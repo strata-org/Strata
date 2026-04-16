@@ -275,12 +275,12 @@ structure VCOutcome where
       When outcomes from multiple paths are merged, each path's log is
       preserved as a separate entry in the outer list. Consumed by future
       diagnostic and traceability tooling. -/
-  solverLog : List (List SolverPhaseLog) := []
+  solverLog : Array (List SolverPhaseLog) := #[]
   /-- When this outcome was produced by merging multiple paths, stores the
       pre-merge per-path outcomes. Empty for unmerged (single-path) results.
       Used by the rendering phase to compute per-path classification summaries
       without storing rendering-mode-dependent strings. -/
-  mergedFrom : List VCOutcome := []
+  mergedFrom : Array VCOutcome := #[]
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -529,8 +529,8 @@ def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
     Each path's `solverLog` is preserved as a separate entry.
     Pre-merge per-path outcomes are stored in `mergedFrom` for rendering. -/
 def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
-  let aPaths := if a.mergedFrom.isEmpty then [a] else a.mergedFrom
-  let bPaths := if b.mergedFrom.isEmpty then [b] else b.mergedFrom
+  let aPaths := if a.mergedFrom.isEmpty then #[a] else a.mergedFrom
+  let bPaths := if b.mergedFrom.isEmpty then #[b] else b.mergedFrom
   { satisfiabilityProperty := a.satisfiabilityProperty.merge b.satisfiabilityProperty
     validityProperty := a.validityProperty.merge b.validityProperty
     solverLog := a.solverLog ++ b.solverLog
@@ -896,7 +896,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     let rawOutcome : VCOutcome := {
       satisfiabilityProperty := adjSat,
       validityProperty := adjVal,
-      solverLog := [smtLog] }
+      solverLog := #[smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
     -- Extract model from sat results (using raw solver results)
     let model := match satResult, validityResult with
@@ -961,7 +961,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           let outcome : VCOutcome := {
             satisfiabilityProperty := adjPeSat,
             validityProperty := adjPeVal,
-            solverLog := [peLog] }
+            solverLog := #[peLog] }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
           results := results.push result
