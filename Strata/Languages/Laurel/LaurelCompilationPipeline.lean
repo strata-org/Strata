@@ -109,10 +109,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let (program, model) := (result.program, result.model)
   emit "ConstrainedTypeElim" program
 
-  -- Contract pass: externalize pre/postconditions and rewrite call sites.
-  -- Disabled pending test updates — the pass changes verification diagnostics
-  -- from "precondition does not hold" to "assertion does not hold" and needs
-  -- metadata propagation work. Enable with: let program := contractPass program
+  let program := contractPass program
 
   -- Check if the pipeline introduced new resolution errors that weren't present initially.
   -- This catches bugs where a pass produces unresolvable names, which would silently
@@ -154,7 +151,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
         DiagnosticType.StrataBug]
     else []
   let fnModel := fnResolveResult.model
-  dbg_trace s!"model: {repr fnModel}"
 
   let ordered := orderFunctionsAndProofs functionsAndProofs
   let initState : TranslateState := { model := fnModel }

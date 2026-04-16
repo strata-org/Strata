@@ -114,7 +114,6 @@ procedure imperativeCallInConditionalExpression(b: bool)
 };
 
 function add(x: int, y: int): int
-  opaque
 {
   x + y
 };
