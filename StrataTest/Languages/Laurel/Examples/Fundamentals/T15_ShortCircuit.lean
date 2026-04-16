@@ -15,7 +15,6 @@ namespace Laurel
 def shortCircuitProgram := r"
 function mustNotCallFunc(x: int): int
   requires false
-  opaque
 { x };
 
 procedure mustNotCallProc(): int

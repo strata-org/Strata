@@ -29,7 +29,6 @@ composite Container {
 
 procedure modifyContainerOpaque(c: Container) returns (b: bool)
   opaque
-  ensures true // makes this procedure opaque. Maybe we should use explicit syntax
   modifies c
 {
   c#value := c#value + 1;
@@ -66,7 +65,6 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
   opaque
-   ensures true
 {
     var i: int := modifyContainerTransparant(c)
 };
@@ -75,7 +73,6 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
   opaque
-  ensures true
   modifies d
 {
     c#value := 2
@@ -85,7 +82,6 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
   opaque
-  ensures true
   modifies d
 {
     var i: int := modifyContainerTransparant(c)
@@ -110,7 +106,6 @@ procedure multipleModifiesClausesCaller()
 
 procedure newObjectDoNotCountForModifies()
   opaque
-  ensures true
 {
   var c: Container := new Container;
   c#value := 1

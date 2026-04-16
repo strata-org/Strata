@@ -17,7 +17,6 @@ composite Container {
 procedure opaqueProcedure(c: Container): int
   reads c
   opaque
-  ensures true
 ;
 
 procedure foo(c: Container, d: Container) 
@@ -48,7 +47,6 @@ type Field;
 val value: Field;
 
 function opaqueProcedure_ensures(heap: Heap, c: Container, r: int): boolean
-  opaque
 {
   true
 }

@@ -22,20 +22,17 @@ procedure impure(): int
 };
 
 function impureFunction1(x: int): int
-  opaque
 {
   x := x + 1
 //^^^^^^^^^^ error: destructive assignments are not supported in functions or contracts
 };
 
 function impureFunction2(x: int): int
-  opaque
 {
   while(false) {}
 //^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
 };
 function impureFunction3(x: int): int
-  opaque
 {
   impure()
 //^^^^^^^^ error: calls to procedures are not supported in functions or contracts

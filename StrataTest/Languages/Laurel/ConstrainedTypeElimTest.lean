@@ -50,6 +50,7 @@ info: function nat$constraint(x: int): bool
 procedure test(n: int)
   returns (r: int)
   requires nat$constraint(n)
+  opaque
   ensures nat$constraint(r)
 { assert r >= 0; var y: int := n; assert nat$constraint(y); return y };
 procedure $witness_nat()
@@ -81,6 +82,7 @@ procedure test(b: bool)
 info: function pos$constraint(v: int): bool
 { v > 0 };
 procedure test(b: bool)
+  opaque
 { if b then { var x: int := 1; assert pos$constraint(x) }; { var x: int := -5; x := -10 } };
 procedure $witness_pos()
 { var $witness: int := 1; assert pos$constraint($witness) };
@@ -107,6 +109,7 @@ procedure f()
 info: function posint$constraint(x: int): bool
 { x > 0 };
 procedure f()
+  opaque
 { var x: int; assume posint$constraint(x); assert x == 1 };
 procedure $witness_posint()
 { var $witness: int := 1; assert posint$constraint($witness) };

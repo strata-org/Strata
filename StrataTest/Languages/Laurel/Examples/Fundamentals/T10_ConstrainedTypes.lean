@@ -160,13 +160,11 @@ procedure uninitNotWitness()
 
 // Function with valid constrained return — constraint not checked (not yet supported)
 function goodFunc(): nat
-  opaque
 { 3 };
 //       ^^^^^^^^ error: constrained return types on functions are not yet supported
 
 // Function with invalid constrained return — constraint not checked (not yet supported)
 function badFunc(): nat
-  opaque
 { -1 };
 //       ^^^^^^^ error: constrained return types on functions are not yet supported
 

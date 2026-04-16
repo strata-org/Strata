@@ -36,7 +36,6 @@ procedure caller()
 
 function aFunctionWithPrecondition(x: int): int
   requires x == 10
-  opaque
 {
   x
 };
@@ -68,7 +67,6 @@ procedure multipleRequiresCaller()
 function funcMultipleRequires(x: int, y: int): int
   requires x > 0
   requires y > 0
-  opaque
 {
   x + y
 };

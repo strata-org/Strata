@@ -14,7 +14,6 @@ namespace Strata.Laurel
 
 def stringConcatLiftingProgram := r#"
 procedure stringConcatWithAssignment()
-requires true
   opaque
 {
   var x: string := "Hello";
@@ -24,7 +23,6 @@ requires true
 };
 
 procedure stringConcatOK()
-requires true
   opaque
 {
   var a: string := "Hello";
@@ -34,7 +32,6 @@ requires true
 };
 
 procedure stringConcatKO()
-requires true
   opaque
 {
   var a: string := "Hello";

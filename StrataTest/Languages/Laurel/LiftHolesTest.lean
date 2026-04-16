@@ -336,8 +336,10 @@ procedure test()
 -- Mixed: det hole eliminated, nondet hole preserved.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { var x: int := $hole_0(); assert <??> };
 -/
 #guard_msgs in

@@ -68,7 +68,6 @@ procedure blockWithTwoAssignmentsInExpression()
 
 procedure nestedImpureStatementsAndOpaque()
   opaque
-  ensures true
 {
   var y: int := 0;
   var x: int := y;

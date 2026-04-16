@@ -33,9 +33,7 @@ procedure testQuantifierInContract(n: int)
 };
 
 function P(x: int): int;
-  opaque
 function Q(): int;
-  opaque
 procedure triggers()
   opaque
 {

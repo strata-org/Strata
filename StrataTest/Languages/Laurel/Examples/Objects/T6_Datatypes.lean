@@ -63,7 +63,6 @@ procedure unsafeDestructor()
 // Datatype in function
 function listHead(xs: IntList): int
   requires IntList..isCons(xs)
-  opaque
 {
   IntList..head(xs)
 };

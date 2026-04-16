@@ -14,7 +14,6 @@ namespace Strata.Laurel
 
 def program := r"
 function returnAtEnd(x: int) returns (r: int)
-  opaque
 {
   if x > 0 then {
     if x == 1 then {
@@ -28,13 +27,11 @@ function returnAtEnd(x: int) returns (r: int)
 };
 
 function elseWithCall(): int
-  opaque
 {
   if true then 3 else returnAtEnd(3)
 };
 
 function guardInFunction(x: int) returns (r: int)
-  opaque
 {
   if x > 0 then {
     if x == 1 then {

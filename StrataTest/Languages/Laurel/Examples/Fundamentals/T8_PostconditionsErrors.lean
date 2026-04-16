@@ -18,7 +18,6 @@ function opaqueFunction(x: int) returns (r: int)
 //       ^^^^^^^^^^^^^^ error: functions with postconditions are not yet supported
 // The above limitation is because Core does not yet support functions with postconditions
   requires x > 0
-  opaque
   ensures r > 0
 // The above limitation is because functions in Core do not support postconditions
 {

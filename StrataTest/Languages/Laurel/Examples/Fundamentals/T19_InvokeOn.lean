@@ -14,25 +14,21 @@ namespace Strata.Laurel
 
 def program := r#"
 function P(x: int): bool;
-  opaque
 function Q(x: int): bool;
 
   opaque
 function assertP(x: int): int requires P(x);
-  opaque
 function needsPAndQsInvoke1(): int
-  opaque
 {
   assertP(3)
 };
 
 procedure PAndQ(x: int)
   invokeOn P(x)
-
   opaque
   ensures P(x) && Q(x);
+
 function needsPAndQsInvoke2(): int
-  opaque
 {
   assertP(3)
 };
@@ -52,14 +48,12 @@ procedure axiomDoesNotFireBecauseOfPattern(x: int)
 };
 
 function A(x: int, y: real): bool;
-  opaque
 function B(x: real): bool;
-  opaque
 procedure AAndB(x: int, y: real)
   invokeOn A(x, y)
-
   opaque
   ensures A(x, y) && B(y);
+
 procedure invokeA(x: int, y :real)
   opaque
 {

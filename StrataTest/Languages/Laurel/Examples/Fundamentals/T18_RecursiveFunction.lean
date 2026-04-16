@@ -23,7 +23,6 @@ datatype IntList {
 }
 
 function listLen(xs: IntList): int
-  opaque
 {
   if IntList..isNil(xs) then 0
   else 1 + listLen(IntList..tail!(xs))
@@ -38,14 +37,12 @@ procedure testListLen()
 
 // Mutual recursion
 function listLenEven(xs: IntList): bool
-  opaque
 {
   if IntList..isNil(xs) then true
   else listLenOdd(IntList..tail!(xs))
 };
 
 function listLenOdd(xs: IntList): bool
-  opaque
 {
   if IntList..isNil(xs) then false
   else listLenEven(IntList..tail!(xs))

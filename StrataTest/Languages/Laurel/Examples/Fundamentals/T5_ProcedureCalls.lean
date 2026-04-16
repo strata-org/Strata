@@ -43,7 +43,6 @@ procedure fooProof()
 };
 
 function aFunction(x: int): int
-  opaque
 {
   x
 };
