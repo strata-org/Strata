@@ -764,8 +764,9 @@ private def vcResultGroupKey (r : VCResult) (uid : Nat) : String × Nat :=
     if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
     else
       let related := Imperative.getRelatedFileRanges r.obligation.metadata
-      let relatedKey := related.foldl (fun acc r => s!"{acc}+{repr r}") ""
-      (s!"{displayLabel}@{repr fr}{relatedKey}", uid)
+      let frKey := s!"{fr.file}:{fr.range.start}:{fr.range.stop}"
+      let relatedKey := related.foldl (fun acc r => s!"{acc}+{r.file}:{r.range.start}:{r.range.stop}") ""
+      (s!"{displayLabel}@{frKey}{relatedKey}", uid)
   | none => (s!"{displayLabel}@__unique_{uid}", uid + 1)
 
 /-- Merge `VCResults` that originate from the same assertion (identified by
