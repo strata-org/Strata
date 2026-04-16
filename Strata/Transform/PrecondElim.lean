@@ -42,6 +42,15 @@ open Lambda
 open Strata (DiagnosticModel)
 open Core.Transform
 
+/-- Statistics keys tracked by the precondition elimination transformation. -/
+inductive Stats where
+  | callSiteAssertsEmitted
+  | wfProcedureBodyStmtsEmitted
+  | wfProceduresGenerated
+  | numFuncsRemovedAfterPrecondStripped
+
+derive_prefixed_toString Stats "PrecondElim"
+
 /-! ## Naming conventions -/
 
 /-- Suffix for generated well-formedness procedures. -/
@@ -51,10 +60,25 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-! ## Collecting assertions from expressions -/
 
-/-- Classify a function name into a property type for SARIF reporting. -/
-private def classifyPrecondition (funcName : String) : Option String :=
+/-- Classify a function precondition into a property type for SARIF reporting.
+    For functions with multiple preconditions (e.g., SafeSDiv has both div-by-zero
+    and overflow), the precondition index distinguishes them. -/
+private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : Option String :=
   if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
     some Imperative.MetaData.divisionByZero
+  else if funcName.startsWith "Bv1.SafeSDiv" || funcName.startsWith "Bv2.SafeSDiv" ||
+          funcName.startsWith "Bv8.SafeSDiv" || funcName.startsWith "Bv16.SafeSDiv" ||
+          funcName.startsWith "Bv32.SafeSDiv" || funcName.startsWith "Bv64.SafeSDiv" ||
+          funcName.startsWith "Bv1.SafeSMod" || funcName.startsWith "Bv2.SafeSMod" ||
+          funcName.startsWith "Bv8.SafeSMod" || funcName.startsWith "Bv16.SafeSMod" ||
+          funcName.startsWith "Bv32.SafeSMod" || funcName.startsWith "Bv64.SafeSMod" then
+    -- SafeSDiv/SafeSMod: precondition 0 is div-by-zero, precondition 1 is overflow
+    if precondIdx == 0 then some Imperative.MetaData.divisionByZero
+    else some Imperative.MetaData.arithmeticOverflow
+  else if funcName.startsWith "Bv1.Safe" || funcName.startsWith "Bv2.Safe" ||
+          funcName.startsWith "Bv8.Safe" || funcName.startsWith "Bv16.Safe" ||
+          funcName.startsWith "Bv32.Safe" || funcName.startsWith "Bv64.Safe" then
+    some Imperative.MetaData.arithmeticOverflow
   else
     none
 
@@ -68,12 +92,27 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
 (labelPrefix : String) (md : Imperative.MetaData Expression)
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
-  wfObs.mapIdx fun idx ob =>
-    let md' := match classifyPrecondition ob.funcName with
-      | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
-      | none => md
-    Statement.assert
-    s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md'
+  -- Strip propertySummary: the enclosing statement's user-facing message
+  -- (e.g., a Python assert message) should not propagate to generated
+  -- precondition checks for called functions.
+  let md := md.eraseAllElems Imperative.MetaData.propertySummary
+  -- Use modulo to cycle the precondition index correctly across call sites.
+  -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
+  -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
+  -- Without modulo, the index would be 0,1,2,3 instead of 0,1,0,1.
+  let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List Statement)))
+    fun (prevFunc, prevIdx, acc) ob =>
+      let rawIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
+      let precondCount := F[ob.funcName]?.map (·.preconditions.length) |>.getD 1
+      let precondIdx := if precondCount > 0 then rawIdx % precondCount else rawIdx
+      let globalIdx := acc.length
+      let md' := match classifyPrecondition ob.funcName precondIdx with
+        | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
+        | none => md
+      let stmt := Statement.assert
+        s!"{labelPrefix}_calls_{ob.funcName}_{globalIdx}" ob.obligation md'
+      (ob.funcName, rawIdx, stmt :: acc)
+  result.reverse
 
 /--
 Collect assertions for all expressions in a command.
@@ -220,9 +259,11 @@ def transformStmt (s : Statement)
   match s with
   | .cmd (.cmd c) =>
     let asserts := collectCmdPrecondAsserts F c
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return (!asserts.isEmpty, asserts ++ [.cmd (.cmd c)])
   | .cmd (.call lhs pname args md) =>
     let asserts := collectCallPrecondAsserts F pname args md
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return (!asserts.isEmpty, asserts ++ [.call lhs pname args md])
   | .block lbl b md => do
     let savedF ← getFactory
@@ -233,6 +274,8 @@ def transformStmt (s : Statement)
     let condAsserts := match c with
       | .det e => collectPrecondAsserts F e "ite_cond" md
       | .nondet => []
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" condAsserts.length
+
     let savedF ← getFactory
     let (changed, thenb') ← transformStmts thenb
     setFactory savedF
@@ -254,6 +297,11 @@ def transformStmt (s : Statement)
     let guardAssertsEnd := match guard with
       | .det g => collectPrecondAsserts F g "loop_guard_end" md
       | .nondet => []
+
+    incrementStat s!"{Stats.callSiteAssertsEmitted}"
+      (measureAsserts.length + measureAssertsEnd.length +
+       invAsserts.length + guardAsserts.length + guardAssertsEnd.length)
+
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
@@ -273,9 +321,12 @@ def transformStmt (s : Statement)
     setFactory F'
     let decl' := { decl with preconditions := [] }
     let hasPreconds := !decl.preconditions.isEmpty
+    if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
+
     match mkFuncWFStmts F' funcName decl.preconditions decl.body md with
     | none => return (hasPreconds, [.funcDecl decl' md])
     | some wfStmts =>
+      incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}" wfStmts.length
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty .nondet md
@@ -330,6 +381,10 @@ where
         let (changed', rest') ← transformDecls rest
         match mkContractWFProc F proc md with
         | some wfDecl => do
+          incrementStat s!"{Stats.wfProceduresGenerated}"
+          incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
           return (true, wfDecl :: procDecl :: rest')
         | none => return (changed || changed', procDecl :: rest')
@@ -342,9 +397,14 @@ where
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
         let hasPreconds := !func.preconditions.isEmpty
+        if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
         let (changed, rest') ← transformDecls rest
         match mkFuncWFProc F' func md with
         | some wfDecl => do
+          incrementStat s!"{Stats.wfProceduresGenerated}"
+          incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
           return (true, wfDecl :: funcDecl :: rest')
         | none => return (changed || hasPreconds, funcDecl :: rest')
@@ -358,10 +418,18 @@ where
         let funcs' := funcs.map ({ · with preconditions := [] })
         let funcDecl := Decl.recFuncBlock funcs' md
         let hasPreconds := funcs.any (!·.preconditions.isEmpty)
+        let numStripped := funcs.foldl (fun n f =>
+          if !f.preconditions.isEmpty then n + 1 else n) 0
+        incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
+
         let (changed, rest') ← transformDecls rest
         let wfDecls ← funcs.filterMapM fun func => do
           match mkFuncWFProc F' func md with
           | some wfDecl => do
+            incrementStat s!"{Stats.wfProceduresGenerated}"
+            incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+              (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+
             addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
             return some wfDecl
           | none => return none
