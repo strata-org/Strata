@@ -218,12 +218,12 @@ def dischargeObligation
 def dischargeObligationIncremental
   (options : VerifyOptions)
   (vars : List Expression.TypedIdent)
-  (md : Imperative.MetaData Expression)
+  (_md : Imperative.MetaData Expression)
   (assumptionTerms : List Term)
   (obligationTerm : Term)
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
-  (label : String)
+  (_label : String)
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) :=
   open _root_.Strata.SMT.IncrementalSolver in do
   let baseFlags := getSolverFlags options
@@ -899,7 +899,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             typedVarsInObligation
             obligation.metadata
             assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-            (label := obligation.label)
+            obligation.label
         else
           SMT.dischargeObligation options
             typedVarsInObligation
