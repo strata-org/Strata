@@ -269,13 +269,13 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
-  /-- Ordered log of solver results per path. Each inner list is one path's
+  /-- Ordered log of solver results per path. Each inner array is one path's
       log: the raw solver results followed by per-phase adjusted results
       (e.g. sat→unknown when a phase cannot validate the model).
       When outcomes from multiple paths are merged, each path's log is
-      preserved as a separate entry in the outer list. Consumed by future
+      preserved as a separate entry in the outer array. Consumed by future
       diagnostic and traceability tooling. -/
-  solverLog : Array (List SolverPhaseLog) := #[]
+  solverLog : Array (Array SolverPhaseLog) := #[]
   /-- When this outcome was produced by merging multiple paths, stores the
       pre-merge per-path outcomes. Empty for unmerged (single-path) results.
       Used by the rendering phase to compute per-path classification summaries
@@ -832,10 +832,12 @@ def coreAbstractedPhases (procs : Option (List String) := none) : List Abstracte
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
     (satisfiabilityCheck validityCheck : Bool)
-    (satPhaseLog valPhaseLog : List SolverPhaseLog) : List SolverPhaseLog :=
-  (if satisfiabilityCheck then [{ phase := "solver.sat", result := satResult }] else []) ++
-  (if validityCheck then [{ phase := "solver.val", result := valResult }] else []) ++
-  satPhaseLog ++ valPhaseLog
+    (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
+  let sat : Array SolverPhaseLog :=
+    if satisfiabilityCheck then #[{ phase := "solver.sat", result := satResult }] else #[]
+  let val : Array SolverPhaseLog :=
+    if validityCheck then #[{ phase := "solver.val", result := valResult }] else #[]
+  sat ++ val ++ satPhaseLog.toArray ++ valPhaseLog.toArray
 
 /-- Adjust an SMT result through pipeline phase validation. A `.sat` result
     may be demoted to `.unknown` if a phase cannot validate the model, and
