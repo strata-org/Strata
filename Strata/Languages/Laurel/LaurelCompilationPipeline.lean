@@ -149,8 +149,10 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
 
   let fnProgram : Program := {
     staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs,
-    staticFields := program.staticFields,
-    types := program.types ++ functionsAndProofs.datatypes.map TypeDefinition.Datatype,
+    staticFields := [],
+    types := functionsAndProofs.datatypes.map TypeDefinition.Datatype ++
+    -- Hack to compensate for references to composite types not having been updated yet.
+      program.types.filter (fun t => match t with | .Composite _ => true | _ => false),
     constants := program.constants
   }
   let fnResolveResult := resolve fnProgram (some model)
