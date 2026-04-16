@@ -41,17 +41,6 @@ def reCompile := mk "re" "compile"
 
 end PythonIdent
 
-/-- Map a PythonIdent to its PyLauType string name, if it's a recognized
-    builtin type. Used by both PySpecPipeline (for type extraction) and
-    PythonToLaurel (for type assertions). -/
-def PythonIdent.toPyLauType? (id : PythonIdent) : Option String :=
-  if id == PythonIdent.builtinsInt then some "int"
-  else if id == PythonIdent.builtinsStr then some "str"
-  else if id == PythonIdent.builtinsBool then some "bool"
-  else if id == PythonIdent.builtinsFloat then some "float"
-  else if id == PythonIdent.noneType then some "None"
-  else none
-
 namespace Specs
 
 /--

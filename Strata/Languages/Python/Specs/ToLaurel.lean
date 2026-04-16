@@ -28,6 +28,25 @@ converts those signatures into Laurel programs that can be verified.
 - `externTypeDecl`: Ignored — PySpec fully qualifies imported class names
 -/
 
+namespace Strata.Python
+
+public section
+
+/-- Map a PythonIdent to its PyLauType string name, if it's a recognized
+    builtin type. This is the single source of truth for which Python builtins
+    map to PyLauType names. Used by PySpecPipeline (for type extraction).
+    Keep in sync with `pyLauTypesWithTesters` in PythonToLaurel.lean. -/
+def PythonIdent.toPyLauType? (id : PythonIdent) : Option String :=
+  if id == PythonIdent.builtinsInt then some "int"
+  else if id == PythonIdent.builtinsStr then some "str"
+  else if id == PythonIdent.builtinsBool then some "bool"
+  else if id == PythonIdent.builtinsFloat then some "float"
+  else if id == PythonIdent.noneType then some "None"
+  else none
+
+end -- public section
+end Strata.Python
+
 namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
