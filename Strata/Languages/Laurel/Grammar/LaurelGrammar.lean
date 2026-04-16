@@ -9,7 +9,7 @@ module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: added opaque keyword for explicit opaque procedure bodies
+-- Last grammar change: fixed opaqueBlock body precedence to prevent parenthesization
 public import Strata.DDM.Integration.Lean
 public meta import Strata.DDM.Integration.Lean
 

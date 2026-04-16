@@ -167,7 +167,7 @@ op externalBody: Body => "external";
 
 category OpaqueBlock;
 op opaqueBlock(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause, body: Option Body): OpaqueBlock
-  => "\n  opaque" ensures modifies body;
+  => "\n  opaque" ensures modifies body:0;
 
 category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
