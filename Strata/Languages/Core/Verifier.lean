@@ -809,7 +809,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
-    EIO DiagnosticModel VCResults := do
+    EIO DiagnosticModel (VCResults × Statistics) := do
   let (p, E) := pE
   let profile := options.profile
   match E.error with
@@ -818,6 +818,8 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
+    let mut stats : Statistics := ({} : Statistics)
+      |>.increment s!"{Evaluator.Stats.verify_numObligations}" E.deferred.size
     let mut results := (#[] : VCResults)
     let mut preprocessNs : Nat := 0
     let mut smtEncodeNs : Nat := 0
@@ -883,7 +885,8 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
         if options.stopOnFirstError then break
-      | .ok (assumptionTerms, obligationTerm, ctx) =>
+      | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
+        stats := stats.merge encStats
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
@@ -909,7 +912,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
-    return results
+    return (results, stats)
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
@@ -931,7 +934,7 @@ def verify (program : Program)
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
   let phases := pipelinePhases.map (·.phase)
-  let finalProgram ← profileStep profile "  Program transformations" do
+  let (finalProgram, pipelineStats) ← profileStep profile "  Program transformations" do
     if let some pfx := keepAllFilesPrefix then
       if let some parent := (System.FilePath.mk pfx).parent then
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
@@ -954,24 +957,28 @@ def verify (program : Program)
             (IO.FS.writeFile path (toString current ++ "\n"))
       | .error e =>
         throw (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
-    .ok current
+    .ok (current, state.statistics)
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  let pEs ← profileStep profile "  Type check and partial eval" do
+  let (pEs, evalStats) ← profileStep profile "  Type check and partial eval" do
     match Core.typeCheckAndPartialEval options finalProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok pEs => .ok pEs
+    | .ok (pEs, stats) => .ok (pEs, stats)
+  let allStats := pipelineStats.merge evalStats
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure []
     else
       (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases phases) pEs)
-  .ok VCss.toArray.flatten
+  let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
+  if profile then
+    let _ ← (IO.println allStats.format |>.toBaseIO)
+  .ok (VCss.map (·.fst)).toArray.flatten
 
 end -- public section
 end Core

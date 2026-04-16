@@ -24,6 +24,13 @@ namespace ProcedureInlining
 
 open Transform
 
+/-- Statistics keys tracked by the procedure inlining transformation. -/
+inductive Stats where
+  | visitedCalls
+  | inlinedCalls
+
+derive_prefixed_toString Stats "ProcedureInlining"
+
 -- Gathers all labels including those in assert and assume.
 mutual
 def Block.labels (b : Block): List String :=
@@ -203,9 +210,11 @@ def inlineCallCmd
     open Lambda in do
     match cmd with
       | .call lhs procName args md =>
+        incrementStat s!"{Stats.visitedCalls}"
 
         let st ← get
         if ¬ doInline st.currentProcedureName procName st.cachedAnalyses then return .none else
+        incrementStat s!"{Stats.inlinedCalls}"
 
         let some p := (← get).currentProgram
           | throw s!"currentProgram not set"
