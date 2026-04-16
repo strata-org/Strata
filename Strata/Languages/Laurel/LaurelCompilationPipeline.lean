@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.EliminateMultipleOutputs
 import Strata.Languages.Core.Verifier
 
 /-!
@@ -144,11 +145,18 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
+  let functionsAndProofs := eliminateMultipleOutputs functionsAndProofs
 
   let fnProgram : Program := {
     staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs,
     staticFields := program.staticFields,
-    types := program.types,
+    types := program.types ++
+      -- Add only the new datatypes synthesized by eliminateMultipleOutputs
+      -- (the original datatypes are already in program.types)
+      let origDtNames := program.types.filterMap fun td => match td with
+        | .Datatype dt => some dt.name.text | _ => none
+      (functionsAndProofs.datatypes.filter fun dt =>
+        !origDtNames.contains dt.name.text).map TypeDefinition.Datatype,
     constants := program.constants
   }
   let fnResolveResult := resolve fnProgram (some model)
@@ -161,7 +169,18 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     else []
   let fnModel := fnResolveResult.model
 
-  let ordered := orderFunctionsAndProofs functionsAndProofs
+  -- Reconstruct FunctionsAndProofsProgram from the resolved program so that
+  -- all identifiers (including synthesized result types) have uniqueIds.
+  let resolvedProcs := fnResolveResult.program.staticProcedures
+  let resolvedFunctionsAndProofs : FunctionsAndProofsProgram := {
+    functions := resolvedProcs.filter (·.isFunctional)
+    proofs := resolvedProcs.filter (!·.isFunctional)
+    datatypes := fnResolveResult.program.types.filterMap fun td => match td with
+      | .Datatype dt => some dt | _ => none
+    constants := fnResolveResult.program.constants
+  }
+
+  let ordered := orderFunctionsAndProofs resolvedFunctionsAndProofs
   let initState : TranslateState := { model := fnModel }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
