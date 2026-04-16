@@ -12,6 +12,7 @@ public import Strata.DDM.Elab.LoadedDialects
 public import Strata.DDM.Parser
 import all Strata.DDM.Util.Lean
 import all Strata.DDM.Util.PrattParsingTables
+public import Strata.DDM.Util.Format
 
 set_option autoImplicit false
 
@@ -161,7 +162,7 @@ def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSil
     | none => ElabClass.getGlobalContext
   let c : FormatContext := .ofDialects (← ElabClass.getDialects) gctx {}
   let s : FormatState := { openDialects := ← ElabClass.getOpenDialects }
-  let msg := msg c s |>.format |>.pretty
+  let msg := msg c s |>.format |> Strata.renderFormat
   logErrorMessage (mkErrorMessage inputCtx loc msg isSilent)
 
 -- DeclM

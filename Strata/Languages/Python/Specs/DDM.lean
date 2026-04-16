@@ -10,6 +10,7 @@ public import Strata.Languages.Python.Specs.Decls
 
 import Strata.DDM.AST
 import Strata.DDM.Util.ByteArray
+public import Strata.DDM.Util.Format
 import Strata.DDM.Format
 import Strata.DDM.BuiltinDialects.Init
 public import Strata.DDM.Integration.Lean.OfAstM
@@ -276,7 +277,7 @@ def specExprFormatState : FormatState where
   openDialects := DDM.PythonSpecs_map.toList.foldl (init := {}) fun s d => s.insert d.name
 
 instance : ToString SpecExpr where
-  toString e := (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
+  toString e := Strata.renderFormat (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format
 
 private def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
   match p with
