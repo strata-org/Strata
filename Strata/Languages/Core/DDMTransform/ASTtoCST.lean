@@ -9,6 +9,7 @@ public import Strata.Languages.Core.DDMTransform.Grammar
 public import Strata.Languages.Core.Program
 public import Strata.DDM.Util.DecimalRat
 public import Strata.DDM.Format
+public import Strata.Languages.Core.CoreOp
 
 public section
 
@@ -385,10 +386,11 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
 /-- Handle 0-ary operations -/
 def handleZeroaryOps {M} [Inhabited M] (name : String)
     : ToCSTM M (CoreDDM.Expr M) :=
-  match name with
-  | "Re.All" => pure (.re_all default)
-  | "Re.AllChar" => pure (.re_allchar default)
-  | "Re.None" => pure (.re_none default)
+  open Core in
+  match CoreOp.ofString name with
+  | .re .All => pure (.re_all default)
+  | .re .AllChar => pure (.re_allchar default)
+  | .re .None => pure (.re_none default)
   -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
@@ -398,99 +400,96 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
-  match name with
-  | "old" => pure (.old default ty arg)
+  open Core in
+  match CoreOp.ofString name with
+  | .other "old" => pure (.old default ty arg)
   -- Integers and reals
-  | "Int.Neg" | "Real.Neg" => pure (.neg_expr default ty arg)
+  | .numeric ⟨_, .Neg⟩ => pure (.neg_expr default ty arg)
   -- Booleans
-  | "Bool.Not" => pure (.not default arg)
+  | .bool .Not => pure (.not default arg)
   -- Strings and regexes
-  | "Str.Length" => pure (.str_len default arg)
-  | "Str.ToRegEx" => pure (.str_toregex default arg)
-  | "Re.Star" => pure (.re_star default arg)
-  | "Re.Plus" => pure (.re_plus default arg)
-  | "Re.Comp" => pure (.re_comp default arg)
+  | .str .Length => pure (.str_len default arg)
+  | .str .ToRegEx => pure (.str_toregex default arg)
+  | .re .Star => pure (.re_star default arg)
+  | .re .Plus => pure (.re_plus default arg)
+  | .re .Comp => pure (.re_comp default arg)
   -- Sequences
-  | "Sequence.length" => pure (.seq_length default ty arg)
-  -- Bitvectors
-  | "Bv1.Not" => pure (.bvnot default (.bv1 default) arg)
-  | "Bv1.Neg" => pure (.neg_expr default (.bv1 default) arg)
-  | "Bv8.Not" => pure (.bvnot default (.bv8 default) arg)
-  | "Bv8.Neg" => pure (.neg_expr default (.bv8 default) arg)
-  | "Bv16.Not" => pure (.bvnot default (.bv16 default) arg)
-  | "Bv16.Neg" => pure (.neg_expr default (.bv16 default) arg)
-  | "Bv32.Not" => pure (.bvnot default (.bv32 default) arg)
-  | "Bv32.Neg" => pure (.neg_expr default (.bv32 default) arg)
-  | "Bv64.Not" => pure (.bvnot default (.bv64 default) arg)
-  | "Bv64.Neg" => pure (.neg_expr default (.bv64 default) arg)
-  -- Safe negation variants (same CST as regular negation)
-  | "Bv1.SafeNeg" | "Bv1.SafeUNeg" => pure (.safeneg_expr default (.bv1 default) arg)
-  | "Bv8.SafeNeg" | "Bv8.SafeUNeg" => pure (.safeneg_expr default (.bv8 default) arg)
-  | "Bv16.SafeNeg" | "Bv16.SafeUNeg" => pure (.safeneg_expr default (.bv16 default) arg)
-  | "Bv32.SafeNeg" | "Bv32.SafeUNeg" => pure (.safeneg_expr default (.bv32 default) arg)
-  | "Bv64.SafeNeg" | "Bv64.SafeUNeg" => pure (.safeneg_expr default (.bv64 default) arg)
-  -- Overflow predicates: these only appear in generated assertions, not user code.
-  -- Use Bool.Not as an approximation for CST printing (the actual semantics are
-  -- handled by the SMT encoder, not the CST).
-  | "Bv1.SNegOverflow" | "Bv1.UNegOverflow"
-  | "Bv8.SNegOverflow" | "Bv8.UNegOverflow"
-  | "Bv16.SNegOverflow" | "Bv16.UNegOverflow"
-  | "Bv32.SNegOverflow" | "Bv32.UNegOverflow"
-  | "Bv64.SNegOverflow" | "Bv64.UNegOverflow" =>
-    pure (.not default arg)
-  | "Bv8.Extract_7_7" => pure (.bvextract_7_7 default arg)
-  | "Bv16.Extract_15_15" => pure (.bvextract_15_15 default arg)
-  | "Bv32.Extract_31_31" => pure (.bvextract_31_31 default arg)
-  | "Bv16.Extract_7_0" => pure (.bvextract_7_0_16 default arg)
-  | "Bv32.Extract_7_0" => pure (.bvextract_7_0_32 default arg)
-  | "Bv32.Extract_15_0" => pure (.bvextract_15_0_32 default arg)
-  | "Bv64.Extract_7_0" => pure (.bvextract_7_0_64 default arg)
-  | "Bv64.Extract_15_0" => pure (.bvextract_15_0_64 default arg)
-  | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default arg)
+  | .seq .Length => pure (.seq_length default ty arg)
+  -- Bitvector unary ops: enumerated per size because the CST constructors
+  -- (.bvnot, .neg_expr) require a concrete type argument. Adding a new BV
+  -- width requires adding cases here.
+  | .bv ⟨1, .Not⟩ => pure (.bvnot default (.bv1 default) arg)
+  | .bv ⟨1, .Neg⟩ => pure (.neg_expr default (.bv1 default) arg)
+  | .bv ⟨8, .Not⟩ => pure (.bvnot default (.bv8 default) arg)
+  | .bv ⟨8, .Neg⟩ => pure (.neg_expr default (.bv8 default) arg)
+  | .bv ⟨16, .Not⟩ => pure (.bvnot default (.bv16 default) arg)
+  | .bv ⟨16, .Neg⟩ => pure (.neg_expr default (.bv16 default) arg)
+  | .bv ⟨32, .Not⟩ => pure (.bvnot default (.bv32 default) arg)
+  | .bv ⟨32, .Neg⟩ => pure (.neg_expr default (.bv32 default) arg)
+  | .bv ⟨64, .Not⟩ => pure (.bvnot default (.bv64 default) arg)
+  | .bv ⟨64, .Neg⟩ => pure (.neg_expr default (.bv64 default) arg)
+  -- Safe negation variants
+  | .bv ⟨1, .SafeNeg⟩ | .bv ⟨1, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv1 default) arg)
+  | .bv ⟨8, .SafeNeg⟩ | .bv ⟨8, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv8 default) arg)
+  | .bv ⟨16, .SafeNeg⟩ | .bv ⟨16, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv16 default) arg)
+  | .bv ⟨32, .SafeNeg⟩ | .bv ⟨32, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv32 default) arg)
+  | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
+  -- Overflow predicates: approximated as Bool.Not for CST printing
+  | .bv ⟨_, .SNegOverflow⟩ | .bv ⟨_, .UNegOverflow⟩ => pure (.not default arg)
+  -- Bitvector extract ops
+  | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)
+  | .bvExtract 16 15 15 => pure (.bvextract_15_15 default arg)
+  | .bvExtract 32 31 31 => pure (.bvextract_31_31 default arg)
+  | .bvExtract 16 7 0 => pure (.bvextract_7_0_16 default arg)
+  | .bvExtract 32 7 0 => pure (.bvextract_7_0_32 default arg)
+  | .bvExtract 32 15 0 => pure (.bvextract_15_0_32 default arg)
+  | .bvExtract 64 7 0 => pure (.bvextract_7_0_64 default arg)
+  | .bvExtract 64 15 0 => pure (.bvextract_15_0_64 default arg)
+  | .bvExtract 64 31 0 => pure (.bvextract_31_0_64 default arg)
   | _ => mkGenericCall "handleUnaryOps" name [arg]
 
-/-- Map from bitvector binary operation base names to DDM Expr constructors -/
+/-- Map from bitvector binary operation kinds to DDM Expr constructors -/
 def bvBinaryOpMap {M} [Inhabited M] :
-    List (String × (CoreType M → CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) :=
+    List (Core.BvOpKind × (CoreType M → CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) :=
  [
-  ("And", fun ty arg1 arg2 => .bvand default ty arg1 arg2),
-  ("Or", fun ty arg1 arg2 => .bvor default ty arg1 arg2),
-  ("Xor", fun ty arg1 arg2 => .bvxor default ty arg1 arg2),
-  ("Add", fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
-  ("Sub", fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
-  ("Mul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2),
-  ("UDiv", fun ty arg1 arg2 => .div_expr default ty arg1 arg2),
-  ("UMod", fun ty arg1 arg2 => .mod_expr default ty arg1 arg2),
-  ("SDiv", fun ty arg1 arg2 => .bvsdiv default ty arg1 arg2),
-  ("SMod", fun ty arg1 arg2 => .bvsmod default ty arg1 arg2),
-  ("Shl", fun ty arg1 arg2 => .bvshl default ty arg1 arg2),
-  ("UShr", fun ty arg1 arg2 => .bvushr default ty arg1 arg2),
-  ("SShr", fun ty arg1 arg2 => .bvsshr default ty arg1 arg2),
-  ("ULe", fun ty arg1 arg2 => .le default ty arg1 arg2),
-  ("ULt", fun ty arg1 arg2 => .lt default ty arg1 arg2),
-  ("UGe", fun ty arg1 arg2 => .ge default ty arg1 arg2),
-  ("UGt", fun ty arg1 arg2 => .gt default ty arg1 arg2),
-  ("SLe", fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
-  ("SLt", fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
-  ("SGe", fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
-  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
-  -- Safe variants map to the same CST constructors
-  ("SafeAdd", fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
-  ("SafeSub", fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
-  ("SafeMul", fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
-  ("SafeSDiv", fun ty arg1 arg2 => .safesdiv_expr default ty arg1 arg2),
-  ("SafeSMod", fun ty arg1 arg2 => .safesmod_expr default ty arg1 arg2),
-  ("SafeUAdd", fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
-  ("SafeUSub", fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
-  ("SafeUMul", fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
-  -- Overflow predicates: approximated as boolean ops for CST printing (only appear in generated assertions)
-  ("SAddOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  ("SSubOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  ("SMulOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  ("SDivOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  ("UAddOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  ("USubOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  ("UMulOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2)
+  (.And, fun ty arg1 arg2 => .bvand default ty arg1 arg2),
+  (.Or, fun ty arg1 arg2 => .bvor default ty arg1 arg2),
+  (.Xor, fun ty arg1 arg2 => .bvxor default ty arg1 arg2),
+  (.Add, fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
+  (.Sub, fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
+  (.Mul, fun ty arg1 arg2 => .mul_expr default ty arg1 arg2),
+  (.UDiv, fun ty arg1 arg2 => .div_expr default ty arg1 arg2),
+  (.UMod, fun ty arg1 arg2 => .mod_expr default ty arg1 arg2),
+  (.SDiv, fun ty arg1 arg2 => .bvsdiv default ty arg1 arg2),
+  (.SMod, fun ty arg1 arg2 => .bvsmod default ty arg1 arg2),
+  (.Shl, fun ty arg1 arg2 => .bvshl default ty arg1 arg2),
+  (.UShr, fun ty arg1 arg2 => .bvushr default ty arg1 arg2),
+  (.SShr, fun ty arg1 arg2 => .bvsshr default ty arg1 arg2),
+  (.ULe, fun ty arg1 arg2 => .le default ty arg1 arg2),
+  (.ULt, fun ty arg1 arg2 => .lt default ty arg1 arg2),
+  (.UGe, fun ty arg1 arg2 => .ge default ty arg1 arg2),
+  (.UGt, fun ty arg1 arg2 => .gt default ty arg1 arg2),
+  (.SLe, fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
+  (.SLt, fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
+  (.SGe, fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
+  (.SGt, fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
+  -- Safe variants
+  (.SafeAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
+  (.SafeSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
+  (.SafeMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
+  (.SafeSDiv, fun ty arg1 arg2 => .safesdiv_expr default ty arg1 arg2),
+  (.SafeSMod, fun ty arg1 arg2 => .safesmod_expr default ty arg1 arg2),
+  (.SafeUAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
+  (.SafeUSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
+  (.SafeUMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
+  -- Overflow predicates: approximated as boolean ops for CST printing
+  (.SAddOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.SSubOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.SMulOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.SDivOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.UAddOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.USubOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.UMulOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/
@@ -513,89 +512,81 @@ def bvConcatMap {M} [Inhabited M] :
 /-- Auto-generated bitvector binary operations handler -/
 def handleBitvecBinaryOps {M} [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
-  -- Parse operation name: "BvN.Op" -> (N, "Op")
-  let parts := name.splitOn "."
-  match parts with
-  | [sizeStr, opName] =>
-    if sizeStr.startsWith "Bv" then
-      let sizeNumStr := sizeStr.drop 2
-      match sizeNumStr.toNat? with
-      | some size =>
-        -- Look up type for this size
-        match (bvTypeMap).find? (·.1 == size) with
-        | some (_, ty) =>
-          match opName with
-          | "Concat" => -- Handle concat operations
-            match (bvConcatMap).find? (·.1 == size) with
-            | some (_, concatOp) => pure (concatOp arg1 arg2)
-            | none => do
-              ToCSTM.logError "handleBitvecBinaryOps" "unsupported concat size" (toString size)
-              pure (.bvconcat32 default arg1 arg2)  -- Default to 32-bit concat
-          | _ => -- Handle regular binary operations
-            match (bvBinaryOpMap).find? (·.1 == opName) with
-            | some (_, op) => pure (op ty arg1 arg2)
-            | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
-        | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
+  open Core in
+  match CoreOp.ofString name with
+  | .bv ⟨size, .Concat⟩ =>
+    match (bvConcatMap).find? (·.1 == size) with
+    | some (_, concatOp) => pure (concatOp arg1 arg2)
+    | none => do
+      ToCSTM.logError "handleBitvecBinaryOps" "unsupported concat size" (toString size)
+      pure (.bvconcat32 default arg1 arg2)
+  | .bv ⟨size, kind⟩ =>
+    match (bvTypeMap).find? (·.1 == size) with
+    | some (_, ty) =>
+      match (bvBinaryOpMap).find? (·.1 == kind) with
+      | some (_, op) => pure (op ty arg1 arg2)
       | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
-    else mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
+    | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
   | _ => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
 
 /-- Handle binary operations -/
 def handleBinaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
-  match name with
+  open Core in
+  match CoreOp.ofString name with
   -- Integer and Real operations
-  | "Int.Add" | "Real.Add" => pure (.add_expr default ty arg1 arg2)
-  | "Int.Sub" | "Real.Sub" => pure (.sub_expr default ty arg1 arg2)
-  | "Int.Mul" | "Real.Mul" => pure (.mul_expr default ty arg1 arg2)
-  | "Int.Div" | "Real.Div" => pure (.div_expr default ty arg1 arg2)
-  | "Int.SafeDiv" => pure (.safediv_expr default ty arg1 arg2)
-  | "Int.Mod" => pure (.mod_expr default ty arg1 arg2)
-  | "Int.SafeMod" => pure (.safemod_expr default ty arg1 arg2)
-  | "Int.DivT" => pure (.divt_expr default ty arg1 arg2)
-  | "Int.SafeDivT" => pure (.safedivt_expr default ty arg1 arg2)
-  | "Int.ModT" => pure (.modt_expr default ty arg1 arg2)
-  | "Int.SafeModT" => pure (.safemodt_expr default ty arg1 arg2)
-  | "Int.Le" | "Real.Le" => pure (.le default ty arg1 arg2)
-  | "Int.Lt" | "Real.Lt" => pure (.lt default ty arg1 arg2)
-  | "Int.Ge" | "Real.Ge" => pure (.ge default ty arg1 arg2)
-  | "Int.Gt" | "Real.Gt" => pure (.gt default ty arg1 arg2)
+  | .numeric ⟨_, .Add⟩ => pure (.add_expr default ty arg1 arg2)
+  | .numeric ⟨_, .Sub⟩ => pure (.sub_expr default ty arg1 arg2)
+  | .numeric ⟨_, .Mul⟩ => pure (.mul_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .Div⟩ | .numeric ⟨.real, .Div⟩ => pure (.div_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .SafeDiv⟩ => pure (.safediv_expr default ty arg1 arg2)
+  | .numeric ⟨_, .Mod⟩ => pure (.mod_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .SafeMod⟩ => pure (.safemod_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .DivT⟩ => pure (.divt_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .SafeDivT⟩ => pure (.safedivt_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .ModT⟩ => pure (.modt_expr default ty arg1 arg2)
+  | .numeric ⟨.int, .SafeModT⟩ => pure (.safemodt_expr default ty arg1 arg2)
+  | .numeric ⟨_, .Le⟩ => pure (.le default ty arg1 arg2)
+  | .numeric ⟨_, .Lt⟩ => pure (.lt default ty arg1 arg2)
+  | .numeric ⟨_, .Ge⟩ => pure (.ge default ty arg1 arg2)
+  | .numeric ⟨_, .Gt⟩ => pure (.gt default ty arg1 arg2)
   -- Boolean operations
-  | "Bool.And" => pure (.and default arg1 arg2)
-  | "Bool.Or" => pure (.or default arg1 arg2)
-  | "Bool.Implies" => pure (.implies default arg1 arg2)
-  | "Bool.Equiv" => pure (.equiv default arg1 arg2)
+  | .bool .And => pure (.and default arg1 arg2)
+  | .bool .Or => pure (.or default arg1 arg2)
+  | .bool .Implies => pure (.implies default arg1 arg2)
+  | .bool .Equiv => pure (.equiv default arg1 arg2)
   -- Map operations
-  | "select" => pure (.map_get default ty ty arg1 arg2)
+  | .map .Select => pure (.map_get default ty ty arg1 arg2)
   -- Sequence operations
-  | "Sequence.select" => pure (.seq_select default ty arg1 arg2)
-  | "Sequence.append" => pure (.seq_append default ty arg1 arg2)
-  | "Sequence.build" => pure (.seq_build default ty arg1 arg2)
-  | "Sequence.contains" => pure (.seq_contains default ty arg1 arg2)
-  | "Sequence.take" => pure (.seq_take default ty arg1 arg2)
-  | "Sequence.drop" => pure (.seq_drop default ty arg1 arg2)
+  | .seq .Select => pure (.seq_select default ty arg1 arg2)
+  | .seq .Append => pure (.seq_append default ty arg1 arg2)
+  | .seq .Build => pure (.seq_build default ty arg1 arg2)
+  | .seq .Contains => pure (.seq_contains default ty arg1 arg2)
+  | .seq .Take => pure (.seq_take default ty arg1 arg2)
+  | .seq .Drop => pure (.seq_drop default ty arg1 arg2)
   -- String and Regex operations
-  | "Str.Concat" => pure (.str_concat default arg1 arg2)
-  | "Str.InRegEx" => pure (.str_inregex default arg1 arg2)
-  | "Re.Range" => pure (.re_range default arg1 arg2)
-  | "Re.Concat" => pure (.re_concat default arg1 arg2)
-  | "Re.Union" => pure (.re_union default arg1 arg2)
-  | "Re.Inter" => pure (.re_inter default arg1 arg2)
+  | .str .Concat => pure (.str_concat default arg1 arg2)
+  | .str .InRegEx => pure (.str_inregex default arg1 arg2)
+  | .re .Range => pure (.re_range default arg1 arg2)
+  | .re .Concat => pure (.re_concat default arg1 arg2)
+  | .re .Union => pure (.re_union default arg1 arg2)
+  | .re .Inter => pure (.re_inter default arg1 arg2)
   | _ => handleBitvecBinaryOps name arg1 arg2
 
 /-- Handle ternary operations -/
 def handleTernaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 arg3 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
-  match name with
+  open Core in
+  match CoreOp.ofString name with
   -- Maps
-  | "update" => pure (.map_set default ty ty arg1 arg2 arg3)
+  | .map .Update => pure (.map_set default ty ty arg1 arg2 arg3)
   -- Sequences
-  | "Sequence.update" => pure (.seq_update default ty arg1 arg2 arg3)
+  | .seq .Update => pure (.seq_update default ty arg1 arg2 arg3)
   -- Strings and regexes
-  | "Str.Substr" => pure (.str_substr default arg1 arg2 arg3)
-  | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
+  | .str .Substr => pure (.str_substr default arg1 arg2 arg3)
+  | .re .Loop => pure (.re_loop default arg1 arg2 arg3)
   | _ => mkGenericCall "handleTernaryOps" name [arg1, arg2, arg3]
 
 def lopToExpr {M} [Inhabited M]
