@@ -10,6 +10,7 @@ import all Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Env
 public import Strata.Languages.Core.CmdEval
+public import Strata.Languages.Core.Statistics
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Imperative.Stmt
@@ -428,34 +429,38 @@ private def collectDeadBranchDeferred
   else
     #[]
 
+private def noStats : Statistics := {}
+
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
-    List EnvWithNext :=
+    List EnvWithNext × Statistics :=
   match steps, Ewn.env.error with
-  | _, some _ => [{Ewn with exitLabel := .none}]
-  | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, exitLabel := .none}]
+  | _, some _ => ([{Ewn with exitLabel := .none}], noStats)
+  | 0, none => ([{Ewn with env := { Ewn.env with error := some .OutOfFuel}, exitLabel := .none}],
+      noStats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}")
   | steps' + 1, none =>
     have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
     let go' := evalAuxGo steps' old_var_subst
     match processExit ss optExit with
-    | ([], .none) => [{ Ewn with exitLabel := .none }]
-    | (_, .some l) => [{ Ewn with exitLabel := .some l }] -- Exit propagating, statement list skipped
+    | ([], .none) => ([{ Ewn with exitLabel := .none }], noStats)
+    | (_, .some l) => ([{ Ewn with exitLabel := .some l }], noStats) -- Exit propagating, statement list skipped
     | (s :: rest, .none) =>
-      let EAndNexts : List EnvWithNext :=
+      let (EAndNexts, stmtStats) : List EnvWithNext × Statistics :=
         match s with
 
           | .cmd c =>
             let (c', E) := Command.eval Ewn.env old_var_subst c
-            [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
-                        env := E,
-                        exitLabel := .none }]
+            ([{ Ewn with
+                  stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')]
+                  env := E
+                  exitLabel := .none }], noStats)
 
           | .block label ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with env := Ewn.env.pushEmptyScope,
                                   stk := orig_stk.push [] }
             -- Not allowed to jump into a block
-            let Ewns := go' Ewn ss .none
+            let (Ewns, blockStats) := go' Ewn ss .none
             let Ewns := Ewns.map
                             (fun (ewn : EnvWithNext) =>
                                  let exitLabel := match ewn.exitLabel with
@@ -471,7 +476,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                               let ss' := ewn.stk.top
                                               let s' := Imperative.Stmt.block label ss' md
                                               orig_stk.appendToTop [s'] })
-            Ewns
+            (Ewns, blockStats)
 
           | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
@@ -491,18 +496,19 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
               let (ss_live, ss_dead) :=
                 if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
               let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
+              let (liveResults, liveStats) := go' Ewn ss_live .none
               let Ewns :=
-                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
+                liveResults.map fun (ewn : EnvWithNext) =>
                   { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
               -- Prepend dead-branch obligations to the first result only.
               -- Pre-ITE obligations flow through the live branch naturally;
               -- processIteBranches keeps them in the first (true-path) result,
               -- so mergeResults won't duplicate them.
               match Ewns with
-              | [] => []
-              | first :: rest =>
-                { first with env.deferred :=
-                    deadDeferred ++ first.env.deferred } :: rest
+              | [] => ([], liveStats)
+              | first :: restEwns =>
+                ({ first with env.deferred :=
+                    deadDeferred ++ first.env.deferred } :: restEwns, liveStats)
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
@@ -528,22 +534,28 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
               axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
             }
             match Ewn.env.addFactoryFunc func with
-            | .ok env' => [{ Ewn with env := env' }]
+            | .ok env' => ([{ Ewn with env := env' }], noStats)
             | .error e =>
-              [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
+              ([{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }], noStats)
 
           | .typeDecl tc _ =>
             -- Type declarations have no runtime effect (only used during type checking)
-            [Ewn]
+            ([Ewn], noStats)
 
-          | .exit l md => [{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}]
+          | .exit l md => ([{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}], noStats)
 
-      List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.exitLabel) EAndNexts
+      let stmtStats := stmtStats.increment s!"{Evaluator.Stats.simulatedStmts}"
+      let (continuations, contStats) := EAndNexts.foldl
+        (fun (acc, statsAcc) ewn =>
+          let (results, s) := go' ewn rest ewn.exitLabel
+          (acc ++ results, statsAcc.merge s))
+        ([], stmtStats)
+      (continuations, contStats)
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
-    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack) : List EnvWithNext :=
+    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack) : List EnvWithNext × Statistics :=
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
@@ -560,25 +572,27 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
                                           Imperative.Block.sizeOf else_ss := by
    omega
-  let Ewns_t := evalAuxGo steps old_var_subst
+  let (Ewns_t, stats_t) := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
                   then_ss .none
   -- We empty the deferred proof obligations in the `else` path to
   -- avoid duplicate verification checks -- the deferred obligations
   -- would be checked in the `then` branch anyway.
-  let Ewns_f := evalAuxGo steps old_var_subst
+  let (Ewns_f, stats_f) := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
                                                  deferred := #[]}}
                   else_ss .none
+  let branchStats := stats_t.merge stats_f
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
-    [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
+    ([EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
-                    (orig_stk.appendToTop [s'])]
+                    (orig_stk.appendToTop [s'])],
+     branchStats.increment s!"{Evaluator.Stats.processIteBranches_merged}")
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
@@ -590,13 +604,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                         let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
-  Ewns_t ++ Ewns_f
+    (Ewns_t ++ Ewns_f,
+     branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}")
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 
 end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
-  List EnvWithNext :=
+  List EnvWithNext × Statistics :=
   evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optExit
 
 def exitToError : EnvWithNext → Statements × Env
@@ -611,15 +626,16 @@ statements.
 The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
 -/
-def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) :=
-  (evalAux E old_var_subst ss .none).map exitToError
+def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) × Statistics :=
+  let (ewns, stats) := evalAux E old_var_subst ss .none
+  (ewns.map exitToError, stats)
 
 /--
 Partial evaluator for statements yielding one environment and transformed
 statements.
 -/
 def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Statements × Env :=
-  match eval E old_var_subst ss with
+  match (eval E old_var_subst ss).fst with
   | [(ss', E')] => (ss', E')
   | _ => (ss, { E with error := some (.Misc "More than one result environment") })
 
