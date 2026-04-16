@@ -74,7 +74,7 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
 
 /-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
-  emitDiagnostic (ty.md.toDiagnostic msg)
+  emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic msg)
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
   return .tcons "Error" []
 
@@ -150,7 +150,7 @@ def translateExpr (expr : StmtExprMd)
     : TranslateM Core.Expression.Expr := do
   let s ← get
   let model := s.model
-  let md := expr.md
+  let md := astNodeToCoreMd expr
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       throwExprDiagnostic $ md.toDiagnostic msg
@@ -226,14 +226,14 @@ def translateExpr (expr : StmtExprMd)
             throwExprDiagnostic $ md.toDiagnostic s!"if-then without else expression" DiagnosticType.NotYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
-              have := WithMetadata.sizeOf_val_lt expr
+              have := AstNode.sizeOf_val_lt expr
               cases expr; simp_all; omega
             translateExpr e boundVars isPureContext
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !model.isFunction callee then
-        disallowed expr.md "calls to procedures are not supported in functions or contracts"
+        disallowed md "calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
@@ -260,34 +260,34 @@ def translateExpr (expr : StmtExprMd)
         return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole _ _ =>
       -- Holes should have been eliminated before translation.
-      disallowed expr.md "holes should have been eliminated before translation"
+      disallowed md "holes should have been eliminated before translation"
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
       return .eq () re1 re2
   | .Assign _ _ =>
-      disallowed expr.md "destructive assignments are not supported in functions or contracts"
+      disallowed md "destructive assignments are not supported in functions or contracts"
   | .While _ _ _ _ =>
-      disallowed expr.md "loops are not supported in functions or contracts"
-  | .Exit _ => disallowed expr.md "exit is not supported in expression position"
+      disallowed md "loops are not supported in functions or contracts"
+  | .Exit _ => disallowed md "exit is not supported in expression position"
 
-  | .Block (⟨ .Assert _, md⟩ :: rest) label => do
-    _ ← disallowed md "asserts are not YET supported in functions or contracts"
-    translateExpr ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
-  | .Block (⟨ .Assume _, md⟩ :: rest) label =>
-    _ ← disallowed md "assumes are not YET supported in functions or contracts"
-    translateExpr ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
-  | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
+  | .Block (⟨ .Assert _, innerSrc, innerMd⟩ :: rest) label => do
+    _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "asserts are not YET supported in functions or contracts"
+    translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
+  | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
+    _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
+    translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
+  | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
-      let bodyExpr ← translateExpr ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
-      disallowed md "local variables in functions are not YET supported"
+      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
+      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
-  | .Block (⟨ .LocalVariable name ty none, md⟩ :: rest) label =>
-    disallowed md "local variables in functions must have initializers"
-  | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
-    disallowed md "if-then-else only supported as the last statement in a block"
+  | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
+    disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
+  | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
+    disallowed (fileRangeToCoreMd innerSrc innerMd) "if-then-else only supported as the last statement in a block"
 
   | .IsType _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug
@@ -300,7 +300,7 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .LocalVariable _ _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
-  | .Return _ => disallowed expr.md "return expression should be lowered in a separate pass"
+  | .Return _ => disallowed md "return expression should be lowered in a separate pass"
 
   | .AsType target _ => throwExprDiagnostic $ md.toDiagnostic "AsType expression translation" DiagnosticType.NotYetImplemented
   | .Assigned _ => throwExprDiagnostic $ md.toDiagnostic "assigned expression translation" DiagnosticType.NotYetImplemented
@@ -317,7 +317,7 @@ def translateExpr (expr : StmtExprMd)
   | .This => throwExprDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
   decreasing_by
-    all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+    all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (dbg_trace "BUG: metadata without a filerange"; default)
@@ -356,7 +356,7 @@ def translateStmt (stmt : StmtExprMd)
     : TranslateM (List Core.Statement) := do
   let s ← get
   let model := s.model
-  let md := stmt.md
+  let md := astNodeToCoreMd stmt
   match _h : stmt.val with
   | .Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
@@ -375,11 +375,11 @@ def translateStmt (stmt : StmtExprMd)
       let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨id.text, ()⟩
       match initializer with
-      | some (⟨ .StaticCall callee args, callMd⟩) =>
+      | some (⟨ .StaticCall callee args, callSrc, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if model.isFunction callee then
             -- Translate as expression (function application)
-            let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
+            let coreExpr ← translateExpr { val := .StaticCall callee args, source := callSrc, md := callMd }
             return [Core.Statement.init ident coreType (.det coreExpr) md]
           else
             -- Translate as: var name; call name := callee(args)
@@ -388,12 +388,12 @@ def translateStmt (stmt : StmtExprMd)
             let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
-      | some (⟨ .InstanceCall .., _⟩) =>
+      | some (⟨ .InstanceCall .., _, _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
           let initStmt := Core.Statement.init ident coreType .nondet md
           return [initStmt]
-      | some (⟨ .Hole _ _, _⟩) =>
+      | some (⟨ .Hole _ _, _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
           return [Core.Statement.init ident coreType .nondet md]
       | some initExpr =>
@@ -403,7 +403,7 @@ def translateStmt (stmt : StmtExprMd)
           return [Core.Statement.init ident coreType .nondet md]
   | .Assign targets value =>
       match targets with
-      | [⟨ .Identifier targetId, _ ⟩] =>
+      | [⟨ .Identifier targetId, _, _ ⟩] =>
           let ident := ⟨targetId.text, ()⟩
           -- Check if RHS is a procedure call (not a function)
           match value.val with
@@ -446,7 +446,7 @@ def translateStmt (stmt : StmtExprMd)
                 match t.val with
                 | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
+              return [Core.Statement.call lhsIdents callee.text coreArgs (astNodeToCoreMd value)]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
@@ -511,7 +511,7 @@ def translateStmt (stmt : StmtExprMd)
   termination_by sizeOf stmt
   decreasing_by
     all_goals
-      have hlt := WithMetadata.sizeOf_val_lt stmt
+      have hlt := AstNode.sizeOf_val_lt stmt
       cases stmt; term_by_mem
 
 /--
@@ -523,7 +523,7 @@ private def translateChecks (checks : List StmtExprMd) (labelBase : String)
   checks.mapIdxM (fun i check => do
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
     let checkExpr ← translateExpr check [] (isPureContext := true)
-    let c : Core.Procedure.Check := { expr := checkExpr, md := check.md }
+    let c : Core.Procedure.Check := { expr := checkExpr, md := astNodeToCoreMd check }
     return (label, c))
 
 /--
