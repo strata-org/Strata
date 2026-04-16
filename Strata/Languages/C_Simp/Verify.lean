@@ -8,6 +8,7 @@ import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Translate
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.CoreOp
 import Strata.DL.Imperative.Stmt
 
 open Core
@@ -88,7 +89,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
-      let measure_pos := (.app () (.app () (.op () "Int.Ge" none) (translate_expr measure)) (.intConst () 0))
+      let measure_pos := (.app () (.app () (coreOpExpr (.numeric ⟨.int, .Ge⟩)) (translate_expr measure)) (.intConst () 0))
 
       let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
@@ -101,8 +102,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes ++
          [Core.Statement.assume "assume_measure_pos" measure_pos {}]) {}
       let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (.det (translate_expr measure)) {}
-      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app () (.app () (.op () "Int.Lt" none) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) (.true ())) {}
+      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app () (.app () (coreOpExpr (.numeric ⟨.int, .Lt⟩)) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
+      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (coreOpExpr (.numeric ⟨.int, .Le⟩)) (translate_expr measure)) (.intConst () 0)) (.app () (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) (.true ())) {}
       let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
@@ -110,7 +111,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++
          [measure_decreases, measure_imp_not_guard] ++ maintain_invariants) {}
 
-      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app () (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
@@ -130,7 +131,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
         ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
-      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app () (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}

@@ -28,6 +28,7 @@ BOTH_SKIP = {
     "test_user_error_metadata", # No SARIF output because does not run SMT analysis
     "test_is_non_none", # No SARIF output because does not run SMT analysis
     "test_is_not_non_none", # No SARIF output because does not run SMT analysis
+    "test_list", # Module-level asserts cause "asserts not supported in functions" error
 }
 SKIP_TESTS = BOTH_SKIP | {
     "test_augmented_assign",

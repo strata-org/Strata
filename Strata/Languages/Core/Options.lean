@@ -151,7 +151,7 @@ structure VerifyOptions where
   /-- Directory to store generated SMT-Lib (`.smt2`) files. -/
   vcDirectory : Option System.FilePath
   /-- Always generate SMT-Lib files, even if the verification
-      condition is trivial (i.e. resolved by partial evaluation
+      condition is trivial (i.e. resolved by symbolic evaluation
       without needing the solver). -/
   alwaysGenerateSMT : Bool
   -- Encoding options
