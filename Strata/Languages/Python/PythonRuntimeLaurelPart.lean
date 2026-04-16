@@ -638,7 +638,7 @@ function PNot (v: Any) : Any
   else if Any..isfrom_DictStrAny(v) then
     from_bool(!(Any..as_Dict!(v) == DictStrAny_empty()))
   else
-    hole
+    exception(UndefinedError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
