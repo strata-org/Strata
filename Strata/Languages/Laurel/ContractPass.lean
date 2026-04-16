@@ -105,12 +105,19 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let outputArgs := paramsToArgs proc.outputs
+  let postconds := getPostconditions proc.body
   let preAssume : List StmtExprMd :=
     if info.hasPreCondition then [mkMd (.Assume (mkCall info.preName inputArgs))]
     else []
   let postAssert : List StmtExprMd :=
     if info.hasPostCondition then
-      [mkMdWithSummary (.Assert (mkCall info.postName (inputArgs ++ outputArgs))) "postcondition"]
+      -- Use the metadata from the first postcondition so the diagnostic
+      -- carries the source location of the `ensures` clause.
+      let baseMd := match postconds.head? with
+        | some pc => pc.md
+        | none => emptyMd
+      [⟨.Assert (mkCall info.postName (inputArgs ++ outputArgs)),
+        baseMd.withPropertySummary "postcondition"⟩]
     else []
   match proc.body with
   | .Transparent body =>
