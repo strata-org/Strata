@@ -83,12 +83,35 @@ private def guardNewAssumptions (cond? : Option Expression.Expr)
   | some cond => newPcs.map fun (l, e) => (l, guardAssumption cond e)
   | none => newPcs
 
+/-- True if a label is internal to the loop-elimination encoding and should
+    not propagate to post-loop obligations. -/
+private def isLoopElimInternal (label : String) : Bool :=
+  label.startsWith "assume_guard_" || label.startsWith "assume_invariant_"
+
+/-- Remove unguarded loop-elim-internal assumptions for a specific loop
+    from path conditions. Guarded versions (from nondet ITE merge, wrapped
+    in if-then-else) are preserved. Only removes assumptions matching the
+    given loop number to avoid stripping outer loop assumptions. -/
+private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : String) : PathConditions Expression :=
+  let guardPrefix := s!"assume_guard_{loopNum}"
+  let invPrefix := s!"assume_invariant_{loopNum}_"
+  pc.map (·.filter (fun (l, e) =>
+    let isThisLoop := l.startsWith guardPrefix || l.startsWith invPrefix
+    !isThisLoop || match e with | .ite _ _ _ _ => true | _ => false))
+
+/-- Check if a block label is a loop-elim top-level block (loop_N). -/
+private def isLoopElimBlock (label : String) : Bool :=
+  label.startsWith "loop_" && label.length > 5 &&
+    (label.toList.drop 5).all (·.isDigit)
+
 /-- Merge path conditions from two nondet ITE branches for post-ITE statements.
     Each branch's new assumptions (those not in the pre-ITE path conditions) are
     guarded by the branch condition extracted from the first `assume` statement
     in each branch. This prevents contradictory branch assumptions from making
     the path conditions unsatisfiable while preserving information needed by
-    post-ITE statements (e.g., loop invariants). -/
+    post-ITE statements (e.g., loop invariants).
+    Loop-elim-internal assumptions are excluded from the merge because they are
+    scoped to the loop body and should not leak to post-loop obligations. -/
 private def mergeNondetBranchPcs (preItePc : PathConditions Expression)
     (thenSs elseSs : Statements)
     (thenPc elsePc : PathConditions Expression) : PathConditions Expression :=
@@ -186,14 +209,17 @@ where
 
     | .block label innerSs _md => do
       let innerRes ← extractFromStatements pc innerSs
-      -- An exit is consumed if it targets this block (matching label or unlabelled)
       let consumed := match innerRes.exitLabel with
         | .some .none => true
         | .some (.some l) => l == label
         | .none => true
-      .ok { obligations := acc ++ innerRes.obligations,
-            pathConditions := innerRes.pathConditions,
-            exitLabel := if consumed then .none else innerRes.exitLabel }
+      -- Strip unguarded loop-elim assumptions for this specific loop
+      -- at the loop_N block boundary, preserving outer loop assumptions.
+      let outPc := if isLoopElimBlock label
+        then stripLoopElimForLoop innerRes.pathConditions (label.drop 5).toString
+        else innerRes.pathConditions
+      .ok ⟨acc ++ innerRes.obligations, outPc,
+           if consumed then .none else innerRes.exitLabel⟩
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
       -- Variable definitions become equalities in the path conditions,
