@@ -103,7 +103,7 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
       (c', EC.deferObligation σ (ProofObligation.mk label .cover assumptions e md))
 
 /--
-Symbolic simluation for Imperative's Commands.
+Symbolic simulation for Imperative's Commands.
 -/
 def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
   match cs with

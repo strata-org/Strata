@@ -623,7 +623,7 @@ instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
 /--
-Preprocess a proof obligation using symbolic simluation.
+Preprocess a proof obligation using symbolic simulation.
 Returns the symbolic results for satisfiability and validity independently.
 Each result is `some r` if evaluator can determine it, `none` if the solver is needed.
 -/
