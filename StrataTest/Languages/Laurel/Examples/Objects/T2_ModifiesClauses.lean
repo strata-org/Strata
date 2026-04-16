@@ -37,14 +37,12 @@ procedure modifyContainerOpaque(c: Container) returns (b: bool)
 };
 
 procedure modifyContainerTransparant(c: Container) returns (i: int)
-  opaque
 {
   c#value := c#value + 1;
   7
 };
 
 procedure caller()
-  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -98,7 +96,6 @@ procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
 ;
 
 procedure multipleModifiesClausesCaller()
-  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;

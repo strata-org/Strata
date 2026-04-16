@@ -26,7 +26,6 @@ composite Extender extends Base, Base2 {
 }
 
 procedure inheritedFields(a: Extender)
-  opaque
 {
   a#xValue := 1;
   a#yValue := 2;
@@ -38,7 +37,6 @@ procedure inheritedFields(a: Extender)
 };
 
 procedure typeCheckingAndCasting()
-  opaque
 {
   var a: Base := new Base;
   assert a is Base;
@@ -69,7 +67,6 @@ composite Bottom extends Left, Right {
 }
 
 procedure diamondInheritance()
-  opaque
 {
   var b: Bottom := new Bottom;
   b#lValue := 1;

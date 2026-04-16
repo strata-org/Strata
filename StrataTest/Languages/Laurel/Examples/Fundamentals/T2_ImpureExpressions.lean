@@ -14,7 +14,6 @@ namespace Strata.Laurel
 
 def program: String := r"
 procedure nestedImpureStatements()
-  opaque
 {
   var y: int := 0;
   var x: int := y;
@@ -25,7 +24,6 @@ procedure nestedImpureStatements()
 };
 
 procedure multipleAssignments()
-  opaque
 {
   var x: int := 1;
   var y: int := x + ((x := 2) + x) + (x := 3);
@@ -33,7 +31,6 @@ procedure multipleAssignments()
 };
 
 procedure conditionalAssignmentInExpression(x: int)
-  opaque
 {
   var y: int := 0;
   var z: int := (if x > 0 then { y := y + 1 } else { 0 }) + y;
@@ -47,7 +44,6 @@ procedure conditionalAssignmentInExpression(x: int)
 };
 
 procedure anotherConditionAssignmentInExpression(c: bool)
-  opaque
 {
   var b: bool := c;
   var z: bool := (if b then { b := false } else (b := true)) || b;
@@ -56,7 +52,6 @@ procedure anotherConditionAssignmentInExpression(c: bool)
 };
 
 procedure blockWithTwoAssignmentsInExpression()
-  opaque
 {
   var x: int := 0;
   var y: int := 0;
@@ -90,7 +85,6 @@ procedure imperativeProc(x: int) returns (r: int)
 };
 
 procedure imperativeCallInExpressionPosition()
-  opaque
 {
   var x: int := 0;
   // imperativeProc(x) is lifted out; its argument is evaluated before the call,
@@ -102,7 +96,6 @@ procedure imperativeCallInExpressionPosition()
 
 // An imperative call inside a conditional expression is also lifted.
 procedure imperativeCallInConditionalExpression(b: bool)
-  opaque
 {
   var counter: int := 0;
   // The imperative call in the then-branch is lifted out of the expression.
@@ -115,13 +108,11 @@ procedure imperativeCallInConditionalExpression(b: bool)
 };
 
 function add(x: int, y: int): int
-  opaque
 {
   x + y
 };
 
 procedure repeatedBlockExpressions()
-  opaque
 {
   var x: int := 2;
   var y: int := { x := 1; x } + { x := x + 10; x };
@@ -137,7 +128,6 @@ procedure addProc(a: int, b: int) returns (r: int)
 };
 
 procedure addProcCaller(): int
-  opaque
 {
   var x: int := 0;
   var y: int := addProc({x := 1; x}, {x := x + 10; x});

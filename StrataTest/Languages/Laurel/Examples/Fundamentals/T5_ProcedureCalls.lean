@@ -14,7 +14,6 @@ namespace Strata.Laurel
 
 def program := r"
 procedure fooReassign(): int
-  opaque
 {
   var x: int := 0;
   x := x + 1;
@@ -24,7 +23,6 @@ procedure fooReassign(): int
 };
 
 procedure fooSingleAssign(): int
-  opaque
 {
   var x: int := 0;
   var x2: int := x + 1;
@@ -33,7 +31,6 @@ procedure fooSingleAssign(): int
 };
 
 procedure fooProof()
-  opaque
 {
   var x: int := fooReassign();
   var y: int := fooSingleAssign()
@@ -43,13 +40,11 @@ procedure fooProof()
 };
 
 function aFunction(x: int): int
-  opaque
 {
   x
 };
 
 procedure aFunctionCaller()
-  opaque
 {
   var x: int := aFunction(3);
   assert x == 3

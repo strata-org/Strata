@@ -65,16 +65,42 @@ private def mkFunctionCopy (proc : Procedure) : Procedure :=
     | _, _ => .Opaque [] none []
   { proc with isFunctional := true, body := body }
 
+/-- Rename `StaticCall` callees that refer to user-defined non-functional
+    procedures so they point at the `$proof` copy. -/
+private def renameCallsForProof (procNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e =>
+    match e.val with
+    | .StaticCall callee args =>
+      if procNames.contains callee.text then
+        ⟨.StaticCall { callee with text := callee.text ++ "$proof" } args, e.md⟩
+      else e
+    | _ => e) expr
+
+/-- Rename calls in all bodies (including postconditions) of a procedure. -/
+private def renameCallsInProc (procNames : Std.HashSet String) (proc : Procedure) : Procedure :=
+  let rn := renameCallsForProof procNames
+  match proc.body with
+  | .Transparent b => { proc with body := .Transparent (rn b) }
+  | .Opaque posts impl mods =>
+    { proc with body := .Opaque (posts.map rn) (impl.map rn) (mods.map rn) }
+  | b => { proc with body := b }
+
 /--
 Proof pass: translate a Laurel program to the FunctionsAndProofs IR.
 
-Partitions procedures by `isFunctional`: functional procedures become
-functions, non-functional become proofs.
+Every procedure generates both a function copy (with Assert/Assume stripped,
+body only for transparent procedures) and a proof copy (with `$proof` suffix).
+Calls inside proof bodies to non-functional procedures are renamed to target
+the `$proof` copy.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
   let functions := nonExternal.map mkFunctionCopy
+  -- Collect names of non-functional procedures whose calls need renaming
+  let procNames : Std.HashSet String := nonExternal.foldl (fun s p =>
+    if p.isFunctional then s else s.insert p.name.text) {}
   let proofs := nonExternal.map fun p =>
+    let p := renameCallsInProc procNames p
     { p with isFunctional := false, name := { p.name with text := p.name.text ++ "$proof" } }
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
