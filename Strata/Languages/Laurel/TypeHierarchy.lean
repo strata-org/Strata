@@ -214,7 +214,7 @@ def lowerNew (name : Identifier) (source : Option FileRange) (md : Imperative.Me
   let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
-  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, none, #[]⟩ (some getCounter))
+  let saveCounter := mkMd (.LocalVariable [freshVar] ⟨.TInt, none, #[]⟩ (some getCounter))
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
