@@ -37,14 +37,6 @@ private def parseLaurelAndGetStats (input : String) : IO Statistics := do
 
 /-! ## Laurel Statistics: simple procedure -/
 
-/--
-info: [statistics] EliminateReturns.functionalProceduresProcessed: 6
-[statistics] EliminateReturns.nonFunctionalProceduresSkipped: 1
-[statistics] FilterNonCompositeModifies.proceduresProcessed: 4
-[statistics] HeapParameterization.proceduresTransformed: 4
-[statistics] LiftExpressionAssignments.proceduresProcessed: 7
-[statistics] ModifiesClausesTransform.proceduresTransformed: 7
--/
 #guard_msgs in
 #eval! do
   let stats ← parseLaurelAndGetStats r"
@@ -56,18 +48,12 @@ procedure test(x: int) returns (y: int)
 "
   IO.print stats.format
 
-/-! ## Laurel Statistics: two procedures with short-circuit operators and holes -/
+/-! ## Laurel Statistics: two procedures with holes -/
 
 /--
 info: [statistics] EliminateHoles.functionsGenerated: 1
 [statistics] EliminateHoles.holesEliminated: 1
-[statistics] EliminateReturns.functionalProceduresProcessed: 7
-[statistics] EliminateReturns.nonFunctionalProceduresSkipped: 2
-[statistics] FilterNonCompositeModifies.proceduresProcessed: 5
-[statistics] HeapParameterization.proceduresTransformed: 5
 [statistics] InferHoleTypes.holesAnnotated: 1
-[statistics] LiftExpressionAssignments.proceduresProcessed: 9
-[statistics] ModifiesClausesTransform.proceduresTransformed: 8
 -/
 #guard_msgs in
 #eval! do

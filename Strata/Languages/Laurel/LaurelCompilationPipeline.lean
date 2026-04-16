@@ -51,29 +51,27 @@ structure LaurelPass where
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 private def laurelPipeline : Array LaurelPass := #[
+  { name := "FilterNonCompositeModifies"
+    run := fun p m =>
+      let (p', diags) := filterNonCompositeModifies m p
+      (p', diags, {}) },
   { name := "EliminateValueReturns"
     run := fun p _m =>
       let (p', diags) := eliminateValueReturnsTransform p
       (p', diags.toList, {}) },
-  { name := "FilterNonCompositeModifies"
-    run := fun p m =>
-      let (p', diags, stats) := filterNonCompositeModifies m p
-      (p', diags, stats) },
   { name := "HeapParameterization"
     resolvesAfter := 1
     run := fun p m =>
-      let (p', stats) := heapParameterization m p
-      (p', [], stats) },
+      (heapParameterization m p, [], {}) },
   { name := "TypeHierarchyTransform"
     resolvesAfter := 1
     run := fun p m =>
-      let (p', stats) := typeHierarchyTransform m p
-      (p', [], stats) },
+      (typeHierarchyTransform m p, [], {}) },
   { name := "ModifiesClausesTransform"
     resolvesAfter := 2
     run := fun p m =>
-      let (p', diags, stats) := modifiesClausesTransform m p
-      (p', diags, stats) },
+      let (p', diags) := modifiesClausesTransform m p
+      (p', diags, {}) },
   { name := "InferHoleTypes"
     run := fun p m =>
       let (p', stats) := inferHoleTypes m p
@@ -84,22 +82,19 @@ private def laurelPipeline : Array LaurelPass := #[
       (p', [], stats) },
   { name := "DesugarShortCircuit"
     run := fun p m =>
-      let (p', stats) := desugarShortCircuit m p
-      (p', [], stats) },
+      (desugarShortCircuit m p, [], {}) },
   { name := "LiftExpressionAssignments"
     run := fun p m =>
-      let (p', stats) := liftExpressionAssignments m p
-      (p', [], stats) },
+      (liftExpressionAssignments m p, [], {}) },
   { name := "EliminateReturns"
     resolvesAfter := 1
     run := fun p _m =>
-      let (p', stats) := eliminateReturnsInExpressionTransform p
-      (p', [], stats) },
+      (eliminateReturnsInExpressionTransform p, [], {}) },
   { name := "ConstrainedTypeElim"
     resolvesAfter := 1
     run := fun p m =>
-      let (p', diags, stats) := constrainedTypeElim m p
-      (p', diags, stats) }
+      let (p', diags) := constrainedTypeElim m p
+      (p', diags, {}) }
 ]
 
 /--

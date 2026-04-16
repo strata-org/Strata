@@ -216,20 +216,10 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     isFunctional := false
     decreases := none }
 
-inductive CTElimStats where
-  /-- Number of constrained type definitions removed from the program. -/
-  | constrainedTypesEliminated
-  /-- Number of `<type>$constraint` functions generated to check type invariants. -/
-  | constraintFunctionsGenerated
-  /-- Number of `$witness_<type>` procedures generated to validate witness values. -/
-  | witnessProceduresGenerated
-
-#derive_prefixed_toString CTElimStats "ConstrainedTypeElim"
-
 public def constrainedTypeElim (_model : SemanticModel) (program : Program)
-    : Program × List DiagnosticModel × Statistics :=
+    : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
-  if ptMap.isEmpty then (program, [], {}) else
+  if ptMap.isEmpty then (program, []) else
   let constraintFuncs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
@@ -238,14 +228,10 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program)
     if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
       acc.cons (proc.name.md.toDiagnostic "constrained return types on functions are not yet supported")
     else acc
-  let stats := ({} : Statistics)
-    |>.increment s!"{CTElimStats.constrainedTypesEliminated}" constraintFuncs.length
-    |>.increment s!"{CTElimStats.constraintFunctionsGenerated}" constraintFuncs.length
-    |>.increment s!"{CTElimStats.witnessProceduresGenerated}" witnessProcedures.length
   ({ program with
     staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)
                         ++ witnessProcedures
     types := program.types.filter fun | .Constrained _ => false | _ => true },
-   funcDiags, stats)
+   funcDiags)
 
 end Strata.Laurel

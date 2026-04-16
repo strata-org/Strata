@@ -185,16 +185,8 @@ Filter non-composite modifies entries from all procedures in a program,
 collecting diagnostics. Should run before heap parameterization so that
 the heap parameterization phase remains agnostic to modifies clauses.
 -/
-inductive FilterStats where
-  /-- Number of static procedures whose modifies clauses were checked. -/
-  | proceduresProcessed
-  /-- Number of diagnostics emitted for non-composite modifies entries. -/
-  | diagnosticsEmitted
-
-#derive_prefixed_toString FilterStats "FilterNonCompositeModifies"
-
 def filterNonCompositeModifies (model : SemanticModel) (program : Program)
-    : Program × List DiagnosticModel × Statistics :=
+    : Program × List DiagnosticModel :=
   let (staticProcs, staticDiags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
     let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
     (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
@@ -210,10 +202,7 @@ def filterNonCompositeModifies (model : SemanticModel) (program : Program)
     | other => (ts ++ [other], ds)
   ) ([], [])
   let allDiags := staticDiags ++ typeDiags
-  let stats := ({} : Statistics)
-    |>.increment s!"{FilterStats.proceduresProcessed}" staticProcs.length
-    |>.increment s!"{FilterStats.diagnosticsEmitted}" allDiags.length
-  ({ program with staticProcedures := staticProcs, types := types' }, allDiags, stats)
+  ({ program with staticProcedures := staticProcs, types := types' }, allDiags)
 
 /--
 Transform a Laurel program: apply modifies clause transformation to all procedures.
@@ -222,26 +211,15 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-inductive ModifiesStats where
-  /-- Number of procedures whose modifies clauses were successfully transformed into frame conditions. -/
-  | proceduresTransformed
-  /-- Number of procedures where modifies clause transformation failed (kept unchanged). -/
-  | proceduresWithErrors
-
-#derive_prefixed_toString ModifiesStats "ModifiesClausesTransform"
-
 def modifiesClausesTransform (model: SemanticModel) (program : Program)
-    : Program × List DiagnosticModel × Statistics :=
-  let (procs', errors, numTransformed, numErrors) :=
-    program.staticProcedures.foldl (fun (acc, errs, nT, nE) proc =>
+    : Program × List DiagnosticModel :=
+  let (procs', errors) :=
+    program.staticProcedures.foldl (fun (acc, errs) proc =>
       match transformModifiesClauses model proc with
-      | .ok proc' => (acc ++ [proc'], errs, nT + 1, nE)
-      | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList, nT, nE + 1)
-    ) ([], [], 0, 0)
-  let stats := ({} : Statistics)
-    |>.increment s!"{ModifiesStats.proceduresTransformed}" numTransformed
-    |>.increment s!"{ModifiesStats.proceduresWithErrors}" numErrors
-  ({ program with staticProcedures := procs' }, errors, stats)
+      | .ok proc' => (acc ++ [proc'], errs)
+      | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
+    ) ([], [])
+  ({ program with staticProcedures := procs' }, errors)
 
 end -- public section
 end Strata.Laurel

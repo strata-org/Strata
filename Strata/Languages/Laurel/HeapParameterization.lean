@@ -467,17 +467,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- This procedure doesn't read or write the heap - no changes needed
     return proc
 
-inductive HeapStats where
-  /-- Number of procedures that transitively read the heap. -/
-  | heapReaders
-  /-- Number of procedures that transitively write the heap. -/
-  | heapWriters
-  /-- Total number of static procedures transformed. -/
-  | proceduresTransformed
-
-#derive_prefixed_toString HeapStats "HeapParameterization"
-
-def heapParameterization (model: SemanticModel) (program : Program) : Program × Statistics :=
+def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let program := { program with
     types := program.types
     staticProcedures := program.staticProcedures }
@@ -509,13 +499,9 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program ×
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
     .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
-  let stats := ({} : Statistics)
-    |>.increment s!"{HeapStats.heapReaders}" heapReaders.length
-    |>.increment s!"{HeapStats.heapWriters}" heapWriters.length
-    |>.increment s!"{HeapStats.proceduresTransformed}" procs'.length
-  ({ program with
+  { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
-    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }, stats)
+    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
 
 end Strata.Laurel
 

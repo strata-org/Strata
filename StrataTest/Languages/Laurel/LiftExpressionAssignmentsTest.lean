@@ -40,7 +40,7 @@ def parseLaurelAndLift (input : String) : IO Program := do
   | .ok program =>
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments model program).1
+    pure (liftExpressionAssignments model program)
 
 /--
 info: procedure assertInBlockExpr()

@@ -45,13 +45,13 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
   | .staticProcedure proc => some (proc.inputs.map (·.type))
   | _ => none
 
-inductive InferStats where
+inductive InferHoleTypesStats where
   /-- Number of holes successfully annotated with an inferred type. -/
   | holesAnnotated
   /-- Number of holes left with `Unknown` type (context could not determine type). -/
   | holesLeftUnknown
 
-#derive_prefixed_toString InferStats "InferHoleTypes"
+#derive_prefixed_toString InferHoleTypesStats "InferHoleTypes"
 
 structure InferHoleState where
   model : SemanticModel
@@ -90,10 +90,10 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   match val with
   | .Hole det _ =>
       if expectedType.val == .Unknown then
-        modify fun s => { s with statistics := s.statistics.increment s!"{InferStats.holesLeftUnknown}" }
+        modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}" }
         return expr
       else
-        modify fun s => { s with statistics := s.statistics.increment s!"{InferStats.holesAnnotated}" }
+        modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), md⟩
   | .PrimitiveOp op args =>
       let argType := match op with

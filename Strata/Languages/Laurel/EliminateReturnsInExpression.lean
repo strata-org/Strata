@@ -110,25 +110,11 @@ def eliminateReturnsInExpression (proc : Procedure) : Procedure :=
 
 public section
 
-inductive ElimRetStats where
-  /-- Number of functional procedures whose return statements were eliminated. -/
-  | functionalProceduresProcessed
-  /-- Number of non-functional procedures left unchanged by this pass. -/
-  | nonFunctionalProceduresSkipped
-
-#derive_prefixed_toString ElimRetStats "EliminateReturns"
-
 /--
 Transform a program by eliminating returns in all functional procedure bodies.
 -/
-def eliminateReturnsInExpressionTransform (program : Program) : Program × Statistics :=
-  let procs := program.staticProcedures.map eliminateReturnsInExpression
-  let nFunctional := program.staticProcedures.countP (·.isFunctional)
-  let nSkipped := program.staticProcedures.length - nFunctional
-  let stats := ({} : Statistics)
-    |>.increment s!"{ElimRetStats.functionalProceduresProcessed}" nFunctional
-    |>.increment s!"{ElimRetStats.nonFunctionalProceduresSkipped}" nSkipped
-  ({ program with staticProcedures := procs }, stats)
+def eliminateReturnsInExpressionTransform (program : Program) : Program :=
+  { program with staticProcedures := program.staticProcedures.map eliminateReturnsInExpression }
 
 end -- public section
 
