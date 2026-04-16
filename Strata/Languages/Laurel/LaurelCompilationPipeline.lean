@@ -145,7 +145,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
-    let (program', diags, stats) ← profileStep options.profile pass.name do
+    let (program', diags, stats) ← profileStep options.profile s!"  {pass.name}" do
       pure (pass.run program model)
     program := program'
     allDiags := allDiags ++ diags
