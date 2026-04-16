@@ -88,17 +88,20 @@ private def guardNewAssumptions (cond? : Option Expression.Expr)
 private def isLoopElimInternal (label : String) : Bool :=
   label.startsWith "assume_guard_" || label.startsWith "assume_invariant_"
 
-/-- Remove unguarded loop-elim-internal assumptions for a specific loop
-    from path conditions. Guarded versions (from nondet ITE merge, wrapped
-    in if-then-else) are preserved because they carry loop invariant
-    information needed by post-loop obligations and the solver handles
-    them correctly. -/
+/-- At a loop_N block boundary, strip unguarded loop-elim assumptions and
+    rename guarded ones so they don't trigger the loopElimPipelinePhase
+    demotion. Guarded versions carry loop invariant information needed by
+    post-loop obligations; renaming preserves the information while
+    preventing spurious demotion. -/
 private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : String) : PathConditions Expression :=
   let guardPrefix := s!"assume_guard_{loopNum}"
   let invPrefix := s!"assume_invariant_{loopNum}_"
-  pc.map (·.filter (fun (l, e) =>
+  pc.map (·.filterMap (fun (l, e) =>
     let isThisLoop := l.startsWith guardPrefix || l.startsWith invPrefix
-    !isThisLoop || match e with | .ite _ _ _ _ => true | _ => false))
+    if !isThisLoop then some (l, e)
+    else match e with
+      | .ite _ _ _ _ => some (s!"post_loop_{l}", e)  -- rename to avoid demotion
+      | _ => none))
 
 /-- Check if a block label is a loop-elim top-level block (loop_N). -/
 private def isLoopElimBlock (label : String) : Bool :=

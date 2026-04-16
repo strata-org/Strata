@@ -375,9 +375,9 @@ Label: equiv
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__xs1)) else true
-assume_guard_0: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
-assume_invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
-assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
+post_loop_assume_guard_0: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
+post_loop_assume_invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
+post_loop_assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
 not_guard_0: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
 invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
 invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true

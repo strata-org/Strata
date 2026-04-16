@@ -278,10 +278,10 @@ Label: sum_ensures_1
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then 0 < $__n2 else true
-assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
-assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
-assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
-assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
+post_loop_assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
+post_loop_assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
+post_loop_assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
+post_loop_assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
 assume_measure_0: if 0 < $__n2 then $__$__loop_measure_07 == $__n2 - $__i5 else true
 not_guard_0: if 0 < $__n2 then !($__i8 < $__n2) else true
 invariant_0_0: if 0 < $__n2 then 0 <= $__i8 else true

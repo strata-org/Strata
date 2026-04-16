@@ -323,3 +323,52 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify noDupConcreteFalse (options := .quiet)
+
+-- Exit duplication test: when an exit inside a nondet ITE causes PE to
+-- produce multiple paths, obligations before the exit point appear in
+-- both paths. Per-procedure deduplication removes the duplicates.
+-- Obligation `a` appears once (deduplicated across paths).
+-- Obligation `d` appears twice (different path conditions in each PE path).
+def exitDuplicationPgm :=
+#strata
+program Core;
+procedure test(x : int, y : int, z : int) returns ()
+spec {
+  requires [pre_x]: x >= 0;
+  requires [pre_y]: y >= 0;
+  requires [pre_z]: z >= 0;
+}
+{
+  assert [a]: x >= 0;
+  some_block: {
+    if * {
+      assert [b]: y >= 0;
+      exit some_block;
+    } else {
+      assert [c]: z >= 0;
+    }
+  }
+  assert [d]: x + y + z >= 0;
+};
+#end
+
+/--
+info:
+Obligation: a
+Property: assert
+Result: ✅ pass
+
+Obligation: b
+Property: assert
+Result: ✅ pass
+
+Obligation: d
+Property: assert
+Result: ✅ pass
+
+Obligation: c
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify exitDuplicationPgm (options := .quiet)
