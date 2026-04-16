@@ -1,3 +1,5 @@
+# Imprecision of the analysis make the asserts in this file undecided
+
 class Counter:
     def __init__(self) -> None:
         self.count: int = 0
