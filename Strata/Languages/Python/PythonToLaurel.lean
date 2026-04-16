@@ -708,6 +708,7 @@ partial def reMapFunctionName (_ctx: TranslationContext) (fname: String) : Strin
   match fname with
   | "str" => "to_string_any"
   | "int" => "to_int_any"
+  | "bool" => "to_bool_any"
   | "len" => "Any_len_to_Any"
   | "timedelta" => "timedelta_func" -- We handle timedelta as an int, not a class
   | _ => fname
