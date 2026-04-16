@@ -468,4 +468,17 @@ def main() -> None:
   let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   pure ()
 
+-- print() with keyword arguments (sep, end, flush) should not produce errors.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    print(\"hello\", end=\"\")
+    print(\"a\", \"b\", sep=\",\")
+    print(\"done\", flush=True)
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest

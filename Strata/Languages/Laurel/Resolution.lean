@@ -28,8 +28,8 @@ filled in.
 
 ### Phase 2: Build refToDef Map
 Walks the *resolved* AST (where all definitions already have their UUIDs)
-and builds a map from each definition's ID to its `AstNode`. Because this
-happens after Phase 1, the `AstNode` values in the map contain the fully
+and builds a map from each definition's ID to its `ResolvedNode`. Because this
+happens after Phase 1, the `ResolvedNode` values in the map contain the fully
 resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 
 ### Definition nodes (introduce a name into scope)
@@ -53,7 +53,7 @@ resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 
 Each of these nodes carries an `id : Nat` field (defaulting to `0`).
 The ID assignment pass fills in unique values. The resolution pass then
-builds a map from reference IDs to `AstNode` values describing the
+builds a map from reference IDs to `ResolvedNode` values describing the
 definition each reference resolves to.
 -/
 
@@ -61,10 +61,10 @@ namespace Strata.Laurel
 
 public section
 
-/-! ## AstNode — the target of a resolved reference -/
+/-! ## ResolvedNode — the target of a resolved reference -/
 
 /-- A definition-site AST node that a reference can resolve to. -/
-inductive AstNode where
+inductive ResolvedNode where
   /-- A local variable declaration. -/
   | var (name : Identifier) (type : HighTypeMd)
   /-- A procedure parameter. -/
@@ -90,30 +90,30 @@ inductive AstNode where
   | unresolved
   deriving Repr
 
-instance : Inhabited AstNode where
-  default := AstNode.unresolved
+instance : Inhabited ResolvedNode where
+  default := ResolvedNode.unresolved
 
-def AstNode.getType (node: AstNode): HighTypeMd := match node with
+def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, none, default ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
+    ⟨ .UserDefined "dummyName", none, default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none, default ⟩
 
 /-! ## Resolution result -/
 
 structure SemanticModel where
   nextId: Nat
   compositeCount: Nat
-  refToDef: Std.HashMap Nat AstNode
+  refToDef: Std.HashMap Nat ResolvedNode
   deriving Repr
 
-def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
+def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
   match iden.uniqueId with
   | some key => (model.refToDef.get? key).getD default
   | none => default
@@ -140,10 +140,10 @@ structure ResolutionResult where
 
 /-! ## Phase 1: ID assignment and reference resolution -/
 
-/-- A scope entry stores the definition-site ID and the AstNode for type lookups. -/
-@[expose] abbrev ScopeEntry := Nat × AstNode
+/-- A scope entry stores the definition-site ID and the ResolvedNode for type lookups. -/
+@[expose] abbrev ScopeEntry := Nat × ResolvedNode
 
-/-- Scope maps a name to its definition-site ID and optional AstNode. -/
+/-- Scope maps a name to its definition-site ID and optional ResolvedNode. -/
 @[expose] abbrev Scope := Std.HashMap String ScopeEntry
 
 /-- Per-composite-type scope mapping field names to their scope entries. -/
@@ -174,8 +174,8 @@ private def freshId : ResolveM Nat := do
   set { s with nextId := id + 1 }
   return id
 
-/-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
-def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+/-- Register a definition: assign a fresh ID to the identifier and record it in scope with its ResolvedNode. -/
+def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
   let (name', uniqueId) ← match iden.uniqueId with
     | some uid => pure (iden, uid)
@@ -189,7 +189,7 @@ def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Opt
 
 /-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope.
     Inserts an `.unresolved` node so subsequent references still resolve without cascading errors. -/
-def defineNameCheckDup (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
   if (← get).currentScopeNames.contains resolutionName then
     let diag := iden.md.toDiagnostic s!"Duplicate definition '{resolutionName}' is already defined in this scope"
@@ -264,10 +264,11 @@ def withScope (action : ResolveM α) : ResolveM α := do
 
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
+  let coreMd := fileRangeToCoreMd ty.source ty.md
   let val' ← match val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref ty.md
+    let ref' ← resolveRef ref coreMd
     pure (.UserDefined ref')
   | .TTypedField vt =>
     let vt' ← resolveHighType vt
@@ -290,11 +291,12 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
   | other => pure other
-  return ⟨val', ty.md⟩
+  return ⟨val', ty.source, ty.md⟩
 
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
-  | WithMetadata.mk expr md =>
+  | AstNode.mk expr source md =>
+  let coreMd := fileRangeToCoreMd source md
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond
@@ -325,7 +327,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralString v => pure (.LiteralString v)
   | .LiteralDecimal v => pure (.LiteralDecimal v)
   | .Identifier ref =>
-    let ref' ← resolveRef ref md
+    let ref' ← resolveRef ref coreMd
     pure (.Identifier ref')
   | .Assign targets value =>
     let targets' ← targets.mapM resolveStmtExpr
@@ -333,22 +335,22 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .FieldSelect target fieldName =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName md
+    let fieldName' ← resolveFieldRef target' fieldName coreMd
     pure (.FieldSelect target' fieldName')
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName md
+    let fieldName' ← resolveFieldRef target' fieldName coreMd
     let newVal' ← resolveStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
-    let callee' ← resolveRef callee md
+    let callee' ← resolveRef callee coreMd
     let args' ← args.mapM resolveStmtExpr
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
     let args' ← args.mapM resolveStmtExpr
     pure (.PrimitiveOp op args')
   | .New ref =>
-    let ref' ← resolveRef ref md
+    let ref' ← resolveRef ref coreMd
     pure (.New ref')
   | .This => pure .This
   | .ReferenceEquals lhs rhs =>
@@ -365,7 +367,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.IsType target' ty')
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
-    let callee' ← resolveRef callee md
+    let callee' ← resolveRef callee coreMd
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
   | .Forall param trigger body =>
@@ -411,7 +413,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let ty' ← resolveHighType ty
       pure (.Hole det ty')
     | none => pure (.Hole det none)
-  return ⟨val', md⟩
+  return ⟨val', source, md⟩
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 
@@ -542,16 +544,16 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
 /-! ## Phase 2: Build refToDef map from the resolved program -/
 
 /-- Insert a definition into the refToDef map using the ID already on the identifier. -/
-private def register (map : Std.HashMap Nat AstNode) (iden : Identifier) (node : AstNode)
-    : Std.HashMap Nat AstNode :=
+private def register (map : Std.HashMap Nat ResolvedNode) (iden : Identifier) (node : ResolvedNode)
+    : Std.HashMap Nat ResolvedNode :=
   match iden.uniqueId with
   | some uuid => map.insert uuid node
   | none => map  -- shouldn't happen after Phase 1
 
-private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
-    : Std.HashMap Nat AstNode :=
+private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeMd)
+    : Std.HashMap Nat ResolvedNode :=
   match ty with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .TTypedField vt => collectHighType map vt
   | .TSet et => collectHighType map et
@@ -565,10 +567,10 @@ private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
   | .Intersection tys => tys.foldl collectHighType map
   | _ => map
 
-private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
-    : Std.HashMap Nat AstNode :=
+private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
+    : Std.HashMap Nat ResolvedNode :=
   match expr with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .IfThenElse cond thenBr elseBr =>
     let map := collectStmtExpr map cond
@@ -633,8 +635,8 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
   | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Abstract | .All | .Hole _ _ => map
 
-private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
-    : Std.HashMap Nat AstNode :=
+private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
+    : Std.HashMap Nat ResolvedNode :=
   match body with
   | .Transparent b => collectStmtExpr map b
   | .Opaque posts impl mods =>
@@ -644,13 +646,13 @@ private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
   | .Abstract posts => posts.foldl collectStmtExpr map
   | .External => map
 
-private def collectParameter (map : Std.HashMap Nat AstNode) (param : Parameter)
-    : Std.HashMap Nat AstNode :=
+private def collectParameter (map : Std.HashMap Nat ResolvedNode) (param : Parameter)
+    : Std.HashMap Nat ResolvedNode :=
   let map := register map param.name (.parameter param)
   collectHighType map param.type
 
-private def collectProcedure (map : Std.HashMap Nat AstNode) (proc : Procedure)
-    (mkNode : Procedure → AstNode) : Std.HashMap Nat AstNode :=
+private def collectProcedure (map : Std.HashMap Nat ResolvedNode) (proc : Procedure)
+    (mkNode : Procedure → ResolvedNode) : Std.HashMap Nat ResolvedNode :=
   let map := register map proc.name (mkNode proc)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
@@ -658,13 +660,13 @@ private def collectProcedure (map : Std.HashMap Nat AstNode) (proc : Procedure)
   let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
   collectBody map proc.body
 
-private def collectField (map : Std.HashMap Nat AstNode) (ownerName : Identifier) (field : Field)
-    : Std.HashMap Nat AstNode :=
+private def collectField (map : Std.HashMap Nat ResolvedNode) (ownerName : Identifier) (field : Field)
+    : Std.HashMap Nat ResolvedNode :=
   let map := register map field.name (.field ownerName field)
   collectHighType map field.type
 
-private def collectTypeDefinition (map : Std.HashMap Nat AstNode) (td : TypeDefinition)
-    : Std.HashMap Nat AstNode :=
+private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : TypeDefinition)
+    : Std.HashMap Nat ResolvedNode :=
   match td with
   | .Composite ct =>
     let map := register map ct.name (.compositeType ct)
@@ -685,8 +687,8 @@ private def collectTypeDefinition (map : Std.HashMap Nat AstNode) (td : TypeDefi
       ) map
     ) map
 
-private def collectConstant (map : Std.HashMap Nat AstNode) (c : Constant)
-    : Std.HashMap Nat AstNode :=
+private def collectConstant (map : Std.HashMap Nat ResolvedNode) (c : Constant)
+    : Std.HashMap Nat ResolvedNode :=
   let map := register map c.name (.constant c)
   let map := collectHighType map c.type
   match c.initializer with
@@ -694,8 +696,8 @@ private def collectConstant (map : Std.HashMap Nat AstNode) (c : Constant)
   | none => map
 
 /-- Build the refToDef map by walking the fully-resolved program (Phase 2). -/
-def buildRefToDef (program : Program) : Std.HashMap Nat AstNode :=
-  let map : Std.HashMap Nat AstNode := {}
+def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
+  let map : Std.HashMap Nat ResolvedNode := {}
   let map := program.types.foldl collectTypeDefinition map
   let map := program.constants.foldl collectConstant map
   let map := program.staticFields.foldl (collectField · "$static" ·) map
@@ -703,9 +705,9 @@ def buildRefToDef (program : Program) : Std.HashMap Nat AstNode :=
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
-/-- A default AstNode used as a placeholder during pre-registration.
+/-- A default ResolvedNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
-private def placeholderNode : AstNode := .var "$placeholder" ⟨.TVoid, #[]⟩
+private def placeholderNode : ResolvedNode := .var "$placeholder" ⟨.TVoid, none, #[]⟩
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
