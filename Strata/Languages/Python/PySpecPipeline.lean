@@ -53,13 +53,7 @@ private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
   -- Multi-atom types (e.g., Optional[str] = [NoneType, str]) produce
   -- multiple entries so getUnionTypeConstraint generates a disjunction.
   let tys := arg.type.atoms.toList.filterMap fun a => match a with
-    | .ident nm _ =>
-      if nm == Python.PythonIdent.builtinsStr then some "str"
-      else if nm == Python.PythonIdent.builtinsInt then some "int"
-      else if nm == Python.PythonIdent.builtinsBool then some "bool"
-      else if nm == Python.PythonIdent.builtinsFloat then some "float"
-      else if nm == Python.PythonIdent.noneType then some "None"
-      else none
+    | .ident nm _ => Python.PythonIdent.toPyLauType? nm
     | _ => none
   -- Fall back to ["Any"] if no atoms were recognized (unknown types
   -- should not generate constraints).

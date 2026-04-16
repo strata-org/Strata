@@ -12,6 +12,7 @@ public import Strata.DL.Lambda.RecursiveAxioms
 import Init.Data.String.Extra
 public import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.SMTUtils
+public import Strata.Languages.Core.CoreOp
 
 ---------------------------------------------------------------------
 
@@ -439,45 +440,25 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     match E.factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      -- Handle unsigned overflow predicates and safe ops via if-then-else
-      -- (kept separate from the main match to avoid C compiler nesting limits)
-      let name := func.name.name
-      if name.startsWith "Bv" && (name.endsWith "UAddOverflow" || name.endsWith "USubOverflow" ||
-         name.endsWith "UMulOverflow" || name.endsWith "UNegOverflow" ||
-         name.endsWith "SafeUAdd" || name.endsWith "SafeUSub" ||
-         name.endsWith "SafeUMul" || name.endsWith "SafeUNeg") then
-        -- Parse size from "BvN.Op"
-        let sizeStr := (name.splitOn ".").head!.drop 2
-        let n := sizeStr.toNat!
-        let bvTy := TermType.prim (.bitvec n)
-        if name.endsWith "UAddOverflow" then uaddOverflowEnc n ctx
-        else if name.endsWith "USubOverflow" then usubOverflowEnc ctx
-        else if name.endsWith "UMulOverflow" then umulOverflowEnc n ctx
-        else if name.endsWith "UNegOverflow" then unegOverflowEnc n ctx
-        else if name.endsWith "SafeUAdd" then .ok (.app Op.bvadd, bvTy, ctx)
-        else if name.endsWith "SafeUSub" then .ok (.app Op.bvsub, bvTy, ctx)
-        else if name.endsWith "SafeUMul" then .ok (.app Op.bvmul, bvTy, ctx)
-        else .ok (.app Op.bvneg, bvTy, ctx) -- SafeUNeg
-      else
-      match name with
-    | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
-    | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
-    | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
-    | "Bool.Implies" => .ok (.app Op.implies,    .bool,   ctx)
-    | "Bool.Equiv"   => .ok (.app Op.eq,         .bool,   ctx)
+      match CoreOp.ofString func.name.name with
+    | .bool .And     => .ok (.app Op.and,        .bool,   ctx)
+    | .bool .Or      => .ok (.app Op.or,         .bool,   ctx)
+    | .bool .Not     => .ok (.app Op.not,        .bool,   ctx)
+    | .bool .Implies => .ok (.app Op.implies,    .bool,   ctx)
+    | .bool .Equiv   => .ok (.app Op.eq,         .bool,   ctx)
 
-    | "Int.Neg"      => .ok (.app Op.neg,        .int ,   ctx)
-    | "Int.Add"      => .ok (.app Op.add,        .int ,   ctx)
-    | "Int.Sub"      => .ok (.app Op.sub,        .int ,   ctx)
-    | "Int.Mul"      => .ok (.app Op.mul,        .int ,   ctx)
-    | "Int.Div"      => .ok (.app Op.div,        .int ,   ctx)
-    -- Safe to encode as normal SMT div/mod: preconditions have already been
-    -- checked and generated well-formedness conditions in the environment.
-    | "Int.SafeDiv"  => .ok (.app Op.div,        .int ,   ctx)
-    | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
-    | "Int.SafeMod"  => .ok (.app Op.mod,        .int ,   ctx)
+    | .numeric ⟨.int, .Neg⟩      => .ok (.app Op.neg,        .int ,   ctx)
+    | .numeric ⟨.int, .Add⟩      => .ok (.app Op.add,        .int ,   ctx)
+    | .numeric ⟨.int, .Sub⟩      => .ok (.app Op.sub,        .int ,   ctx)
+    | .numeric ⟨.int, .Mul⟩      => .ok (.app Op.mul,        .int ,   ctx)
+    | .numeric ⟨.int, .Div⟩ | .numeric ⟨.int, .SafeDiv⟩ =>
+      -- Safe to encode as normal SMT div/mod: preconditions have already been
+      -- checked and generated well-formedness conditions in the environment.
+      .ok (.app Op.div,        .int ,   ctx)
+    | .numeric ⟨.int, .Mod⟩ | .numeric ⟨.int, .SafeMod⟩ =>
+      .ok (.app Op.mod,        .int ,   ctx)
     -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | "Int.DivT" | "Int.SafeDivT" =>
+    | .numeric ⟨.int, .DivT⟩ | .numeric ⟨.int, .SafeDivT⟩ =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -493,7 +474,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       .ok (divTApp, .int, ctx)
     -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
     -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | "Int.ModT" | "Int.SafeModT" =>
+    | .numeric ⟨.int, .ModT⟩ | .numeric ⟨.int, .SafeModT⟩ =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -509,225 +490,93 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           Term.app Op.sub [a, bTimesTdiv] retTy
         | _ => Term.app Op.mod args retTy
       .ok (modTApp, .int, ctx)
-    | "Int.Lt"       => .ok (.app Op.lt,         .bool,   ctx)
-    | "Int.Le"       => .ok (.app Op.le,         .bool,   ctx)
-    | "Int.Gt"       => .ok (.app Op.gt,         .bool,   ctx)
-    | "Int.Ge"       => .ok (.app Op.ge,         .bool,   ctx)
+    | .numeric ⟨.int, .Lt⟩       => .ok (.app Op.lt,         .bool,   ctx)
+    | .numeric ⟨.int, .Le⟩       => .ok (.app Op.le,         .bool,   ctx)
+    | .numeric ⟨.int, .Gt⟩       => .ok (.app Op.gt,         .bool,   ctx)
+    | .numeric ⟨.int, .Ge⟩       => .ok (.app Op.ge,         .bool,   ctx)
 
-    | "Real.Neg"     => .ok (.app Op.neg,        .real,   ctx)
-    | "Real.Add"     => .ok (.app Op.add,        .real,   ctx)
-    | "Real.Sub"     => .ok (.app Op.sub,        .real,   ctx)
-    | "Real.Mul"     => .ok (.app Op.mul,        .real,   ctx)
-    | "Real.Div"     => .ok (.app Op.rdiv,       .real,   ctx)
-    | "Real.Lt"      => .ok (.app Op.lt,         .bool,   ctx)
-    | "Real.Le"      => .ok (.app Op.le,         .bool,   ctx)
-    | "Real.Gt"      => .ok (.app Op.gt,         .bool,   ctx)
-    | "Real.Ge"      => .ok (.app Op.ge,         .bool,   ctx)
+    | .numeric ⟨.real, .Neg⟩     => .ok (.app Op.neg,        .real,   ctx)
+    | .numeric ⟨.real, .Add⟩     => .ok (.app Op.add,        .real,   ctx)
+    | .numeric ⟨.real, .Sub⟩     => .ok (.app Op.sub,        .real,   ctx)
+    | .numeric ⟨.real, .Mul⟩     => .ok (.app Op.mul,        .real,   ctx)
+    | .numeric ⟨.real, .Div⟩     => .ok (.app Op.rdiv,       .real,   ctx)
+    | .numeric ⟨.real, .Lt⟩      => .ok (.app Op.lt,         .bool,   ctx)
+    | .numeric ⟨.real, .Le⟩      => .ok (.app Op.le,         .bool,   ctx)
+    | .numeric ⟨.real, .Gt⟩      => .ok (.app Op.gt,         .bool,   ctx)
+    | .numeric ⟨.real, .Ge⟩      => .ok (.app Op.ge,         .bool,   ctx)
 
-    | "Bv1.Neg"     => .ok (.app Op.bvneg,      .bitvec 1, ctx)
-    | "Bv1.Add"     => .ok (.app Op.bvadd,      .bitvec 1, ctx)
-    | "Bv1.Sub"     => .ok (.app Op.bvsub,      .bitvec 1, ctx)
-    | "Bv1.Mul"     => .ok (.app Op.bvmul,      .bitvec 1, ctx)
-    | "Bv1.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 1, ctx)
-    | "Bv1.UMod"    => .ok (.app Op.bvurem,     .bitvec 1, ctx)
-    | "Bv1.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 1, ctx)
-    | "Bv1.SMod"    => .ok (.app Op.bvsrem,     .bitvec 1, ctx)
-    | "Bv1.Not"     => .ok (.app Op.bvnot,      .bitvec 1, ctx)
-    | "Bv1.And"     => .ok (.app Op.bvand,      .bitvec 1, ctx)
-    | "Bv1.Or"      => .ok (.app Op.bvor,       .bitvec 1, ctx)
-    | "Bv1.Xor"     => .ok (.app Op.bvxor,      .bitvec 1, ctx)
-    | "Bv1.Shl"     => .ok (.app Op.bvshl,      .bitvec 1, ctx)
-    | "Bv1.UShr"    => .ok (.app Op.bvlshr,     .bitvec 1, ctx)
-    | "Bv1.SShr"    => .ok (.app Op.bvashr,     .bitvec 1, ctx)
-    | "Bv1.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
-    | "Bv1.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
-    | "Bv1.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
-    | "Bv1.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
-    | "Bv1.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
-    | "Bv1.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
-    | "Bv1.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | "Bv1.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
+    -- Bitvector operations: size-generic via CoreOp
+    | .bv ⟨n, .Neg⟩  => .ok (.app Op.bvneg,      .bitvec n, ctx)
+    | .bv ⟨n, .Add⟩  => .ok (.app Op.bvadd,      .bitvec n, ctx)
+    | .bv ⟨n, .Sub⟩  => .ok (.app Op.bvsub,      .bitvec n, ctx)
+    | .bv ⟨n, .Mul⟩  => .ok (.app Op.bvmul,      .bitvec n, ctx)
+    | .bv ⟨n, .UDiv⟩ => .ok (.app Op.bvudiv,     .bitvec n, ctx)
+    | .bv ⟨n, .UMod⟩ => .ok (.app Op.bvurem,     .bitvec n, ctx)
+    | .bv ⟨n, .SDiv⟩ => .ok (.app Op.bvsdiv,     .bitvec n, ctx)
+    | .bv ⟨n, .SMod⟩ => .ok (.app Op.bvsrem,     .bitvec n, ctx)
+    | .bv ⟨n, .Not⟩  => .ok (.app Op.bvnot,      .bitvec n, ctx)
+    | .bv ⟨n, .And⟩  => .ok (.app Op.bvand,      .bitvec n, ctx)
+    | .bv ⟨n, .Or⟩   => .ok (.app Op.bvor,       .bitvec n, ctx)
+    | .bv ⟨n, .Xor⟩  => .ok (.app Op.bvxor,      .bitvec n, ctx)
+    | .bv ⟨n, .Shl⟩  => .ok (.app Op.bvshl,      .bitvec n, ctx)
+    | .bv ⟨n, .UShr⟩ => .ok (.app Op.bvlshr,     .bitvec n, ctx)
+    | .bv ⟨n, .SShr⟩ => .ok (.app Op.bvashr,     .bitvec n, ctx)
+    | .bv ⟨_, .ULt⟩  => .ok (.app Op.bvult,      .bool,   ctx)
+    | .bv ⟨_, .ULe⟩  => .ok (.app Op.bvule,      .bool,   ctx)
+    | .bv ⟨_, .UGt⟩  => .ok (.app Op.bvugt,      .bool,   ctx)
+    | .bv ⟨_, .UGe⟩  => .ok (.app Op.bvuge,      .bool,   ctx)
+    | .bv ⟨_, .SLt⟩  => .ok (.app Op.bvslt,      .bool,   ctx)
+    | .bv ⟨_, .SLe⟩  => .ok (.app Op.bvsle,      .bool,   ctx)
+    | .bv ⟨_, .SGt⟩  => .ok (.app Op.bvsgt,      .bool,   ctx)
+    | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
+    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat, .bitvec (n * 2), ctx)
 
-    | "Bv8.Neg"     => .ok (.app Op.bvneg,      .bitvec 8, ctx)
-    | "Bv8.Add"     => .ok (.app Op.bvadd,      .bitvec 8, ctx)
-    | "Bv8.Sub"     => .ok (.app Op.bvsub,      .bitvec 8, ctx)
-    | "Bv8.Mul"     => .ok (.app Op.bvmul,      .bitvec 8, ctx)
-    | "Bv8.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 8, ctx)
-    | "Bv8.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 8, ctx)
-    | "Bv8.UMod"    => .ok (.app Op.bvurem,     .bitvec 8, ctx)
-    | "Bv8.SMod"    => .ok (.app Op.bvsrem,     .bitvec 8, ctx)
-    | "Bv8.Not"     => .ok (.app Op.bvnot,      .bitvec 8, ctx)
-    | "Bv8.And"     => .ok (.app Op.bvand,      .bitvec 8, ctx)
-    | "Bv8.Or"      => .ok (.app Op.bvor,       .bitvec 8, ctx)
-    | "Bv8.Xor"     => .ok (.app Op.bvxor,      .bitvec 8, ctx)
-    | "Bv8.Shl"     => .ok (.app Op.bvshl,      .bitvec 8, ctx)
-    | "Bv8.UShr"    => .ok (.app Op.bvlshr,     .bitvec 8, ctx)
-    | "Bv8.SShr"    => .ok (.app Op.bvashr,     .bitvec 8, ctx)
-    | "Bv8.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
-    | "Bv8.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
-    | "Bv8.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
-    | "Bv8.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
-    | "Bv8.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
-    | "Bv8.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
-    | "Bv8.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | "Bv8.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
+    | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
+    | .str .Concat   => .ok (.app Op.str_concat,    .string, ctx)
+    | .str .Substr   => .ok (.app Op.str_substr,    .string, ctx)
+    | .str .ToRegEx  => .ok (.app Op.str_to_re,     .regex,  ctx)
+    | .str .InRegEx  => .ok (.app Op.str_in_re,     .bool,   ctx)
+    | .re .All       => .ok (.app Op.re_all,        .regex,  ctx)
+    | .re .AllChar   => .ok (.app Op.re_allchar,    .regex,  ctx)
+    | .re .Range     => .ok (.app Op.re_range,      .regex,  ctx)
+    | .re .Concat    => .ok (.app Op.re_concat,     .regex,  ctx)
+    | .re .Star      => .ok (.app Op.re_star,       .regex,  ctx)
+    | .re .Plus      => .ok (.app Op.re_plus,       .regex,  ctx)
+    | .re .Union     => .ok (.app Op.re_union,      .regex,  ctx)
+    | .re .Inter     => .ok (.app Op.re_inter,      .regex,  ctx)
+    | .re .Comp      => .ok (.app Op.re_comp,       .regex,  ctx)
+    | .re .None      => .ok (.app Op.re_none,       .regex,  ctx)
 
-    | "Bv16.Neg"     => .ok (.app Op.bvneg,      .bitvec 16, ctx)
-    | "Bv16.Add"     => .ok (.app Op.bvadd,      .bitvec 16, ctx)
-    | "Bv16.Sub"     => .ok (.app Op.bvsub,      .bitvec 16, ctx)
-    | "Bv16.Mul"     => .ok (.app Op.bvmul,      .bitvec 16, ctx)
-    | "Bv16.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 16, ctx)
-    | "Bv16.UMod"    => .ok (.app Op.bvurem,     .bitvec 16, ctx)
-    | "Bv16.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 16, ctx)
-    | "Bv16.SMod"    => .ok (.app Op.bvsrem,     .bitvec 16, ctx)
-    | "Bv16.Not"     => .ok (.app Op.bvnot,      .bitvec 16, ctx)
-    | "Bv16.And"     => .ok (.app Op.bvand,      .bitvec 16, ctx)
-    | "Bv16.Or"      => .ok (.app Op.bvor,       .bitvec 16, ctx)
-    | "Bv16.Xor"     => .ok (.app Op.bvxor,      .bitvec 16, ctx)
-    | "Bv16.Shl"     => .ok (.app Op.bvshl,      .bitvec 16, ctx)
-    | "Bv16.UShr"    => .ok (.app Op.bvlshr,     .bitvec 16, ctx)
-    | "Bv16.SShr"    => .ok (.app Op.bvashr,     .bitvec 16, ctx)
-    | "Bv16.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
-    | "Bv16.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
-    | "Bv16.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
-    | "Bv16.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
-    | "Bv16.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
-    | "Bv16.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
-    | "Bv16.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | "Bv16.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
-
-    | "Bv32.Neg"     => .ok (.app Op.bvneg,      .bitvec 32, ctx)
-    | "Bv32.Add"     => .ok (.app Op.bvadd,      .bitvec 32, ctx)
-    | "Bv32.Sub"     => .ok (.app Op.bvsub,      .bitvec 32, ctx)
-    | "Bv32.Mul"     => .ok (.app Op.bvmul,      .bitvec 32, ctx)
-    | "Bv32.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 32, ctx)
-    | "Bv32.UMod"    => .ok (.app Op.bvurem,     .bitvec 32, ctx)
-    | "Bv32.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 32, ctx)
-    | "Bv32.SMod"    => .ok (.app Op.bvsrem,     .bitvec 32, ctx)
-    | "Bv32.Not"     => .ok (.app Op.bvnot,      .bitvec 32, ctx)
-    | "Bv32.And"     => .ok (.app Op.bvand,      .bitvec 32, ctx)
-    | "Bv32.Or"      => .ok (.app Op.bvor,       .bitvec 32, ctx)
-    | "Bv32.Xor"     => .ok (.app Op.bvxor,      .bitvec 32, ctx)
-    | "Bv32.Shl"     => .ok (.app Op.bvshl,      .bitvec 32, ctx)
-    | "Bv32.UShr"    => .ok (.app Op.bvlshr,     .bitvec 32, ctx)
-    | "Bv32.SShr"    => .ok (.app Op.bvashr,     .bitvec 32, ctx)
-    | "Bv32.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
-    | "Bv32.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
-    | "Bv32.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
-    | "Bv32.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
-    | "Bv32.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
-    | "Bv32.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
-    | "Bv32.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | "Bv32.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
-
-    | "Bv64.Neg"     => .ok (.app Op.bvneg,      .bitvec 64, ctx)
-    | "Bv64.Add"     => .ok (.app Op.bvadd,      .bitvec 64, ctx)
-    | "Bv64.Sub"     => .ok (.app Op.bvsub,      .bitvec 64, ctx)
-    | "Bv64.Mul"     => .ok (.app Op.bvmul,      .bitvec 64, ctx)
-    | "Bv64.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 64, ctx)
-    | "Bv64.UMod"    => .ok (.app Op.bvurem,     .bitvec 64, ctx)
-    | "Bv64.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 64, ctx)
-    | "Bv64.SMod"    => .ok (.app Op.bvsrem,     .bitvec 64, ctx)
-    | "Bv64.Not"     => .ok (.app Op.bvnot,      .bitvec 64, ctx)
-    | "Bv64.And"     => .ok (.app Op.bvand,      .bitvec 64, ctx)
-    | "Bv64.Or"      => .ok (.app Op.bvor,       .bitvec 64, ctx)
-    | "Bv64.Xor"     => .ok (.app Op.bvxor,      .bitvec 64, ctx)
-    | "Bv64.Shl"     => .ok (.app Op.bvshl,      .bitvec 64, ctx)
-    | "Bv64.UShr"    => .ok (.app Op.bvlshr,     .bitvec 64, ctx)
-    | "Bv64.SShr"    => .ok (.app Op.bvashr,     .bitvec 64, ctx)
-    | "Bv64.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
-    | "Bv64.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
-    | "Bv64.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
-    | "Bv64.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
-    | "Bv64.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
-    | "Bv64.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
-    | "Bv64.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | "Bv64.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
+    | .trigger .EmptyTriggers | .trigger .EmptyGroup =>
+      .ok (.app Op.triggers, .trigger, ctx)
+    | .trigger .AddTrigger | .trigger .AddGroup =>
+      .ok (Factory.addTriggerList, .trigger, ctx)
 
     -- Safe BV operations: same encoding as unsafe (preconditions already checked)
-    | "Bv1.SafeAdd"  => .ok (.app Op.bvadd,      .bitvec 1, ctx)
-    | "Bv1.SafeSub"  => .ok (.app Op.bvsub,      .bitvec 1, ctx)
-    | "Bv1.SafeMul"  => .ok (.app Op.bvmul,      .bitvec 1, ctx)
-    | "Bv1.SafeNeg"  => .ok (.app Op.bvneg,      .bitvec 1, ctx)
-    | "Bv8.SafeAdd"  => .ok (.app Op.bvadd,      .bitvec 8, ctx)
-    | "Bv8.SafeSub"  => .ok (.app Op.bvsub,      .bitvec 8, ctx)
-    | "Bv8.SafeMul"  => .ok (.app Op.bvmul,      .bitvec 8, ctx)
-    | "Bv8.SafeNeg"  => .ok (.app Op.bvneg,      .bitvec 8, ctx)
-    | "Bv16.SafeAdd" => .ok (.app Op.bvadd,      .bitvec 16, ctx)
-    | "Bv16.SafeSub" => .ok (.app Op.bvsub,      .bitvec 16, ctx)
-    | "Bv16.SafeMul" => .ok (.app Op.bvmul,      .bitvec 16, ctx)
-    | "Bv16.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 16, ctx)
-    | "Bv32.SafeAdd" => .ok (.app Op.bvadd,      .bitvec 32, ctx)
-    | "Bv32.SafeSub" => .ok (.app Op.bvsub,      .bitvec 32, ctx)
-    | "Bv32.SafeMul" => .ok (.app Op.bvmul,      .bitvec 32, ctx)
-    | "Bv32.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 32, ctx)
-    | "Bv64.SafeAdd" => .ok (.app Op.bvadd,      .bitvec 64, ctx)
-    | "Bv64.SafeSub" => .ok (.app Op.bvsub,      .bitvec 64, ctx)
-    | "Bv64.SafeMul" => .ok (.app Op.bvmul,      .bitvec 64, ctx)
-    | "Bv64.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 64, ctx)
-    | "Bv1.SafeSDiv"  => .ok (.app Op.bvsdiv,     .bitvec 1, ctx)
-    | "Bv1.SafeSMod"  => .ok (.app Op.bvsrem,     .bitvec 1, ctx)
-    | "Bv8.SafeSDiv"  => .ok (.app Op.bvsdiv,     .bitvec 8, ctx)
-    | "Bv8.SafeSMod"  => .ok (.app Op.bvsrem,     .bitvec 8, ctx)
-    | "Bv16.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 16, ctx)
-    | "Bv16.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 16, ctx)
-    | "Bv32.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 32, ctx)
-    | "Bv32.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 32, ctx)
-    | "Bv64.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 64, ctx)
-    | "Bv64.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 64, ctx)
+    | .bv ⟨n, .SafeAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
+    | .bv ⟨n, .SafeSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
+    | .bv ⟨n, .SafeMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
+    | .bv ⟨n, .SafeNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
+    | .bv ⟨n, .SafeSDiv⟩ => .ok (.app Op.bvsdiv, .bitvec n, ctx)
+    | .bv ⟨n, .SafeSMod⟩ => .ok (.app Op.bvsrem, .bitvec n, ctx)
     -- Signed overflow predicates
-    | "Bv1.SAddOverflow"  => .ok (.app Op.bvsaddo,  .bool, ctx)
-    | "Bv1.SSubOverflow"  => .ok (.app Op.bvssubo,  .bool, ctx)
-    | "Bv1.SMulOverflow"  => .ok (.app Op.bvsmulo,  .bool, ctx)
-    | "Bv1.SNegOverflow"  => .ok (.app Op.bvnego,   .bool, ctx)
-    | "Bv1.SDivOverflow"  => sdivOverflowEnc 1 ctx
-    | "Bv8.SAddOverflow"  => .ok (.app Op.bvsaddo,  .bool, ctx)
-    | "Bv8.SSubOverflow"  => .ok (.app Op.bvssubo,  .bool, ctx)
-    | "Bv8.SMulOverflow"  => .ok (.app Op.bvsmulo,  .bool, ctx)
-    | "Bv8.SNegOverflow"  => .ok (.app Op.bvnego,   .bool, ctx)
-    | "Bv8.SDivOverflow"  => sdivOverflowEnc 8 ctx
-    | "Bv16.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
-    | "Bv16.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
-    | "Bv16.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
-    | "Bv16.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
-    | "Bv16.SDivOverflow" => sdivOverflowEnc 16 ctx
-    | "Bv32.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
-    | "Bv32.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
-    | "Bv32.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
-    | "Bv32.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
-    | "Bv32.SDivOverflow" => sdivOverflowEnc 32 ctx
-    | "Bv64.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
-    | "Bv64.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
-    | "Bv64.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
-    | "Bv64.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
-    | "Bv64.SDivOverflow" => sdivOverflowEnc 64 ctx
+    | .bv ⟨_, .SAddOverflow⟩ => .ok (.app Op.bvsaddo, .bool, ctx)
+    | .bv ⟨_, .SSubOverflow⟩ => .ok (.app Op.bvssubo, .bool, ctx)
+    | .bv ⟨_, .SMulOverflow⟩ => .ok (.app Op.bvsmulo, .bool, ctx)
+    | .bv ⟨_, .SNegOverflow⟩ => .ok (.app Op.bvnego, .bool, ctx)
+    | .bv ⟨n, .SDivOverflow⟩ => sdivOverflowEnc n ctx
     -- Unsigned overflow predicates
+    | .bv ⟨n, .UAddOverflow⟩ => uaddOverflowEnc n ctx
+    | .bv ⟨_, .USubOverflow⟩ => usubOverflowEnc ctx
+    | .bv ⟨n, .UMulOverflow⟩ => umulOverflowEnc n ctx
+    | .bv ⟨n, .UNegOverflow⟩ => unegOverflowEnc n ctx
 
-    | "Bv8.Concat"   => .ok (.app Op.bvconcat,   .bitvec 16, ctx)
-    | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)
-    | "Bv32.Concat"  => .ok (.app Op.bvconcat,   .bitvec 64, ctx)
-
-    | "Str.Length"   => .ok (.app Op.str_length,    .int,    ctx)
-    | "Str.Concat"   => .ok (.app Op.str_concat,    .string, ctx)
-    | "Str.Substr"   => .ok (.app Op.str_substr,    .string, ctx)
-    | "Str.ToRegEx"  => .ok (.app Op.str_to_re,     .regex,  ctx)
-    | "Str.InRegEx"  => .ok (.app Op.str_in_re,     .bool,   ctx)
-    | "Re.All"       => .ok (.app Op.re_all,        .regex,  ctx)
-    | "Re.AllChar"   => .ok (.app Op.re_allchar,    .regex,  ctx)
-    | "Re.Range"     => .ok (.app Op.re_range,      .regex,  ctx)
-    | "Re.Concat"    => .ok (.app Op.re_concat,     .regex,  ctx)
-    | "Re.Star"      => .ok (.app Op.re_star,       .regex,  ctx)
-    | "Re.Plus"      => .ok (.app Op.re_plus,       .regex,  ctx)
-    | "Re.Union"     => .ok (.app Op.re_union,      .regex,  ctx)
-    | "Re.Inter"     => .ok (.app Op.re_inter,      .regex,  ctx)
-    | "Re.Comp"      => .ok (.app Op.re_comp,       .regex,  ctx)
-    | "Re.None"      => .ok (.app Op.re_none,       .regex,  ctx)
-
-    | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
-    | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
-    | "TriggerGroup.addTrigger" => .ok (Factory.addTriggerList, .trigger, ctx)
-    | "Triggers.addGroup"       => .ok (Factory.addTriggerList, .trigger, ctx)
-    | fnname => do
+    | _ => do
+      let fnname := func.name.name
       if (fnname == "select" || fnname == "update") && useArrayTheory then
         .ok (.app (if fnname == "select" then Op.select else Op.store), smt_outty, ctx)
       else

@@ -551,4 +551,41 @@ def main() -> None:
   let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   pure ()
 
+-- Multi-assignment with side-effecting RHS: the RHS should be evaluated
+-- exactly once. a = b = c.next() must call next() once, so both a and b
+-- get the same value and the counter increments by 1.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Counter:
+    def __init__(self) -> None:
+        self.count: int = 0
+
+    def next(self) -> int:
+        self.count = self.count + 1
+        return self.count
+
+def test() -> None:
+    c: Counter = Counter()
+    a = b = c.next()
+    assert a == 1
+    assert b == 1
+    assert c.count == 1
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
+-- print() with keyword arguments (sep, end, flush) should not produce errors.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    print(\"hello\", end=\"\")
+    print(\"a\", \"b\", sep=\",\")
+    print(\"done\", flush=True)
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest

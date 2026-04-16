@@ -9,6 +9,7 @@ public import Strata.DDM.AST
 public import Strata.Languages.Core.DDMTransform.Grammar
 public import Strata.Languages.Core.Core
 public import Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.CoreOp
 public import Strata.DDM.Util.DecimalRat
 
 
@@ -873,7 +874,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapSelectOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
+     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Select) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
@@ -881,7 +882,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapUpdateOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
+     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Update) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
@@ -891,14 +892,14 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.length"
+       Core.coreOpExpr (.seq .Length)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int]))
      let s ← translateExpr p bindings sa
      return .mkApp () fn [s]
   | .fn _ q`Core.seq_select, [_atp, sa, ia] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.select"
+       Core.coreOpExpr (.seq .Select)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety]))
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
@@ -906,7 +907,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_append, [_atp, s1a, s2a] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.append"
+       Core.coreOpExpr (.seq .Append)
          (.some (LMonoTy.mkArrow (Core.seqTy ety)
            [Core.seqTy ety, Core.seqTy ety]))
      let s1 ← translateExpr p bindings s1a
@@ -915,7 +916,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_build, [_atp, sa, va] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.build"
+       Core.coreOpExpr (.seq .Build)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
@@ -923,7 +924,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_update, [_atp, sa, ia, va] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.update"
+       Core.coreOpExpr (.seq .Update)
          (.some (LMonoTy.mkArrow (Core.seqTy ety)
            [.int, ety, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
@@ -933,7 +934,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_contains, [_atp, sa, va] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.contains"
+       Core.coreOpExpr (.seq .Contains)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool]))
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
@@ -941,7 +942,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_take, [_atp, sa, na] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.take"
+       Core.coreOpExpr (.seq .Take)
          (.some (LMonoTy.mkArrow (Core.seqTy ety)
            [.int, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
@@ -950,7 +951,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.seq_drop, [_atp, sa, na] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
-       LExpr.op () "Sequence.drop"
+       Core.coreOpExpr (.seq .Drop)
          (.some (LMonoTy.mkArrow (Core.seqTy ety)
            [.int, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
