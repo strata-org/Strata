@@ -62,7 +62,8 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
 private def mkFunctionCopy (proc : Procedure) : Procedure :=
   let body := match proc.isFunctional, proc.body with
     | true, .Transparent b => .Transparent (stripAssertAssume b)
-    | _, _ => .Opaque [] none []
+    | _, .Opaque _ _ _ => .Opaque [] none []
+    | _, x => x
   { proc with isFunctional := true, body := body }
 
 /--
@@ -73,7 +74,7 @@ functions, non-functional become proofs.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let functions := nonExternal.map mkFunctionCopy
+  let functions := program.staticProcedures.map mkFunctionCopy
   let proofs := nonExternal.map fun p =>
     { p with isFunctional := false, name := { p.name with text := p.name.text ++ "$proof" } }
   let datatypes := program.types.filterMap fun td => match td with

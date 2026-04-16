@@ -701,7 +701,8 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
-      let coreFuncs ← funcs.mapM (translateProcedureToFunction options isRecursive)
+      let nonExternal := funcs.filter (fun p => !p.body.isExternal)
+      let coreFuncs ← nonExternal.mapM (translateProcedureToFunction options isRecursive)
       if isRecursive then
         let coreFuncValues := coreFuncs.filterMap (fun d => match d with
           | .func f _ => some f
