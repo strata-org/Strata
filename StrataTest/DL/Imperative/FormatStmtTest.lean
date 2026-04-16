@@ -52,7 +52,7 @@ private def xEq1 : E := .eq () x int1
 #guard_msgs in #eval! format (Statement.call [] "foo" [int1, int2] .empty : S)
 
 -- 7. cmd: call (with lhs)
-/-- info: call [y] := bar(#1) -/
+/-- info: call bar(#1, out [y]) -/
 #guard_msgs in #eval! format (Statement.call ["y"] "bar" [int1] .empty : S)
 
 -- 8. block: empty

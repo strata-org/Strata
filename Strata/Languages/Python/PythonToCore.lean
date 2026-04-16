@@ -880,7 +880,7 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (.det (.strConst () "__main__")) .empty)]
+  let globals : List Core.Decl := []
 
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)

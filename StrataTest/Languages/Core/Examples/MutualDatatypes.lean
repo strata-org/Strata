@@ -25,7 +25,7 @@ program Core;
   datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
 
-procedure TestRoseTreeTesters() returns ()
+procedure TestRoseTreeTesters()
 spec {
   ensures true;
 }
@@ -91,7 +91,7 @@ program Core;
   datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
 
-procedure TestRoseTreeDestructor() returns ()
+procedure TestRoseTreeDestructor()
 spec {
   ensures true;
 }
@@ -185,7 +185,7 @@ program Core;
   datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
 
-procedure TestRoseTreeEquality() returns ()
+procedure TestRoseTreeEquality()
 spec {
   ensures true;
 }
@@ -246,7 +246,7 @@ program Core;
   datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) }
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
 
-procedure TestPolyRoseTreeHavoc() returns ()
+procedure TestPolyRoseTreeHavoc()
 spec {
   ensures true;
 }
@@ -326,7 +326,7 @@ program Core;
     Goto(target: int)
   };
 
-procedure TestStmtListHavoc() returns ()
+procedure TestStmtListHavoc()
 spec {
   ensures true;
 }

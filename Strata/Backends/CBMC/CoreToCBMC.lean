@@ -22,7 +22,7 @@ def SimpleTestEnv :=
 #strata
 program Core;
 
-procedure simpleTest(x : int, y : int) returns (ret : int)
+procedure simpleTest(x : int, y : int, out ret : int)
 spec {
   requires [x_positive]:    (x > 0);
 }

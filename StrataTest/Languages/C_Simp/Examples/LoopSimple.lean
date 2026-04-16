@@ -84,7 +84,7 @@ info: function loopSimple {
 /--
 info: program Core;
 
-procedure loopSimple (n : int) returns (return : int)
+procedure loopSimple (n : int, out return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;

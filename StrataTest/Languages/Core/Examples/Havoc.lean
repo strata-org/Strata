@@ -12,7 +12,7 @@ namespace Strata
 def havocPgm : Program :=
 #strata
 program Core;
-procedure S() returns ()
+procedure S()
 {
   var x : int;
   x := 1;
@@ -29,7 +29,7 @@ procedure S() returns ()
 /--
 info: (program Core;
 
-procedure S () returns ()
+procedure S ()
 {
   var x : int;
   x := 1;
