@@ -508,11 +508,11 @@ def pathSummary (o : VCOutcome) (property : Imperative.PropertyType)
 
 end VCOutcome
 
-/-- Merge two SMT results, where `sat` dominates `unknown` dominates `unsat`.
+/-- Merge two SMT results, where `err` dominates `sat` dominates `unknown` dominates `unsat`.
+    If either result is an error, the merged result is an error.
     If either result is `sat`, the merged result is `sat` (keeping the first model).
     If either is `unknown`, the merged result is `unknown`.
-    Only if both are `unsat` is the merged result `unsat`.
-    Errors are preserved if present. -/
+    Only if both are `unsat` is the merged result `unsat`. -/
 def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
   match a, b with
   | .err e, _ => .err e
