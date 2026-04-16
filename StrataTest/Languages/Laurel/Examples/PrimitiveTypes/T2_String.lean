@@ -17,6 +17,7 @@ def program := r#"
 procedure testStringKO()
 returns (result: string)
 requires true
+  opaque
 {
   var message: string := "Hello";
   assert(message == "Hell");
@@ -28,6 +29,7 @@ requires true
 procedure testStringOK()
 returns (result: string)
 requires true
+  opaque
 {
   var message: string := "Hello";
   assert(message == "Hello");
@@ -37,6 +39,7 @@ requires true
 
 procedure testStringLiteralConcatOK()
 requires true
+  opaque
 {
   var result: string := "a" ++ "b";
   assert(result == "ab")
@@ -44,6 +47,7 @@ requires true
 
 procedure testStringLiteralConcatKO()
 requires true
+  opaque
 {
   var result: string := "a" ++ "b";
   assert(result == "cd")
@@ -52,6 +56,7 @@ requires true
 
 procedure testStringVarConcatOK()
 requires true
+  opaque
 {
   var x: string := "Hello";
   var result: string := x ++ " World";
@@ -60,6 +65,7 @@ requires true
 
 procedure testStringVarConcatKO()
 requires true
+  opaque
 {
   var x: string := "Hello";
   var result: string := x ++ " World";

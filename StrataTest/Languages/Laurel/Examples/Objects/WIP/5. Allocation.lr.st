@@ -14,6 +14,7 @@ composite Immutable {
 
   procedure construct()
     constructor
+    opaque
     requires contructing == {this}
     ensures constructing == {}
   {
@@ -23,7 +24,9 @@ composite Immutable {
   };
 }
 
-procedure foo() {
+procedure foo()
+  opaque
+{
   val immutable = Immutable.construct(); // constructor instance method can be called as a static.
 };
 
@@ -35,6 +38,7 @@ composite ImmutableChainOfTwo {
 
   procedure construct() 
     constructor
+    opaque
     requires contructing == {this}
     ensures constructing == {}
   {
@@ -50,12 +54,15 @@ composite ImmutableChainOfTwo {
   // only used privately
   procedure allocate()
     constructor
+    opaque
     ensures constructing = {this} {    
     // empty body
   };
 }
 
-procedure foo2() {
+procedure foo2()
+  opaque
+{
   val immutable = ImmutableChainOfTwo.construct();
   val same = immutable.other.other;
   assert immutable =&= same;
@@ -68,6 +75,7 @@ composite UsesHelperConstructor {
 
   procedure setXhelper() 
     constructor
+    opaque
     requires constructing == {this}
     ensures constructing == {this} && assigned(this.x)
   {
@@ -76,6 +84,7 @@ composite UsesHelperConstructor {
 
   procedure construct() 
     constructor
+    opaque
     requires contructing == {this}
     ensures constructing == {}
   {

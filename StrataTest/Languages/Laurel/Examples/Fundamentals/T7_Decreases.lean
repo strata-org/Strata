@@ -18,28 +18,34 @@ A procedure with a decreases clause may be called in an erased context.
 -/
 
 def program := r"
-procedure noDecreases(x: int): boolean;
+procedure noDecreases(x: int): boolean
+  opaque;
 procedure caller(x: int)
   requires noDecreases(x)
 //                    ^ error: noDecreases can not be called from a pure context, because it is not proven to terminate
-;
+  opaque;
 
 procedure noCyclicCalls()
   decreases []
+  opaque
 {
   leaf();
 };
 
-procedure leaf() decreases [1] { };
+procedure leaf() decreases [1]
+  opaque
+{ };
 
 procedure mutualRecursionA(x: nat)
   decreases [x, 1]
+  opaque
 {
   mutualRecursionB(x);
 };
 
 procedure mutualRecursionB(x: nat)
   decreases [x, 0]
+  opaque
 {
   if x != 0 { mutualRecursionA(x-1); }
 };

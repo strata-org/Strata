@@ -14,6 +14,7 @@ namespace Strata.Laurel
 
 def program := r"
 function assertAndAssumeInFunctions(a: int) returns (r: int)
+  opaque
 {
   assert 2 == 3;
 //^^^^^^^^^^^^^ error: asserts are not YET supported in functions or contracts
@@ -24,7 +25,9 @@ function assertAndAssumeInFunctions(a: int) returns (r: int)
 
 // Lettish bindings in functions not yet supported
 // because Core expressions do not support let bindings
-function letsInFunction() returns (r: int) {
+function letsInFunction() returns (r: int)
+  opaque
+{
   var x: int := 0;
 //^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var y: int := x + 1;
@@ -34,13 +37,17 @@ function letsInFunction() returns (r: int) {
   z
 };
 
-function localVariableWithoutInitializer(): int {
+function localVariableWithoutInitializer(): int
+  opaque
+{
   var x: int;
 //^^^^^^^^^^ error: local variables in functions must have initializers
   3
 };
 
-function deadCodeAfterIfElse(x: int) returns (r: int) {
+function deadCodeAfterIfElse(x: int) returns (r: int)
+  opaque
+{
   if x > 0 then { return 1 } else { return 2 };
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
   return 3

@@ -19,6 +19,7 @@ composite Immutable {
   // and invariants of Immutable are not visible
   // can only call procedures that are also constructing Immutable
     constructs Immutable
+    opaque
     modifies this
   {
     this.x = 3;
@@ -28,12 +29,15 @@ composite Immutable {
 
   procedure assignToY() 
     constructs Immutable
+    opaque
   {
     this.y = 3;
   };
 }
 
-procedure foo() {
+procedure foo()
+  opaque
+{
   var c = new Immutable.construct();
   var temp = c.x;
   c.z = 1;
@@ -41,7 +45,9 @@ procedure foo() {
   assert temp == c.x; // pass
 };
 
-procedure pureCompositeAllocator(): boolean {
+procedure pureCompositeAllocator(): boolean
+  opaque
+{
   // can be called in a determinstic context
   var i: Immutable = Immutable.construct(); 
   var j: Immutable = Immutable.construct();

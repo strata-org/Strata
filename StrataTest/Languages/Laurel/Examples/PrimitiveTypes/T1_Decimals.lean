@@ -13,7 +13,9 @@ namespace Strata
 namespace Laurel
 
 def decimalsProgram := r"
-procedure testDecimalLiterals() {
+procedure testDecimalLiterals()
+  opaque
+{
     var a: real := 1.5;
     var b: real := 2.5;
     assert a == 1.5;
@@ -21,7 +23,9 @@ procedure testDecimalLiterals() {
     assert a != b
 };
 
-procedure testDecimalArithmetic() {
+procedure testDecimalArithmetic()
+  opaque
+{
     var a: real := 1.5;
     var b: real := 2.5;
     var sum: real := a + b;
@@ -34,13 +38,17 @@ procedure testDecimalArithmetic() {
     assert quot == 5.0 / 3.0
 };
 
-procedure testDecimalNeg() {
+procedure testDecimalNeg()
+  opaque
+{
     var a: real := 1.5;
     var neg: real := -a;
     assert neg == 0.0 - 1.5
 };
 
-procedure testDecimalComparisons() {
+procedure testDecimalComparisons()
+  opaque
+{
     var a: real := 1.5;
     var b: real := 2.5;
     assert a < b;
@@ -51,7 +59,9 @@ procedure testDecimalComparisons() {
     assert a >= a
 };
 
-procedure testDecimalAssertFails() {
+procedure testDecimalAssertFails()
+  opaque
+{
     var a: real := 1.5;
     var b: real := 2.5;
     assert a == b
