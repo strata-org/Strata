@@ -1,4 +1,7 @@
-# Imprecision of the analysis make the asserts in this file undecided
+# This test is in pending/ because CBMC cannot verify the asserts:
+# the Counter class methods produce uninterpreted functions in the GOTO model.
+# The test verifies that multi-assignment evaluates the RHS exactly once,
+# using Counter.next() as a side-effecting expression.
 
 class Counter:
     def __init__(self) -> None:
