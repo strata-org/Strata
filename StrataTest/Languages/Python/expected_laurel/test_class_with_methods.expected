@@ -1,8 +1,8 @@
 test_class_with_methods.py(31, 0): ✔️ always true if reached - ite_cond_calls_Any_to_bool_0
-test_class_with_methods.py(32, 4): ✔️ always true if reached - assert_main_assert(517)_19_calls_Any_to_bool_0
-test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
-test_class_with_methods.py(32, 4): ✔️ always true if reached - assert_main_assert(602)_20_calls_Any_to_bool_0
-test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name should return mystore
+test_class_with_methods.py(24, 4): ✔️ always true if reached - assert_main_assert(517)_19_calls_Any_to_bool_0
+test_class_with_methods.py(24, 4): ✔️ always true if reached - get_count should return 30
+test_class_with_methods.py(27, 4): ✔️ always true if reached - assert_main_assert(602)_20_calls_Any_to_bool_0
+test_class_with_methods.py(27, 4): ✔️ always true if reached - get_name should return mystore
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_str
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_bar
