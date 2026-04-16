@@ -204,7 +204,7 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
-  incremental := false
+  incremental := true
 }
 
 instance : Inhabited VerifyOptions where

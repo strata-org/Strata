@@ -216,12 +216,15 @@ def dischargeObligationIncremental
   open _root_.Strata.SMT.IncrementalSolver in do
   let baseFlags := getSolverFlags options
   let needsIncremental := satisfiabilityCheck && validityCheck
-  let solverFlags :=
-    if needsIncremental && options.solver == "cvc5" && !baseFlags.contains "--incremental" then
-      baseFlags ++ #["--incremental"]
-    else
-      baseFlags
-  let allFlags := #["--quiet", "--lang", "smt"] ++ solverFlags
+  let solverSpecificFlags := match options.solver with
+    | "cvc5" =>
+      let base := #["--quiet", "--lang", "smt"]
+      if needsIncremental && !baseFlags.contains "--incremental" then
+        base ++ #["--incremental"]
+      else base
+    | "z3" => #["-in"]  -- z3 reads from stdin with -in
+    | _ => #[]
+  let allFlags := solverSpecificFlags ++ baseFlags
   let solverState ← spawn options.solver allFlags
   let action : _root_.Strata.SMT.IncrementalSolverM (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
     -- Encode the entire problem into a buffer using the existing encoder.
@@ -875,7 +878,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
-        (if options.incremental then
+        (if options.incremental && !options.alwaysGenerateSMT then
           SMT.dischargeObligationIncremental options
             typedVarsInObligation
             obligation.metadata
