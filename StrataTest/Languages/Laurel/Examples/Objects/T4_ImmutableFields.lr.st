@@ -9,6 +9,7 @@ composite ImmutableContainer {
 }
 
 procedure valueReader(c: ImmutableContainer): int
+  opaque
   { c.value } // no reads clause needed because value is immutable
 ;
 
@@ -18,6 +19,7 @@ Translation towards SMT:
 type Composite;
 function ImmutableContainer_value(c: Composite): int
 
+  opaque
 function valueReader(c: Composite): int {
   ImmutableContainer_value(c)
 }

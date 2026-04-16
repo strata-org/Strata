@@ -25,7 +25,8 @@ composite Extender extends Base, Base2 {
   var zValue: int
 }
 
-procedure inheritedFields(a: Extender) {
+procedure inheritedFields(a: Extender)
+{
   a#xValue := 1;
   a#yValue := 2;
   a#zValue := 3;
@@ -35,7 +36,8 @@ procedure inheritedFields(a: Extender) {
   assert a#zValue == 3
 };
 
-procedure typeCheckingAndCasting() {
+procedure typeCheckingAndCasting()
+{
   var a: Base := new Base;
   assert a is Base;
   assert !(a is Extender);
@@ -64,7 +66,8 @@ composite Bottom extends Left, Right {
   var bValue: int
 }
 
-procedure diamondInheritance() {
+procedure diamondInheritance()
+{
   var b: Bottom := new Bottom;
   b#lValue := 1;
   b#rValue := 2;

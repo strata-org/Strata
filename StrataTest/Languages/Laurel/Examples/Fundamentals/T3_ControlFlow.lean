@@ -13,7 +13,8 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-function returnAtEnd(x: int) returns (r: int) {
+function returnAtEnd(x: int) returns (r: int)
+{
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -25,11 +26,13 @@ function returnAtEnd(x: int) returns (r: int) {
   }
 };
 
-function elseWithCall(): int {
+function elseWithCall(): int
+{
   if true then 3 else returnAtEnd(3)
 };
 
-function guardInFunction(x: int) returns (r: int) {
+function guardInFunction(x: int) returns (r: int)
+{
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -41,7 +44,8 @@ function guardInFunction(x: int) returns (r: int) {
   return 3
 };
 
-procedure testFunctions() {
+procedure testFunctions()
+{
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold

@@ -13,7 +13,9 @@ open Strata
 namespace Laurel
 
 def program := r"
-procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: int): int {
+procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: int): int
+  opaque
+{
   var counter = 0
   {
     while(steps > 0)

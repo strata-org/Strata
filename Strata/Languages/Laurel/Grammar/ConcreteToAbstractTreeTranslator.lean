@@ -429,9 +429,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg]
+      requiresArg, invokeOnArg, opaqueBlockArg, bodyArg]
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg] =>
+      requiresArg, invokeOnArg, opaqueBlockArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -461,17 +461,29 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected invokeOnClause operation, got {repr invokeOnOp.name}"
       | .option _ none => pure none
       | _ => pure none
-    -- Parse postconditions (ensures clauses - zero or more)
-    let postconditions ← translateEnsuresClauses ensuresArg
-    -- Parse modifies clauses (zero or more)
-    let modifies ← translateModifiesClauses modifiesArg
-    -- Parse optional body
+    -- Parse opaque block (ensures, modifies, and opaque body)
+    let (isOpaque, postconditions, modifies, opaqueBody) ← match opaqueBlockArg with
+      | .option _ (some (.op opaqueOp)) => match opaqueOp.name, opaqueOp.args with
+        | q`Laurel.opaqueBlock, #[ensuresArg, modifiesArg, opaqueBodyArg] =>
+          let postconditions ← translateEnsuresClauses ensuresArg
+          let modifies ← translateModifiesClauses modifiesArg
+          let body ← match opaqueBodyArg with
+            | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
+              | q`Laurel.body, #[exprArg] => translateCommand exprArg >>= (pure ∘ some)
+              | _, _ => TransM.error s!"Expected body in opaque block, got {repr bodyOp.name}"
+            | .option _ none => pure none
+            | _ => TransM.error s!"Expected body in opaque block, got {repr opaqueBodyArg}"
+          pure (true, postconditions, modifies, body)
+        | _, _ => TransM.error s!"Expected opaqueBlock operation, got {repr opaqueOp.name}"
+      | .option _ none => pure (false, [], [], none)
+      | _ => TransM.error s!"Expected opaqueBlock, got {repr opaqueBlockArg}"
+    -- Parse optional transparent body (only when not opaque)
     let isExternal ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
         | q`Laurel.externalBody, #[] => pure true
         | _, _ => pure false
       | _ => pure false
-    let body ← match bodyArg with
+    let transparentBody ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
         | q`Laurel.body, #[exprArg] => translateCommand exprArg >>= (pure ∘ some)
         | q`Laurel.externalBody, #[] => pure none
@@ -481,10 +493,10 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External
-      else match postconditions, body with
-      | _ :: _, bodyOpt => Body.Opaque postconditions bodyOpt modifies
-      | [], some b => Body.Transparent b
-      | [], none => Body.Opaque [] none modifies
+      else if isOpaque then Body.Opaque postconditions opaqueBody modifies
+      else match transparentBody with
+      | some b => Body.Transparent b
+      | none => Body.Opaque [] none []
     return {
       name := name
       inputs := parameters
@@ -497,7 +509,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 9 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 
