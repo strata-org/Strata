@@ -88,7 +88,7 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
   opaque
   modifies d
 {
-    var i: int := modifyContainerOpaque(c)
+    var i: bool := modifyContainerOpaque(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)

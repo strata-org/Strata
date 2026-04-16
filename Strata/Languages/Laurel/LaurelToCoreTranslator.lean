@@ -97,7 +97,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
       modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-      return .tcons "Composite" []
+      return .tcons "error" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
   | .Unknown => throwTypeDiagnostic ty "could not infer type"

@@ -165,6 +165,18 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     else []
   let fnModel := fnResolveResult.model
 
+  -- Reconstruct FunctionsAndProofsProgram from the resolved fnProgram so that
+  -- identifiers introduced by eliminateMultipleOutputs have their uniqueId set.
+  let resolvedProcs := fnResolveResult.program.staticProcedures
+  let resolvedDatatypes := fnResolveResult.program.types.filterMap fun td =>
+    match td with | .Datatype dt => some dt | _ => none
+  let functionsAndProofs : FunctionsAndProofsProgram := {
+    functions := resolvedProcs.filter (·.isFunctional)
+    proofs := resolvedProcs.filter (!·.isFunctional)
+    datatypes := resolvedDatatypes
+    constants := fnResolveResult.program.constants
+  }
+
   let ordered := orderFunctionsAndProofs functionsAndProofs
   let initState : TranslateState := { model := fnModel }
   let (coreProgramOption, translateState) :=
