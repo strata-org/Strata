@@ -1,9 +1,6 @@
 test_if_elif.py(2, 7): ✅ pass - Check PLt exception
 test_if_elif.py(1, 24): ✅ pass - (classify ensures) Return type constraint
-test_if_elif.py(1, 24): ✅ pass - (classify ensures) Return type constraint
 test_if_elif.py(6, 9): ✅ pass - Check PLt exception
-test_if_elif.py(1, 24): ✅ pass - (classify ensures) Return type constraint
-test_if_elif.py(1, 24): ✅ pass - (classify ensures) Return type constraint
 test_if_elif.py(12, 23): ✅ pass - Check PNeg exception
 test_if_elif.py(12, 4): ✅ pass - (classify requires) Type constraint of x
 test_if_elif.py(13, 4): ❓ unknown - should be negative
@@ -13,5 +10,5 @@ test_if_elif.py(18, 4): ✅ pass - (classify requires) Type constraint of x
 test_if_elif.py(19, 4): ❓ unknown - should be small
 test_if_elif.py(21, 4): ✅ pass - (classify requires) Type constraint of x
 test_if_elif.py(22, 4): ❓ unknown - should be large
-DETAIL: 11 passed, 0 failed, 4 inconclusive
+DETAIL: 8 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

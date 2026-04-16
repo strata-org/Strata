@@ -2,8 +2,6 @@ test_multi_function.py(4, 44): ✅ pass - (create_config ensures) Return type co
 test_multi_function.py(9, 4): ✅ pass - ite_cond_calls_PNotIn_0
 test_multi_function.py(8, 47): ✅ pass - (validate_config ensures) Return type constraint
 test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_PNotIn_0
-test_multi_function.py(8, 47): ✅ pass - (validate_config ensures) Return type constraint
-test_multi_function.py(8, 47): ✅ pass - (validate_config ensures) Return type constraint
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of name
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of value
 test_multi_function.py(17, 4): ✅ pass - (validate_config requires) Type constraint of config
@@ -15,5 +13,5 @@ test_multi_function.py(24, 4): ❓ unknown - process_config should return value
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 15 passed, 0 failed, 2 inconclusive
+DETAIL: 13 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

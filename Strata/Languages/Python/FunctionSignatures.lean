@@ -131,7 +131,7 @@ open SignatureM
 
 def addCoreDecls : SignatureM Unit := do
   decl "test_helper_procedure" [req_name :< string, opt_name :< StrOrNone]
-  decl "print" [msg :< string, opt :< StrOrNone]
+  decl "print" [msg :< string, opt :< StrOrNone, sep :< StrOrNone, «end» :< StrOrNone, file :< AnyOrNone, flush :< BoolOrNone]
   decl "json_dumps" [msg :< DictStrAny, opt_indent :< IntOrNone]
   decl "json_loads" [msg :< string]
   decl "input" [msg :< string]
