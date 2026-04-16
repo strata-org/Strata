@@ -73,16 +73,16 @@ jobs:
           ninja -C build cbmc symtab2gb goto-cc goto-instrument
           ccache -s
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
-      - name: Restore lake cache
-        # Only use the caches on PRs because there is a risk of stale results:
-        # https://github.com/strata-org/Strata/issues/952
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+      # - name: Restore lake cache
+      #   # Only use the caches on PRs because there is a risk of stale results:
+      #   # https://github.com/strata-org/Strata/issues/952
+      #   if: github.event_name == 'pull_request'
+      #   uses: actions/cache/restore@v5
+      #   with:
+      #     path: .lake
+      #     key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+      #     restore-keys: |
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:
