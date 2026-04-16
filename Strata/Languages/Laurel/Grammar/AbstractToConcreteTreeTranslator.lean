@@ -9,6 +9,7 @@ public import Strata.DDM.AST
 public import Strata.DDM.Format
 public import Strata.Languages.Laurel.Grammar.LaurelGrammar
 public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.FunctionsAndProofs
 
 namespace Strata
 namespace Laurel
@@ -371,6 +372,17 @@ instance : Std.ToFormat DatatypeDefinition where format := formatDatatypeDefinit
 instance : Std.ToFormat Constant where format := formatConstant
 instance : Std.ToFormat TypeDefinition where format := formatTypeDefinition
 instance : Std.ToFormat Program where format := formatProgram
+
+def formatFunctionsAndProofsProgram (p : FunctionsAndProofsProgram) : Format :=
+  let sections : List Format :=
+    (p.datatypes.map formatDatatypeDefinition) ++
+    (p.constants.map formatConstant) ++
+    (p.functions.map formatProcedure) ++
+    (p.proofs.map formatProcedure)
+  Std.Format.joinSep sections "\n\n"
+
+instance : Std.ToFormat FunctionsAndProofsProgram where
+  format := formatFunctionsAndProofsProgram
 
 instance : Repr StmtExpr where
   reprPrec r _ := s!"{Std.format r}"

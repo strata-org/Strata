@@ -63,11 +63,13 @@ body only for transparent procedures) and a proof copy.
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
   let functions := nonExternal.map mkFunctionCopy
-  let proofs := nonExternal.map fun p => { p with isFunctional := false }
+  let proofs := nonExternal.map fun p =>
+    { p with isFunctional := false, name := { p.name with text := p.name.text ++ "$proof" } }
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
   { functions, proofs, datatypes, constants := program.constants }
+
 
 end -- public section
 end Strata.Laurel

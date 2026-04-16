@@ -57,9 +57,11 @@ private def getPostconditions (body : Body) : List StmtExprMd :=
 /-- Build a helper function that returns the conjunction of the given conditions. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (conditions : List StmtExprMd) : Procedure :=
+  -- Use "$result" as the output name to avoid clashing with user-defined
+  -- parameter names (user names cannot contain '$').
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "result", ⟨.TBool, emptyMd⟩⟩]
+    outputs := [⟨mkId "$result", ⟨.TBool, emptyMd⟩⟩] -- TODO, enable anonymous output parameters
     preconditions := []
     decreases := none
     isFunctional := true
@@ -109,13 +111,9 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   | .Transparent body =>
     .Transparent (mkMd (.Block (preAssume ++ [body] ++ postAssert) none))
   | .Opaque _ (some impl) _ =>
-    .Transparent (mkMd (.Block (preAssume ++ [impl] ++ postAssert) none))
+    .Opaque [] (mkMd (.Block (preAssume ++ [impl] ++ postAssert) none)) []
   | .Opaque _ none _ | .Abstract _ =>
-    -- Bodiless: assume postconditions
-    let postAssume := if info.hasPostCondition
-      then [mkMd (.Assume (mkCall info.postName (inputArgs ++ outputArgs)))]
-      else []
-    .Transparent (mkMd (.Block (preAssume ++ postAssume) none))
+    .Opaque [] (mkMd (.Block [] none)) []
   | b => b
 
 /-- Rewrite call sites in a statement/expression tree. For each `StaticCall` to a
