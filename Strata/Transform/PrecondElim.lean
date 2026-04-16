@@ -42,6 +42,15 @@ open Lambda
 open Strata (DiagnosticModel)
 open Core.Transform
 
+/-- Statistics keys tracked by the precondition elimination transformation. -/
+inductive Stats where
+  | callSiteAssertsEmitted
+  | wfProcedureBodyStmtsEmitted
+  | wfProceduresGenerated
+  | numFuncsRemovedAfterPrecondStripped
+
+derive_prefixed_toString Stats "PrecondElim"
+
 /-! ## Naming conventions -/
 
 /-- Suffix for generated well-formedness procedures. -/
@@ -250,9 +259,11 @@ def transformStmt (s : Statement)
   match s with
   | .cmd (.cmd c) =>
     let asserts := collectCmdPrecondAsserts F c
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return (!asserts.isEmpty, asserts ++ [.cmd (.cmd c)])
   | .cmd (.call lhs pname args md) =>
     let asserts := collectCallPrecondAsserts F pname args md
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return (!asserts.isEmpty, asserts ++ [.call lhs pname args md])
   | .block lbl b md => do
     let savedF ← getFactory
@@ -263,6 +274,8 @@ def transformStmt (s : Statement)
     let condAsserts := match c with
       | .det e => collectPrecondAsserts F e "ite_cond" md
       | .nondet => []
+    incrementStat s!"{Stats.callSiteAssertsEmitted}" condAsserts.length
+
     let savedF ← getFactory
     let (changed, thenb') ← transformStmts thenb
     setFactory savedF
@@ -284,6 +297,11 @@ def transformStmt (s : Statement)
     let guardAssertsEnd := match guard with
       | .det g => collectPrecondAsserts F g "loop_guard_end" md
       | .nondet => []
+
+    incrementStat s!"{Stats.callSiteAssertsEmitted}"
+      (measureAsserts.length + measureAssertsEnd.length +
+       invAsserts.length + guardAsserts.length + guardAssertsEnd.length)
+
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
@@ -303,9 +321,12 @@ def transformStmt (s : Statement)
     setFactory F'
     let decl' := { decl with preconditions := [] }
     let hasPreconds := !decl.preconditions.isEmpty
+    if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
+
     match mkFuncWFStmts F' funcName decl.preconditions decl.body md with
     | none => return (hasPreconds, [.funcDecl decl' md])
     | some wfStmts =>
+      incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}" wfStmts.length
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty .nondet md
@@ -360,6 +381,10 @@ where
         let (changed', rest') ← transformDecls rest
         match mkContractWFProc F proc md with
         | some wfDecl => do
+          incrementStat s!"{Stats.wfProceduresGenerated}"
+          incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
           return (true, wfDecl :: procDecl :: rest')
         | none => return (changed || changed', procDecl :: rest')
@@ -372,9 +397,14 @@ where
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
         let hasPreconds := !func.preconditions.isEmpty
+        if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
         let (changed, rest') ← transformDecls rest
         match mkFuncWFProc F' func md with
         | some wfDecl => do
+          incrementStat s!"{Stats.wfProceduresGenerated}"
+          incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
           return (true, wfDecl :: funcDecl :: rest')
         | none => return (changed || hasPreconds, funcDecl :: rest')
@@ -388,10 +418,18 @@ where
         let funcs' := funcs.map ({ · with preconditions := [] })
         let funcDecl := Decl.recFuncBlock funcs' md
         let hasPreconds := funcs.any (!·.preconditions.isEmpty)
+        let numStripped := funcs.foldl (fun n f =>
+          if !f.preconditions.isEmpty then n + 1 else n) 0
+        incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
+
         let (changed, rest') ← transformDecls rest
         let wfDecls ← funcs.filterMapM fun func => do
           match mkFuncWFProc F' func md with
           | some wfDecl => do
+            incrementStat s!"{Stats.wfProceduresGenerated}"
+            incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+              (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+
             addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
             return some wfDecl
           | none => return none
