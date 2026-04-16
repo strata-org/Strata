@@ -22,20 +22,6 @@ open LExpr
 
 public section
 
-/-- Return `some (dom, cod)` if the type is an arrow, `none` otherwise. -/
-def LMonoTy.isArrow : LMonoTy → Option (LMonoTy × LMonoTy)
-  | .tcons "arrow" [dom, cod] => some (dom, cod)
-  | _ => none
-
-@[simp] theorem LMonoTy.isArrow_arrow (t1 t2 : LMonoTy) :
-    (LMonoTy.arrow t1 t2).isArrow = some (t1, t2) := by
-  simp [LMonoTy.arrow, isArrow]
-
-theorem LMonoTy.isArrow_some {t t1 t2 : LMonoTy} :
-    t.isArrow = some (t1, t2) → t = .arrow t1 t2 := by
-  simp [LMonoTy.arrow, isArrow]
-  cases t <;> grind
-
 /-- Typecheck an annotated `LExpr`, returning `some τ` if well-typed, `none`
 otherwise. `ctx` maps de Bruijn indices to their types from enclosing
 binders. -/
@@ -282,9 +268,7 @@ theorem HasTypeA_weaken {T : LExprParams}
   rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
   rw [typeCheck_of_lcAt hlc]; exact h
 
-/-- Substitution preserves typeCheck results. Generalized to an arbitrary
-substitution function `s` (not just a constant one) so that `varOpen`
-(which uses metadata-dependent `fun m => fvar m x ty`) is covered. -/
+/-- Substitution preserves typeCheck results. -/
 theorem substK_typeCheck {T : LExprParams}
     {e : LExpr T.mono} {s : T.mono.base.Metadata → LExpr T.mono}
     {aty : LMonoTy} {Δ₁ : List LMonoTy}

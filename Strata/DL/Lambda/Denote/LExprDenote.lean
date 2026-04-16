@@ -710,7 +710,7 @@ theorem denote_boolConst
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.boolConst b)) (.tcons "bool" []) h = b := by
   rw [denote_const]; simp [denoteConst]
 
-/-- Unfolding lemma for `denote` of a bound variable. -/
+/-- Unfolding lemma for `denote` of an operator. -/
 theorem denote_op
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
@@ -723,6 +723,7 @@ theorem denote_op
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.op m o (some ty)) τ h =
       HasTypeA.op_inv h ▸ opInterp o.name (ty.substTyVars vt) := by rfl
 
+/-- Unfolding lemma for `denote` of a free variable. -/
 theorem denote_fvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
@@ -735,6 +736,7 @@ theorem denote_fvar
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.fvar m name (some ty)) τ h =
       HasTypeA.fvar_inv h ▸ fvarVal name (ty.substTyVars vt) := by rfl
 
+/-- Unfolding lemma for `denote` of a bound variable. -/
 theorem denote_bvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)

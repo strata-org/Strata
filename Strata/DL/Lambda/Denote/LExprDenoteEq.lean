@@ -424,9 +424,6 @@ theorem eqlCombine_attach_zip_some_false
         · simp only [List.getElem?_cons_succ]; grind
         · simp only [List.getElem?_cons_succ]; grind
 
--- callOfLFunc_constr_disjoint_denote moved to LExprDenoteConstrs.lean
--- callOfLFunc_constr_injective_denote moved to LExprDenoteConstrs.lean
-
 /-- If `eql` returns `some false`, then the denotations are not equal.
 Restricted to the empty bound-variable context (same as `eql_true`). -/
 theorem eql_false_implies_denote_ne
@@ -450,9 +447,7 @@ theorem eql_false_implies_denote_ne
   | case3 m1 c1 m2 c2 _he hnotreal hnotmod => -- const/const, non-real
     split at heql
     · contradiction
-    · -- heql : some (c1 == c2) = some false, so c1 ≠ c2
-      have hneq : c1 ≠ c2 := by grind
-      -- Extract type equality from HasTypeA
+    · have hneq : c1 ≠ c2 := by grind
       have hty1 : τ = c1.ty := by cases h₁; rfl
       have hty2 : τ = c2.ty := by cases h₂; rfl
       have htyeq : c1.ty = c2.ty := by rw [← hty1, ← hty2]
@@ -485,16 +480,14 @@ theorem eql_false_implies_denote_ne
       subst hrty; subst hτ1
       rw [denote_abs .nil hbody1 h₁, denote_abs .nil hbody2 h₂]
       intro habs_eq
-      -- Apply IH with fvarVal to get ≠ on varOpen'd bodies
+      -- Apply IH on varOpen'd bodies
       have hih := ih fvarVal (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2)
         (OpsConsistent_varOpen (show OpsConsistent F body1 from hoc₁))
         (OpsConsistent_varOpen (show OpsConsistent F body2 from hoc₂)) heql
       apply hih
-      -- Use varOpen_denote to relate varOpen'd denote to body denote
       have hvo1 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal vt hbody1 (varOpen_HasTypeA hbody1)
       have hvo2 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal vt hbody2 (varOpen_HasTypeA hbody2)
       rw [hvo1, hvo2]
-      -- From habs_eq, bodies have equal denotes at any v
       exact congrFun habs_eq _
   | case6 => contradiction -- abs/abs, not both closed → returns none
   | case7 m1 c m2 pn ty body => -- const/abs → vacuous (base type ≠ arrow type)
@@ -519,7 +512,7 @@ theorem eql_false_implies_denote_ne
     -- both callOfLFunc, not both isConstr → returns none
     rw [hcall1, hcall2] at heql; simp [hnotconstr] at heql
   | case10 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hdiffname =>
-    -- Different constructors → some false
+    -- Different constructors
     have hconstr1 : f1.isConstr = true := by simp at hisconstr; exact hisconstr.1
     have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
     have hdiff : f1.name.name ≠ f2.name.name := by simp [bne_iff_ne] at hdiffname; exact hdiffname
@@ -527,7 +520,6 @@ theorem eql_false_implies_denote_ne
       h₁ h₂ hcall1 hcall2 hconstr1 hconstr2 hdiff hoc₁ hoc₂ hfwf hcwf htfwf hConstrIC
   | case11 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hsamename _ _ _ _ ih_args =>
     -- Same constructor, fold returns some false
-    -- Extract isConstr and same name
     have hconstr1 : f1.isConstr = true := by simp at hisconstr; exact hisconstr.1
     have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
     have hsamename' : f1.name.name = f2.name.name := by simp [bne_iff_ne] at hsamename; exact hsamename
@@ -540,52 +532,36 @@ theorem eql_false_implies_denote_ne
     have hf_eq : f1 = f2 := by
       have h := hnames_eq ▸ hget2; rw [hget1] at h; exact Option.some.inj h
     subst hf_eq
-    -- Proof by contradiction
+    -- By injectivity, equal denotes implies equal arg denotes
     intro heq_denote
-    -- By injectivity, all args have equal denotes
     have hinj := callOfLFunc_constr_injective_denote tcInterp opInterp fvarVal vt
       h₁ h₂ hcall1 hcall2 hconstr1 hoc₁ hoc₂ hfwf hcwf hConstrIC heq_denote
-    -- Simplify heql to get the fold
+    -- Extract an arg pair with eql = some false
     rw [hcall1, hcall2] at heql
     simp at heql
     obtain ⟨_, heql_fold⟩ := heql
-    -- Extract an arg pair with eql = some false
     obtain ⟨i, a1, a2, ha1, ha2, hmem1, heql_i⟩ :=
       eqlCombine_attach_zip_some_false heql_fold
-    -- IH: denote a1 ≠ denote a2 (need typing first)
     -- Get arg typing from callOfLFunc_denote
     obtain ⟨argTys1, ty_op1, m_op1, name_op1, h_args1, hty_op1, hcallee_op1, _⟩ :=
       callOfLFunc_denote tcInterp opInterp fvarVal vt hcall1 h₁
     obtain ⟨argTys2, ty_op2, m_op2, name_op2, h_args2, hty_op2, hcallee_op2, _⟩ :=
       callOfLFunc_denote tcInterp opInterp fvarVal vt hcall2 h₂
-    -- Need typing for a1 and a2 at the same type
-    -- Extract from Forall₂ and ha1/ha2
-    -- Use IH: a1 ∈ args1, eql a1 a2 = some false
-    -- Need HasTypeA for a1 and a2 at some common type
-    -- Use hinj: if denote e1 = denote e2, arg denotes are equal
-    -- These together give contradiction
-    -- Both need HasTypeA [] a1 σ and HasTypeA [] a2 σ for some σ
-    -- Get σ from argTys1[i]
     obtain ⟨σ, hσ, ha1_ty⟩ := List.Forall₂.getElem?_some h_args1 ha1
     obtain ⟨σ', hσ', ha2_ty⟩ := List.Forall₂.getElem?_some h_args2 ha2
-    -- Get argTys1 = argTys2 via constr_callOfLFunc_argTys_eq'
+    -- Get argTys1 = argTys2
     have hargTys_eq : argTys1 = argTys2 :=
       constr_callOfLFunc_argTys_eq' hcall1 hcall2 h_args1 h_args2 hoc₁ hoc₂ hfwf hcwf hconstr1
         ⟨m_op1, name_op1, hty_op1 ▸ hcallee_op1⟩
         ⟨m_op2, name_op2, hty_op2 ▸ hcallee_op2⟩
-    -- Derive σ = σ'
     have hσ_eq : σ = σ' := by rw [hargTys_eq] at hσ; rw [hσ] at hσ'; exact Option.some.inj hσ'
     subst hσ_eq
-    -- Get OpsConsistent for args
+    -- IH gives denote a1 ≠ denote a2, injectivity gives equality: contradiction
     have hoc_args1 := OpsConsistent_callOfLFunc_args hoc₁ hcall1
     have hoc_args2 := OpsConsistent_callOfLFunc_args hoc₂ hcall2
-    -- Get a2 ∈ args2 from ha2
     have hmem2 : a2 ∈ args2 := by rw [List.mem_iff_getElem?]; exact ⟨i, ha2⟩
-    -- Apply IH: denote a1 ≠ denote a2
     have hne := ih_args a1 hmem1 a2 fvarVal ha1_ty ha2_ty (hoc_args1 a1 hmem1) (hoc_args2 a2 hmem2) heql_i
-    -- Apply injectivity to get equality of arg denotes, contradicting IH
-    have heq_arg := hinj i a1 a2 σ ha1 ha2 ha1_ty ha2_ty
-    exact hne heq_arg
+    exact hne (hinj i a1 a2 σ ha1 ha2 ha1_ty ha2_ty)
   | case12 e1 e2 hnotmod hnotconst hnotabs hnotconstabs hnotabsconst hnotbothcall =>
     -- callOfLFunc doesn't match both → returns none
     split at heql

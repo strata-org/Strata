@@ -465,6 +465,7 @@ theorem replaceMetadata_HasTypeA {e: LExpr T.mono}
   rw[←replaceMetadata_typeCheck]
   exact h₁
 
+/-- Replacing metadata preserves denotation. -/
 theorem denote_replaceMetadata
     {T : LExprParams} [Inhabited T.mono.base.IDMeta]
     (tcInterp : TyConstrInterp)
@@ -655,13 +656,36 @@ theorem denoteArgs_eq_implies_denote_eq
         exact ih h2_tail htail n a₁ a₂ σ ha₁ ha₂ hσ hta₁ hta₂
 
 /-- `denote` is invariant under changing the type index by an equality proof. -/
-private theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
+theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
     (h_eq : τ₁ = τ₂) (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂)
     (bv : BVarVal tcInterp vt Δ)
     : LExpr.denote tcInterp opInterp fvarVal vt bv e τ₁ h₁ =
       cast (congrArg (TyDenote tcInterp vt) h_eq.symm)
         (LExpr.denote tcInterp opInterp fvarVal vt bv e τ₂ h₂) := by
   subst h_eq; rfl
+
+theorem denoteArgs_cast_ty {Δ : List LMonoTy} {l : List (LExpr T.mono)}
+  {τ₁ τ₂ : List LMonoTy} (h_eq : τ₁ = τ₂)
+  (h₁ : List.Forall₂ (LExpr.HasTypeA Δ) l τ₁)
+  (h₂ : List.Forall₂ (LExpr.HasTypeA Δ) l τ₂)
+    (bv : BVarVal tcInterp vt Δ)
+    : denoteArgs tcInterp opInterp fvarVal vt bv l τ₁ h₁ =
+      HList.cast (congrArg (List.map (Lambda.LMonoTy.substTyVars vt)) h_eq.symm)
+        (denoteArgs tcInterp opInterp fvarVal vt bv l τ₂ h₂) := by
+  subst h_eq; rfl
+
+theorem applyArgs_cast_ty {args1 args2 : List LMonoTy} {ret1 ret2 : LMonoTy}
+  (h_args: args1 = args2) (h_ret : ret1 = ret2)
+  -- (s: SortDenote tcInterp (LSort.mkArrow ret1 args1))
+  (h: HList (SortDenote tcInterp) (List.map (Lambda.LMonoTy.substTyVars vt) args1)):
+  @SortDenote.applyArgs tcInterp  _ _
+    (opInterp n ((Lambda.LMonoTy.substTyVars vt ret1).mkArrow
+          (List.map (Lambda.LMonoTy.substTyVars vt) args1))) h =
+  cast (congrArg (fun x => SortDenote tcInterp (Lambda.LMonoTy.substTyVars vt x)) h_ret.symm) (@SortDenote.applyArgs tcInterp  _ _
+    (opInterp n ((Lambda.LMonoTy.substTyVars vt ret2).mkArrow
+          (List.map (Lambda.LMonoTy.substTyVars vt) args2)))
+    (HList.cast (congrArg (List.map (Lambda.LMonoTy.substTyVars vt)) h_args) h)) := by
+  subst h_args h_ret; rfl
 
 /-! ### fvars_annotated_by lemmas -/
 

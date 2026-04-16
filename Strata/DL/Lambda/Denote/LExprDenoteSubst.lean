@@ -909,6 +909,9 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
 
 /-! ## `substFvars` denotation (via locally closed replacements) -/
 
+/-- Free-variable substitution commutes with denotation: for locally closed
+replacement terms, substituting free variables and then evaluating equals
+evaluating the original body under an extended free-variable valuation. -/
 theorem substFvars_denote [DecidableEq T.IDMeta]
     {body : LExpr T.mono} {τ : LMonoTy}
     {bindings : List (T.Identifier × LExpr T.mono)}

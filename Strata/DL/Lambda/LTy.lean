@@ -147,6 +147,20 @@ def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
   | .arrow t1 t2 => t1 :: t2.getArrowArgs
   | _ => []
 
+/-- Return `some (dom, cod)` if the type is an arrow, `none` otherwise. -/
+def LMonoTy.isArrow : LMonoTy → Option (LMonoTy × LMonoTy)
+  | .tcons "arrow" [dom, cod] => some (dom, cod)
+  | _ => none
+
+@[simp] theorem LMonoTy.isArrow_arrow (t1 t2 : LMonoTy) :
+    (LMonoTy.arrow t1 t2).isArrow = some (t1, t2) := by
+  simp [LMonoTy.arrow, isArrow]
+
+theorem LMonoTy.isArrow_some {t t1 t2 : LMonoTy} :
+    t.isArrow = some (t1, t2) → t = .arrow t1 t2 := by
+  simp [LMonoTy.arrow, isArrow]
+  cases t <;> grind
+
 /--
 Polymorphic type schemes in Lambda.
 -/
@@ -308,6 +322,47 @@ end
 theorem LMonoTys.freeVars_of_cons :
   LMonoTys.freeVars (x :: xs) = LMonoTy.freeVars x ++ LMonoTys.freeVars xs := by
   simp_all [LMonoTys.freeVars]
+
+
+/-- If `v ∈ LMonoTys.freeVars tys` and every element's free vars are in `S`,
+then `v ∈ S`. -/
+theorem LMonoTys.freeVars_subset
+    {tys : List LMonoTy} {S : List TyIdentifier}
+    (h : ∀ ty, ty ∈ tys → LMonoTy.freeVars ty ⊆ S)
+    {v : TyIdentifier}
+    (hv : v ∈ LMonoTys.freeVars tys)
+    : v ∈ S := by
+  induction tys with
+  | nil => simp [LMonoTys.freeVars] at hv
+  | cons ty rest ih =>
+    simp only [LMonoTys.freeVars_of_cons, List.mem_append] at hv
+    cases hv with
+    | inl hmem => exact h ty (.head _) hmem
+    | inr hmem => exact ih (fun t ht => h t (.tail _ ht)) hmem
+
+/-- Each element's free vars are a subset of the whole list's free vars. -/
+theorem LMonoTys.freeVars_mem_subset
+    {ty : LMonoTy} {tys : List LMonoTy}
+    (ht : ty ∈ tys)
+    : LMonoTy.freeVars ty ⊆ LMonoTys.freeVars tys := by
+  induction tys with
+  | nil => contradiction
+  | cons x rest ih =>
+    simp only [LMonoTys.freeVars_of_cons]
+    grind
+
+/-- If `v ∈ LMonoTys.freeVars tys`, then some element of `tys` contains `v`. -/
+theorem LMonoTys.freeVars_exists
+    {v : TyIdentifier} {tys : List LMonoTy}
+    (hv : v ∈ LMonoTys.freeVars tys)
+    : ∃ ty, ty ∈ tys ∧ v ∈ LMonoTy.freeVars ty := by
+  induction tys with
+  | nil => simp [LMonoTys.freeVars] at hv
+  | cons ty rest ih =>
+    simp only [LMonoTys.freeVars_of_cons, List.mem_append] at hv
+    cases hv with
+    | inl h => exact ⟨ty, .head _, h⟩
+    | inr h => obtain ⟨t, ht, htv⟩ := ih h; exact ⟨t, .tail _ ht, htv⟩
 
 /--
 Get all type constructors in monotype `mty`.

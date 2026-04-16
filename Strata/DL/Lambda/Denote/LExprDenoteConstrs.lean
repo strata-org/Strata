@@ -24,110 +24,6 @@ Typing and denotation results for ADT constructor applications.
 
 namespace Lambda
 
-/-- If `v ∈ LMonoTys.freeVars tys` and every element's free vars are in `S`,
-then `v ∈ S`. -/
-theorem LMonoTys.freeVars_subset
-    {tys : List LMonoTy} {S : List TyIdentifier}
-    (h : ∀ ty, ty ∈ tys → LMonoTy.freeVars ty ⊆ S)
-    {v : TyIdentifier}
-    (hv : v ∈ LMonoTys.freeVars tys)
-    : v ∈ S := by
-  induction tys with
-  | nil => simp [LMonoTys.freeVars] at hv
-  | cons ty rest ih =>
-    simp only [LMonoTys.freeVars_of_cons, List.mem_append] at hv
-    cases hv with
-    | inl hmem => exact h ty (.head _) hmem
-    | inr hmem => exact ih (fun t ht => h t (.tail _ ht)) hmem
-
-/-- Each element's free vars are a subset of the whole list's free vars. -/
-theorem LMonoTys.freeVars_mem_subset
-    {ty : LMonoTy} {tys : List LMonoTy}
-    (ht : ty ∈ tys)
-    : LMonoTy.freeVars ty ⊆ LMonoTys.freeVars tys := by
-  induction tys with
-  | nil => contradiction
-  | cons x rest ih =>
-    simp only [LMonoTys.freeVars_of_cons]
-    grind
-
-/-- If `v ∈ LMonoTys.freeVars tys`, then some element of `tys` contains `v`. -/
-theorem LMonoTys.freeVars_exists
-    {v : TyIdentifier} {tys : List LMonoTy}
-    (hv : v ∈ LMonoTys.freeVars tys)
-    : ∃ ty, ty ∈ tys ∧ v ∈ LMonoTy.freeVars ty := by
-  induction tys with
-  | nil => simp [LMonoTys.freeVars] at hv
-  | cons ty rest ih =>
-    simp only [LMonoTys.freeVars_of_cons, List.mem_append] at hv
-    cases hv with
-    | inl h => exact ⟨ty, .head _, h⟩
-    | inr h => obtain ⟨t, ht, htv⟩ := ih h; exact ⟨t, .tail _ ht, htv⟩
-
-/-! ## Type substitution agreement lemmas
-
-These lemmas establish that if two substitutions produce the same result on a
-type, they must agree on all free variables of that type — and conversely, if
-they agree on all free variables, they produce the same result. -/
-
-/-- If two substitutions produce the same result on a type `ty`, then they
-agree on every free variable of `ty` (in the sense of producing the same
-substitution result on that variable). -/
-theorem subst_eq_implies_agree_on_freeVars
-    {S₁ S₂ : Subst}
-    {ty : LMonoTy}
-    (h : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty)
-    (v : TyIdentifier)
-    (hv : v ∈ LMonoTy.freeVars ty)
-    : LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v) := by
-  induction ty with
-  | ftvar x =>
-    simp only [LMonoTy.freeVars, List.mem_singleton] at hv
-    subst hv; exact h
-  | bitvec n =>
-    simp [LMonoTy.freeVars] at hv
-  | tcons name args ih =>
-    simp only [LMonoTy.subst_unfold] at h
-    simp only [LMonoTy.freeVars] at hv
-    have h_args := LMonoTy.tcons.inj h |>.2
-    -- v ∈ freeVars of some ty ∈ args; find it and apply IH
-    have h_map_eq := List.map_eq_map_iff.mp h_args
-    have ⟨ty, ht, hv_ty⟩ := LMonoTys.freeVars_exists hv
-    exact ih ty ht (h_map_eq ty ht) hv_ty
-
-/-- If two substitutions agree on all free variables of `ty` (in the sense of
-producing the same substitution result), then they produce the same result
-on `ty`. -/
-theorem agree_on_freeVars_implies_subst_eq
-    {S₁ S₂ : Subst}
-    {ty : LMonoTy}
-    (h : ∀ v, v ∈ LMonoTy.freeVars ty →
-      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
-    : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty := by
-  induction ty with
-  | ftvar v =>
-    exact h v (by simp [LMonoTy.freeVars])
-  | bitvec n =>
-    simp only [LMonoTy.subst_unfold]
-  | tcons name args ih =>
-    simp only [LMonoTy.subst_unfold]
-    congr 1
-    simp only [LMonoTy.freeVars] at h
-    exact List.map_eq_map_iff.mpr fun ty ht =>
-      ih ty ht fun v hv => h v (LMonoTys.freeVars_mem_subset ht hv)
-
-/-- List version: if two substitutions agree on all free variables of every
-type in a list, then mapping `subst` over the list produces the same result. -/
-theorem agree_on_freeVars_implies_subst_eq_list
-    {S₁ S₂ : Subst}
-    {tys : List LMonoTy}
-    (h : ∀ v, v ∈ LMonoTys.freeVars tys →
-      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
-    : tys.map (LMonoTy.subst S₁) = tys.map (LMonoTy.subst S₂) :=
-  List.map_eq_map_iff.mpr fun _ ht =>
-    agree_on_freeVars_implies_subst_eq fun v hv =>
-      h v (LMonoTys.freeVars_mem_subset ht hv)
-
 /-- Free vars of `f.inputs.map Prod.snd` are contained in `f.typeArgs`
 for a well-formed function. -/
 theorem freeVars_map_snd_subset_typeArgs
@@ -369,20 +265,13 @@ theorem callOfLFunc_constr_disjoint_denote
     rw [hargTys_eq₂]; simp only [List.map_map]
     congr 1; funext ⟨_, ty⟩
     exact substTyVars_subst vt tySubst₂ ty
-  -- Apply constr_disjoint
+  -- Both constructors belong to the same datatype (outputs match after substitution)
   have hmem₁ := callOfLFunc_func_mem _ _ _ _ _ false hcall₁
   have hmem₂ := callOfLFunc_func_mem _ _ _ _ _ false hcall₂
-  have hvals₁ : f₁.inputs.values = f₁.inputs.map Prod.snd := ListMap.values_eq_map_snd f₁.inputs
-  have hvals₂ : f₂.inputs.values = f₂.inputs.map Prod.snd := ListMap.values_eq_map_snd f₂.inputs
-  have h_output_eq : LMonoTy.substTyVars vt'₁ f₁.output = LMonoTy.substTyVars vt'₂ f₂.output := by
-    rw [← h_outputSort_eq₁, ← h_outputSort_eq₂]
-  -- From ConstrWellFormed, both are constrFunc c d for some datatype d
   obtain ⟨d₁, hd₁_mem, c₁, _, hf₁_eq⟩ := hcwf f₁ hmem₁ hconstr₁
   obtain ⟨d₂, hd₂_mem, c₂, _, hf₂_eq⟩ := hcwf f₂ hmem₂ hconstr₂
-  -- Both outputs are dataDefault d_i = .tcons d_i.name (d_i.typeArgs.map .ftvar)
   have ho₁ : f₁.output = dataDefault d₁ := by subst hf₁_eq; rfl
   have ho₂ : f₂.output = dataDefault d₂ := by subst hf₂_eq; rfl
-  -- After substitution, both equal τ, so tcons names must match
   have hτ_tcons₁ : τ = .tcons d₁.name (LMonoTys.subst tySubst₁ (d₁.typeArgs.map .ftvar)) := by
     rw [hτ_eq₁, ho₁]; unfold dataDefault data; rw [LMonoTy.subst_tcons]
   have hτ_tcons₂ : τ = .tcons d₂.name (LMonoTys.subst tySubst₂ (d₂.typeArgs.map .ftvar)) := by
@@ -390,42 +279,29 @@ theorem callOfLFunc_constr_disjoint_denote
   have hd_name : d₁.name = d₂.name := by
     have h_tcons_eq := hτ_tcons₁.symm.trans hτ_tcons₂
     exact LMonoTy.tcons.inj h_tcons_eq |>.1
-  -- Same datatype: d₁ = d₂ by unique names
   have hd_eq : d₁ = d₂ := htfwf.eq_of_name_eq hd₁_mem hd₂_mem hd_name
   subst hd_eq
-  -- Now f₁.output = f₂.output = dataDefault d₁
   have h_same_output : f₁.output = f₂.output := by rw [ho₁, ho₂]
-  -- subst S₁ and S₂ agree on f₂'s output
+  -- Since outputs agree, tySubst₁ and tySubst₂ agree on f₂'s types
   have h_subst_output_eq : LMonoTy.subst tySubst₁ f₂.output = LMonoTy.subst tySubst₂ f₂.output := by grind
   have h_subst_inputs_eq := constr_same_output_implies_same_argTys
     (hfwf.lfuncs_wf f₂ hmem₂) h_subst_output_eq
     (constrFunc_output_covers_typeArgs hcwf hmem₂ hconstr₂)
-  -- Now vt'₁ and vt'₂ agree on f₂'s types, so we can use hdisj with vt'₁
+  -- Apply constr_disjoint with vt'₁
   have hdisj := hConstrIC.constr_disjoint f₁ f₂ hmem₁ hmem₂ hconstr₁ hconstr₂ hdiffname vt'₁
-  -- argTys₂ under vt equals f₂'s inputs under vt'₁ (not just vt'₂)
-  -- h_inputSorts_eq₂ uses vt'₂; we need the vt'₁ version
-  -- Key: h_subst_inputs_eq says map (subst S₁) = map (subst S₂) on f₂'s inputs
-  -- So: map (substTyVars vt ∘ subst S₁) = map (substTyVars vt ∘ subst S₂) on f₂'s inputs
-  -- And substTyVars vt (subst Sᵢ ty) = substTyVars vt'ᵢ ty
-  -- argTys₂ = map (subst S₂) f₂.inputs, and map (subst S₁) = map (subst S₂) on f₂.inputs
-  -- So argTys₂ = map (subst S₁) f₂.inputs too
+  -- Rewrite f₂'s sort equalities in terms of vt'₁ (using h_subst_inputs_eq)
   have hargTys_eq₂' : argTys₂ = (f₂.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁) := by
     rw [hargTys_eq₂, h_subst_inputs_eq]
-  -- Now h_inputSorts_eq₂ with S₁ instead of S₂:
   have h_inputSorts_eq₂_vt1 : argTys₂.map (LMonoTy.substTyVars vt) =
       (f₂.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₁) := by
     rw [hargTys_eq₂']; simp only [List.map_map]
     congr 1; funext ⟨_, ty⟩
     exact substTyVars_subst vt tySubst₁ ty
-  -- Output sort: substTyVars vt τ = substTyVars vt'₁ f₂.output
   have h_outputSort_eq₂_vt1 : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt'₁ f₂.output := by
     rw [h_outputSort_eq₁, h_same_output]
-  -- Now apply hdisj using applyArgs_cast_eq (following injective proof pattern)
-  -- fullSort₁ = mkArrow (substTyVars vt'₁ f₁.output) (map (substTyVars vt'₁) f₁.inputs.values)
-  -- fullSort₂ = mkArrow (substTyVars vt'₁ f₂.output) (map (substTyVars vt'₁) f₂.inputs.values)
+  -- Convert goal sorts to fullSort form via applyArgs_cast_eq
   have hvals₁ : f₁.inputs.values = f₁.inputs.map Prod.snd := ListMap.values_eq_map_snd f₁.inputs
   have hvals₂ : f₂.inputs.values = f₂.inputs.map Prod.snd := ListMap.values_eq_map_snd f₂.inputs
-  -- Convert goal sorts to fullSort form
   have h₁_sort : LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁) =
       LSort.mkArrow (LMonoTy.substTyVars vt'₁ f₁.output)
         (f₁.inputs.values.map (LMonoTy.substTyVars vt'₁)) := by
@@ -434,10 +310,8 @@ theorem callOfLFunc_constr_disjoint_denote
       LSort.mkArrow (LMonoTy.substTyVars vt'₁ f₂.output)
         (f₂.inputs.values.map (LMonoTy.substTyVars vt'₁)) := by
     rw [substTyVars_mkArrow', h_outputSort_eq₂_vt1, h_inputSorts_eq₂_vt1, hvals₂]
-  -- heq for hdisj: outputSort₁ = outputSort₂
   have h_output_sorts_eq : LMonoTy.substTyVars vt'₁ f₁.output = LMonoTy.substTyVars vt'₁ f₂.output := by
     rw [h_same_output]
-  -- Use applyArgs_cast_eq to convert both sides
   let dArgs₁ := denoteArgs tcInterp opInterp fvarVal vt .nil args₁ argTys₁ h_args₁
   let dArgs₂ := denoteArgs tcInterp opInterp fvarVal vt .nil args₂ argTys₂ h_args₂
   have h_convert₁ := applyArgs_cast_eq

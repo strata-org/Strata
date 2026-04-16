@@ -144,8 +144,7 @@ private theorem fvars_annotated_by_keySet
     exact h_val_i ▸ h_envTys_k
 
 omit [Inhabited T.mono.base.IDMeta] in
-/-- Substituting free variables from the state preserves typing.
-Used in `abs_subst_fvars`, `quant_subst_fvars_body`, and `quant_subst_fvars_trigger`. -/
+/-- Substituting (well-typed) free variables from the state preserves typing. -/
 private theorem substFvarsFromState_type_preserved
     {σ : LState T} {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
     (h : LExpr.HasTypeA Δ e τ)
@@ -1121,9 +1120,12 @@ theorem Step.fvars_annotated_preserved
     exact ⟨substFvarsFromState_fvars_annotated hAnnot.1 hEnvAnnot henv_eq, hAnnot.2⟩
 
 /-- Multi-step version: `HasTypeA` is preserved by `StepStar`.
-Assumes `Env.StepWF F env` (env well-formedness) and
-`Factory.StepWF F tyMap` (factory well-formedness for step preservation),
-plus `OpsConsistent` and `fvars_annotated_by` for the initial expression. -/
+
+Assumptions:
+- `hEnvWF`: environment well-formedness (local closure, typing, annotations, ops).
+- `hFWF`: factory well-formedness for step preservation (body typing, eval typing, etc.).
+- `hOps`: every op referenced in `e₁` has a corresponding factory entry.
+- `hAnnot`: free variable annotations in `e₁` match the environment type map. -/
 theorem StepStar.type_preserved
     {F : @Factory T} {env : Env T}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
@@ -1144,11 +1146,14 @@ theorem StepStar.type_preserved
 
 /-- Multi-step version: if `e₁` reduces to `e₂` in zero or more steps, and
 both are well-typed at `τ`, they have the same denotation.
-Assumes `Env.StepWF F env` (env well-formedness),
-`Factory.StepWF F tyMap` (factory well-formedness for step preservation),
-`Factory.WF F tf` (factory/type-factory well-formedness),
-`InterpConsistent tcInterp opInterp fvarVal F env` (interpretation consistency),
-plus `OpsConsistent` and `fvars_annotated_by` for the initial expression. -/
+
+Assumptions:
+- `hEnvWF`: environment well-formedness (local closure, typing, annotations, ops).
+- `hFWF`: factory well-formedness for step preservation (body typing, eval typing, etc.).
+- `hFacWF`: factory and type-factory well-formedness.
+- `hIC`: interpretation consistency (factory bodies and environment values denote correctly).
+- `hOps`: every op referenced in `e₁` has a corresponding factory entry.
+- `hAnnot`: free variable annotations in `e₁` match the environment type map. -/
 theorem StepStar.denote_preserved
     {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
@@ -1193,7 +1198,7 @@ theorem StepStar.denote_preserved'
     (StepStar.type_preserved hsteps h₁ hEnvWF hFWF hOps hAnnot)
     hEnvWF hFWF hFacWF hIC hOps hAnnot
 
-end -- section [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+end
 
 section
 variable [DecidableEq T.IDMeta]

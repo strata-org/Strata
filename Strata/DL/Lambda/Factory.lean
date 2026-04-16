@@ -369,7 +369,6 @@ theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
 theorem mem_name_eq_getElem {T} {F : Factory T} {fn : LFunc T} {s : String}
     (hmem : fn ∈ F.toArray) (hname : fn.name.name = s) :
     ∃ (hs : s ∈ F), F[s]'hs = fn := by
-  -- subst_vars
   rw [Array.mem_def] at hmem
   rw [List.mem_iff_getElem] at hmem
   obtain ⟨i, hi, hval⟩ := hmem

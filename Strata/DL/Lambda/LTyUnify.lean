@@ -312,6 +312,97 @@ theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
     simp only [LMonoTy.arrow, List.map]
     rw [ih]
 
+/-- Like `LMonoTy.subst` but without the `hasEmptyScopes` short-circuit,
+so it reduces definitionally on ground types.
+Uses structural recursion (no well-founded recursion) so it unfolds in the kernel. -/
+@[expose] def LMonoTy.substSimple (S : Subst) : LMonoTy → LMonoTy
+  | .ftvar x => match S.find? x with | some sty => sty | none => .ftvar x
+  | .bitvec n => .bitvec n
+  | .tcons name ltys => .tcons name (substSimpleList S ltys)
+where substSimpleList (S : Subst) : List LMonoTy → List LMonoTy
+  | [] => []
+  | ty :: tys => substSimple S ty :: substSimpleList S tys
+
+theorem LMonoTy.substSimpleList_eq_map (S : Subst) (ltys : List LMonoTy) :
+    LMonoTy.substSimple.substSimpleList S ltys = ltys.map (substSimple S) := by
+  induction ltys with
+  | nil => rfl
+  | cons hd tl ih => simp [substSimple.substSimpleList, ih]
+
+theorem LMonoTy.subst_eq_substSimple (S : Subst) (ty : LMonoTy) :
+    LMonoTy.subst S ty = LMonoTy.substSimple S ty := by
+  induction ty with
+  | ftvar x => rw [subst_unfold]; simp [substSimple]
+  | bitvec n => rw [subst_unfold]; simp [substSimple]
+  | tcons name ltys ih =>
+    rw [subst_unfold]; simp only [substSimple, substSimpleList_eq_map]
+    congr 1
+    exact List.map_congr_left ih
+
+/-! ## Type substitution agreement lemmas
+
+These lemmas establish that if two substitutions produce the same result on a
+type, they must agree on all free variables of that type — and conversely, if
+they agree on all free variables, they produce the same result. -/
+
+/-- If two substitutions produce the same result on a type `ty`, then they
+agree on every free variable of `ty` (in the sense of producing the same
+substitution result on that variable). -/
+theorem subst_eq_implies_agree_on_freeVars
+    {S₁ S₂ : Subst}
+    {ty : LMonoTy}
+    (h : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty)
+    (v : TyIdentifier)
+    (hv : v ∈ LMonoTy.freeVars ty)
+    : LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v) := by
+  induction ty with
+  | ftvar x =>
+    simp only [LMonoTy.freeVars, List.mem_singleton] at hv
+    subst hv; exact h
+  | bitvec n =>
+    simp [LMonoTy.freeVars] at hv
+  | tcons name args ih =>
+    simp only [LMonoTy.subst_unfold] at h
+    simp only [LMonoTy.freeVars] at hv
+    have h_args := LMonoTy.tcons.inj h |>.2
+    -- v ∈ freeVars of some ty ∈ args; find it and apply IH
+    have h_map_eq := List.map_eq_map_iff.mp h_args
+    have ⟨ty, ht, hv_ty⟩ := LMonoTys.freeVars_exists hv
+    exact ih ty ht (h_map_eq ty ht) hv_ty
+
+/-- If two substitutions agree on all free variables of `ty` (in the sense of
+producing the same substitution result), then they produce the same result
+on `ty`. -/
+theorem agree_on_freeVars_implies_subst_eq
+    {S₁ S₂ : Subst}
+    {ty : LMonoTy}
+    (h : ∀ v, v ∈ LMonoTy.freeVars ty →
+      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
+    : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty := by
+  induction ty with
+  | ftvar v =>
+    exact h v (by simp [LMonoTy.freeVars])
+  | bitvec n =>
+    simp only [LMonoTy.subst_unfold]
+  | tcons name args ih =>
+    simp only [LMonoTy.subst_unfold]
+    congr 1
+    simp only [LMonoTy.freeVars] at h
+    exact List.map_eq_map_iff.mpr fun ty ht =>
+      ih ty ht fun v hv => h v (LMonoTys.freeVars_mem_subset ht hv)
+
+/-- List version: if two substitutions agree on all free variables of every
+type in a list, then mapping `subst` over the list produces the same result. -/
+theorem agree_on_freeVars_implies_subst_eq_list
+    {S₁ S₂ : Subst}
+    {tys : List LMonoTy}
+    (h : ∀ v, v ∈ LMonoTys.freeVars tys →
+      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
+    : tys.map (LMonoTy.subst S₁) = tys.map (LMonoTy.subst S₂) :=
+  List.map_eq_map_iff.mpr fun _ ht =>
+    agree_on_freeVars_implies_subst_eq fun v hv =>
+      h v (LMonoTys.freeVars_mem_subset ht hv)
+
 /--
 No key (i.e., type identifier) in a well-formed substitution `S` can appear as a
 free variable in a substituted type (i.e., in `LMonoTy.subst S ty`).

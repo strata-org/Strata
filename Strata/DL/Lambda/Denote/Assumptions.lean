@@ -14,8 +14,8 @@ import all Strata.DL.Lambda.FactoryWF
 ## Typing Assumptions
 
 Collects all well-formedness and typing assumptions used by the denotational
-semantics proofs. Definitions only — no theorems. Semantic (denotation-level)
-assumptions live in `LExprSemanticsConsistent`.
+semantics proofs. Semantic (denotation-level) assumptions live in
+`LExprSemanticsConsistent`.
 
 ### Expression-level predicates (TODO: prove satisfied after `LExpr.resolve`)
 - `fvars_annotated_by` — free variable annotations match a type map

@@ -37,8 +37,6 @@ theorem applyArgs_cast_eq
           (SortDenote.applyArgs tcInterp (cast (congrArg (SortDenote tcInterp) h₂) v) (HList.cast h_args da)) := by
   subst_vars; rfl
 
-/-! ## `OpsConsistent` — every `.op` annotation is a valid instantiation -/
-
 /-- `OpsConsistent` is preserved by `substK` for arbitrary substitution,
 provided the substituted expressions satisfy `OpsConsistent`. -/
 theorem OpsConsistent_substK
