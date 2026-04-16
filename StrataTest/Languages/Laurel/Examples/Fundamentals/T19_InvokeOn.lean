@@ -14,9 +14,9 @@ namespace Strata.Laurel
 
 def program := r#"
 function P(x: int): bool;
-function Q(x: int): bool;
+function Q(x: int): bool
+  opaque;
 
-  opaque
 function assertP(x: int): int requires P(x);
 function needsPAndQsInvoke1(): int
 {
@@ -44,7 +44,7 @@ procedure axiomDoesNotFireBecauseOfPattern(x: int)
   opaque
 {
   assert Q(x)
-//^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^ error: assertion does not hold
 };
 
 function A(x: int, y: real): bool;
@@ -64,16 +64,17 @@ procedure invokeB(x: int, y :real)
   opaque
 {
   assert B(y)
-//^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^ error: assertion does not hold
 };
 
-function R(x: int): bool;
-  opaque
+function R(x: int): bool
+  opaque;
+
 procedure badPostcondition(x: int)
   invokeOn R(x)
   opaque
   ensures R(x)
-//        ^^^^ error: assertion does not hold
+//        ^^^^ error: postcondition does not hold
 {
 };
 
