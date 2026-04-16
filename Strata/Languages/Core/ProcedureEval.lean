@@ -26,16 +26,8 @@ def fixupError (E : Env) : Env :=
                      pathConditions := E.pathConditions.pop }
   | some _ => E
 
-/-- Combine multiple procedure bodies into a single body using nondet ITE.
-    Each path becomes a branch so that obligation extraction can reconstruct
-    all proof obligations from the program structure. -/
-private def combineBodies (bodies : List Statements) : Statements :=
-  match bodies with
-  | [] => []
-  | [b] => b
-  | b :: rest =>
-    let combined := combineBodies rest
-    [Imperative.Stmt.ite .nondet b combined .empty]
+/--
+Merge multiple procedure evaluation results into one.
 
 After `fixupError`, all paths through a procedure have identical variable state
 and path conditions — the procedure scope and its path-condition scope have been

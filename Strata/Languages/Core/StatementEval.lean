@@ -183,9 +183,14 @@ def Command.evalCall (E : Env)
         (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create pre-call substitution for preconditions.
     let precond_subst := formal_arg_subst ++ current_globals
-    -- Precondition obligations are handled by CallElim (which emits assert
-    -- statements before PE runs). No deferred collection needed here.
-    let _preconditions := callConditions proc .Requires preconditions_typed precond_subst
+    -- Generate precondition proof obligations.
+    let preconditions := callConditions proc .Requires preconditions_typed precond_subst
+    -- It's safe to evaluate the preconditions in the current environment
+    -- (pre-call context).
+    let preconditions := preconditions.map
+        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
+    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
+    let E := { E with deferred := E.deferred ++ deferred_pre }
 
     -- Apply type substitution to postconditions to instantiate type variables.
     let postconditions_typed := proc.spec.postconditions.map
@@ -227,6 +232,125 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
 
 ---------------------------------------------------------------------
 
+mutual
+/--
+Generic function to check if a statement contains a specific command type.
+-/
+def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd c) => predicate c
+  | .cmd _ => false
+  | .block _ inner_ss _ => Statements.containsCmds predicate inner_ss
+  | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
+                                Statements.containsCmds predicate else_ss
+  | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => false  -- Function/type declarations and exits don't contain commands
+  termination_by Imperative.Stmt.sizeOf s
+
+/--
+Generic function to check if statements contain a specific command type.
+-/
+def Statements.containsCmds (predicate : Imperative.Cmd Expression → Bool) (ss : Statements) : Bool :=
+  match ss with
+  | [] => false
+  | s :: ss =>
+    Statement.containsCmd predicate s || Statements.containsCmds predicate ss
+  termination_by Imperative.Block.sizeOf ss
+end
+
+/--
+Detect if statements contain any `cover` commands.
+-/
+def Statements.containsCovers (ss : Statements) : Bool :=
+  Statements.containsCmds
+    (fun c => match c with | .cover _ _ _ => true | _ => false) ss
+
+/--
+Detect if statements contain any `assert` commands.
+-/
+def Statements.containsAsserts (ss : Statements) : Bool :=
+  Statements.containsCmds
+    (fun c => match c with | .assert _ _ _ => true | _ => false) ss
+
+mutual
+/--
+Collect all `cover` commands from a statement `s` with their labels and metadata.
+-/
+def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaData Expression) :=
+  match s with
+  | .cmd (.cmd (.cover label _expr md)) => [(label, md)]
+  | .cmd _ => []
+  | .block _ inner_ss _ => Statements.collectCovers inner_ss
+  | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
+  | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
+  termination_by Imperative.Stmt.sizeOf s
+/--
+Collect all `cover` commands from statements `ss` with their labels and metadata.
+-/
+def Statements.collectCovers (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+  match ss with
+  | [] => []
+  | s :: ss =>
+    Statement.collectCovers s ++ Statements.collectCovers ss
+  termination_by Imperative.Block.sizeOf ss
+end
+
+mutual
+/--
+Collect all `assert` commands from a statement `s` with their labels and metadata.
+-/
+def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaData Expression) :=
+  match s with
+  | .cmd (.cmd (.assert label _expr md)) => [(label, md)]
+  | .cmd _ => []
+  | .block _ inner_ss _ => Statements.collectAsserts inner_ss
+  | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
+  | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
+  termination_by Imperative.Stmt.sizeOf s
+/--
+Collect all `assert` commands from statements `ss` with their labels and metadata.
+-/
+def Statements.collectAsserts (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+  match ss with
+  | [] => []
+  | s :: ss =>
+    Statement.collectAsserts s ++ Statements.collectAsserts ss
+  termination_by Imperative.Block.sizeOf ss
+end
+
+/--
+Create cover obligations for covers in an unreachable (dead) branch, including
+the current path conditions so that a reachability check can detect unreachability.
+The obligation expression is `false` (a cover that trivially fails).
+-/
+private def createUnreachableCoverObligations
+    (pathConditions : Imperative.PathConditions Expression)
+    (covers : List (String × Imperative.MetaData Expression)) :
+    Imperative.ProofObligations Expression :=
+  covers.toArray.map
+    (fun (label, md) =>
+      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
+
+/--
+Create assert obligations for asserts in an unreachable (dead) branch, including
+the current path conditions so that a reachability check can detect unreachability.
+The obligation expression is `true` (an assert that trivially passes).
+-/
+private def createUnreachableAssertObligations
+    (pathConditions : Imperative.PathConditions Expression)
+    (asserts : List (String × Imperative.MetaData Expression)) :
+    Imperative.ProofObligations Expression :=
+  asserts.toArray.map
+    (fun (label, md) =>
+      let propType := match md.getPropertyType with
+        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero
+                    else if s == Imperative.MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else .assert
+        | _ => .assert
+      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
+
 /--
 Substitute free variables in an expression with their current values from the environment,
 excluding the given parameter names (which are bound by the function, not free).
@@ -267,6 +391,23 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | rest, .none => (rest, .none)
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
+/--
+Collect proof obligations for an unreachable (dead) branch.
+All covers in the dead branch fail (unreachable), and all asserts pass
+(unsatisfiable path conditions).
+-/
+private def collectDeadBranchDeferred
+    (ss_f : Statements) (cond : Expression.Expr)
+    (pathConditions : Imperative.PathConditions Expression) :
+    Imperative.ProofObligations Expression :=
+  if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
+    let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
+    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false ())]
+    createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
+    createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
+  else
+    #[]
+
 private def noStats : Statistics := {}
 
 mutual
@@ -283,40 +424,6 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
     | ([], .none) => ([{ Ewn with exitLabel := .none }], noStats)
     | (_, .some l) => ([{ Ewn with exitLabel := .some l }], noStats) -- Exit propagating, statement list skipped
     | (s :: rest, .none) =>
-      match s with
-      | .ite (.det c) then_ss else_ss md =>
-        let orig_stk := Ewn.stk
-        let Ewn := { Ewn with stk := orig_stk.push [] }
-        let cond' := Ewn.env.exprEval c
-        match cond' with
-        | .true _ | .false _ =>
-          let (ss_live, ss_dead) :=
-            if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-          let (Ewns, liveStats) := go' Ewn ss_live .none
-          let Ewns := Ewns.map fun (ewn : EnvWithNext) =>
-              let (liveSs, deadSs) := if cond'.isTrue then (ewn.stk.top, ss_dead) else (ss_dead, ewn.stk.top)
-              { ewn with stk := orig_stk.appendToTop [.ite (.det cond') liveSs deadSs md] }
-          let results := Ewns.map (fun ewn => go' ewn rest ewn.exitLabel)
-          let allResults := results.flatMap (·.1)
-          let allStats := results.foldl (fun acc r => acc.merge r.2) liveStats
-          (allResults, allStats)
-        | _ =>
-          -- Process both branches independently, then continue with rest.
-          let (Ewns, iteStats) := processIteBranches steps' old_var_subst
-            Ewn c cond' then_ss else_ss md orig_stk
-          let results := Ewns.map (fun ewn => go' ewn rest ewn.exitLabel)
-          let allResults := results.flatMap (·.1)
-          let allStats := results.foldl (fun acc r => acc.merge r.2) iteStats
-          (allResults, allStats)
-      | .ite .nondet then_ss else_ss md =>
-        let orig_stk := Ewn.stk
-        -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
-        let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
-        let freshVar : Expression.Expr := .fvar () freshName none
-        let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
-        let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
-        go' { Ewn with stk := orig_stk } (initStmt :: iteStmt :: rest) optExit
-      | _ =>
       let (EAndNexts, stmtStats) : List EnvWithNext × Statistics :=
         match s with
 
@@ -418,14 +525,9 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
-  let negCond : Expression.Expr := .ite () cond' (LExpr.false ()) (LExpr.true ())
   let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
-  let path_conds_false := Ewn.env.pathConditions.push [(label_false, negCond)]
-  -- Emit assume statements so ObligationExtraction can reconstruct path conditions.
-  let assumeCondTrue := Imperative.Stmt.cmd
-    (CmdExt.cmd (Imperative.Cmd.assume label_true cond' .empty))
-  let assumeCondFalse := Imperative.Stmt.cmd
-    (CmdExt.cmd (Imperative.Cmd.assume label_false negCond .empty))
+  let path_conds_false := Ewn.env.pathConditions.push
+                            [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -436,12 +538,15 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
                                           Imperative.Block.sizeOf else_ss := by
    omega
-  -- Evaluate each branch independently (without rest).
   let (Ewns_t, stats_t) := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
                   then_ss .none
+  -- We empty the deferred proof obligations in the `else` path to
+  -- avoid duplicate verification checks -- the deferred obligations
+  -- would be checked in the `then` branch anyway.
   let (Ewns_f, stats_f) := evalAuxGo steps old_var_subst
-                  {Ewn with env := {Ewn.env with pathConditions := path_conds_false}}
+                  {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
+                                                 deferred := #[]}}
                   else_ss .none
   let branchStats := stats_t.merge stats_f
   match Ewns_t, Ewns_f with

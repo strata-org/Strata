@@ -31,8 +31,7 @@ spec {
 
 #end
 
-/-- info:
-Obligation: test_ensures_0_318
+/-- info: Obligation: test_ensures_0_318
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

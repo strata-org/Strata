@@ -53,8 +53,6 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: post
 Property: assert
-Assumptions:
-pre: true
 Obligation:
 true
 

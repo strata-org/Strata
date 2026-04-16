@@ -71,6 +71,10 @@ Result: ❌ fail
 Obligation: wrong_ensures_0
 Property: assert
 Result: ✅ pass
+
+Obligation: wrong_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify sequentialExitPgm (options := .quiet)
@@ -98,11 +102,11 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: live_then
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 
-Obligation: dead_else
+Obligation: live_then
 Property: assert
 Result: ✅ pass
 -/
@@ -123,11 +127,11 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: live_else
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
-Obligation: dead_then
+Obligation: live_else
 Property: assert
 Result: ✅ pass
 -/
@@ -148,13 +152,13 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: live_else
-Property: assert
-Result: ✅ pass
-
 Obligation: dead_cover
 Property: cover
 Result: ❌ fail
+
+Obligation: live_else
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify concreteFalseDeadThenCover (options := .quiet)
@@ -175,15 +179,15 @@ procedure p() returns () {
 
 /--
 info:
+Obligation: dead_then
+Property: assert
+Result: ✅ pass
+
 Obligation: pre
 Property: assert
 Result: ✅ pass
 
 Obligation: live_else
-Property: assert
-Result: ✅ pass
-
-Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
@@ -212,13 +216,13 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_assert
-Property: assert
-Result: ✅ pass (❗path unreachable)
-
 Obligation: dead_cover
 Property: cover
 Result: ❌ fail (❗path unreachable)
+
+Obligation: dead_assert
+Property: assert
+Result: ✅ pass (❗path unreachable)
 -/
 #guard_msgs in
 #eval verify deadBranchAnnotations
@@ -227,9 +231,10 @@ Result: ❌ fail (❗path unreachable)
 ---------------------------------------------------------------------
 -- No-duplication tests
 --
--- When a concrete ITE's live branch contains a symbolic ITE with an exit,
--- processIteBranches merges both branches into a single .ite result.
--- Pre-ITE and dead-branch obligations must appear exactly once.
+-- When a concrete ITE's live branch contains a symbolic ITE with an exit
+-- (producing multiple paths via processIteBranches), mergeResults unions
+-- all paths' deferred obligations. Pre-ITE and dead-branch obligations
+-- must appear exactly once — they are attached only to the first result.
 ---------------------------------------------------------------------
 
 def noDupConcreteTrue :=
@@ -255,6 +260,10 @@ procedure p(x : bool) returns () {
 
 /--
 info:
+Obligation: dead_else
+Property: assert
+Result: ✅ pass
+
 Obligation: pre
 Property: assert
 Result: ✅ pass
@@ -263,15 +272,15 @@ Obligation: then_path
 Property: assert
 Result: ✅ pass
 
-Obligation: dead_else
-Property: assert
-Result: ✅ pass
-
 Obligation: post
 Property: assert
 Result: ✅ pass
 
 Obligation: else_path
+Property: assert
+Result: ✅ pass
+
+Obligation: post
 Property: assert
 Result: ✅ pass
 -/
@@ -301,6 +310,10 @@ procedure q(x : bool) returns () {
 
 /--
 info:
+Obligation: dead_then
+Property: assert
+Result: ✅ pass
+
 Obligation: pre
 Property: assert
 Result: ✅ pass
@@ -309,15 +322,15 @@ Obligation: then_path
 Property: assert
 Result: ✅ pass
 
-Obligation: dead_then
-Property: assert
-Result: ✅ pass
-
 Obligation: post
 Property: assert
 Result: ✅ pass
 
 Obligation: else_path
+Property: assert
+Result: ✅ pass
+
+Obligation: post
 Property: assert
 Result: ✅ pass
 -/

@@ -9,7 +9,6 @@ public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.ProgramEval
 public import Strata.Languages.Core.ProgramType
 public import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Transform.ObligationExtraction
 public import Strata.Languages.Core.Statistics
 
 ---------------------------------------------------------------------

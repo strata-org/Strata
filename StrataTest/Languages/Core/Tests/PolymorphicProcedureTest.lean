@@ -42,17 +42,11 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: callElimAssert_Extract_requires_0_2
 Property: assert
-Assumptions:
-tmp_arg_0: tmp_arg_0 == $__xs3
-tmp_h_1: tmp_h_1 == $__h4
 Obligation:
 List..isCons($__xs3)
 
 Label: Test_ensures_0
 Property: assert
-Assumptions:
-tmp_arg_0: tmp_arg_0 == $__xs3
-tmp_h_1: tmp_h_1 == $__h4
 Obligation:
 true
 
@@ -62,7 +56,7 @@ Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, Nil) (tmp_arg_0, Nil) (tmp_h_1, 0) ($__h4, 0) 
+($__xs3, Nil)
 
 Obligation: Test_ensures_0
 Property: assert
@@ -106,8 +100,6 @@ true
 Label: assert_0
 Property: assert
 Assumptions:
-tmp_arg_0: tmp_arg_0 == 1
-tmp_r_1: tmp_r_1 == $__r2
 callElimAssume_MkCons_ensures_0_2: List..isCons($__r3)
 Obligation:
 List..isCons($__r3)
@@ -115,8 +107,6 @@ List..isCons($__r3)
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-tmp_arg_0: tmp_arg_0 == 1
-tmp_r_1: tmp_r_1 == $__r2
 callElimAssume_MkCons_ensures_0_2: List..isCons($__r3)
 Obligation:
 true

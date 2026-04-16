@@ -18,8 +18,6 @@ import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.LoopElim
-import Strata.Transform.Deduplication
-import Strata.Transform.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
@@ -60,25 +58,18 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   ctx.emitDatatypes
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
   for id in _axms do
     Solver.assert id
   -- Assert assumption terms
-  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm) |>.run estate
+  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
   for id in assumptionIds do
     Solver.assert id
   -- Encode the obligation term Q (not negated)
-  let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
+  let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
-  -- Exclude variables whose type is a declared sort (e.g. Map). Their model
-  -- values use solver-internal representations that may not parse across
-  -- solver versions. Datatype variables (List, Either, …) are kept.
-  let declaredSortNames := ctx.sorts.map (·.name) |>.toList
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty then match uf.out with
-      | .constr name _ => if name ∈ declaredSortNames then none else some id
-      | _ => some id
-    else none
+    if uf.args.isEmpty then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
@@ -110,7 +101,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
-      Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
+      Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
   -- Emit the property summary (or label) as the final message in the SMT-LIB output.
@@ -937,17 +928,14 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
-    let obligations ← match Core.ObligationExtraction.extractObligations p with
-      | .ok obs => pure obs
-      | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
     let mut stats : Statistics := ({} : Statistics)
-      |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
+      |>.increment s!"{Evaluator.Stats.verify_numObligations}" E.deferred.size
     let mut results := (#[] : VCResults)
     let mut preprocessNs : Nat := 0
     let mut smtEncodeNs : Nat := 0
     let mut solverNs : Nat := 0
     let mut peResolvedCount : Nat := 0
-    for obligation in obligations do
+    for obligation in E.deferred do
       -- Determine which checks to perform based on metadata or check mode/amount
       let (satisfiabilityCheck, validityCheck) :=
         if Imperative.MetaData.hasFullCheck obligation.metadata then
@@ -1091,10 +1079,6 @@ def verify (program : Program)
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
     | .ok (pEs, stats) => .ok (pEs, stats)
   let allStats := pipelineStats.merge evalStats
-  -- Post-PE: deduplicate common subexpressions in the evaluated program
-  let pEs ← profileStep profile "  Deduplication" do
-    pure (pEs.map fun (p, E) =>
-      (Core.Deduplication.deduplicateProgram p, E))
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then

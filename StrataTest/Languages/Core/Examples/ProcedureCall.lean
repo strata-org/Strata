@@ -87,9 +87,6 @@ Label: callElimAssert_counter_ge_zero_10
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-tmp_arg_7: tmp_arg_7 == 8
-tmp_b_8: tmp_b_8 == $__b5
-old_counter_9: old_counter_9 == $__counter4
 Obligation:
 $__counter4 >= 0
 
@@ -97,9 +94,6 @@ Label: callElimAssert_a_positive_11
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-tmp_arg_7: tmp_arg_7 == 8
-tmp_b_8: tmp_b_8 == $__b5
-old_counter_9: old_counter_9 == $__counter4
 Obligation:
 true
 
@@ -107,14 +101,8 @@ Label: callElimAssert_counter_ge_zero_3
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-tmp_arg_7: tmp_arg_7 == 8
-tmp_b_8: tmp_b_8 == $__b5
-old_counter_9: old_counter_9 == $__counter4
 callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
 callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
-tmp_arg_0: tmp_arg_0 == 8
-tmp_b_1: tmp_b_1 == $__b6
-old_counter_2: old_counter_2 == $__counter7
 Obligation:
 $__counter7 >= 0
 
@@ -122,14 +110,8 @@ Label: callElimAssert_a_positive_4
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-tmp_arg_7: tmp_arg_7 == 8
-tmp_b_8: tmp_b_8 == $__b5
-old_counter_9: old_counter_9 == $__counter4
 callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
 callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
-tmp_arg_0: tmp_arg_0 == 8
-tmp_b_1: tmp_b_1 == $__b6
-old_counter_2: old_counter_2 == $__counter7
 Obligation:
 true
 
@@ -137,14 +119,8 @@ Label: return_value_lemma
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-tmp_arg_7: tmp_arg_7 == 8
-tmp_b_8: tmp_b_8 == $__b5
-old_counter_9: old_counter_9 == $__counter4
 callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
 callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
-tmp_arg_0: tmp_arg_0 == 8
-tmp_b_1: tmp_b_1 == $__b6
-old_counter_2: old_counter_2 == $__counter7
 callElimAssume_new_g_value_5: $__counter9 == $__counter7 + 8
 callElimAssume_old_g_property_6: $__b8 - 8 == $__counter7
 Obligation:

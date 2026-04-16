@@ -41,7 +41,7 @@ Label: after_double_internal
 Property: assert
 Assumptions:
 test: $__n0 >= 2
-test: $__n0 >= 0
+test_1: $__n0 >= 0
 Obligation:
 $__n0 + $__n0 >= 4
 
@@ -49,7 +49,7 @@ Label: double_correct
 Property: assert
 Assumptions:
 test: $__n0 >= 2
-test: $__n0 >= 0
+test_1: $__n0 >= 0
 Obligation:
 $__n0 + $__n0 == $__n0 * 2
 

@@ -65,7 +65,6 @@ axiom_0: forall __q0 : (Map Field int) :: forall __q1 : Field :: forall __q2 : F
 axiom_1: forall __q0 : (Map Field int) :: forall __q1 : Field :: forall __q2 : int :: (__q0[__q1:=__q2])[__q1] == __q2
 axiom_2: forall __q0 : (Map Ref (Map Field int)) :: forall __q1 : Ref :: forall __q2 : Ref :: forall __q3 : (Map Field int) :: !(__q1 == __q2) ==> __q0[__q1] == (__q0[__q2:=__q3])[__q1]
 axiom_3: forall __q0 : (Map Ref (Map Field int)) :: forall __q1 : Ref :: forall __q2 : (Map Field int) :: (__q0[__q1:=__q2])[__q1] == __q2
-newH: newH == $__h0[$__ref1:=($__h0[$__ref1])[$__field2:=($__h0[$__ref1])[$__field2] + 1]]
 Obligation:
 (($__h0[$__ref1:=($__h0[$__ref1])[$__field2:=($__h0[$__ref1])[$__field2] + 1]])[$__ref1])[$__field2] == ($__h0[$__ref1])[$__field2] + 1
 

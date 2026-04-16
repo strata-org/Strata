@@ -161,13 +161,14 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred := _ }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Datatypes:{Format.line}{datatypes}{Format.line}\
               Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
-              Warnings:{Format.line}{warnings}"
+              Warnings:{Format.line}{warnings}{Format.line}\
+              Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
 Create a substitution map from all non-global variables to their values.
@@ -333,7 +334,8 @@ def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
   let pc_merged := PathCondition.merge cond pc1 pc2
   let pcs := pcs1.pop
   let pcs := Maps.addInNewest pcs pc_merged
-  { E1 with exprEnv := exprEnv, pathConditions := pcs }
+  let deferred := E1.deferred.append E2.deferred
+  { E1 with exprEnv := exprEnv, pathConditions := pcs, deferred := deferred }
 
 def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   if h1: E1.error.isSome then

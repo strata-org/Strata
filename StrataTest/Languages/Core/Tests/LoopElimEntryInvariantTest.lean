@@ -37,6 +37,14 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Assumptions:
+<dead_branch: (~Int.Gt n #0)>: false
+assume_entry_invariant_0_0: false
+Obligation:
+true
+
 Label: entry_invariant_0_0
 Property: assert
 Obligation:
@@ -44,15 +52,13 @@ false
 
 ---
 info:
-Obligation: entry_invariant_0_0
-Property: assert
-Result: ❌ always false and is reachable from declaration entry
-Model:
-($__t.0, false) (n, 0) ($__t.1, false) (s, 0) 
-
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass (❗path unreachable)
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify falseInvariantNeverExecuted

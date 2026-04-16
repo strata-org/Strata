@@ -100,7 +100,6 @@ Label: assert_0
 Property: assert
 Assumptions:
 assume_0: $__x1 == 1
-z: z == $__x1
 Obligation:
 $__x1 == 1
 
@@ -450,16 +449,11 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: init_calls_addPositive_0
 Property: assert
-Assumptions:
-x: x == 5
 Obligation:
 true
 
 Label: assert_0
 Property: assert
-Assumptions:
-x: x == 5
-z: z == addPositive(3)
 Obligation:
 addPositive(3) == 8
 
@@ -505,7 +499,6 @@ Label: loop_guard_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
 test_requires_0: !($__n0 == 0)
-i: i == 0
 Obligation:
 !($__n0 == 0)
 
@@ -513,31 +506,26 @@ Label: entry_invariant_0_0
 Property: assert
 Assumptions:
 test_requires_0: !($__n0 == 0)
-i: i == 0
 Obligation:
 true
 
 Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-test_requires_0: !($__n0 == 0)
-i: i == 0
-assume_entry_invariant_0_0: true
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
 assume_guard_0: $__i1 / $__n0 < 10
 assume_invariant_0_0: $__i1 >= 0
+test_requires_0: !($__n0 == 0)
 Obligation:
 !($__n0 == 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-test_requires_0: !($__n0 == 0)
-i: i == 0
-assume_entry_invariant_0_0: true
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
 assume_guard_0: $__i1 / $__n0 < 10
 assume_invariant_0_0: $__i1 >= 0
+test_requires_0: !($__n0 == 0)
 Obligation:
 $__i1 + 1 >= 0
 
