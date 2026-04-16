@@ -72,6 +72,8 @@ is possible but very difficult with recursive functions.
 TODO: Show that consistent interpretations exist for a simple but nontrivial
 example.
 
+Note that the semantics does not handle function preconditions at the moment.
+
 ## Using the Semantics
 
 The file `StrataTest/DL/Lambda/Denote/Tautologies.lean` shows how to use the
