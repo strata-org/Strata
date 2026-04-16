@@ -203,7 +203,7 @@ inductive THStats where
   /-- Number of composite types in the program (one TypeTag constructor each). -/
   | compositeTypes
 
-derive_prefixed_toString THStats "TypeHierarchy"
+#derive_prefixed_toString THStats "TypeHierarchy"
 
 structure THState where
   freshCounter : Nat := 0

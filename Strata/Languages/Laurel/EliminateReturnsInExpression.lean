@@ -116,7 +116,7 @@ inductive ElimRetStats where
   /-- Number of non-functional procedures left unchanged by this pass. -/
   | nonFunctionalProceduresSkipped
 
-derive_prefixed_toString ElimRetStats "EliminateReturns"
+#derive_prefixed_toString ElimRetStats "EliminateReturns"
 
 /--
 Transform a program by eliminating returns in all functional procedure bodies.

@@ -475,7 +475,7 @@ inductive HeapStats where
   /-- Total number of static procedures transformed. -/
   | proceduresTransformed
 
-derive_prefixed_toString HeapStats "HeapParameterization"
+#derive_prefixed_toString HeapStats "HeapParameterization"
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program × Statistics :=
   let program := { program with

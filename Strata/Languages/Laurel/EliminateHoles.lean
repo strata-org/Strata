@@ -82,7 +82,7 @@ inductive ElimHoleStats where
   /-- Number of fresh uninterpreted functions generated (one per eliminated hole). -/
   | functionsGenerated
 
-derive_prefixed_toString ElimHoleStats "EliminateHoles"
+#derive_prefixed_toString ElimHoleStats "EliminateHoles"
 
 def eliminateHoles (program : Program) : Program × Statistics :=
   let initState : ElimHoleState := {}

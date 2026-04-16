@@ -191,7 +191,7 @@ inductive FilterStats where
   /-- Number of diagnostics emitted for non-composite modifies entries. -/
   | diagnosticsEmitted
 
-derive_prefixed_toString FilterStats "FilterNonCompositeModifies"
+#derive_prefixed_toString FilterStats "FilterNonCompositeModifies"
 
 def filterNonCompositeModifies (model : SemanticModel) (program : Program)
     : Program × List DiagnosticModel × Statistics :=
@@ -228,7 +228,7 @@ inductive ModifiesStats where
   /-- Number of procedures where modifies clause transformation failed (kept unchanged). -/
   | proceduresWithErrors
 
-derive_prefixed_toString ModifiesStats "ModifiesClausesTransform"
+#derive_prefixed_toString ModifiesStats "ModifiesClausesTransform"
 
 def modifiesClausesTransform (model: SemanticModel) (program : Program)
     : Program × List DiagnosticModel × Statistics :=

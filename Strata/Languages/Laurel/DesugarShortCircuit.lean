@@ -30,7 +30,7 @@ inductive DesugarStats where
   /-- Number of short-circuit operators (AndThen/OrElse/Implies) rewritten to IfThenElse. -/
   | operatorsDesugared
 
-derive_prefixed_toString DesugarStats "DesugarShortCircuit"
+#derive_prefixed_toString DesugarStats "DesugarShortCircuit"
 
 private abbrev DesugarM := StateM Statistics
 

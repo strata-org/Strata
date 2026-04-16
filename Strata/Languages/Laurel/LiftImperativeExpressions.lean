@@ -506,7 +506,7 @@ inductive LiftStats where
   /-- Number of procedures whose bodies were scanned for expression-position assignments. -/
   | proceduresProcessed
 
-derive_prefixed_toString LiftStats "LiftExpressionAssignments"
+#derive_prefixed_toString LiftStats "LiftExpressionAssignments"
 
 /--
 Transform a program to lift all assignments that occur in an expression context.

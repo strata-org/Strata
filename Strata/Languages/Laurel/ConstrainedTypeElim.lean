@@ -224,7 +224,7 @@ inductive CTElimStats where
   /-- Number of `$witness_<type>` procedures generated to validate witness values. -/
   | witnessProceduresGenerated
 
-derive_prefixed_toString CTElimStats "ConstrainedTypeElim"
+#derive_prefixed_toString CTElimStats "ConstrainedTypeElim"
 
 public def constrainedTypeElim (_model : SemanticModel) (program : Program)
     : Program × List DiagnosticModel × Statistics :=

@@ -51,7 +51,7 @@ inductive InferStats where
   /-- Number of holes left with `Unknown` type (context could not determine type). -/
   | holesLeftUnknown
 
-derive_prefixed_toString InferStats "InferHoleTypes"
+#derive_prefixed_toString InferStats "InferHoleTypes"
 
 structure InferHoleState where
   model : SemanticModel
