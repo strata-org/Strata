@@ -11,7 +11,6 @@ public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Core.Verifier
 public import Strata.DL.Util.Map
 import Strata.Util.Tactics
-public import Strata.Util.Statistics
 
 namespace Strata
 namespace Laurel

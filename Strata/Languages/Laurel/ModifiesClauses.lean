@@ -9,7 +9,6 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Laurel.Resolution
-public import Strata.Util.Statistics
 
 /-
 Modifies clause transformation (Laurel → Laurel).
@@ -202,8 +201,7 @@ def filterNonCompositeModifies (model : SemanticModel) (program : Program)
       (ts ++ [.Composite { ct with instanceProcedures := instProcs }], ds ++ instDiags)
     | other => (ts ++ [other], ds)
   ) ([], [])
-  let allDiags := staticDiags ++ typeDiags
-  ({ program with staticProcedures := staticProcs, types := types' }, allDiags)
+  ({ program with staticProcedures := staticProcs, types := types' }, staticDiags ++ typeDiags)
 
 /--
 Transform a Laurel program: apply modifies clause transformation to all procedures.
@@ -212,14 +210,12 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program)
-    : Program × List DiagnosticModel :=
-  let (procs', errors) :=
-    program.staticProcedures.foldl (fun (acc, errs) proc =>
-      match transformModifiesClauses model proc with
-      | .ok proc' => (acc ++ [proc'], errs)
-      | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
-    ) ([], [])
+def modifiesClausesTransform (model: SemanticModel) (program : Program) : Program × List DiagnosticModel :=
+  let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
+    match transformModifiesClauses model proc with
+    | .ok proc' => (acc ++ [proc'], errs)
+    | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
+  ) ([], [])
   ({ program with staticProcedures := procs' }, errors)
 
 end -- public section

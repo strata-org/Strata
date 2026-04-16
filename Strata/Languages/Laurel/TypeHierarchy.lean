@@ -9,7 +9,6 @@ public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.DL.Imperative.MetaData
 import Strata.Util.Tactics
-public import Strata.Util.Statistics
 
 public section
 

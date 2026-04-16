@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 import Strata.Util.Tactics
-public import Strata.Util.Statistics
 
 /-!
 # Eliminate Returns in Expression Position
