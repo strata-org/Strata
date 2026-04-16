@@ -6,7 +6,7 @@
 module
 
 import Strata.Languages.Laurel.FilterPrelude
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 public import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
@@ -359,18 +359,24 @@ public def splitProcNames (prog : Core.Program)
   (preludeNames, userProcNames)
 
 /-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
-    (after all Laurel-to-Laurel passes, before translation to Core). -/
+    (after all Laurel-to-Laurel passes, before translation to Core).
+
+    When `keepAllFilesPrefix` is provided, the program state after each named
+    Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`. -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
-    : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
-  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
-  (coreOption.map appendCorePartOfRuntime, errors, lowered)
+    (keepAllFilesPrefix : Option String := none)
+    : IO (Option Core.Program × List DiagnosticModel × Laurel.Program) := do
+  let (coreOption, errors, lowered) ←
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+      (keepAllFilesPrefix := keepAllFilesPrefix)
+  return (coreOption.map appendCorePartOfRuntime, errors, lowered)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
-    : (Option Core.Program × List DiagnosticModel) :=
-  let (coreOption, errors, _) := translateCombinedLaurelWithLowered combined
-  (coreOption, errors)
+    : IO (Option Core.Program × List DiagnosticModel) := do
+  let (coreOption, errors, _) ← translateCombinedLaurelWithLowered combined
+  return (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
@@ -399,7 +405,7 @@ public instance : ToString PipelineError where
     The optional `sourcePath` overrides the file path embedded in
     Laurel metadata (useful when the Ion file was generated from a
     `.py` source and you want line numbers to refer to the original). -/
-public def pyAnalyzeLaurel
+public def pythonAndSpecToLaurel
     (pythonIonPath : String)
     (dispatchModules : Array String := #[])
     (pyspecModules : Array String := #[])
@@ -421,7 +427,7 @@ public def pyAnalyzeLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
-    match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
+    match Python.pythonToLaurel' preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
         throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")

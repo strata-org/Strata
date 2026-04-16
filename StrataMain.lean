@@ -12,21 +12,23 @@ import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Profile
+import Strata.Util.Json
 
 open Strata
 
-open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
 
 /-! ## Exit codes
 
@@ -185,7 +187,10 @@ def verifyOptionsFlags : List Flag := [
     help := "Use SMT-LIB Array theory instead of axiomatized maps." },
   { name := "remove-irrelevant-axioms",
     help := "Prune irrelevant axioms: 'off', 'aggressive', or 'precise'.",
-    takesArg := .arg "mode" }
+    takesArg := .arg "mode" },
+  { name := "overflow-checks",
+    help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
+    takesArg := .arg "checks" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -208,6 +213,16 @@ def parseVerifyOptions (pflags : ParsedFlags)
     | .some "aggressive" => pure .Aggressive
     | .some "precise" => pure .Precise
     | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
+  let overflowChecks := match pflags.getString "overflow-checks" with
+    | .none => base.overflowChecks
+    | .some s => s.splitOn "," |>.foldl (fun acc c =>
+        match c.trimAscii.toString with
+        | "signed"   => { acc with signedBV := true }
+        | "unsigned" => { acc with unsignedBV := true }
+        | "float64"  => { acc with float64 := true }
+        | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
+        | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
+        | _          => acc) { signedBV := false, unsignedBV := false, float64 := false }
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -227,6 +242,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     profile := pflags.getBool "profile" || base.profile,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
+    overflowChecks,
     vcDirectory
   }
 
@@ -483,6 +499,7 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -498,7 +515,10 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .repeat "module" },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            { name := "entry-point",
+              help := "Which procedures to verify: main (main fn only), roots (user procs with no user callers, default), or all (all user procs). Only valid in bugFinding mode.",
+              takesArg := .arg "mode" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -523,7 +543,7 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath
+      match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
                 (quiet := quiet) |>.toBaseIO with
       | .ok r => pure r
@@ -557,17 +577,12 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
 
-    if let some dir := keepDir then
-      let path := s!"{dir}/{baseName}.laurel"
-      IO.FS.writeFile path ((Laurel.formatProgram combinedLaurel).pretty ++ "\n")
+    let keepPrefix := keepDir.map (s!"{·}/{baseName}")
 
-    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
+    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel) ←
       profileStep profile "Laurel to Core translation" do
-        pure (Strata.translateCombinedLaurelWithLowered combinedLaurel)
-
-    if let some dir := keepDir then
-      let path := s!"{dir}/{baseName}.lowered.laurel"
-      IO.FS.writeFile path ((Laurel.formatProgram loweredLaurel).pretty ++ "\n")
+        Strata.translateCombinedLaurelWithLowered combinedLaurel
+          (keepAllFilesPrefix := keepPrefix)
 
     let coreProgram ←
       match coreProgramOption with
@@ -579,16 +594,6 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print (Core.formatProgram coreProgram)
 
-    -- Split prelude / user procedure names.
-    -- Only procedures whose file range matches the user source are targets.
-    let userSourcePath := sourcePath.getD filePath
-    let (_preludeNames, userProcNames) :=
-      Strata.splitProcNames coreProgram [userSourcePath]
-
-    if let some dir := keepDir then
-      let path := s!"{dir}/{baseName}.core"
-      IO.FS.writeFile path (toString coreProgram)
-
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
@@ -599,18 +604,41 @@ def pyAnalyzeLaurelCommand : Command where
     let options ← parseVerifyOptions pflags pyAnalyzeBase
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
-    let inlinePhases : List Core.PipelinePhase :=
+
+    -- Parse --entry-point flag (only supported in bug-finding modes).
+    let entryPointFlag := pflags.getString "entry-point"
+    let entryPoint : EntryPoint ←
       if isBugFinding then
-        [Core.procedureInliningPipelinePhase
-          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
-            maxIters := some 10 }]
-      else []
+        match entryPointFlag with
+        | some s =>
+          match EntryPoint.ofString? s with
+          | some ep => pure ep
+          | none =>
+            exitPyAnalyzeUserError s!"Invalid --entry-point value '{s}'. Must be {EntryPoint.options}."
+        | none => pure .roots
+      else
+        if entryPointFlag.isSome then
+          exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
+        else pure .all
+
+    -- Pick the procedures to verify and set up inlining phases.
+    let userSourcePath := sourcePath.getD filePath
+    let (_, userProcNames) :=
+      Strata.splitProcNames coreProgram [userSourcePath]
+    let (proceduresToVerify, inlinePhases) :=
+      if isBugFinding then
+        let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases coreProgram userProcNames entryPoint
+        (p, [i])
+      else (userProcNames, [])
+
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some userProcNames)
+                (proceduresToVerify := some proceduresToVerify)
                 (externalPhases := [Strata.frontEndPhase])
-                (prefixPhases := inlinePhases) |>.toBaseIO with
+                (prefixPhases := inlinePhases)
+                (keepAllFilesPrefix := keepPrefix)
+                |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
@@ -657,7 +685,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm { doInline := (fun name _ => name ≠ "main") } with
+    match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -691,8 +719,8 @@ def pyAnalyzeToGotoCommand : Command where
               (moduleName := baseName)
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
-        IO.FS.writeFile symTabFile symtab.pretty
-        IO.FS.writeFile gotoFile goto.pretty
+        writeJsonFile symTabFile symtab
+        writeJsonFile gotoFile goto
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def pyTranslateLaurelCommand : Command where
@@ -882,7 +910,7 @@ def laurelAnalyzeToGotoCommand : Command where
     let path : System.FilePath := v[0]
     let content ← IO.FS.readFile path
     let laurelProgram ← Strata.parseLaurelText path content
-    match Strata.Laurel.translate {} laurelProgram with
+    match ← Strata.Laurel.translate {} laurelProgram with
       | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | (some coreProgram, errors) =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
@@ -964,8 +992,8 @@ def laurelAnalyzeToGotoCommand : Command where
         let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
-        IO.FS.writeFile symTabFile symtab.pretty
-        IO.FS.writeFile gotoFile goto.pretty
+        writeJsonFile symTabFile symtab
+        writeJsonFile gotoFile goto
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def laurelPrintCommand : Command where
@@ -1007,7 +1035,7 @@ def laurelToCoreCommand : Command where
   help := "Translate a Laurel source file to Core and print to stdout."
   callback := fun v _ => do
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (coreProgramOption, errors) := Strata.Laurel.translate {} laurelProgram
+    let (coreProgramOption, errors) ← Strata.Laurel.translate {} laurelProgram
       if !errors.isEmpty then
         IO.println s!"Core translation errors: {errors.map (·.message)}"
       match coreProgramOption with
@@ -1107,7 +1135,7 @@ def transformCommand : Command where
         | "inlineProcedures" =>
           let opts : Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
-            else { doInline := (fun name _ => name ∈ pc.procedures) }
+            else { doInline := (fun _caller callee _ => callee ∈ pc.procedures) }
           passes := passes ++ [.inlineProcedures opts]
         | "loopElim" =>
           passes := passes ++ [.loopElim]
