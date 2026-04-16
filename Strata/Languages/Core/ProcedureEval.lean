@@ -43,22 +43,21 @@ The differences across paths are:
   `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
   prevent fresh-variable name collisions in subsequent evaluation.
 
-The `fallback` pair is returned when `results` is empty (which should not occur
+The `fallback` Env is returned when `results` is empty (which should not occur
 in practice, since `Statement.eval` always produces at least one result).
 -/
-private def mergeResults (fallback : Procedure × Env) (results : List (Procedure × Env)) :
-    Procedure × Env :=
+private def mergeResults (fallback : Env) (results : List Env) : Env :=
   match results with
   | [] => fallback
-  | [(p, E)] => (p, E)
-  | (p, E) :: rest =>
-    let allDeferred := rest.foldl (fun acc (_, e) => acc ++ e.deferred) E.deferred
-    let maxGen      := rest.foldl (fun acc (_, e) => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
-    (p, { E with
+  | [E] => E
+  | E :: rest =>
+    let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) E.deferred
+    let maxGen      := rest.foldl (fun acc e => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
+    { E with
       deferred := allDeferred,
-      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
+      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } }
 
-def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
+def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
   let modifies_tys :=
@@ -116,7 +115,7 @@ def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
       (.assume label check.expr check.md))
       p.spec.preconditions
   let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ p.body ++ postcond_asserts)
-  (mergeResults (p, E) (ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))), evalStats)
+  (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
 
 ---------------------------------------------------------------------
 
