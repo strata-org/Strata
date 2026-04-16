@@ -205,6 +205,7 @@ def dischargeObligation
     batch `dischargeObligation`. -/
 def dischargeObligationIncremental
   (options : VerifyOptions)
+  (vars : List Expression.TypedIdent)
   (md : Imperative.MetaData Expression)
   (assumptionTerms : List Term)
   (obligationTerm : Term)
@@ -223,8 +224,8 @@ def dischargeObligationIncremental
   let allFlags := #["--quiet", "--lang", "smt"] ++ solverFlags
   let solverState ← spawn options.solver allFlags
   let action : _root_.Strata.SMT.IncrementalSolverM (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
-    -- Encode the entire problem using the existing encoder into a buffer,
-    -- then replay the commands to the live solver process.
+    -- Encode the entire problem into a buffer using the existing encoder,
+    -- then send all commands to the live solver and read all output.
     let bEnc ← IO.mkRef { : IO.FS.Stream.Buffer }
     let batchSolverEnc ← Solver.bufferWriter bEnc
     let ((_ids, estate), _) ← (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
@@ -235,51 +236,35 @@ def dischargeObligationIncremental
       pure (String.fromUTF8 bufEnc.data h)
     else
       throw (IO.userError "incremental solver: encoded SMT-LIB buffer is not valid UTF-8")
-    -- Count expected check-sat responses so we can read the right number.
-    -- The encoder may also emit get-value commands after check-sat; we need
-    -- to consume those responses too.
-    let mut checkSatCount := 0
+    -- Send all commands to the live solver
     for line in cmds.splitOn "\n" do
-      let trimmed := line.trimAscii.toString
-      if trimmed.isEmpty then continue
-      emitln line
-      if trimmed.startsWith "(check-sat" then
-        checkSatCount := checkSatCount + 1
-    -- Parse a solver response line into an SMT result.
-    -- Detects solver error messages (e.g. `(error "...")`) instead of
-    -- silently mapping them to `.unknown`.
-    let parseResult (line : String) : Imperative.SMT.Result Expression.Ident :=
-      match line with
-      | "sat" => .sat []
-      | "unsat" => .unsat
-      | "unknown" => .unknown
-      | other =>
-        if other.startsWith "(error" then .err other
-        else .unknown
-    -- Read check-sat responses. The encoder may also emit `(get-value ...)`
-    -- after check-sat when `ids` is non-empty, which produces multi-line
-    -- output from the solver. We consume lines until we find a check-sat
-    -- response (sat/unsat/unknown) or a solver error.
-    let isCheckSatResponse (s : String) : Bool :=
-      s == "sat" || s == "unsat" || s == "unknown" || s.startsWith "(error"
-    let mut resultsList : List (Imperative.SMT.Result Expression.Ident) := []
-    for _ in List.range checkSatCount do
-      -- Skip any non-check-sat output (e.g. get-value responses)
-      let mut line ← readln
-      while !isCheckSatResponse line do
-        line ← readln
-      resultsList := parseResult line :: resultsList
-    let results := resultsList.reverse
-    -- Map results to sat/validity based on what was requested
-    let satResult := if satisfiabilityCheck then
-      results.head?.getD .unknown
-    else .unknown
-    let valResult := if validityCheck then
-      let idx := if satisfiabilityCheck then 1 else 0
-      results.getD idx .unknown
-    else .unknown
+      if !line.trimAscii.toString.isEmpty then
+        emitln line
+    -- Send exit and flush to signal the solver to produce all output
     emitln "(exit)"
-    return .ok (satResult, valResult, estate)
+    let st ← get
+    st.solver.smtLibInput.flush
+    -- Read all solver output at once, then parse with the same logic
+    -- as the batch path (solverResult handles verdicts, get-value
+    -- responses, and model parsing).
+    let mut allOutput := ""
+    match st.solver.smtLibOutput with
+    | .some stdout =>
+      let mut reading := true
+      while reading do
+        let chunk ← try
+          stdout.getLine
+        catch _ =>
+          reading := false
+          pure ""
+        if chunk.isEmpty then reading := false
+        else allOutput := allOutput ++ chunk
+    | .none => pure ()
+    let fakeOutput : IO.Process.Output := { exitCode := 0, stdout := allOutput, stderr := "" }
+    match ← Imperative.SMT.solverResult (typedVarToSMTFn ctx) vars fakeOutput estate
+        options.solver satisfiabilityCheck validityCheck with
+    | .ok (satResult, valResult) => return .ok (satResult, valResult, estate)
+    | .error e => return .error e
   let (result, _) ← action.run solverState
   return result
 
@@ -853,6 +838,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
         (fun e => DiagnosticModel.fromFormat f!"{e}")
         (if options.incremental then
           SMT.dischargeObligationIncremental options
+            typedVarsInObligation
             obligation.metadata
             assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
             (label := obligation.label)
