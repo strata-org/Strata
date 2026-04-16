@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
+import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Core.Verifier
@@ -103,6 +104,9 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   emit "EliminateReturns" program
+
+  let program := eliminateReturnStatements program
+  emit "EliminateReturnStatements" program
 
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
   let result := resolve program (some model)
