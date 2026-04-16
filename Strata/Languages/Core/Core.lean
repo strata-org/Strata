@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.ProgramEval
 public import Strata.Languages.Core.ProgramType
 public import Strata.Languages.Core.DDMTransform.ASTtoCST
+public import Strata.Languages.Core.Statistics
 
 ---------------------------------------------------------------------
 
@@ -71,7 +72,7 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
 
 def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (List Env) := do
+    Except DiagnosticModel ((List Env) × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
@@ -81,15 +82,29 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
   let σ ← (Lambda.LState.init).addFactory factory
   let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
-  match Program.eval E with
-  | .ok pEs =>
-    if options.verbose >= .normal then do
-      dbg_trace f!"{Std.Format.line}VCs:"
-      for E in pEs do
-        dbg_trace f!"{formatProofObligations E.deferred}"
-    return pEs
-  | .error msg =>
-    .error (DiagnosticModel.fromMessage msg)
+
+  -- Collect declaration statistics
+  let stats := program.decls.foldl (fun s d =>
+    match d with
+    | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
+    | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
+    | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
+    | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
+    | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
+    | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
+    | .recFuncBlock fs _ => s.increment s!"{Evaluator.Stats.recursiveFunctions}" fs.length)
+    ({} : Statistics)
+
+  let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
+  let (pEs, evalStats) := Program.eval E
+  let stats := stats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+
+  if options.verbose >= .normal then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    for E in pEs do
+      dbg_trace f!"{formatProofObligations E.deferred}"
+  return (pEs, stats)
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)

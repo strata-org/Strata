@@ -42,7 +42,7 @@ info: error: Impossible to unify (Foo bool bool) with (Foo int bool).
 First mismatch: bool with int.
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndEval .default bad_prog
+#eval do let (ans, _) ← typeCheckAndEval .default bad_prog
          return (format ans)
 
 def good_prog : Program := { decls := [
@@ -488,7 +488,7 @@ info: ok: [Error:
  ]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndEval .default good_prog
+#eval do let (ans, _) ← typeCheckAndEval .default good_prog
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -523,7 +523,7 @@ info: error: [assert [q_check] (q == #1)] No free variables are allowed here!
 Free Variables: [q]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndEval .default outOfScopeVarProg
+#eval do let (ans, _) ← typeCheckAndEval .default outOfScopeVarProg
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -601,7 +601,7 @@ VCs:
 info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndEval .default intIdentityFnPgm
+#eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm
           if h : ans.length == 1 then
             let E := ans[0]'(by grind)
             return (format E.program)
@@ -622,7 +622,7 @@ def recursiveFuncDeclProg : Program := { decls := [
 info: error: Decl.func does not allow recursive functions. Use recFuncBlock instead: 'bad'
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndEval .default recursiveFuncDeclProg
+#eval do let (ans, _) ← typeCheckAndEval .default recursiveFuncDeclProg
          return (format ans)
 
 ---------------------------------------------------------------------
