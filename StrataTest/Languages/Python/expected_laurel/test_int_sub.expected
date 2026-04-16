@@ -1,5 +1,5 @@
 test_int_sub.py(4, 13): ✅ pass - Check PSub exception
-test_int_sub.py(5, 4): ✅ pass - int subtraction
+test_int_sub.py(5, 4): ✅ pass - assert_assert(74)_calls_Any_to_bool_0
 test_int_sub.py(5, 4): ✅ pass - int subtraction
 DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

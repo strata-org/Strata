@@ -68,7 +68,7 @@ category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl:0 ", " b:0;
 
 category MonoBind;
 @[declare(v, tp)]
@@ -80,7 +80,7 @@ category MonoDeclList;
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl ", " b;
+  dl:0 ", " b:0;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -173,6 +173,12 @@ fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
 fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
 fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
 fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
+fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe+ " b;
+fn safesub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe- " b;
+fn safemul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " safe* " b;
+fn safeneg_expr (tp : Type, a : tp) : tp => "safe_neg " a;
+fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesdiv " b;
+fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesmod " b;
 fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
