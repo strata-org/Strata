@@ -501,8 +501,9 @@ def pathSummary (o : VCOutcome) (property : Imperative.PropertyType)
     -- If all paths have the same label as the merged result, no extra info needed
     if counts.size == 1 && counts.contains mergedLabel then ""
     else
-      let parts := counts.toList.map fun (lbl, n) =>
-        s!"{lbl} on {n} path{if n > 1 then "s" else ""}"
+      let parts := counts.toList.mergeSort (fun a b => a.1 < b.1)
+        |>.map fun (lbl, n) =>
+          s!"{lbl} on {n} path{if n > 1 then "s" else ""}"
       s!" ({", ".intercalate parts})"
 
 end VCOutcome
