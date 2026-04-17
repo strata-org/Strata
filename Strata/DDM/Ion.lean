@@ -153,32 +153,36 @@ private inductive StringOrSexp (v : Ion SymbolId) where
 | string (s : String)
 | sexp (a : Array (Ion SymbolId)) (p : a.size > 0 ∧ sizeOf a < sizeOf v)
 
-private inductive Required where
+inductive Required where
 | req
 | opt
 deriving DecidableEq
 
+<<<<<<< HEAD
+structure StructArgMap (size : Nat) where
+=======
 /--
 Maps struct field names to their position indices, tracking which fields are
 required. Used during Ion deserialization to validate that all required fields
 are present.
 -/
 private structure StructArgMap (size : Nat) where
+>>>>>>> origin/main
   map : Std.HashMap String (Fin size) := {}
   required : Array (String × Fin size)
   deriving Inhabited
 
 namespace StructArgMap
 
-private instance : Membership String (StructArgMap size) where
+instance : Membership String (StructArgMap size) where
   mem m nm := nm ∈ m.map
 
-private instance : GetElem? (StructArgMap size) String (Fin size) (fun m nm => nm ∈ m) where
+instance : GetElem? (StructArgMap size) String (Fin size) (fun m nm => nm ∈ m) where
   getElem m nm p := m.map[nm]
   getElem! m nm := m.map[nm]!
   getElem? m nm := m.map[nm]?
 
-private def fromList! (as : List String) : StructArgMap as.length :=
+def fromList! (as : List String) : StructArgMap as.length :=
   let size := as.length
   let m := { map := {}, required := #[] }
   as.foldl (init := m) fun m name =>
@@ -192,7 +196,7 @@ private def fromList! (as : List String) : StructArgMap as.length :=
     else
       panic! "Invalid index"
 
-private def fromOptList! (as : List (String × Required)) : StructArgMap as.length :=
+def fromOptList! (as : List (String × Required)) : StructArgMap as.length :=
   let size := as.length
   let m := { map := {}, required := #[] }
   as.foldl (init := m) fun m (name, r) =>
@@ -219,54 +223,59 @@ deriving Monad
 
 namespace FromIonM
 
-private instance : MonadExcept String FromIonM :=
+instance : MonadExcept String FromIonM :=
   inferInstanceAs (MonadExcept _ (ReaderT _ _))
 
-private instance : MonadReader FromIonContext FromIonM :=
+instance : MonadReader FromIonContext FromIonM :=
   inferInstanceAs (MonadReader _ (ReaderT _ _))
 
-private def readSymbolTable : FromIonM Ion.SymbolTable :=
+def readSymbolTable : FromIonM Ion.SymbolTable :=
   return (← read).symbols
 
-private protected def lookupSymbol (sym : SymbolId) : FromIonM String := do
+protected def lookupSymbol (sym : SymbolId) : FromIonM String := do
   let some fullname := (←readSymbolTable)[sym]?
     | throw s!"Could not find symbol {sym.value}"
   pure fullname
 
-private protected def asNat (name : String) (v : Ion SymbolId) : FromIonM Nat :=
+protected def asNat (name : String) (v : Ion SymbolId) : FromIonM Nat :=
   match v.asNat? with
   | some x => pure x
   | none => throw s!"Expected {name} to be a nat instead of {repr v}."
 
-private protected def asInt (v : Ion SymbolId) : FromIonM Int :=
+protected def asInt (v : Ion SymbolId) : FromIonM Int :=
   match v.asInt? with
   | some x => pure x
   | none => throw s!"Expected {repr v} to be an int."
 
-private protected def asString (name : String) (v : Ion SymbolId) : FromIonM String :=
+protected def asString (name : String) (v : Ion SymbolId) : FromIonM String :=
   match v.app with
   | .string s => return s
   | _ => throw s!"{name} expected to be a string. {repr v}"
 
-private protected def asBytes (name : String) (v : Ion SymbolId) : FromIonM ByteArray :=
+protected def asBool (name : String) (v : Ion SymbolId) : FromIonM Bool :=
+  match v.app with
+  | .bool b => return b
+  | _ => throw s!"{name} expected to be a bool. {repr v}"
+
+protected def asBytes (name : String) (v : Ion SymbolId) : FromIonM ByteArray :=
   match v.app with
   | .blob a => return a
   | .list a => ByteArray.ofNatArray <$> a.mapM (.asNat "name element")
   | _ => throw s!"{name} expected to be a string. {repr v}"
 
-private protected def asSymbolString (name : String) (v : Ion SymbolId) : FromIonM String :=
+protected def asSymbolString (name : String) (v : Ion SymbolId) : FromIonM String :=
   match v.app with
   | .symbol sym => .lookupSymbol sym
   | .string name => pure name
   | _ => throw s!"{name} expected to be a symbol or string."
 
-private protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion SymbolId) // sizeOf a < sizeOf v} :=
+protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion SymbolId) // sizeOf a < sizeOf v} :=
   match v with
   | .mk (.list args) =>
     return .mk args (by simp; omega)
   | _ => throw s!"Expected list"
 
-private protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // a.size > 0 ∧ sizeOf a < sizeOf v}) :=
+protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // a.size > 0 ∧ sizeOf a < sizeOf v}) :=
   match v with
   | .mk (.sexp args) | .mk (.list args) =>
     if p : args.size > 0 then
@@ -275,7 +284,13 @@ private protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a 
       throw s!"{name} expected non-empty expression"
   | _ => throw s!"{name} expected sexpression."
 
-private protected def asSymbolOrSexp (v : Ion SymbolId) : FromIonM (StringOrSexp v) :=
+protected def asSexpOrList (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // sizeOf a < sizeOf v}) :=
+  match v with
+  | .mk (.sexp args) | .mk (.list args) =>
+    pure <| .mk args (by decreasing_tactic)
+  | _ => throw s!"{name} expected sexpression or list."
+
+protected def asSymbolOrSexp (v : Ion SymbolId) : FromIonM (StringOrSexp v) :=
   match v with
   | .mk (.symbol s) => .string <$> .lookupSymbol s
   | .mk (.string s) => return .string s
@@ -286,13 +301,13 @@ private protected def asSymbolOrSexp (v : Ion SymbolId) : FromIonM (StringOrSexp
       throw s!"Expected non-empty expression"
   | _ => throw s!"Expected symbol or sexpression."
 
-private def checkArgCount (name : String) (args : Array (Ion SymbolId)) (n : Nat) : FromIonM (PLift (args.size = n)) := do
+def checkArgCount (name : String) (args : Array (Ion SymbolId)) (n : Nat) : FromIonM (PLift (args.size = n)) := do
     if p : args.size = n then
       pure ⟨p⟩
     else
       throw s!"{name} expects {n} arguments has {repr args}"
 
-private def checkArgMin (name : String) (args : Array (Ion SymbolId)) (n : Nat) : FromIonM (PLift (args.size ≥ n)) := do
+def checkArgMin (name : String) (args : Array (Ion SymbolId)) (n : Nat) : FromIonM (PLift (args.size ≥ n)) := do
     if p : args.size ≥ n then
       pure ⟨p⟩
     else
@@ -301,22 +316,38 @@ private def checkArgMin (name : String) (args : Array (Ion SymbolId)) (n : Nat) 
 /--
 Interpret Ion value as an array and applies function to it.
 -/
-private def asListOf {α} (name : String) (v : Ion SymbolId) (f : Ion SymbolId → FromIonM α) : FromIonM (Array α) :=
+def asListOf {α} (name : String) (v : Ion SymbolId) (f : Ion SymbolId → FromIonM α) : FromIonM (Array α) :=
   match v with
   | .mk (.list a) => a.mapM f
   | _ => throw s!"{name} expects a list."
 
-private def asStruct (type : String) (v : Ion SymbolId) : FromIonM { a : Array (SymbolId × Ion SymbolId) // sizeOf a < sizeOf v } := do
+def asStruct (type : String) (v : Ion SymbolId) : FromIonM { a : Array (SymbolId × Ion SymbolId) // sizeOf a < sizeOf v } := do
   match v with
   | .mk (.struct args) => pure ⟨args, by decreasing_tactic ⟩
   | v => throw s!"{type} expected a struct: {repr v}"
 
-private def asStruct0 (v : Ion SymbolId) : FromIonM (Array (SymbolId × Ion SymbolId)) := do
+def asStruct0 (v : Ion SymbolId) : FromIonM (Array (SymbolId × Ion SymbolId)) := do
   match v with
   | .mk (.struct args) => pure args
   | _ => throw "Expected a struct0"
 
-private def sizeOfListLowerBound [h : SizeOf α] (l : List α) : sizeOf l > l.length := by
+/-- Look up a field by name in a struct's field array -/
+def getField (fields : Array (SymbolId × Ion SymbolId)) (fieldName : String) : FromIonM (Ion SymbolId) := do
+  for (symId, value) in fields do
+    let name ← .lookupSymbol symId
+    if name == fieldName then
+      return value
+  throw s!"Field '{fieldName}' not found in struct"
+
+/-- Look up an optional field by name in a struct's field array -/
+def getFieldOpt (fields : Array (SymbolId × Ion SymbolId)) (fieldName : String) : FromIonM (Option (Ion SymbolId)) := do
+  for (symId, value) in fields do
+    let name ← .lookupSymbol symId
+    if name == fieldName then
+      return some value
+  return none
+
+def sizeOfListLowerBound [h : SizeOf α] (l : List α) : sizeOf l > l.length := by
   match l with
   | [] =>
     simp
@@ -324,7 +355,7 @@ private def sizeOfListLowerBound [h : SizeOf α] (l : List α) : sizeOf l > l.le
     have p := sizeOfListLowerBound r
     decreasing_tactic
 
-private def sizeOfArrayLowerBound [h : SizeOf α] (a : Array α) : sizeOf a ≥ 2 + a.size := by
+def sizeOfArrayLowerBound [h : SizeOf α] (a : Array α) : sizeOf a ≥ 2 + a.size := by
   match a with
   | ⟨l⟩ =>
     have p := sizeOfListLowerBound l
@@ -359,11 +390,11 @@ private def mapFields {size} (args : Array (SymbolId × Ion SymbolId)) (m : Stru
         throw s!"Missing assignment to {name}."
     pure a
 
-private def asFieldStruct {size} (v : Ion SymbolId) (type : String) (m : StructArgMap size) : FromIonM (Vector (Ion SymbolId) size) := do
+def asFieldStruct {size} (v : Ion SymbolId) (type : String) (m : StructArgMap size) : FromIonM (Vector (Ion SymbolId) size) := do
   let ⟨args, _⟩ ← asStruct type v
   mapFields args m
 
-private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) : Except String α := do
+def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) : Except String α := do
   let a ←
     match deserialize bs with
     | .error (off, msg) =>
