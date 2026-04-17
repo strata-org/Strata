@@ -25,9 +25,9 @@ assert F(2+z)+F(2+z) == 2*F(2+z)
 This pass normalizes such programs by hoisting common subexpressions into
 `var` declarations:
 ```
-var $__t.0 := F(2+z)
-assume $__t.0 >= 5
-assert $__t.0+$__t.0 == 2*$__t.0
+var $__anf.0 := F(2+z)
+assume $__anf.0 >= 5
+assert $__anf.0+$__anf.0 == 2*$__anf.0
 ```
 
 This is the second phase described in issue #749: after partial evaluation
@@ -282,7 +282,7 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let targets := findANFEncoderTargets (collectExprsFromStatements body)
   -- Build var declarations in reverse, then reverse at the end
   let (revDecls, body', nextIdx) := targets.foldl (fun (decls, body, idx) dup =>
-    let freshName : CoreIdent := ⟨s!"$__t.{idx}", ()⟩
+    let freshName : CoreIdent := ⟨s!"$__anf.{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
     let ty : Expression.Ty := match freshTy with

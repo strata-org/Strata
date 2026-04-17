@@ -33,11 +33,11 @@ info: program Core;
 
 procedure test (x : int, y : int) returns ()
 {
-  var $__t.0 : int := x + y;
-  if ($__t.0 > 0) {
-    assert [assert_0]: $__t.0 >= 1;
+  var $__anf.0 : int := x + y;
+  if ($__anf.0 > 0) {
+    assert [assert_0]: $__anf.0 >= 1;
     } else {
-    assert [assert_1]: $__t.0 <= 0;
+    assert [assert_1]: $__anf.0 <= 0;
     }
   };
 -/

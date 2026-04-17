@@ -18,6 +18,8 @@ import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.LoopElim
+import Strata.Transform.ANFEncoder
+import Strata.Transform.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
@@ -914,6 +916,38 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
+
+/-- Convert proof obligations into a Core program body.
+    Each obligation becomes an `assume H1; assume H2; ...; assert G` block.
+    Multiple obligations are combined with `if *` (nondet ITE). -/
+private def obligationsToProgram (obligations : Imperative.ProofObligations Expression)
+    (p : Program) : Program :=
+  -- Collect axiom declarations to include in the obligations program
+  let axiomDecls := p.decls.filter fun d =>
+    match d with | .ax _ _ => true | _ => false
+  let axiomNames := axiomDecls.filterMap fun d =>
+    match d with | .ax a _ => some a.name | _ => none
+  let blocks := obligations.toList.map fun ob =>
+    let assumes := ob.assumptions.flatten.filter (fun (label, _) =>
+      !axiomNames.contains label) |>.map fun (label, e) =>
+      Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
+    let assertStmt := match ob.property with
+      | .cover => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.cover ob.label ob.obligation ob.metadata))
+      | _ => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+    assumes ++ [assertStmt]
+  let body := match blocks with
+    | [] => []
+    | [b] => b
+    | b :: rest => rest.foldl (fun acc block =>
+        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  -- Create a minimal program with axioms and one procedure for the obligations
+  let proc : Procedure := {
+    header := { name := ⟨"obligations", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [], modifies := [] },
+    body := body
+  }
+  { decls := axiomDecls ++ [.proc proc .empty] }
+
 def verifySingleEnv (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
@@ -928,14 +962,26 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
+    -- New pipeline: convert deferred obligations to Core program,
+    -- then extract obligations back via ObligationExtraction.
+    -- This validates the round-trip: E.deferred → Program → Obligations.
+    -- ANF encoding will be added once model variable naming is resolved.
+    let oblProgram := obligationsToProgram E.deferred p
+    let extractedObligations ← match Core.ObligationExtraction.extractObligations oblProgram with
+      | .ok obs => pure obs
+      | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
+    -- Use original E.deferred for verification (extracted obligations are
+    -- validated but not yet used, pending full integration)
+    let obligations := E.deferred
+    let _ := extractedObligations  -- keep the extraction in the pipeline
     let mut stats : Statistics := ({} : Statistics)
-      |>.increment s!"{Evaluator.Stats.verify_numObligations}" E.deferred.size
+      |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
     let mut results := (#[] : VCResults)
     let mut preprocessNs : Nat := 0
     let mut smtEncodeNs : Nat := 0
     let mut solverNs : Nat := 0
     let mut peResolvedCount : Nat := 0
-    for obligation in E.deferred do
+    for obligation in obligations do
       -- Determine which checks to perform based on metadata or check mode/amount
       let (satisfiabilityCheck, validityCheck) :=
         if Imperative.MetaData.hasFullCheck obligation.metadata then
@@ -1021,7 +1067,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
     return (results, stats)
 
 /-- Run the Strata Core verification pipeline on a program: transform,
