@@ -140,6 +140,29 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
       dbg_trace f!"{formatProofObligations E.deferred}"
   return (oblProgram, pEs, stats)
 
+/-- Build an Env suitable for SMT encoding from a program.
+    Loads factory functions, datatypes, and distinct constraints
+    without running procedure evaluation. -/
+def buildSMTEnv (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel Env := do
+  let factory ← Core.Factory.addFactory moreFns
+  let σ ← (Lambda.LState.init).addFactory factory
+  let datatypes := program.decls.filterMap fun decl =>
+    match decl with | .type (.data d) _ => some d | _ => none
+  let mut E : Env := { Env.init with exprEnv := σ, program := program }
+  E ← E.addDatatypes datatypes
+  -- Load function declarations into the factory
+  for decl in program.decls do
+    match decl with
+    | .func func _ => E ← E.addFactoryFunc func
+    | .recFuncBlock funcs _ =>
+      validateCasesTypes funcs E.datatypes
+      for func in funcs do E ← E.addFactoryFunc func
+    | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
+    | _ => pure ()
+  return E
+
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)
 

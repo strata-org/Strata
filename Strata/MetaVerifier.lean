@@ -59,9 +59,12 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
   let program := (loopElim program).fst
   match Core.typeCheckAndEval options program with
   | .error _ => none
-  | .ok (_oblProgram, pEs, _stats) =>
-    let VCss ← List.mapM (fun E => genVCsSingleENV E) pEs
-    return VCss.flatten.reverse
+  | .ok (oblProgram, pEs, _stats) =>
+    match Core.ObligationExtraction.extractObligations oblProgram with
+    | .error _ => none
+    | .ok obligations =>
+      let E := pEs.head?.getD (Env.init (empty_factory := true))
+      return obligations.toList.map (fun ob => (E, ob))
 
 end Core
 
