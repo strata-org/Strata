@@ -108,14 +108,14 @@ structure CoreTransformState where
   genState: CoreGenState
   -- The program that is being transformed.
   -- The definition of "current" may vary depending on the transformation.
-  -- During transformation, it is allowed for currentProgram be slightly stale
-  -- (has procedures and functions and statements that are not transformed
-  -- yet). For example, procedure inlining will always keep currentProgram that
-  -- is before inlining.
-  -- However, when transformation is finished, currentProgram must contain the
-  -- program that is fully updated (or it has to be .none). runProgram enforces
-  -- that currentProgram of this CoreTransformState is updated to be the updated
-  -- program.
+  -- If the transformation is implemented with runProgram or runProgramUntil,
+  -- the currentProgram field will store the latest versions of finished
+  -- procedures, but the procedure that is being updated might have stale
+  -- statements.
+  -- When a transformation is finished, currentProgram must contain the
+  -- program that is fully updated (or it has to be .none).
+  -- Using runProgram/runProgramUntil enforces that currentProgram of this
+  -- CoreTransformState is updated to be the updated program.
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
@@ -338,42 +338,6 @@ private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)
     return ⟨changed0 || changed, (sres ++ ss'')⟩
 
 /--
-Visit all procedures and run f. The returned Bool corresponds to whether the
-program has been updated.
-NOTE: please use runProgram if possible since CoreTransformState might result
-in an inconsistent state. This function is for partial implementation.
--/
-private def runProcedures
-    (f : Command → CoreTransformM (Option (List Statement)))
-    (dcls : List Decl)
-    (targetProcList : Option (List String) := .none)
-    : CoreTransformM (Bool × List Decl) := do
-  match dcls with
-  | [] => return (false, [])
-  | d :: ds =>
-    match d with
-    | .proc proc md =>
-      if (match targetProcList with
-         | .none => true
-         | .some p => proc.header.name.1 ∈ p) then
-        modify (fun σ => { σ with
-          currentProcedureName := .some proc.header.name.1
-        })
-        let (changed, new_body) ← runStmtsRec f proc.body
-        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
-        return (changed || changed',
-          Decl.proc {
-            proc with body := new_body
-          } md :: new_procs)
-      else
-        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
-        return (changed', d :: new_procs)
-    | _ =>
-      let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
-      return (changed', d :: new_procs)
-
-
-/--
 Run f on each command of the program.
 Returns (has the program updated?, the updated program).
 If targetProcList is .none, apply f to all statements in every procedure.
@@ -386,14 +350,37 @@ def runProgram
     (targetProcList : Option (List String) := .none)
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
-  let (changed, newDecls) ← runProcedures
-    (targetProcList := targetProcList) f p.decls
-  let newProg := { decls := newDecls }
+
+  let mut anyChanged := false
+  let mut newDecls := p.decls
+  for i in [:p.decls.length] do
+    match p.decls[i]? with
+    | some (.proc proc md) =>
+      let isTargetProc := match targetProcList with
+         | .none => true
+         | .some pl => proc.header.name.1 ∈ pl
+
+      if isTargetProc then
+        -- Initialize CoreTransformState
+        modify (fun σ => { σ with
+          currentProcedureName := .some proc.header.name.1
+        })
+
+        let (changed, new_body) ← runStmtsRec f proc.body
+
+        if changed then
+          newDecls := newDecls.set i (Decl.proc { proc with body := new_body } md)
+          anyChanged := true
+          modify (fun σ => { σ with
+            currentProgram := .some { decls := newDecls }
+          })
+    | _ => pure ()
+
+  let newProg : Program := { decls := newDecls }
   modify (fun σ => { σ with
-    currentProgram := .some newProg,
     currentProcedureName := .none
   })
-  return (changed, newProg)
+  return (anyChanged, newProg)
 
 /-- Repeatedly apply a command-level transformation until no more changes occur
     or the iteration limit is reached.
