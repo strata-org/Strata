@@ -1086,6 +1086,9 @@ def verify (program : Program)
     | .error err => .error err
     | .ok (oblProgram, stats) => .ok (oblProgram, stats)
   let allStats := pipelineStats.merge evalStats
+  -- ANF encoding phase (Program → Program)
+  let (oblProgram, _) ← profileStep profile "  ANF encoding" do
+    pure (Core.ANFEncoder.anfEncodeProgram oblProgram, ({} : Statistics))
   -- Build SMT encoding context by running full evaluation on the
   -- type-checked program (loads factory, datatypes, distinct, functions)
   let (smtEnv, _) ← match Core.buildEvalEnv finalProgram moreFns with

@@ -77,6 +77,8 @@ Result: ✅ pass
 Obligation: real_add_ge_bad
 Property: assert
 Result: ❌ fail
+Model:
+($__anf.2, 3.0) ($__anf.0, true) ($__anf.1, true)
 -/
 #guard_msgs in
 #eval verify realPgm

@@ -88,21 +88,27 @@ procedure Q3(x : int) returns ()
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    if line.startsWith "($__x" && line.contains ", " then
-      -- Extract the value after the comma
-      match line.splitOn ", " with
-      | [var, rest] =>
-        -- Remove trailing ")" and strip LExpr integer prefix "#"
-        let valStr := rest.dropEnd 1 |>.trimAscii
-        let valStr := if valStr.startsWith "#" then valStr.drop 1 else valStr
-        match valStr.toInt? with
-        | some val =>
-          if val == 2 then
-            s!"{var}, VALUE_WAS_2)"
-          else
-            s!"{var}, model_not_2)"
-        | none => line
-      | _ => line
+    if line.contains "$__x" && line.contains ", " then
+      -- New model format: multiple entries on one line
+      -- Extract $__x* entries and normalize their values
+      let parts := line.splitOn "($__x"
+      let xEntries := parts.drop 1 |>.filterMap fun part =>
+        match part.splitOn ", " with
+        | [varSuffix, rest] =>
+          let valAndRest := rest.splitOn ")"
+          match valAndRest with
+          | val :: _ =>
+            let val := val.trimRight
+            let val := if val.startsWith "#" then val.drop 1 else val
+            match val.toInt? with
+            | some v =>
+              if v == 2 then some s!"($__x{varSuffix}, VALUE_WAS_2)"
+              else some s!"($__x{varSuffix}, model_not_2)"
+            | none => some s!"($__x{varSuffix}, {val})"
+          | _ => none
+        | _ => none
+      if xEntries.isEmpty then line
+      else String.intercalate " " xEntries
     else
       line
   String.intercalate "\n" normalized

@@ -70,6 +70,8 @@ Result: ✅ pass
 Obligation: a_one_true
 Property: assert
 Result: ❌ fail
+Model:
+($__anf.0, true)
 -/
 #guard_msgs in
 #eval verify mapPgm
