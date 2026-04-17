@@ -1091,7 +1091,7 @@ public def pythonRuntimeLaurelPart : Laurel.Program :=
   | .ok p =>
     let addExceptionMd := p.staticProcedures.map (λ f =>
       if f.name.text ∈ AnyMaybeExceptionList then
-        {f with name := {f.name with md := f.name.md.withPropertySummary "AnyMaybeExcept" }}
+        {f with name := {f.name with md := f.name.md.pushElem (.label "maybeException") (.switch true) }}
       else f)
     {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
