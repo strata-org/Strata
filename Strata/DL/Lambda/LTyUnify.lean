@@ -87,10 +87,8 @@ theorem Subst.freeVars_cons (S : Subst) :
 theorem Subst.freeVars_of_find_subset (S : Subst) (hi : Maps.find? S i = some sty) :
     LMonoTy.freeVars sty ⊆ Subst.freeVars S := by
   have h_sty_map_value := @Maps.find?_mem_values _ _ i sty _ S hi
-  simp [List.instHasSubset, List.Subset, Subst.freeVars]
-  intro x hx
-  apply Exists.intro sty
-  simp_all
+  simp only [Subst.freeVars]
+  grind
 
 /--
 A substitution map `S` is well-formed if no key appears in the free type

@@ -262,6 +262,9 @@ theorem Map.erase_append_singleton [DecidableEq α]
       · exact absurd ‹_› h_ne
       · exact congrArg ((a, b) :: ·) (ih h)
 
+--set_option pp.notation false
+--set_option pp.explicit true
+
 /-- `Map.find?` on a map appended with a singleton map: either the new entry
     is found, or the result is the same as looking up in the original map. -/
 theorem Map.find?_append_singleton [DecidableEq α]
@@ -269,16 +272,18 @@ theorem Map.find?_append_singleton [DecidableEq α]
     (hm' : m' = [(x, v)]) :
     Map.find? (m ++ m') y = some v ∧ y = x ∨
     Map.find? (m ++ m') y = Map.find? m y := by
+  unfold Map;
+  unfold instHAppendMap
   subst hm'
   induction m with
   | nil =>
-    unfold Map; simp only [List.nil_append, Map.find?]
+    simp only [Map.find?, List.append]
     by_cases h : x = y
-    · left; exact ⟨by simp [h], h.symm⟩
+    · grind
     · right; simp [h]
   | cons p m' ih =>
     obtain ⟨a, b⟩ := p
-    unfold Map at *; simp only [List.cons_append, Map.find?]
+    simp only [Map.find?, List.append]
     by_cases h : a = y
     · right; simp [h]
     · simp only [h, ↓reduceIte]; exact ih

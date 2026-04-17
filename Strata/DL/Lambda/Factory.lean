@@ -188,12 +188,16 @@ theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map 
 
 protected def mem {T} (f : Factory T) (name : String) := name ∈ f.nameMap
 
+def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (f.mem name) :=
+  (inferInstance : Decidable (name ∈ f.nameMap))
+
+
+
 instance instMem {T} : Membership String (Factory T) where
   mem := Factory.mem
 
-@[instance]
-def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (name ∈ f) :=
-  inferInstanceAs (Decidable (name ∈ f.nameMap))
+instance instMembershipDecidable {T} (f : Factory T) (name : String) : Decidable (name ∈ f) :=
+  f.instMemDecidable name
 
 def get {T} (f : Factory T) (name : String) (p : name ∈ f): LFunc T :=
   let idx := f.nameMap[name]
@@ -228,6 +232,9 @@ protected def default {T} : Factory T := {
 instance {T} : Inhabited (Factory T) where
   default := Factory.default
 
+set_option pp.notation false
+set_option pp.explicit true
+
 def push {T} (F : Factory T) (fn : LFunc T) (is_new : ¬(fn.name.name ∈ F)) : Factory T :=
   let idx := F.toArray.size
   { toArray := F.toArray.push fn
@@ -235,7 +242,8 @@ def push {T} (F : Factory T) (fn : LFunc T) (is_new : ¬(fn.name.name ∈ F)) : 
     toArrayDefined := by
       intro ⟨i, hi⟩
       if heq : i < F.toArray.size then
-        simp only [instMem, Factory.mem] at is_new
+        unfold instMem at is_new
+        simp only [Factory.mem] at is_new
         have r := F.toArrayDefined ⟨i, heq⟩
         grind
       else
@@ -296,11 +304,11 @@ theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
 
 @[simp]
 theorem default_mem_is_false (T) (name : String) : name ∈ Factory.default (T := T) ↔ False := by
-  simp [Factory.default, Factory.instMem, Factory.mem]
+  simp +instances[Factory.default, Factory.instMem, Factory.mem]
 
 theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
   (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
-  simp [push, instGetElem?, Factory.get?]
+  simp +instances [push, instGetElem?, Factory.get?]
   grind
 
 theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}

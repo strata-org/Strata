@@ -1725,6 +1725,9 @@ private theorem unify_preserves_SubstFreshForGen
     · exact h_fresh_cs v h n hn
     · exact h_fresh_S v (Or.inr h) n hn
 
+#print Nat.toString_eq_repr
+
+set_option trace.Meta.Tactic.simp.rewrite true in
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `TGenEnv.genTyVar` is `tyPrefix ++ toString k` for
     `k = Env.genState.tyGen`, and the output state has `tyGen = k + 1`.
@@ -1738,21 +1741,16 @@ theorem genTyVar_genFresh'
   · simp at h
   · simp at h; obtain ⟨h_tv, h_env⟩ := h
     rw [← h_tv, ← h_env]
-    simp [TState.genTySym, TState.incTyGen]
+    simp only [TState.genTySym, TState.incTyGen]
+    simp [-Nat.toString_eq_repr]
     intro n hn h_eq
     -- genTySym gives tyPrefix ++ toString Env.genState.tyGen
     -- Env'.genState.tyGen = Env.genState.tyGen + 1
     -- So the name has index Env.genState.tyGen < n, hence ≠
     have h_ne : Env.genState.tyGen ≠ n := by omega
-    simp [TState.tyPrefix] at h_eq
-    -- h_eq : tyPrefix ++ toString Env.genState.tyGen = tyPrefix ++ toString n
-    -- By String left-cancellation + Nat.toString injectivity, Env.genState.tyGen = n
-    -- Left-cancel the common prefix to get toString equality,
-    -- then Nat.toString injectivity gives k = n, contradicting h_ne.
-    rw [String.ext_iff] at h_eq
-    simp [String.toList_append] at h_eq
-    exact absurd (Nat.toString_injective (String.toList_injective h_eq)) h_ne
+    exact absurd (Nat.toString_injective h_eq) h_ne
 
+#print Nat.toDigits
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- All vars produced by `TGenEnv.genTyVars` satisfy gen-freshness for the
     output state: each is `tyPrefix ++ toString k` for some
@@ -2374,8 +2372,8 @@ private theorem knownTypeVars_addInNewestContext_cases
       List.mem_append, List.not_mem_nil, or_false] at h
     show v ∈ TContext.types.knownTypeVars [] ∨ v ∈ LTy.freeVars ty
     right
-    have : ([] : List (T.Identifier × LTy)) ++ [(xv, ty)] = [(xv, ty)] := List.nil_append _
-    rw [this] at h
+    change v ∈ TContext.types.knownTypeVars.go (List.append [] [(xv, ty)]) at h
+    simp at h
     unfold TContext.types.knownTypeVars.go at h
     simp [TContext.types.knownTypeVars.go] at h
     exact h
