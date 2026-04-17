@@ -29,7 +29,7 @@ function IsProperIndex(i : int, size : int) : (bool);
 // Implementations
 procedure P(a : (Map int T), n : int) returns ()
 spec {
-  requires (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero)));
+  requires (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero)));
 }
 {
   call Q(a, n);
@@ -37,7 +37,7 @@ spec {
 
 procedure Q(a : (Map int T), n : int) returns ()
 spec {
-  requires (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero)));
+  requires (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero)));
 }
 {
   call P(a, n);
@@ -45,24 +45,24 @@ spec {
 
 procedure A(a : (Map int T), n : int) returns ()
 {
-  assert ((forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero))) ==> (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero))));
+  assert ((∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero))) ==> (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero))));
 };
 
 procedure B(a : (Map int T), n : int) returns ()
 {
-  assert ((forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero))) ==> (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero))));
+  assert ((∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero))) ==> (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero))));
 };
 
 procedure C(a : (Map int T), n : int) returns ()
 {
-  assume (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero)));
-  assert (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero)));
+  assume (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero)));
+  assert (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero)));
 };
 
 procedure D(a : (Map int T), n : int) returns ()
 {
-  assume (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero)));
-  assert (forall i: int :: (IsProperIndex(i, n) ==> (a[i] == zero)));
+  assume (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero)));
+  assert (∀ i: int . (IsProperIndex(i, n) ==> (a[i] == zero)));
 };
 
 #end
