@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 
-/-! # Expression Deduplication
+/-! # Expression ANFEncoder
 
 A Core-to-Core transformation that extracts common subexpressions into fresh
 variable definitions. This reduces duplication that arises from partial
@@ -31,23 +31,23 @@ assert $__t.0+$__t.0 == 2*$__t.0
 ```
 
 This is the second phase described in issue #749: after partial evaluation
-produces a Core program with inlined expressions, deduplication normalizes
+produces a Core program with inlined expressions, ANF encoding normalizes
 the result by factoring out common subexpressions.
 
 ## Design
 
-The pass operates at the program level: `deduplicateProgram` walks procedure
+The pass operates at the program level: `anfEncodeProgram` walks procedure
 bodies and extracts common subexpressions into `var` declarations prepended
 to the body.
 
-After deduplication, proof obligation extraction (issue #475) becomes a simple
+After ANF encoding, proof obligation extraction (issue #475) becomes a simple
 tree traversal that collects individual goals from `if * { } else { }` trees
 — no further SMT-to-SMT optimization is needed.
 -/
 
 public section
 
-namespace Core.Deduplication
+namespace Core.ANFEncoder
 
 open Lambda Imperative
 
@@ -55,14 +55,14 @@ open Lambda Imperative
 -- Expression analysis utilities
 ---------------------------------------------------------------------
 
-/-- Check if an expression is a leaf node that should not be deduplicated. -/
+/-- Check if an expression is a leaf node that should not be anfEncoded. -/
 private def isTrivial (e : Expression.Expr) : Bool :=
   match e with
   | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => true
   | _ => false
 
 /-- Check if an expression contains bound variables, which would make
-    deduplication unsound across different binding contexts. -/
+    ANF encoding unsound across different binding contexts. -/
 private def hasBVar (e : Expression.Expr) : Bool :=
   match e with
   | .bvar _ _ => true
@@ -74,7 +74,7 @@ private def hasBVar (e : Expression.Expr) : Bool :=
   | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
 
 /-- Collect non-trivial subexpressions from an expression, suitable for
-    deduplication. For function applications, collects the full (curried)
+    ANF encoding. For function applications, collects the full (curried)
     application and recurses into each argument, but does not collect
     intermediate partial applications from the spine. -/
 private def collectSubexprs (e : Expression.Expr) : List Expression.Expr :=
@@ -97,7 +97,7 @@ where
     | _ => []
 
 /-- Hash an expression structurally, ignoring type annotations (matching
-    `eraseTypes` semantics) for use in HashMap-based deduplication. -/
+    `eraseTypes` semantics) for use in HashMap-based ANF encoding. -/
 private def hashExpr : Expression.Expr → UInt64
   | .const _ c => mixHash 1 (hash (toString c))
   | .bvar _ i => mixHash 2 (hash i)
@@ -210,7 +210,7 @@ private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr
 
 /-- Shared pipeline: collect subexpressions, filter, find duplicates, remove
     subsumed, and sort by size (largest first). -/
-private def findDeduplicationTargets (exprs : List Expression.Expr) :
+private def findANFEncoderTargets (exprs : List Expression.Expr) :
     List Expression.Expr :=
   let candidates := exprs.filter (fun e => !isTrivial e && !hasBVar e)
   let duplicates := findDuplicates candidates
@@ -272,14 +272,14 @@ where
   | _ => []
 
 ---------------------------------------------------------------------
--- Program level deduplication
+-- Program level ANF encoding
 ---------------------------------------------------------------------
 
 /-- Deduplicate a procedure's body by extracting common subexpressions into
     `var` declarations prepended to the body. Returns the modified body and
     the next available dedup index. -/
-def deduplicateBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
-  let targets := findDeduplicationTargets (collectExprsFromStatements body)
+def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
+  let targets := findANFEncoderTargets (collectExprsFromStatements body)
   -- Build var declarations in reverse, then reverse at the end
   let (revDecls, body', nextIdx) := targets.foldl (fun (decls, body, idx) dup =>
     let freshName : CoreIdent := ⟨s!"$__t.{idx}", ()⟩
@@ -295,23 +295,23 @@ def deduplicateBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   (revDecls.reverse ++ body', nextIdx)
 
 /-- Deduplicate all procedures in a program. -/
-def deduplicateProgram (p : Program) : Program :=
+def anfEncodeProgram (p : Program) : Program :=
   let (revDecls, _, _) := p.decls.foldl (fun (acc, idx, _) decl =>
     match decl with
     | .proc proc md =>
-      let (body', idx') := deduplicateBody proc.body idx
+      let (body', idx') := anfEncodeBody proc.body idx
       (.proc { proc with body := body' } md :: acc, idx', ())
     | other => (other :: acc, idx, ())
   ) ([], 0, ())
   { decls := revDecls.reverse }
 
-end Core.Deduplication
+end Core.ANFEncoder
 
-/-- Deduplication pipeline phase: extracts common subexpressions into fresh
+/-- ANFEncoder pipeline phase: extracts common subexpressions into fresh
     variable declarations. Model-preserving because it only introduces
     definitional equalities without changing program semantics. -/
-def Core.deduplicationPipelinePhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "Deduplication" fun prog => do
-    return (true, Core.Deduplication.deduplicateProgram prog)
+def Core.anfEncoderPipelinePhase : Core.PipelinePhase :=
+  Core.modelPreservingPipelinePhase "ANFEncoder" fun prog => do
+    return (true, Core.ANFEncoder.anfEncodeProgram prog)
 
 end -- public section

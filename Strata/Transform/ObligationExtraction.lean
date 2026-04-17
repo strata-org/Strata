@@ -13,12 +13,12 @@ A Core-to-obligations pass that walks a post-PE, post-dedup program and extracts
 proof obligations with their path conditions reconstructed from the program
 structure.
 
-After partial evaluation and deduplication, a procedure body contains only:
+After partial evaluation and ANF encoding, a procedure body contains only:
 - `assume` statements (path conditions)
 - `assert` statements (proof obligations)
 - `cover` statements (proof obligations)
 - non-deterministic terminal branching (`if *`)
-- `var` declarations (from deduplication or global initialization)
+- `var` declarations (from ANF encoding or global initialization)
 
 This pass reconstructs path conditions by tracking `assume` statements
 encountered on the path to each `assert`/`cover`.

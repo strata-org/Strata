@@ -4,17 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Transform.Deduplication
+import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.DDMTransform.Translate
 
-namespace Core.Deduplication.Tests
+namespace Core.ANFEncoder.Tests
 
-open Strata Lambda Imperative Core.Deduplication
+open Strata Lambda Imperative Core.ANFEncoder
 
 private def translateCore (p : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
-/-! ## Deduplication across ITE branches and condition -/
+/-! ## ANFEncoder across ITE branches and condition -/
 
 private def iteDupProg :=
 #strata
@@ -42,7 +42,7 @@ procedure test (x : int, y : int) returns ()
   };
 -/
 #guard_msgs in
-#eval IO.println (toString (deduplicateProgram (translateCore iteDupProg)))
+#eval IO.println (toString (anfEncodeProgram (translateCore iteDupProg)))
 
 /-! ## No duplicates leaves body unchanged -/
 
@@ -65,6 +65,6 @@ procedure test (x : int, y : int) returns ()
   };
 -/
 #guard_msgs in
-#eval IO.println (toString (deduplicateProgram (translateCore noDupProg)))
+#eval IO.println (toString (anfEncodeProgram (translateCore noDupProg)))
 
-end Core.Deduplication.Tests
+end Core.ANFEncoder.Tests
