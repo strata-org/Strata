@@ -1721,8 +1721,9 @@ partial def getArgumentTypes (arg: Python.expr SourceRange) : Except Translation
     | "Union" =>  match sliceHead with
         | .Tuple _ tys _ => return (← tys.val.toList.mapM getArgumentTypes).flatten
         | _ => throw (.internalError s!"Unhandled Expr: {repr arg}")
-    | "List" => return ["ListAny"]
-    | "Dict" => return ["DictStrAny"]
+    | "List" | "list" => return ["ListAny"]
+    | "Dict" | "dict" => return ["DictStrAny"]
+    | "Callable" => return ["Any"]
     | _ =>  throw (.internalError s!"Unhandled Expr: {repr arg}")
   | .Constant _ _ _ => return ["None"]
   | .Attribute _ _ _ _ => return [pyExprToString arg]
