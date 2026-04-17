@@ -1079,8 +1079,7 @@ def verify (program : Program)
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
     | .ok (oblProgram, pEs, stats) =>
-      let sampleEnv := pEs.head?.getD Env.init
-      .ok ((oblProgram, sampleEnv), stats)
+      .ok ((oblProgram, pEs.head?.getD Env.init), stats)
   let allStats := pipelineStats.merge evalStats
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
