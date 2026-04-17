@@ -272,15 +272,6 @@ def asSingleton (tp : SpecType) : Option SpecAtomType := do
 
 def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
 
-/-
-instance : Membership SpecAtomType SpecType where
-  mem a e := private a.atoms.binSearchContains e (compare · · == .lt) = true
-
-@[instance]
-instance instDecidableMem (e : SpecAtomType) (tp : SpecType) : Decidable (e ∈ tp) :=
-  (inferInstance : Decidable (_ = true))
--/
-
 end SpecType
 
 /-- A default value for a pyspec argument.

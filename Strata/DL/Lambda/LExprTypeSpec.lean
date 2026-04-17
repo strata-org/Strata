@@ -1725,9 +1725,6 @@ private theorem unify_preserves_SubstFreshForGen
     · exact h_fresh_cs v h n hn
     · exact h_fresh_S v (Or.inr h) n hn
 
-#print Nat.toString_eq_repr
-
-set_option trace.Meta.Tactic.simp.rewrite true in
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `TGenEnv.genTyVar` is `tyPrefix ++ toString k` for
     `k = Env.genState.tyGen`, and the output state has `tyGen = k + 1`.
@@ -1750,7 +1747,6 @@ theorem genTyVar_genFresh'
     have h_ne : Env.genState.tyGen ≠ n := by omega
     exact absurd (Nat.toString_injective h_eq) h_ne
 
-#print Nat.toDigits
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- All vars produced by `TGenEnv.genTyVars` satisfy gen-freshness for the
     output state: each is `tyPrefix ++ toString k` for some

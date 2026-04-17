@@ -262,9 +262,6 @@ theorem Map.erase_append_singleton [DecidableEq α]
       · exact absurd ‹_› h_ne
       · exact congrArg ((a, b) :: ·) (ih h)
 
---set_option pp.notation false
---set_option pp.explicit true
-
 /-- `Map.find?` on a map appended with a singleton map: either the new entry
     is found, or the result is the same as looking up in the original map. -/
 theorem Map.find?_append_singleton [DecidableEq α]

@@ -283,8 +283,6 @@ private theorem stmtsT_cons_terminal
     have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal extendEval hrest
     exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
 
---set_option pp.notation false in
---set_option pp.explicit true in
 omit [HasVal P] [HasBoolVal P] in
 private theorem stmtsT_append_terminal
     (extendEval : ExtendEval P)

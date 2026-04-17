@@ -232,9 +232,6 @@ protected def default {T} : Factory T := {
 instance {T} : Inhabited (Factory T) where
   default := Factory.default
 
-set_option pp.notation false
-set_option pp.explicit true
-
 def push {T} (F : Factory T) (fn : LFunc T) (is_new : ¬(fn.name.name ∈ F)) : Factory T :=
   let idx := F.toArray.size
   { toArray := F.toArray.push fn
