@@ -505,4 +505,23 @@ def test() -> None:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
+-- Callable[..., Any], dict[str, Any], and list[str] type annotations
+-- should not crash the pipeline (issue #960).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from typing import Any, Callable
+
+def retry(func: Callable[..., Any], retries: int = 3) -> Any:
+    return func()
+
+def make_record(name: str) -> dict[str, Any]:
+    return {\"name\": name}
+
+def make_records(names: list[str]) -> list[dict[str, Any]]:
+    return [{\"name\": n} for n in names]
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
 end Strata.Python.VerifyPythonTest
