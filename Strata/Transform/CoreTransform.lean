@@ -267,11 +267,12 @@ def createAsserts
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
-          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-          -- Use the call site as the primary file range, preserving the requires
-          -- clause location as a related file range for richer diagnostics.
-          let assertMd := check.md.setCallSiteFileRange md
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
+          -- Merge propertySummary from the check metadata (e.g. precondition
+          -- description) into the call-site metadata so it appears in output.
+          let mergedMd := match check.md.getPropertySummary with
+            | some summary => md.withPropertySummary summary
+            | none => md
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) mergedMd)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes

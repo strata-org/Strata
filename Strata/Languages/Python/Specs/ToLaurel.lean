@@ -331,6 +331,7 @@ private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
   let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   if !msg.isEmpty then
     md := md.withPropertySummary msg
+    md := md.push ⟨Imperative.MetaData.message, .msg msg⟩
   return md
 
 /-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
@@ -410,6 +411,45 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
       some (mkStmt (.PrimitiveOp .Leq
         [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
          mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
+  | .intAdd left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      -- Unwrap to int, add, re-wrap: from_int(as_int(l) + as_int(r))
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      let sum := mkStmt (.PrimitiveOp .Add [lInt, rInt]) md
+      some (mkStmt (.StaticCall (mkId "from_int") [sum]) md)
+  | .intSub left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      -- Unwrap to int, subtract, re-wrap: from_int(as_int(l) - as_int(r))
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      let diff := mkStmt (.PrimitiveOp .Sub [lInt, rInt]) md
+      some (mkStmt (.StaticCall (mkId "from_int") [diff]) md)
+  | .intMul left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      -- Unwrap to int, multiply, re-wrap: from_int(as_int(l) * as_int(r))
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      let prod := mkStmt (.PrimitiveOp .Mul [lInt, rInt]) md
+      some (mkStmt (.StaticCall (mkId "from_int") [prod]) md)
+  | .intEq left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      -- Unwrap to int, compare: as_int(l) == as_int(r)
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      some (mkStmt (.PrimitiveOp .Eq [lInt, rInt]) md)
   | .floatGe subject bound loc => do
     let md ← nodeMd loc
     let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
@@ -488,6 +528,20 @@ def SpecAssertMsg.render : SpecAssertMsg → String
   | .userAssertion text  => text
   | .unnamed index       => s!"precondition {index}"
 
+/-- Generate a human-readable message from a SpecExpr for postcondition labels. -/
+private def specExprToMessage : SpecExpr → String
+  | .var name _ => name
+  | .intLit v _ => toString v
+  | .intGe a b _ => s!"{specExprToMessage a} >= {specExprToMessage b}"
+  | .intLe a b _ => s!"{specExprToMessage a} <= {specExprToMessage b}"
+  | .intEq a b _ => s!"{specExprToMessage a} == {specExprToMessage b}"
+  | .intAdd a b _ => s!"{specExprToMessage a} + {specExprToMessage b}"
+  | .intSub a b _ => s!"{specExprToMessage a} - {specExprToMessage b}"
+  | .intMul a b _ => s!"{specExprToMessage a} * {specExprToMessage b}"
+  | .not e _ => s!"not ({specExprToMessage e})"
+  | .len e _ => s!"len({specExprToMessage e})"
+  | _ => "<expr>"
+
 /-- Build a procedure body that asserts preconditions.
     Outputs are already initialized non-deterministically. -/
 def buildSpecBody (preconditions : Array Assertion)
@@ -564,8 +618,54 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     [{ name := "result", type := match retType.val with
       | .TVoid => tyAny
       | _ => retType }]
-  if func.postconditions.size > 0 then
-    reportError func.loc "Postconditions not yet supported"
+  if func.postconditions.size > 0 then do
+    -- When postconditions exist, use TCore "Any" for all parameters and outputs
+    let anyTy : HighTypeMd := tyAny
+    let anyInputs := inputs.map fun p => { p with type := anyTy }
+    let anyOutputs := outputs.map fun p => { p with type := anyTy }
+    -- Build postcondition expressions
+    let fileMd ← mkFileMd
+    let postconds ← func.postconditions.toList.filterMapM fun postExpr => do
+      let msg := specExprToMessage postExpr
+      let postMd ← mkMdWithFileRange default msg
+      specExprToLaurel postExpr postMd
+    -- Add isfrom_int(result) so callers know the return value is an integer.
+    -- This is needed for PSub/PAdd to take the int-int branch.
+    let postconds := if !postconds.isEmpty then
+      let resultIntExpr := mkStmt (.StaticCall (mkId "Any..isfrom_int")
+        [mkStmt (.Identifier (mkId "result")) fileMd]) fileMd
+      postconds ++ [resultIntExpr]
+    else postconds
+    -- Build Laurel-level precondition expressions for the Procedure.preconditions
+    -- field. CallElim uses these to assert preconditions at call sites and
+    -- assume them in the body, enabling transitivity for internal calls.
+    let laurelPreconds ← func.preconditions.toList.filterMapM fun assertion => do
+      let msg := formatAssertionMessage assertion.message
+      let precondMd ← mkMdWithFileRange default msg
+      specExprToLaurel assertion.formula precondMd
+    -- Build body with precondition asserts
+    let impl ← if func.preconditions.size > 0 then do
+      let body ← buildSpecBody func.preconditions .empty
+        (requiredParams := allArgs.filterMap fun a =>
+          if a.default.isNone then some a.name else none)
+      pure (some body)
+    else do
+      let fileMd' ← mkFileMd
+      let body := mkStmt (.Block [] none) fileMd'
+      pure (some (Body.Transparent body))
+    let bodyVal : Body := match impl with
+      | some (.Transparent bodyExpr) => .Opaque postconds (some bodyExpr) []
+      | _ => .Opaque postconds none []
+    let md ← mkMdWithFileRange func.loc
+    return {
+      name := { text := procName, md := md }
+      inputs := anyInputs.toList
+      outputs := anyOutputs
+      preconditions := laurelPreconds
+      decreases := none
+      isFunctional := false
+      body := bodyVal
+    }
   -- When preconditions exist, use TCore "Any" for all parameters and outputs
   -- to match the Python→Laurel pipeline's Any-wrapping convention.
   let (inputs, outputs, body) ←
