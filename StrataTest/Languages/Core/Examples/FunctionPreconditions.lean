@@ -254,24 +254,6 @@ Property: division by zero check
 Obligation:
 false
 
-
-
-Result: Obligation: badDiv_body_calls_Int.SafeDiv_0
-Property: division by zero check
-Result: ❌ fail
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-procedure badDiv$$wf (x : int) returns ()
-{
-  assert [badDiv_body_calls_Int.SafeDiv_0]: false;
-  };
-function badDiv (x : int) : int {
-  x / 0
-}
-
 ---
 info:
 Obligation: badDiv_body_calls_Int.SafeDiv_0
