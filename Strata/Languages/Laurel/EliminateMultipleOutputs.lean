@@ -73,8 +73,8 @@ private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
       | some info =>
         if targets.length == info.outputs.length then
           let tempName := s!"${callee.text}$temp"
-          let tempDecl := mkMd (.LocalVariable [mkId tempName]
-            (mkTy (.UserDefined (mkId info.resultTypeName)))
+          let tempParam : Parameter := { name := mkId tempName, type := mkTy (.UserDefined (mkId info.resultTypeName)) }
+          let tempDecl := mkMd (.LocalVariable [tempParam]
             (some ⟨.StaticCall callee args, callSrc, callMd⟩))
           let assigns := targets.zipIdx.map fun (tgt, i) =>
             mkMd (.Assign [tgt]
@@ -83,15 +83,17 @@ private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
           tempDecl :: assigns
         else [stmt]
       | none => [stmt]
-    | .LocalVariable names _ty (some ⟨.StaticCall callee args, callSrc, callMd⟩) =>
+    | .LocalVariable params (some ⟨.StaticCall callee args, callSrc, callMd⟩) =>
       match infoMap.get? callee.text with
       | some info =>
         if info.outputs.length > 1 then
           let tempName := s!"${callee.text}$temp"
-          let tempDecl := mkMd (.LocalVariable [mkId tempName]
-            (mkTy (.UserDefined (mkId info.resultTypeName)))
+          let tempParam : Parameter := { name := mkId tempName, type := mkTy (.UserDefined (mkId info.resultTypeName)) }
+          let tempDecl := mkMd (.LocalVariable [tempParam]
             (some ⟨.StaticCall callee args, callSrc, callMd⟩))
-          let name := names.head!
+          let name := match params with
+            | p :: _ => p.name
+            | [] => mkId "$unknown"
           let assign := mkMd (.Assign [mkMd (.Identifier name)]
             (mkMd (.StaticCall (mkId (destructorName info 0))
               [mkMd (.Identifier (mkId tempName))])))

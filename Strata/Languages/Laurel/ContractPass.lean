@@ -106,14 +106,8 @@ private def mkPostConditionProc (name : String) (originalProcName : String)
     (inputParams : List Parameter) (outputParams : List Parameter)
     (conditions : List StmtExprMd) : Procedure :=
   let inputArgs := paramsToArgs inputParams
-  let outputNames := outputParams.map (·.name)
-  -- Use the first output's type; the Core translator generates per-name init stmts
-  -- followed by a single call stmt, so the type is only used for default-init.
-  let outputType := match outputParams.head? with
-    | some p => p.type
-    | none => { val := .Unknown, source := none }
   let callExpr := mkMd (.StaticCall (mkId originalProcName) inputArgs)
-  let localVarStmt := mkMd (.LocalVariable outputNames outputType (some callExpr))
+  let localVarStmt := mkMd (.LocalVariable outputParams (some callExpr))
   -- Body: single initialized local variable, then postcondition conjunction
   let bodyStmts := [localVarStmt, conjoin conditions]
   let body := mkMd (.Block bodyStmts none)
@@ -216,7 +210,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
         then [mkWithMd (.Assume (mkCall info.postName args))] else []
       preAssert ++ [e] ++ postAssume
     | none => [e]
-  | .LocalVariable _name _ty (some (.mk (.StaticCall callee args) ..)) =>
+  | .LocalVariable _params (some (.mk (.StaticCall callee args) ..)) =>
     match contractInfoMap.get? callee.text with
     | some info =>
       let preAssert := if info.hasPreCondition
