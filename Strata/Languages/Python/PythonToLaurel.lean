@@ -2214,12 +2214,23 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     -- Handles both plain assignments and annotated assignments.
     -- Scans recursively into nested blocks (if/try/for/while/with).
     let mut dispatchFields : Std.HashMap String String := {}
+    let mut conflictingFields : Std.HashSet String := {}
     for stmt in body do
       if let .FunctionDef _ name _ initBody _ _ _ _ := stmt then
         if name.val == "__init__" then
           let dispatchResult ← scanDispatchFields ctx initBody.val.toList
           for (fieldName, cn) in dispatchResult do
+            match dispatchFields[fieldName]? with
+            | some existing =>
+              if existing != cn then
+                -- Same field assigned different dispatch types in different
+                -- branches — mark as conflicting and remove from dispatch map.
+                conflictingFields := conflictingFields.insert fieldName
+            | none => pure ()
             dispatchFields := dispatchFields.insert fieldName cn
+    -- Remove fields with conflicting types (e.g., different types in if/else branches)
+    for f in conflictingFields do
+      dispatchFields := dispatchFields.erase f
     let ctx := {ctx with
       classFieldHighType := ctx.classFieldHighType.insert className classFields
       dispatchFieldTypes := ctx.dispatchFieldTypes.insert className dispatchFields}
