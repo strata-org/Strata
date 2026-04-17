@@ -6,5 +6,5 @@ test_deep_inline.py(11, 4): ✔️ always true if reached - triple_apply_assert(
 test_deep_inline.py(15, 4): ✔️ always true if reached - main_assert(279)_5
 test_deep_inline.py(17, 4): ✔️ always true if reached - triple_apply(3) should be 9
 test_deep_inline.py(18, 4): ✖️ always false if reached - triple_apply(3) should not be 10
-DETAIL: 0 passed, 1 failed, 0 inconclusive
+DETAIL: 7 passed, 1 failed, 0 inconclusive
 RESULT: Failures found
