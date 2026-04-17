@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Util.Statistics
 
 /-!
 # Constrained Type Elimination
@@ -220,7 +221,8 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     isFunctional := false
     decreases := none }
 
-public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Program × List DiagnosticModel :=
+public def constrainedTypeElim (_model : SemanticModel) (program : Program)
+    : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
   let constraintFuncs := program.types.filterMap fun
