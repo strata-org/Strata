@@ -1,0 +1,6 @@
+test_bool_shortcircuit_and.py(2, 4): ✅ pass - assert(38)
+test_bool_shortcircuit_and.py(3, 4): ✅ pass - assert(53)
+test_bool_shortcircuit_and.py(4, 4): ✅ pass - assert_assert(94)_calls_Any_to_bool_0
+test_bool_shortcircuit_and.py(4, 4): ✅ pass - short circuit and
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

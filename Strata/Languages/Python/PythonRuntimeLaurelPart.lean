@@ -40,10 +40,12 @@ datatype Error {
   TypeError (Type_msg : string),
   AttributeError (Attribute_msg : string),
   AssertionError (Assertion_msg : string),
+  ZeroDivisionError (),
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
   IndexError (IndexError_msg : string),
-  RePatternError (Re_msg : string)
+  RePatternError (Re_msg : string),
+  UnknownError ()
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -501,6 +503,21 @@ function Any_get! (dictOrList: Any, index: Any): Any
     exception (IndexError("Invalid subscription"))
 };
 
+function Any_get_slice! (list: Any, index: Any): Any
+{
+  if Any..isexception(list) then list
+  else if Any..isexception(index) then index
+  else if !(Any..isfrom_ListAny(list) && Any..isfrom_Slice(index)) then
+    exception (TypeError("Invalid subscription type"))
+  else
+    from_ListAny(List_slice(
+      Any..as_ListAny!(list),
+      Any..start!(index),
+      if OptionInt..isOptSome(Any..stop!(index))
+      then OptionInt..unwrap!(Any..stop!(index))
+      else List_len(Any..as_ListAny!(list))))
+};
+
 function Any_set (dictOrList: Any, index: Any, val: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) ||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) &&
@@ -606,7 +623,7 @@ function PNeg (v: Any) : Any
   else if Any..isfrom_float(v) then
     from_float(- Any..as_float!(v))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PBitNot (v: Any) : Any
@@ -634,7 +651,7 @@ function PNot (v: Any) : Any
   else if Any..isfrom_ListAny(v) then
     from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -669,7 +686,7 @@ function PAdd (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_int(v2) then
     from_datetime((Any..as_datetime!(v1) + Any..as_int!(v2)))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PSub (v1: Any, v2: Any) : Any
@@ -698,7 +715,7 @@ function PSub (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_int(Any..as_datetime!(v1) - Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function string_repeat (s: string, i: int) : string;
@@ -737,13 +754,16 @@ function PMul (v1: Any, v2: Any) : Any
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_float(Any..as_float!(v1) * Any..as_float!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PFloorDiv (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_bool(v2) && !Any..as_bool!(v2) then
+    exception(ZeroDivisionError())
+  else if Any..isfrom_int(v2) && Any..as_int!(v2) == 0 then
+    exception(ZeroDivisionError())
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
     from_int( bool_to_int(Any..as_bool!(v1)) / bool_to_int(Any..as_bool!(v2)))
   else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
@@ -753,7 +773,7 @@ function PFloorDiv (v1: Any, v2: Any) : Any
   else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
     from_int(Any..as_int!(v1) / Any..as_int!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -797,7 +817,7 @@ function PLt (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) <Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PLe (v1: Any, v2: Any) : Any
@@ -828,7 +848,7 @@ function PLe (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) <=Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PGt (v1: Any, v2: Any) : Any
@@ -859,7 +879,7 @@ function PGt (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) >Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PGe (v1: Any, v2: Any) : Any
@@ -890,7 +910,7 @@ function PGe (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) >=Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PEq (v: Any, v': Any) : Any {
@@ -906,17 +926,21 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
-  if ! Any_to_bool (v1) then v1 else v2
+  if (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1) || Any..isfrom_DictStrAny(v1) || Any..isfrom_ListAny(v1)) then
+    if ! Any_to_bool (v1) then v1 else v2
+  else
+    exception(UndefinedError("Unable to convert operand to bool"))
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
-  if Any_to_bool (v1) then v1 else v2
+  if (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1) || Any..isfrom_DictStrAny(v1) || Any..isfrom_ListAny(v1)) then
+    if Any_to_bool (v1) then v1 else v2
+  else
+    exception(UndefinedError("Unable to convert operand to bool"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -950,9 +974,12 @@ function PPow (v1: Any, v2: Any) : Any
 };
 
 function PMod (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_bool(v2) && !Any..as_bool!(v2) then
+    exception(ZeroDivisionError())
+  else if Any..isfrom_int(v2) && Any..as_int!(v2) == 0 then
+    exception(ZeroDivisionError())
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
     from_int( bool_to_int(Any..as_bool!(v1)) % bool_to_int(Any..as_bool!(v2)))
   else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
@@ -1083,7 +1110,7 @@ Parse the Laurel DDM prelude into a Laurel Program.
 
 -- Prelude functions that may return an exception value as Any.
 -- We should make sure that all functions in this list propagate the exceptions from their arguments.
-def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
+def AnyMaybeExceptionList := ["Any_get!", "Any_get_slice!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
    "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
 
 public def pythonRuntimeLaurelPart : Laurel.Program :=
