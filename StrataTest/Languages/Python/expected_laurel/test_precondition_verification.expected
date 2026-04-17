@@ -10,6 +10,5 @@ test_precondition_verification.py(14, 4): ✅ pass - (Origin_test_helper_procedu
 test_precondition_verification.py(17, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_precondition_verification.py(17, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_precondition_verification.py(17, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-test_precondition_verification.py(19, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 11 passed, 0 failed, 2 inconclusive
+DETAIL: 10 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive
