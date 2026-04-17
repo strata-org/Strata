@@ -56,4 +56,4 @@ run "symtab2gb" symtab2gb "$PROJECT_ROOT/$BN.symtab.json" \
   --out "$WORK_DIR/$BN.gb"
 
 CBMC=${CBMC:-cbmc}
-run "cbmc verification" "$CBMC" "$WORK_DIR/$BN.gb" --function main --z3 --verbosity 9
+run "cbmc verification" "$CBMC" "$WORK_DIR/$BN.gb" --function 'main$proof' --z3 --verbosity 9

@@ -470,8 +470,7 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     | none => throw s!"No entry-point procedure found (tried {entryPoints})"
   let some p := mainDecl.getProc?
     | throw "entry point is not a procedure"
-  -- Always use "main" as the GOTO function name (CBMC expects --function main)
-  let procName := "main"
+  let procName := Core.CoreIdent.toPretty p.header.name
   let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
   let distincts := tcPgm.decls.filterMap fun d => match d with
     | .distinct name es _ => some (name, es) | _ => none
