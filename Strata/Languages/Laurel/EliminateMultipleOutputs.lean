@@ -22,8 +22,8 @@ namespace Strata.Laurel
 public section
 
 private def emptyMd : MetaData := .empty
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, emptyMd⟩
-private def mkTy (t : HighType) : HighTypeMd := ⟨t, emptyMd⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
+private def mkTy (t : HighType) : HighTypeMd := { val := t, source := none }
 
 /-- Info about a function whose multiple outputs have been collapsed into a result datatype. -/
 private structure MultiOutInfo where
@@ -68,14 +68,14 @@ private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
     (stmts : List StmtExprMd) : List StmtExprMd :=
   stmts.flatMap fun stmt =>
     match stmt.val with
-    | .Assign targets ⟨.StaticCall callee args, callMd⟩ =>
+    | .Assign targets ⟨.StaticCall callee args, callSrc, callMd⟩ =>
       match infoMap.get? callee.text with
       | some info =>
         if targets.length == info.outputs.length then
           let tempName := s!"${callee.text}$temp"
-          let tempDecl := mkMd (.LocalVariable (mkId tempName)
+          let tempDecl := mkMd (.LocalVariable [mkId tempName]
             (mkTy (.UserDefined (mkId info.resultTypeName)))
-            (some ⟨.StaticCall callee args, callMd⟩))
+            (some ⟨.StaticCall callee args, callSrc, callMd⟩))
           let assigns := targets.zipIdx.map fun (tgt, i) =>
             mkMd (.Assign [tgt]
               (mkMd (.StaticCall (mkId (destructorName info i))
@@ -83,14 +83,15 @@ private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
           tempDecl :: assigns
         else [stmt]
       | none => [stmt]
-    | .LocalVariable name _ty (some ⟨.StaticCall callee args, callMd⟩) =>
+    | .LocalVariable names _ty (some ⟨.StaticCall callee args, callSrc, callMd⟩) =>
       match infoMap.get? callee.text with
       | some info =>
         if info.outputs.length > 1 then
           let tempName := s!"${callee.text}$temp"
-          let tempDecl := mkMd (.LocalVariable (mkId tempName)
+          let tempDecl := mkMd (.LocalVariable [mkId tempName]
             (mkTy (.UserDefined (mkId info.resultTypeName)))
-            (some ⟨.StaticCall callee args, callMd⟩))
+            (some ⟨.StaticCall callee args, callSrc, callMd⟩))
+          let name := names.head!
           let assign := mkMd (.Assign [mkMd (.Identifier name)]
             (mkMd (.StaticCall (mkId (destructorName info 0))
               [mkMd (.Identifier (mkId tempName))])))
@@ -104,7 +105,7 @@ private def rewriteExpr (infoMap : Std.HashMap String MultiOutInfo)
     (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Block stmts label => ⟨.Block (rewriteStmts infoMap stmts) label, e.md⟩
+    | .Block stmts label => ⟨.Block (rewriteStmts infoMap stmts) label, e.source, e.md⟩
     | _ => e) expr
 
 /-- Rewrite all procedure bodies. -/

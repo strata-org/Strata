@@ -480,7 +480,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .PrimitiveOp name args =>
       let seqArgs ← args.mapM transformExpr
       let prepends ← takePrepends
-      return prepends ++ [⟨.PrimitiveOp name seqArgs, md⟩]
+      return prepends ++ [⟨.PrimitiveOp name seqArgs, source, md⟩]
   | _ =>
       return [stmt]
   termination_by (sizeOf stmt, 0)

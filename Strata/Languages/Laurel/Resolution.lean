@@ -101,12 +101,11 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
- | .unresolved =>
    -- Expected when a reference failed to resolve (a diagnostic was already emitted
    -- by resolveRef or defineNameCheckDup). Returning Unknown propagates the error
    -- gracefully through type translation.
-   ⟨ .Unknown, default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
+   ⟨ .Unknown, none, default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none, default ⟩
 
 /-! ## Resolution result -/
 

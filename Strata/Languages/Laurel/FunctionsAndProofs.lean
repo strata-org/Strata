@@ -44,14 +44,14 @@ structure FunctionsAndProofsProgram where
 def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.md⟩
+    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.source, e.md⟩
     | .Block stmts label =>
       let stmts' := stmts.filter fun s =>
         match s.val with | .LiteralBool true => false | _ => true
       match stmts' with
-      | [] => ⟨.LiteralBool true, e.md⟩
-      | [s] => if label.isNone then s else ⟨.Block [s] label, e.md⟩
-      | _ => ⟨.Block stmts' label, e.md⟩
+      | [] => ⟨.LiteralBool true, e.source, e.md⟩
+      | [s] => if label.isNone then s else ⟨.Block [s] label, e.source, e.md⟩
+      | _ => ⟨.Block stmts' label, e.source, e.md⟩
     | _ => e) expr
 
 /-- Create the function copy of a procedure. The function body is included only

@@ -38,11 +38,11 @@ public section
 
 private def emptyMd : MetaData := .empty
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, emptyMd⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
 
 /-- Create a `StmtExprMd` with a property summary in its metadata. -/
 private def mkMdWithSummary (e : StmtExpr) (summary : String) : StmtExprMd :=
-  ⟨e, emptyMd.withPropertySummary summary⟩
+  ⟨e, none, emptyMd.withPropertySummary summary⟩
 
 /-- Build a conjunction of expressions. Returns `LiteralBool true` for an empty list. -/
 private def conjoin (exprs : List StmtExprMd) : StmtExprMd :=
@@ -80,7 +80,7 @@ private def mkConditionProc (name : String) (params : List Parameter)
   -- parameter names (user names cannot contain '$').
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "$result", ⟨.TBool, emptyMd⟩⟩] -- TODO, enable anonymous output parameters
+    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩] -- TODO, enable anonymous output parameters
     preconditions := []
     decreases := none
     isFunctional := true
@@ -93,9 +93,7 @@ private def mkConditionProc (name : String) (params : List Parameter)
     generates:
     ```
     procedure foo$post(a, b) returns ($result : bool) {
-      var x : Tx;
-      var y : Ty;
-      x, y := foo(a, b);
+      var x, y : Tx := foo(a, b);
       P(a, b, x, y)
     }
     ```
@@ -108,19 +106,20 @@ private def mkPostConditionProc (name : String) (originalProcName : String)
     (inputParams : List Parameter) (outputParams : List Parameter)
     (conditions : List StmtExprMd) : Procedure :=
   let inputArgs := paramsToArgs inputParams
-  -- Declare local variables for each output parameter (uninitialized)
-  let outputDecls := outputParams.map fun p =>
-    mkMd (.LocalVariable p.name p.type none)
-  -- Build the call: x, y := foo(inputs)
-  let outputTargets := outputParams.map fun p => mkMd (.Identifier p.name)
+  let outputNames := outputParams.map (·.name)
+  -- Use the first output's type; the Core translator generates per-name init stmts
+  -- followed by a single call stmt, so the type is only used for default-init.
+  let outputType := match outputParams.head? with
+    | some p => p.type
+    | none => { val := .Unknown, source := none }
   let callExpr := mkMd (.StaticCall (mkId originalProcName) inputArgs)
-  let assignStmt := mkMd (.Assign outputTargets callExpr)
-  -- Body: declarations, call, then postcondition conjunction
-  let bodyStmts := outputDecls ++ [assignStmt, conjoin conditions]
+  let localVarStmt := mkMd (.LocalVariable outputNames outputType (some callExpr))
+  -- Body: single initialized local variable, then postcondition conjunction
+  let bodyStmts := [localVarStmt, conjoin conditions]
   let body := mkMd (.Block bodyStmts none)
   { name := mkId name
     inputs := inputParams
-    outputs := [⟨mkId "$result", ⟨.TBool, emptyMd⟩⟩]
+    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
     isFunctional := false
@@ -183,7 +182,7 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
       let summary := info.postSummary.getD "postcondition"
       -- Pass only input args; $post internally calls the procedure to get outputs.
       [⟨.Assert (mkCall info.postName inputArgs),
-        baseMd.withPropertySummary summary⟩]
+        none, baseMd.withPropertySummary summary⟩]
     else []
   match proc.body with
   | .Transparent body =>
@@ -202,11 +201,12 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
 private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd) : List StmtExprMd :=
   let md := e.md
-  let mkWithMd (se : StmtExpr) : StmtExprMd := ⟨se, md⟩
+  let src := e.source
+  let mkWithMd (se : StmtExpr) : StmtExprMd := ⟨se, src, md⟩
   let mkWithMdSummary (se : StmtExpr) (summary : String) : StmtExprMd :=
-    ⟨se, md.withPropertySummary summary⟩
+    ⟨se, src, md.withPropertySummary summary⟩
   match e.val with
-  | .Assign _targets (.mk (.StaticCall callee args) _) =>
+  | .Assign _targets (.mk (.StaticCall callee args) ..) =>
     match contractInfoMap.get? callee.text with
     | some info =>
       let preAssert := if info.hasPreCondition
@@ -216,7 +216,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
         then [mkWithMd (.Assume (mkCall info.postName args))] else []
       preAssert ++ [e] ++ postAssume
     | none => [e]
-  | .LocalVariable _name _ty (some (.mk (.StaticCall callee args) _)) =>
+  | .LocalVariable _name _ty (some (.mk (.StaticCall callee args) ..)) =>
     match contractInfoMap.get? callee.text with
     | some info =>
       let preAssert := if info.hasPreCondition
@@ -246,7 +246,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     | .Block stmts label =>
       let stmts' := stmts.flatMap (rewriteStmt contractInfoMap)
       if stmts'.length == stmts.length then e
-      else ⟨.Block stmts' label, e.md⟩
+      else ⟨.Block stmts' label, e.source, e.md⟩
     | _ => e) expr
   -- Handle top-level non-Block statements (e.g., bare Assign or StaticCall)
   let expanded := rewriteStmt contractInfoMap result
