@@ -65,14 +65,15 @@ private def destructorName (info : MultiOutInfo) (idx : Nat) : String :=
 
 /-- Rewrite a statement list, replacing multi-output call patterns. -/
 private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
-    (stmts : List StmtExprMd) : List StmtExprMd :=
-  stmts.flatMap fun stmt =>
+    (stmts : List StmtExprMd) : StateM Nat (List StmtExprMd) :=
+  stmts.flatMapM fun stmt =>
     match stmt.val with
     | .Assign targets ⟨.StaticCall callee args, callSrc, callMd⟩ =>
       match infoMap.get? callee.text with
       | some info =>
-        if targets.length == info.outputs.length then
-          let tempName := s!"${callee.text}$temp"
+        if targets.length ≤ info.outputs.length then do
+          let n ← getModify (· + 1)
+          let tempName := s!"${callee.text}$temp_{n}"
           let tempDecl := mkMd (.LocalVariable [mkId tempName]
             (mkTy (.UserDefined (mkId info.resultTypeName)))
             (some ⟨.StaticCall callee args, callSrc, callMd⟩))
@@ -80,14 +81,15 @@ private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
             mkMd (.Assign [tgt]
               (mkMd (.StaticCall (mkId (destructorName info i))
                 [mkMd (.Identifier (mkId tempName))])))
-          tempDecl :: assigns
-        else [stmt]
-      | none => [stmt]
+          return tempDecl :: assigns
+        else return [stmt]
+      | none => return [stmt]
     | .LocalVariable names _ty (some ⟨.StaticCall callee args, callSrc, callMd⟩) =>
       match infoMap.get? callee.text with
       | some info =>
-        if info.outputs.length > 1 then
-          let tempName := s!"${callee.text}$temp"
+        if info.outputs.length > 1 then do
+          let n ← getModify (· + 1)
+          let tempName := s!"${callee.text}$temp_{n}"
           let tempDecl := mkMd (.LocalVariable [mkId tempName]
             (mkTy (.UserDefined (mkId info.resultTypeName)))
             (some ⟨.StaticCall callee args, callSrc, callMd⟩))
@@ -95,33 +97,35 @@ private def rewriteStmts (infoMap : Std.HashMap String MultiOutInfo)
           let assign := mkMd (.Assign [mkMd (.Identifier name)]
             (mkMd (.StaticCall (mkId (destructorName info 0))
               [mkMd (.Identifier (mkId tempName))])))
-          [tempDecl, assign]
-        else [stmt]
-      | none => [stmt]
-    | _ => [stmt]
+          return [tempDecl, assign]
+        else return [stmt]
+      | none => return [stmt]
+    | _ => return [stmt]
 
 /-- Rewrite blocks in a StmtExprMd tree to handle multi-output calls. -/
 private def rewriteExpr (infoMap : Std.HashMap String MultiOutInfo)
-    (expr : StmtExprMd) : StmtExprMd :=
-  mapStmtExpr (fun e =>
+    (expr : StmtExprMd) : StateM Nat StmtExprMd :=
+  mapStmtExprM (fun e =>
     match e.val with
-    | .Block stmts label => ⟨.Block (rewriteStmts infoMap stmts) label, e.source, e.md⟩
-    | _ => e) expr
+    | .Block stmts label => do
+      let stmts' ← rewriteStmts infoMap stmts
+      return ⟨.Block stmts' label, e.source, e.md⟩
+    | _ => return e) expr
 
 /-- Rewrite all procedure bodies. -/
 private def rewriteProcedure (infoMap : Std.HashMap String MultiOutInfo)
-    (proc : Procedure) : Procedure :=
+    (proc : Procedure) : StateM Nat Procedure :=
   match proc.body with
-  | .Transparent b =>
+  | .Transparent b => do
     -- Wrap in a block so rewriteStmts can process top-level statements
     let wrapped := mkMd (.Block [b] none)
-    let rewritten := rewriteExpr infoMap wrapped
-    { proc with body := .Transparent rewritten }
-  | .Opaque posts (some impl) mods =>
+    let rewritten ← rewriteExpr infoMap wrapped
+    return { proc with body := .Transparent rewritten }
+  | .Opaque posts (some impl) mods => do
     let wrapped := mkMd (.Block [impl] none)
-    let rewritten := rewriteExpr infoMap wrapped
-    { proc with body := .Opaque posts (some rewritten) mods }
-  | _ => proc
+    let rewritten ← rewriteExpr infoMap wrapped
+    return { proc with body := .Opaque posts (some rewritten) mods }
+  | _ => return proc
 
 /-- Eliminate multiple outputs from a FunctionsAndProofsProgram. -/
 def eliminateMultipleOutputs (program : FunctionsAndProofsProgram)
@@ -131,11 +135,11 @@ def eliminateMultipleOutputs (program : FunctionsAndProofsProgram)
   let infoMap : Std.HashMap String MultiOutInfo :=
     infos.foldl (fun m info => m.insert info.funcName info) {}
   let newDatatypes := infos.map mkResultDatatype
-  let functions := program.functions.map fun f =>
+  let (functions, n) := StateT.run (s := (0 : Nat)) <| program.functions.mapM fun f =>
     match infoMap.get? f.name.text with
     | some info => rewriteProcedure infoMap (transformFunction info f)
     | none => rewriteProcedure infoMap f
-  let proofs := program.proofs.map (rewriteProcedure infoMap)
+  let (proofs, _) := StateT.run (s := n) <| program.proofs.mapM (rewriteProcedure infoMap)
   { program with
     functions := functions
     proofs := proofs

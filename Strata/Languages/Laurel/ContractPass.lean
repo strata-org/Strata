@@ -156,10 +156,11 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     | some info =>
       -- Skip call-site rewriting for functional procedures (handled by Core translator)
       if info.skipContractPass then [e] else
-      let resultArgs := targets.map fun t => ⟨t.val, t.source, t.md⟩
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
-      let postAssume := if info.hasPostCondition
+      -- Only assume postcondition when all outputs are captured
+      let resultArgs := targets.map fun t => ⟨t.val, t.source, t.md⟩
+      let postAssume := if info.hasPostCondition && targets.length == info.outputParams.length
         then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
     | none => [e]
