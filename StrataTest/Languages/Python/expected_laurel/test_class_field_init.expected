@@ -1,3 +1,7 @@
+test_class_field_init.py(16, 4): ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - set_$heap_calls_CircularBuffer@__init__$result..out0_0
+test_class_field_init.py(15, 0): ❓ unknown - postcondition
 test_class_field_init.py(19, 0): ✔️ always true if reached - ite_cond_calls_Any_to_bool_0
-DETAIL: 1 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+unknown location: ✔️ always true if reached - set_$heap_calls_main$result..out0_0
+DETAIL: 4 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

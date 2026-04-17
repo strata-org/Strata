@@ -1,7 +1,9 @@
-test_class_field_use.py(19, 11): ✔️ always true if reached - Check PMul exception
+test_class_field_use.py(13, 4): ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - set_$heap_calls_CircularBuffer@__init__$result..out0_0
 test_class_field_use.py(14, 4): ✔️ always true if reached - assert(302)
 test_class_field_use.py(15, 4): ✔️ always true if reached - assert_assert(343)_calls_Any_to_bool_0
-test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
-test_class_field_use.py(12, 0): ✔️ always true if reached - postcondition
-DETAIL: 5 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_class_field_use.py(15, 4): ❓ unknown - Doubling of buffer did not work
+test_class_field_use.py(12, 0): ❓ unknown - postcondition
+test_class_field_use.py(19, 11): ❓ unknown - Check PMul exception
+DETAIL: 4 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive
