@@ -236,6 +236,89 @@ def create_service() -> Any:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Class with field initialized via constructor call.
+-- Verifies that dispatch detection in __init__ doesn't break
+-- normal class translation.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Wrapper:
+    name: str
+    def __init__(self, name: str) -> None:
+        self.name = name
+    def greet(self) -> str:
+        return self.name
+
+def main() -> None:
+    w: Wrapper = Wrapper(\"test\")
+    r: str = w.greet()
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
+-- Regression test: class with self.field = Constructor() translates without crashing.
+-- Verifies that field method calls on user-defined classes don't cause
+-- "Coercion to Any not supported" or other translation errors.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        self.svc = Svc()
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- Translation should succeed without coercion errors
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error: {d.message}")
+  -- Log diagnostic count for visibility; fail if unexpectedly many
+  if diags.size > 10 then
+    throw (IO.userError s!"Unexpected number of diagnostics: {diags.size}: {diags.map (·.message)}")
+
+-- Dispatch detection inside try/except in __init__.
+-- self.svc = Svc() inside a try block should still be detected.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        try:
+            self.svc = Svc()
+        except:
+            pass
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error in try/except dispatch: {d.message}")
 -- Instance method call resolution and body preservation:
 -- Verifies that the method body is translated (not opaque) and the
 -- instance call resolves to a StaticCall (not a Hole).
