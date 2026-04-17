@@ -55,7 +55,7 @@ build_goto() {
       --out '$WORK_DIR/$bn.gb'"
 
   run_test "$bn: goto-cc (add C scaffolding)" \
-    bash -c "ulimit -t 10; '$GOTO_CC' --function main -o '$WORK_DIR/${bn}_cc.gb' '$WORK_DIR/$bn.gb'"
+    bash -c "ulimit -t 10; '$GOTO_CC' --function 'main\$proof' -o '$WORK_DIR/${bn}_cc.gb' '$WORK_DIR/$bn.gb'"
 }
 
 echo "=== Strata → GOTO → CBMC Contract E2E Tests ==="
@@ -66,15 +66,18 @@ echo "--- Test 1: Procedure with requires/ensures (full DFCC + CBMC) ---"
 
 build_goto "contract" 'procedure add(x: int, y: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r >= x
 {
-  r := x + y;
-}
+  r := x + y
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var a: int := 42;
-  assert a > 0;
-}'
+  assert a > 0
+};'
 
 # Verify contracts are in the symbol table
 run_test "contract: cbmc reads #spec_requires and #spec_ensures" \
@@ -84,17 +87,17 @@ import json, sys
 data = json.load(sys.stdin)
 for item in data:
     if 'symbolTable' in item:
-        ns = item['symbolTable'].get('add', {}).get('type', {}).get('namedSub', {})
+        ns = item['symbolTable'].get('add\\\$proof', {}).get('type', {}).get('namedSub', {})
         assert '#spec_requires' in ns, 'missing #spec_requires'
         assert '#spec_ensures' in ns, 'missing #spec_ensures'
         print('OK: both contract annotations found')
 \""
 
 run_test "contract: goto-instrument --dfcc" \
-  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc main '$WORK_DIR/contract_cc.gb' '$WORK_DIR/contract_dfcc.gb'"
+  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc 'main\$proof' '$WORK_DIR/contract_cc.gb' '$WORK_DIR/contract_dfcc.gb'"
 
 run_test "contract: cbmc verification succeeds" \
-  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/contract_dfcc.gb' --function main 2>&1 \
+  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/contract_dfcc.gb' --function 'main\$proof' 2>&1 \
     | grep -q 'VERIFICATION SUCCESSFUL'"
 
 echo ""
@@ -102,17 +105,19 @@ echo ""
 # ---- Test 2: Simple assert (full CBMC verification) ----
 echo "--- Test 2: Simple assert (full DFCC + CBMC) ---"
 
-build_goto "assert" 'procedure main() {
+build_goto "assert" 'procedure main()
+  opaque
+{
   var x: int := 10;
   var y: int := x + 5;
-  assert y > x;
-}'
+  assert y > x
+};'
 
 run_test "assert: goto-instrument --dfcc" \
-  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc main '$WORK_DIR/assert_cc.gb' '$WORK_DIR/assert_dfcc.gb'"
+  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc 'main\$proof' '$WORK_DIR/assert_cc.gb' '$WORK_DIR/assert_dfcc.gb'"
 
 run_test "assert: cbmc verification succeeds" \
-  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/assert_dfcc.gb' --function main 2>&1 \
+  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/assert_dfcc.gb' --function 'main\$proof' 2>&1 \
     | grep -q 'VERIFICATION SUCCESSFUL'"
 
 echo ""
@@ -122,21 +127,24 @@ echo "--- Test 3: Procedure with ensures (full DFCC + CBMC) ---"
 
 build_goto "ensures" 'procedure inc(x: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r > x
 {
-  r := x + 1;
-}
+  r := x + 1
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var v: int := 10;
-  assert v > 0;
-}'
+  assert v > 0
+};'
 
 run_test "ensures: goto-instrument --dfcc" \
-  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc main '$WORK_DIR/ensures_cc.gb' '$WORK_DIR/ensures_dfcc.gb'"
+  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc 'main\$proof' '$WORK_DIR/ensures_cc.gb' '$WORK_DIR/ensures_dfcc.gb'"
 
 run_test "ensures: cbmc verification succeeds" \
-  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/ensures_dfcc.gb' --function main 2>&1 \
+  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/ensures_dfcc.gb' --function 'main\$proof' 2>&1 \
     | grep -q 'VERIFICATION SUCCESSFUL'"
 
 echo ""
@@ -146,6 +154,7 @@ echo "--- Test 4: Loop with invariant (full DFCC + CBMC) ---"
 
 build_goto "loop" 'procedure sum_to_n(n: int) returns (s: int)
   requires n >= 0
+  opaque
   ensures s >= 0
 {
   var i: int := 0;
@@ -155,21 +164,23 @@ build_goto "loop" 'procedure sum_to_n(n: int) returns (s: int)
     invariant s >= 0
   {
     s := s + i;
-    i := i + 1;
+    i := i + 1
   }
-}
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var x: int := 5;
-  assert x > 0;
-}'
+  assert x > 0
+};'
 
 run_test "loop: goto-instrument --dfcc --apply-loop-contracts" \
-  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc main --apply-loop-contracts \
+  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc 'main\$proof' --apply-loop-contracts \
     '$WORK_DIR/loop_cc.gb' '$WORK_DIR/loop_dfcc.gb'"
 
 run_test "loop: cbmc verification succeeds" \
-  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/loop_dfcc.gb' --function main 2>&1 \
+  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/loop_dfcc.gb' --function 'main\$proof' 2>&1 \
     | grep -q 'VERIFICATION SUCCESSFUL'"
 
 echo ""
@@ -179,15 +190,18 @@ echo "--- Test 5: Procedure call (full DFCC + CBMC) ---"
 
 build_goto "call" 'procedure double(x: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r == x + x
 {
-  r := x + x;
-}
+  r := x + x
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var a: int := 3;
-  assert a > 0;
-}'
+  assert a > 0
+};'
 
 # Verify that the callee symbol has a code type (not empty)
 run_test "call: double has code type in symbol table" \
@@ -197,17 +211,17 @@ import json, sys
 data = json.load(sys.stdin)
 for item in data:
     if 'symbolTable' in item:
-        ty = item['symbolTable'].get('double', {}).get('type', {})
+        ty = item['symbolTable'].get('double\\\$proof', {}).get('type', {})
         assert ty.get('id') == 'code', f'expected code type, got {ty}'
         print('OK: double has code type')
 \""
 
 run_test "call: goto-instrument --dfcc" \
-  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc main \
+  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc 'main\$proof' \
     '$WORK_DIR/call_cc.gb' '$WORK_DIR/call_dfcc.gb'"
 
 run_test "call: cbmc verification succeeds" \
-  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/call_dfcc.gb' --function main 2>&1 \
+  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/call_dfcc.gb' --function 'main\$proof' 2>&1 \
     | grep -q 'VERIFICATION SUCCESSFUL'"
 
 echo ""
@@ -217,22 +231,26 @@ echo "--- Test 6: Multiple procedures with contracts ---"
 
 build_goto "multi" 'procedure inc(x: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r == x + 1
 {
-  r := x + 1;
-}
+  r := x + 1
+};
 
 procedure dec(x: int) returns (r: int)
   requires x > 0
+  opaque
   ensures r == x - 1
 {
-  r := x - 1;
-}
+  r := x - 1
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var x: int := 5;
-  assert x > 0;
-}'
+  assert x > 0
+};'
 
 # Verify both procedures have code types in symbol table
 run_test "multi: inc and dec have code types" \
@@ -242,18 +260,18 @@ import json, sys
 data = json.load(sys.stdin)
 for item in data:
     if 'symbolTable' in item:
-        for name in ['inc', 'dec']:
+        for name in ['inc\\\$proof', 'dec\\\$proof']:
             ty = item['symbolTable'].get(name, {}).get('type', {})
             assert ty.get('id') == 'code', f'{name}: expected code type, got {ty}'
         print('OK: both procedures have code types')
 \""
 
 run_test "multi: goto-instrument --dfcc" \
-  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc main \
+  bash -c "ulimit -t 10; '$GOTO_INSTRUMENT' --dfcc 'main\$proof' \
     '$WORK_DIR/multi_cc.gb' '$WORK_DIR/multi_dfcc.gb'"
 
 run_test "multi: cbmc verification succeeds" \
-  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/multi_dfcc.gb' --function main 2>&1 \
+  bash -c "ulimit -t 30; '$CBMC' '$WORK_DIR/multi_dfcc.gb' --function 'main\$proof' 2>&1 \
     | grep -q 'VERIFICATION SUCCESSFUL'"
 
 echo ""
@@ -263,21 +281,24 @@ echo "--- Test 7: Call inside if-then-else (GOTO output) ---"
 
 build_goto "nested_call" 'procedure inc(x: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r == x + 1
 {
-  r := x + 1;
-}
+  r := x + 1
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var a: int := 3;
   var b: int;
   if (a > 0) {
-    call b := inc(a);
+    call b := inc(a)
   } else {
-    b := 0;
-  }
-  assert b >= 0;
-}'
+    b := 0
+  };
+  assert b >= 0
+};'
 
 # Verify GOTO output contains FUNCTION_CALL and GOTO (for if-then-else branching)
 run_test "nested_call: GOTO has FUNCTION_CALL inside branching" \
@@ -285,7 +306,7 @@ run_test "nested_call: GOTO has FUNCTION_CALL inside branching" \
 import json
 with open('$WORK_DIR/nested_call.lr.goto.json') as f:
     data = json.load(f)
-main_fn = [fn for fn in data['functions'] if fn['name'] == 'main'][0]
+main_fn = [fn for fn in data['functions'] if fn['name'] == 'main\\\$proof'][0]
 types = [i.get('instructionId','') for i in main_fn['instructions']]
 assert 'FUNCTION_CALL' in types, f'missing FUNCTION_CALL in {types}'
 assert 'GOTO' in types, f'missing GOTO in {types}'
@@ -299,12 +320,15 @@ echo "--- Test 8: Call inside loop (GOTO output) ---"
 
 build_goto "loop_call" 'procedure inc(x: int) returns (r: int)
   requires x >= 0
+  opaque
   ensures r == x + 1
 {
-  r := x + 1;
-}
+  r := x + 1
+};
 
-procedure main() {
+procedure main()
+  opaque
+{
   var i: int := 0;
   var s: int := 0;
   while (i < 3)
@@ -312,10 +336,10 @@ procedure main() {
     invariant s >= 0
   {
     call s := inc(s);
-    i := i + 1;
-  }
-  assert s >= 0;
-}'
+    i := i + 1
+  };
+  assert s >= 0
+};'
 
 # Verify GOTO output contains FUNCTION_CALL and loop back-edge GOTO
 run_test "loop_call: GOTO has FUNCTION_CALL inside loop" \
@@ -323,7 +347,7 @@ run_test "loop_call: GOTO has FUNCTION_CALL inside loop" \
 import json
 with open('$WORK_DIR/loop_call.lr.goto.json') as f:
     data = json.load(f)
-main_fn = [fn for fn in data['functions'] if fn['name'] == 'main'][0]
+main_fn = [fn for fn in data['functions'] if fn['name'] == 'main\\\$proof'][0]
 types = [i.get('instructionId','') for i in main_fn['instructions']]
 assert 'FUNCTION_CALL' in types, f'missing FUNCTION_CALL in {types}'
 # Should have at least 2 GOTOs: guard exit + back edge

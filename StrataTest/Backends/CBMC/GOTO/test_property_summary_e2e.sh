@@ -15,7 +15,9 @@ trap 'rm -rf "$WORK"' EXIT
 
 # Create Laurel program with property summaries
 cat > "$WORK/test.lr.st" << 'LAUREL'
-procedure main() {
+procedure main()
+  opaque
+{
     var x: int := 5;
     var y: int := 3;
     assert x + y == 8 summary "addition equals eight";

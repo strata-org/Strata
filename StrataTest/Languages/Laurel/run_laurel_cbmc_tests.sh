@@ -53,9 +53,9 @@ for lr_file in "$TESTS_DIR"/*.lr.st; do
   while IFS= read -r prop; do
     prop=$(echo "$prop" | sed 's/^[[:space:]]*//')
     [ -z "$prop" ] && continue
-    # Parse: [main.N] line L <desc>: <STATUS>
-    # Extract property id + line as the match key, e.g. "[main.1] line 6"
-    prop_key=$(echo "$prop" | sed 's/^\(\[main\.[0-9]*\] line [0-9]*\).*/\1/')
+    # Parse: [main$proof.N] line L <desc>: <STATUS>
+    # Extract property id + line as the match key, e.g. "[main$proof.1] line 8"
+    prop_key=$(echo "$prop" | sed 's/^\(\[main\$proof\.[0-9]*\] line [0-9]*\).*/\1/')
     expected_status=$(echo "$prop" | grep -o '\(SUCCESS\|FAILURE\)$')
     # Find matching line in CBMC output by property id + line number
     match=$(echo "$output" | grep -F "$prop_key")

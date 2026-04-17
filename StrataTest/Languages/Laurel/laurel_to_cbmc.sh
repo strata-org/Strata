@@ -55,10 +55,10 @@ run "symtab2gb" symtab2gb "$PROJECT_ROOT/$BN.symtab.json" \
   --out "$WORK_DIR/$BN.gb"
 
 GOTO_CC=${GOTO_CC:-goto-cc}
-run "goto-cc (add C scaffolding)" "$GOTO_CC" --function main -o "$WORK_DIR/${BN}_cc.gb" "$WORK_DIR/$BN.gb"
+run "goto-cc (add C scaffolding)" "$GOTO_CC" --function 'main$proof' -o "$WORK_DIR/${BN}_cc.gb" "$WORK_DIR/$BN.gb"
 
 GOTO_INSTRUMENT=${GOTO_INSTRUMENT:-goto-instrument}
-run "goto-instrument --dfcc" "$GOTO_INSTRUMENT" --dfcc main "$WORK_DIR/${BN}_cc.gb" "$WORK_DIR/${BN}_dfcc.gb"
+run "goto-instrument --dfcc" "$GOTO_INSTRUMENT" --dfcc 'main$proof' "$WORK_DIR/${BN}_cc.gb" "$WORK_DIR/${BN}_dfcc.gb"
 
 CBMC=${CBMC:-cbmc}
-run "cbmc verification" "$CBMC" "$WORK_DIR/${BN}_dfcc.gb" --function main --z3 --verbosity 9
+run "cbmc verification" "$CBMC" "$WORK_DIR/${BN}_dfcc.gb" --function 'main$proof' --z3 --verbosity 9
