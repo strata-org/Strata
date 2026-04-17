@@ -19,9 +19,7 @@ generates verification conditions for these preconditions.
 -/
 
 def e2eProgram := r"
-procedure safeDivision()
-  opaque
-{
+procedure safeDivision() {
   var x: int := 10;
   var y: int := 2;
   var z: int := x / y;
@@ -29,9 +27,7 @@ procedure safeDivision()
 };
 
 // Error ranges are too wide because Core does not use expression locations
-procedure unsafeDivision(x: int)
-  opaque
-{
+procedure unsafeDivision(x: int) {
   var z: int := 10 / x
 //^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
@@ -43,16 +39,12 @@ function pureDiv(x: int, y: int): int
   x / y
 };
 
-procedure callPureDivSafe()
-  opaque
-{
+procedure callPureDivSafe() {
   var z: int := pureDiv(10, 2);
   assert z == 5
 };
 
-procedure callPureDivUnsafe(x: int)
-  opaque
-{
+procedure callPureDivUnsafe(x: int) {
   var z: int := pureDiv(10, x)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
@@ -60,6 +52,6 @@ procedure callPureDivUnsafe(x: int)
 "
 
 #guard_msgs(drop info, error) in
-#eval testInputWithOffset "DivByZeroE2E" e2eProgram 20 processLaurelFile
+#eval testInputWithOffset "DivByZeroE2E" e2eProgram 22 processLaurelFile
 
 end Laurel

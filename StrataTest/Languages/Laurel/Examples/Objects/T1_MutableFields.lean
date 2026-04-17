@@ -20,17 +20,13 @@ composite Container {
   var stringValue: string
 }
 
-procedure newsAreNotEqual()
-  opaque
-{
+procedure newsAreNotEqual() {
   var c: Container := new Container;
   var d: Container := new Container;
   assert c != d
 };
 
-procedure simpleAssign()
-  opaque
-{
+procedure simpleAssign() {
   var c: Container := new Container;
   var iv: int := c#intValue;
   var rv: real := c#realValue;
@@ -49,7 +45,6 @@ procedure simpleAssign()
 };
 
 procedure updatesAndAliasing()
-  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -67,21 +62,13 @@ procedure updatesAndAliasing()
   assert dAlias#intValue == d#intValue
 };
 
-procedure subsequentHeapMutations()
-  opaque
-{
-  var c: Container := new Container;
+procedure subsequentHeapMutations(c: Container) {
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
   var sum: int := ((c#intValue := 1) + c#intValue) + (c#intValue := 2);
   assert sum == 4
 };
 
-procedure implicitEquality()
-  opaque
-{
-  var c: Container := new Container;
-  var d: Container := new Container;
-
+procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
   d#intValue := 2;
   if c#intValue == d#intValue then {
@@ -92,9 +79,7 @@ procedure implicitEquality()
   }
 };
 
-procedure useBool(c: Container) returns (r: bool)
-  opaque
-{
+procedure useBool(c: Container) returns (r: bool) {
   r := c#boolValue
 };
 
@@ -102,12 +87,7 @@ composite SameFieldName {
   var intValue: bool
 }
 
-procedure sameFieldNameDifferentType()
-  opaque
-{
-  var a: Container := new Container;
-  var b: SameFieldName := new SameFieldName;
-
+procedure sameFieldNameDifferentType(a: Container, b: SameFieldName) {
   a#intValue := 1;
   b#intValue := true;
 
@@ -126,9 +106,7 @@ composite Pixel {
   var color: Color
 }
 
-procedure datatypeField()
-  opaque
-{
+procedure datatypeField() {
   var p: Pixel := new Pixel;
   p#color := Red();
   assert Color..isRed(p#color);

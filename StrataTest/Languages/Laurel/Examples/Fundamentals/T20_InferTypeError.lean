@@ -13,9 +13,7 @@ namespace Strata
 namespace Laurel
 
 def inferTypeErrorProgram := r"
-procedure foo()
-  opaque
-{
+procedure foo() {
   <?>
 //^^^ error: could not infer type
 };

@@ -41,9 +41,9 @@ procedure foo()
   opaque
 { };
 procedure foo()
+//        ^^^ error: Duplicate definition 'foo' is already defined in this scope
   opaque
 { };
-//        ^^^ error: Duplicate definition 'foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -77,9 +77,9 @@ composite Foo {
 
 def dupParams := r"
 procedure foo(x: int, x: bool)
+//                    ^ error: Duplicate definition 'x' is already defined in this scope
   opaque
 { };
-//                    ^ error: Duplicate definition 'x' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -93,9 +93,9 @@ composite Foo {
     opaque
   { };
   procedure bar()
+//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
     opaque
   { };
-//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
 }
 "
 
@@ -122,9 +122,9 @@ procedure foo()
 def dupProcType := r"
 composite Foo { }
 procedure Foo()
+//        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
   opaque
 { };
-//        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in

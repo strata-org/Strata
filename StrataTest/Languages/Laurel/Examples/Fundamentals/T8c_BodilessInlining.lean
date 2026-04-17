@@ -22,9 +22,7 @@ procedure bodilessProcedure() returns (r: int)
   ensures r > 0
 ;
 
-procedure caller()
-  opaque
-{
+procedure caller() {
   var x: int := bodilessProcedure();
   assert x > 0;
   assert false

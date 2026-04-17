@@ -13,15 +13,11 @@ namespace Strata
 namespace Laurel
 
 def quantifiersProgram := r"
-procedure testForall()
-  opaque
-{
+procedure testForall() {
     assert forall(x: int) => x + 0 == x
 };
 
-procedure testExists()
-  opaque
-{
+procedure testExists() {
     assert exists(x: int) => x == 42
 };
 
@@ -34,9 +30,7 @@ procedure testQuantifierInContract(n: int)
 
 function P(x: int): int;
 function Q(): int;
-procedure triggers()
-  opaque
-{
+procedure triggers() {
   assert forall(i: int) { P(i) } => P(i) == i + 1;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   assert forall(i: int) => true;
