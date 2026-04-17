@@ -536,6 +536,12 @@ function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
     Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
 
+function Any_len (v: Any) : int;
+
+function Any_len_to_Any (v: Any) : Any {
+  from_int(Any_len(v))
+};
+
 function PIn (v: Any, dictOrList: Any) : Any
   requires (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(v)) || Any..isfrom_ListAny(dictOrList)
 {

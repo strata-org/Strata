@@ -712,7 +712,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Tuple literal: (1, 2)
   -- Abstract: return havoc'd tuple (sound abstraction)
-  | .Tuple .. => return mkStmtExprMd .Hole
+  | .Tuple _ elems _ => translateList ctx elems.val.toList
 
   -- List comprehension: [x for x in items]
   -- Abstract: return havoc'd list (sound abstraction)
@@ -1602,9 +1602,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let sr := target.ann
     let holeRhs := expr.Constant sr (constant.ConEllipsis sr) ⟨sr, none⟩
     let (bodyCtxNoLabels, targetDecls, _) ← translateAssign ctx target none holeRhs md
+    let counterName := s!"@for_loop_counter_{s.toAst.ann.start.byteIdx}"
+    let counterVar := freeVar counterName
+    let counterDecl := mkStmtExprMd $ .LocalVariable counterName (mkHighTypeMd $ .TInt) (mkStmtExprMd $ .LiteralInt 0)
+    let counterIncrease := mkStmtExprMd $ .Assign [counterVar] (mkStmtExprMd $ .PrimitiveOp .Add [counterVar, mkStmtExprMd $ .LiteralInt 1])
     let bodyCtx := { bodyCtxNoLabels with
       loopBreakLabel := some breakLabel
-      loopContinueLabel := some continueLabel }
+      loopContinueLabel := some continueLabel
+      variableTypes := bodyCtxNoLabels.variableTypes ++ [(counterName, "int")]}
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
     let assumeStmts : List StmtExprMd ← do match target with
       | .Name _ n _ =>
@@ -1632,10 +1637,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             let assumeInStmt := mkStmtExprMdWithLoc (.Assume (Any_to_bool targetInIter)) md
             pure [assumeInStmt]
       | _ => pure []
-    let bodyStmts := assumeStmts ++ bodyStmts
+    let counterLtLen := match iterExpr.val with
+      | .StaticCall "range" (startExpr::_) =>
+          mkStmtExprMd $ .PrimitiveOp .Lt [counterVar,
+                          mkStmtExprMd $ .StaticCall "Any..as_int!" [startExpr]]
+      | _ =>
+          mkStmtExprMd $ .PrimitiveOp .Lt [counterVar,
+                          mkStmtExprMd $ .StaticCall "Any_len" [iterExpr]]
+    let bodyStmts := assumeStmts ++ bodyStmts ++ [counterIncrease]
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
-    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ targetDecls ++ [loopBlock])
+    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
+    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ [counterDecl] ++ targetDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
