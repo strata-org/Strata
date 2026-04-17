@@ -77,7 +77,6 @@ An atomic type in the PySpec language
 -/
 inductive SpecAtomType where
 | ident (nm : PythonIdent) (args : Array SpecType)
-| pyClass (name : String) (args : Array SpecType)
 /- An integer literal -/
 | intLiteral (value : Int)
 /-- A string literal -/
@@ -127,7 +126,7 @@ termination_by a₁.size - i
 mutual
 
 /-- Compare two atom types by structure, ignoring `loc` in nested `SpecType`
-    values. Variants are ordered: ident < pyClass < intLiteral < stringLiteral
+    values. Variants are ordered: ident < intLiteral < stringLiteral
     < typedDict. -/
 protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
   match x, y with
@@ -136,12 +135,6 @@ protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
       compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
   | .ident .., _ => .lt
   | _, .ident .. => .gt
-
-  | .pyClass xname xargs, .pyClass yname yargs =>
-    compare xname yname |>.then $
-      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
-  | .pyClass .., _ => .lt
-  | _, .pyClass .. => .gt
 
   | .intLiteral xval, .intLiteral yval => compare xval yval
   | .intLiteral .., _ => .lt
@@ -261,9 +254,6 @@ protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecTyp
 
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
   ofAtom loc (.ident i args)
-
-def pyClass (loc : SourceRange) (name : String) (params : Array SpecType) : SpecType :=
-  ofAtom loc (.pyClass name params)
 
 def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then

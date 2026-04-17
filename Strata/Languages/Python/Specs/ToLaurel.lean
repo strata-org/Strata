@@ -158,11 +158,6 @@ def atomTypeToString (a : SpecAtomType) : String :=
     else
       let argStrs := args.map specTypeToString
       s!"{nm}[{String.intercalate ", " argStrs.toList}]"
-  | .pyClass name args =>
-    if args.isEmpty then name
-    else
-      let argStrs := args.map specTypeToString
-      s!"{name}[{String.intercalate ", " argStrs.toList}]"
   | .intLiteral v => s!"Literal[{v}]"
   | .stringLiteral v => s!"Literal[\"{v}\"]"
   | .typedDict _ _ _ => "TypedDict"
@@ -313,13 +308,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
         reportError .complexToReal default s!"'{nm}' mapped to TReal (complex loses imaginary component)"
       if let some ty := knownIdentTypes[nm]? then
         return ty
-      reportError .unknownType default s!"Unknown type '{nm}' mapped to TString"
-      return tyString
-    | .pyClass name args =>
-      if args.size > 0 then
-        reportError .unsupportedGenericClass default
-          s!"Generic class '{name}' with type args unsupported"
-      let prefixed ← prefixName name
+      let prefixed ← prefixName nm.name
       return mkTy (.UserDefined { text := prefixed, md := .empty })
     | .intLiteral _ => return tyInt
     | .stringLiteral _ => return tyString
@@ -671,9 +660,8 @@ def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
   })
 
 /-- Extract an overload dispatch entry from an `@overload` function declaration.
-    Looks for a `stringLiteral` in the first argument's type and a class
-    return type (either `.pyClass` for locally-defined classes or `.ident`
-    for externally imported classes), and records them in the dispatch table. -/
+    Looks for a `stringLiteral` in the first argument's type and an `.ident`
+    return type, and records them in the dispatch table. -/
 def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
   let args := func.args.args
   let .isTrue _ := decideProp (args.size > 0)
@@ -703,10 +691,6 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
       return
   let retType ←
         match func.returnType.atoms[0] with
-        | .pyClass name _ => do
-          let ctx ← read
-          let prefixed ← prefixName name
-          pure (PythonIdent.mk ctx.modulePrefix prefixed)
         | .ident nm _ => pure nm
         | _ =>
           reportError .overloadReturnNotClass func.loc

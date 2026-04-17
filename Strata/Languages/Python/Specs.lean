@@ -427,9 +427,10 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
     | some (.typeValue tp) =>
       return tp
     | _ =>
-      specError loc s!"Unknown type in valueAsType {repr val}."
       recordTypeRef loc val
-      return .ofAtom loc (.pyClass val #[])
+      let mod := toString (← read).currentModule
+      let pyIdent : PythonIdent := { pythonModule := mod, name := val }
+      return .ofAtom loc (.ident pyIdent #[])
   | _ =>
     specError loc s!"Expected type instead of {repr v}."
     return default
@@ -707,7 +708,8 @@ def pySpecArg (usedNames : Std.HashSet String)
     | some cl =>
       if type.isSome then
         specError loc s!"Unexpected argument to {name}"
-      pure <| .pyClass loc cl #[]
+      let mod := toString (← read).currentModule
+      pure <| .ident loc { pythonModule := mod, name := cl } #[]
   assert! comment.isNone
   let argDefault ←
     match de with
@@ -1324,9 +1326,6 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
           match tp.asSingleton with
           | some (.ident pyIdent _) =>
             result := result.push pyIdent
-          | some (.pyClass clsName _) =>
-            let mod := toString (← read).currentModule
-            result := result.push { pythonModule := mod, name := clsName }
           | _ =>
             specError base.ann s!"Unknown base class '{name}'"
         | _ =>
@@ -1385,9 +1384,11 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
                 match value with
                 | .Call _ (.Attribute _ (.Name _ ⟨_, "self"⟩ (.Load _))
                     ⟨_, innerClsName⟩ (.Load _)) _ _ =>
+                  let mod := toString (← read).currentModule
+                  let pyIdent : PythonIdent := { pythonModule := mod, name := innerClsName }
                   let f : ClassField := {
                     name := fieldName,
-                    type := SpecType.pyClass loc innerClsName #[],
+                    type := .ident loc pyIdent #[],
                     constValue := some s!"{innerClsName}()" }
                   fields := fields.push f
                 | _ =>
@@ -1725,7 +1726,8 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       let baseIdents ← resolveBaseClasses bases
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
-      setNameValue className (.typeValue (.pyClass loc className #[]))
+      let mod := toString (← read).currentModule
+      setNameValue className (.typeValue (.ident loc { pythonModule := mod, name := className } #[]))
       let d ← pySpecClassBody loc className baseIdents stmts
       let d := { d with exhaustive := isExhaustive }
       if success then
