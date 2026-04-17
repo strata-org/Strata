@@ -73,7 +73,7 @@ info: ok: program Core;
 
 type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo int bool;
-procedure obligations () returns ()
+procedure P () returns ()
 {
   assert [test]: re.none() == re.none();
   };
@@ -202,10 +202,7 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 
 ---
-info: ok: [procedure obligations :  () → ()
-   modifies: []
-   preconditions: 
-   postconditions:  { {} }]
+info: ok: []
 -/
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm

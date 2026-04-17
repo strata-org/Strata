@@ -117,7 +117,9 @@ def symbolicEval (options : VerifyOptions) (program : Program)
   -- Type/datatype declarations come from the original program.
   let typeDecls := program.decls.filter fun d =>
     match d with | .type _ _ => true | _ => false
-  let oblProcs := pEs.map fun E =>
+  let procNames := program.decls.filterMap fun d =>
+    match d with | .proc p _ => some p.header.name | _ => none
+  let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
     let blocks := E.deferred.toList.map fun ob =>
       let assumes := ob.assumptions.flatten.map fun (label, e) =>
         Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
@@ -131,7 +133,7 @@ def symbolicEval (options : VerifyOptions) (program : Program)
       | b :: rest => rest.foldl (fun acc block =>
           [Imperative.Stmt.ite .nondet acc block .empty]) b
     let proc : Procedure := {
-      header := { name := ⟨"obligations", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+      header := { name := procName, typeArgs := [], inputs := [], outputs := [] },
       spec := { preconditions := [], postconditions := [], modifies := [] },
       body := body
     }
