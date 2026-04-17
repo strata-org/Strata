@@ -49,7 +49,7 @@ Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses (options : LaurelTranslateOptions) (program : Program)
     (keepAllFilesPrefix : Option String := none)
-    : IO (Program × SemanticModel × List DiagnosticModel) := do
+    : IO (Program × SemanticModel × List DiagnosticModel × Nat) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -138,7 +138,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
     valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags ++ newResolutionErrors
-  return (program, model, allDiags)
+  return (program, model, allDiags, finalResolutionErrors.size)
 
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
@@ -149,7 +149,7 @@ Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     (keepAllFilesPrefix : Option String := none)
     : IO TranslateResultWithLaurel := do
-  let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
+  let (program, model, passDiags, preExistingResolutionErrorCount) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
   let functionsAndProofs := eliminateMultipleOutputs functionsAndProofs
 
@@ -163,10 +163,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   }
   let fnResolveResult := resolve fnProgram (some model)
   let fnResolutionErrors : List DiagnosticModel :=
-    if fnResolveResult.errors.size > 0 then
-      let firstErr := fnResolveResult.errors.toList.head?.map (·.message) |>.getD "unknown"
+    if fnResolveResult.errors.size > preExistingResolutionErrorCount then
+      let newCount := fnResolveResult.errors.size - preExistingResolutionErrorCount
+      let firstErr := fnResolveResult.errors.toList.drop preExistingResolutionErrorCount
+        |>.head?.map (·.message) |>.getD "unknown"
       [DiagnosticModel.fromMessage
-        s!"Strata bug: {fnResolveResult.errors.size} resolution error(s) in fnProgram re-resolve. First error: {firstErr}"
+        s!"Strata bug: {newCount} resolution error(s) in fnProgram re-resolve. First error: {firstErr}"
         DiagnosticType.StrataBug]
     else []
   let fnModel := fnResolveResult.model
@@ -188,6 +190,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
   let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
+  let allDiagnostics := allDiagnostics.eraseDups
   let allDiagnostics :=
     if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
       -- The program was suppressed but no diagnostics explain why — that's a bug.

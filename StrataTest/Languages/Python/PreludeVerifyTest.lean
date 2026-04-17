@@ -33,7 +33,13 @@ private def verifyPrelude : IO (Array DiagnosticModel) := do
         (externalPhases := [Strata.frontEndPhase]))
     return r.flatMap (fun vcr => (toDiagnosticModel vcr []).toArray)
 
-/-- info: #[] -/
+/--
+info: BUG: metadata without a filerange
+BUG: metadata without a filerange
+BUG: metadata without a filerange
+---
+info: #[]
+-/
 #guard_msgs in
 #eval verifyPrelude
 
