@@ -87,6 +87,7 @@ so in affect there no longer are any variables captured by a closure.
 
 // Option A: first class procedures
 procedure hasClosure() returns (r: int)
+  opaque
   ensures r == 7
 {
   var x = 3;
@@ -100,17 +101,21 @@ procedure hasClosure() returns (r: int)
 
 // Option B: type closures
 composite ATrait {
-  procedure foo() returns (r: int) ensures r > 0 {
+  procedure foo() returns (r: int) ensures r > 0
+    opaque
+  {
     abstract
   };
 }
 
 procedure hasClosure() returns (r: int)
+  opaque
   ensures r == 7
 {
   var x = 3;
   var aClosure := closure extends ATrait {
     procedure foo() returns (r: int) 
+      opaque
     {
       r = x + 4;
     };

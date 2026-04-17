@@ -28,7 +28,7 @@ procedure outputValid(): nat {
 
 // Output constraint — invalid return fails
 procedure outputInvalid(): nat {
-//                         ^^^ error: assertion does not hold
+//                         ^^^ error: postcondition does not hold
   return -1
 };
 

@@ -56,4 +56,17 @@ run "symtab2gb" symtab2gb "$PROJECT_ROOT/$BN.symtab.json" \
   --out "$WORK_DIR/$BN.gb"
 
 CBMC=${CBMC:-cbmc}
-run "cbmc verification" "$CBMC" "$WORK_DIR/$BN.gb" --function main --z3 --verbosity 9
+# Detect the entry-point function name from the generated GOTO JSON.
+# coreToGotoFiles uses the actual procedure name (e.g. main$proof or __main__$proof).
+ENTRY_FN=$(python3 -c "
+import json, sys
+with open('$PROJECT_ROOT/$BN.goto.json') as f:
+    data = json.load(f)
+fns = [fn['name'] for fn in data['functions']]
+for candidate in ['main\$proof', '__main__\$proof', 'main', '__main__']:
+    if candidate in fns:
+        print(candidate)
+        sys.exit(0)
+print(fns[0] if fns else 'main\$proof')
+")
+run "cbmc verification" "$CBMC" "$WORK_DIR/$BN.gb" --function "$ENTRY_FN" --z3 --verbosity 9

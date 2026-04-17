@@ -44,14 +44,14 @@ structure FunctionsAndProofsProgram where
 def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.md⟩
+    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.source, e.md⟩
     | .Block stmts label =>
       let stmts' := stmts.filter fun s =>
         match s.val with | .LiteralBool true => false | _ => true
       match stmts' with
-      | [] => ⟨.LiteralBool true, e.md⟩
-      | [s] => if label.isNone then s else ⟨.Block [s] label, e.md⟩
-      | _ => ⟨.Block stmts' label, e.md⟩
+      | [] => ⟨.LiteralBool true, e.source, e.md⟩
+      | [s] => if label.isNone then s else ⟨.Block [s] label, e.source, e.md⟩
+      | _ => ⟨.Block stmts' label, e.source, e.md⟩
     | _ => e) expr
 
 /-- Create the function copy of a procedure. The function body is included only
@@ -60,9 +60,11 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
     contain imperative constructs that cannot be translated as pure functions.
     Assert/Assume nodes are stripped from function bodies. -/
 private def mkFunctionCopy (proc : Procedure) : Procedure :=
-  let body := match proc.isFunctional, proc.body with
-    | true, .Transparent b => .Transparent (stripAssertAssume b)
-    | _, _ => .Opaque [] none []
+  let body := if !proc.isFunctional then .Opaque [] none []
+    else match proc.body with
+      | .Transparent b => .Transparent (stripAssertAssume b)
+      | .Opaque _ _ _ => .Opaque [] none []
+      | x => x
   { proc with isFunctional := true, body := body }
 
 /--
@@ -73,9 +75,11 @@ functions, non-functional become proofs.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let functions := nonExternal.map mkFunctionCopy
+  let externalProcs := program.staticProcedures.filter (fun p => p.body.isExternal)
+  let functions := externalProcs ++ nonExternal.map mkFunctionCopy
   let proofs := nonExternal.map fun p =>
-    { p with isFunctional := false, name := { p.name with text := p.name.text ++ "$proof" } }
+    { p with isFunctional := false,
+             name := { p.name with text := p.name.text ++ "$proof", uniqueId := none } }
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none

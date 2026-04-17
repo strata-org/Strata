@@ -23,6 +23,7 @@ procedure testExists() {
 
 procedure testQuantifierInContract(n: int)
   requires n > 0
+  opaque
   ensures forall(i: int) => i >= 0 ==> i < n ==> i < n + 1
 {
 };

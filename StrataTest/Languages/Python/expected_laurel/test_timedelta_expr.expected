@@ -1,0 +1,8 @@
+test_timedelta_expr.py(4, 0): ✅ pass - (Origin_timedelta_Requires), (Origin_timedelta_Requires)hours_type, (Origin_timedelta_Requires)days_pos, (Origin_timedelta_Requires)hours_pos
+unknown location: ✅ pass - set_delta_calls_timedelta_func$result..out0_0
+test_timedelta_expr.py(5, 18): ❓ unknown - Check PSub exception
+test_timedelta_expr.py(6, 7): ❓ unknown - Check PLe exception
+test_timedelta_expr.py(6, 0): ❓ unknown - assert_assert(140)_calls_Any_to_bool_0
+test_timedelta_expr.py(6, 0): ❓ unknown - assert(140)
+DETAIL: 2 passed, 0 failed, 4 inconclusive
+RESULT: Inconclusive

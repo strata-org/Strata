@@ -31,7 +31,7 @@ public section
 
 private def emptyMd : MetaData := .empty
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, emptyMd⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
 
 /-- Build a conjunction of expressions. Returns `LiteralBool true` for an empty list. -/
 private def conjoin (exprs : List StmtExprMd) : StmtExprMd :=
@@ -54,19 +54,6 @@ private def getPostconditions (body : Body) : List StmtExprMd :=
   | .Abstract postconds => postconds
   | _ => []
 
-/-- Build a helper function that returns the conjunction of the given conditions. -/
-private def mkConditionProc (name : String) (params : List Parameter)
-    (conditions : List StmtExprMd) : Procedure :=
-  -- Use "$result" as the output name to avoid clashing with user-defined
-  -- parameter names (user names cannot contain '$').
-  { name := mkId name
-    inputs := params
-    outputs := [⟨mkId "$result", ⟨.TBool, emptyMd⟩⟩] -- TODO, enable anonymous output parameters
-    preconditions := []
-    decreases := none
-    isFunctional := true
-    body := .Transparent (conjoin conditions) }
-
 /-- Build a call expression. -/
 private def mkCall (callee : String) (args : List StmtExprMd) : StmtExprMd :=
   mkMd (.StaticCall (mkId callee) args)
@@ -75,12 +62,37 @@ private def mkCall (callee : String) (args : List StmtExprMd) : StmtExprMd :=
 private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
   params.map fun p => mkMd (.Identifier p.name)
 
+/-- Build a helper function that returns the conjunction of the given conditions. -/
+private def mkConditionProc (name : String) (params : List Parameter)
+    (conditions : List StmtExprMd) : Procedure :=
+  { name := mkId name
+    inputs := params
+    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
+    preconditions := []
+    decreases := none
+    isFunctional := true
+    body := .Transparent (conjoin conditions) }
+
+/-- Extract a combined summary from a list of contract clauses. -/
+private def combinedSummary (clauses : List StmtExprMd) : Option String :=
+  let summaries := clauses.filterMap fun c => c.md.getPropertySummary
+  match summaries with
+  | [] => none
+  | [s] => some s
+  | ss => some (String.intercalate ", " ss)
+
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where
   hasPreCondition : Bool
   hasPostCondition : Bool
   preName : String
   postName : String
+  preSummary : Option String
+  postSummary : Option String
+  inputParams : List Parameter
+  outputParams : List Parameter
+  /-- Functional/invokeOn procedures have their contracts handled by the Core translator. -/
+  skipContractPass : Bool
 
 /-- Collect contract info for all procedures with contracts. -/
 private def collectContractInfo (procs : List Procedure) : Std.HashMap String ContractInfo :=
@@ -94,6 +106,11 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
         hasPostCondition := hasPost
         preName := preCondProcName proc.name.text
         postName := postCondProcName proc.name.text
+        preSummary := combinedSummary proc.preconditions
+        postSummary := combinedSummary postconds
+        inputParams := proc.inputs
+        outputParams := proc.outputs
+        skipContractPass := proc.isFunctional || proc.invokeOn.isSome
       }
     else m) {}
 
@@ -101,11 +118,18 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let outputArgs := paramsToArgs proc.outputs
+  let postconds := getPostconditions proc.body
   let preAssume : List StmtExprMd :=
     if info.hasPreCondition then [mkMd (.Assume (mkCall info.preName inputArgs))]
     else []
   let postAssert : List StmtExprMd :=
-    if info.hasPostCondition then [mkMd (.Assert (mkCall info.postName (inputArgs ++ outputArgs)))]
+    if info.hasPostCondition then
+      let (baseSrc, baseMd) := match postconds.head? with
+        | some pc => (pc.source, pc.md)
+        | none => (none, emptyMd)
+      let summary := info.postSummary.getD "postcondition"
+      [⟨.Assert (mkCall info.postName (inputArgs ++ outputArgs)),
+        baseSrc, baseMd.withPropertySummary summary⟩]
     else []
   match proc.body with
   | .Transparent body =>
@@ -122,24 +146,31 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
 private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd) : List StmtExprMd :=
   let md := e.md
-  let mkWithMd (se : StmtExpr) : StmtExprMd := ⟨se, md⟩
+  let src := e.source
+  let mkWithMd (se : StmtExpr) : StmtExprMd := ⟨se, src, md⟩
+  let mkWithMdSummary (se : StmtExpr) (summary : String) : StmtExprMd :=
+    ⟨se, src, md.withPropertySummary summary⟩
   match e.val with
-  | .Assign targets (.mk (.StaticCall callee args) _) =>
+  | .Assign targets (.mk (.StaticCall callee args) ..) =>
     match contractInfoMap.get? callee.text with
     | some info =>
-      let resultArgs := targets.map fun t => ⟨t.val, t.md⟩
+      -- Skip call-site rewriting for functional procedures (handled by Core translator)
+      if info.skipContractPass then [e] else
       let preAssert := if info.hasPreCondition
-        then [mkWithMd (.Assert (mkCall info.preName args))] else []
-      let postAssume := if info.hasPostCondition
+        then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
+      -- Only assume postcondition when all outputs are captured
+      let resultArgs := targets.map fun t => ⟨t.val, t.source, t.md⟩
+      let postAssume := if info.hasPostCondition && targets.length == info.outputParams.length
         then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
     | none => [e]
-  | .LocalVariable name _ty (some (.mk (.StaticCall callee args) _)) =>
+  | .LocalVariable names _ty (some (.mk (.StaticCall callee args) ..)) =>
     match contractInfoMap.get? callee.text with
     | some info =>
-      let resultArgs := [mkMd (.Identifier name)]
+      if info.skipContractPass then [e] else
+      let resultArgs := names.map fun n => mkMd (.Identifier n)
       let preAssert := if info.hasPreCondition
-        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+        then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
       let postAssume := if info.hasPostCondition
         then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
@@ -147,8 +178,9 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
   | .StaticCall callee args =>
     match contractInfoMap.get? callee.text with
     | some info =>
+      if info.skipContractPass then [e] else
       let preAssert := if info.hasPreCondition
-        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+        then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
       preAssert ++ [e]
     | none => [e]
   | _ => [e]
@@ -164,7 +196,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     | .Block stmts label =>
       let stmts' := stmts.flatMap (rewriteStmt contractInfoMap)
       if stmts'.length == stmts.length then e
-      else ⟨.Block stmts' label, e.md⟩
+      else ⟨.Block stmts' label, e.source, e.md⟩
     | _ => e) expr
   -- Handle top-level non-Block statements (e.g., bare Assign or StaticCall)
   let expanded := rewriteStmt contractInfoMap result
@@ -189,8 +221,14 @@ private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String Contrac
 def contractPass (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
-  -- Generate helper procedures for all procedures with contracts
+  -- Generate helper procedures for non-functional procedures with contracts.
+  -- Functional procedures have their contracts handled by the Core translator.
+  -- Procedures with invokeOn are skipped because the axiom generator reads
+  -- postconditions directly from the procedure body.
+  let shouldSkip (proc : Procedure) : Bool :=
+    proc.isFunctional || proc.invokeOn.isSome
   let helperProcs := program.staticProcedures.flatMap fun proc =>
+    if shouldSkip proc then [] else
     let postconds := getPostconditions proc.body
     let preProc :=
       if proc.preconditions.isEmpty then []
@@ -200,9 +238,11 @@ def contractPass (program : Program) : Program :=
       else [mkConditionProc (postCondProcName proc.name.text) (proc.inputs ++ proc.outputs) postconds]
     preProc ++ postProc
 
-  -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
+  -- Transform procedures: strip contracts, add assume/assert, rewrite call sites.
+  -- Functional procedures and invokeOn procedures are left unchanged.
   let transformedProcs := program.staticProcedures.map fun proc =>
-    let proc := match contractInfoMap.get? proc.name.text with
+    let proc := if shouldSkip proc then proc
+      else match contractInfoMap.get? proc.name.text with
       | some info =>
         { proc with
           preconditions := []

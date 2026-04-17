@@ -1,12 +1,30 @@
+test_with_statement.py(16, 4): ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - set_$heap_calls_Resource@__init__$result..out0_0
+test_with_statement.py(17, 4): ✔️ always true if reached - assert(364)
+unknown location: ✔️ always true if reached - precondition
+test_with_statement.py(18, 4): ✔️ always true if reached - precondition
 test_with_statement.py(20, 4): ✔️ always true if reached - assert_assert(426)_calls_Any_to_bool_0
-test_with_statement.py(20, 4): ✔️ always true if reached - assert(426)
-test_with_statement.py(15, 0): ✔️ always true if reached - postcondition
+test_with_statement.py(20, 4): ❓ unknown - assert(426)
+test_with_statement.py(15, 0): ❓ unknown - postcondition
+test_with_statement.py(23, 4): ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - set_$heap_calls_Resource@__init__$result..out0_0
+test_with_statement.py(24, 4): ✔️ always true if reached - precondition
+test_with_statement.py(25, 8): ✔️ always true if reached - precondition
+test_with_statement.py(25, 8): ❓ unknown - assert(525)
 test_with_statement.py(26, 8): ✔️ always true if reached - assert_assert(558)_calls_Any_to_bool_0
-test_with_statement.py(26, 8): ✔️ always true if reached - assert(558)
-test_with_statement.py(22, 0): ✔️ always true if reached - postcondition
-test_with_statement.py(32, 21): ✔️ always true if reached - Check PAdd exception
+test_with_statement.py(26, 8): ❓ unknown - assert(558)
+test_with_statement.py(22, 0): ❓ unknown - postcondition
+test_with_statement.py(29, 4): ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - set_$heap_calls_Resource@__init__$result..out0_0
+test_with_statement.py(30, 4): ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - set_$heap_calls_Resource@__init__$result..out0_0
+unknown location: ✔️ always true if reached - precondition
+unknown location: ✔️ always true if reached - precondition
+test_with_statement.py(32, 21): ❓ unknown - Check PAdd exception
+test_with_statement.py(32, 8): ❓ unknown - assert(697)
 test_with_statement.py(33, 8): ✔️ always true if reached - assert_assert(724)_calls_Any_to_bool_0
-test_with_statement.py(33, 8): ✔️ always true if reached - assert(724)
-test_with_statement.py(28, 0): ✔️ always true if reached - postcondition
-DETAIL: 10 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_with_statement.py(33, 8): ❓ unknown - assert(724)
+test_with_statement.py(31, 4): ✔️ always true if reached - precondition
+test_with_statement.py(28, 0): ❓ unknown - postcondition
+DETAIL: 19 passed, 0 failed, 9 inconclusive
+RESULT: Inconclusive

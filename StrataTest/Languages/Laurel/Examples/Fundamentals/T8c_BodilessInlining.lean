@@ -18,6 +18,7 @@ namespace Strata.Laurel.BodilessInliningTest
 
 private def laurelSource := "
 procedure bodilessProcedure() returns (r: int)
+  opaque
   ensures r > 0
 ;
 
@@ -28,7 +29,7 @@ procedure caller() {
 };
 "
 
-/-- info: "assert(143): ❌ fail" -/
+/-- info: "assert(152): ❌ fail" -/
 #guard_msgs in
 #eval show IO String from do
   let laurelProg ← Strata.parseLaurelText "test.laurel" laurelSource
@@ -42,7 +43,7 @@ procedure caller() {
     EIO.toIO (fun e => IO.Error.userError e)
       (Strata.Core.verifyProgram inlined
         { Core.VerifyOptions.default with verbose := .quiet }
-        (proceduresToVerify := some ["caller"]))
+        (proceduresToVerify := some ["caller$proof"]))
   -- Collect only failing results
   let failures := vcResults.filter fun vcr =>
     match vcr.outcome with

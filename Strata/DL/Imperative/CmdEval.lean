@@ -16,7 +16,7 @@ public section
 --------------------------------------------------------------------
 
 /--
-Partial evaluator for an Imperative Command.
+Symbolic simulation for an Imperative Command.
 -/
 def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
   match EC.lookupError σ with
@@ -67,7 +67,9 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
       let propType := match md.getPropertyType with
-        | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
+        | some s => if s == MetaData.divisionByZero then .divisionByZero
+                    else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else .assert
         | none => .assert
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.
@@ -101,7 +103,7 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
       (c', EC.deferObligation σ (ProofObligation.mk label .cover assumptions e md))
 
 /--
-Partial evaluator for Imperative's Commands.
+Symbolic simulation for Imperative's Commands.
 -/
 def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
   match cs with

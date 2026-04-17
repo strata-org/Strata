@@ -1,18 +1,17 @@
 test_datetime.py(13, 0): ✅ pass - (Origin_datetime_date_Requires)d_type
-test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)
-test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_type
-test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)days_pos
-test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_pos
-test_datetime.py(15, 19): ✅ pass - Check PSub exception
-test_datetime.py(21, 7): ✅ pass - Check PLe exception
-test_datetime.py(21, 0): ✅ pass - assert_assert(554)_calls_Any_to_bool_0
-test_datetime.py(21, 0): ✅ pass - assert(554)
+unknown location: ✅ pass - set_end_calls_datetime_date$result..out0_0
+test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires), (Origin_timedelta_Requires)hours_type, (Origin_timedelta_Requires)days_pos, (Origin_timedelta_Requires)hours_pos
+unknown location: ✅ pass - set_delta_calls_timedelta_func$result..out0_0
+test_datetime.py(15, 19): ❓ unknown - Check PSub exception
+test_datetime.py(21, 7): ❓ unknown - Check PLe exception
+test_datetime.py(21, 0): ❓ unknown - assert_assert(554)_calls_Any_to_bool_0
+test_datetime.py(21, 0): ❓ unknown - assert(554)
 test_datetime.py(25, 0): ✅ pass - assert_assert(673)_calls_Any_to_bool_0
 test_datetime.py(25, 0): ✅ pass - assert(673)
 test_datetime.py(27, 0): ✅ pass - assert_assert(758)_calls_Any_to_bool_0
 test_datetime.py(27, 0): ✅ pass - assert(758)
-test_datetime.py(30, 7): ✅ pass - Check PLe exception
-test_datetime.py(30, 0): ✅ pass - assert_assert(859)_calls_Any_to_bool_0
-test_datetime.py(30, 0): ✅ pass - assert(859)
-DETAIL: 16 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_datetime.py(30, 7): ❓ unknown - Check PLe exception
+test_datetime.py(30, 0): ❓ unknown - assert_assert(859)_calls_Any_to_bool_0
+test_datetime.py(30, 0): ❓ unknown - assert(859)
+DETAIL: 8 passed, 0 failed, 7 inconclusive
+RESULT: Inconclusive

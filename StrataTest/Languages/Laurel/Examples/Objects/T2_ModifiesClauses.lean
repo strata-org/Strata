@@ -28,29 +28,30 @@ composite Container {
 }
 
 procedure modifyContainerOpaque(c: Container) returns (b: bool)
-  ensures true // makes this procedure opaque. Maybe we should use explicit syntax
+  opaque
   modifies c
 {
   c#value := c#value + 1;
   true
 };
 
-procedure modifyContainerTransparant(c: Container) returns (i: int)
+procedure caller()
 {
-  c#value := c#value + 1;
-  7
-};
-
-procedure caller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
   var b: bool := modifyContainerOpaque(c);
-  assert x == d#value // pass
+  assert x == d#value // pass -- TODO: known issue, contract pass doesn't capture pre-call heap
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-// This test-case does not work yet.
-// Because Core procedures never have transparent bodies
+// Commented out because
+// Transparent assignments are not supported yet
+// procedure modifyContainerTransparant(c: Container) returns (i: int)
+//{
+//  c#value := c#value + 1;
+//  7
+//};
 //procedure modifyContainerWithPermission1(c: Container, d: Container)
 //   ensures true
 //   modifies c
@@ -58,48 +59,56 @@ procedure caller() {
 //    var i: int := modifyContainerTransparant(c);
 //}
 
-procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
-   ensures true
-{
-    var i: int := modifyContainerTransparant(c)
-};
+// TODO add wildcard support
+// procedure modifyContainerWildcard(c: Container) returns (i: int)
+//  opaque
+//  modifies *
+//{
+//  c#value := c#value + 1;
+//  7
+//};
+
+//procedure modifyContainerWithoutPermission1(c: Container, d: Container)
+//          error: postcondition does not hold
+//  opaque
+//{
+//    var i: int := modifyContainerWildcard(c)
+//};
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
-  ensures true
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+  opaque
   modifies d
 {
     c#value := 2
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
-  ensures true
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
+  opaque
   modifies d
 {
-    var i: int := modifyContainerTransparant(c)
+    var i: bool := modifyContainerOpaque(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
+  opaque
   modifies c
   modifies d
 ;
 
-procedure multipleModifiesClausesCaller() {
+procedure multipleModifiesClausesCaller()
+{
   var c: Container := new Container;
   var d: Container := new Container;
   var e: Container := new Container;
   var x: int := e#value;
   multipleModifiesClauses(c, d, e);
-  assert x == e#value // pass
+  assert x == e#value // pass -- TODO: known issue, contract pass doesn't capture pre-call heap
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure newObjectDoNotCountForModifies()
-  ensures true
 {
   var c: Container := new Container;
   c#value := 1

@@ -453,12 +453,13 @@ public def typeCheckCore (program : Core.Program)
 
 /-- Translate a type-checked Core program to CProver GOTO JSON files.
     Finds an entry-point procedure from `entryPoints` (defaulting to
-    `["main", "__main__"]`), translates it to GOTO, and writes
-    `<baseName>.symtab.json` and `<baseName>.goto.json`. -/
+    `["main", "__main__", "main$proof", "__main__$proof"]`), translates it
+    to GOTO, and writes `<baseName>.symtab.json` and
+    `<baseName>.goto.json`. -/
 public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     (baseName : String)
     (sourceText : Option String := none)
-    (entryPoints : List String := ["main", "__main__"])
+    (entryPoints : List String := ["main", "__main__", "main$proof", "__main__$proof"])
     : EIO String Unit := do
   let findProc (name : String) := tcPgm.decls.find? fun d =>
       match d with
@@ -469,8 +470,7 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     | none => throw s!"No entry-point procedure found (tried {entryPoints})"
   let some p := mainDecl.getProc?
     | throw "entry point is not a procedure"
-  -- Always use "main" as the GOTO function name (CBMC expects --function main)
-  let procName := "main"
+  let procName := Core.CoreIdent.toPretty p.header.name
   let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
   let distincts := tcPgm.decls.filterMap fun d => match d with
     | .distinct name es _ => some (name, es) | _ => none
@@ -501,11 +501,11 @@ Inline procedures, type-check, and emit CProver GOTO JSON files.
 public def inlineCoreToGotoFiles (program : Core.Program)
     (baseName : String)
     (sourceText : Option String := none)
-    (entryPoints : List String := ["main", "__main__"])
+    (entryPoints : List String := ["main", "__main__", "main$proof", "__main__$proof"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
   let phase := Core.procedureInliningPipelinePhase
-    { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
+    { doInline := (fun _caller callee _ => callee ≠ "main" && callee ≠ "main$proof"), maxIters := some 10 }
   let inlined ← match Core.Transform.run program (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
