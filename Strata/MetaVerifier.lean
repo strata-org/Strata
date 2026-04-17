@@ -60,7 +60,7 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
   match Core.typeCheckAndEval options program with
   | .error _ => none
   | .ok (pEs, _stats) =>
-    let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs
+    let VCss ← List.mapM (fun (_, E) => genVCsSingleENV E) pEs
     return VCss.flatten.reverse
 
 end Core

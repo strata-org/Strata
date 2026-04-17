@@ -917,38 +917,13 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     return result
 
 
-/-- Convert proof obligations into a Core program body.
-    Each obligation becomes an `assume H1; assume H2; ...; assert G` block.
-    Multiple obligations are combined with `if *` (nondet ITE). -/
-private def obligationsToProgram (obligations : Imperative.ProofObligations Expression)
-    (_p : Program) : Program :=
-  let blocks := obligations.toList.map fun ob =>
-    let assumes := ob.assumptions.flatten.map fun (label, e) =>
-      Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
-    let assertStmt := match ob.property with
-      | .cover => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.cover ob.label ob.obligation ob.metadata))
-      | _ => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
-    assumes ++ [assertStmt]
-  let body := match blocks with
-    | [] => []
-    | [b] => b
-    | b :: rest => rest.foldl (fun acc block =>
-        [Imperative.Stmt.ite .nondet acc block .empty]) b
-  -- Create a minimal program with one procedure (no axiom declarations —
-  -- the obligations already have axioms in their path conditions)
-  let proc : Procedure := {
-    header := { name := ⟨"obligations", ()⟩, typeArgs := [], inputs := [], outputs := [] },
-    spec := { preconditions := [], postconditions := [], modifies := [] },
-    body := body
-  }
-  { decls := [.proc proc .empty] }
-
-def verifySingleEnv (E : Env) (options : VerifyOptions)
+def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel (VCResults × Statistics) := do
+  let (oblProgram, E) := pE
   let p := E.program
   let profile := options.profile
   match E.error with
@@ -957,9 +932,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
-    -- Pipeline: convert deferred obligations to Core program,
-    -- then extract obligations back via ObligationExtraction.
-    let oblProgram := obligationsToProgram E.deferred p
+    -- Extract obligations from the obligations program via ObligationExtraction
     let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
       | .ok obs => pure obs
       | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")

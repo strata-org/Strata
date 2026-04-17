@@ -69,16 +69,6 @@ def good_prog : Program := { decls := [
 ]}
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: test
-Property: assert
-Obligation:
-fooAliasVal == fooVal
-
----
 info: ok: [Error:
  none
  Subst Map:
@@ -488,8 +478,8 @@ info: ok: [Error:
  ]
 -/
 #guard_msgs in
-#eval do let (ans, _) ← typeCheckAndEval .default good_prog
-         return (format ans)
+#eval do let (ans, _) ← typeCheckAndEval .quiet good_prog
+         return (format (ans.map Prod.snd))
 
 ---------------------------------------------------------------------
 
@@ -603,7 +593,7 @@ info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm
           if h : ans.length == 1 then
-            let E := ans[0]'(by grind)
+            let (_, E) := ans[0]'(by grind)
             return (format E.program)
           else
             return (format "Unexpected output")
