@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateReturnStatements
+import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.EliminateMultipleOutputs
@@ -78,6 +79,8 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let (program, nonCompositeDiags) := filterNonCompositeModifies model program
   emit "FilterNonCompositeModifies" program
 
+  let (program, valueReturnDiags) := eliminateValueReturnsTransform program
+
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -131,7 +134,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     else []
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
-    modifiesDiags ++ constrainedTypeDiags ++ newResolutionErrors
+    valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags ++ newResolutionErrors
   return (program, model, allDiags)
 
 /--
@@ -178,7 +181,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   }
 
   let ordered := orderFunctionsAndProofs functionsAndProofs
-  let initState : TranslateState := { model := fnModel }
+  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
   let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
@@ -220,9 +223,19 @@ def verifyToVcResults (program : Program)
     return (some ioResult, translateDiags)
   | none => return (none, translateDiags)
 
+/--
+Verify a Laurel program using an SMT solver, returning results with
+duplicated assertions merged at the VCOutcome level.
+-/
+def verifyToMergedResults (program : Program)
+    (options : VerifyOptions := .default)
+    : IO (Option VCResults × List DiagnosticModel) := do
+  let (vcOpt, diags) ← verifyToVcResults program options
+  return (vcOpt.map (·.mergeByAssertion), diags)
+
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default) : IO (Array Diagnostic) := do
-  let results ← verifyToVcResults program options
+  let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
@@ -232,7 +245,7 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default)
     : IO (Array DiagnosticModel) := do
-  let results ← verifyToVcResults program options
+  let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []

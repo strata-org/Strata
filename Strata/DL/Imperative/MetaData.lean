@@ -292,6 +292,9 @@ def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
 /-- Metadata value for division-by-zero property type classification. -/
 def MetaData.divisionByZero : String := "divisionByZero"
 
+/-- Metadata value for arithmetic-overflow property type classification. -/
+def MetaData.arithmeticOverflow : String := "arithmeticOverflow"
+
 /-- Read the property type classification from metadata, if present. -/
 def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
   match md.findElem MetaData.propertyType with
