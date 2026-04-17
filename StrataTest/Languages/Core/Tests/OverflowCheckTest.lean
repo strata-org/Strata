@@ -32,26 +32,26 @@ example := Core.bv32SNegOverflowOp
 
 -- Verify WF obligations are generated for safe add (1 precondition)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv32SafeAddOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 1
+  (LExpr.mkApp Strata.SourceRange.none Core.bv32SafeAddOp [
+    .fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar Strata.SourceRange.none ⟨"y", ()⟩ (some (.bitvec 32))])).length == 1
 
 -- Verify WF obligations are generated for safe neg (1 precondition)
 #guard (collectWFObligations Core.Factory
-  (.app () Core.bv8SafeNegOp
-    (.fvar () ⟨"x", ()⟩ (some (.bitvec 8))))).length == 1
+  (.app Strata.SourceRange.none Core.bv8SafeNegOp
+    (.fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 8))))).length == 1
 
 -- Verify no WF obligations for unsafe add (no precondition)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv32AddOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 0
+  (LExpr.mkApp Strata.SourceRange.none Core.bv32AddOp [
+    .fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar Strata.SourceRange.none ⟨"y", ()⟩ (some (.bitvec 32))])).length == 0
 
 -- Verify SafeSDiv has 2 preconditions (div-by-zero + overflow)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv32SafeSDivOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 2
+  (LExpr.mkApp Strata.SourceRange.none Core.bv32SafeSDivOp [
+    .fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar Strata.SourceRange.none ⟨"y", ()⟩ (some (.bitvec 32))])).length == 2
 
 -- Verify SDivOverflow predicate and SafeSDiv/SafeSMod exist
 example := Core.bv32SDivOverflowOp
@@ -60,9 +60,9 @@ example := Core.bv32SafeSModOp
 
 -- Verify SafeUAdd has 1 precondition (unsigned overflow)
 #guard (collectWFObligations Core.Factory
-  (LExpr.mkApp () Core.bv8SafeUAddOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 8)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 8))])).length == 1
+  (LExpr.mkApp Strata.SourceRange.none Core.bv8SafeUAddOp [
+    .fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 8)),
+    .fvar Strata.SourceRange.none ⟨"y", ()⟩ (some (.bitvec 8))])).length == 1
 
 -- Verify unsigned overflow predicates and safe ops exist
 example := Core.bv32UAddOverflowOp
@@ -77,9 +77,9 @@ example := Core.bv32SafeUNegOp
 -- Verify SafeSDiv precondition classification: precond 0 = divisionByZero, precond 1 = arithmeticOverflow
 open Strata Core Lambda Core.PrecondElim Imperative in
 #eval do
-  let expr := LExpr.mkApp () Core.bv32SafeSDivOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))]
+  let expr := LExpr.mkApp Strata.SourceRange.none Core.bv32SafeSDivOp [
+    .fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar Strata.SourceRange.none ⟨"y", ()⟩ (some (.bitvec 32))]
   let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
   assert! stmts.length == 2
   -- First should be divisionByZero
@@ -92,12 +92,12 @@ open Strata Core Lambda Core.PrecondElim Imperative in
 -- Verify nested SafeSDiv: both inner and outer calls get correct classification
 open Strata Core Lambda Core.PrecondElim Imperative in
 #eval do
-  let innerDiv := LExpr.mkApp () Core.bv32SafeSDivOp [
-    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
-    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))]
-  let outerDiv := LExpr.mkApp () Core.bv32SafeSDivOp [
+  let innerDiv := LExpr.mkApp Strata.SourceRange.none Core.bv32SafeSDivOp [
+    .fvar Strata.SourceRange.none ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar Strata.SourceRange.none ⟨"y", ()⟩ (some (.bitvec 32))]
+  let outerDiv := LExpr.mkApp Strata.SourceRange.none Core.bv32SafeSDivOp [
     innerDiv,
-    .fvar () ⟨"z", ()⟩ (some (.bitvec 32))]
+    .fvar Strata.SourceRange.none ⟨"z", ()⟩ (some (.bitvec 32))]
   let stmts := collectPrecondAsserts Core.Factory outerDiv "test" #[]
   assert! stmts.length == 4
   -- Inner call: precond 0 = divisionByZero, precond 1 = arithmeticOverflow

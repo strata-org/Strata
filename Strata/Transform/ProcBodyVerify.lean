@@ -81,7 +81,7 @@ def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement
     let oldG := CoreIdent.mkOld g.name
     let gTy ← getIdentTy! p g
     return [ Statement.init oldG gTy .nondet #[],
-             Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[] ]
+             Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[] ]
   let modifiesInits := modifiesInits.flatten
 
   -- Convert preconditions to assumes
