@@ -250,25 +250,24 @@ def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
     return none
 
 /-- Known PythonIdent → Laurel type mappings for single-atom ident types.
-    - `bytes`/`bytearray` → TString (closest string-like approximation)
-    - `complex` → TReal (no complex type in SMT; real is the closest numeric type)
-    - `Exception` → UserDefined "Error" (matches CorePrelude's Error datatype)
-    - `typing.Any` → UserDefined "Any" (datatype in Laurel prelude) -/
+    Matches PythonToLaurel's type mapping: only int, str, bool, float get
+    concrete Laurel types; everything else maps to Any. -/
 private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
   .ofList [
     (.builtinsBool,      tyBool),
-    (.builtinsBytearray, tyString),
-    (.builtinsBytes,     tyString),
-    (.builtinsComplex,   tyReal),
-    (.builtinsDict,      tyDictStrAny),
-    (.builtinsException, tyError),
+    (.builtinsBytearray, tyAny),
+    (.builtinsBytes,     tyAny),
+    (.builtinsComplex,   tyAny),
+    (.builtinsDict,      tyAny),
+    (.builtinsException, tyAny),
     (.builtinsFloat,     tyReal),
     (.builtinsInt,       tyInt),
     (.builtinsStr,       tyString),
     (.noneType,          tyVoid),
     (.typingAny,         tyAny),
-    (.typingDict,        tyDictStrAny),
-    (.typingList,        tyListStr),
+    (.typingBinaryIO,    tyAny),
+    (.typingDict,        tyAny),
+    (.typingList,        tyAny),
   ]
 
 /-- Convert a SpecType to a Laurel HighTypeMd. -/

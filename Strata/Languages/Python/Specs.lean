@@ -241,6 +241,7 @@ def preludeSig :=
     .mk .noneType (typeIdent .noneType),
 
     .mk .typingAny (typeIdent .typingAny),
+    .mk .typingBinaryIO (typeIdent .typingBinaryIO),
     .mk .typingDict (.metaType .typingDict),
     .mk .typingGenerator (.metaType .typingGenerator),
     .mk .typingList (.metaType .typingList),

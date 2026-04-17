@@ -25,6 +25,7 @@ def builtinsStr := mk "builtins" "str"
 def noneType := mk "_types" "NoneType"
 
 def typingAny := mk "typing" "Any"
+def typingBinaryIO := mk "typing" "BinaryIO"
 def typingDict := mk "typing" "Dict"
 def typingGenerator := mk "typing" "Generator"
 def typingList := mk "typing" "List"
