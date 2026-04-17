@@ -59,7 +59,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     | some pfx => do
       let n ← stepRef.modifyGet (fun n => (n, n + 1))
       IO.FS.writeFile s!"{pfx}.{n}.{name}.laurel.st"
-        ((formatProgram p).pretty ++ "\n")
+        (Strata.renderFormat (formatProgram p) ++ "\n")
     | none => pure ()
 
   -- Step 0: the input program before any passes

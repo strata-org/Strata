@@ -80,3 +80,13 @@ def render (fmt : Std.Format) : String :=
   renderAux #[fmt] 0 { soFar := "" } |>.snd |>.soFar
 
 end Std.Format
+
+namespace Strata
+
+/-- Render a `Format` to a string using Strata's custom renderer that correctly handles
+indentation for closing braces after `nest` blocks. Lean's built-in `.pretty` does not
+reset indentation properly when a `nest` block's last line ends with a newline. -/
+public def renderFormat (fmt : Std.Format) : String :=
+  Std.Format.render fmt
+
+end Strata
