@@ -307,16 +307,22 @@ function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
+  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_float(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
   if (Any..isfrom_None(v)) then false else
   if (Any..isfrom_str(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  if (Any..isfrom_float(v)) then !(Any..as_float!(v) == 0.0) else
   if (Any..isfrom_DictStrAny(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
   if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil()) else
   false
-  //WILL BE ADDED
+};
+
+function to_bool_any(v: Any) : Any
+  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_float(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
+{
+  from_bool(Any_to_bool(v))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
