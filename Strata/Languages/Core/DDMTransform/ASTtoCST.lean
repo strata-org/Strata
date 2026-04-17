@@ -741,6 +741,18 @@ partial def lappToExpr {M} [Inhabited M]
     (qLevel : Nat) (acc : List (CoreDDM.Expr M) := [])
     : ToCSTM M (CoreDDM.Expr M) :=
   match e with
+  | .app _ (.abs _ _name (some ty) body) value => do
+    -- Let expression: (λ v : T. body) value → let v : T := value in body
+    let varName := mkQuantVarName qLevel
+    modify ToCSTContext.pushScope
+    modify (·.addScopedBoundVars #[varName])
+    let tyExpr ← lmonoTyToCoreType ty
+    let valExpr ← lexprToExpr value (qLevel + 1)
+    let bodyExpr ← lexprToExpr body (qLevel + 1)
+    modify ToCSTContext.popScope
+    let nameIdent : Ann String M := ⟨default, varName⟩
+    let rtpExpr := CoreType.tvar default unknownTypeVar
+    pure (.let_expr default tyExpr rtpExpr nameIdent valExpr bodyExpr)
   | .app _ (.app m fn e1) e2 => do
     let e2Expr ← lexprToExpr e2 qLevel
     lappToExpr (.app m fn e1) qLevel (e2Expr :: acc)
