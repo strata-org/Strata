@@ -622,22 +622,7 @@ function PBitNot (v: Any) : Any
 function PNot (v: Any) : Any
 {
   if Any..isexception(v) then v
-  else if Any..isfrom_bool(v) then
-    from_bool(!(Any..as_bool!(v)))
-  else if Any..isfrom_int(v) then
-    from_bool(!(Any..as_int!(v) == 0))
-  else if Any..isfrom_float(v) then
-    from_bool(!(Any..as_float!(v) == 0.0))
-  else if Any..isfrom_str(v) then
-    from_bool(!(Any..as_string!(v) == ""))
-  else if Any..isfrom_ListAny(v) then
-    from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
-  else if Any..isfrom_None(v) then
-    from_bool(true)
-  else if Any..isfrom_DictStrAny(v) then
-    from_bool(!(Any..as_Dict!(v) == DictStrAny_empty()))
-  else
-    <?>
+  else from_bool(!(Any_to_bool(v)))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
