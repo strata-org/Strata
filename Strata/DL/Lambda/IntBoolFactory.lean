@@ -374,11 +374,53 @@ def intGeFunc : WFLFunc T :=
 
 /-! ### Boolean Operations -/
 
-def boolAndFunc : WFLFunc T :=
-  binaryOp "Bool.And" Bool.and
+def boolAndFunc [Inhabited T.mono.base.Metadata] : WFLFunc T :=
+  let x : LExpr T.mono := .fvar default "x" (some .bool)
+  let y : LExpr T.mono := .fvar default "y" (some .bool)
+  ⟨{ name := "Bool.And",
+     inputs := [("x", .bool), ("y", .bool)],
+     output := .bool,
+     body := some (.ite default x y (.boolConst default false)),
+     attr := #[.inline] }, {
+    arg_nodup := by simp
+    body_freevars := by
+      intro b hb; simp at hb; subst hb; sorry
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by
+      intro ity hity; simp [ListMap.values] at hity
+      rcases hity with rfl | rfl <;> sorry
+    output_typevars_in_typeArgs := by sorry
+    precond_freevars := by simp
+    typeArgs_no_gen_prefix := by simp
+    constr_no_eval := by simp
+    concreteEval_eraseMetadata := by intro _ h; simp at h
+  }⟩
 
-def boolOrFunc : WFLFunc T :=
-  binaryOp "Bool.Or" Bool.or
+def boolOrFunc [Inhabited T.mono.base.Metadata] : WFLFunc T :=
+  let x : LExpr T.mono := .fvar default "x" (some .bool)
+  let y : LExpr T.mono := .fvar default "y" (some .bool)
+  ⟨{ name := "Bool.Or",
+     inputs := [("x", .bool), ("y", .bool)],
+     output := .bool,
+     body := some (.ite default x (.boolConst default true) y),
+     attr := #[.inline] }, {
+    arg_nodup := by simp
+    body_freevars := by
+      intro b hb; simp at hb; subst hb; sorry
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by
+      intro ity hity; simp [ListMap.values] at hity
+      rcases hity with rfl | rfl <;> sorry
+    output_typevars_in_typeArgs := by sorry
+    precond_freevars := by simp
+    typeArgs_no_gen_prefix := by simp
+    constr_no_eval := by simp
+    concreteEval_eraseMetadata := by intro _ h; simp at h
+  }⟩
 
 def boolImpliesFunc : WFLFunc T :=
   binaryOp (InValTy := Bool) "Bool.Implies" (!· || ·)
