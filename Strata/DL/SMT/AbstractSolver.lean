@@ -10,13 +10,13 @@ public import Strata.DL.SMT.Solver
 /-!
 # Abstract Solver Interface
 
-Defines `AbstractSolver τ m`, a generic solver interface parameterized by an
-opaque term type `τ` and a monad `m`. All operations that can fail return
-`Except String`. The monad `m` captures any state or effects the backend needs.
+Defines `AbstractSolver τ σ m`, a generic solver interface parameterized by an
+opaque term type `τ`, an opaque sort type `σ`, and a monad `m`. All operations
+that can fail return `Except String`. The monad `m` captures any state or
+effects the backend needs.
 
-For the batch SMT-LIB pipeline, `m` is `SolverM` (file-writing, no interaction).
-For the incremental backend, `m` is `StateT IncrementalSolverState IO`.
-For a future FFI backend, `m` could be `StateT NativeSolverState IO`.
+For the incremental SMT-LIB backend, `τ = SMT.Term`, `σ = SMT.TermType`,
+`m = StateT IncrementalSolverState IO`.
 
 ## Design
 
@@ -26,18 +26,29 @@ For a future FFI backend, `m` could be `StateT NativeSolverState IO`.
   (0 = most recently declared).
 - Quantifier bound variables are scoped via a callback pattern.
 - Terms are session-independent and can be stored and replayed across sessions.
+- Sorts are first-class: backends can create and pass their own sort
+  representations via `intSort`, `boolSort`, `bitvecSort`, `arraySort`, etc.
 -/
 
 namespace Strata.SMT
 
 public section
 
-/-- Abstract solver interface parameterized by term type `τ` and monad `m`.
+/-- Abstract solver interface parameterized by term type `τ`, sort type `σ`,
+and monad `m`.
 
 All term constructors are fallible. Solvers might not accept certain constructs
 (e.g., wrong sorts, unsupported combinations) and we need to surface the issue
 precisely via `Except String`. -/
-structure AbstractSolver (τ : Type) (m : Type → Type) where
+structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
+  -- Sort constructors
+  boolSort : m σ
+  intSort : m σ
+  realSort : m σ
+  stringSort : m σ
+  bitvecSort : Nat → m σ
+  arraySort : σ → σ → m (Except String σ)
+
   -- Literal constructors
   mkBool : Bool → m τ
   mkInt : Int → m τ
@@ -55,6 +66,7 @@ structure AbstractSolver (τ : Type) (m : Type → Type) where
   mkDiv : τ → τ → m (Except String τ)
   mkMod : τ → τ → m (Except String τ)
   mkNeg : τ → m (Except String τ)
+  mkAbs : τ → m (Except String τ)
 
   -- Comparison operations
   mkEq : List τ → m (Except String τ)
@@ -66,32 +78,39 @@ structure AbstractSolver (τ : Type) (m : Type → Type) where
   -- Conditional
   mkIte : τ → τ → τ → m (Except String τ)
 
+  -- Array operations
+  mkSelect : τ → τ → m (Except String τ)
+  mkStore : τ → τ → τ → m (Except String τ)
+
+  -- Function application (for uninterpreted functions)
+  mkApp : τ → List τ → m (Except String τ)
+
   /-- Declare a new variable. Shadowing is allowed: declaring the same name
       twice creates two distinct variables. The backend handles disambiguation
       internally. -/
-  declareNew : String → TermType → m τ
+  declareNew : String → σ → m τ
 
   /-- Declare an uninterpreted function. -/
-  declareFun : String → List TermType → TermType → m (Except String τ)
+  declareFun : String → List σ → σ → m (Except String τ)
 
   /-- Define an interpreted function with a body term. -/
-  defineFun : String → List (String × TermType) → TermType → τ → m (Except String Unit)
+  defineFun : String → List (String × σ) → σ → τ → m (Except String Unit)
 
   /-- Declare a new sort with the given arity. -/
   declareSort : String → Nat → m (Except String Unit)
 
   /-- Declare an algebraic datatype.
       Parameters: name, type parameters, constructors (name × fields). -/
-  declareDatatype : String → List String → List (String × List (String × TermType)) → m (Except String Unit)
+  declareDatatype : String → List String → List (String × List (String × σ)) → m (Except String Unit)
 
   /-- Construct a universally quantified term.
       Takes name-sort pairs for bound variables and a callback that receives
       the bound variable terms and returns the body and trigger groups.
       Bound variables cannot escape the quantifier scope. -/
-  mkForall : List (String × TermType) → (List τ → Except String (τ × List (List τ))) → m (Except String τ)
+  mkForall : List (String × σ) → (List τ → Except String (τ × List (List τ))) → m (Except String τ)
 
   /-- Construct an existentially quantified term. Same callback pattern as `mkForall`. -/
-  mkExists : List (String × TermType) → (List τ → Except String (τ × List (List τ))) → m (Except String τ)
+  mkExists : List (String × σ) → (List τ → Except String (τ × List (List τ))) → m (Except String τ)
 
   -- Session operations
 

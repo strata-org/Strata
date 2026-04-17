@@ -122,7 +122,14 @@ def parseDecision (line : String) : Except String Decision :=
   | other => .error s!"unrecognized solver output: {other}"
 
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
-def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
+def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
+  boolSort := return .bool
+  intSort := return .int
+  realSort := return .real
+  stringSort := return .string
+  bitvecSort n := return .bitvec n
+  arraySort k v := return .ok (.constr "Array" [k, v])
+
   mkBool b := return Term.bool b
   mkInt i := return Term.int i
 
@@ -137,6 +144,7 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   mkDiv t1 t2 := return .ok (Term.app .div [t1, t2] t1.typeOf)
   mkMod t1 t2 := return .ok (Term.app .mod [t1, t2] t1.typeOf)
   mkNeg t := return .ok (Term.app .neg [t] t.typeOf)
+  mkAbs t := return .ok (Term.app .abs [t] t.typeOf)
 
   mkEq ts := return match ts with
     | [] | [_] => .error "mkEq: need at least two arguments"
@@ -149,6 +157,12 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   mkGe ts := mkBinCmp .ge "mkGe" ts
 
   mkIte c t f := return .ok (Factory.ite c t f)
+
+  mkSelect arr idx := return .ok (Term.app .select [arr, idx] arr.typeOf)
+  mkStore arr idx val := return .ok (Term.app .store [arr, idx, val] arr.typeOf)
+  mkApp fn args := return match fn with
+    | .app (.uf uf) _ _ => .ok (Term.app (.uf uf) args uf.out)
+    | _ => .error "mkApp: expected an uninterpreted function term"
 
   declareNew name ty := do
     let st ← get
