@@ -60,7 +60,13 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .FieldSelect target _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExprMd target
   | .InstanceCall target _ args => collectExprMd target; for a in args do collectExprMd a
-  | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
+  | .StaticCall callee args =>
+      if callee.text == "readField" then
+        modify fun s => { s with readsHeapDirectly := true }
+      else if callee.text == "updateField" then
+        modify fun s => { s with writesHeapDirectly := true }
+      else
+        modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
   | .LocalVariable _ _ i => if let some x := i then collectExprMd x
@@ -275,7 +281,7 @@ where
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
-          if valueUsed then
+          if valueUsed && !model.isFunction callee then
             let freshVar ← freshVarName
             let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
             let callWithHeap := ⟨ .Assign
@@ -398,7 +404,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   if writesHeap then
     -- This procedure writes the heap - add $heap_in as input and $heap as output
     -- At the start, assign $heap_in to $heap, then use $heap throughout
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none, #[]⟩ }
+    let heapInParam : Parameter := { name := if proc.isFunctional then heapName else heapInName, type := ⟨.THeap, none, #[]⟩ }
     let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none, #[]⟩ }
 
     let inputs' := heapInParam :: proc.inputs
@@ -413,7 +419,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           -- First assign $heap_in to $heap, then transform body using $heap
           let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
+          if proc.isFunctional then
+            pure (.Transparent bodyExpr')
+          else
+            pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
       | .Opaque postconds impl modif =>
           -- Postconditions use $heap (the output state)
           let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)

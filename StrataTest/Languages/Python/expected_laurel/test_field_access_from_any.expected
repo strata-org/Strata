@@ -1,0 +1,24 @@
+test_field_access_from_any.py(11, 11): ❓ unknown - assert_assert(195)_calls_Any_read_field_0
+test_field_access_from_any.py(11, 11): ✅ pass - assert_assert(195)_calls_Any_read_field_1
+test_field_access_from_any.py(11, 11): ❓ unknown - Check PMul exception
+test_field_access_from_any.py(11, 4): ❓ unknown - set_LaurelResult_calls_Any_read_field_0
+test_field_access_from_any.py(11, 4): ✅ pass - set_LaurelResult_calls_Any_read_field_1
+test_field_access_from_any.py(10, 29): ❓ unknown - (pure_double ensures) Return type constraint
+test_field_access_from_any.py(14, 4): ❓ unknown - assert_assert(243)_calls_Any_read_field_0
+test_field_access_from_any.py(14, 4): ✅ pass - assert_assert(243)_calls_Any_read_field_1
+test_field_access_from_any.py(14, 4): ❓ unknown - Check PMul exception
+unknown location: ❓ unknown - set_$heap_calls_Any_read_field_0
+unknown location: ✅ pass - set_$heap_calls_Any_read_field_1
+unknown location: ❓ unknown - set_$heap_calls_Any_update_field_2
+unknown location: ✅ pass - set_$heap_calls_Any_update_field_3
+test_field_access_from_any.py(13, 0): ❓ unknown - postcondition
+test_field_access_from_any.py(16, 0): ✅ pass - callElimAssert_requires_24
+test_field_access_from_any.py(18, 0): ✅ pass - assert_assert(303)_calls_Any_to_bool_0
+test_field_access_from_any.py(18, 0): ❓ unknown - assert(303)
+test_field_access_from_any.py(20, 0): ✅ pass - callElimAssert_requires_14
+test_field_access_from_any.py(22, 0): ✅ pass - assert_assert(365)_calls_Any_to_bool_0
+test_field_access_from_any.py(22, 0): ❓ unknown - assert(365)
+test_field_access_from_any.py(25, 0): ✅ pass - assert_assert(406)_calls_Any_to_bool_0
+test_field_access_from_any.py(25, 0): ❓ unknown - assert(406)
+DETAIL: 10 passed, 0 failed, 12 inconclusive
+RESULT: Inconclusive
