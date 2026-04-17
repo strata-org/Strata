@@ -174,8 +174,12 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
         | some pc => pc.md
         | none => emptyMd
       let summary := info.postSummary.getD "postcondition"
-      -- Pass only input args; $post internally calls the procedure to get outputs.
-      [⟨.Assert (mkCall info.postName inputArgs),
+      -- Directly assert the postcondition conjunction rather than calling $post.
+      -- The $post procedure re-invokes the original (opaque) procedure to obtain
+      -- outputs, which is correct at *call sites* but wrong inside the body:
+      -- here the output variables (e.g. $heap) are already in scope with their
+      -- actual values, so we assert the postcondition directly.
+      [⟨.Assert (conjoin postconds),
         none, baseMd.withPropertySummary summary⟩]
     else []
   match proc.body with
