@@ -114,19 +114,22 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
 
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
   let result := resolve program (some model)
+  let preContractErrorCount := result.errors.size
   let (program, model) := (result.program, result.model)
   emit "ConstrainedTypeElim" program
 
   let program := contractPass program
 
-  -- Check if the pipeline introduced new resolution errors that weren't present initially.
-  -- This catches bugs where a pass produces unresolvable names, which would silently
-  -- cause coreProgramHasSuperfluousErrors to be set with no user-visible diagnostic.
+  -- Check if the contract pass introduced new resolution errors.
+  -- Compare against the error count right before the contract pass (after
+  -- constrainedTypeElim), not the initial count, since intermediate passes
+  -- may have introduced their own resolution errors (e.g., duplicate names
+  -- from heap parameterization).
   let finalResolutionErrors := (resolve program (some model)).errors
   let newResolutionErrors : List DiagnosticModel :=
-    if finalResolutionErrors.size > resolutionErrors.length then
-      let newCount := finalResolutionErrors.size - resolutionErrors.length
-      let firstNew := finalResolutionErrors.toList.drop resolutionErrors.length
+    if finalResolutionErrors.size > preContractErrorCount then
+      let newCount := finalResolutionErrors.size - preContractErrorCount
+      let firstNew := finalResolutionErrors.toList.drop preContractErrorCount
         |>.head?.map (·.message) |>.getD "unknown"
       [DiagnosticModel.fromMessage
         s!"Strata bug: {newCount} new resolution error(s) introduced by pipeline passes. First new error: {firstNew}"

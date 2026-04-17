@@ -91,8 +91,8 @@ private structure ContractInfo where
   postSummary : Option String
   inputParams : List Parameter
   outputParams : List Parameter
-  /-- Functional procedures have their contracts handled by the Core translator. -/
-  isFunctional : Bool
+  /-- Functional/invokeOn procedures have their contracts handled by the Core translator. -/
+  skipContractPass : Bool
 
 /-- Collect contract info for all procedures with contracts. -/
 private def collectContractInfo (procs : List Procedure) : Std.HashMap String ContractInfo :=
@@ -110,7 +110,7 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
         postSummary := combinedSummary postconds
         inputParams := proc.inputs
         outputParams := proc.outputs
-        isFunctional := proc.isFunctional
+        skipContractPass := proc.isFunctional || proc.invokeOn.isSome
       }
     else m) {}
 
@@ -155,7 +155,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     match contractInfoMap.get? callee.text with
     | some info =>
       -- Skip call-site rewriting for functional procedures (handled by Core translator)
-      if info.isFunctional then [e] else
+      if info.skipContractPass then [e] else
       let resultArgs := targets.map fun t => ⟨t.val, t.source, t.md⟩
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
@@ -166,7 +166,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
   | .LocalVariable names _ty (some (.mk (.StaticCall callee args) ..)) =>
     match contractInfoMap.get? callee.text with
     | some info =>
-      if info.isFunctional then [e] else
+      if info.skipContractPass then [e] else
       let resultArgs := names.map fun n => mkMd (.Identifier n)
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
@@ -177,7 +177,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
   | .StaticCall callee args =>
     match contractInfoMap.get? callee.text with
     | some info =>
-      if info.isFunctional then [e] else
+      if info.skipContractPass then [e] else
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
       preAssert ++ [e]
@@ -222,8 +222,12 @@ def contractPass (program : Program) : Program :=
 
   -- Generate helper procedures for non-functional procedures with contracts.
   -- Functional procedures have their contracts handled by the Core translator.
+  -- Procedures with invokeOn are skipped because the axiom generator reads
+  -- postconditions directly from the procedure body.
+  let shouldSkip (proc : Procedure) : Bool :=
+    proc.isFunctional || proc.invokeOn.isSome
   let helperProcs := program.staticProcedures.flatMap fun proc =>
-    if proc.isFunctional then [] else
+    if shouldSkip proc then [] else
     let postconds := getPostconditions proc.body
     let preProc :=
       if proc.preconditions.isEmpty then []
@@ -234,9 +238,9 @@ def contractPass (program : Program) : Program :=
     preProc ++ postProc
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites.
-  -- Functional procedures are left unchanged (their contracts are handled by Core).
+  -- Functional procedures and invokeOn procedures are left unchanged.
   let transformedProcs := program.staticProcedures.map fun proc =>
-    let proc := if proc.isFunctional then proc
+    let proc := if shouldSkip proc then proc
       else match contractInfoMap.get? proc.name.text with
       | some info =>
         { proc with
