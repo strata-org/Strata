@@ -907,6 +907,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
+    -- Filter out ANF encoding variables from model display
+    let model := model.filter fun (name, _) => !name.name.startsWith "$__anf."
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
