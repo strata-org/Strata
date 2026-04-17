@@ -127,15 +127,18 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   let source := stmt.source
   let md := stmt.md
   match _h : stmt.val with
-  | .LocalVariable name ty init =>
-    let callOpt := constraintCallFor ptMap ty.val name md (src := source)
-    if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
+  | .LocalVariable names ty init =>
+    for name in names do
+      let callOpt := constraintCallFor ptMap ty.val name md (src := source)
+      if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
     let (init', check) : Option StmtExprMd × List StmtExprMd := match init with
-      | none => match callOpt with
-        | some c => (none, [⟨.Assume c, source, md⟩])
-        | none => (none, [])
-      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert c, source, md⟩)
-    pure ([⟨.LocalVariable name ty init', source, md⟩] ++ check)
+      | none =>
+        let calls := names.filterMap fun name => constraintCallFor ptMap ty.val name md (src := source)
+        (none, calls.map fun c => ⟨.Assume c, source, md⟩)
+      | some _ =>
+        let calls := names.filterMap fun name => constraintCallFor ptMap ty.val name md (src := source)
+        (init, calls.map fun c => ⟨.Assert c, source, md⟩)
+    pure ([⟨.LocalVariable names ty init', source, md⟩] ++ check)
 
   | .Assign [target] _ => match target.val with
     | .Identifier name => do
@@ -209,7 +212,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let md := ct.witness.md
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src, md⟩
+    ⟨.LocalVariable [witnessId] (resolveType ptMap ct.base) (some ct.witness), src, md⟩
   let assert : StmtExprMd :=
     ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md (src := src)).get!, src, md⟩
   { name := mkId s!"$witness_{ct.name.text}"

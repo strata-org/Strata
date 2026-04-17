@@ -277,7 +277,7 @@ where
         if calleeWritesHeap then
           if valueUsed then
             let freshVar ← freshVarName
-            let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
+            let varDecl := mkMd (.LocalVariable [freshVar] (computeExprType model exprMd) none)
             let callWithHeap := ⟨ .Assign
               [mkMd (.Identifier heapVar), mkMd (.Identifier freshVar)]
               (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩), source, md ⟩

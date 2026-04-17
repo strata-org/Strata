@@ -274,14 +274,14 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
-  | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
+  | .Block (⟨ .LocalVariable names ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
-      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
+      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (names ++ boundVars) isPureContext
       disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
-  | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
+  | .Block (⟨ .LocalVariable names ty none, innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "if-then-else only supported as the last statement in a block"
@@ -367,37 +367,36 @@ def translateStmt (stmt : StmtExprMd)
       match label with
       | some l => return [Imperative.Stmt.block l innerStmts md]
       | none   => return innerStmts
-  | .LocalVariable id ty initializer =>
+  | .LocalVariable ids ty initializer =>
       let coreMonoType ← translateType ty
       let coreType := LTy.forAll [] coreMonoType
-      let ident := ⟨id.text, ()⟩
+      let idents := ids.map fun id => ⟨id.text, ()⟩
       match initializer with
       | some (⟨ .StaticCall callee args, callSrc, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr { val := .StaticCall callee args, source := callSrc, md := callMd }
-            return [Core.Statement.init ident coreType (.det coreExpr) md]
+            return idents.map fun ident => Core.Statement.init ident coreType (.det coreExpr) md
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr ← defaultExprForType ty
-            let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-            return [initStmt, callStmt]
+            let initStmts := idents.map fun ident => Core.Statement.init ident coreType (.det defaultExpr) md
+            let callStmt := Core.Statement.call idents callee.text coreArgs md
+            return initStmts ++ [callStmt]
       | some (⟨ .InstanceCall .., _, _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType .nondet md
-          return [initStmt]
+          return idents.map fun ident => Core.Statement.init ident coreType .nondet md
       | some (⟨ .Hole _ _, _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
-          return [Core.Statement.init ident coreType .nondet md]
+          return idents.map fun ident => Core.Statement.init ident coreType .nondet md
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (.det coreExpr) md]
+          return idents.map fun ident => Core.Statement.init ident coreType (.det coreExpr) md
       | none =>
-          return [Core.Statement.init ident coreType .nondet md]
+          return idents.map fun ident => Core.Statement.init ident coreType .nondet md
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _, _ ⟩] =>
