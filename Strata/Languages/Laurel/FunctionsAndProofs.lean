@@ -60,10 +60,11 @@ def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
     contain imperative constructs that cannot be translated as pure functions.
     Assert/Assume nodes are stripped from function bodies. -/
 private def mkFunctionCopy (proc : Procedure) : Procedure :=
-  let body := match proc.body with
-    | .Transparent b => .Transparent (stripAssertAssume b)
-    | .Opaque _ _ _ => .Opaque [] none []
-    | x => x
+  let body := if !proc.isFunctional then .Opaque [] none []
+    else match proc.body with
+      | .Transparent b => .Transparent (stripAssertAssume b)
+      | .Opaque _ _ _ => .Opaque [] none []
+      | x => x
   { proc with isFunctional := true, body := body }
 
 /--
