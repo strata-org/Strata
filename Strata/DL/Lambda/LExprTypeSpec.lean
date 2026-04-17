@@ -51,7 +51,7 @@ variable {IDMeta : Type} [DecidableEq IDMeta]
 /-!
 ### Lean 4 Standard Library Gaps
 
-The `String.startsWith` and `String.drop` APIs in Lean 4.27 go through the
+The `String.startsWith` and `String.drop` APIs go through the
 `Slice`/`Pattern` infrastructure with private internal definitions that have
 no proof-level lemmas. To avoid this, `TState.isFutureGenVar` uses
 `List.isPrefixOf` on `Char` lists, making the prefix-detection and
