@@ -1879,6 +1879,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     let (bodyBlock, newCtx) ←  translateFunctionBody ctx inputTypes body
     let noneReturn := mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier PyLauFuncReturnVar)] AnyNone)
     let (renamedInputs, paramCopies) := renameInputParams inputs
+      (match funcDecl.kwargsName with | some kw => (· == kw) | none => fun _ => false)
     let bodyBlock : StmtExprMd := match bodyBlock.val with
     | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn :: paramCopies ++ bodyStmts) label}
     | _ => bodyBlock
@@ -1986,10 +1987,13 @@ def translateMethod (ctx : TranslationContext) (className : String)
           match arg with
           | .mk_arg _ paramName _paramAnnotation _ =>
             inputs := inputs ++ [{name := paramName.val, type := AnyTy}]
+    let mut kwargsName : Option String := none
     match args with
       | .mk_arguments _ _ _ _ _ _ kwargs _ =>
           match kwargs.val with
-          | some (.mk_arg _ name _ _ ) => inputs:= inputs ++ [{ name := name.val, type := mkCoreType PyLauType.DictStrAny }]
+          | some (.mk_arg _ name _ _ ) =>
+            inputs:= inputs ++ [{ name := name.val, type := mkCoreType PyLauType.DictStrAny }]
+            kwargsName := some name.val
           | _ => pure ()
 
     -- Translate return type
@@ -2007,7 +2011,8 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let (varDecls, ctxWithClass) ←  createVarDeclStmtsAndCtx ctxWithClass newDecls
     let (_, bodyStmts) ← translateStmtList ctxWithClass body.val.toList
     let bodyStmts := prependExceptHandlingHelper (varDecls ++ bodyStmts)
-    let (renamedInputs, paramCopies) := renameInputParams inputs (· == "self")
+    let (renamedInputs, paramCopies) := renameInputParams inputs
+      (fun n => n == "self" || kwargsName == some n)
     let bodyStmts := paramCopies ++ bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
@@ -2252,7 +2257,10 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       else
         let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
         let args := p.inputs.map fun param =>
-          {name:= param.name.text, md:= default, tys:= [getHighTypeName param.type.val], default:= some noneexpr}
+          let argName := if param.name.text.startsWith paramInputPrefix then
+            (param.name.text.drop paramInputPrefix.length).toString
+          else param.name.text
+          {name:= argName, md:= default, tys:= [getHighTypeName param.type.val], default:= some noneexpr}
         let ret := p.outputs.head?.map fun param => ([getHighTypeName param.type.val], defaultMetadata)
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
