@@ -586,8 +586,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       -- Fold pairs with PAnd (pairs has n ≥ 1 elements)
       have : 0 < pairs.size := by omega
       let mut result := pairs[0]
-      for i in [1:pairs.size] do
-        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]!])
+      for h : i in [1:pairs.size] do
+        have hi :  i < pairs.size := Membership.mem.upper h
+        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]])
       -- Wrap in a block if we emitted temp variable declarations
       if tempDecls.isEmpty then
         return { result with md := md }
