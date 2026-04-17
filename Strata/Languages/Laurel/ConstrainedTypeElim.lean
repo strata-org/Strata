@@ -92,8 +92,8 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
   let source := expr.source
   let md := expr.md
   match expr.val with
-  | .LocalVariable n ty init =>
-    ⟨.LocalVariable n (resolveType ptMap ty) init, source, md⟩
+  | .LocalVariable params init =>
+    ⟨.LocalVariable (params.map fun p => { p with type := resolveType ptMap p.type }) init, source, md⟩
   | .Forall param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
@@ -127,15 +127,18 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   let source := stmt.source
   let md := stmt.md
   match _h : stmt.val with
-  | .LocalVariable name ty init =>
-    let callOpt := constraintCallFor ptMap ty.val name md (src := source)
-    if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
+  | .LocalVariable params init =>
+    for p in params do
+      let callOpt := constraintCallFor ptMap p.type.val p.name md (src := source)
+      if callOpt.isSome then modify fun pv => pv.insert p.name.text p.type.val
     let (init', check) : Option StmtExprMd × List StmtExprMd := match init with
-      | none => match callOpt with
-        | some c => (none, [⟨.Assume c, source, md⟩])
-        | none => (none, [])
-      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert c, source, md⟩)
-    pure ([⟨.LocalVariable name ty init', source, md⟩] ++ check)
+      | none =>
+        let calls := params.filterMap fun p => constraintCallFor ptMap p.type.val p.name md (src := source)
+        (none, calls.map fun c => ⟨.Assume c, source, md⟩)
+      | some _ =>
+        let calls := params.filterMap fun p => constraintCallFor ptMap p.type.val p.name md (src := source)
+        (init, calls.map fun c => ⟨.Assert c, source, md⟩)
+    pure ([⟨.LocalVariable params init', source, md⟩] ++ check)
 
   | .Assign [target] _ => match target.val with
     | .Identifier name => do
@@ -209,7 +212,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let md := ct.witness.md
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src, md⟩
+    ⟨.LocalVariable [{ name := witnessId, type := resolveType ptMap ct.base }] (some ct.witness), src, md⟩
   let assert : StmtExprMd :=
     ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md (src := src)).get!, src, md⟩
   { name := mkId s!"$witness_{ct.name.text}"

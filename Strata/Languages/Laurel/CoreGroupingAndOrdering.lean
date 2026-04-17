@@ -65,7 +65,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .Assign targets v =>
       targets.flatMap (fun t => collectStaticCallNames t) ++
       collectStaticCallNames v
-  | .LocalVariable _ _ initOption =>
+  | .LocalVariable _ initOption =>
       match initOption with
       | some init => collectStaticCallNames init
       | none => []

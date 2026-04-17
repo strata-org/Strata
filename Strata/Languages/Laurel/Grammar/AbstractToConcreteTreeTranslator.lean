@@ -95,10 +95,14 @@ where
       match label with
       | none => laurelOp "block" #[semicolonSep stmtArgs]
       | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
-    | .LocalVariable name ty init =>
+    | .LocalVariable params init =>
+      -- Grammar only supports single-target varDecl; use first parameter or placeholder
+      let (nameText, ty) := match params with
+        | p :: _ => (p.name.text, p.type)
+        | [] => ("_", ⟨.TVoid, none, #[]⟩)
       let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg ty]))
       let initOpt := optionArg (init.map fun e => laurelOp "initializer" #[stmtExprToArg e])
-      laurelOp "varDecl" #[ident name.text, typeOpt, initOpt]
+      laurelOp "varDecl" #[ident nameText, typeOpt, initOpt]
     | .Assign targets value =>
       -- Grammar only supports single-target assign; use first target or placeholder
       let targetArg := match targets with

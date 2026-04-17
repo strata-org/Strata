@@ -238,8 +238,8 @@ inductive StmtExpr : Type where
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
-  /-- A local variable declaration with a type and optional initializer. The initializer must be set if this `StmtExpr` is pure. -/
-  | LocalVariable (name : Identifier) (type : AstNode HighType) (initializer : Option (AstNode StmtExpr))
+  /-- A local variable declaration with typed parameters and optional initializer. The initializer must be set if this `StmtExpr` is pure. Multiple parameters are only allowed when the initializer is a `StaticCall` to a procedure with multiple outputs. -/
+  | LocalVariable (parameters : List Parameter) (initializer : Option (AstNode StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
