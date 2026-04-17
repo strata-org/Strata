@@ -315,7 +315,7 @@ function Any_to_bool (v: Any) : bool
   if (Any..isfrom_float(v)) then !(Any..as_float!(v) == 0.0) else
   if (Any..isfrom_DictStrAny(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
   if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil()) else
-  false
+  <?>
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -637,7 +637,7 @@ function PNot (v: Any) : Any
   else if Any..isfrom_DictStrAny(v) then
     from_bool(!(Any..as_Dict!(v) == DictStrAny_empty()))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    <?>
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////

@@ -19,8 +19,8 @@ test_loops.py(18, 11): ✅ pass - Check PGt exception
 test_loops.py(18, 4): ✅ pass - nested unpacking incremented
 test_loops.py(21, 4): ✅ pass - assert(477)
 test_loops.py(22, 10): ✅ pass - Check PGt exception
-test_loops.py(23, 13): ✅ pass - Check PSub exception
+test_loops.py(23, 13): ❓ unknown - Check PSub exception
 test_loops.py(24, 11): ❓ unknown - Check PLe exception
 test_loops.py(24, 4): ❓ unknown - while loop did not increase n4
-DETAIL: 16 passed, 0 failed, 8 inconclusive
+DETAIL: 15 passed, 0 failed, 9 inconclusive
 RESULT: Inconclusive
