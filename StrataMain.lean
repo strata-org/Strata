@@ -190,7 +190,9 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "mode" },
   { name := "overflow-checks",
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
-    takesArg := .arg "checks" }
+    takesArg := .arg "checks" },
+  { name := "incremental",
+    help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -240,6 +242,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     removeIrrelevantAxioms,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
+    incremental := pflags.getBool "incremental" || base.incremental,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,

@@ -14,6 +14,7 @@ public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
@@ -30,22 +31,34 @@ open Strata
 
 public section
 
-/-- Encode a verification condition into SMT-LIB format.
+/-- Encode declarations and assertions to the solver, returning the encoded
+    obligation term and variable ids needed for check-sat. This is the
+    non-interactive part of encoding — it does not issue check-sat or
+    get-value commands. Used by the incremental path to send declarations
+    directly to the live solver, then issue session operations through
+    the AbstractSolver API. -/
+def encodeDeclarations (ctx : Core.SMT.Context) (prelude : SolverM Unit)
+    (assumptionTerms : List Term) (obligationTerm : Term) :
+    SolverM (Term × List String × EncoderState) := do
+  Solver.setLogic "ALL"
+  prelude
+  let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
+  ctx.emitDatatypes
+  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
+  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
+  for id in _axms do
+    Solver.assert id
+  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
+  for id in assumptionIds do
+    Solver.assert id
+  let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
+  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+    if uf.args.isEmpty then some id else none
+  return (obligationId, ids, estate)
 
-This function encodes the path conditions (P) and obligation (Q) into SMT,
-then emits check-sat commands to determine satisfiability and/or validity.
-
-When both checks are requested, uses check-sat-assuming for efficiency:
-- Satisfiability: (check-sat-assuming (Q)) tests if P ∧ Q is satisfiable
-- Validity: (check-sat-assuming ((not Q))) tests if P ∧ ¬Q is satisfiable
-
-When only one check is requested, uses assert + check-sat:
-- For satisfiability: (assert Q) (check-sat) tests P ∧ Q
-- For validity: (assert (not Q)) (check-sat) tests P ∧ ¬Q
-
-Note: The obligation term Q is encoded without negation. Negation is applied
-when needed for the validity check (line 64 for check-sat-assuming, line 77 for assert).
--/
+/-- Encode a verification condition into SMT-LIB format, including check-sat
+    commands. Used by the batch pipeline. -/
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
@@ -197,6 +210,121 @@ def dischargeObligation
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
     (skipSolver := options.skipSolver)
+
+/-- Discharge a proof obligation using the incremental solver backend.
+    Spawns a live solver process, sends commands via stdin/stdout, and
+    reads results interactively. Returns the same result triple as the
+    batch `dischargeObligation`. -/
+def dischargeObligationIncremental
+  (options : VerifyOptions)
+  (vars : List Expression.TypedIdent)
+  (_md : Imperative.MetaData Expression)
+  (assumptionTerms : List Term)
+  (obligationTerm : Term)
+  (ctx : SMT.Context)
+  (satisfiabilityCheck validityCheck : Bool)
+  (_label : String)
+  : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) :=
+  open _root_.Strata.SMT.IncrementalSolver in do
+  let baseFlags := getSolverFlags options
+  let needsIncremental := satisfiabilityCheck && validityCheck
+  let solverSpecificFlags := match options.solver with
+    | "cvc5" =>
+      let base := #["--quiet", "--lang", "smt"]
+      if needsIncremental && !baseFlags.contains "--incremental" then
+        base ++ #["--incremental"]
+      else base
+    | "z3" => #["-in"]  -- z3 reads from stdin with -in
+    | _ => #[]
+  let allFlags := solverSpecificFlags ++ baseFlags
+  let solverState ← spawn options.solver allFlags
+  let action : _root_.Strata.SMT.IncrementalSolverM (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
+    let solver := _root_.Strata.SMT.IncrementalSolver.mkAbstractSolver
+    -- Run the encoder directly against the live solver process.
+    -- encodeDeclarations sends all declarations and assertions to the
+    -- solver via SolverM (which writes to the solver's stdin). It does
+    -- NOT issue check-sat or get-value — those go through the
+    -- AbstractSolver API below.
+    let st ← get
+    let liveSolver : Strata.SMT.SMTLibSolver := st.solver
+    let ((obligationId, ids, estate), _solverState) ←
+      (Strata.SMT.Encoder.encodeDeclarations ctx (getSolverPrelude options.solver)
+        assumptionTerms obligationTerm).run liveSolver
+    -- Variable terms for getValue
+    let varIds := ids.map fun id => Term.var ⟨id, .bool⟩
+    -- Helper to get model via solver.getValue and parse it
+    let getModelForVars : _root_.Strata.SMT.IncrementalSolverM (Imperative.SMT.Model Expression.Ident) := do
+      if varIds.isEmpty then return []
+      match ← solver.getValue varIds with
+      | .ok pairs =>
+        match pairs with
+        | [(.prim (.string rawOutput), _)] =>
+          let rawModel ← Imperative.SMT.parseModelDDM rawOutput
+          match Imperative.SMT.processModel (typedVarToSMTFn ctx) vars rawModel estate with
+          | .ok model => return model
+          | .error _ => return []
+        | _ => return []
+      | .error _ => return []
+    -- Issue check-sat commands through the AbstractSolver API.
+    -- The encoding strategy mirrors encodeCore: when both checks are
+    -- requested, use check-sat-assuming; otherwise use assert + check-sat.
+    let bothChecks := satisfiabilityCheck && validityCheck
+    let mut satResult : Imperative.SMT.Result Expression.Ident := .unknown
+    let mut valResult : Imperative.SMT.Result Expression.Ident := .unknown
+    if bothChecks then
+      -- Satisfiability: check-sat-assuming with obligation
+      let satDecision ← solver.checkSatAssuming [obligationId]
+      match satDecision with
+      | .ok .sat => satResult := .sat (← getModelForVars)
+      | .ok .unknown =>
+        let model ← getModelForVars
+        satResult := if model.isEmpty then .unknown else .unknown (some model)
+      | .ok .unsat => satResult := .unsat
+      | .error msg => satResult := .err msg
+      -- Validity: check-sat-assuming with negated obligation
+      match ← solver.mkNot obligationId with
+      | .ok negObligation =>
+        let valDecision ← solver.checkSatAssuming [negObligation]
+        match valDecision with
+        | .ok .sat => valResult := .sat (← getModelForVars)
+        | .ok .unknown =>
+          let model ← getModelForVars
+          valResult := if model.isEmpty then .unknown else .unknown (some model)
+        | .ok .unsat => valResult := .unsat
+        | .error msg => valResult := .err msg
+      | .error msg => valResult := .err msg
+    else
+      if satisfiabilityCheck then
+        match ← solver.assert obligationId with
+        | .ok _ => pure ()
+        | .error msg => throw (IO.userError s!"assert failed: {msg}")
+        let decision ← solver.checkSat
+        match decision with
+        | .ok .sat => satResult := .sat (← getModelForVars)
+        | .ok .unknown =>
+          let model ← getModelForVars
+          satResult := if model.isEmpty then .unknown else .unknown (some model)
+        | .ok .unsat => satResult := .unsat
+        | .error msg => satResult := .err msg
+      else if validityCheck then
+        match ← solver.mkNot obligationId with
+        | .ok negObligation =>
+          match ← solver.assert negObligation with
+          | .ok _ => pure ()
+          | .error msg => throw (IO.userError s!"assert failed: {msg}")
+        | .error msg => throw (IO.userError s!"mkNot failed: {msg}")
+        let decision ← solver.checkSat
+        match decision with
+        | .ok .sat => valResult := .sat (← getModelForVars)
+        | .ok .unknown =>
+          let model ← getModelForVars
+          valResult := if model.isEmpty then .unknown else .unknown (some model)
+        | .ok .unsat => valResult := .unsat
+        | .error msg => valResult := .err msg
+    solver.close
+    return .ok (satResult, valResult, estate)
+  let (result, _) ← action.run solverState
+  return result
 
 end -- public section
 end Core.SMT
@@ -876,12 +1004,19 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
-        (SMT.dischargeObligation options
+        (if options.incremental && !options.alwaysGenerateSMT then
+          SMT.dischargeObligationIncremental options
+            typedVarsInObligation
+            obligation.metadata
+            assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+            obligation.label
+        else
+          SMT.dischargeObligation options
             typedVarsInObligation
             obligation.metadata
             filename.toString
-          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-          (label := obligation.label))
+            assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+            (label := obligation.label))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
