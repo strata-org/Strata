@@ -921,15 +921,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     Each obligation becomes an `assume H1; assume H2; ...; assert G` block.
     Multiple obligations are combined with `if *` (nondet ITE). -/
 private def obligationsToProgram (obligations : Imperative.ProofObligations Expression)
-    (p : Program) : Program :=
-  -- Collect axiom declarations to include in the obligations program
-  let axiomDecls := p.decls.filter fun d =>
-    match d with | .ax _ _ => true | _ => false
-  let axiomNames := axiomDecls.filterMap fun d =>
-    match d with | .ax a _ => some a.name | _ => none
+    (_p : Program) : Program :=
   let blocks := obligations.toList.map fun ob =>
-    let assumes := ob.assumptions.flatten.filter (fun (label, _) =>
-      !axiomNames.contains label) |>.map fun (label, e) =>
+    let assumes := ob.assumptions.flatten.map fun (label, e) =>
       Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
     let assertStmt := match ob.property with
       | .cover => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.cover ob.label ob.obligation ob.metadata))
@@ -940,13 +934,14 @@ private def obligationsToProgram (obligations : Imperative.ProofObligations Expr
     | [b] => b
     | b :: rest => rest.foldl (fun acc block =>
         [Imperative.Stmt.ite .nondet acc block .empty]) b
-  -- Create a minimal program with axioms and one procedure for the obligations
+  -- Create a minimal program with one procedure (no axiom declarations —
+  -- the obligations already have axioms in their path conditions)
   let proc : Procedure := {
     header := { name := ⟨"obligations", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [], modifies := [] },
     body := body
   }
-  { decls := axiomDecls ++ [.proc proc .empty] }
+  { decls := [.proc proc .empty] }
 
 def verifySingleEnv (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
@@ -962,18 +957,12 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
-    -- New pipeline: convert deferred obligations to Core program,
+    -- Pipeline: convert deferred obligations to Core program,
     -- then extract obligations back via ObligationExtraction.
-    -- This validates the round-trip: E.deferred → Program → Obligations.
-    -- ANF encoding will be added once model variable naming is resolved.
     let oblProgram := obligationsToProgram E.deferred p
-    let extractedObligations ← match Core.ObligationExtraction.extractObligations oblProgram with
+    let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
       | .ok obs => pure obs
       | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
-    -- Use original E.deferred for verification (extracted obligations are
-    -- validated but not yet used, pending full integration)
-    let obligations := E.deferred
-    let _ := extractedObligations  -- keep the extraction in the pipeline
     let mut stats : Statistics := ({} : Statistics)
       |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
     let mut results := (#[] : VCResults)
