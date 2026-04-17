@@ -311,7 +311,7 @@ def printCommand : Command where
     match pd with
     | .dialect d =>
       let ld ← searchPath.getLoaded
-      let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ ld.dialects))
+      let .isTrue mem := (inferInstance : Decidable (d.name ∈ ld.dialects))
         | exitInternalError "Internal error reading file."
       IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
@@ -330,7 +330,7 @@ def diffCommand : Command where
     | .program p1, .program p2 =>
       if p1.dialect != p2.dialect then
         exitFailure s!"Dialects differ: {p1.dialect} and {p2.dialect}"
-        let Decidable.isTrue eq := inferInstanceAs (Decidable (p1.commands.size = p2.commands.size))
+        let Decidable.isTrue eq := (inferInstance : Decidable (p1.commands.size = p2.commands.size))
           | exitFailure s!"Number of commands differ {p1.commands.size} and {p2.commands.size}"
         for (c1, c2) in Array.zip p1.commands p2.commands do
           if c1 != c2 then

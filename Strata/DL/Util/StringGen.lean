@@ -59,14 +59,6 @@ theorem String.append_eq_suffix (as bs bs' : String):
   (as ++ bs = as ++ bs') → bs = bs' := by
   intros Heq
   by_cases bs = bs' <;> simp_all
-  next Hne =>
-  have Heq' := String.ext_iff.mp Heq
-  have Hne' : ¬ bs.toList = bs'.toList := by
-    intros Heq
-    have HH := String.ext_iff.mpr Heq
-    contradiction
-  simp at *
-  contradiction
 
 theorem String.append_eq_prefix (as as' bs : String):
   (as ++ bs = as' ++ bs) → as = as' := by
@@ -248,7 +240,7 @@ theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s +
       List.suffix_append_of_suffix (List.suffix_refl _)
     have ⟨t, h⟩ : ['_'] ++ (toString x).toList <:+ (toString y).toList :=
       List.suffix_of_suffix_length_le Hsuf Hsuf' (by simp; exact x_lt)
-    have : '_' ∈ (toString y).toList := by simp [← h]
+    have : '_' ∈ (toString y).toList := by grind
     have := @Nat_toString_not_contain_underscore y
     contradiction
   else if x_gt : (toString x).length > (toString y).length then
@@ -262,8 +254,8 @@ theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s +
       simp only [List.append_assoc]
       exact List.suffix_append_of_suffix (List.suffix_refl _)
     have ⟨t, h⟩ : ['_'] ++ (toString y).toList <:+ (toString x).toList :=
-      List.suffix_of_suffix_length_le Hsuf' Hsuf (by simp; omega)
-    have : '_' ∈ (toString x).toList := by simp [← h]
+      List.suffix_of_suffix_length_le Hsuf' Hsuf (by simp_all; exact x_gt)
+    have : '_' ∈ (toString x).toList := by grind
     have := @Nat_toString_not_contain_underscore x
     contradiction
   else
