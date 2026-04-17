@@ -72,7 +72,7 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
 
 def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel ((List (Program × Env)) × Statistics) := do
+    Except DiagnosticModel (Program × List Env × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
@@ -110,7 +110,10 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
   -- but each procedure's body is replaced with the obligations tree
   -- (assume/assert blocks combined with if *). Axioms are inlined
   -- into each procedure's obligations (from E.deferred path conditions).
-  let oblPrograms := pEs.map fun E =>
+  -- Type/datatype declarations come from the original program.
+  let typeDecls := program.decls.filter fun d =>
+    match d with | .type _ _ => true | _ => false
+  let oblProcs := pEs.map fun E =>
     let blocks := E.deferred.toList.map fun ob =>
       let assumes := ob.assumptions.flatten.map fun (label, e) =>
         Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
@@ -123,21 +126,19 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
       | [b] => b
       | b :: rest => rest.foldl (fun acc block =>
           [Imperative.Stmt.ite .nondet acc block .empty]) b
-    -- Keep type/datatype declarations, replace procedure body
-    let typeDecls := E.program.decls.filter fun d =>
-      match d with | .type _ _ => true | _ => false
     let proc : Procedure := {
       header := { name := ⟨"obligations", ()⟩, typeArgs := [], inputs := [], outputs := [] },
       spec := { preconditions := [], postconditions := [], modifies := [] },
       body := body
     }
-    ({ decls := typeDecls ++ [.proc proc .empty] }, E)
+    Decl.proc proc .empty
+  let oblProgram : Program := { decls := typeDecls ++ oblProcs }
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for E in pEs do
       dbg_trace f!"{formatProofObligations E.deferred}"
-  return (oblPrograms, stats)
+  return (oblProgram, pEs, stats)
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)

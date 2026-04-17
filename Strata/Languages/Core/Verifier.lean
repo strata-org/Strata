@@ -917,13 +917,12 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     return result
 
 
-def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
+def verifySingleEnv (oblProgram : Program) (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel (VCResults × Statistics) := do
-  let (oblProgram, E) := pE
   let p := E.program
   let profile := options.profile
   match E.error with
@@ -1081,18 +1080,19 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  let (pEs, evalStats) ← profileStep profile "  Type check and symbolic eval" do
+  let ((oblProgram, pEs), evalStats) ← profileStep profile "  Type check and symbolic eval" do
     match Core.typeCheckAndEval options finalProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok (pEs, stats) => .ok (pEs, stats)
+    | .ok (oblProgram, pEs, stats) => .ok ((oblProgram, pEs), stats)
   let allStats := pipelineStats.merge evalStats
+  let sampleEnv := pEs.head?.getD Env.init
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure []
     else
-      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases phases) pEs)
+      pure [← verifySingleEnv oblProgram sampleEnv options counter tempDir axiomCache? externalPhases phases]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
