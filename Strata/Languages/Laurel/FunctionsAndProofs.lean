@@ -75,7 +75,8 @@ functions, non-functional become proofs.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let functions := program.staticProcedures.map mkFunctionCopy
+  let externalProcs := program.staticProcedures.filter (fun p => p.body.isExternal)
+  let functions := externalProcs ++ nonExternal.map mkFunctionCopy
   let proofs := nonExternal.map fun p =>
     { p with isFunctional := false,
              name := { p.name with text := p.name.text ++ "$proof", uniqueId := none } }

@@ -16,20 +16,13 @@ assertions.
 
 For each procedure with contracts:
 - Generate a precondition procedure (`foo$pre`) returning the conjunction of preconditions.
-- Generate a postcondition procedure (`foo$post`) that takes only the *input*
-  parameters, internally calls the original procedure to obtain the outputs,
-  and returns the conjunction of postconditions.
+- Generate a postcondition procedure (`foo$post`) returning the conjunction of postconditions.
 - Insert `assume foo$pre(inputs)` at the start of the body.
-- Insert `assert foo$post(inputs)` at the end of the body.
+- Insert `assert foo$post(inputs, outputs)` at the end of the body.
 
 For each call to a contracted procedure:
 - Insert `assert foo$pre(args)` before the call (precondition check).
-- Insert `assume foo$post(args)` after the call (postcondition assumption).
-
-The postcondition procedure calls the original procedure internally so that
-the `assume` at call sites only references pre-call arguments. This avoids
-a soundness issue where mutable variables (e.g. `$heap`) are overwritten by
-the call's result destructuring before the `assume` is evaluated.
+- Insert `assume foo$post(args, results)` after the call (postcondition assumption).
 -/
 
 namespace Strata.Laurel
@@ -39,10 +32,6 @@ public section
 private def emptyMd : MetaData := .empty
 
 private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
-
-/-- Create a `StmtExprMd` with a property summary in its metadata. -/
-private def mkMdWithSummary (e : StmtExpr) (summary : String) : StmtExprMd :=
-  ⟨e, none, emptyMd.withPropertySummary summary⟩
 
 /-- Build a conjunction of expressions. Returns `LiteralBool true` for an empty list. -/
 private def conjoin (exprs : List StmtExprMd) : StmtExprMd :=
@@ -76,54 +65,13 @@ private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
 /-- Build a helper function that returns the conjunction of the given conditions. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (conditions : List StmtExprMd) : Procedure :=
-  -- Use "$result" as the output name to avoid clashing with user-defined
-  -- parameter names (user names cannot contain '$').
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩] -- TODO, enable anonymous output parameters
+    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
     isFunctional := true
     body := .Transparent (conjoin conditions) }
-
-/-- Build a postcondition procedure that takes only the *input* parameters
-    and internally calls the original procedure to obtain the outputs.
-
-    For a procedure `foo(a, b) returns (x, y)` with postcondition `P(a, b, x, y)`,
-    generates:
-    ```
-    procedure foo$post(a, b) returns ($result : bool) {
-      var x, y : Tx := foo(a, b);
-      P(a, b, x, y)
-    }
-    ```
-
-    This ensures the `assume` at call sites only references pre-call arguments,
-    avoiding a soundness issue where mutable variables (e.g. `$heap`) are
-    overwritten by the call's result destructuring before the `assume` is
-    evaluated. -/
-private def mkPostConditionProc (name : String) (originalProcName : String)
-    (inputParams : List Parameter) (outputParams : List Parameter)
-    (conditions : List StmtExprMd) : Procedure :=
-  let inputArgs := paramsToArgs inputParams
-  let outputNames := outputParams.map (·.name)
-  -- Use the first output's type; the Core translator generates per-name init stmts
-  -- followed by a single call stmt, so the type is only used for default-init.
-  let outputType := match outputParams.head? with
-    | some p => p.type
-    | none => { val := .Unknown, source := none }
-  let callExpr := mkMd (.StaticCall (mkId originalProcName) inputArgs)
-  let localVarStmt := mkMd (.LocalVariable outputNames outputType (some callExpr))
-  -- Body: single initialized local variable, then postcondition conjunction
-  let bodyStmts := [localVarStmt, conjoin conditions]
-  let body := mkMd (.Block bodyStmts none)
-  { name := mkId name
-    inputs := inputParams
-    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
-    preconditions := []
-    decreases := none
-    isFunctional := false
-    body := .Transparent body }
 
 /-- Extract a combined summary from a list of contract clauses. -/
 private def combinedSummary (clauses : List StmtExprMd) : Option String :=
@@ -141,10 +89,10 @@ private structure ContractInfo where
   postName : String
   preSummary : Option String
   postSummary : Option String
-  /-- The original procedure's input parameters (needed for postcondition generation). -/
   inputParams : List Parameter
-  /-- The original procedure's output parameters (needed for postcondition generation). -/
   outputParams : List Parameter
+  /-- Functional procedures have their contracts handled by the Core translator. -/
+  isFunctional : Bool
 
 /-- Collect contract info for all procedures with contracts. -/
 private def collectContractInfo (procs : List Procedure) : Std.HashMap String ContractInfo :=
@@ -162,27 +110,26 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
         postSummary := combinedSummary postconds
         inputParams := proc.inputs
         outputParams := proc.outputs
+        isFunctional := proc.isFunctional
       }
     else m) {}
 
 /-- Transform a procedure body to add assume/assert for its own contracts. -/
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
+  let outputArgs := paramsToArgs proc.outputs
   let postconds := getPostconditions proc.body
   let preAssume : List StmtExprMd :=
     if info.hasPreCondition then [mkMd (.Assume (mkCall info.preName inputArgs))]
     else []
   let postAssert : List StmtExprMd :=
     if info.hasPostCondition then
-      -- Use the metadata from the first postcondition so the diagnostic
-      -- carries the source location of the `ensures` clause.
-      let baseMd := match postconds.head? with
-        | some pc => pc.md
-        | none => emptyMd
+      let (baseSrc, baseMd) := match postconds.head? with
+        | some pc => (pc.source, pc.md)
+        | none => (none, emptyMd)
       let summary := info.postSummary.getD "postcondition"
-      -- Pass only input args; $post internally calls the procedure to get outputs.
-      [⟨.Assert (mkCall info.postName inputArgs),
-        none, baseMd.withPropertySummary summary⟩]
+      [⟨.Assert (mkCall info.postName (inputArgs ++ outputArgs)),
+        baseSrc, baseMd.withPropertySummary summary⟩]
     else []
   match proc.body with
   | .Transparent body =>
@@ -195,9 +142,7 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
 
 /-- Rewrite a single statement that may be a call to a contracted procedure.
     Returns a list of statements (the original plus any inserted assert/assume).
-    Uses the call site's metadata for generated assert/assume nodes.
-    The postcondition assume passes only the call arguments (not the results),
-    since the $post procedure internally calls the original to obtain outputs. -/
+    Uses the call site's metadata for generated assert/assume nodes. -/
 private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd) : List StmtExprMd :=
   let md := e.md
@@ -206,29 +151,33 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
   let mkWithMdSummary (se : StmtExpr) (summary : String) : StmtExprMd :=
     ⟨se, src, md.withPropertySummary summary⟩
   match e.val with
-  | .Assign _targets (.mk (.StaticCall callee args) ..) =>
+  | .Assign targets (.mk (.StaticCall callee args) ..) =>
     match contractInfoMap.get? callee.text with
     | some info =>
+      -- Skip call-site rewriting for functional procedures (handled by Core translator)
+      if info.isFunctional then [e] else
+      let resultArgs := targets.map fun t => ⟨t.val, t.source, t.md⟩
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
-      -- Pass only call args; $post internally calls the procedure to get outputs.
       let postAssume := if info.hasPostCondition
-        then [mkWithMd (.Assume (mkCall info.postName args))] else []
+        then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
     | none => [e]
-  | .LocalVariable _name _ty (some (.mk (.StaticCall callee args) ..)) =>
+  | .LocalVariable names _ty (some (.mk (.StaticCall callee args) ..)) =>
     match contractInfoMap.get? callee.text with
     | some info =>
+      if info.isFunctional then [e] else
+      let resultArgs := names.map fun n => mkMd (.Identifier n)
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
-      -- Pass only call args; $post internally calls the procedure to get outputs.
       let postAssume := if info.hasPostCondition
-        then [mkWithMd (.Assume (mkCall info.postName args))] else []
+        then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
     | none => [e]
   | .StaticCall callee args =>
     match contractInfoMap.get? callee.text with
     | some info =>
+      if info.isFunctional then [e] else
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
       preAssert ++ [e]
@@ -238,7 +187,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
 /-- Rewrite call sites in a statement/expression tree. Processes Block children
     at the statement level to avoid interfering with expression-level calls.
     For each statement-level call to a contracted procedure, inserts
-    `assert pre(args)` before and `assume post(args)` after. -/
+    `assert pre(args)` before and `assume post(args, results)` after. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     (expr : StmtExprMd) : StmtExprMd :=
   let result := mapStmtExpr (fun e =>
@@ -271,21 +220,24 @@ private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String Contrac
 def contractPass (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
-  -- Generate helper procedures for all procedures with contracts
+  -- Generate helper procedures for non-functional procedures with contracts.
+  -- Functional procedures have their contracts handled by the Core translator.
   let helperProcs := program.staticProcedures.flatMap fun proc =>
+    if proc.isFunctional then [] else
     let postconds := getPostconditions proc.body
     let preProc :=
       if proc.preconditions.isEmpty then []
       else [mkConditionProc (preCondProcName proc.name.text) proc.inputs proc.preconditions]
     let postProc :=
       if postconds.isEmpty then []
-      else [mkPostConditionProc (postCondProcName proc.name.text) proc.name.text
-              proc.inputs proc.outputs postconds]
+      else [mkConditionProc (postCondProcName proc.name.text) (proc.inputs ++ proc.outputs) postconds]
     preProc ++ postProc
 
-  -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
+  -- Transform procedures: strip contracts, add assume/assert, rewrite call sites.
+  -- Functional procedures are left unchanged (their contracts are handled by Core).
   let transformedProcs := program.staticProcedures.map fun proc =>
-    let proc := match contractInfoMap.get? proc.name.text with
+    let proc := if proc.isFunctional then proc
+      else match contractInfoMap.get? proc.name.text with
       | some info =>
         { proc with
           preconditions := []
