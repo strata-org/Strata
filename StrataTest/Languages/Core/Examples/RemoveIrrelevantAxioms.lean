@@ -122,6 +122,8 @@ Result: ✅ pass
 Obligation: a1
 Property: assert
 Result: ❌ fail
+Model:
+($__x1, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -135,49 +137,49 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, model_not_2)
+($__x3, model_not_2) ($__x1, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, model_not_2)
+($__x3, model_not_2) ($__x1, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, model_not_2)
+($__x2, model_not_2) ($__x1, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, model_not_2)
+($__x2, model_not_2) ($__x1, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, model_not_2)
+($__x0, model_not_2) ($__x1, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, model_not_2)
+($__x0, model_not_2) ($__x1, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2)
+($__x1, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2)
+($__x1, model_not_2)
 -/
 #guard_msgs in
 #eval do
