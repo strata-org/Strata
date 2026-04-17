@@ -1074,19 +1074,32 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  let ((oblProgram, sampleEnv), evalStats) ← profileStep profile "  Type check and symbolic eval" do
-    match Core.typeCheckAndEval options finalProgram moreFns with
+  -- Type checking phase (Program → Program)
+  let (finalProgram, _) ← profileStep profile "  Type check" do
+    match Core.typeCheck options finalProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok (oblProgram, pEs, stats) =>
-      .ok ((oblProgram, pEs.head?.getD Env.init), stats)
+    | .ok program => .ok (program, ({} : Statistics))
+  -- Symbolic evaluation phase (Program → Program)
+  let (oblProgram, evalStats) ← profileStep profile "  Symbolic eval" do
+    match Core.symbolicEval options finalProgram moreFns with
+    | .error err => .error err
+    | .ok (oblProgram, stats) => .ok (oblProgram, stats)
   let allStats := pipelineStats.merge evalStats
+  -- Build SMT encoding context by running full evaluation on the
+  -- type-checked program (loads factory, datatypes, distinct, functions)
+  let (smtEnv, _) ← match Core.buildEvalEnv finalProgram moreFns with
+    | .ok (E, stats) =>
+      match Program.eval E with
+      | .ok (pEs, evalStats) => pure (pEs.head?.getD E, stats.merge evalStats)
+      | .error e => .error e
+    | .error e => .error e
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure []
     else
-      pure [← verifySingleEnv oblProgram sampleEnv options counter tempDir axiomCache? externalPhases phases]
+      pure [← verifySingleEnv oblProgram smtEnv options counter tempDir axiomCache? externalPhases phases]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)

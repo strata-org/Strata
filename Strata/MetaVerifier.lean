@@ -57,14 +57,22 @@ def genVCsSingleENV (E : Env) : Option coreVCs := do
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   let program := (loopElim program).fst
-  match Core.typeCheckAndEval options program with
+  match Core.typeCheck options program with
   | .error _ => none
-  | .ok (oblProgram, pEs, _stats) =>
-    match Core.ObligationExtraction.extractObligations oblProgram with
+  | .ok tcProgram =>
+    match Core.symbolicEval options tcProgram with
     | .error _ => none
-    | .ok obligations =>
-      let E := pEs.head?.getD (Env.init (empty_factory := true))
-      return obligations.toList.map (fun ob => (E, ob))
+    | .ok (oblProgram, _stats) =>
+      match Core.ObligationExtraction.extractObligations oblProgram with
+      | .error _ => none
+      | .ok obligations =>
+        let E := match Core.buildEvalEnv tcProgram with
+          | .ok (initE, _) =>
+            match Program.eval initE with
+            | .ok (pEs, _) => pEs.head?.getD initE
+            | .error _ => initE
+          | .error _ => Env.init (empty_factory := true)
+        return obligations.toList.map (fun ob => (E, ob))
 
 end Core
 
