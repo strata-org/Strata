@@ -66,4 +66,3 @@ instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] : ToFormat (EvalWa
 
 end -- public section
 end Imperative
-
