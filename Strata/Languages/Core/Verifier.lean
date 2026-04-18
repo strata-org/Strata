@@ -133,11 +133,14 @@ def sanitizeFilename (s : String) : String :=
          || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
     else some c
 
-private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
-  (ty : Core.Expression.Ty) := do
-    -- Type of identifier has to be monotye
+private def typedVarToSMTFn (ctx : SMT.Context) (useArrayTheory : Bool)
+    (id : Core.Expression.Ident) (ty : Core.Expression.Ty) := do
+    -- Type of identifier has to be monotype
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
     let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
+    -- When array theory is disabled, axiomatizeArrays rewrites Array→Map in the
+    -- encoder state.  Variable types must match what's in the encoder state.
+    let ty' := if useArrayTheory then ty' else ArrayAxiom.replaceArrayType ty'
     return (id.name, ty')
 
 @[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
@@ -190,7 +193,7 @@ def dischargeObligation
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
       (label := label))
-    (typedVarToSMTFn ctx)
+    (typedVarToSMTFn ctx options.useArrayTheory)
     vars
     options.solver
     filename
@@ -978,7 +981,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
       let t2 ← IO.monoNanosNow
-      let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
+      let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames }
       let t3 ← IO.monoNanosNow
       smtEncodeNs := smtEncodeNs + (t3 - t2)
       match maybeTerms with
@@ -995,8 +998,11 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
         if options.stopOnFirstError then break
-      | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
-        stats := stats.merge encStats
+      | .ok (assumptionTerms, obligationTerm, ctx) =>
+        -- When array theory is disabled, axiomatize arrays as UFs + axioms
+        let (ctx, assumptionTerms, obligationTerm) :=
+          if options.useArrayTheory then (ctx, assumptionTerms, obligationTerm)
+          else ctx.axiomatizeArrays assumptionTerms obligationTerm
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)

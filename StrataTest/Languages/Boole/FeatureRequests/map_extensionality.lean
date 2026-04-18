@@ -5,48 +5,40 @@
 -/
 
 import Strata.MetaVerifier
-import Strata.Languages.Boole.Verify
 
 open Strata
-open Lambda
 
 /-
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:guide/ext_equal`
-- Verus link:
-  `guide/ext_equal`: https://github.com/verus-lang/verus/blob/main/examples/guide/ext_equal.rs
-- Original gap: extensional equality lowered to ordinary equality
-- Current status: implemented for direct `Map` types via Boole `=~=`
-- Lowering: `a =~= b` becomes `∀ i . a[i] == b[i]`
-- Remaining gap: named map synonyms and non-map extensional equality
+- Gap: extensional equality lowered to ordinary equality
 -/
 
 private def mapExtensionalitySeed : Strata.Program :=
 #strata
 program Boole;
 
-// Implemented shape for direct `Map` types: `a =~= b` lowers to
-// `∀ i: int . a[i] == b[i]`.
+type IntMap := Map int int;
+
+axiom (forall a: IntMap, b: IntMap :: (forall i: int :: a[i] == b[i]) ==> a == b);
+
+// Target shape once Boole/Strata distinguish extensional equality from `==`.
+//
+// Preferred direction: lower extensional equality directly to a quantified
+// formula during translation rather than reusing ordinary `==`.
 //
 // spec {
-//   requires ∀ i: int . a[i] == b[i];
+//   requires forall i: int :: a[i] == b[i];
 //   ensures a =~= b;
 // }
 
-// TODO(feature:extensional-equality): normalize type synonyms so
-// `type IntMap := Map int int` also works with `=~=`.
-// TODO(feature:extensional-equality): extend the same idea to other collection
-// types such as sequences once we settle the intended semantics.
-// TODO(feature:extensional-equality): review quantified triggers/solver
-// behavior as more extensional cases are added.
-
-procedure map_extensionality_seed(a: Map int int, b: Map int int) returns ()
+procedure map_extensionality_seed(a: IntMap, b: IntMap) returns ()
 spec {
-  requires ∀ i: int . a[i] == b[i];
-  ensures a =~= b;
+  requires forall i: int :: a[i] == b[i];
+  ensures a == b;
 }
 {
-  assert a =~= b;
+  assert a == b;
 };
 #end
 
@@ -56,53 +48,5 @@ spec {
 example : Strata.smtVCsCorrect mapExtensionalitySeed := by
   gen_smt_vcs
   all_goals
-    intro Map inst select a b hPointwise i
-    exact hPointwise i
-
-/-!
-Regression test for extensional equality nested under an outer quantifier.
-
-The Boole frontend lowers `a =~= b` to `∀ i . a[i] == b[i]`. When `a` and `b`
-are themselves outer bound variables, introducing that extra quantifier must
-lift their de Bruijn indices so they keep referring to the outer map binders
-instead of the new index binder.
--/
-
-private def quantifiedMapExtensionalityCaptureSeed : Strata.Program :=
-#strata
-program Boole;
-
-procedure quantified_map_extensionality_capture() returns ()
-spec {
-  ensures ∀ a: Map int int, b: Map int int . a =~= b;
-}
-{
-};
-#end
-
-private def mkExprApp (f : Core.Expression.Expr) (args : List Core.Expression.Expr) :
-    Core.Expression.Expr :=
-  Lambda.LExpr.mkApp () f args
-
-private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.Expr := do
-  let booleProg <- (Strata.Boole.getProgram quantifiedMapExtensionalityCaptureSeed).toOption
-  let coreProg <-
-    (Strata.Boole.toCoreProgram booleProg quantifiedMapExtensionalityCaptureSeed.globalContext).toOption
-  coreProg.decls.findSome? fun decl =>
-    match decl.getProc? with
-    | some proc =>
-        if proc.header.name == "quantified_map_extensionality_capture" then
-          proc.spec.postconditions.values.head?.map (·.expr)
-        else
-          none
-    | none => none
-
-private def expectedQuantifiedMapExtensionalityCapture : Core.Expression.Expr :=
-  let mapIntInt := Core.mapTy .int .int
-  let lhs := mkExprApp Core.mapSelectOp [.bvar () 2, .bvar () 0]
-  let rhs := mkExprApp Core.mapSelectOp [.bvar () 1, .bvar () 0]
-  .quant () .all "" (some mapIntInt) (.bvar () 0)
-    (.quant () .all "" (some mapIntInt) (.bvar () 0)
-      (.quant () .all "" (some .int) lhs (.eq () lhs rhs)))
-
-#guard loweredQuantifiedMapExtensionalityCapture? == some expectedQuantifiedMapExtensionalityCapture
+    intro a b hPointwise hExtensional
+    exact hExtensional a b hPointwise
