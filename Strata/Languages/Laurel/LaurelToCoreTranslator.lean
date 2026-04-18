@@ -274,16 +274,17 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
-  | .Block (⟨ .LocalVariable params (some initializer), innerSrc, innerMd⟩ :: rest) label => do
-      let names := params.map (·.name)
-      let valueExpr ← translateExpr  initializer boundVars isPureContext
-      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (names ++ boundVars) isPureContext
-      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
+  | .Block (⟨ .LocalVariable [⟨ name, ty ⟩] (some initializer), innerSrc, innerMd⟩ :: rest) label => do
+      let valueExpr ← translateExpr initializer boundVars isPureContext
+      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
+      -- disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
-      -- let coreMonoType := translateType ty
-      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
+      let coreMonoType ← translateType ty
+      return .app () (.abs () "" (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable _params none, innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
+  | .Block (⟨ .LocalVariable (x::xs) _, innerSrc, innerMd⟩ :: rest) label =>
+    disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions may only have one target"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "if-then-else only supported as the last statement in a block"
 
