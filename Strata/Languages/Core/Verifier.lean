@@ -18,6 +18,8 @@ import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.LoopElim
+import Strata.Transform.ANFEncoder
+import Strata.Transform.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
@@ -905,6 +907,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
+    -- Filter out ANF encoding variables from model display
+    let model := model.filter fun (name, _) => !name.name.startsWith "$__anf."
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
@@ -914,7 +918,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
-def verifySingleEnv (E : Env) (options : VerifyOptions)
+
+def verifySingleEnv (oblProgram : Program) (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
@@ -922,107 +927,105 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
     EIO DiagnosticModel (VCResults × Statistics) := do
   let p := E.program
   let profile := options.profile
-  match E.error with
-  | some err =>
-    .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
-              {format err}\n\n\
-              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
-  | _ =>
-    let mut stats : Statistics := ({} : Statistics)
-      |>.increment s!"{Evaluator.Stats.verify_numObligations}" E.deferred.size
-    let mut results := (#[] : VCResults)
-    let mut preprocessNs : Nat := 0
-    let mut smtEncodeNs : Nat := 0
-    let mut solverNs : Nat := 0
-    let mut peResolvedCount : Nat := 0
-    for obligation in E.deferred do
-      -- Determine which checks to perform based on metadata or check mode/amount
-      let (satisfiabilityCheck, validityCheck) :=
-        if Imperative.MetaData.hasFullCheck obligation.metadata then
-          (true, true)  -- fullCheck annotation: always run both
-        else
-          -- Derive checks from check mode and level
-          match options.checkMode, options.checkLevel with
-          | _, .full => (true, true)
-          | .bugFindingAssumingCompleteSpec, _ => (true, true)
-          | .deductive, _ =>
-            if obligation.property.passWhenUnreachable then (false, true) else (true, false)
-          | .bugFinding, _ => (true, false)
-      let t0 ← IO.monoNanosNow
-      let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
-      let t1 ← IO.monoNanosNow
-      preprocessNs := preprocessNs + (t1 - t0)
-      -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
-      if not options.alwaysGenerateSMT then
-        if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let phases := externalPhases ++ corePhases
-          let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
-          let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
-          let peLog := buildSolverLog peSat peVal
-            satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-          let outcome : VCOutcome := {
-            satisfiabilityProperty := adjPeSat,
-            validityProperty := adjPeVal,
-            solverLog := #[peLog] }
-          let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
-                                      checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
-          results := results.push result
-          peResolvedCount := peResolvedCount + 1
-          if result.isFailure || result.isImplementationError then
-            if options.verbose >= .debug then
-              let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-              dbg_trace f!"\n\nResult: {result}\n{prog}"
-            if options.stopOnFirstError then break
-          continue
-      -- Need the solver for at least one check
-      let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
-      let needValCheck := validityCheck && peValResult?.isNone
-      let t2 ← IO.monoNanosNow
-      let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-      let t3 ← IO.monoNanosNow
-      smtEncodeNs := smtEncodeNs + (t3 - t2)
-      match maybeTerms with
-      | .error err =>
-        let err := f!"SMT Encoding Error! " ++ err
-        let result := { obligation,
-                        outcome := .error (toString err),
-                        verbose := options.verbose,
-                        checkLevel := options.checkLevel,
-                        checkMode := options.checkMode,
-                        lexprModel := [] }
-        if options.verbose >= .debug then
-          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-          dbg_trace f!"\n\nResult: {result}\n{prog}"
+    -- Extract obligations from the obligations program via ObligationExtraction
+  let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
+    | .ok obs => pure obs
+    | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
+  let mut stats : Statistics := ({} : Statistics)
+    |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
+  let mut results := (#[] : VCResults)
+  let mut preprocessNs : Nat := 0
+  let mut smtEncodeNs : Nat := 0
+  let mut solverNs : Nat := 0
+  let mut peResolvedCount : Nat := 0
+  for obligation in obligations do
+    -- Determine which checks to perform based on metadata or check mode/amount
+    let (satisfiabilityCheck, validityCheck) :=
+      if Imperative.MetaData.hasFullCheck obligation.metadata then
+        (true, true)  -- fullCheck annotation: always run both
+      else
+        -- Derive checks from check mode and level
+        match options.checkMode, options.checkLevel with
+        | _, .full => (true, true)
+        | .bugFindingAssumingCompleteSpec, _ => (true, true)
+        | .deductive, _ =>
+          if obligation.property.passWhenUnreachable then (false, true) else (true, false)
+        | .bugFinding, _ => (true, false)
+    let t0 ← IO.monoNanosNow
+    let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
+    let t1 ← IO.monoNanosNow
+    preprocessNs := preprocessNs + (t1 - t0)
+    -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
+    if not options.alwaysGenerateSMT then
+      if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
+        let phases := externalPhases ++ corePhases
+        let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
+        let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
+        let peLog := buildSolverLog peSat peVal
+          satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+        let outcome : VCOutcome := {
+          satisfiabilityProperty := adjPeSat,
+          validityProperty := adjPeVal,
+          solverLog := #[peLog] }
+        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
+                                    checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
         results := results.push result
-        if options.stopOnFirstError then break
-      | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
-        stats := stats.merge encStats
-        let t4 ← IO.monoNanosNow
-        let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
-        let t5 ← IO.monoNanosNow
-        solverNs := solverNs + (t5 - t4)
-        -- Merge evaluator results with solver results
-        let result := match result.outcome with
-          | .ok solverOutcome =>
-            let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-            let valResult := peValResult?.getD solverOutcome.validityProperty
-            { result with outcome := .ok { solverOutcome with
-                satisfiabilityProperty := satResult,
-                validityProperty := valResult } }
-          | .error _ => result
-        results := results.push result
-        if result.isNotSuccess then
+        peResolvedCount := peResolvedCount + 1
+        if result.isFailure || result.isImplementationError then
           if options.verbose >= .debug then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
-    if profile then
-      let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
-    return (results, stats)
+        continue
+    -- Need the solver for at least one check
+    let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
+    let needValCheck := validityCheck && peValResult?.isNone
+    let t2 ← IO.monoNanosNow
+    let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
+    let t3 ← IO.monoNanosNow
+    smtEncodeNs := smtEncodeNs + (t3 - t2)
+    match maybeTerms with
+    | .error err =>
+      let err := f!"SMT Encoding Error! " ++ err
+      let result := { obligation,
+                      outcome := .error (toString err),
+                      verbose := options.verbose,
+                      checkLevel := options.checkLevel,
+                      checkMode := options.checkMode,
+                      lexprModel := [] }
+      if options.verbose >= .debug then
+        let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+        dbg_trace f!"\n\nResult: {result}\n{prog}"
+      results := results.push result
+      if options.stopOnFirstError then break
+    | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
+      stats := stats.merge encStats
+      let t4 ← IO.monoNanosNow
+      let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                    counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+      let t5 ← IO.monoNanosNow
+      solverNs := solverNs + (t5 - t4)
+      -- Merge evaluator results with solver results
+      let result := match result.outcome with
+        | .ok solverOutcome =>
+          let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
+          let valResult := peValResult?.getD solverOutcome.validityProperty
+          { result with outcome := .ok { solverOutcome with
+              satisfiabilityProperty := satResult,
+              validityProperty := valResult } }
+        | .error _ => result
+      results := results.push result
+      if result.isNotSuccess then
+        if options.verbose >= .debug then
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+          dbg_trace f!"\n\nResult: {result}\n{prog}"
+        if options.stopOnFirstError then break
+  if profile then
+    let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
+  return (results, stats)
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
@@ -1073,18 +1076,35 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  let (pEs, evalStats) ← profileStep profile "  Type check and symbolic eval" do
-    match Core.typeCheckAndEval options finalProgram moreFns with
+  -- Type checking phase (Program → Program)
+  let (finalProgram, _) ← profileStep profile "  Type check" do
+    match Core.typeCheck options finalProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok (pEs, stats) => .ok (pEs, stats)
+    | .ok program => .ok (program, ({} : Statistics))
+  -- Symbolic evaluation phase (Program → Program)
+  let (oblProgram, evalStats) ← profileStep profile "  Symbolic eval" do
+    match Core.symbolicEval options finalProgram moreFns with
+    | .error err => .error err
+    | .ok (oblProgram, stats) => .ok (oblProgram, stats)
   let allStats := pipelineStats.merge evalStats
+  -- ANF encoding phase (Program → Program)
+  let (oblProgram, _) ← profileStep profile "  ANF encoding" do
+    pure (Core.ANFEncoder.anfEncodeProgram oblProgram, ({} : Statistics))
+  -- Build SMT encoding context by running full evaluation on the
+  -- type-checked program (loads factory, datatypes, distinct, functions)
+  let (smtEnv, _) ← match Core.buildEvalEnv finalProgram moreFns with
+    | .ok (E, stats) =>
+      match Program.eval E with
+      | .ok (pEs, evalStats) => pure (pEs.head?.getD E, stats.merge evalStats)
+      | .error e => .error e
+    | .error e => .error e
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure []
     else
-      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases phases) pEs)
+      pure [← verifySingleEnv oblProgram smtEnv options counter tempDir axiomCache? externalPhases phases]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)

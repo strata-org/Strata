@@ -70,20 +70,17 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-def typeCheckAndEval (options : VerifyOptions) (program : Program)
+/-- Build an evaluation environment from a type-checked program.
+    Loads the factory, datatypes, and processes all declarations. -/
+def buildEvalEnv (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel ((List Env) × Statistics) := do
+    Except DiagnosticModel (Env × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
-  let program ← typeCheck options program moreFns
-  let datatypes := program.decls.filterMap fun decl =>
-    match decl with
-    | .type (.data d) _ => some d
-    | _ => none
   let σ ← (Lambda.LState.init).addFactory factory
+  let datatypes := program.decls.filterMap fun decl =>
+    match decl with | .type (.data d) _ => some d | _ => none
   let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
-
-  -- Collect declaration statistics
   let stats := program.decls.foldl (fun s d =>
     match d with
     | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
@@ -94,22 +91,90 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
     | .recFuncBlock fs _ => s.increment s!"{Evaluator.Stats.recursiveFunctions}" fs.length)
     ({} : Statistics)
-
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
+  return (E, stats)
+
+/-- Symbolic evaluation phase: Program → Program.
+    Runs symbolic execution and converts obligations to a program. -/
+def symbolicEval (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Program × Statistics) := do
+  let (E, declStats) ← buildEvalEnv program moreFns
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
   -- Note: all .program fields in pEs will have identical values, because
   -- Program.eval does not modify the program. The Program field is
   -- kept for convenience.
   -- kept for convenience.
-  let stats := stats.merge evalStats
+  let stats := declStats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+
+  -- Convert each Env's deferred obligations into a procedure body.
+  -- The resulting program has type/datatype declarations preserved,
+  -- but each procedure's body is replaced with the obligations tree
+  -- (assume/assert blocks combined with if *). Axioms are inlined
+  -- into each procedure's obligations (from E.deferred path conditions).
+  -- Type/datatype declarations come from the original program.
+  let typeDecls := program.decls.filter fun d =>
+    match d with | .type _ _ => true | _ => false
+  let procNames := program.decls.filterMap fun d =>
+    match d with | .proc p _ => some p.header.name | _ => none
+  let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
+    let blocks := E.deferred.toList.map fun ob =>
+      let assumes := ob.assumptions.flatten.map fun (label, e) =>
+        Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
+      let assertStmt := match ob.property with
+        | .cover => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.cover ob.label ob.obligation ob.metadata))
+        | _ => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+      assumes ++ [assertStmt]
+    let body := match blocks with
+      | [] => []
+      | [b] => b
+      | b :: rest => rest.foldl (fun acc block =>
+          [Imperative.Stmt.ite .nondet acc block .empty]) b
+    let proc : Procedure := {
+      header := { name := procName, typeArgs := [], inputs := [], outputs := [] },
+      spec := { preconditions := [], postconditions := [], modifies := [] },
+      body := body
+    }
+    Decl.proc proc .empty
+  let oblProgram : Program := { decls := typeDecls ++ oblProcs }
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for E in pEs do
       dbg_trace f!"{formatProofObligations E.deferred}"
-  return (pEs, stats)
+  return (oblProgram, stats)
+
+
+/-- Convenience: type check then symbolic eval. -/
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Program × Statistics) := do
+  let program ← typeCheck options program moreFns
+  symbolicEval options program moreFns
+/-- Build an Env suitable for SMT encoding from a program.
+    Loads factory functions, datatypes, and distinct constraints
+    without running procedure evaluation. -/
+def buildSMTEnv (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel Env := do
+  let factory ← Core.Factory.addFactory moreFns
+  let σ ← (Lambda.LState.init).addFactory factory
+  let datatypes := program.decls.filterMap fun decl =>
+    match decl with | .type (.data d) _ => some d | _ => none
+  let mut E : Env := { Env.init with exprEnv := σ, program := program }
+  E ← E.addDatatypes datatypes
+  -- Load function declarations into the factory
+  for decl in program.decls do
+    match decl with
+    | .func func _ => E ← E.addFactoryFunc func
+    | .recFuncBlock funcs _ =>
+      validateCasesTypes funcs E.datatypes
+      for func in funcs do E ← E.addFactoryFunc func
+    | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
+    | _ => pure ()
+  return E
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)
