@@ -14,6 +14,10 @@ open Strata.Laurel
 
 /-! ## Test Infrastructure -/
 
+private def assertEq [BEq α] [ToString α] (actual expected : α) : IO Unit := do
+  unless actual == expected do
+    throw <| .userError s!"expected: {expected}\n  actual: {actual}"
+
 private def loc : SourceRange := default
 
 private def mkType (atom : SpecAtomType) : SpecType :=
@@ -95,6 +99,35 @@ private def runTestErrors (sigs : Array Signature) (modulePrefix : String := "")
   for err in result.errors do
     IO.println err.message
 
+/-- Run signaturesToLaurel and print warning kinds (phase.category: message). -/
+private def runTestWarningKinds (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
+  assert! result.errors.size > 0
+  for err in result.errors do
+    IO.println s!"{err.kind.phase}.{err.kind.category}: {err.message}"
+
+/-- Helper to make a function signature with preconditions. -/
+private def mkFuncSigWithPrecond (name : String) (returnType : SpecType)
+    (preconditions : Array Assertion) (args : Array Arg := #[]) : Signature :=
+  .functionDecl {
+    loc := loc, nameLoc := loc, name := name
+    args := { args := args, kwonly := #[] }
+    returnType := returnType
+    isOverload := false
+    preconditions := preconditions, postconditions := #[]
+  }
+
+/-- Helper to make a function signature with postconditions. -/
+private def mkFuncSigWithPostcond (name : String) (returnType : SpecType)
+    (postconditions : Array SpecExpr) : Signature :=
+  .functionDecl {
+    loc := loc, nameLoc := loc, name := name
+    args := { args := #[], kwonly := #[] }
+    returnType := returnType
+    isOverload := false
+    preconditions := #[], postconditions := postconditions
+  }
+
 private def noneAtom := SpecAtomType.noneType
 
 /-! ## Primitive and builtin types as args and return types -/
@@ -125,7 +158,6 @@ procedure with_kwonly(x:TInt, verbose:TBool) returns(result:TString)
 info: procedure takes_any(x:UserDefined(Any)) returns(result:TInt)
 procedure takes_list(items:UserDefined(ListStr)) returns(result:TBool)
 procedure returns_dict() returns(result:UserDefined(DictStrAny))
-procedure returns_bytes() returns(result:TString)
 procedure typed_list() returns(result:UserDefined(ListStr))
 procedure typed_dict() returns(result:UserDefined(DictStrAny))
 -/
@@ -136,7 +168,6 @@ procedure typed_dict() returns(result:UserDefined(DictStrAny))
   mkFuncSig "takes_list" (identType .builtinsBool)
     (args := #[mkArg "items" (identType .typingList)]),
   mkFuncSig "returns_dict" (identType .typingDict),
-  mkFuncSig "returns_bytes" (identType .builtinsBytes),
   mkFuncSig "typed_list"
     (mkType (.ident .typingList #[identType .builtinsStr])),
   mkFuncSig "typed_dict"
@@ -171,11 +202,6 @@ procedure str_enum() returns(result:TString)
 info: procedure opt_str() returns(result:UserDefined(StrOrNone))
 procedure opt_int() returns(result:UserDefined(IntOrNone))
 procedure opt_bool(x:UserDefined(StrOrNone)) returns(result:UserDefined(BoolOrNone))
-procedure opt_float() returns(result:TString)
-procedure opt_list() returns(result:TString)
-procedure opt_dict() returns(result:TString)
-procedure opt_any() returns(result:TString)
-procedure opt_bytes() returns(result:TString)
 procedure opt_typed_dict() returns(result:UserDefined(DictStrAny))
 procedure opt_str_enum() returns(result:UserDefined(StrOrNone))
 procedure opt_int_enum() returns(result:UserDefined(IntOrNone))
@@ -190,16 +216,6 @@ procedure opt_int_enum() returns(result:UserDefined(IntOrNone))
     (mkUnion #[noneAtom, identAtom .builtinsBool])
     (args := #[mkArg "x"
       (mkUnion #[noneAtom, identAtom .builtinsStr])]),
-  mkFuncSig "opt_float"
-    (mkUnion #[noneAtom, identAtom .builtinsFloat]),
-  mkFuncSig "opt_list"
-    (mkUnion #[noneAtom, identAtom .typingList]),
-  mkFuncSig "opt_dict"
-    (mkUnion #[noneAtom, identAtom .typingDict]),
-  mkFuncSig "opt_any"
-    (mkUnion #[noneAtom, identAtom .typingAny]),
-  mkFuncSig "opt_bytes"
-    (mkUnion #[noneAtom, identAtom .builtinsBytes]),
   mkFuncSig "opt_typed_dict"
     (mkUnion #[noneAtom,
       .typedDict #["x"] #[identType .builtinsStr] #[true]]),
@@ -210,37 +226,37 @@ procedure opt_int_enum() returns(result:UserDefined(IntOrNone))
     (mkUnion #[noneAtom, .intLiteral 1, .intLiteral 2])
 ]
 
-/-! ## Error cases -/
+/-! ## Error cases (updated to verify WarningKind) -/
 
 /--
-info: Unknown type 'foo.Bar' mapped to TString
+info: pySpecToLaurel.unknownType: Unknown type 'foo.Bar' mapped to TString
 -/
 #guard_msgs in
-#eval runTestErrors
+#eval runTestWarningKinds
   #[mkFuncSig "f"
     (identType (PythonIdent.mk "foo" "Bar"))]
 
 /--
-info: Empty type (no atoms) encountered in Laurel conversion
+info: pySpecToLaurel.emptyType: Empty type (no atoms) encountered in Laurel conversion
 -/
 #guard_msgs in
-#eval runTestErrors
+#eval runTestWarningKinds
   #[mkFuncSig "f" { atoms := #[], loc := default }]
 
 /--
-info: Union type (builtins.str | builtins.int) not yet supported in Laurel
+info: pySpecToLaurel.unsupportedUnion: Union type (builtins.str | builtins.int) not yet supported in Laurel
 -/
 #guard_msgs in
-#eval runTestErrors
+#eval runTestWarningKinds
   #[mkFuncSig "f"
     (mkUnion #[identAtom .builtinsStr,
                identAtom .builtinsInt])]
 
 /--
-info: Union type (None | foo.Bar) not yet supported in Laurel
+info: pySpecToLaurel.unsupportedUnion: Union type (None | foo.Bar) not yet supported in Laurel
 -/
 #guard_msgs in
-#eval runTestErrors
+#eval runTestWarningKinds
   #[mkFuncSig "f"
     (mkUnion #[noneAtom,
       identAtom (PythonIdent.mk "foo" "Bar")])]
@@ -483,5 +499,318 @@ body contains FieldSelect: false
     IO.println s!"body contains Any_get: {bodyStr.contains "Any_get"}"
     IO.println s!"body contains FieldSelect: {bodyStr.contains "#"}"
   | [] => IO.println "no procedures"
+
+/-! ## Warning kind tests -/
+
+-- Type translation: unsupportedGenericClass
+/--
+info: pySpecToLaurel.unsupportedGenericClass: Generic class 'Foo' with type args unsupported
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (mkType (.pyClass "Foo" #[identType .builtinsInt]))]
+
+-- Type translation: bytesToString
+/--
+info: pySpecToLaurel.bytesToString: 'builtins.bytes' mapped to TString (bytes have different semantics)
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (identType .builtinsBytes)]
+
+-- Type translation: bytesToString (bytearray variant)
+/--
+info: pySpecToLaurel.bytesToString: 'builtins.bytearray' mapped to TString (bytes have different semantics)
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (identType .builtinsBytearray)]
+
+-- Type translation: complexToReal
+/--
+info: pySpecToLaurel.complexToReal: 'builtins.complex' mapped to TReal (complex loses imaginary component)
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (identType .builtinsComplex)]
+
+-- Unsupported Optional patterns
+/--
+info: pySpecToLaurel.unsupportedOptionalFloat: Optional[float] mapped to TString
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .builtinsFloat])]
+
+/--
+info: pySpecToLaurel.unsupportedOptionalList: Optional[List] mapped to TString
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .typingList])]
+
+/--
+info: pySpecToLaurel.unsupportedOptionalDict: Optional[Dict] mapped to TString
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .typingDict])]
+
+/--
+info: pySpecToLaurel.unsupportedOptionalAny: Optional[Any] mapped to TString
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .typingAny])]
+
+/--
+info: pySpecToLaurel.unsupportedOptionalBytes: Optional[bytes] mapped to TString
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .builtinsBytes])]
+
+-- Precondition: placeholderExpr
+/--
+info: pySpecToLaurel.placeholderExpr: Placeholder expression not translatable
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSigWithPrecond "f" (identType .builtinsStr)
+    #[{ message := #[], formula := .placeholder loc }]]
+
+-- Precondition: floatLiteral
+/--
+info: pySpecToLaurel.floatLiteral: Float literals not yet supported in preconditions
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSigWithPrecond "f" (identType .builtinsStr)
+    #[{ message := #[], formula := .floatLit "3.14" loc }]]
+
+-- Precondition: isinstanceUnsupported
+/--
+info: pySpecToLaurel.isinstanceUnsupported: isinstance check for 'MyType' not yet supported in preconditions
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSigWithPrecond "f" (identType .builtinsStr)
+    #[{ message := #[], formula := .isInstanceOf (.var "x" loc) "MyType" loc }]]
+
+-- Precondition: forallListUnsupported
+/--
+info: pySpecToLaurel.forallListUnsupported: forallList quantifier not yet supported in preconditions
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSigWithPrecond "f" (identType .builtinsStr)
+    #[{ message := #[], formula := .forallList (.var "xs" loc) "x" (.var "x" loc) loc }]]
+
+-- Precondition: forallDictUnsupported
+/--
+info: pySpecToLaurel.forallDictUnsupported: forallDict quantifier not yet supported in preconditions
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSigWithPrecond "f" (identType .builtinsStr)
+    #[{ message := #[], formula := .forallDict (.var "d" loc) "k" "v" (.var "k" loc) loc }]]
+
+-- Declaration: missingMethodSelf
+/--
+info: pySpecToLaurel.missingMethodSelf: Method 'bad_method' has no arguments (expected 'self' as first parameter)
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[.classDef {
+    loc := loc, name := "C"
+    methods := #[
+      { loc := loc, nameLoc := loc, name := "bad_method"
+        args := { args := #[], kwonly := #[] }
+        returnType := identType .builtinsStr
+        isOverload := false
+        preconditions := #[], postconditions := #[] }
+    ]
+  }]
+
+-- Declaration: kwargsExpansionError
+/--
+info: pySpecToLaurel.kwargsExpansionError: **kw has non-TypedDict type; kwargs not expanded
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[.functionDecl {
+    loc := loc, nameLoc := loc, name := "f"
+    args := { args := #[], kwonly := #[],
+              kwargs := some ("kw", identType .builtinsStr) }
+    returnType := identType .builtinsStr
+    isOverload := false
+    preconditions := #[], postconditions := #[]
+  }]
+
+-- Declaration: postconditionUnsupported
+/--
+info: pySpecToLaurel.postconditionUnsupported: Postconditions not yet supported
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkFuncSigWithPostcond "f" (identType .builtinsStr)
+    #[.intGe (.var "result" loc) (.intLit 0 loc) loc]]
+
+-- Overload: overloadNoArgs
+/--
+info: pySpecToLaurel.overloadNoArgs: Overloaded function 'bad' has no arguments
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkOverload "bad" (identType .builtinsStr)]
+
+-- Overload: overloadArgArity
+/--
+info: pySpecToLaurel.overloadArgArity: Overloaded function 'bad': first argument has 2 type atoms, expected 1
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkOverload "bad" (identType .builtinsStr)
+    (args := #[mkArg "x" (mkUnion #[.stringLiteral "a", .stringLiteral "b"])])]
+
+-- Overload: overloadArgNotStringLiteral
+/--
+info: pySpecToLaurel.overloadArgNotStringLiteral: Overloaded function 'bad': first argument type 'builtins.str' is not a string literal (only string literal dispatch is currently supported)
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkOverload "bad" (identType .builtinsStr)
+    (args := #[mkArg "x" (identType .builtinsStr)])]
+
+-- Overload: overloadReturnArity
+/--
+info: pySpecToLaurel.overloadReturnArity: Overloaded function 'bad': return type has 2 type atoms, expected 1
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkOverload "bad"
+    (mkUnion #[identAtom .builtinsStr, identAtom .builtinsInt])
+    (args := #[mkArg "x" (mkType (.stringLiteral "a"))])]
+
+-- Overload: overloadReturnNotClass
+/--
+info: pySpecToLaurel.overloadReturnNotClass: Overloaded function 'bad': return type 'Literal["hello"]' is not a class type
+-/
+#guard_msgs in
+#eval runTestWarningKinds
+  #[mkOverload "bad"
+    (mkType (.stringLiteral "hello"))
+    (args := #[mkArg "x" (mkType (.stringLiteral "a"))])]
+
+/-! ## Precondition integration tests
+
+End-to-end tests that precondition formulas translate to the expected Laurel
+operations.  Each test runs `signaturesToLaurel` with a precondition and
+checks that the formatted procedure body contains the correct operation
+names (concrete Laurel syntax).  These catch bugs where `TypedStmtExpr`
+wrappers emit wrong operations or wrong return types that cause assertions
+to be silently dropped. -/
+
+/-- Extract formatted body text from the first procedure in a translation result.
+    Returns `none` if there are no procedures or the body is opaque/empty. -/
+private def getBody (result : TranslationResult) : Option String :=
+  match result.program.staticProcedures with
+  | proc :: _ => match proc.body with
+    | .Transparent body => some (toString (Strata.Laurel.formatStmtExpr body))
+    | .Opaque _ (some body) _ => some (toString (Strata.Laurel.formatStmtExpr body))
+    | _ => none
+  | [] => none
+
+/-- Translate a single function with preconditions. -/
+private def translatePrecondResult (preconditions : Array Assertion)
+    (args : Array Arg := #[]) : TranslationResult :=
+  let strTy := identType .builtinsStr
+  signaturesToLaurel "<test>" #[
+    .functionDecl {
+      loc := loc, nameLoc := loc, name := "f"
+      args := { args := args, kwonly := #[] }
+      returnType := strTy, isOverload := false
+      preconditions, postconditions := #[]
+    }] ""
+
+/-- Translate a single function with preconditions and return
+    `(bodyString, errorCount)`. -/
+private def translatePrecond (preconditions : Array Assertion)
+    (args : Array Arg := #[]) : String × Nat :=
+  let result := translatePrecondResult preconditions args
+  (getBody result |>.getD "", result.errors.size)
+
+-- enumMember: or and eq via `|` and `==` infix syntax
+#eval do
+  let (body, errs) := translatePrecond
+    #[{ message := #[], formula :=
+          .enumMember (.var "x" loc) #["a", "b"] loc }]
+    (args := #[mkArg "x" (identType .builtinsStr)])
+  assert! errs == 0
+  -- `or` renders as `|`, `eq` as `==`; would have been `<=` before fix #1
+  assert! body.contains " | "
+  assert! body.contains "=="
+  assert! !body.contains "<="
+
+-- implies: `==>` infix syntax
+#eval do
+  let (body, errs) := translatePrecond
+    #[{ message := #[], formula :=
+          .implies
+            (.intGe (.var "x" loc) (.intLit 0 loc) loc)
+            (.intGe (.var "y" loc) (.intLit 0 loc) loc)
+            loc }]
+    (args := #[mkArg "x" (identType .builtinsStr),
+               mkArg "y" (identType .builtinsStr)])
+  assert! errs == 0
+  -- `implies` renders as `==>`; would have been `<=` before fix #1
+  assert! body.contains "==>"
+
+-- not via containsKey on kwargs: `!` prefix syntax
+#eval do
+  let strTy := identType .builtinsStr
+  let kwargsTy := SpecType.ofAtom loc
+    (.typedDict #["key"] #[strTy] #[false])
+  let result := signaturesToLaurel "<test>" #[
+    .functionDecl {
+      loc := loc, nameLoc := loc, name := "f"
+      args := { args := #[], kwonly := #[],
+                kwargs := some ("kw", kwargsTy) }
+      returnType := strTy, isOverload := false
+      preconditions := #[{
+        message := #[], formula :=
+          .containsKey (.var "kwargs" loc) "key" loc }]
+      postconditions := #[] }] ""
+  let body := getBody result |>.getD ""
+  assertEq result.errors.size 0
+  assertEq body "{ assert !Any..isfrom_None(key) }"
+
+-- containsKey on a non-kwargs dict: DictStrAny_contains in an assert
+-- (would have been silently dropped before fix #2)
+#eval do
+  let (body, errs) := translatePrecond
+    #[{ message := #[], formula :=
+          .containsKey (.var "d" loc) "mykey" loc }]
+    (args := #[mkArg "d" (identType .builtinsStr)])
+  assert! errs == 0
+  assert! body.contains "DictStrAny_contains"
+
+
+/-! ## typeError warning coverage -/
+
+private def hasTypeError (result : TranslationResult) : Bool :=
+  result.errors.any fun e => e.kind == .typeError
+
+-- Unknown identifier triggers typeError
+#eval do
+  let result := translatePrecondResult
+    #[{ message := #[], formula := .var "unknown_name" loc }]
+  assert! hasTypeError result
+
+-- Non-Bool precondition formula (intLit returns Any, not Bool) triggers typeError
+#eval do
+  let result := translatePrecondResult
+    #[{ message := #[], formula := .intLit 42 loc }]
+  assert! hasTypeError result
 
 end Strata.Python.Specs.ToLaurel.Tests
