@@ -30,11 +30,15 @@ function needsPAndQsInvoke2(): int {
 };
 
 // The axiom fires because P(x) appears in the goal.
-procedure fireAxiomUsingPattern(x: int) {
+procedure fireAxiomUsingPattern(x: int)
+  ensures true
+{
   assert P(x)
 };
 
-procedure axiomDoesNotFireBecauseOfPattern(x: int) {
+procedure axiomDoesNotFireBecauseOfPattern(x: int)
+  ensures true
+{
   assert Q(x)
 //^^^^^^^^^^^ error: assertion could not be proved
 };
@@ -45,11 +49,15 @@ procedure AAndB(x: int, y: real)
   invokeOn A(x, y)
   ensures A(x, y) && B(y);
 
-procedure invokeA(x: int, y :real) {
+procedure invokeA(x: int, y :real)
+  ensures true
+{
   assert A(x, y)
 };
 
-procedure invokeB(x: int, y :real) {
+procedure invokeB(x: int, y :real)
+  ensures true
+{
   assert B(y)
 //^^^^^^^^^^^ error: assertion could not be proved
 };

@@ -28,20 +28,16 @@ composite Container {
 }
 
 procedure modifyContainerOpaque(c: Container) returns (b: bool)
-  ensures true // makes this procedure opaque. Maybe we should use explicit syntax
+  ensures true
   modifies c
 {
   c#value := c#value + 1;
   true
 };
 
-procedure modifyContainerTransparant(c: Container) returns (i: int)
+procedure caller()
+  ensures true
 {
-  c#value := c#value + 1;
-  7
-};
-
-procedure caller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
@@ -49,8 +45,13 @@ procedure caller() {
   assert x == d#value // pass
 };
 
-// This test-case does not work yet.
-// Because Core procedures never have transparent bodies
+// Commented out because
+// Transparent assignments are not supported yet
+// procedure modifyContainerTransparant(c: Container) returns (i: int)
+//{
+//  c#value := c#value + 1;
+//  7
+//};
 //procedure modifyContainerWithPermission1(c: Container, d: Container)
 //   ensures true
 //   modifies c
@@ -58,17 +59,24 @@ procedure caller() {
 //    var i: int := modifyContainerTransparant(c);
 //}
 
-procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
-   ensures true
-{
-    var i: int := modifyContainerTransparant(c)
-};
+// TODO add wildcard support
+// procedure modifyContainerWildcard(c: Container) returns (i: int)
+//  ensures true
+//  modifies *
+//{
+//  c#value := c#value + 1;
+//  7
+//};
+
+//procedure modifyContainerWithoutPermission1(c: Container, d: Container)
+//          error: postcondition does not hold
+//  ensures true
+//{
+//    var i: int := modifyContainerWildcard(c)
+//};
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   ensures true
   modifies d
 {
@@ -76,20 +84,22 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   ensures true
   modifies d
 {
-    var i: int := modifyContainerTransparant(c)
+    var i: bool := modifyContainerOpaque(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
+  ensures true
   modifies c
   modifies d
 ;
 
-procedure multipleModifiesClausesCaller() {
+procedure multipleModifiesClausesCaller()
+  ensures true
+{
   var c: Container := new Container;
   var d: Container := new Container;
   var e: Container := new Container;

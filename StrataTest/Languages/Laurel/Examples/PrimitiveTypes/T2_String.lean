@@ -16,7 +16,7 @@ namespace Laurel
 def program := r#"
 procedure testStringKO()
 returns (result: string)
-requires true
+  ensures true
 {
   var message: string := "Hello";
   assert(message == "Hell");
@@ -27,7 +27,7 @@ requires true
 
 procedure testStringOK()
 returns (result: string)
-requires true
+  ensures true
 {
   var message: string := "Hello";
   assert(message == "Hello");
@@ -36,14 +36,14 @@ requires true
 };
 
 procedure testStringLiteralConcatOK()
-requires true
+  ensures true
 {
   var result: string := "a" ++ "b";
   assert(result == "ab")
 };
 
 procedure testStringLiteralConcatKO()
-requires true
+  ensures true
 {
   var result: string := "a" ++ "b";
   assert(result == "cd")
@@ -51,7 +51,7 @@ requires true
 };
 
 procedure testStringVarConcatOK()
-requires true
+  ensures true
 {
   var x: string := "Hello";
   var result: string := x ++ " World";
@@ -59,7 +59,7 @@ requires true
 };
 
 procedure testStringVarConcatKO()
-requires true
+  ensures true
 {
   var x: string := "Hello";
   var result: string := x ++ " World";
