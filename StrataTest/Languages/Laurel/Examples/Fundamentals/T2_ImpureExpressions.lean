@@ -57,7 +57,7 @@ procedure blockWithTwoAssignmentsInExpression() {
 };
 
 procedure nestedImpureStatementsAndOpaque()
-  ensures true
+  opaque
 {
   var y: int := 0;
   var x: int := y;
@@ -71,6 +71,7 @@ procedure nestedImpureStatementsAndOpaque()
 // surrounding expression is evaluated.
 procedure imperativeProc(x: int) returns (r: int)
    // ensures clause required because Core's symbolic verification does not support transparent proceduces yet
+  opaque
   ensures r == x + 1
 {
   r := x + 1;
@@ -112,6 +113,7 @@ procedure repeatedBlockExpressions() {
 };
 
 procedure addProc(a: int, b: int) returns (r: int)
+  opaque
   ensures r == a + b {
   return a + b
 };
