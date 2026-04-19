@@ -49,7 +49,7 @@ info: function nat$constraint(x: int) returns ⏎
 procedure test(n: int) returns ⏎
 (r: int)
 requires nat$constraint(n)
- ensures nat$constraint(r) := { assert r >= 0; var y: int := n; assert nat$constraint(y); return y }
+ opaque ensures nat$constraint(r) := { assert r >= 0; var y: int := n; assert nat$constraint(y); return y }
 procedure $witness_nat() returns ⏎
 ()
 { var $witness: int := 0; assert nat$constraint($witness) }
