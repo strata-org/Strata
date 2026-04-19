@@ -603,7 +603,6 @@ where
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
-  checkTransparentBodies : Bool := true
   inlineFunctionsWhenPossible : Bool := false
 
 /--
@@ -696,10 +695,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
   let result := resolve program
-  let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then
-    if options.checkTransparentBodies then result.errors.toList
-    else result.errors.toList.filter (fun d => !(d.message.splitOn "transparent statement bodies").length > 1)
-  else []
+  let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
   let diamondErrors := validateDiamondFieldAccesses model program
 

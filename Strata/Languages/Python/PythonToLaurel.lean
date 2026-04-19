@@ -1826,7 +1826,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       isFunctional := false
       decreases := none
-      body := .Transparent bodyBlock
+      body := .Opaque [] (some bodyBlock) []
       md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
@@ -1941,7 +1941,7 @@ structure PreludeInfo where
   maybeExceptionFunctions : List String := []
   /-- Procedure names (non-function callables) -/
   procedureNames : List String := []
-  /-- Names of procedures with transparent bodies (can be inlined). -/
+  /-- Names of procedures that should generate calls (have transparent bodies or preconditions). -/
   inlinableProcedures : Std.HashSet String := {}
   /-- Maps Python-visible names to their structured symbol info.
       Includes both canonical Laurel names and unprefixed aliases. -/
@@ -2027,7 +2027,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       if p.body.isExternal || p.isFunctional then none else some p.name.text
   inlinableProcedures :=
     prog.staticProcedures.foldl (init := {}) fun s p =>
-      if p.body.isTransparent then s.insert p.name.text else s
+      if p.body.isTransparent || !p.preconditions.isEmpty then s.insert p.name.text else s
 
 /-- Merge two `PreludeInfo` values by concatenating each field. -/
 def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
@@ -2157,7 +2157,7 @@ def pythonToLaurel' (info : PreludeInfo)
     outputs := [],
     preconditions := [],
     decreases := none,
-    body := .Transparent bodyBlock
+    body := .Opaque [] (some bodyBlock) []
     md := md
     isFunctional := false
   }

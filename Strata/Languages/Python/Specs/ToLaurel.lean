@@ -429,33 +429,31 @@ private def formatAssertionMessage (msg : Array MessagePart) : String :=
     | .expr e => toString e
   String.join parts.toList
 
-/-- Build a procedure body that asserts preconditions.
-    Outputs are already initialized non-deterministically. -/
-def buildSpecBody (preconditions : Array Assertion)
+/-- Build precondition expressions from spec assertions and required-parameter checks.
+    Returns a list of `StmtExprMd` suitable for use as Laurel `requires` clauses. -/
+def buildSpecPreconditions (preconditions : Array Assertion)
     (md : Imperative.MetaData Core.Expression)
     (requiredParams : Array String := #[])
-    : ToLaurelM Body := do
-  let fileMd ← mkFileMd
-  let mut stmts : List StmtExprMd := []
-  -- Assert that required parameters are provided (not None)
+    : ToLaurelM (List StmtExprMd) := do
+  let mut pres : List StmtExprMd := []
+  -- Required parameters must not be None
   for param in requiredParams do
     let cond := mkStmt (.PrimitiveOp .Not
       [mkStmt (.StaticCall (mkId "Any..isfrom_None")
         [mkStmt (.Identifier (mkId param)) md]) md]) md
-    let assertStmt ← mkStmtWithLoc (.Assert cond) default s!"Required parameter '{param}' is missing"
-    stmts := assertStmt :: stmts
+    let condWithSummary := { cond with md := cond.md.withPropertySummary s!"Required parameter '{param}' is missing" }
+    pres := condWithSummary :: pres
   for assertion in preconditions do
     let msg := formatAssertionMessage assertion.message
     match ← specExprToLaurel assertion.formula md with
     | some condExpr =>
-      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
-      stmts := assertStmt :: stmts
+      let condWithSummary := { condExpr with md := condExpr.md.withPropertySummary msg }
+      pres := condWithSummary :: pres
     | none =>
       reportError default s!"Untranslatable precondition (emitting nondeterministic assert): {msg}"
-      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole md)) default msg
-      stmts := assertStmt :: stmts
-  let body := mkStmt (.Block stmts.reverse none) fileMd
-  return .Transparent body
+      let hole := mkStmt .Hole md
+      pres := { hole with md := hole.md.withPropertySummary msg } :: pres
+  return pres.reverse
 
 /-! ## Declaration Translation -/
 
@@ -502,26 +500,26 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     reportError func.loc "Postconditions not yet supported"
   -- When preconditions exist, use TCore "Any" for all parameters and outputs
   -- to match the Python→Laurel pipeline's Any-wrapping convention.
-  let (inputs, outputs, body) ←
+  let (inputs, outputs, preconditions) ←
     if func.preconditions.size > 0 then do
       let anyTy : HighTypeMd := tyAny
       let anyInputs := inputs.map fun p => { p with type := anyTy }
       let anyOutputs := outputs.map fun p => { p with type := anyTy }
-      let body ← buildSpecBody func.preconditions .empty
+      let pres ← buildSpecPreconditions func.preconditions .empty
         (requiredParams := allArgs.filterMap fun a =>
           if a.default.isNone then some a.name else none)
-      pure (anyInputs, anyOutputs, body)
+      pure (anyInputs, anyOutputs, pres)
     else
-      pure (inputs, outputs, Body.Opaque [] none [])
+      pure (inputs, outputs, [])
   let md ← mkMdWithFileRange func.loc
   return {
     name := procName
     inputs := inputs.toList
     outputs := outputs
-    preconditions := []
+    preconditions := preconditions
     decreases := none
     isFunctional := false
-    body := body
+    body := Body.Opaque [] none []
     md := md
   }
 
