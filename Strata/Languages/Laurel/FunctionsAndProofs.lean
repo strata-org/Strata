@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.Laurel
 
 /-!
 ## FunctionsAndProofs IR
@@ -15,12 +16,6 @@ functions (pure, used for computation) and proofs (used for verification).
 
 This IR sits between Laurel and CoreWithLaurelTypes in the pipeline:
   Laurel → FunctionsAndProofs → CoreWithLaurelTypes → Core
-
-Currently partitions by `isFunctional`. When the contract pass is enabled,
-the proof pass will generate:
-- A function for every procedure (body included only for transparent procedures,
-  with Assert/Assume stripped via `stripAssertAssume`).
-- A proof for every procedure.
 -/
 
 namespace Strata.Laurel
@@ -82,7 +77,6 @@ def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :
     | .Datatype dt => some dt
     | _ => none
   { functions, proofs, datatypes, constants := program.constants }
-
 
 end -- public section
 end Strata.Laurel
