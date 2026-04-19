@@ -9,6 +9,7 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Verifier
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprWF
 import Strata.DL.Imperative.Stmt
 
 namespace Strata.Boole
@@ -228,6 +229,23 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
   let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
+private def toCoreExtensionalEq
+    (m : SourceRange)
+    (ty : Boole.Type)
+    (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+  match ty with
+  | .Map _ _ keyTy =>
+      let keyTy' ← toCoreMonoType keyTy
+      let idx : Core.Expression.Expr := .bvar () 0
+      let a := Lambda.LExpr.liftBVars 1 a
+      let b := Lambda.LExpr.liftBVars 1 b
+      let lhs := mkCoreApp Core.mapSelectOp [a, idx]
+      let rhs := mkCoreApp Core.mapSelectOp [b, idx]
+      let trigger := lhs
+      return .quant () .all "" (some keyTy') trigger (.eq () lhs rhs)
+  | _ =>
+      throwAt m s!"Extensional equality is currently only supported for Map types, got: {repr ty}"
+
 private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m ident ty =>
       let ident' := if Core.CoreIdent.isOldIdent ident then ident else Core.CoreIdent.mkOld ident.name
@@ -302,6 +320,7 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .or _ a b => return mkCoreApp Core.boolOrOp [← toCoreExpr a, ← toCoreExpr b]
   | .equiv _ a b => return mkCoreApp Core.boolEquivOp [← toCoreExpr a, ← toCoreExpr b]
   | .implies _ a b => return mkCoreApp Core.boolImpliesOp [← toCoreExpr a, ← toCoreExpr b]
+  | .ext_equal m ty a b => return ← toCoreExtensionalEq m ty (← toCoreExpr a) (← toCoreExpr b)
   | .equal _ _ a b => return .eq () (← toCoreExpr a) (← toCoreExpr b)
   | .not_equal _ _ a b => return .app () Core.boolNotOp (.eq () (← toCoreExpr a) (← toCoreExpr b))
   | .le m ty a b => toCoreTypedBin m ty "Le" (← toCoreExpr a) (← toCoreExpr b)
@@ -343,10 +362,11 @@ def lowerFor
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
     (invs : List Core.Expression.Expr)
     (body : List Core.Statement) : TranslateM Core.Statement := do
+  let blockLabel ← defaultLabel m "for" none
   let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (.det initExpr) (← toCoreMetaData m)
   let stepStmt : Core.Statement := Core.Statement.set id stepExpr (← toCoreMetaData m)
   let loopBody := body ++ [stepStmt]
-  return .block "for" [initStmt, .loop (.det guardExpr) none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
+  return .block blockLabel [initStmt, .loop (.det guardExpr) none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
 
 private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRange) : TranslateM (List Core.Statement) := do
   let mut outRev : List Core.Statement := []
@@ -658,9 +678,15 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
-      let body ← match body? with
+      -- Wrap the body in a labeled block named after the procedure so that
+      -- `exit functionName;` inside the body exits the whole procedure,
+      -- implementing early return without a synthetic label.
+      let bodyStmts ← match body? with
         | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
+      let body : List Core.Statement := match bodyStmts with
+        | [] => []
+        | stmts => [.block n stmts .empty]
       return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
         spec := spec
@@ -717,6 +743,21 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 
+/-- Render a `Boole.Program` to a format object using the provided `GlobalContext` and
+`DialectMap`. These should come from the originating `Strata.Program` (i.e. `env.globalContext`
+and `env.dialects`), since fvar indices in `prog` are relative to that context.
+
+This mirrors `Core.formatProgram`: both functions accept an external context rather than
+recomputing one from the program structure, because the container operation (`Boole.prog`)
+carries no binding specs and therefore produces an empty `GlobalContext` when processed alone.
+-/
+def formatProgram (prog : Boole.Program) (gctx : GlobalContext) (dialects : DialectMap) : Std.Format :=
+  let ctx := FormatContext.ofDialects dialects gctx {}
+  let state : FormatState := {
+    openDialects := dialects.toList.foldl (init := {}) fun a d => a.insert d.name
+  }
+  (mformat (ArgF.op prog.toAst) ctx state).format
+
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
@@ -761,6 +802,8 @@ def verify
   | .error e =>
     throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
   | .ok prog =>
+    if options.verbose >= .normal then
+      dbg_trace f!"\n\n[DEBUG] Boole program:\n{Boole.formatProgram prog env.globalContext env.dialects}"
     match toCoreProgram prog env.globalContext with
     | .error e =>
       throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))

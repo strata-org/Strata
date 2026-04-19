@@ -3,6 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
+/- NOTE: This grammar is the source of truth for Core.st syntax. If you change
+   keywords, operators, types, or built-in functions here, regenerate the
+   editor syntax files by running:
+     lake env lean --run editors/GenSyntax.lean all
+-/
 module
 
 public import Strata.DDM.AST
@@ -62,7 +68,7 @@ category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl:0 ", " b:0;
 
 category MonoBind;
 @[declare(v, tp)]
@@ -74,7 +80,7 @@ category MonoDeclList;
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl ", " b;
+  dl:0 ", " b:0;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -167,6 +173,12 @@ fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
 fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
 fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
 fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
+fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe+ " b;
+fn safesub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe- " b;
+fn safemul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " safe* " b;
+fn safeneg_expr (tp : Type, a : tp) : tp => "safe_neg " a;
+fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesdiv " b;
+fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesmod " b;
 fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
@@ -278,9 +290,9 @@ op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 
 category Binding;
 @[declare(name, tp)]
-op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
+op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
 @[declare(name, tp)]
-op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp;
+op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp:0;
 
 category Bindings;
 @[scope(bindings)]
@@ -400,14 +412,14 @@ category ConstructorList;
 
 @[constructor(name, fields)]
 op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) :
-    Constructor => @[prec(50)] name "(" fields ")";
+    Constructor => name "(" fields ")";
 
 @[constructorListAtom(c)]
-op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c;
+op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c:0;
 
 @[constructorListPush(cl, c)]
 op constructorListPush (cl : ConstructorList, c : Constructor)
-    : ConstructorList => cl ",\n  " c;
+    : ConstructorList => cl:0 ",\n  " c:0;
 
 // preRegisterTypes on command_datatypes handles bringing datatype names into
 // scope; @[scopeTVar(typeParams)] brings type parameters into scope for constructors.

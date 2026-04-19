@@ -22,7 +22,7 @@ Messaging) are generic and not tied to any cloud provider.
 
 namespace Strata.Python.AnalyzeLaurelTest
 
-open Strata (pyAnalyzeLaurel pySpecsDir)
+open Strata (pythonAndSpecToLaurel pySpecsDir)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
@@ -84,12 +84,12 @@ private meta def runAnalyze
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
-    match ← Strata.pyAnalyzeLaurel testIon.toString
+    match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  match Strata.translateCombinedLaurel laurel with
+  match ← Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
@@ -97,40 +97,49 @@ private meta def runAnalyze
     | .ok _ => return .ok core
   | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
 
-/-- Run pyAnalyzeLaurel with inlining and verification, returning the formatted results. -/
+/-- Run pyAnalyzeLaurel with inlining and verification.
+    When `useRoots` is true, entry points are determined via the call graph
+    (the CLI `--entry-point roots` default); otherwise only `__main__` is used. -/
 private meta def runAnalyzeAndVerify
     (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
+    (useRoots : Bool := false)
     : IO (Except String (Array Core.VCResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
-    match ← Strata.pyAnalyzeLaurel testIon.toString
+    match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
+  let (coreProgramOption, _) ← Strata.translateCombinedLaurel laurel
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
-  -- Split prelude / user procedure names at FIRST_END_MARKER
-  let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
-  -- Inline all non-main, non-prelude procedures
-  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
-        (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
-        coreProgram .emp with
-    | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
-    | ⟨.ok (_, inlined), _⟩ => pure inlined
-  -- Verify
+  -- Determine entry points
+  let entryPoints ←
+    if useRoots then
+      let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+      let cg := coreProgram.toProcedureCG
+      let userSet := Std.HashSet.ofList userProcNames
+      pure ((cg.computeRoots (preferredRoots := userProcNames)).filter userSet.contains)
+    else
+      pure ["__main__"]
+  let entrySet := Std.HashSet.ofList entryPoints
+  let inlinePhases : List Core.PipelinePhase :=
+    [_root_.Core.procedureInliningPipelinePhase
+      { doInline := fun caller callee a =>
+          (match caller with | some c => entrySet.contains c | none => false)
+          && _root_.Core.doInlineNonRecursive callee a }]
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
   match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
-      (proceduresToVerify := some userProcNames)
-      (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+      (proceduresToVerify := some entryPoints)
+      (externalPhases := [Strata.frontEndPhase])
+      (prefixPhases := inlinePhases) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 
@@ -229,19 +238,24 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
       "test_class_composite_as_any.py"
       (.failPrefix "Known limitation: Unsupported construct: Coercion from user-defined class"))
     tasks := tasks.push ("test_class_composite_as_any.py", task)
+    -- test_class_any_as_composite: assigning a str to a Composite-typed field
+    -- causes a type unification error in Core.typeCheck, which is expected.
     let task ← IO.asTask do
       let testIon ← compileTestScript pythonCmd (testDir / "test_class_any_as_composite.py") tmpDir
       let laurel ←
-        match ← Strata.pyAnalyzeLaurel testIon.toString
+        match ← Strata.pythonAndSpecToLaurel testIon.toString
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
             (specDir := tmpDir) |>.toBaseIO with
         | .ok r => pure r
         | .error err => return some s!"test_class_any_as_composite.py: {err}"
-      match Strata.translateCombinedLaurel laurel with
+      match ← Strata.translateCombinedLaurel laurel with
       | (some core, []) =>
         match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
-        | .error errors => return some s!"test_class_any_as_composite.py: {errors}"
+        | .error diag =>
+          -- Expected: assigning str (Any) to a Composite-typed field is a type error
+          if (diag.message.splitOn "Impossible to unify").length > 1 then return none
+          else return some s!"test_class_any_as_composite.py: {diag}"
         | .ok _ => return none
       | (_, errors) => return some s!"test_class_any_as_composite.py: Laurel to Core failed: {errors}"
     tasks := tasks.push ("test_class_any_as_composite.py", task)
@@ -259,6 +273,9 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
 
 Verifies that calling `put_item(Bucket="INVALID!", ...)` produces a `✖️ always false`
 result for the regex assertion through the full verification pipeline.
+Uses `--entry-point roots` to discover the user-defined function as the entry point,
+since the test script defines a function but does not call it from the top level.
+
 Expected output (when Python + z3 available):
   servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
   servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
@@ -271,8 +288,11 @@ Expected output (when Python + z3 available):
 #eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
+    -- These test scripts define functions but do not call them from the
+    -- top level, so __main__ has no assertions.  Use `useRoots` to
+    -- discover the user-defined function as the entry point.
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_precondition_violation.py"
+      "test_precondition_violation.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
@@ -283,7 +303,8 @@ Expected output (when Python + z3 available):
           if (line.splitOn "✖️").length != 1 then
             foundAlwaysFalse := true
       if !foundAlwaysFalse then
-        throw <| IO.userError "Expected ✖️ always false for regex violation"
+        throw <| IO.userError
+          "Expected ✖️ always false for regex violation"
 
 /-! ## Precondition with alias test
 
@@ -296,7 +317,7 @@ assertion. This exercises the full pipeline with type alias resolution.
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_precondition_with_alias.py"
+      "test_precondition_with_alias.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
@@ -309,6 +330,25 @@ assertion. This exercises the full pipeline with type alias resolution.
       if !foundAlwaysFalse then
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
+
+/-! ## evalIfCanonical regression test (Issue #812)
+
+Symbolic bucket must pass the regex precondition via `evalIfCanonical`.
+Without the attribute, the regex VC would be ❓ unknown. -/
+
+#eval withPython fun pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
+      "test_regex_eval_if_canonical.py" (useRoots := true)
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          if !r.isSuccess then
+            throw <| IO.userError
+              s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
 
 /-! ## Resolution error test after FilterPrelude
 
@@ -329,7 +369,7 @@ recursively translates subclasses, so the type
     let testIon ← compileTestScript pythonCmd
       (testDir / "test_resolution_after_filter.py") tmpDir
     let combined ←
-      match ← Strata.pyAnalyzeLaurel testIon.toString
+      match ← Strata.pythonAndSpecToLaurel testIon.toString
           (dispatchModules := #["servicelib"])
           (specDir := tmpDir) |>.toBaseIO with
       | .ok r => pure r
