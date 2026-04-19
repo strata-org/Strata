@@ -6,6 +6,7 @@
 
 import Strata.DL.Lambda.Lambda
 import Strata.Backends.CBMC.GOTO.Expr
+import Strata.Languages.Core.CoreOp
 namespace Lambda
 
 /-! # Lambda-to-GOTO expression and type translation
@@ -68,123 +69,86 @@ def LExprT.getGotoType {T : LExprParamsT} (e : LExprT T) :
 
 
 def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
-  -- Bitvector operations: Bv{8,16,32,64}.{Op}
-  let bvOp := if fn.startsWith "Bv8." then some (fn.drop 4).toString
-    else if fn.startsWith "Bv16." then some (fn.drop 5).toString
-    else if fn.startsWith "Bv32." then some (fn.drop 5).toString
-    else if fn.startsWith "Bv64." then some (fn.drop 5).toString
-    else none
-  if let some op := bvOp then
-    match op with
-    | "Add" => return .multiary .Plus
-    | "Sub" => return .binary .Minus
-    | "Mul" => return .multiary .Mult
-    | "Neg" => return .unary .UnaryMinus
-    | "UDiv" => return .binary .Div
-    | "UMod" => return .binary .Mod
-    | "SDiv" => return .binary .Div
-    | "SMod" => return .binary .Mod
-    | "Not" => return .unary .Bitnot
-    | "And" => return .binary .Bitand
-    | "Or" => return .binary .Bitor
-    | "Xor" => return .binary .Bitxor
-    | "Shl" => return .binary .Shl
-    | "UShr" => return .binary .Lshr
-    | "SShr" => return .binary .Ashr
-    | "Concat" => return .binary .Concatenation
-    | "ULt" => return .binary .Lt
-    | "ULe" => return .binary .Le
-    | "UGt" => return .binary .Gt
-    | "UGe" => return .binary .Ge
-    | "SLt" => return .binary .Lt
-    | "SLe" => return .binary .Le
-    | "SGt" => return .binary .Gt
-    | "SGe" => return .binary .Ge
-    | "Lt" => return .binary .Lt
-    -- Safe variants map to the same GOTO operations
-    | "SafeAdd" | "SafeUAdd" => return .multiary .Plus
-    | "SafeSub" | "SafeUSub" => return .binary .Minus
-    | "SafeMul" | "SafeUMul" => return .multiary .Mult
-    | "SafeNeg" | "SafeUNeg" => return .unary .UnaryMinus
-    | "SafeSDiv" => return .binary .Div
-    | "SafeSMod" => return .binary .Mod
-    -- Overflow predicates map to CBMC overflow expressions
-    | "SAddOverflow" | "UAddOverflow" => return .binary .PlusOverflow
-    | "SSubOverflow" | "USubOverflow" => return .binary .MinusOverflow
-    | "SMulOverflow" | "UMulOverflow" => return .binary .MultOverflow
-    | "SNegOverflow" | "UNegOverflow" => return .unary .UnaryMinusOverflow
-    -- SDivOverflow(x, y) = (x == INT_MIN) && (y == -1)
-    -- Expanded in toGotoExpr/toGotoExprCtx into the compound expression.
-    | "SDivOverflow" => return .functionApplication "SDivOverflow"
-    | _ =>
-      -- Handle Extract_{hi}_{lo} patterns
-      if op.startsWith "Extract_" then
-        return .binary .Extractbits
-      else
-        return .functionApplication fn
-  else
-  match fn with
+  open Core in
+  match CoreOp.ofString fn with
+  -- Bitvector operations
+  | .bv ⟨_, .Add⟩ | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeUAdd⟩ => .ok (.multiary .Plus)
+  | .bv ⟨_, .Sub⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeUSub⟩ => .ok (.binary .Minus)
+  | .bv ⟨_, .Mul⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeUMul⟩ => .ok (.multiary .Mult)
+  | .bv ⟨_, .Neg⟩ | .bv ⟨_, .SafeNeg⟩ | .bv ⟨_, .SafeUNeg⟩ => .ok (.unary .UnaryMinus)
+  | .bv ⟨_, .UDiv⟩ | .bv ⟨_, .SDiv⟩ | .bv ⟨_, .SafeSDiv⟩ => .ok (.binary .Div)
+  | .bv ⟨_, .UMod⟩ | .bv ⟨_, .SMod⟩ | .bv ⟨_, .SafeSMod⟩ => .ok (.binary .Mod)
+  | .bv ⟨_, .Not⟩ => .ok (.unary .Bitnot)
+  | .bv ⟨_, .And⟩ => .ok (.binary .Bitand)
+  | .bv ⟨_, .Or⟩ => .ok (.binary .Bitor)
+  | .bv ⟨_, .Xor⟩ => .ok (.binary .Bitxor)
+  | .bv ⟨_, .Shl⟩ => .ok (.binary .Shl)
+  | .bv ⟨_, .UShr⟩ => .ok (.binary .Lshr)
+  | .bv ⟨_, .SShr⟩ => .ok (.binary .Ashr)
+  | .bv ⟨_, .Concat⟩ => .ok (.binary .Concatenation)
+  | .bv ⟨_, .ULt⟩ | .bv ⟨_, .SLt⟩ => .ok (.binary .Lt)
+  | .bv ⟨_, .ULe⟩ | .bv ⟨_, .SLe⟩ => .ok (.binary .Le)
+  | .bv ⟨_, .UGt⟩ | .bv ⟨_, .SGt⟩ => .ok (.binary .Gt)
+  | .bv ⟨_, .UGe⟩ | .bv ⟨_, .SGe⟩ => .ok (.binary .Ge)
+  | .bvExtract .. => .ok (.binary .Extractbits)
+  -- Overflow predicates
+  | .bv ⟨_, .SAddOverflow⟩ | .bv ⟨_, .UAddOverflow⟩ => .ok (.binary .PlusOverflow)
+  | .bv ⟨_, .SSubOverflow⟩ | .bv ⟨_, .USubOverflow⟩ => .ok (.binary .MinusOverflow)
+  | .bv ⟨_, .SMulOverflow⟩ | .bv ⟨_, .UMulOverflow⟩ => .ok (.binary .MultOverflow)
+  | .bv ⟨_, .SNegOverflow⟩ | .bv ⟨_, .UNegOverflow⟩ => .ok (.unary .UnaryMinusOverflow)
+  | .bv ⟨_, .SDivOverflow⟩ => .ok (.functionApplication "SDivOverflow")
   -- Integer arithmetic
-  | "Int.Add" => .ok (.multiary .Plus)
-  | "Int.Sub" => .ok (.binary .Minus)
-  | "Int.Mul" => .ok (.multiary .Mult)
-  | "Int.DivT" | "Int.SafeDivT" => .ok (.binary .Div)
-  | "Int.ModT" | "Int.SafeModT" => .ok (.binary .Mod)
-  | "Int.Div" | "Int.SafeDiv" => .ok (.functionApplication "Int.EuclideanDiv")
-  | "Int.Mod" | "Int.SafeMod" => .ok (.functionApplication "Int.EuclideanMod")
-  | "Int.Neg" => .ok (.unary .UnaryMinus)
-  -- Integer comparisons
-  | "Int.Lt" => .ok (.binary .Lt)
-  | "Int.Le" => .ok (.binary .Le)
-  | "Int.Gt" => .ok (.binary .Gt)
-  | "Int.Ge" => .ok (.binary .Ge)
+  | .numeric ⟨.int, .Add⟩ => .ok (.multiary .Plus)
+  | .numeric ⟨.int, .Sub⟩ => .ok (.binary .Minus)
+  | .numeric ⟨.int, .Mul⟩ => .ok (.multiary .Mult)
+  | .numeric ⟨.int, .DivT⟩ | .numeric ⟨.int, .SafeDivT⟩ => .ok (.binary .Div)
+  | .numeric ⟨.int, .ModT⟩ | .numeric ⟨.int, .SafeModT⟩ => .ok (.binary .Mod)
+  | .numeric ⟨.int, .Div⟩ | .numeric ⟨.int, .SafeDiv⟩ =>
+    .ok (.functionApplication "Int.EuclideanDiv")
+  | .numeric ⟨.int, .Mod⟩ | .numeric ⟨.int, .SafeMod⟩ =>
+    .ok (.functionApplication "Int.EuclideanMod")
+  | .numeric ⟨.int, .Neg⟩ => .ok (.unary .UnaryMinus)
+  | .numeric ⟨.int, .Lt⟩ => .ok (.binary .Lt)
+  | .numeric ⟨.int, .Le⟩ => .ok (.binary .Le)
+  | .numeric ⟨.int, .Gt⟩ => .ok (.binary .Gt)
+  | .numeric ⟨.int, .Ge⟩ => .ok (.binary .Ge)
   -- Boolean operations
-  | "Bool.And" => .ok (.multiary .And)
-  | "Bool.Or" => .ok (.multiary .Or)
-  | "Bool.Not" => .ok (.unary .Not)
-  | "Bool.Implies" => .ok (.binary .Implies)
-  | "Bool.Equiv" => .ok (.binary .Equal)
+  | .bool .And => .ok (.multiary .And)
+  | .bool .Or => .ok (.multiary .Or)
+  | .bool .Not => .ok (.unary .Not)
+  | .bool .Implies => .ok (.binary .Implies)
+  | .bool .Equiv => .ok (.binary .Equal)
   -- Real arithmetic
-  | "Real.Add" => .ok (.multiary .Plus)
-  | "Real.Sub" => .ok (.binary .Minus)
-  | "Real.Mul" => .ok (.multiary .Mult)
-  | "Real.Div" => .ok (.binary .Div)
-  | "Real.Neg" => .ok (.unary .UnaryMinus)
-  -- Real comparisons
-  | "Real.Lt" => .ok (.binary .Lt)
-  | "Real.Le" => .ok (.binary .Le)
-  | "Real.Gt" => .ok (.binary .Gt)
-  | "Real.Ge" => .ok (.binary .Ge)
+  | .numeric ⟨.real, .Add⟩ => .ok (.multiary .Plus)
+  | .numeric ⟨.real, .Sub⟩ => .ok (.binary .Minus)
+  | .numeric ⟨.real, .Mul⟩ => .ok (.multiary .Mult)
+  | .numeric ⟨.real, .Div⟩ => .ok (.binary .Div)
+  | .numeric ⟨.real, .Neg⟩ => .ok (.unary .UnaryMinus)
+  | .numeric ⟨.real, .Lt⟩ => .ok (.binary .Lt)
+  | .numeric ⟨.real, .Le⟩ => .ok (.binary .Le)
+  | .numeric ⟨.real, .Gt⟩ => .ok (.binary .Gt)
+  | .numeric ⟨.real, .Ge⟩ => .ok (.binary .Ge)
   -- Map/array operations
-  | "select" => .ok (.binary .Index)
-  | "update" => .ok (.ternary .«with»)
-  | "Map.const" => .ok (.unary .ArrayOf)
+  | .map .Select => .ok (.binary .Index)
+  | .map .Update => .ok (.ternary .«with»)
+  | .map .Const => .ok (.unary .ArrayOf)
+  -- Everything else (strings, regex, sequences, user-defined, etc.)
   | _ => .ok (.functionApplication fn)
 
-/-- Parse the lower bit index from a BV Extract function name like "Bv32.Extract_7_0" → some 0 -/
+/-- Parse the lower bit index from a BV Extract operator. -/
 def parseBvExtractLo (fn : String) : Option Nat :=
-  if fn.startsWith "Bv8.Extract_" || fn.startsWith "Bv16.Extract_" ||
-     fn.startsWith "Bv32.Extract_" || fn.startsWith "Bv64.Extract_" then
-    let rev := fn.toList.reverse
-    let digits := rev.takeWhile Char.isDigit
-    if digits.isEmpty then none
-    else (String.ofList digits.reverse).toNat?
-  else none
+  open Core in
+  match CoreOp.ofString fn with
+  | .bvExtract _ _ lo => some lo
+  | _ => none
 
 /-- Check if a function name is a signed bitvector operation.
     Signed ops need operands cast to signedbv so CBMC interprets them correctly. -/
 private def isSignedBvOp (fn : String) : Bool :=
-  let bvOp := if fn.startsWith "Bv8." then some (fn.drop 4).toString
-    else if fn.startsWith "Bv16." then some (fn.drop 5).toString
-    else if fn.startsWith "Bv32." then some (fn.drop 5).toString
-    else if fn.startsWith "Bv64." then some (fn.drop 5).toString
-    else none
-  match bvOp with
-  | some op => op ∈ ["SDiv", "SMod", "SLt", "SLe", "SGt", "SGe", "SShr",
-                      "SafeSDiv", "SafeSMod",
-                      "SAddOverflow", "SSubOverflow", "SMulOverflow", "SNegOverflow",
-                      "SDivOverflow"]
-  | none => false
+  open Core in
+  match CoreOp.ofString fn with
+  | .bv ⟨_, kind⟩ => kind.isSigned
+  | _ => false
 
 /-- Build SDivOverflow(x, y) = (x == INT_MIN) && (y == -1) for signed bitvectors. -/
 private def mkSDivOverflow (x y : CProverGOTO.Expr) : CProverGOTO.Expr :=
