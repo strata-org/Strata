@@ -694,35 +694,30 @@ def translateDatatypeDefinition (dt : DatatypeDefinition)
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
 /--
-Translate an `OrderedLaurel` program to a `Core.Program`.
+Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
 The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
-def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : OrderedLaurel): TranslateM Core.Program := do
+def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
-    | .procs procs isRecursive => do
-      -- For each SCC, determine if it is purely functional or contains procedures.
-      let isFuncSCC := procs.all (·.isFunctional)
-      if isFuncSCC then
-        let funcs ← procs.mapM (translateProcedureToFunction options isRecursive)
-        if isRecursive then
-          let coreFuncs := funcs.filterMap (fun d => match d with
-            | .func f _ => some f
-            | _ => none)
-          return [Core.Decl.recFuncBlock coreFuncs mdWithUnknownLoc]
-        else
-          return funcs
+    | .funcs funcs isRecursive => do
+      let coreFuncs ← funcs.mapM (translateProcedureToFunction options isRecursive)
+      if isRecursive then
+        let coreFuncValues := coreFuncs.filterMap (fun d => match d with
+          | .func f _ => some f
+          | _ => none)
+        return [Core.Decl.recFuncBlock coreFuncValues mdWithUnknownLoc]
       else
-        let procDecls ← procs.flatMapM fun proc => do
-          let procDecl ← translateProcedure proc
-          -- Turn free postconditions into axioms placed right behind the related procedure
-          let axiomDecls : List Core.Decl ← match proc.invokeOn with
-            | none => pure []
-            | some trigger => do
-              let axDecl? ← translateInvokeOnAxiom proc trigger
-              pure axDecl?.toList
-          return [Core.Decl.proc procDecl proc.name.md] ++ axiomDecls
-        return procDecls
+        return coreFuncs
+    | .procedure proc => do
+      let procDecl ← translateProcedure proc
+      -- Turn free postconditions into axioms placed right behind the related procedure
+      let axiomDecls : List Core.Decl ← match proc.invokeOn with
+        | none => pure []
+        | some trigger => do
+          let axDecl? ← translateInvokeOnAxiom proc trigger
+          pure axDecl?.toList
+      return [Core.Decl.proc procDecl proc.name.md] ++ axiomDecls
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition
       return [Core.Decl.type (.data ldatatypes) mdWithUnknownLoc]

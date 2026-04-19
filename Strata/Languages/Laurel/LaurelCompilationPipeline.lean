@@ -22,8 +22,8 @@ to Strata Core. The pipeline is:
 2. Run a sequence of Laurel-to-Laurel lowering passes (resolution, heap
    parameterization, type hierarchy, modifies clauses, hole inference,
    desugaring, lifting, constrained type elimination).
-3. Group and order declarations into an `OrderedLaurel`.
-4. Translate the `OrderedLaurel` to a `Core.Program`.
+3. Group and order declarations into a `CoreWithLaurelTypes`.
+4. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
 -/
 
 open Core (VCResult VCResults VerifyOptions)
@@ -124,7 +124,8 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     (keepAllFilesPrefix : Option String := none)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
-  let ordered := orderProgram program
+  let functionsAndProofs := laurelToFunctionsAndProofs program
+  let ordered := orderFunctionsAndProofs functionsAndProofs
   let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
