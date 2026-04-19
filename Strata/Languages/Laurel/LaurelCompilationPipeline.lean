@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
+import Strata.Languages.Laurel.InlineLocalVariablesInExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Core.Verifier
 
@@ -101,6 +102,8 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let program := liftExpressionAssignments model program
   emit "LiftExpressionAssignments" program
   let program := eliminateReturnsInExpressionTransform program
+  let program := inlineLocalVariablesInExpressions program
+  emit "InlineLocalVariablesInExpressions" program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   emit "EliminateReturns" program
