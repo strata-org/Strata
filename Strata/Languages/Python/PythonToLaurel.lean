@@ -2271,7 +2271,10 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       if p.body.isExternal || p.isFunctional then none else some p.name.text
   inlinableProcedures :=
     prog.staticProcedures.foldl (init := {}) fun s p =>
-      if p.body.isTransparent || !p.preconditions.isEmpty then s.insert p.name.text else s
+      match p.body with
+      | .Transparent _ => s.insert p.name.text
+      | .Opaque _ (some _) _ => s.insert p.name.text
+      | _ => if !p.preconditions.isEmpty then s.insert p.name.text else s
 
 /-- Merge two `PreludeInfo` values by concatenating each field. -/
 def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
