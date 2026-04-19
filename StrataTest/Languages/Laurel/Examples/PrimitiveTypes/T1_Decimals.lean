@@ -14,7 +14,7 @@ namespace Laurel
 
 def decimalsProgram := r"
 procedure testDecimalLiterals()
-  ensures true
+  opaque
 {
     var a: real := 1.5;
     var b: real := 2.5;
@@ -24,7 +24,7 @@ procedure testDecimalLiterals()
 };
 
 procedure testDecimalArithmetic()
-  ensures true
+  opaque
 {
     var a: real := 1.5;
     var b: real := 2.5;
@@ -39,7 +39,7 @@ procedure testDecimalArithmetic()
 };
 
 procedure testDecimalNeg()
-  ensures true
+  opaque
 {
     var a: real := 1.5;
     var neg: real := -a;
@@ -47,7 +47,7 @@ procedure testDecimalNeg()
 };
 
 procedure testDecimalComparisons()
-  ensures true
+  opaque
 {
     var a: real := 1.5;
     var b: real := 2.5;
@@ -60,7 +60,7 @@ procedure testDecimalComparisons()
 };
 
 procedure testDecimalAssertFails()
-  ensures true
+  opaque
 {
     var a: real := 1.5;
     var b: real := 2.5;

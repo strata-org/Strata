@@ -20,7 +20,7 @@ generates verification conditions for these preconditions.
 
 def e2eProgram := r"
 procedure safeDivision()
-  ensures true
+  opaque
 {
   var x: int := 10;
   var y: int := 2;
@@ -30,7 +30,7 @@ procedure safeDivision()
 
 // Error ranges are too wide because Core does not use expression locations
 procedure unsafeDivision(x: int)
-  ensures true
+  opaque
 {
   var z: int := 10 / x
 //^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -44,14 +44,14 @@ function pureDiv(x: int, y: int): int
 };
 
 procedure callPureDivSafe()
-  ensures true
+  opaque
 {
   var z: int := pureDiv(10, 2);
   assert z == 5
 };
 
 procedure callPureDivUnsafe(x: int)
-  ensures true
+  opaque
 {
   var z: int := pureDiv(10, x)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold

@@ -171,13 +171,14 @@ def formatStmtExprWithMsg (s : StmtExprMd) : Format :=
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque postconds impl modif =>
-      (if modif.isEmpty then Format.nil
-       else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
+      " opaque" ++
       Format.joinSep (postconds.map (fun p =>
         " ensures " ++ formatStmtExpr p ++
         match p.md.getPropertySummary with
         | none => Format.nil
         | some msg => " propertySummary \"" ++ msg ++ "\"")) "" ++
+      (if modif.isEmpty then Format.nil
+       else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e

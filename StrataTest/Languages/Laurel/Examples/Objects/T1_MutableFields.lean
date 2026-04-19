@@ -21,7 +21,7 @@ composite Container {
 }
 
 procedure newsAreNotEqual()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -29,7 +29,7 @@ procedure newsAreNotEqual()
 };
 
 procedure simpleAssign()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   var iv: int := c#intValue;
@@ -49,7 +49,7 @@ procedure simpleAssign()
 };
 
 procedure updatesAndAliasing()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -68,7 +68,7 @@ procedure updatesAndAliasing()
 };
 
 procedure subsequentHeapMutations(c: Container)
-  ensures true
+  opaque
   modifies c
 {
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
@@ -77,7 +77,7 @@ procedure subsequentHeapMutations(c: Container)
 };
 
 procedure implicitEquality(c: Container, d: Container)
-  ensures true
+  opaque
   modifies c
   modifies d
 {
@@ -92,7 +92,7 @@ procedure implicitEquality(c: Container, d: Container)
 };
 
 procedure useBool(c: Container) returns (r: bool)
-  ensures true
+  opaque
 {
   r := c#boolValue
 };
@@ -102,7 +102,7 @@ composite SameFieldName {
 }
 
 procedure sameFieldNameDifferentType(a: Container, b: SameFieldName)
-  ensures true
+  opaque
   modifies a
   modifies b
 {
@@ -125,7 +125,7 @@ composite Pixel {
 }
 
 procedure datatypeField()
-  ensures true
+  opaque
 {
   var p: Pixel := new Pixel;
   p#color := Red();

@@ -151,6 +151,9 @@ op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "invokeOn" trigger:0;
 category RequiresClause;
 op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "requires" cond:0 errorMessage;
 
+category OpaqueClause;
+op opaqueClause: OpaqueClause => "opaque";
+
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "ensures" cond:0 errorMessage;
 
@@ -170,20 +173,22 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
+  opaque: Option OpaqueClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaque ensures modifies body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
+  opaque: Option OpaqueClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaque ensures modifies body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending "{" fields procedures "}";
 

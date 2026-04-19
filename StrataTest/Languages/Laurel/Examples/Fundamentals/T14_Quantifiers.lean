@@ -14,19 +14,20 @@ namespace Laurel
 
 def quantifiersProgram := r"
 procedure testForall()
-  ensures true
+  opaque
 {
     assert forall(x: int) => x + 0 == x
 };
 
 procedure testExists()
-  ensures true
+  opaque
 {
     assert exists(x: int) => x == 42
 };
 
 procedure testQuantifierInContract(n: int)
   requires n > 0
+  opaque
   ensures forall(i: int) => i >= 0 ==> i < n ==> i < n + 1
 {
 };
@@ -34,7 +35,7 @@ procedure testQuantifierInContract(n: int)
 function P(x: int): int;
 function Q(): int;
 procedure triggers()
-  ensures true
+  opaque
 {
   assert forall(i: int) { P(i) } => P(i) == i + 1;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold

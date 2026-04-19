@@ -14,7 +14,7 @@ namespace Laurel
 
 def whileLoopsProgram := r"
 procedure countDown()
-  ensures true
+  opaque
 {
     var i: int := 3;
     while(i > 0)
@@ -26,7 +26,7 @@ procedure countDown()
 };
 
 procedure countUp()
-  ensures true
+  opaque
 {
     var n: int := 5;
     var i: int := 0;

@@ -16,7 +16,7 @@ def program := r#"
 procedure divide(x: int, y: int) returns (result: int)
   requires y != 0 summary "divisor is non-zero"
 // Call elimination reports precondition errors at the call site.
-  ensures true
+  opaque
 {
   assert y == 0 summary "divisor is zero";
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero does not hold
@@ -24,7 +24,7 @@ procedure divide(x: int, y: int) returns (result: int)
 };
 
 procedure checkPositive(n: int) returns (ok: bool)
-  ensures true
+  opaque
 {
   var x: int := divide(3, 0)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold

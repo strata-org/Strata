@@ -14,7 +14,7 @@ namespace Laurel
 
 def program := r"
 procedure foo()
-  ensures true
+  opaque
 {
     assert true;
     assert false;
@@ -24,7 +24,7 @@ procedure foo()
 };
 
 procedure bar()
-  ensures true
+  opaque
 {
     assume false;
     assert false

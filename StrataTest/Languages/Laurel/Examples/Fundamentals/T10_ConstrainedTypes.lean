@@ -18,14 +18,14 @@ constrained posnat = x: nat where x != 0 witness 1
 
 // Input constraint becomes requires — body can rely on it
 procedure inputAssumed(n: nat)
-  ensures true
+  opaque
 {
   assert n >= 0
 };
 
 // Output constraint — valid return passes
 procedure outputValid(): nat
-  ensures true
+  opaque
 {
   return 3
 };
@@ -33,7 +33,7 @@ procedure outputValid(): nat
 // Output constraint — invalid return fails
 procedure outputInvalid(): nat
 //                         ^^^ error: assertion does not hold
-  ensures true
+  opaque
 {
   return -1
 };
@@ -41,7 +41,7 @@ procedure outputInvalid(): nat
 // Return value of constrained type — caller gets ensures via call elimination
 procedure opaqueNat(): nat;
 procedure callerAssumes() returns (r: int)
-  ensures true
+  opaque
 {
   var x: int := opaqueNat();
   assert x >= 0;
@@ -50,14 +50,14 @@ procedure callerAssumes() returns (r: int)
 
 // Assignment to constrained-typed variable — valid
 procedure assignValid()
-  ensures true
+  opaque
 {
   var y: nat := 5
 };
 
 // Assignment to constrained-typed variable — invalid
 procedure assignInvalid()
-  ensures true
+  opaque
 {
   var y: nat := -1
 //^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -65,7 +65,7 @@ procedure assignInvalid()
 
 // Reassignment to constrained-typed variable — invalid
 procedure reassignInvalid()
-  ensures true
+  opaque
 {
   var y: nat := 5;
   y := -1
@@ -74,10 +74,10 @@ procedure reassignInvalid()
 
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int)
-  ensures true
+  opaque
 { return n };
 procedure argValid() returns (r: int)
-  ensures true
+  opaque
 {
   var x: int := takesNat(3);
   return x
@@ -85,7 +85,7 @@ procedure argValid() returns (r: int)
 
 // Argument to constrained-typed parameter — invalid (requires violation)
 procedure argInvalid() returns (r: int)
-  ensures true
+  opaque
 {
   var x: int := takesNat(-1);
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
@@ -96,7 +96,7 @@ procedure argInvalid() returns (r: int)
 constrained even = x: int where x % 2 == 0 witness 0
 constrained evenpos = x: even where x > 0 witness 2
 procedure nestedInput(x: evenpos)
-  ensures true
+  opaque
 {
   assert x > 0;
   assert x % 2 == 0
@@ -104,7 +104,7 @@ procedure nestedInput(x: evenpos)
 
 // Multiple constrained-typed parameters
 procedure multiParam(a: nat, b: nat)
-  ensures true
+  opaque
 {
   assert a >= 0;
   assert b >= 0
@@ -112,7 +112,7 @@ procedure multiParam(a: nat, b: nat)
 
 // Two calls to same procedure — no temp var collision
 procedure twoCalls() returns (r: int)
-  ensures true
+  opaque
 {
   var a: int := takesNat(1);
   var b: int := takesNat(2);
@@ -121,7 +121,7 @@ procedure twoCalls() returns (r: int)
 
 // Constrained type in expression position must be resolved
 procedure constrainedInExpr()
-  ensures true
+  opaque
 {
   var b: bool := forall(n: nat) => n + 1 > n;
   assert b
@@ -133,7 +133,7 @@ constrained bad = x: int where x > 0 witness -1
 
 // Uninitialized constrained variable — havoc + assume constraint
 procedure uninitNat()
-  ensures true
+  opaque
 {
   var y: nat;
   assert y >= 0
@@ -141,7 +141,7 @@ procedure uninitNat()
 
 // Uninitialized nested constrained variable — havoc + assume constraint
 procedure uninitPosnat()
-  ensures true
+  opaque
 {
   var y: posnat;
   assert y != 0;
@@ -150,7 +150,7 @@ procedure uninitPosnat()
 
 // Uninitialized constrained variable — witness value is not provable
 procedure uninitNotWitness()
-  ensures true
+  opaque
 {
   var y: posnat;
   assert y == 1
@@ -167,7 +167,7 @@ function badFunc(): nat { -1 };
 
 // Caller of constrained function — body is inlined, caller sees actual value
 procedure callerGood()
-  ensures true
+  opaque
 {
   var x: int := goodFunc();
   assert x >= 0
@@ -176,7 +176,7 @@ procedure callerGood()
 // Quantifier constraint injection — forall
 // n + 1 > 0 is only provable with n >= 0 injected; false for all int
 procedure forallNat()
-  ensures true
+  opaque
 {
   var b: bool := forall(n: nat) => n + 1 > 0;
   assert b
@@ -186,7 +186,7 @@ procedure forallNat()
 // n == -1 is satisfiable for int, but not when n >= 0 is required
 // n == 42 works because 42 >= 0
 procedure existsNat()
-  ensures true
+  opaque
 {
   var b: bool := exists(n: nat) => n == 42;
   assert b
@@ -195,7 +195,7 @@ procedure existsNat()
 // Quantifier constraint injection — nested constrained type
 // n - 1 >= 0 is only provable with n > 0 injected
 procedure forallPosnat()
-  ensures true
+  opaque
 {
   var b: bool := forall(n: posnat) => n - 1 >= 0;
   assert b
@@ -205,7 +205,7 @@ procedure forallPosnat()
 // Without capture avoidance, requires becomes exists(y) => y > y (false), making body vacuously true
 constrained haslarger = x: int where (exists(y: int) => y > x) witness 0
 procedure captureTest(y: haslarger)
-  ensures true
+  opaque
 {
   assert false
 //^^^^^^^^^^^^ error: assertion does not hold

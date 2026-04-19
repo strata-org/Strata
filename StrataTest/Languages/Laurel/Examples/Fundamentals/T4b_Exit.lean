@@ -13,7 +13,7 @@ namespace Strata.Laurel
 
 def exitProgram := r"
 procedure exitSkipsRest()
-  ensures true
+  opaque
 {
     var x: int := 0;
     {
@@ -24,7 +24,7 @@ procedure exitSkipsRest()
 };
 
 procedure exitFromNestedBlock()
-  ensures true
+  opaque
 {
     var x: int := 0;
     {

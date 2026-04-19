@@ -28,7 +28,7 @@ composite Container {
 }
 
 procedure modifyContainerOpaque(c: Container) returns (b: bool)
-  ensures true
+  opaque
   modifies c
 {
   c#value := c#value + 1;
@@ -36,7 +36,7 @@ procedure modifyContainerOpaque(c: Container) returns (b: bool)
 };
 
 procedure caller()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -61,7 +61,7 @@ procedure caller()
 
 // TODO add wildcard support
 // procedure modifyContainerWildcard(c: Container) returns (i: int)
-//  ensures true
+//  opaque
 //  modifies *
 //{
 //  c#value := c#value + 1;
@@ -70,14 +70,14 @@ procedure caller()
 
 //procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 //          error: postcondition does not hold
-//  ensures true
+//  opaque
 //{
 //    var i: int := modifyContainerWildcard(c)
 //};
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-  ensures true
+  opaque
   modifies d
 {
     c#value := 2
@@ -85,20 +85,20 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-  ensures true
+  opaque
   modifies d
 {
     var i: bool := modifyContainerOpaque(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
-  ensures true
+  opaque
   modifies c
   modifies d
 ;
 
 procedure multipleModifiesClausesCaller()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -109,7 +109,7 @@ procedure multipleModifiesClausesCaller()
 };
 
 procedure newObjectDoNotCountForModifies()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   c#value := 1

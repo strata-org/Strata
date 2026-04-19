@@ -14,7 +14,7 @@ namespace Laurel
 
 def forLoopProgram := r"
 procedure sumToThree()
-  ensures true
+  opaque
 {
   var sum: int := 0;
   for (var i: int := 0; i < 3; i := i + 1)

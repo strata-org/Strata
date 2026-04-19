@@ -44,7 +44,7 @@ private def parseElimAndPrint (input : String) : IO Unit := do
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := 1 + $hole_0() }
@@ -58,7 +58,7 @@ procedure test() { var x: int := 1 + <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := $hole_0() }
@@ -72,7 +72,7 @@ procedure test() { var x: int := <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { assert $hole_0() > 0 }
@@ -86,7 +86,7 @@ procedure test() { assert <?> > 0 };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { assert $hole_0() }
@@ -100,7 +100,7 @@ procedure test() { assert <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { assume $hole_0() }
@@ -114,7 +114,7 @@ procedure test() { assume <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { if $hole_0() then { assert true } }
@@ -128,7 +128,7 @@ procedure test() { if <?> then { assert true } };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := if true then $hole_0() else 0 }
@@ -142,7 +142,7 @@ procedure test() { var x: int := if true then <?> else 0 };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { while $hole_0() {  } }
@@ -156,7 +156,7 @@ procedure test() { while(<?>) {} };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { while true invariant $hole_0() {  } }
@@ -172,7 +172,7 @@ procedure test() { while(true) invariant <?> {} };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { assert true && $hole_0() }
@@ -186,7 +186,7 @@ procedure test() { assert true && <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := -$hole_0() }
@@ -200,7 +200,7 @@ procedure test() { var x: int := -<?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: string)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var s: string := "hello" ++ $hole_0() }
@@ -215,10 +215,10 @@ procedure test() returns ⏎
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 function $hole_1() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := $hole_0() + $hole_1() }
@@ -232,10 +232,10 @@ procedure test() { var x: int := <?> + <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 function $hole_1() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := 2 * $hole_0(); assert $hole_1() }
@@ -251,7 +251,7 @@ procedure test() { var x: int := 2 * <?>; assert <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { if 1 + $hole_0() > 0 then { assert true } }
@@ -265,7 +265,7 @@ procedure test() { if 1 + <?> > 0 then { assert true } };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var p: bool; while true invariant p ==> $hole_0() {  } }
@@ -279,7 +279,7 @@ procedure test() { var p: bool; while(true) invariant p ==> <?> {} };
 /--
 info: function $hole_0() returns ⏎
 ($result: real)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var r: real := 3.14 * $hole_0() }
@@ -295,7 +295,7 @@ procedure test() { var r: real := 3.14 * <?> };
 /--
 info: function $hole_0(n: int) returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test(n: int) returns ⏎
 ()
 { assert n > $hole_0(n) }
@@ -311,7 +311,7 @@ procedure test(n: int) { assert n > <?> };
 /--
 info: function $hole_0(x: int) returns ⏎
 ($result: int)
-⏎
+ opaque
 function test(x: int) returns ⏎
 (result: int)
 { $hole_0(x) }
@@ -338,7 +338,7 @@ procedure test() { assert <??> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-⏎
+ opaque
 procedure test() returns ⏎
 ()
 { var x: int := $hole_0(); assert <??> }

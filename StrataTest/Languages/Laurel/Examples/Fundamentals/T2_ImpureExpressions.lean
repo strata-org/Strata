@@ -14,7 +14,7 @@ namespace Strata.Laurel
 
 def program: String := r"
 procedure nestedImpureStatements()
-  ensures true
+  opaque
 {
   var y: int := 0;
   var x: int := y;
@@ -25,7 +25,7 @@ procedure nestedImpureStatements()
 };
 
 procedure multipleAssignments()
-  ensures true
+  opaque
 {
   var x: int := 1;
   var y: int := x + ((x := 2) + x) + (x := 3);
@@ -33,7 +33,7 @@ procedure multipleAssignments()
 };
 
 procedure conditionalAssignmentInExpression(x: int)
-  ensures true
+  opaque
 {
   var y: int := 0;
   var z: int := (if x > 0 then { y := y + 1 } else { 0 }) + y;
@@ -47,7 +47,7 @@ procedure conditionalAssignmentInExpression(x: int)
 };
 
 procedure anotherConditionAssignmentInExpression(c: bool)
-  ensures true
+  opaque
 {
   var b: bool := c;
   var z: bool := (if b then { b := false } else (b := true)) || b;
@@ -56,7 +56,7 @@ procedure anotherConditionAssignmentInExpression(c: bool)
 };
 
 procedure blockWithTwoAssignmentsInExpression()
-  ensures true
+  opaque
 {
   var x: int := 0;
   var y: int := 0;
@@ -67,7 +67,7 @@ procedure blockWithTwoAssignmentsInExpression()
 };
 
 procedure nestedImpureStatementsAndOpaque()
-  ensures true
+  opaque
 {
   var y: int := 0;
   var x: int := y;
@@ -81,6 +81,7 @@ procedure nestedImpureStatementsAndOpaque()
 // surrounding expression is evaluated.
 procedure imperativeProc(x: int) returns (r: int)
    // ensures clause required because Core's symbolic verification does not support transparent proceduces yet
+  opaque
   ensures r == x + 1
 {
   r := x + 1;
@@ -88,7 +89,7 @@ procedure imperativeProc(x: int) returns (r: int)
 };
 
 procedure imperativeCallInExpressionPosition()
-  ensures true
+  opaque
 {
   var x: int := 0;
   // imperativeProc(x) is lifted out; its argument is evaluated before the call,
@@ -100,7 +101,7 @@ procedure imperativeCallInExpressionPosition()
 
 // An imperative call inside a conditional expression is also lifted.
 procedure imperativeCallInConditionalExpression(b: bool)
-  ensures true
+  opaque
 {
   var counter: int := 0;
   // The imperative call in the then-branch is lifted out of the expression.
@@ -118,7 +119,7 @@ function add(x: int, y: int): int
 };
 
 procedure repeatedBlockExpressions()
-  ensures true
+  opaque
 {
   var x: int := 2;
   var y: int := { x := 1; x } + { x := x + 10; x };
@@ -128,12 +129,13 @@ procedure repeatedBlockExpressions()
 };
 
 procedure addProc(a: int, b: int) returns (r: int)
+  opaque
   ensures r == a + b {
   return a + b
 };
 
 procedure addProcCaller(): int
-  ensures true
+  opaque
 {
   var x: int := 0;
   var y: int := addProc({x := 1; x}, {x := x + 10; x});

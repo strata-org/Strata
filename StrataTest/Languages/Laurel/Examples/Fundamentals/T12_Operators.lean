@@ -14,7 +14,7 @@ namespace Laurel
 
 def operatorsProgram := r"
 procedure testArithmetic()
-  ensures true
+  opaque
 {
     var a: int := 10;
     var b: int := 3;
@@ -29,7 +29,7 @@ procedure testArithmetic()
 };
 
 procedure testLogical()
-  ensures true
+  opaque
 {
     var t: bool := true;
     var f: bool := false;
@@ -44,7 +44,7 @@ procedure testLogical()
 };
 
 procedure testUnary()
-  ensures true
+  opaque
 {
     var x: int := 5;
     var y: int := -x;
@@ -52,7 +52,7 @@ procedure testUnary()
 };
 
 procedure testTruncatingDiv()
-  ensures true
+  opaque
 {
     assert 7 /t 3 == 2;
     assert 7 %t 3 == 1;

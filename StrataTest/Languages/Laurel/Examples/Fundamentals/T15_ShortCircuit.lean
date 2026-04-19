@@ -19,7 +19,7 @@ function mustNotCallFunc(x: int): int
 
 procedure mustNotCallProc(): int
   requires false
-  ensures true
+  opaque
 {
   return 0
 };
@@ -27,7 +27,7 @@ procedure mustNotCallProc(): int
 // Pure path: function with requires false
 
 procedure testAndThenFunc()
-  ensures true
+  opaque
 {
   var b: bool := false && mustNotCallFunc(0) > 0;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -36,7 +36,7 @@ procedure testAndThenFunc()
 };
 
 procedure testOrElseFunc()
-  ensures true
+  opaque
 {
   var b: bool := true || mustNotCallFunc(0) > 0;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -45,7 +45,7 @@ procedure testOrElseFunc()
 };
 
 procedure testImpliesFunc()
-  ensures true
+  opaque
 {
   var b: bool := false ==> mustNotCallFunc(0) > 0;
   assert b
@@ -54,7 +54,7 @@ procedure testImpliesFunc()
 // Pure path: division by zero
 
 procedure testAndThenDivByZero()
-  ensures true
+  opaque
 {
   assert !(false && 1 / 0 > 0)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -62,7 +62,7 @@ procedure testAndThenDivByZero()
 };
 
 procedure testOrElseDivByZero()
-  ensures true
+  opaque
 {
   assert true || 1 / 0 > 0
 //^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -70,7 +70,7 @@ procedure testOrElseDivByZero()
 };
 
 procedure testImpliesDivByZero()
-  ensures true
+  opaque
 {
   assert false ==> 1 / 0 > 0
 };
@@ -78,21 +78,21 @@ procedure testImpliesDivByZero()
 // Imperative path: procedure with requires false
 
 procedure testAndThenProc()
-  ensures true
+  opaque
 {
   var b: bool := false && mustNotCallProc() > 0;
   assert !b
 };
 
 procedure testOrElseProc()
-  ensures true
+  opaque
 {
   var b: bool := true || mustNotCallProc() > 0;
   assert b
 };
 
 procedure testImpliesProc()
-  ensures true
+  opaque
 {
   var b: bool := false ==> mustNotCallProc() > 0;
   assert b

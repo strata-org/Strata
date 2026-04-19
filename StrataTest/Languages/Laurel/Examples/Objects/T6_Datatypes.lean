@@ -20,7 +20,7 @@ datatype IntList {
 
 // Construction and destructor access
 procedure testConstruction()
-  ensures true
+  opaque
 {
   var xs: IntList := Cons(42, Nil());
   assert IntList..head(xs) == 42
@@ -28,7 +28,7 @@ procedure testConstruction()
 
 // Constructor testing
 procedure testConstructorTest()
-  ensures true
+  opaque
 {
   var xs: IntList := Cons(1, Nil());
   assert IntList..isCons(xs);
@@ -41,7 +41,7 @@ procedure testConstructorTest()
 
 // Nested construction and deconstruction
 procedure testNested()
-  ensures true
+  opaque
 {
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert IntList..isCons(xs);
@@ -52,7 +52,7 @@ procedure testNested()
 };
 
 procedure unsafeDestructor()
-  ensures true
+  opaque
 {
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
@@ -68,7 +68,7 @@ function listHead(xs: IntList): int
 };
 
 procedure testFunction()
-  ensures true
+  opaque
 {
   var xs: IntList := Cons(10, Nil());
   var h: int := listHead(xs);
@@ -77,7 +77,7 @@ procedure testFunction()
 
 // Failing assertion
 procedure testFailing()
-  ensures true
+  opaque
 {
   var xs: IntList := Nil();
   assert IntList..isCons(xs)
@@ -95,7 +95,7 @@ datatype OddList {
 }
 
 procedure testMutualConstruction()
-  ensures true
+  opaque
 {
   var even: EvenList := ENil();
   assert EvenList..isENil(even);

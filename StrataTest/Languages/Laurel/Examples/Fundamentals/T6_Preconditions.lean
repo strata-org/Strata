@@ -18,7 +18,7 @@ procedure hasRequires(x: int) returns (r: int)
 // Call elimination reports precondition errors at the call site,
 // not at the requires clause definition.
 //
-  ensures true
+  opaque
 {
   assert x > 0;
   assert x > 3;
@@ -27,7 +27,7 @@ procedure hasRequires(x: int) returns (r: int)
 };
 
 procedure caller()
-  ensures true
+  opaque
 {
   var x: int := hasRequires(1);
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
@@ -41,7 +41,7 @@ function aFunctionWithPrecondition(x: int): int
 };
 
 procedure aFunctionWithPreconditionCaller()
-  ensures true
+  opaque
 {
   var x: int := aFunctionWithPrecondition(0)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -51,13 +51,13 @@ procedure aFunctionWithPreconditionCaller()
 procedure multipleRequires(x: int, y: int) returns (r: int)
   requires x > 0
   requires y > 0
-  ensures true
+  opaque
 {
   x + y
 };
 
 procedure multipleRequiresCaller()
-  ensures true
+  opaque
 {
   var a: int := multipleRequires(1, 2);
   var b: int := multipleRequires(-1, 2)
@@ -72,7 +72,7 @@ function funcMultipleRequires(x: int, y: int): int
 };
 
 procedure funcMultipleRequiresCaller()
-  ensures true
+  opaque
 {
   var a: int := funcMultipleRequires(1, 2);
   var b: int := funcMultipleRequires(1, -1)
