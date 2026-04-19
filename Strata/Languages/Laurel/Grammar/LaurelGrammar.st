@@ -153,7 +153,7 @@ category RequiresClause;
 op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  requires " cond:0 errorMessage;
 
 category OpaqueClause;
-op opaqueClause: OpaqueClause => "opaque";
+op opaqueClause: OpaqueClause => "\n  opaque";
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  ensures " cond:0 errorMessage;

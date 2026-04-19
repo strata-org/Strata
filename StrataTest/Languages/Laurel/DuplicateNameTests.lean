@@ -37,8 +37,8 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
 /-! ## Duplicate static procedure names -/
 
 def dupProcedures := r"
-procedure foo() { };
-procedure foo() { };
+procedure foo() opaque { };
+procedure foo() opaque { };
 //        ^^^ error: Duplicate definition 'foo' is already defined in this scope
 "
 
@@ -72,7 +72,7 @@ composite Foo {
 /-! ## Duplicate parameter names in a procedure -/
 
 def dupParams := r"
-procedure foo(x: int, x: bool) { };
+procedure foo(x: int, x: bool) opaque { };
 //                    ^ error: Duplicate definition 'x' is already defined in this scope
 "
 
@@ -83,8 +83,8 @@ procedure foo(x: int, x: bool) { };
 
 def dupInstanceProcs := r"
 composite Foo {
-  procedure bar() { };
-  procedure bar() { };
+  procedure bar() opaque { };
+  procedure bar() opaque { };
 //          ^^^ error: Duplicate definition 'bar' is already defined in this scope
 }
 "
@@ -95,7 +95,7 @@ composite Foo {
 /-! ## Duplicate local variable names in the same block -/
 
 def dupLocals := r"
-procedure foo() {
+procedure foo() opaque {
   var x: int := 1;
   var x: int := 2
 //    ^ error: Duplicate definition 'x' is already defined in this scope
@@ -109,7 +109,7 @@ procedure foo() {
 
 def dupProcType := r"
 composite Foo { }
-procedure Foo() { };
+procedure Foo() opaque { };
 //        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 "
 
@@ -119,7 +119,7 @@ procedure Foo() { };
 /-! ## Shadowing quantifier variables in nested scopes is OK (no error expected) -/
 
 def shadowQuantifierVars := r"
-procedure test() {
+procedure test() opaque {
   assert forall(x: int) => forall(x: int) => x > 0
 };
 "
@@ -130,7 +130,7 @@ procedure test() {
 /-! ## Shadowing in nested blocks is OK (no error expected) -/
 
 def shadowingOk := r"
-procedure foo() {
+procedure foo() opaque {
   var x: int := 1;
   {
     var x: int := 2

@@ -219,10 +219,10 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else #[modifiesClauseToArg modifies]
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
-      (ens, mods, body, true)
+      (ens, mods, body, !postconds.isEmpty || impl.isSome || !modifies.isEmpty)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      (ens, #[], optionArg none, true)
+      (ens, #[], optionArg none, false)
     | .External =>
       (#[], #[], optionArg (some (laurelOp "externalBody")), false)
   let opaqueArg := optionArg (if isOpaque then some (laurelOp "opaqueClause") else none)

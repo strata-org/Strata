@@ -98,6 +98,7 @@ info: procedure test(x: int): int
 /--
 info: procedure divide(x: int, y: int): int
   requires y != 0
+  opaque
   ensures result >= 0
 { x / y };
 -/
@@ -198,6 +199,7 @@ info: constrained Positive = v: int where v > 0 witness 1
 info: composite Container { var value: int }
 
 procedure modify(c: Container)
+  opaque
   ensures true
   modifies c
 { c#value := c#value + 1; true };
