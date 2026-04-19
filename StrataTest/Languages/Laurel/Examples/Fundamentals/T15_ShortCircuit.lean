@@ -30,8 +30,6 @@ procedure testAndThenFunc()
   opaque
 {
   var b: bool := false && mustNotCallFunc(0) > 0;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// TODO caused by a bug in Core: https://github.com/strata-org/Strata/issues/697
   assert !b
 };
 
@@ -39,8 +37,6 @@ procedure testOrElseFunc()
   opaque
 {
   var b: bool := true || mustNotCallFunc(0) > 0;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// TODO caused by a bug in Core: https://github.com/strata-org/Strata/issues/697
   assert b
 };
 
@@ -57,16 +53,12 @@ procedure testAndThenDivByZero()
   opaque
 {
   assert !(false && 1 / 0 > 0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// TODO caused by a bug in Core.
 };
 
 procedure testOrElseDivByZero()
   opaque
 {
   assert true || 1 / 0 > 0
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// TODO caused by a bug in Core: https://github.com/strata-org/Strata/issues/697
 };
 
 procedure testImpliesDivByZero()
@@ -99,7 +91,7 @@ procedure testImpliesProc()
 };
 "
 
-#guard_msgs(drop info, error) in
+#guard_msgs(drop info) in
 #eval testInputWithOffset "ShortCircuit" shortCircuitProgram 15 processLaurelFile
 
 end Laurel

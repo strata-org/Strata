@@ -41,15 +41,8 @@ function lenHelper<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyMutualPgm) |>.snd |>.isEmpty
 
 /--
-error: 🚨 Error during evaluation!
-[ERROR] Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
-
-[DEBUG] Evaluated program: program Core;
-
-datatype MyList (a : Type) {(
-  (Nil())),
-  (Cons(hd : a, tl : (MyList a)))
-};
+error: ❌ Type checking error.
+Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
 #eval verify polyMutualPgm (options := .quiet)
@@ -76,15 +69,8 @@ function isOdd (n : MyNat) : bool
 #end
 
 /--
-error: 🚨 Error during evaluation!
-[ERROR] Recursive function 'isEven' requires a @[cases] parameter
-
-[DEBUG] Evaluated program: program Core;
-
-datatype MyNat {(
-  (Zero())),
-  (Succ(pred : MyNat))
-};
+error: ❌ Type checking error.
+Recursive function 'isEven' requires a @[cases] parameter
 -/
 #guard_msgs in
 #eval verify noCasesMutualPgm (options := .quiet)

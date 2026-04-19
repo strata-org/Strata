@@ -50,43 +50,6 @@ Property: assert
 Obligation:
 true
 
-
-
-Result: Obligation: callElimAssert_Extract_requires_0_2
-Property: assert
-Result: ❌ fail
-Model:
-($__xs3, Nil)
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
-};
-procedure Extract (xs : (List $__ty0)) returns (h : ($__ty5))
-spec {
-  requires [Extract_requires_0]: List..isCons(xs);
-  } {
-  assume [Extract_requires_0]: List..isCons($__xs0);
-  };
-procedure Test () returns ()
-spec {
-  ensures [Test_ensures_0]: true;
-  } {
-  var xs : (List int);
-  xs := Cons(1, Nil);
-  havoc xs;
-  var h : int;
-  var tmp_arg_0 : List int := $__xs3;
-  var tmp_h_1 : int := $__h4;
-  assert [callElimAssert_Extract_requires_0_2]: List..isCons($__xs3);
-  havoc h;
-  assert [Test_ensures_0]: true;
-  };
-
 ---
 info:
 Obligation: callElimAssert_Extract_requires_0_2
