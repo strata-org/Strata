@@ -6,9 +6,10 @@
 ;; Keywords
 (defvar core-st-keywords
   '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
-    "decreases" "while" "call" "exit" "free" "ensures" "requires" "spec"
-    "out" "inout" "procedure" "type" "const" "function" "inline" "rec"
-    "axiom" "distinct" "datatype" "old" "forall" "exists" "program"))
+    "decreases" "while" "out" "inout" "call" "exit" "free" "ensures"
+    "requires" "spec" "procedure" "type" "const" "function" "inline"
+    "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
+    "program"))
 
 (defvar core-st-types
   '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
