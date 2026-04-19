@@ -9,6 +9,7 @@ public import Strata.DDM.AST
 public import Strata.DDM.Format
 public import Strata.Languages.Laurel.Grammar.LaurelGrammar
 public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.FunctionsAndProofs
 
 namespace Strata
 namespace Laurel
@@ -95,10 +96,14 @@ where
       match label with
       | none => laurelOp "block" #[semicolonSep stmtArgs]
       | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
-    | .LocalVariable name ty init =>
+    | .LocalVariable params init =>
+      -- Grammar only supports single-target varDecl; use first parameter or placeholder
+      let (nameText, ty) := match params with
+        | p :: _ => (p.name.text, p.type)
+        | [] => ("_", ⟨.TVoid, none, #[]⟩)
       let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg ty]))
       let initOpt := optionArg (init.map fun e => laurelOp "initializer" #[stmtExprToArg e])
-      laurelOp "varDecl" #[ident name.text, typeOpt, initOpt]
+      laurelOp "varDecl" #[ident nameText, typeOpt, initOpt]
     | .Assign targets value =>
       -- Grammar only supports single-target assign; use first target or placeholder
       let targetArg := match targets with
@@ -212,19 +217,21 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
-  let (ensuresArgs, modifiesArgs, bodyArg) := match proc.body with
+  let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      (#[], #[], optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else #[modifiesClauseToArg modifies]
+      let opaqueOp := laurelOp "opaqueSpec" #[seqArg ens, seqArg mods]
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
-      (ens, mods, body)
+      (optionArg (some opaqueOp), body)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      (ens, #[], optionArg none)
+      let opaqueOp := laurelOp "opaqueSpec" #[seqArg ens, seqArg #[]]
+      (optionArg (some opaqueOp), optionArg none)
     | .External =>
-      (#[], #[], optionArg (some (laurelOp "externalBody")))
+      (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr
     name := { dialect := "Laurel", name := opName }
     args := #[
@@ -234,8 +241,7 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       returnParamsArg,
       seqArg requiresArgs,
       invokeOnArg,
-      seqArg ensuresArgs,
-      seqArg modifiesArgs,
+      opaqueSpecArg,
       bodyArg
     ] }
 
@@ -371,6 +377,17 @@ instance : Std.ToFormat DatatypeDefinition where format := formatDatatypeDefinit
 instance : Std.ToFormat Constant where format := formatConstant
 instance : Std.ToFormat TypeDefinition where format := formatTypeDefinition
 instance : Std.ToFormat Program where format := formatProgram
+
+def formatFunctionsAndProofsProgram (p : FunctionsAndProofsProgram) : Format :=
+  let sections : List Format :=
+    (p.datatypes.map formatDatatypeDefinition) ++
+    (p.constants.map formatConstant) ++
+    (p.functions.map formatProcedure) ++
+    (p.proofs.map formatProcedure)
+  Std.Format.joinSep sections "\n\n"
+
+instance : Std.ToFormat FunctionsAndProofsProgram where
+  format := formatFunctionsAndProofsProgram
 
 instance : Repr StmtExpr where
   reprPrec r _ := s!"{Std.format r}"

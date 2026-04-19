@@ -8,6 +8,7 @@ import Strata.Languages.Boole.Grammar
 
 namespace Strata.BooleDDM
 
+set_option maxHeartbeats 400000
 -- set_option trace.Strata.generator true in
 #strata_gen Boole
 

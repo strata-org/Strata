@@ -101,8 +101,10 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
-    -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", none, default ⟩
+   -- Expected when a reference failed to resolve (a diagnostic was already emitted
+   -- by resolveRef or defineNameCheckDup). Returning Unknown propagates the error
+   -- gracefully through type translation.
+   ⟨ .Unknown, none, default ⟩
  | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none, default ⟩
 
 /-! ## Resolution result -/
@@ -115,8 +117,15 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD default
-  | none => default
+  | some key =>
+    match model.refToDef.get? key with
+    | some node => node
+    | none =>
+      -- An ID was assigned during Phase 1 but the reference was never registered in
+      -- Phase 2 (buildRefToDef). This is a bug in the resolution pass itself.
+      dbg_trace s!"SOUND BUG: identifier '{iden.text}' (id={key}) has a uniqueId but is missing from refToDef"
+      .unresolved
+  | none => .unresolved
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
@@ -307,11 +316,13 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     withScope do
       let stmts' ← stmts.mapM resolveStmtExpr
       pure (.Block stmts' label)
-  | .LocalVariable name ty init =>
-    let ty' ← resolveHighType ty
+  | .LocalVariable params init =>
     let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let name' ← defineNameCheckDup name (.var name ty')
-    pure (.LocalVariable name' ty' init')
+    let params' ← params.mapM fun p => do
+      let ty' ← resolveHighType p.type
+      let name' ← defineNameCheckDup p.name (.var p.name ty')
+      pure { name := name', type := ty' }
+    pure (.LocalVariable params' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
     let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
@@ -579,9 +590,8 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .LocalVariable name ty init =>
-    let map := register map name (.var name ty)
-    let map := collectHighType map ty
+  | .LocalVariable params init =>
+    let map := params.foldl (fun m p => register (collectHighType m p.type) p.name (.var p.name p.type)) map
     match init with
     | some i => collectStmtExpr map i
     | none => map

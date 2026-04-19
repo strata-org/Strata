@@ -8,8 +8,11 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
+import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.EliminateMultipleOutputs
 import Strata.Languages.Core.Verifier
 
 /-!
@@ -21,9 +24,10 @@ to Strata Core. The pipeline is:
 1. Prepend core definitions for Laurel.
 2. Run a sequence of Laurel-to-Laurel lowering passes (resolution, heap
    parameterization, type hierarchy, modifies clauses, hole inference,
-   desugaring, lifting, constrained type elimination).
-3. Group and order declarations into a `CoreWithLaurelTypes`.
-4. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
+   desugaring, lifting, constrained type elimination, contract pass).
+3. Run the proof pass to produce a `FunctionsAndProofsProgram`.
+4. Group and order declarations into a `CoreWithLaurelTypes`.
+5. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
 -/
 
 open Core (VCResult VCResults VerifyOptions)
@@ -105,13 +109,32 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let (program, model) := (result.program, result.model)
   emit "EliminateReturns" program
 
+  let program := eliminateReturnStatements program
+  emit "EliminateReturnStatements" program
+
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   emit "ConstrainedTypeElim" program
 
+  let program := contractPass program
+
+  -- Check if the pipeline introduced new resolution errors that weren't present initially.
+  -- This catches bugs where a pass produces unresolvable names, which would silently
+  -- cause coreProgramHasSuperfluousErrors to be set with no user-visible diagnostic.
+  let finalResolutionErrors := (resolve program (some model)).errors
+  let newResolutionErrors : List DiagnosticModel :=
+    if finalResolutionErrors.size > resolutionErrors.length then
+      let newCount := finalResolutionErrors.size - resolutionErrors.length
+      let firstNew := finalResolutionErrors.toList.drop resolutionErrors.length
+        |>.head?.map (·.message) |>.getD "unknown"
+      [DiagnosticModel.fromMessage
+        s!"Strata bug: {newCount} new resolution error(s) introduced by pipeline passes. First new error: {firstNew}"
+        DiagnosticType.StrataBug]
+    else []
+
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
-    valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags
+    valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags ++ newResolutionErrors
   return (program, model, allDiags)
 
 /--
@@ -125,11 +148,50 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
+  let functionsAndProofs := eliminateMultipleOutputs functionsAndProofs
+
+  let fnProgram : Program := {
+    staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs,
+    staticFields := [],
+    types := functionsAndProofs.datatypes.map TypeDefinition.Datatype ++
+    -- Hack to compensate for references to composite types not having been updated yet.
+      program.types.filter (fun t => match t with | .Composite _ => true | _ => false),
+    constants := program.constants
+  }
+  let fnResolveResult := resolve fnProgram (some model)
+  let fnResolutionErrors : List DiagnosticModel :=
+    if fnResolveResult.errors.size > 0 then
+      let firstErr := fnResolveResult.errors.toList.head?.map (·.message) |>.getD "unknown"
+      [DiagnosticModel.fromMessage
+        s!"Strata bug: {fnResolveResult.errors.size} resolution error(s) in fnProgram re-resolve. First error: {firstErr}"
+        DiagnosticType.StrataBug]
+    else []
+  let fnModel := fnResolveResult.model
+
+  -- Reconstruct FunctionsAndProofsProgram from the resolved fnProgram so that
+  -- identifiers introduced by eliminateMultipleOutputs have their uniqueId set.
+  let resolvedProcs := fnResolveResult.program.staticProcedures
+  let resolvedDatatypes := fnResolveResult.program.types.filterMap fun td =>
+    match td with | .Datatype dt => some dt | _ => none
+  let functionsAndProofs : FunctionsAndProofsProgram := {
+    functions := resolvedProcs.filter (·.isFunctional)
+    proofs := resolvedProcs.filter (!·.isFunctional)
+    datatypes := resolvedDatatypes
+    constants := fnResolveResult.program.constants
+  }
+
   let ordered := orderFunctionsAndProofs functionsAndProofs
-  let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
+  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
-  let allDiagnostics := passDiags ++ translateState.diagnostics
+  let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
+  let allDiagnostics :=
+    if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
+      -- The program was suppressed but no diagnostics explain why — that's a bug.
+      allDiagnostics ++ [DiagnosticModel.fromMessage
+        "Core program was suppressed due to superfluous errors, but no diagnostics were emitted. This is a bug."
+        DiagnosticType.StrataBug]
+    else allDiagnostics
   let coreProgramOption :=
     if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   return (coreProgramOption, allDiagnostics, program)

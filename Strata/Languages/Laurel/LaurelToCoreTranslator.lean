@@ -100,7 +100,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
       modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-      return .tcons "Composite" []
+      return .tcons "error" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
   | .Unknown => throwTypeDiagnostic ty "could not infer type"
@@ -114,9 +114,6 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
-
-def returnNone: TranslateM α :=
-  StateT.pure none
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
@@ -277,15 +274,17 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
-  | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
-      let valueExpr ← translateExpr  initializer boundVars isPureContext
+  | .Block (⟨ .LocalVariable [⟨ name, ty ⟩] (some initializer), innerSrc, innerMd⟩ :: rest) label => do
+      let valueExpr ← translateExpr initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
-      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
+      -- disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
-      -- let coreMonoType := translateType ty
-      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
-  | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
+      let coreMonoType ← translateType ty
+      return .app () (.abs () "" (some coreMonoType) bodyExpr) valueExpr
+  | .Block (⟨ .LocalVariable _params none, innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
+  | .Block (⟨ .LocalVariable (x::xs) _, innerSrc, innerMd⟩ :: rest) label =>
+    disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions may only have one target"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "if-then-else only supported as the last statement in a block"
 
@@ -298,7 +297,7 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ md.toDiagnostic s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
-  | .LocalVariable _ _ _ =>
+  | .LocalVariable _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
   | .Return _ => disallowed md "return expression should be lowered in a separate pass"
 
@@ -370,37 +369,51 @@ def translateStmt (stmt : StmtExprMd)
       match label with
       | some l => return [Imperative.Stmt.block l innerStmts md]
       | none   => return innerStmts
-  | .LocalVariable id ty initializer =>
-      let coreMonoType ← translateType ty
-      let coreType := LTy.forAll [] coreMonoType
-      let ident := ⟨id.text, ()⟩
+  | .LocalVariable params initializer =>
       match initializer with
       | some (⟨ .StaticCall callee args, callSrc, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr { val := .StaticCall callee args, source := callSrc, md := callMd }
-            return [Core.Statement.init ident coreType (.det coreExpr) md]
+            let stmts ← params.mapM fun p => do
+              let coreType := LTy.forAll [] (← translateType p.type)
+              pure (Core.Statement.init ⟨p.name.text, ()⟩ coreType (.det coreExpr) md)
+            return stmts
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
-            let defaultExpr ← defaultExprForType ty
-            let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-            return [initStmt, callStmt]
+            let initStmts ← params.mapM fun p => do
+              let coreType := LTy.forAll [] (← translateType p.type)
+              let defaultExpr ← defaultExprForType p.type
+              pure (Core.Statement.init ⟨p.name.text, ()⟩ coreType (.det defaultExpr) md)
+            let idents := params.map fun p => ⟨p.name.text, ()⟩
+            let callStmt := Core.Statement.call idents callee.text coreArgs md
+            return initStmts ++ [callStmt]
       | some (⟨ .InstanceCall .., _, _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType .nondet md
-          return [initStmt]
+          let stmts ← params.mapM fun p => do
+            let coreType := LTy.forAll [] (← translateType p.type)
+            pure (Core.Statement.init ⟨p.name.text, ()⟩ coreType .nondet md)
+          return stmts
       | some (⟨ .Hole _ _, _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
-          return [Core.Statement.init ident coreType .nondet md]
+          let stmts ← params.mapM fun p => do
+            let coreType := LTy.forAll [] (← translateType p.type)
+            pure (Core.Statement.init ⟨p.name.text, ()⟩ coreType .nondet md)
+          return stmts
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (.det coreExpr) md]
+          let stmts ← params.mapM fun p => do
+            let coreType := LTy.forAll [] (← translateType p.type)
+            pure (Core.Statement.init ⟨p.name.text, ()⟩ coreType (.det coreExpr) md)
+          return stmts
       | none =>
-          return [Core.Statement.init ident coreType .nondet md]
+          let stmts ← params.mapM fun p => do
+            let coreType := LTy.forAll [] (← translateType p.type)
+            pure (Core.Statement.init ⟨p.name.text, ()⟩ coreType .nondet md)
+          return stmts
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _, _ ⟩] =>
@@ -456,7 +469,7 @@ def translateStmt (stmt : StmtExprMd)
               return (havocStmts)
           | _ =>
               emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
-              returnNone
+              return []
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt thenBranch
@@ -701,7 +714,8 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
-      let coreFuncs ← funcs.mapM (translateProcedureToFunction options isRecursive)
+      let nonExternal := funcs.filter (fun p => !p.body.isExternal)
+      let coreFuncs ← nonExternal.mapM (translateProcedureToFunction options isRecursive)
       if isRecursive then
         let coreFuncValues := coreFuncs.filterMap (fun d => match d with
           | .func f _ => some f
@@ -733,6 +747,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
       } mdWithUnknownLoc]
 
 
+  -- TODO move this to another location
   -- Emit diagnostics for composite types with instance procedures.
   for td in program.types do
     if let .Composite ct := td then

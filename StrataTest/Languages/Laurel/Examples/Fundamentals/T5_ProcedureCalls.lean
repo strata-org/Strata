@@ -13,7 +13,9 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-procedure fooReassign(): int {
+procedure fooReassign(): int
+  opaque
+{
   var x: int := 0;
   x := x + 1;
   assert x == 1;
@@ -21,14 +23,18 @@ procedure fooReassign(): int {
   x
 };
 
-procedure fooSingleAssign(): int {
+procedure fooSingleAssign(): int
+  opaque
+{
   var x: int := 0;
   var x2: int := x + 1;
   var x3: int := x2 + 1;
   x3
 };
 
-procedure fooProof() {
+procedure fooProof()
+  opaque
+{
   var x: int := fooReassign();
   var y: int := fooSingleAssign()
 // The following assertions fails while it should succeed,
@@ -41,7 +47,9 @@ function aFunction(x: int): int
   x
 };
 
-procedure aFunctionCaller() {
+procedure aFunctionCaller()
+  opaque
+{
   var x: int := aFunction(3);
   assert x == 3
 };

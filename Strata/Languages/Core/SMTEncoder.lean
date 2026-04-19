@@ -355,6 +355,10 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
       argvars := argvars ++ [TermVar.mk (toString $ format inty) smt_inty]
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
     .ok (Term.app (.uf uf) allArgs smt_outty, ctx)
+  -- Let expression: (λ v : T. body) value — substitute value into body
+  | .app _ (.abs _ _ _ body) e1 => do
+    let inlined := LExpr.subst (fun _ => e1) body
+    toSMTTerm E bvs inlined ctx useArrayTheory
   | .app _ _ _ =>
     .error f!"Cannot encode expression {e}"
 

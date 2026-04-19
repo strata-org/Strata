@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Laurel
 
 /-!
@@ -32,17 +33,46 @@ structure FunctionsAndProofsProgram where
   datatypes : List DatatypeDefinition
   constants : List Constant
 
+/-- Deep traversal that strips all Assert and Assume nodes from a StmtExpr tree.
+    Assert/Assume nodes are replaced with `LiteralBool true`, and Block nodes
+    are collapsed by filtering out trivial `LiteralBool true` leftovers. -/
+def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e =>
+    match e.val with
+    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.source, e.md⟩
+    | .Block stmts label =>
+      let stmts' := stmts.filter fun s =>
+        match s.val with | .LiteralBool true => false | _ => true
+      match stmts' with
+      | [] => ⟨.LiteralBool true, e.source, e.md⟩
+      | [s] => if label.isNone then s else ⟨.Block [s] label, e.source, e.md⟩
+      | _ => ⟨.Block stmts' label, e.source, e.md⟩
+    | _ => e) expr
+
+/-- Create the function copy of a procedure. The function body is included only
+    when the procedure was originally functional and has a transparent body;
+    non-functional procedures get opaque function copies since their bodies
+    contain imperative constructs that cannot be translated as pure functions.
+    Assert/Assume nodes are stripped from function bodies. -/
+private def mkFunctionCopy (proc : Procedure) : Procedure :=
+  let body := match proc.body with
+      | .Transparent b => .Transparent (stripAssertAssume b)
+      | .Opaque _ _ _ => .Opaque [] none []
+      | x => x
+  { proc with isFunctional := true, body := body }
+
 /--
-Temporary translation from Laurel to FunctionsAndProofs.
-Will be replaced by the contract and proof passes (#924).
-Maps functional Laurel procedures to functions and
-non-functional Laurel procedures to proofs.
+Proof pass: translate a Laurel program to the FunctionsAndProofs IR.
+
+Partitions procedures by `isFunctional`: functional procedures become
+functions, non-functional become proofs.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let (functions, proofs) := nonExternal.partition (·.isFunctional)
-  -- Only keep `.Datatype` entries; `.Composite` types are handled separately
-  -- via the original `Program` in `translateLaurelToCore`.
+  let functions := program.staticProcedures.map mkFunctionCopy
+  let proofs := nonExternal.map fun p =>
+    { p with isFunctional := false,
+             name := { p.name with text := p.name.text ++ "$proof", uniqueId := none } }
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none

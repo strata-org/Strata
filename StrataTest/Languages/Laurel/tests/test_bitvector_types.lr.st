@@ -1,14 +1,20 @@
 // Bitvector types through the GOTO/CBMC pipeline.
 
-procedure identity32(x: bv 32) returns (r: bv 32) {
+procedure identity32(x: bv 32) returns (r: bv 32)
+  opaque
+{
   r := x
 };
 
-procedure identity8(x: bv 8) returns (r: bv 8) {
+procedure identity8(x: bv 8) returns (r: bv 8)
+  opaque
+{
   r := x
 };
 
-procedure localBv() returns (r: bv 16) {
+procedure localBv() returns (r: bv 16)
+  opaque
+{
   var x: bv 16 := r;
   r := x
 };

@@ -75,7 +75,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         computeExprType model last
     | none => ⟨ .TVoid, source, md ⟩
   -- Statements
-  | .LocalVariable _ _ _ => ⟨ .TVoid, source, md ⟩
+  | .LocalVariable _ _ => ⟨ .TVoid, source, md ⟩
   | .While _ _ _ _ => ⟨ .TVoid, source, md ⟩
   | .Exit _ => ⟨ .TVoid, source, md ⟩
   | .Return _ => ⟨ .TVoid, source, md ⟩

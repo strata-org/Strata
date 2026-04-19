@@ -22,28 +22,35 @@ datatype IntList {
   Cons(head: int, tail: IntList)
 }
 
-function listLen(xs: IntList): int {
+function listLen(xs: IntList): int
+{
   if IntList..isNil(xs) then 0
   else 1 + listLen(IntList..tail!(xs))
 };
 
-procedure testListLen() {
+procedure testListLen()
+  opaque
+{
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert listLen(xs) == 2
 };
 
 // Mutual recursion
-function listLenEven(xs: IntList): bool {
+function listLenEven(xs: IntList): bool
+{
   if IntList..isNil(xs) then true
   else listLenOdd(IntList..tail!(xs))
 };
 
-function listLenOdd(xs: IntList): bool {
+function listLenOdd(xs: IntList): bool
+{
   if IntList..isNil(xs) then false
   else listLenEven(IntList..tail!(xs))
 };
 
-procedure testMutualRecursion() {
+procedure testMutualRecursion()
+  opaque
+{
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert listLenEven(xs) == true
 };
