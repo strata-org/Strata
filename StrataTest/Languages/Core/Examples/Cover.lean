@@ -13,7 +13,7 @@ namespace Strata
 def coverPgm1 :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -65,7 +65,7 @@ Result: ✅ pass
 def coverPgm2 :=
 #strata
 program Core;
-procedure Test(x : int) returns ()
+procedure Test(x : int)
 spec {
   requires x > 1;
 }
@@ -108,7 +108,7 @@ Result: ✅ pass
 def reachCheckGlobalPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -144,7 +144,7 @@ Result: ❌ fail (❗path unreachable)
 def reachCheckMixedPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -197,7 +197,7 @@ Result: ❌ always false and is reachable from declaration entry
 def reachCheckPerStmtPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -240,7 +240,7 @@ Result: ❌ fail
 def reachCheckDiagnosticsPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -273,7 +273,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 def reachCheckPEPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -315,7 +315,7 @@ Result: ❌ fail (❗path unreachable)
 def minimalVerbosePgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x > 0);

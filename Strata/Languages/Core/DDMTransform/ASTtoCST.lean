@@ -43,6 +43,9 @@ namespace Strata
 open Core
 open Strata.CoreDDM
 
+private inductive ParamKind where
+  | input | out | inout
+
 ---------------------------------------------------------------------
 -- Conversion Errors
 ---------------------------------------------------------------------
@@ -864,11 +867,29 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
         ⟨default, none⟩
     pure (.cover default rcAnn labelAnn exprCST)
   | .call lhs pname args _md => do
-    let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
-    let argsCST ← args.toArray.mapM (fun a => lexprToExpr a 0)
-    let argsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, argsCST⟩
-    pure (.call_statement default lhsAnn pnameAnn argsAnn)
+    let lhsNames := lhs.map (·.name)
+    let mut callArgs : Array (CallArg M) := #[]
+    let mut inoutEmitted : Array String := #[]
+    for a in args do
+      match a with
+      | .fvar _ id _ =>
+        if lhsNames.contains id.name then
+          let nameAnn : Ann String M := ⟨default, id.name⟩
+          callArgs := callArgs.push (.callArgInout default nameAnn)
+          inoutEmitted := inoutEmitted.push id.name
+        else
+          let exprCST ← lexprToExpr a 0
+          callArgs := callArgs.push (.callArgExpr default exprCST)
+      | _ =>
+        let exprCST ← lexprToExpr a 0
+        callArgs := callArgs.push (.callArgExpr default exprCST)
+    for id in lhs do
+      if !inoutEmitted.contains id.name then
+        let nameAnn : Ann String M := ⟨default, id.name⟩
+        callArgs := callArgs.push (.callArgOut default nameAnn)
+    let callArgsAnn : Ann (Array (CallArg M)) M := ⟨default, callArgs⟩
+    pure (.call_statement default pnameAnn callArgsAnn)
   | .block label stmts _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     let blockCST ← blockToCST stmts
@@ -952,39 +973,29 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       let tvars := proc.header.typeArgs.map fun tv =>
         TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
       ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
-  let processInput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (Binding M × String) := do
+  let outputSet := proc.header.outputs.toArray.map (·.1)
+  let mkBinding' (id : CoreIdent) (ty : Lambda.LMonoTy) (kind : ParamKind) :
+      ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.toPretty⟩
     let paramType ← lmonoTyToCoreType ty
-    let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
+    let binding := match kind with
+      | .out => Binding.outBinding default paramName (TypeP.expr paramType)
+      | .inout => Binding.inoutBinding default paramName (TypeP.expr paramType)
+      | .input => Binding.mkBinding default paramName (TypeP.expr paramType)
     pure (binding, id.toPretty)
-  let inputResults ← proc.header.inputs.toArray.mapM (fun (id, ty) => processInput id ty)
-  let inputBindings := inputResults.map (·.1)
-  let inputNames := inputResults.map (·.2)
-  let inputs : Bindings M := .mkBindings default ⟨default, inputBindings⟩
-  let processOutput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (MonoBind M × String) := do
-    let nameAnn : Ann String M := ⟨default, id.toPretty⟩
-    let tyCST ← lmonoTyToCoreType ty
-    pure (MonoBind.mono_bind_mk default nameAnn tyCST, id.toPretty)
-  let outputResults ← proc.header.outputs.toArray.mapM (fun (id, ty) => processOutput id ty)
-  let outputBinds := outputResults.map (·.1)
-  let outputNames := outputResults.map (·.2)
-  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · outputNames)
-  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · inputNames)
-  let outputs : Ann (Option (MonoDeclList M)) M :=
-    if outputBinds.isEmpty then
-      ⟨default, none⟩
-    else
-      let declList := outputBinds[1:].foldl
-        (fun acc bind => MonoDeclList.monoDeclPush default acc bind)
-        (MonoDeclList.monoDeclAtom default outputBinds[0]!)
-      ⟨default, some declList⟩
+  let mut allBindings : Array (Binding M × String) := #[]
+  for (id, ty) in proc.header.inputs.toArray do
+    let kind := if outputSet.contains id then ParamKind.inout else ParamKind.input
+    allBindings := allBindings.push (← mkBinding' id ty kind)
+  let inoutSet := proc.header.inputs.toArray.map (·.1)
+  for (id, ty) in proc.header.outputs.toArray do
+    if !inoutSet.contains id then
+      allBindings := allBindings.push (← mkBinding' id ty .out)
+  let allNames := allBindings.map (·.2)
+  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · allNames)
+  let arguments : Bindings M := .mkBindings default ⟨default, allBindings.map (·.1)⟩
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
-  -- Add modifies
-  if !proc.spec.modifies.isEmpty then
-    let ids : Ann (Array (Ann String M)) M :=
-      ⟨default, proc.spec.modifies.toArray.map fun id => ⟨default, id.name⟩⟩
-    specElts := specElts.push (SpecElt.modifies_spec default ids)
   -- Add requires
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M :=
@@ -1014,7 +1025,7 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   let bodyCST ← blockToCST proc.body
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
-  pure (.command_procedure default name typeArgs inputs outputs spec body)
+  pure (.command_procedure default name typeArgs arguments spec body)
 
 /-- Convert a recursive function to a RecFnDecl CST node -/
 def recFnDeclToCST {M} [Inhabited M]
@@ -1109,24 +1120,9 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
   let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
   pure (.command_distinct default labelAnn exprsAnn)
 
-/-- Convert a variable declaration to CST -/
-def varToCST {M} [Inhabited M]
-    (name : CoreIdent) (ty : Lambda.LTy) (_e : Imperative.ExprOrNondet Expression)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  -- Register name as free variable
-  modify (·.addGlobalFreeVars #[name.toPretty])
-  let nameAnn : Ann String M := ⟨default, name.toPretty⟩
-  let tyCST ← lTyToCoreType ty
-  let typeArgs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
-  let bind := Bind.bind_mk default nameAnn typeArgs tyCST
-  pure (.command_var default bind)
-
 /-- Convert a `Core.Decl` to a Core `Command` -/
 def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
   match decl with
-  | .var name ty e md => do
-    let cmd ← varToCST name ty e md
-    pure [cmd]
   | .type (.con tcons) md => do
     let cmd ← typeConToCST tcons md
     pure [cmd]

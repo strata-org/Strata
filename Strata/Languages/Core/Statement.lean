@@ -60,8 +60,9 @@ instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
   format c := match c with
     | .cmd c => format c
     | .call lhs pname args _md =>
-      f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
-      f!"{pname}({nestD <| group <| joinSep args ("," ++ line)})"
+      let fmtArgs := Format.joinSep args ("," ++ .line)
+      let fmtOut := if lhs.isEmpty then f!"" else f!", out {lhs}"
+      f!"call {pname}({fmtArgs}{fmtOut})"
 
 ---------------------------------------------------------------------
 

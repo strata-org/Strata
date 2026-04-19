@@ -265,10 +265,13 @@ op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
   "while " c:0 "\n" m:0 is body "\n";
 
-op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call " vs " := " f "(" expr ")" ";\n";
-op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call " f "(" expr ")" ";\n";
+category CallArg;
+op callArgExpr (e : Expr) : CallArg => e;
+op callArgOut (v : Ident) : CallArg => "out " v;
+op callArgInout (v : Ident) : CallArg => "inout " v;
+
+op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
+   "call " f "(" args ")" ";\n";
 
 @[scope(c)]
 op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
@@ -279,7 +282,6 @@ op exit_unlabeled_statement : Statement => "exit;\n";
 category SpecElt;
 category Free;
 op free () : Free => "free ";
-op modifies_spec (nms : CommaSepBy Ident) : SpecElt => "modifies " nms ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
@@ -292,6 +294,10 @@ category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
 @[declare(name, tp)]
+op outBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "out " name " : " tp:0;
+@[declare(name, tp)]
+op inoutBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "inout " name " : " tp:0;
+@[declare(name, tp)]
 op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp:0;
 
 category Bindings;
@@ -301,11 +307,10 @@ op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 op command_procedure (name : Ident,
                       typeArgs : Option TypeArgs,
                       @[scope(typeArgs)] b : Bindings,
-                      @[scope(b)] ret : Option MonoDeclList,
-                      @[scope(ret)] s: Option Spec,
-                      @[scope(ret)] body : Option Block) :
+                      @[scope(b)] s: Option Spec,
+                      @[scope(b)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b " returns " "(" ret ")\n"
+  @[prec(10)] "procedure " name typeArgs b "\n"
               s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
@@ -387,10 +392,6 @@ op funcDecl_statement (name : Ident,
 @[declareScopedType(name, some args)]
 op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
   "type " name args ";\n";
-
-@[scope(b)]
-op command_var (b : Bind) : Command =>
-  @[prec(10)] "var " b ";\n";
 
 op command_axiom (label : Option Label, e : bool) : Command =>
   "axiom " label e ";\n";

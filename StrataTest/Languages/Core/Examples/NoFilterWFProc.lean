@@ -18,7 +18,7 @@ def noFilterWFPgm :=
 #strata
 program Core;
 
-procedure P(a : int, b : int) returns (r : int)
+procedure P(a : int, b : int, out r : int)
 spec {
   requires [b_nonzero]: (b != 0);
   ensures [result_ok]: (r == a / b);

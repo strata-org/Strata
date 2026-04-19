@@ -22,6 +22,13 @@ open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
 ---------------------------------------------------------------------
 
+-- Every inout parameter (in both inputs and outputs) must be called with a
+-- simple variable of the same name
+private def areInoutArgsValid (proc : Procedure) (args : List Expression.Expr) : Bool :=
+  (proc.header.inputs.toList.zip args).all fun ((paramId, _), arg) =>
+    !(ListMap.keys proc.header.outputs).contains paramId ||  -- not inout, or …
+    match arg with | .fvar _ id _ => id == paramId | _ => false  -- … is fvar with same name
+
 /--
 Type checker for Strata Core commands.
 
@@ -49,6 +56,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
        else if args.length != proc.header.inputs.length then
          .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's arguments!\
                    Here is the expected signature: {proc.header.inputs}"
+       else if !areInoutArgsValid proc args then
+         .error <| md.toDiagnosticF f!"[{c}]: In-out arguments (parameters appearing in \
+                   both inputs and outputs) must be simple variable references"
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.

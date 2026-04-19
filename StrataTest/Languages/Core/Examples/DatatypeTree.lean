@@ -30,7 +30,7 @@ program Core;
 // Define Tree datatype with Leaf(val: int) and Node(left: Tree, right: Tree) constructors
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeTesters() returns ()
+procedure TestTreeTesters()
 spec {
   ensures true;
 }
@@ -97,7 +97,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeHavoc() returns ()
+procedure TestTreeHavoc()
 spec {
   ensures true;
 }
@@ -143,7 +143,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeExhaustive() returns ()
+procedure TestTreeExhaustive()
 spec {
   ensures true;
 }
@@ -186,7 +186,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeMutualExclusion() returns ()
+procedure TestTreeMutualExclusion()
 spec {
   ensures true;
 }
@@ -232,7 +232,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeEquality() returns ()
+procedure TestTreeEquality()
 spec {
   ensures true;
 }
@@ -287,7 +287,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeInequality() returns ()
+procedure TestTreeInequality()
 spec {
   ensures true;
 }
@@ -331,7 +331,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeDestructor() returns ()
+procedure TestTreeDestructor()
 spec {
   ensures true;
 }
@@ -432,7 +432,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeNested() returns ()
+procedure TestTreeNested()
 spec {
   ensures true;
 }
@@ -506,7 +506,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeDestructorHavoc() returns ()
+procedure TestTreeDestructorHavoc()
 spec {
   ensures true;
 }
@@ -560,7 +560,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeDifferentValues() returns ()
+procedure TestTreeDifferentValues()
 spec {
   ensures true;
 }

@@ -79,7 +79,7 @@ open Strata.C_Simp in
 /--
 info: program Core;
 
-procedure loopTrivial (n : int) returns (return : int)
+procedure loopTrivial (n : int, out return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;

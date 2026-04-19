@@ -11,8 +11,7 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 These tests verify the full pipeline from DDM-parsed Core programs through
 `procedureToGotoCtx` to GOTO JSON output, covering features added in the
 Core-to-GOTO gap-filling work:
-- Global variables in symbol table
-- Procedure contracts (requires/ensures/modifies)
+- Procedure contracts (requires/ensures)
 - Cover command
 - Bitvector operations
 -/
@@ -47,7 +46,7 @@ private def coreToGotoJson (p : Strata.Program) :
 def E2E_SimpleAssert :=
 #strata
 program Core;
-procedure test(x : int) returns () {
+procedure test(x : int) {
   assert (x > 0);
 };
 #end
@@ -59,23 +58,21 @@ procedure test(x : int) returns () {
 
 -------------------------------------------------------------------------------
 
--- Test: global variable appears in symbol table
+-- Test: global variable passed as input parameter appears in symbol table
 def E2E_GlobalVar :=
 #strata
 program Core;
-var g : int;
-procedure test() returns () {
+procedure test(g : int) {
   assert (g > 0);
 };
 #end
 
 #eval do
   let (.ok (symtab, _)) := coreToGotoJson E2E_GlobalVar | IO.throwServerError "translation failed"
-  let gSym := symtab.getObjValD "g"
-  assert! gSym != Lean.Json.null
-  -- isStaticLifetime is a Bool field in CBMCSymbol, serialized by deriving ToJson
-  let isStatic := gSym.getObjValD "isStaticLifetime"
-  assert! isStatic == Lean.Json.bool true
+  let testSym := symtab.getObjValD "test"
+  assert! testSym != Lean.Json.null
+  -- g should appear as a parameter in the procedure
+  assert! (testSym.pretty.splitOn "\"g\"").length > 1
 
 -------------------------------------------------------------------------------
 
@@ -83,7 +80,7 @@ procedure test() returns () {
 def E2E_Precondition :=
 #strata
 program Core;
-procedure test(x : int) returns ()
+procedure test(x : int)
 spec {
   requires (x > 0);
 } {
@@ -105,7 +102,7 @@ spec {
 def E2E_Postcondition :=
 #strata
 program Core;
-procedure test(x : int) returns ()
+procedure test(x : int)
 spec {
   ensures (x > 0);
 } {
@@ -123,15 +120,11 @@ spec {
 
 -------------------------------------------------------------------------------
 
--- Test: procedure with modifies emits #spec_assigns
+-- Test: procedure with g as both input and output parameter
 def E2E_Modifies :=
 #strata
 program Core;
-var g : int;
-procedure test(x : int) returns ()
-spec {
-  modifies g;
-} {
+procedure test(x : int, inout g : int) {
   assert (x > 0);
 };
 #end
@@ -139,10 +132,8 @@ spec {
 #eval do
   let (.ok (symtab, _)) := coreToGotoJson E2E_Modifies | IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
-  let codeType := testSym.getObjValD "type"
-  let namedSub := codeType.getObjValD "namedSub"
-  let specAssigns := namedSub.getObjValD "#spec_assigns"
-  assert! specAssigns != Lean.Json.null
+  assert! testSym != Lean.Json.null
+  assert! (testSym.pretty.splitOn "\"g\"").length > 1
 
 -------------------------------------------------------------------------------
 
@@ -150,7 +141,7 @@ spec {
 def E2E_Cover :=
 #strata
 program Core;
-procedure test(x : int) returns () {
+procedure test(x : int) {
   cover (x > 0);
 };
 #end
@@ -165,7 +156,7 @@ procedure test(x : int) returns () {
 def E2E_BVOps :=
 #strata
 program Core;
-procedure test(x : bv32, y : bv32) returns () {
+procedure test(x : bv32, y : bv32) {
   var z : bv32 := x + y;
   assert (z > bv{32}(0));
 };
@@ -182,7 +173,7 @@ procedure test(x : bv32, y : bv32) returns () {
 def E2E_FreeSpecs :=
 #strata
 program Core;
-procedure test(x : int) returns ()
+procedure test(x : int)
 spec {
   free requires (x > 10);
   requires (x >= 0);
@@ -217,11 +208,11 @@ spec {
 def E2E_Call :=
 #strata
 program Core;
-procedure callee(x : int) returns (r : int) {
+procedure callee(x : int, out r : int) {
   r := x + 1;
 };
-procedure caller() returns (y : int) {
-  call y := callee(42);
+procedure caller(out y : int) {
+  call callee(42, out y);
 };
 #end
 
@@ -259,7 +250,7 @@ def E2E_Axiom :=
 #strata
 program Core;
 axiom [positive_fact]: (42 > 0);
-procedure test(x : int) returns () {
+procedure test(x : int) {
   assert (x > 0);
 };
 #end
@@ -279,7 +270,7 @@ const a : int;
 const b : int;
 const c : int;
 distinct [abc]: [a, b, c];
-procedure test() returns () {
+procedure test() {
   assert (a != b);
 };
 #end
@@ -299,7 +290,7 @@ program Core;
 function myStrInRe(s : string, r : regex) : bool;
 function myReStar(r : regex) : regex;
 function myStrToRe(s : string) : regex;
-procedure test(s : string) returns () {
+procedure test(s : string) {
   assert (myStrInRe(s, myReStar(myStrToRe("abc"))));
 };
 #end
@@ -320,7 +311,7 @@ def E2E_NestedCall :=
 #strata
 program Core;
 function helper(x : int) : int;
-procedure caller(x : int) returns () {
+procedure caller(x : int) {
   var b : int;
   if (x > 0) {
     b := helper(x);
@@ -346,7 +337,7 @@ procedure caller(x : int) returns () {
 def E2E_FuncDecl :=
 #strata
 program Core;
-procedure test(x : int) returns () {
+procedure test(x : int) {
   function double(n : int) : int { n + n }
   assert (double(x) >= 0 || double(x) < 0);
 };
@@ -364,7 +355,7 @@ procedure test(x : int) returns () {
 def E2E_SourceLoc :=
 #strata
 program Core;
-procedure test(x : int) returns () {
+procedure test(x : int) {
   assert (x > 0);
 };
 #end
@@ -403,7 +394,7 @@ private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
 def E2E_PropertySummary :=
 #strata
 program Core;
-procedure test(x : int) returns () {
+procedure test(x : int) {
   assert (x > 0);
 };
 #end

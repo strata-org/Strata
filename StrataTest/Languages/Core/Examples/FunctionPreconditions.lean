@@ -73,7 +73,7 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
-procedure testHead() returns ()
+procedure testHead()
 {
   var x : int;
   havoc x;
@@ -268,7 +268,7 @@ def callUnconditionalPgm :=
 #strata
 program Core;
 
-procedure test() returns ()
+procedure test()
 {
   var z : int := 10 / 2;
 };
@@ -298,7 +298,7 @@ def callWithIfPgm :=
 #strata
 program Core;
 
-procedure test(a : int) returns ()
+procedure test(a : int)
 {
   var z : int;
   if (a > 0) {
@@ -338,7 +338,7 @@ function safeDiv(x : int, y : int) : int
   requires y != 0;
 { x / y }
 
-procedure test(a : int) returns ()
+procedure test(a : int)
 {
   assume a != 0;
   var z : int := safeDiv(10, a);
@@ -430,7 +430,7 @@ def funcDeclPgm :=
 #strata
 program Core;
 
-procedure test() returns ()
+procedure test()
 {
   var x : int := 5;
   function addPositive(y : int) : int
@@ -475,7 +475,7 @@ def loopGuardPrecondPgm :=
 #strata
 program Core;
 
-procedure test(n : int) returns ()
+procedure test(n : int)
 spec {
   requires n != 0;
 }

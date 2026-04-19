@@ -13,7 +13,7 @@ def typeDeclStmt1 : Program :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T;
   var a : T;
   var b : T;
@@ -55,12 +55,12 @@ def typeDeclStmt2 : Program :=
 #strata
 program Core;
 
-procedure P1 () returns () {
+procedure P1 () {
   type T;
   var x : T;
 };
 
-procedure P2 () returns () {
+procedure P2 () {
   type T;
   var y : T;
 };
@@ -75,7 +75,7 @@ def typeDeclStmt3 : Program :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T;
   type U;
   var x : T;
@@ -116,7 +116,7 @@ def typeDeclStmt4 : Program :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T (a : Type, b : Type);
   var x : T int bool;
   var y : T int bool;
@@ -155,7 +155,7 @@ def shadowTopLevelType : Program :=
 #strata
 program Core;
 type T;
-procedure P () returns () {
+procedure P () {
   type T;
   var x : T;
 };
@@ -176,11 +176,11 @@ error: Undeclared type or category T.
 def typeScopeError :=
 #strata
 program Core;
-procedure P1 () returns () {
+procedure P1 () {
   type T;
   var x : T;
 };
-procedure P2 () returns () {
+procedure P2 () {
   var y : T;
 };
 #end
@@ -194,7 +194,7 @@ def typeDeclStmtError1 :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T (a : Type, b : Type);
   var p1 : T int bool;
   var p2 : T bool int;

@@ -14,7 +14,7 @@ namespace Strata
 def issue419TestPgm :=
 #strata
 program Core;
-procedure first(x : int) returns (r : int)
+procedure first(x : int, out r : int)
 spec { ensures [post]: (r >= 0); }
 {
   body: {
@@ -24,7 +24,7 @@ spec { ensures [post]: (r >= 0); }
   }
 };
 
-procedure second() returns () { assert [a]: true; };
+procedure second() { assert [a]: true; };
 #end
 
 
@@ -50,7 +50,7 @@ def sequentialExitPgm :=
 program Core;
 
 
-procedure wrong(c1 : bool, c2 : bool) returns (r : int)
+procedure wrong(c1 : bool, c2 : bool, out r : int)
 spec { ensures r > 0; }
 {
   done: {
@@ -91,7 +91,7 @@ Result: ✅ pass
 def concreteTrueDeadElse :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (true) {
     assert [live_then]: true;
   } else {
@@ -116,7 +116,7 @@ Result: ✅ pass
 def concreteFalseDeadThen :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (false) {
     assert [dead_then]: true;
   } else {
@@ -141,7 +141,7 @@ Result: ✅ pass
 def concreteFalseDeadThenCover :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (false) {
     cover [dead_cover]: true;
   } else {
@@ -166,7 +166,7 @@ Result: ✅ pass
 def programOrderConcreteFalse :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   assert [pre]: true;
   if (false) {
     assert [dead_then]: true;
@@ -205,7 +205,7 @@ Result: ✅ pass
 def deadBranchAnnotations :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (true) {
   } else {
     assert [dead_assert]: true;
@@ -240,7 +240,7 @@ Result: ✅ pass (❗path unreachable)
 def noDupConcreteTrue :=
 #strata
 program Core;
-procedure p(x : bool) returns () {
+procedure p(x : bool) {
   assert [pre]: true;
   if (true) {
     done: {
@@ -290,7 +290,7 @@ Result: ✅ pass
 def noDupConcreteFalse :=
 #strata
 program Core;
-procedure q(x : bool) returns () {
+procedure q(x : bool) {
   assert [pre]: true;
   if (false) {
     assert [dead_then]: true;

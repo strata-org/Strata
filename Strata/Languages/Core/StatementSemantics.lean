@@ -323,8 +323,8 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δ ρ'.store post = .some HasBool.tt) →
 
-    ReadValues ρ'.store (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
-    UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
+    ReadValues ρ'.store (ListMap.keys (p.header.outputs)) modvals →
+    UpdateStates σ (lhs) modvals σ' →
     ----
     EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' false
 
@@ -397,7 +397,7 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ----
     EvalCommandContract π δ σ (CmdExt.cmd c) σ' f
 
-  | call_sem {π δ σ σ₀ args oVals vals σA σAO σO σR n p modvals lhs σ' md} :
+  | call_sem {π δ σ σ₀ args oVals vals σA σAO σO n p modvals lhs σ' md} :
     π n = .some p →
     EvalExpressions (P:=Core.Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -421,13 +421,12 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
-    HavocVars σO p.spec.modifies σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ σR post = .some HasBool.tt) →
-    ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
-    UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
+      δ σO post = .some HasBool.tt) →
+    ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
+    UpdateStates σ (lhs) modvals σ' →
     ----
     EvalCommandContract π δ σ (.call lhs n args md) σ' false
 
