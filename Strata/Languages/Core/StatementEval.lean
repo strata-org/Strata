@@ -438,6 +438,10 @@ private def mergeDownPaths (cond : Expression.Expr)
         { acc with env := Env.merge cond acc.env ewn.env }) first])
   errors ++ merged.flatten
 
+/-- Compare two conditions for structural equality, ignoring metadata. -/
+private def condEq (a b : Expression.Expr) : Bool :=
+  a.eraseMetadata == b.eraseMetadata
+
 /--
 Extract the first element from `ts` whose head `splitConds` condition
 matches `cond`. Returns `(matched_element, remaining_list)` or `none`.
@@ -449,7 +453,7 @@ private def extractMatchingTrue (cond : Expression.Expr) :
   | e_t :: rest, acc =>
     match e_t.splitConds.head? with
     | some (cond_t, _) =>
-      if cond_t == cond then some (e_t, acc.reverse ++ rest)
+      if condEq cond_t cond then some (e_t, acc.reverse ++ rest)
       else extractMatchingTrue cond rest (e_t :: acc)
     | none => extractMatchingTrue cond rest (e_t :: acc)
 
