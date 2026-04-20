@@ -62,7 +62,12 @@ def LExpr.typeCheck {T : LExprParams} (ctx : List LMonoTy) : LExpr T.mono → Op
     guard (ty1 == ty2)
     some .bool
 
-/-- Declarative typing rules for annotated expressions. -/
+/-- Declarative typing rules for annotated expressions.
+
+The first argument (`List LMonoTy`) is the typing context for bound variables,
+ordered by De Bruijn indices: the head of the list is the type of the most
+recently bound variable (index 0), the next element is the type of the
+variable at index 1, and so on. -/
 inductive LExpr.HasTypeA {T : LExprParams} : List LMonoTy → LExpr T.mono → LMonoTy → Prop where
   | const : HasTypeA Δ (.const m c) c.ty
   | op    : HasTypeA Δ (.op m o (some ty)) ty

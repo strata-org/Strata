@@ -132,11 +132,6 @@ sort arguments to a Lean `Type`. -/
 class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
   inhabited : ∀ name args, Inhabited (tcInterp name args)
 
-@[expose] public def isArrow (n: String) (args: List LSort) : Option (LSort × LSort) :=
-  match n, args with
-  | "arrow", [a, b] => some (a, b)
-  | _ , _ => none
-
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
 string, bitvec, arrow) are mapped to their Lean counterparts; all others
 are delegated to `tcInterp`. -/
@@ -187,7 +182,7 @@ abbrev BVarVal (tcInterp : TyConstrInterp)
     (ρ : TyVarVal) (Δ : List LMonoTy) :=
   HList (TyDenote tcInterp ρ) Δ
 
-/-! ### Intepreting Free Variables and Operators -/
+/-! ### Interpreting Free Variables and Operators -/
 
 /-- Maps each identifier and sort to a semantic value of that sort.
 Used for both operator interpretations (`OpInterp`) and free-variable
