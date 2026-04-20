@@ -32,7 +32,7 @@ import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
-open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intSafeDivOp intModOp intSafeModOp intDivTOp intSafeDivTOp intModTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
 namespace Strata.Laurel
@@ -64,6 +64,11 @@ structure TranslateState where
   overflowChecks : Core.OverflowChecks := {}
   /-- Do not process the produces Core program, since it has superfluous errors -/
   coreProgramHasSuperfluousErrors: Bool := false
+  /-- When `true`, use safe division (`intSafeDivOp`) and safe datatype selectors
+      (with preconditions). When `false`, use unsafe division (`intDivOp`) and
+      unsafe datatype selectors (without preconditions).
+      Set to `true` for proof procedures and `false` for functions. -/
+  proof : Bool := false
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
@@ -71,6 +76,25 @@ structure TranslateState where
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
+
+/-- Adjust a datatype selector (destructor) name based on the `proof` flag.
+    Destructor names contain `..` (e.g. `IntList..head`, `IntList..head!`).
+    Tester names also contain `..` but start with `is` after the separator.
+    - `proof = true` → use safe selectors (strip `!` suffix)
+    - `proof = false` → use unsafe selectors (add `!` suffix) -/
+private def adjustSelectorName (name : String) (proof : Bool) : String :=
+  -- Only adjust destructor names (contain ".." but are not testers)
+  match name.splitOn ".." with
+  | [_, suffix] =>
+    if suffix.startsWith "is" then name  -- tester, leave unchanged
+    else if proof then
+      name
+      -- Safe: strip trailing "!"
+      -- if name.endsWith "!" then (name.dropEnd 1).toString else name
+    else
+      -- Unsafe: add trailing "!" if not already present
+      if name.endsWith "!" then name else name ++ "!"
+  | _ => name  -- not a destructor name, leave unchanged
 
 /-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
@@ -147,6 +171,7 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
+  let proof := (← get).proof
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       throwExprDiagnostic $ md.toDiagnostic msg
@@ -201,10 +226,10 @@ def translateExpr (expr : StmtExprMd)
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isReal then realDivOp else intSafeDivOp)
-    | .Mod => return binOp intSafeModOp
-    | .DivT => return binOp intSafeDivTOp
-    | .ModT => return binOp intSafeModTOp
+    | .Div => return binOp (if isReal then realDivOp else if proof then intSafeDivOp else intDivOp)
+    | .Mod => return binOp (if (← get).proof then intSafeModOp else intModOp)
+    | .DivT => return binOp (if (← get).proof then intSafeDivTOp else intDivTOp)
+    | .ModT => return binOp (if (← get).proof then intSafeModTOp else intModTOp)
     | .Lt => return binOp (if isReal then realLtOp else intLtOp)
     | .Leq => return binOp (if isReal then realLeOp else intLeOp)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
@@ -231,7 +256,8 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && !model.isFunction callee then
         disallowed md "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+        let calleeName := adjustSelectorName callee.text (← get).proof
+        let fnOp : Core.Expression.Expr := .op () ⟨calleeName, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -716,6 +742,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
+      modify fun s => { s with proof := false }
       let nonExternal := funcs.filter (fun p => !p.body.isExternal)
       let coreFuncs ← nonExternal.mapM (translateProcedureToFunction options isRecursive)
       if isRecursive then
@@ -726,6 +753,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
       else
         return coreFuncs
     | .procedure proc => do
+      modify fun s => { s with proof := true }
       let procDecl ← translateProcedure proc
       -- Turn free postconditions into axioms placed right behind the related procedure
       let axiomDecls : List Core.Decl ← match proc.invokeOn with
