@@ -98,7 +98,7 @@ def buildEvalEnv (program : Program)
     Runs symbolic execution and converts obligations to a program. -/
 def symbolicEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Program × Statistics) := do
+    Except DiagnosticModel (Program × Env × Statistics) := do
   let (E, declStats) ← buildEvalEnv program moreFns
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
@@ -145,7 +145,7 @@ def symbolicEval (options : VerifyOptions) (program : Program)
     dbg_trace f!"{Std.Format.line}VCs:"
     for E in pEs do
       dbg_trace f!"{formatProofObligations E.deferred}"
-  return (oblProgram, stats)
+  return (oblProgram, pEs.head?.getD E, stats)
 
 
 /-- Convenience: type check then symbolic eval. -/
@@ -153,7 +153,8 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
   let program ← typeCheck options program moreFns
-  symbolicEval options program moreFns
+  let (prog, _, stats) ← symbolicEval options program moreFns
+  return (prog, stats)
 
 /-- Build an Env suitable for SMT encoding from a program.
     Loads factory functions, datatypes, and distinct constraints

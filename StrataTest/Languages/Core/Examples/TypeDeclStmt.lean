@@ -162,7 +162,7 @@ procedure P () returns () {
 #end
 
 /--
-error: ❌ Transform Error. Type 'T' is already declared
+error: ❌ TypeCheck Error. Type 'T' is already declared
 -/
 #guard_msgs in
 #eval verify shadowTopLevelType

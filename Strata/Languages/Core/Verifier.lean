@@ -841,7 +841,7 @@ def symbolicEvalPipelinePhase (options : VerifyOptions)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase where
   transform prog := do
     match Core.symbolicEval options prog moreFns with
-    | .ok (p, _) => return (true, p)
+    | .ok (p, _, _) => return (true, p)
     | .error e => throw s!"{e.message}"
   phase := { name := "SymbolicEval", getValidation := fun _ => .modelPreserving }
 
@@ -1073,9 +1073,7 @@ def verify (program : Program)
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
-  let evalPhases := [typeCheckPipelinePhase options moreFns,
-                     symbolicEvalPipelinePhase options moreFns,
-                     Core.anfEncoderPipelinePhase]
+  let evalPhases := [typeCheckPipelinePhase options moreFns]
   let allPhases := pipelinePhases ++ evalPhases
   let phases := allPhases.map (·.phase)
   let ((oblProgram, preEvalProgram), pipelineStats) ← profileStep profile "  Pipeline" do
@@ -1084,7 +1082,7 @@ def verify (program : Program)
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
           (IO.FS.createDirAll parent)
     let mut current := program
-    let mut preEvalProgram := program  -- saved for SMT env construction (after typeCheck)
+    let mut preEvalProgram := program
     let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
     let numPreEvalPhases := pipelinePhases.length + 1  -- transforms + typeCheck
@@ -1105,7 +1103,7 @@ def verify (program : Program)
           IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
             (IO.FS.writeFile path (toString current ++ "\n"))
       | .error e =>
-        throw (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+        throw (DiagnosticModel.fromFormat f!"❌ {pp.phase.name} Error. {e}")
     .ok ((current, preEvalProgram), state.statistics)
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
@@ -1113,13 +1111,15 @@ def verify (program : Program)
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build preEvalProgram))
   let allStats := pipelineStats
-  -- Build SMT encoding context using the pre-eval program
-  let (smtEnv, _) ← match Core.buildEvalEnv preEvalProgram moreFns with
-    | .ok (E, stats) =>
-      match Program.eval E with
-      | .ok (pEs, evalStats) => pure (pEs.head?.getD E, stats.merge evalStats)
-      | .error e => .error e
+  -- Run symbolic evaluation separately to capture the Env for SMT encoding
+  let ((oblProgram, smtEnv), symEvalStats) ← profileStep profile "  Symbolic eval" do
+    match Core.symbolicEval options oblProgram moreFns with
+    | .ok (prog, env, stats) => .ok ((prog, env), stats)
     | .error e => .error e
+  let allStats := allStats.merge symEvalStats
+  -- Run ANF encoding on the obligations program
+  let (oblProgram, _) ← profileStep profile "  ANF encoding" do
+    pure (Core.ANFEncoder.anfEncodeProgram oblProgram, ({} : Statistics))
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
