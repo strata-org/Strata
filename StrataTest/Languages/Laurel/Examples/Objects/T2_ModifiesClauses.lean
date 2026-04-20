@@ -85,6 +85,7 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
+  opaque
   modifies c
   modifies d
 ;
