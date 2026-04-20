@@ -352,7 +352,7 @@ def shouldSkip (name : String) : PySpecM Bool := do
   return nameIdent ∈ ctx.skipNames
 
 def specErrorAt (file : System.FilePath) (loc : SourceRange) (message : String) : PySpecM Unit := do
-  let e : SpecError := { file, loc, message }
+  let e : SpecError := { file, loc, kind := .pySpecParsingError, message }
   modify fun s => { s with errors := s.errors.push e }
 
 instance : PySpecMClass PySpecM where
@@ -360,7 +360,7 @@ instance : PySpecMClass PySpecM where
     specErrorAt (←read).pythonFile loc message
   specWarning loc message := do
     let file := (←read).pythonFile
-    let w : SpecError := { file, loc, message }
+    let w : SpecError := { file, loc, kind := .pySpecParsingWarning, message }
     modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
@@ -736,11 +736,11 @@ abbrev SpecAssertionM := ReaderT SpecAssertionContext (StateM SpecAssertionState
 instance : PySpecMClass SpecAssertionM where
   specError loc message := do
     let file := (←read) |>.filePath
-    let e : SpecError := { file, loc, message }
+    let e : SpecError := { file, loc, kind := .pySpecParsingError, message }
     modify fun s => { s with errors := s.errors.push e }
   specWarning loc message := do
     let file := (←read) |>.filePath
-    let w : SpecError := { file, loc, message }
+    let w : SpecError := { file, loc, kind := .pySpecParsingWarning, message }
     modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
@@ -770,8 +770,10 @@ def extractKwargsField (e : expr SourceRange)
 partial def extractSubject (e : expr SourceRange)
     : SpecAssertionM (Option SpecExpr) := do
   match ← extractKwargsField e with
-  | some (kn, fn) => return some (.getIndex (.var kn (loc := e.ann)) fn (loc := e.ann))
-  | none => pure ()
+  | some (kn, fn) =>
+    return some (.getIndex (.var kn (loc := e.ann)) fn (loc := e.ann))
+  | none =>
+    pure ()
   match e with
   | .Name _ ⟨_, name⟩ (.Load _) => return some (.var name (loc := e.ann))
   | .Subscript _ inner (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
