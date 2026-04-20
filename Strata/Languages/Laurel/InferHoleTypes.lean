@@ -47,6 +47,7 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
 structure InferHoleState where
   model : SemanticModel
   currentOutputType : HighTypeMd := ⟨.Unknown, none, #[]⟩
+  diagnostics : List DiagnosticModel := []
 
 private abbrev InferHoleM := StateM InferHoleState
 
@@ -80,6 +81,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   match val with
   | .Hole det _ =>
       if expectedType.val == .Unknown then
+        let diag := (fileRangeToCoreMd source md).toDiagnostic "could not infer type"
+        modify fun s => { s with diagnostics := s.diagnostics ++ [diag] }
         return expr
       else
         return ⟨.Hole det (some expectedType), source, md⟩
@@ -162,11 +165,12 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 
 /--
 Annotate every `.Hole` in the program with a type inferred from context.
+Returns the updated program and any diagnostics (e.g. holes whose type could not be inferred).
 -/
-def inferHoleTypes (model : SemanticModel) (program : Program) : Program :=
+def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel :=
   let initState : InferHoleState := { model := model }
-  let (procs, _) := (program.staticProcedures.mapM inferProcedure).run initState
-  { program with staticProcedures := procs }
+  let (procs, finalState) := (program.staticProcedures.mapM inferProcedure).run initState
+  ({ program with staticProcedures := procs }, finalState.diagnostics)
 
 end -- public section
 end Laurel

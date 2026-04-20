@@ -97,7 +97,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   emit "ModifiesClausesTransform" program
-  let program := inferHoleTypes model program
+  let (program, inferHoleDiags) := inferHoleTypes model program
   emit "InferHoleTypes" program
   let program := eliminateHoles program
   emit "EliminateHoles" program
@@ -135,7 +135,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     else []
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
-    valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags ++ newResolutionErrors
+    valueReturnDiags.toList ++ modifiesDiags ++ inferHoleDiags ++ constrainedTypeDiags ++ newResolutionErrors
   return (program, model, allDiags)
 
 /--
@@ -176,25 +176,28 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   }
 
   let coreWithLaurelTypes := orderFunctionsAndProofs functionsAndProofs
-  let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
-  dbg_trace "=========== COREWithLaurelTypes PROGRAM"
-  dbg_trace s!"{Std.format coreWithLaurelTypes}"
-  let (coreProgramOption, translateState) :=
-    runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
-  let allDiagnostics := passDiags ++ translateState.diagnostics
-  let allDiagnostics :=
-    if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
-      -- The program was suppressed but no diagnostics explain why — that's a bug.
-      allDiagnostics ++ [DiagnosticModel.fromMessage
-        "Core program was suppressed due to superfluous errors, but no diagnostics were emitted. This is a bug."
-        DiagnosticType.StrataBug]
-    else allDiagnostics
+  if ! passDiags.isEmpty then
+    return (none, passDiags, program)
+  else
+    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+    dbg_trace "=========== COREWithLaurelTypes PROGRAM"
+    dbg_trace s!"{Std.format coreWithLaurelTypes}"
+    let (coreProgramOption, translateState) :=
+      runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
+    let allDiagnostics := translateState.diagnostics
+    let allDiagnostics :=
+      if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
+        -- The program was suppressed but no diagnostics explain why — that's a bug.
+        allDiagnostics ++ [DiagnosticModel.fromMessage
+          "Core program was suppressed due to superfluous errors, but no diagnostics were emitted. This is a bug."
+          DiagnosticType.StrataBug]
+      else allDiagnostics
 
-  dbg_trace "=========== CORE PROGRAM"
-  dbg_trace s!"{Std.format coreProgramOption}"
-  let coreProgramOption :=
-    if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  return (coreProgramOption, allDiagnostics, program)
+    dbg_trace "=========== CORE PROGRAM"
+    dbg_trace s!"{Std.format coreProgramOption}"
+    let coreProgramOption :=
+      if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
+    return (coreProgramOption, allDiagnostics, program)
 
 /--
 Translate Laurel Program to Core Program.
