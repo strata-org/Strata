@@ -27,25 +27,27 @@ composite Container {
   var value: int
 }
 
-procedure modifyContainerOpaque(c: Container)
+procedure modifyContainerOpaque(c: Container) returns (b: bool)
   ensures true // makes this procedure opaque. Maybe we should use explicit syntax
   modifies c
 {
   c#value := c#value + 1;
-}
+  true
+};
 
-procedure modifyContainerTransparant(c: Container)
+procedure modifyContainerTransparant(c: Container) returns (i: int)
 {
   c#value := c#value + 1;
-}
+  7
+};
 
 procedure caller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
-  modifyContainerOpaque(c)
-  assert x == d#value; // pass
-}
+  var b: bool := modifyContainerOpaque(c);
+  assert x == d#value // pass
+};
 
 // This test-case does not work yet.
 // Because Core procedures never have transparent bodies
@@ -53,7 +55,7 @@ procedure caller() {
 //   ensures true
 //   modifies c
 //{
-//    modifyContainerTransparant(c);
+//    var i: int := modifyContainerTransparant(c);
 //}
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
@@ -61,8 +63,8 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
    ensures true
 {
-    modifyContainerTransparant(c)
-}
+    var i: int := modifyContainerTransparant(c)
+};
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
@@ -70,8 +72,8 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
   ensures true
   modifies d
 {
-    c#value := 2;
-}
+    c#value := 2
+};
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -79,28 +81,29 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
   ensures true
   modifies d
 {
-    modifyContainerTransparant(c)
-}
+    var i: int := modifyContainerTransparant(c)
+};
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
   modifies c
   modifies d
+;
 
 procedure multipleModifiesClausesCaller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var e: Container := new Container;
   var x: int := e#value;
-  multipleModifiesClauses(c, d, e)
-  assert x == e#value; // pass
-}
+  multipleModifiesClauses(c, d, e);
+  assert x == e#value // pass
+};
 
 procedure newObjectDoNotCountForModifies()
   ensures true
 {
   var c: Container := new Container;
-  c#value := 1;
-}
+  c#value := 1
+};
 "
 
 #guard_msgs (drop info, error) in

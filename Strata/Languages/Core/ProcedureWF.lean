@@ -3,14 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.ProcedureType
+public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.StatementWF
 
-
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.ProcedureType
-import Strata.Languages.Core.WF
-import Strata.Languages.Core.StatementWF
+public section
 
 namespace Core
 namespace WF
@@ -29,7 +30,7 @@ theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
-theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
+-- theorem Procedure.typeCheckWF : Procedure.typeCheck C T p pp md = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
 
 
 /-
@@ -122,3 +123,5 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
 
 end WF
 end Core
+
+end -- public section

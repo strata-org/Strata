@@ -27,14 +27,14 @@ open Strata.SMT.Factory
 -- Type Conversion
 ---------------------------------------------------------------------
 
-/-- Convert B3 type name to SMT-LIB type name -/
-def b3TypeToSMT (typeName : String) : String :=
+/-- Convert B3 type name to SMT `TermType`. -/
+def b3TypeToSMTType (typeName : String) : Strata.SMT.TermType :=
   match typeName with
-  | "int" => "Int"
-  | "bool" => "Bool"
-  | "real" => "Real"
-  | "string" => "String"
-  | other => other  -- User-defined types pass through as-is
+  | "int" => .int
+  | "bool" => .bool
+  | "real" => .real
+  | "string" => .string
+  | other => .constr other []
 
 ---------------------------------------------------------------------
 -- Conversion Context

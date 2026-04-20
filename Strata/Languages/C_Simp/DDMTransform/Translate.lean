@@ -7,6 +7,7 @@
 import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.Languages.C_Simp.C_Simp
 import Strata.DDM.AST
+import Strata.Languages.Core.CoreOp
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -177,19 +178,21 @@ end
 ---------------------------------------------------------------------
 
 def translateFn (q : QualifiedIdent) : TransM (LExpr CSimpLParams.mono) :=
+  open Core in
+  let mkOp (op : CoreOp) := return (.op () (op.toString) none)
   match q with
-  | q`C_Simp.and      => return (.op () "Bool.And"     none)
-  | q`C_Simp.or       => return (.op () "Bool.Or"      none)
-  | q`C_Simp.not      => return (.op () "Bool.Not"     none)
-  | q`C_Simp.le       => return (.op () "Int.Le"       none)
-  | q`C_Simp.lt       => return (.op () "Int.Lt"       none)
-  | q`C_Simp.ge       => return (.op () "Int.Ge"       none)
-  | q`C_Simp.gt       => return (.op () "Int.Gt"       none)
-  | q`C_Simp.add      => return (.op () "Int.Add"      none)
-  | q`C_Simp.sub      => return (.op () "Int.Sub"      none)
-  | q`C_Simp.mul      => return (.op () "Int.Mul"      none)
-  | q`C_Simp.div      => return (.op () "Int.Div"      none)
-  | q`C_Simp.mod      => return (.op () "Int.Mod"      none)
+  | q`C_Simp.and      => mkOp (.bool .And)
+  | q`C_Simp.or       => mkOp (.bool .Or)
+  | q`C_Simp.not      => mkOp (.bool .Not)
+  | q`C_Simp.le       => mkOp (.numeric ⟨.int, .Le⟩)
+  | q`C_Simp.lt       => mkOp (.numeric ⟨.int, .Lt⟩)
+  | q`C_Simp.ge       => mkOp (.numeric ⟨.int, .Ge⟩)
+  | q`C_Simp.gt       => mkOp (.numeric ⟨.int, .Gt⟩)
+  | q`C_Simp.add      => mkOp (.numeric ⟨.int, .Add⟩)
+  | q`C_Simp.sub      => mkOp (.numeric ⟨.int, .Sub⟩)
+  | q`C_Simp.mul      => mkOp (.numeric ⟨.int, .Mul⟩)
+  | q`C_Simp.div      => mkOp (.numeric ⟨.int, .Div⟩)
+  | q`C_Simp.mod      => mkOp (.numeric ⟨.int, .Mod⟩)
   | q`C_Simp.len      => return (.op () "Array.Len"    none)
   | q`C_Simp.get      => return (.op () "Array.Get"    none)
   | _                 => TransM.error s!"translateFn: Unknown/unimplemented function {repr q}"
@@ -216,7 +219,7 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
     return .eq () x y
   -- Unary function applications
   | .fn _ q`C_Simp.not, [xa] =>
-    let fn := LExpr.op () ⟨"Bool.Not", ()⟩ none
+    let fn := LExpr.op () ⟨Core.CoreOp.toString (.bool .Not), ()⟩ none
     let x ← translateExpr bindings xa
     return .mkApp () fn [x]
   -- Unary array operations
@@ -383,7 +386,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty none md))], newBindings)
+    return ([(.cmd (.init id ty .nondet md))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
@@ -394,21 +397,21 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty val md))], newBindings)
+    return ([(.cmd (.init id ty (.det val) md))], newBindings)
   | q`C_Simp.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set id val md))], bindings)
+    return ([(.cmd (.set id (.det val) md))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
+    return ([(.ite (.det c) (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
+    return ([.loop (.det (← translateExpr bindings ga)) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set "return" val md))], bindings)
+    return ([(.cmd (.set "return" (.det val) md))], bindings)
   | q`C_Simp.annotation, #[a] =>
     let .op a_op := a
       | TransM.error s!"Annotation expected op {repr a}"

@@ -66,16 +66,9 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
       -- created by CoreGenM.
-      -- new_expr has visibility of unres because that is the default setting
-      -- from DDM parsed program, and the substituted program is supposed to be
-      -- equivalent to the answer program translated from DDM
-      -- These must be reversed when checking e2 -> e1
-      let old_vis := if not isReverse then Visibility.temp else  Visibility.unres
-      let new_vis := if not isReverse then Visibility.unres else Visibility.temp
-      let old_id:Expression.Ident := { name := i1, metadata := old_vis }
-
-      let new_expr:Expression.Expr := .fvar ()
-          { name := i2, metadata := new_vis } .none
+      -- All variables now have Unit metadata; we substitute by name.
+      let old_id : Expression.Ident := { name := i1, metadata := () }
+      let new_expr : Expression.Expr := .fvar () { name := i2, metadata := () } .none
       e.substFvar old_id new_expr)
     e1
 
@@ -103,10 +96,6 @@ private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
 
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
-  (-- Case 1: e1 is created from inliner, e2 was from DDM
-   (e1.metadata == Visibility.temp && e2.metadata == Visibility.unres) ||
-   -- Caes 2: both e1 and e2 are from DDM
-   (e1.metadata == e2.metadata)) &&
   (match Map.find? map.vars.fst e1.name, Map.find? map.vars.snd e2.name with
     | .some n', .some m' => n' == e2.name && m' == e1.name
     | .none, .none => e1.name == e2.name
@@ -137,7 +126,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     alphaEquivBlock b1 b2 map
 
   | .ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _ => do
-    if alphaEquivExprs cond1 cond2 map then
+    let condsMatch := match cond1, cond2 with
+      | .det e1, .det e2 => alphaEquivExprs e1 e2 map
+      | .nondet, .nondet => true
+      | _, _ => false
+    if condsMatch then
       let map' <- alphaEquivBlock thenb1 thenb2 map
       let map'' <- alphaEquivBlock elseb1 elseb2 map'
       return map''
@@ -145,7 +138,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "if conditions do not match"
 
   | .loop g1 m1 i1 b1 _, .loop g2 m2 i2 b2 _ =>
-    if ¬ alphaEquivExprs g1 g2 map then
+    let guardsMatch := match g1, g2 with
+      | .det e1, .det e2 => alphaEquivExprs e1 e2 map
+      | .nondet, .nondet => true
+      | _, _ => false
+    if !guardsMatch then
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
@@ -181,7 +178,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       -- The updateVars below must be the only place that updates the
       -- variable name mapping.
       IdMap.updateVars map [(n1.name,n2.name)]
-    | .cmd (.set n1 e1 _), .cmd (.set n2 e2 _) =>
+    | .cmd (.set n1 (.det e1) _), .cmd (.set n2 (.det e2) _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
         \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
@@ -190,9 +187,9 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
         mk_err "LHS of sets do not match"
       else
         return map
-    | .cmd (.havoc n1 _), .cmd (.havoc n2 _) =>
+    | .cmd (.set n1 .nondet _), .cmd (.set n2 .nondet _) =>
       if ¬ alphaEquivIdents n1 n2 map then
-        mk_err "LHS of havocs do not match"
+        mk_err "LHS of sets do not match"
       else
         return map
     | .cmd (.assert _ e1 _), .cmd (.assert _ e2 _) =>
@@ -282,7 +279,6 @@ procedure h() returns () {
   inlined: {
     var tmp_arg_0 : bool := b_in;
     var tmp_arg_1 : bool;
-    havoc tmp_arg_1;
     tmp_arg_1 := !tmp_arg_0;
     b_out := tmp_arg_1;
   }
@@ -332,7 +328,6 @@ procedure h() returns () {
   inlined: {
     var f_x : bool := b_in;
     var f_y : bool;
-    havoc f_y;
     f_body: {
       if (f_x) {
         exit f_body;
@@ -384,7 +379,6 @@ procedure g() returns () {
     inlined1: {
       var f_x : int := 1;
       var f_y : int;
-      havoc f_y;
       f_y := f_x;
       f_out := f_y;
     }
@@ -392,7 +386,6 @@ procedure g() returns () {
     inlined1: {
       var f_x2 : int := 2;
       var f_y2 : int;
-      havoc f_y2;
       f_y2 := f_x2;
       f_out := f_y2;
     }
@@ -428,17 +421,17 @@ def test := do
   let p := translate TestRecursiveCall
   let _ ← setCallGraph p
   let (changed, _p) ← runProgram (targetProcList := .some ["f"])
-    (inlineCallCmd (doInline := fun name _ => name = "f")) p
+    (inlineCallCmd (doInline := fun _caller callee _ => callee = "f")) p
   let cg := (← get).cachedAnalyses.callGraph
   return (changed, cg)
 
 /--
-info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1), ("a1", 2), ("a2", 2)]),
-              ("a1", Std.HashMap.ofList []),
-              ("a2", Std.HashMap.ofList [])],
-  callers := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1)]),
-              ("a1", Std.HashMap.ofList [("f", 2)]),
-              ("a2", Std.HashMap.ofList [("f", 2)])] }
+info: true, some CallGraph(callees: [("a1", []),
+("a2", []),
+("f", [("a1", 2), ("a2", 2), ("f", 1)])],
+         callers: [("a1", [("f", 2)]),
+("a2", [("f", 2)]),
+("f", [("f", 1)])])
 -/
 #guard_msgs in
 #eval ((match test .emp with
@@ -446,5 +439,37 @@ info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f"
   | ⟨.error m, _⟩ => panic! s!"{m}"))
 
 
+
+/- Check CallGraph cache of CoreTransformState -/
+
+def TestThreeChain :=
+#strata
+program Core;
+procedure leaf(x : int) returns (y : int) {
+  y := x + 1;
+};
+procedure mid(a : int) returns (b : int) {
+  call b := leaf(a);
+};
+procedure top(n : int) returns (r : int) {
+  call r := mid(n);
+};
+#end
+
+/-- After fully inlining the 3-procedure chain, the cached call graph must
+    equal the call graph freshly computed from the output program. -/
+def testThreeChainCG := do
+  let p := translate TestThreeChain
+  let _ ← setCallGraph p
+  let (_, p') ← runProgramUntil (inlineCallCmd) p
+  let cachedCG := (← get).cachedAnalyses.callGraph
+  let freshCG := p'.toProcedureCG
+  return (cachedCG.map (· == freshCG))
+
+/-- info: some true -/
+#guard_msgs in
+#eval ((match testThreeChainCG .emp with
+  | ⟨.ok result, _⟩ => f!"{repr result}"
+  | ⟨.error m, _⟩ => s!"ERROR: {m}"))
 
 end ProcedureInliningExamples

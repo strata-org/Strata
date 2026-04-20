@@ -22,12 +22,8 @@ def roseTreeTesterPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree;
-forward type Forest;
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeTesters() returns ()
 spec {
@@ -82,7 +78,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify roseTreeTesterPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Rose Tree Destructor Functions
@@ -92,12 +88,8 @@ def roseTreeDestructorPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree;
-forward type Forest;
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeDestructor() returns ()
 spec {
@@ -134,7 +126,15 @@ spec {
 
 /--
 info:
+Obligation: set_v_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valIs42
+Property: assert
+Result: ✅ pass
+
+Obligation: set_c_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
 
@@ -142,11 +142,23 @@ Obligation: childrenIsNil
 Property: assert
 Result: ✅ pass
 
+Obligation: set_t_calls_Forest..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIsNode
 Property: assert
 Result: ✅ pass
 
+Obligation: assert_headVal_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headVal
+Property: assert
+Result: ✅ pass
+
+Obligation: set_f_calls_Forest..tail_0
 Property: assert
 Result: ✅ pass
 
@@ -160,7 +172,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify roseTreeDestructorPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Rose Tree Equality
@@ -170,12 +182,8 @@ def roseTreeEqualityPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree;
-forward type Forest;
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeEquality() returns ()
 spec {
@@ -225,7 +233,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify roseTreeEqualityPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: Polymorphic Rose Tree with Havoc (SMT verification)
@@ -235,12 +243,8 @@ def polyRoseTreeHavocPgm : Program :=
 #strata
 program Core;
 
-forward type RoseTree (a : Type);
-forward type Forest (a : Type);
-mutual
-  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
+  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) }
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
-end;
 
 procedure TestPolyRoseTreeHavoc() returns ()
 spec {
@@ -268,11 +272,27 @@ spec {
 
 /--
 info:
+Obligation: assert_valIs42_calls_RoseTree..val_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valIs42
 Property: assert
 Result: ✅ pass
 
+Obligation: assert_headIsT_calls_Forest..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIsT
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_headVal_calls_Forest..head_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_headVal_calls_RoseTree..val_1
 Property: assert
 Result: ✅ pass
 
@@ -286,7 +306,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify polyRoseTreeHavocPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: Imperative Stmt/StmtList with Havoc (SMT verification)
@@ -297,10 +317,7 @@ def stmtListHavocPgm : Program :=
 #strata
 program Core;
 
-forward type Stmt (e : Type, c : Type);
-forward type StmtList (e : Type, c : Type);
-mutual
-  datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) };
+  datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) }
   datatype Stmt (e : Type, c : Type) {
     Cmd(cmd: c),
     Block(label: int, blockBody: StmtList e c),
@@ -308,7 +325,6 @@ mutual
     Loop(guard: e, loopBody: StmtList e c),
     Goto(target: int)
   };
-end;
 
 procedure TestStmtListHavoc() returns ()
 spec {
@@ -342,11 +358,39 @@ Obligation: isBlock
 Property: assert
 Result: ✅ pass
 
+Obligation: assert_bodyHd_calls_Stmt..blockBody_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_bodyHd_calls_StmtList..hd_1
+Property: assert
+Result: ✅ pass
+
 Obligation: bodyHd
 Property: assert
 Result: ✅ pass
 
+Obligation: assert_cmdVal_calls_Stmt..blockBody_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_cmdVal_calls_StmtList..hd_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_cmdVal_calls_Stmt..cmd_2
+Property: assert
+Result: ✅ pass
+
 Obligation: cmdVal
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_secondIsGoto_calls_StmtList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_secondIsGoto_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 
@@ -360,6 +404,6 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify stmtListHavocPgm Inhabited.default
-  (options := Options.quiet)
+  (options := .quiet)
 
 end Strata.MutualDatatypeTest

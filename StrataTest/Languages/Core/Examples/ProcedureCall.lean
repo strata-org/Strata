@@ -23,8 +23,8 @@ spec {
   modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
   requires [a_positive]:      (a > 0);
-  ensures  [new_g_value]:     (counter == old(counter) + a);
-  ensures  [old_g_property]:  (ret - a == old(counter));
+  ensures  [new_g_value]:     (counter == old counter + a);
+  ensures  [old_g_property]:  (ret - a == old counter);
 }
 {
   counter := Add(counter, a);
@@ -35,7 +35,7 @@ procedure P() returns (b : int)
 spec {
   modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
-  ensures [return_value_lemma]: (b == old(counter) + 16);
+  ensures [return_value_lemma]: (b == old counter + 16);
 }
 {
   call b := Inc(8);
@@ -52,11 +52,14 @@ procedure Q2() returns () {
 #end
 
 /--
-info: { callees := Std.HashMap.ofList [("Inc", Std.HashMap.ofList []),
-              ("Q2", Std.HashMap.ofList [("Q1", 1)]),
-              ("P", Std.HashMap.ofList [("Inc", 2)]),
-              ("Q1", Std.HashMap.ofList [])],
-  callers := Std.HashMap.ofList [("Inc", Std.HashMap.ofList [("P", 2)]), ("Q1", Std.HashMap.ofList [("Q2", 1)])] }
+info: CallGraph(callees: [("Inc", []),
+("P", [("Inc", 2)]),
+("Q1", []),
+("Q2", [("Q1", 1)])],
+         callers: [("Inc", [("P", 2)]),
+("P", []),
+("Q1", [("Q2", 1)]),
+("Q2", [])])
 -/
 #guard_msgs in
 #eval let (program, _) := Core.getProgram globalCounterPgm
@@ -83,35 +86,35 @@ a_positive: $__a2 > 0
 Obligation:
 $__counter1 + $__a2 - $__a2 == $__counter1
 
-Label: (Origin_Inc_Requires)counter_ge_zero
+Label: callElimAssert_counter_ge_zero_10
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
 Obligation:
 $__counter4 >= 0
 
-Label: (Origin_Inc_Requires)a_positive
+Label: callElimAssert_a_positive_11
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
 Obligation:
 true
 
-Label: (Origin_Inc_Requires)counter_ge_zero
+Label: callElimAssert_counter_ge_zero_3
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
-(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
+callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
+callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
 Obligation:
 $__counter7 >= 0
 
-Label: (Origin_Inc_Requires)a_positive
+Label: callElimAssert_a_positive_4
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
-(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
+callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
+callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
 Obligation:
 true
 
@@ -119,10 +122,10 @@ Label: return_value_lemma
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter4 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
-(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
-(Origin_Inc_Ensures)new_g_value: $__counter9 == $__counter7 + 8
-(Origin_Inc_Ensures)old_g_property: $__b8 - 8 == $__counter7
+callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
+callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
+callElimAssume_new_g_value_5: $__counter9 == $__counter7 + 8
+callElimAssume_old_g_property_6: $__b8 - 8 == $__counter7
 Obligation:
 $__b8 == $__counter4 + 16
 
@@ -141,19 +144,19 @@ Obligation: old_g_property
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)counter_ge_zero
+Obligation: callElimAssert_counter_ge_zero_10
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)a_positive
+Obligation: callElimAssert_a_positive_11
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)counter_ge_zero
+Obligation: callElimAssert_counter_ge_zero_3
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)a_positive
+Obligation: callElimAssert_a_positive_4
 Property: assert
 Result: ✅ pass
 

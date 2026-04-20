@@ -11,10 +11,10 @@ import Strata.DL.Imperative.CmdEval
 
 namespace Arith
 
-/-! ## Instantiate `Imperative`'s Partial Evaluator
+/-! ## Instantiate `Imperative`'s Symbolic Evaluator
 
 We instantiate Imperative's `EvalContext` typeclass with `ArithPrograms`'
-specific implementations to obtain a partial evaluator that generates
+specific implementations to obtain an evaluator that generates
 verification conditions on the fly (i.e., a Strongest-Postconditions
 Verification Condition Generator).
 -/
@@ -170,8 +170,8 @@ instance : ToFormat (Cmds PureExpr × State) where
 /- Tests -/
 
 private def testProgram1 : Cmds PureExpr :=
-  [.init "x" .Num (some (.Num 0)) .empty,
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)) .empty,
+  [.init "x" .Num (.det (.Num 0)) .empty,
+   .set "x" (.det (.Plus (.Var "x" .none) (.Num 100))) .empty,
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--
@@ -198,8 +198,8 @@ genNum: 0
 
 
 private def testProgram2 : Cmds PureExpr :=
-  [.init "x" .Num (some (.Var "y" .none)) .empty,
-   .havoc "x" .empty,
+  [.init "x" .Num (.det (.Var "y" .none)) .empty,
+   .set "x" .nondet .empty,
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--

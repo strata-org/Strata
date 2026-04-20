@@ -3,19 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Init.Data.List.Basic
 import Init.Data.List.Lemmas
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.Identifiers
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.WF
-import Strata.DL.Lambda.Lambda
-import Strata.Transform.CoreTransform
-import Strata.Transform.CallElim
-import Strata.DL.Imperative.CmdSemantics
-import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.Identifiers
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.WF
+public import Strata.DL.Lambda.Lambda
+public import Strata.Transform.CoreTransform
+public import Strata.Transform.CallElim
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
 
@@ -34,32 +35,7 @@ import Strata.DL.Util.ListUtils
 namespace CallElimCorrect
 open Core Core.Transform CallElim
 
-theorem CoreIdent.isGlob_isGlobOrLocl :
-  PredImplies (CoreIdent.isGlob ·) (CoreIdent.isGlobOrLocl ·) := by
-  intros x H
-  simp [CoreIdent.isGlobOrLocl]
-  exact Or.symm (Or.inr H)
-
-theorem CoreIdent.isLocl_isGlobOrLocl :
-  PredImplies (CoreIdent.isLocl ·) (CoreIdent.isGlobOrLocl ·) := by
-  intros x H
-  simp [CoreIdent.isGlobOrLocl]
-  exact Or.symm (Or.inl H)
-
-theorem CoreIdent.Disjoint_isTemp_isGlobOrLocl :
-  PredDisjoint (CoreIdent.isTemp ·) (CoreIdent.isGlobOrLocl ·) := by
-  intros x H1 H2
-  simp [CoreIdent.isTemp] at H1
-  simp [CoreIdent.isGlobOrLocl] at H2
-  split at H1 <;> simp_all
-  cases H2 <;> simp [CoreIdent.isGlob, CoreIdent.isLocl] at *
-
-theorem CoreIdent.Disjoint_isLocl_isGlob :
-  PredDisjoint (CoreIdent.isLocl ·) (CoreIdent.isGlob ·) := by
-  intros x H1 H2
-  simp [CoreIdent.isLocl] at H1
-  simp [CoreIdent.isGlob] at H2
-  split at H1 <;> simp_all
+public section
 
 -- inidividual lemmas
 
@@ -867,7 +843,7 @@ theorem EvalStatementsContractHavocVars :
     apply EvalStmtRefinesContract
     apply Imperative.EvalStmt.cmd_sem
     apply EvalCommand.cmd_sem
-    apply Imperative.EvalCmd.eval_havoc <;> try assumption
+    apply Imperative.EvalCmd.eval_set_nondet <;> try assumption
     . simp [Imperative.isDefinedOver, Command.modifiedVars,Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars]
       simp [Imperative.isDefined] at Hdef ⊢
@@ -2846,10 +2822,10 @@ theorem genOldExprIdentsTripWFMono :
     . cases Hgen
   . cases Hgen
 
-theorem List.Subset.trans :
+private theorem List.Subset.trans :
   List.Subset a b → b.Subset c → a.Subset c := fun H1 H2 _ Hin => H2 (H1 Hin)
 
-theorem List.Subset.app :
+private theorem List.Subset.app :
   List.Subset a c → b.Subset c → (a ++ b).Subset c := by
   intros H1 H2
   intros x Hin
@@ -4707,4 +4683,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
 
 -/
 -/
+
+end -- public section
+
 end CallElimCorrect

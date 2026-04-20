@@ -46,17 +46,17 @@ private instance : Coe String TestParams.Identifier where
                                esM[if #true then (x == #5) else (x == #6)]
          return (format $ ans.fst)
 
-/-- info: ok: (λ %0) -/
+/-- info: ok: (λ (bvar:$__ty0) %0) -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default TEnv.default esM[λ(%0)]
          return format ans.fst
 
-/-- info: ok: (∀ (%0 == #5)) -/
+/-- info: ok: (∀ (bvar:int) (%0 == #5)) -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default TEnv.default esM[∀ (%0 == #5)]
          return format ans.fst
 
-/-- info: ok: (λ ((succ : (arrow int int)) %0)) -/
+/-- info: ok: (λ (bvar:int) ((succ : (arrow int int)) %0)) -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default ( TEnv.default.updateContext { types := [[("succ", t[int → int])]] })
                                esM[λ(succ %0)]
@@ -144,7 +144,7 @@ info: error: Failed occurs check: $__ty1 cannot be unified with (arrow $__ty1 $_
                             esM[λλ(%1 (%0 %0))]
          return (format $ ans.fst)
 
-private def testIntFns : (@Factory TestParams) :=
+private def testIntFns : (Factory TestParams) := .ofArray
   #[{ name := "unit",
       inputs := [],
       output := mty[unit]},

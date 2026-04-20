@@ -3,29 +3,32 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.PureExpr
-import Strata.Languages.Core.Identifiers
-import Strata.DL.Imperative.HasVars
+public import Strata.DL.Lambda.Lambda
+public import Strata.DL.Imperative.PureExpr
+public import Strata.Languages.Core.Identifiers
+public import Strata.Languages.Core.CoreOp
+public import Strata.DL.Imperative.HasVars
 
 namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
-def ExpressionMetadata := Unit
+public section
 
+@[expose] abbrev ExpressionMetadata := Unit
+
+@[expose]
 abbrev Expression : Imperative.PureExpr :=
    { Ident := CoreIdent,
-     EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier _))
-     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Visibility⟩, Lambda.LMonoTy⟩,
+     EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
+     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,
      ExprMetadata := ExpressionMetadata,
-     TyEnv := @Lambda.TEnv Visibility,
-     TyContext := @Lambda.LContext ⟨ExpressionMetadata, Visibility⟩,
-     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Visibility⟩ }
+     TyEnv := @Lambda.TEnv Unit,
+     TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
+     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Unit⟩ }
 
 instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
@@ -33,6 +36,12 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
 instance : Inhabited Expression.Expr where
   default := .intConst () 0
 
+/-- Build an `LExpr.op` node from a structured `CoreOp`. -/
+def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
+  .op () op.toString ty
+
 ---------------------------------------------------------------------
+
+end
 
 end Core

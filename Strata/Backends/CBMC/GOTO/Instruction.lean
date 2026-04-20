@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Expr
-import Strata.Backends.CBMC.GOTO.Code
+public import Strata.Backends.CBMC.GOTO.Expr
+public import Strata.Backends.CBMC.GOTO.Code
 
 namespace CProverGOTO
 open Std (ToFormat Format format)
 
 -------------------------------------------------------------------------------
+
+public section
 
 /--
 GOTO instruction type; corresponds to
@@ -64,14 +67,7 @@ instance : ToString InstructionType where
 
 -------------------------------------------------------------------------------
 
-def Target := Nat
-deriving Repr, Inhabited, DecidableEq
-
-instance {n} : OfNat Target n := ⟨n⟩
-def Target.toNat (t : Target) : Nat := t
-
-instance : ToString Target where
-  toString t := toString $ repr t
+@[expose] abbrev Target := Nat
 
 -------------------------------------------------------------------------------
 
@@ -112,8 +108,16 @@ structure Instruction where
 
 instance : ToString Instruction where
   toString instr :=
-    let code_str := f!" {instr.code}"
+    let payload := match instr.type with
+      | .GOTO => match instr.target with
+        | some t => s!" {t}"
+        | none   => ""
+      | .LOCATION => s!" {instr.locationNum}"
+      | .ASSUME | .ASSERT => ""
+      | _ => s!" {Std.format instr.code}"
     let guard_str := if Expr.beq instr.guard Expr.true then "" else s!" [{Std.format instr.guard}]"
-    s!"{instr.type}{code_str}{guard_str}"
+    s!"{instr.type}{payload}{guard_str}"
 
 -------------------------------------------------------------------------------
+
+end -- public section

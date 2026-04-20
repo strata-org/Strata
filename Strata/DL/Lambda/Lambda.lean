@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.LExprType
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.Semantics
-import Strata.DL.Lambda.TypeFactory
-import Strata.DL.Lambda.Reflect
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Lambda.LExprType
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.Semantics
+public import Strata.DL.Lambda.TypeFactory
+public import Strata.DL.Lambda.Reflect
 
 namespace Lambda
 open Strata
 open Std (ToFormat Format format)
+
+public section
 
 /-! # Lambda Dialect
 
@@ -43,13 +46,14 @@ def typeCheckAndPartialEval
   (e : LExpr T.mono) :
   Except DiagnosticModel (LExpr T.mono) := do
   let E := TEnv.default
-  let C := LContext.default.addFactoryFunctions f
+  let C := LContext.default (functions := f)
   let C ← C.addTypeFactory t
   let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory C.functions
   return (LExpr.eval σ.config.fuel σ et)
 
+end -- public section
 end Lambda
 
 ---------------------------------------------------------------------

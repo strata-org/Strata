@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/TermType.lean)
@@ -22,7 +24,7 @@ inductive TermPrimType where
   /-- `regex`: regular expressions in the theory of unicode strings -/
   | regex
   | trigger
-deriving instance Repr, Inhabited, DecidableEq for TermPrimType
+deriving instance Repr, Inhabited, DecidableEq, Hashable for TermPrimType
 
 def TermPrimType.mkName : TermPrimType → String
   | .bool     => "bool"
@@ -48,7 +50,7 @@ inductive TermType where
   -- (TODO) It looks like `option` is a special instance of `constr`.
   | option (ty : TermType)
   | constr (id : String) (args : List TermType)
-deriving instance Repr, Inhabited for TermType
+deriving instance Repr, Inhabited, Hashable for TermType
 
 /--
 Induction rule for `TermType`: the default induction tactic doesn't yet support
@@ -87,8 +89,6 @@ instance : LT TermType where
 instance TermType.decLt (x y : TermType) : Decidable (x < y) :=
   if h : TermType.lt x y then isTrue h else isFalse h
 
-instance : Hashable TermType where
-  hash := λ a => hash s!"{repr a}"
 
 def TermType.beq : TermType → TermType → Bool
   | .prim pty₁, .prim pty₂ => pty₁ == pty₂
@@ -191,3 +191,4 @@ def TermType.isConstrType : TermType → Bool
   | _         => false
 
 end Strata.SMT
+end

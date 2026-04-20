@@ -3,21 +3,36 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Lean.Elab.Command
+module
 
-import Strata.Languages.Core.Identifiers
-import Strata.Languages.Core.Expressions
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.FactoryWF
-import Strata.DL.Lambda.IntBoolFactory
+public meta import Lean.Elab.Command
+
+public import Strata.Languages.Core.Identifiers
+public meta import Strata.Languages.Core.Identifiers
+public import Strata.Languages.Core.Expressions
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.FactoryWF
+public import Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.LExpr
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryWF
+import Strata.DL.Util.BitVec
 ---------------------------------------------------------------------
 
 namespace Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-@[match_pattern]
+public section
+
+@[expose, match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
+
+@[expose, match_pattern]
+def seqTy (elemTy : LMonoTy) : LMonoTy :=
+  .tcons "Sequence" [elemTy]
 
 def KnownLTys : LTys :=
   [t[bool],
@@ -31,29 +46,17 @@ def KnownLTys : LTys :=
    -- We can simply add the following here.
    t[∀n. bitvec n],
    t[∀a b. %a → %b],
-   t[∀a b. Map %a %b]]
+   t[∀a b. Map %a %b],
+   t[∀a. Sequence %a]]
 
 def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
 
 def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Metadata, IDMeta}: LExprParams).mono
 
-/--
-  Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility
-  TODO: Remove when Lambda elaborator offers parametric identifier type
--/
-def ToCoreIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit M Visibility) :=
-match ine with
-    | .const m c => .const m c
-    | .op m o oty => .op m (CoreIdent.unres o.name) oty
-    | .bvar m deBruijnIndex => .bvar m deBruijnIndex
-    | .fvar m name oty => .fvar m (CoreIdent.unres name.name) oty
-    | .abs m oty e => .abs m oty (ToCoreIdent e)
-    | .quant m k oty tr e => .quant m k oty (ToCoreIdent tr) (ToCoreIdent e)
-    | .app m fn e => .app m (ToCoreIdent fn) (ToCoreIdent e)
-    | .ite m c t e => .ite m (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
-    | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
+end -- public section
 
+public meta section
 
 /-- Kind of bitvector evaluator, used to generate both the combinator name
     and the concrete-evaluator syntax for each BV operation. -/
@@ -66,6 +69,10 @@ private inductive BVEvalKind
   | shift (fn : Lean.Name)
   /-- Predicate: `binaryOp fn` -/
   | pred (fn : Lean.Name) (swap : Bool)
+  /-- Binary overflow predicate: `binaryOp fn` returning bool -/
+  | overflowBinary (fn : Lean.Name)
+  /-- Unary overflow predicate: `unaryOp fn` returning bool -/
+  | overflowUnary (fn : Lean.Name)
 
 /-- Specification of a single bitvector operation for metaprogramming. -/
 private structure BVOpSpec where
@@ -104,7 +111,19 @@ private def BVOpSpecs : Array BVOpSpec := #[
   ⟨"SLt", .pred ``BitVec.slt false⟩,
   ⟨"SLe", .pred ``BitVec.sle false⟩,
   ⟨"SGt", .pred ``BitVec.slt true⟩,
-  ⟨"SGe", .pred ``BitVec.sle true⟩
+  ⟨"SGe", .pred ``BitVec.sle true⟩,
+  -- Signed overflow predicates (return bool: true iff overflow occurs)
+  ⟨"SNegOverflow",  .overflowUnary ``BitVec.negOverflow⟩,
+  ⟨"SAddOverflow",  .overflowBinary ``BitVec.saddOverflow⟩,
+  ⟨"SSubOverflow",  .overflowBinary ``BitVec.ssubOverflow⟩,
+  ⟨"SMulOverflow",  .overflowBinary ``BitVec.smulOverflow⟩,
+  -- Signed division overflow predicate: true iff x == INT_MIN ∧ y == -1
+  ⟨"SDivOverflow",  .overflowBinary ``BitVec.sdivOverflow⟩,
+  -- Unsigned overflow predicates
+  ⟨"UNegOverflow",  .overflowUnary ``BitVec.unegOverflow⟩,
+  ⟨"UAddOverflow",  .overflowBinary ``BitVec.uaddOverflow⟩,
+  ⟨"USubOverflow",  .overflowBinary ``BitVec.usubOverflow⟩,
+  ⟨"UMulOverflow",  .overflowBinary ``BitVec.umulOverflow⟩
 ]
 
 open Lean Elab Command in
@@ -127,6 +146,10 @@ private def BVEvalKind.toDefRHS (opName : TSyntax `str)
     `(Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent fn))
   | .pred fn true =>
     `(Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName (fun x y => $(mkIdent fn) y x))
+  | .overflowBinary fn =>
+    `(Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent fn))
+  | .overflowUnary fn =>
+    `(Lambda.unaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent fn))
 
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
@@ -139,7 +162,127 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let rhs ← spec.evalKind.toDefRHS opName sizeNum
       elabCommand (← `(def $funcName : Lambda.WFLFunc CoreLParams := $rhs))
 
+/-- Specification of a safe (preconditioned) bitvector operation. -/
+private structure BVSafeOpSpec where
+  opName : String
+  /-- The underlying operation function (e.g., BitVec.add) -/
+  opFn : Lean.Name
+  /-- The overflow predicate function name suffix (e.g., "SAddOverflow") -/
+  overflowPredSuffix : String
+  /-- Whether this is a unary operation -/
+  isUnary : Bool := false
+
+private def BVSafeOpSpecs : Array BVSafeOpSpec := #[
+  ⟨"SafeAdd", ``BitVec.add,  "SAddOverflow", false⟩,
+  ⟨"SafeSub", ``BitVec.sub,  "SSubOverflow", false⟩,
+  ⟨"SafeMul", ``BitVec.mul,  "SMulOverflow", false⟩,
+  ⟨"SafeNeg", ``BitVec.neg,  "SNegOverflow", true⟩,
+  ⟨"SafeUAdd", ``BitVec.add,  "UAddOverflow", false⟩,
+  ⟨"SafeUSub", ``BitVec.sub,  "USubOverflow", false⟩,
+  ⟨"SafeUMul", ``BitVec.mul,  "UMulOverflow", false⟩,
+  ⟨"SafeUNeg", ``BitVec.neg,  "UNegOverflow", true⟩
+]
+
+/-- Specs for safe signed division operations (need both div-by-zero and overflow preconditions). -/
+private structure BVSafeDivOpSpec where
+  opName : String
+  opFn : Lean.Name
+
+private def BVSafeDivOpSpecs : Array BVSafeDivOpSpec := #[
+  ⟨"SafeSDiv", ``BitVec.sdiv⟩,
+  ⟨"SafeSMod", ``BitVec.srem⟩
+]
+
+open Lean Elab Command in
+/-- Generate safe BV operations with overflow preconditions.
+    Each safe operation carries a precondition asserting that the overflow
+    predicate is false. The precondition references the overflow predicate
+    function generated by `ExpandBVOpFuncDefs`. -/
+elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    let sizeNum := Syntax.mkNumLit s
+    for spec in BVSafeOpSpecs do
+      let funcName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Func")
+      let opName := Syntax.mkStrLit s!"Bv{s}.{spec.opName}"
+      let overflowFuncName := mkIdent
+        (.str .anonymous s!"bv{s}{spec.overflowPredSuffix}Func")
+      let xParam := Syntax.mkStrLit Lambda.unaryParamName
+      let yParam := Syntax.mkStrLit Lambda.binaryParam2Name
+      if spec.isUnary then
+        elabCommand (← `(
+          def $funcName : Lambda.WFLFunc CoreLParams :=
+            Lambda.unaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent spec.opFn)
+              (preconditions := [⟨.app default
+                (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
+                (.app default ($overflowFuncName).opExpr
+                  (.fvar default $xParam (some (.bitvec $sizeNum)))),
+                default⟩])
+              (h_precond := by
+                intro p hp; simp at hp; subst hp
+                native_decide)))
+      else
+        elabCommand (← `(
+          def $funcName : Lambda.WFLFunc CoreLParams :=
+            Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent spec.opFn)
+              (preconditions := [⟨.app default
+                (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
+                (.app default
+                  (.app default ($overflowFuncName).opExpr
+                    (.fvar default $xParam (some (.bitvec $sizeNum))))
+                  (.fvar default $yParam (some (.bitvec $sizeNum)))),
+                default⟩])
+              (h_precond := by
+                intro p hp; simp at hp; subst hp
+                native_decide)))
+
+open Lean Elab Command in
+/-- Generate safe signed division/modulo operations with both div-by-zero
+    and overflow (INT_MIN / -1) preconditions. -/
+elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    let sizeNum := Syntax.mkNumLit s
+    for spec in BVSafeDivOpSpecs do
+      let funcName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Func")
+      let opName := Syntax.mkStrLit s!"Bv{s}.{spec.opName}"
+      let overflowFuncName := mkIdent
+        (.str .anonymous s!"bv{s}SDivOverflowFunc")
+      let xParam := Syntax.mkStrLit Lambda.binaryParam1Name
+      let yParam := Syntax.mkStrLit Lambda.binaryParam2Name
+      elabCommand (← `(
+        def $funcName : Lambda.WFLFunc CoreLParams :=
+          Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent spec.opFn) (· != 0)
+            (preconditions := [
+              -- Precondition 1: y ≠ 0 (division by zero)
+              ⟨.app default
+                (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
+                (.eq default
+                  (.fvar default $yParam (some (.bitvec $sizeNum)))
+                  (LExpr.bitvecConst default $sizeNum (0 : BitVec $sizeNum))),
+                default⟩,
+              -- Precondition 2: ¬ SDivOverflow(x, y)
+              ⟨.app default
+                (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
+                (.app default
+                  (.app default ($overflowFuncName).opExpr
+                    (.fvar default $xParam (some (.bitvec $sizeNum))))
+                  (.fvar default $yParam (some (.bitvec $sizeNum)))),
+                default⟩])
+            (h_precond := by
+              intro p hp
+              simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
+              cases hp with
+              | inl h => subst h; native_decide
+              | inr h => subst h; native_decide)))
+
+end -- public meta section
+
+public section
+
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
+ExpandBVSafeOpFuncDefs[1, 2, 8, 16, 32, 64]
+ExpandBVSafeDivOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
@@ -216,23 +359,19 @@ def reCompFunc : WFLFunc CoreLParams :=
 def reNoneFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.None" mty[regex]
 
-/- A polymorphic `old` function with type `∀a. a → a`. -/
-def polyOldFunc : WFLFunc CoreLParams :=
-  polyUneval "old" ["a"] [("x", mty[%a])] mty[%a]
-
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
-   `Map.const(d)` returns a map where every key maps to the value `d`. -/
+   `const(d)` returns a map where every key maps to the value `d`. -/
 def mapConstFunc : WFLFunc CoreLParams :=
-  polyUneval "Map.const" ["k", "v"]
+  polyUneval "const" ["k", "v"]
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
-      ToCoreIdent esM[∀ (%v): -- %1 d
+      esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
-                ((~Map.const : %v → (Map %k %v)) %1)) %0)}
+                ((~const : %v → (Map %k %v)) %1)) %0)}
             (((~select : (Map %k %v) → %k → %v)
-                ((~Map.const : %v → (Map %k %v)) %1)) %0) == %1)]
+                ((~const : %v → (Map %k %v)) %1)) %0) == %1)]
     ])
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
@@ -247,7 +386,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
     (mapTy mty[%k] mty[%v])
     (axioms := [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      ToCoreIdent esM[∀(Map %k %v):
+      esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -255,7 +394,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      ToCoreIdent esM[∀ (Map %k %v): -- %3 m
+      esM[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv
@@ -273,6 +412,298 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
                     ))))]
     ])
 
+/- A `Sequence` length function with type `∀a. Sequence a → int`. -/
+def seqLengthFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.length" ["a"]
+    [("s", seqTy mty[%a])] mty[int]
+    (axioms := [
+      -- length(s) >= 0
+      esM[∀ (Sequence %a): -- %0 s
+        {((~Sequence.length : (Sequence %a) → int) %0)}
+        (((~Int.Ge : int → int → bool)
+          ((~Sequence.length : (Sequence %a) → int) %0))
+          #0)]
+    ])
+
+/- An empty `Sequence` constructor with type `∀a. Sequence a`.
+   NOTE: This is registered in the Factory for programmatic use, but is not yet
+   parseable from `.st` files because the DDM grammar cannot currently handle
+   0-ary polymorphic functions (no arguments to infer the type parameter from). -/
+def seqEmptyFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
+    (axioms := [
+      -- length(empty()) == 0
+      esM[((~Sequence.length : (Sequence %a) → int)
+            (~Sequence.empty : (Sequence %a))) == #0]
+    ])
+
+/- A `Sequence` append function with type `∀a. Sequence a → Sequence a → Sequence a`. -/
+def seqAppendFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.append" ["a"]
+    [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(append(s0, s1)) == length(s0) + length(s1)
+      esM[∀ (Sequence %a): -- %1 s0
+          (∀ (Sequence %a): -- %0 s1
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))}
+            ((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))
+            ==
+            (((~Int.Add : int → int → int)
+              ((~Sequence.length : (Sequence %a) → int) %1))
+              ((~Sequence.length : (Sequence %a) → int) %0)))],
+      -- select(append(s0, s1), n):
+      --   0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
+      esM[∀ (Sequence %a): -- %2 s0
+          (∀ (Sequence %a): -- %1 s1
+            (∀ (int): -- %0 n
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)}
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)
+                ==
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
+              else #true))],
+      -- select(append(s0, s1), n):
+      --   n >= length(s0) && n < length(s0) + length(s1)
+      --     ==> select(append(s0,s1), n) == select(s1, n - length(s0))
+      esM[∀ (Sequence %a): -- %2 s0
+          (∀ (Sequence %a): -- %1 s1
+            (∀ (int): -- %0 n
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)}
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
+                    (((~Int.Lt : int → int → bool) %0)
+                      (((~Int.Add : int → int → int)
+                        ((~Sequence.length : (Sequence %a) → int) %2))
+                        ((~Sequence.length : (Sequence %a) → int) %1))))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)
+                ==
+                (((~Sequence.select : (Sequence %a) → int → %a) %1)
+                    (((~Int.Sub : int → int → int) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
+              else #true))]
+    ])
+
+/- A `Sequence` selection function with type `∀a. Sequence a → int → a`. -/
+def seqSelectFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.select" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+
+/- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
+   `build(s, v)` appends a single element `v` to the end of `s`. -/
+def seqBuildFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.build" ["a"]
+    [("s", seqTy mty[%a]), ("v", mty[%a])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(build(s, v)) == 1 + length(s)
+      esM[∀ (Sequence %a): -- %1 s
+          (∀ (%a): -- %0 v
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))}
+            ((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))
+            ==
+            (((~Int.Add : int → int → int)
+              #1)
+              ((~Sequence.length : (Sequence %a) → int) %1)))],
+      -- select(build(s, v), i):
+      --   i == length(s) ==> select(build(s,v), i) == v
+      esM[∀ (Sequence %a): -- %2 s
+          (∀ (%a): -- %1 v
+            (∀ (int): -- %0 i
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)}
+              if (%0 == ((~Sequence.length : (Sequence %a) → int) %2))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
+                == %1
+              else #true))],
+      -- select(build(s, v), i):
+      --   0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
+      esM[∀ (Sequence %a): -- %2 s
+          (∀ (%a): -- %1 v
+            (∀ (int): -- %0 i
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)}
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0)
+                      ((~Sequence.length : (Sequence %a) → int) %2)))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
+                ==
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
+              else #true))]
+    ])
+
+/- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
+   `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`. -/
+def seqUpdateFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.update" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(update(s, i, v)) == length(s)
+      esM[∀ (Sequence %a): -- %2 s
+          (∀ (int): -- %1 i
+            (∀ (%a): -- %0 v
+              {((~Sequence.length : (Sequence %a) → int)
+                ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))}
+              ((~Sequence.length : (Sequence %a) → int)
+                ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))
+              ==
+              ((~Sequence.length : (Sequence %a) → int) %2)))],
+      -- 0 <= i < length(s) ==> select(update(s, i, v), i) == v  (same index)
+      esM[∀ (Sequence %a): -- %2 s
+          (∀ (int): -- %1 i
+            (∀ (%a): -- %0 v
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                  ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)}
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %1) #0))
+                    (((~Int.Lt : int → int → bool) %1)
+                      ((~Sequence.length : (Sequence %a) → int) %2)))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)
+                == %0
+              else #true))],
+      -- 0 <= n < length(s) && n != i ==> select(update(s, i, v), n) == select(s, n)
+      esM[∀ (Sequence %a): -- %3 s
+          (∀ (int): -- %2 i
+            (∀ (%a): -- %1 v
+              (∀ (int): -- %0 n
+                {(((~Sequence.select : (Sequence %a) → int → %a)
+                    ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)}
+                if (((~Bool.And : bool → bool → bool)
+                      (((~Bool.And : bool → bool → bool)
+                        (((~Int.Ge : int → int → bool) %0) #0))
+                        (((~Int.Lt : int → int → bool) %0)
+                          ((~Sequence.length : (Sequence %a) → int) %3))))
+                      ((~Bool.Not : bool → bool) (%0 == %2)))
+                then
+                  (((~Sequence.select : (Sequence %a) → int → %a)
+                      ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)
+                  ==
+                  (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
+                else #true)))]
+    ])
+
+/- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
+   `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
+def seqContainsFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.contains" ["a"]
+    [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
+    (axioms := [
+      -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
+      esM[∀ (Sequence %a): -- %1 s
+          (∀ (%a): -- %0 v
+            {(((~Sequence.contains : (Sequence %a) → %a → bool) %1) %0)}
+            (((~Sequence.contains : (Sequence %a) → %a → bool) %1) %0)
+            ==
+            (∃ (int): -- %0 i (inside this quantifier: s=%2, v=%1, i=%0)
+              (((~Bool.And : bool → bool → bool)
+                (((~Bool.And : bool → bool → bool)
+                  (((~Int.Ge : int → int → bool) %0) #0))
+                  (((~Int.Lt : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2))))
+                ((((~Sequence.select : (Sequence %a) → int → %a) %2) %0) == %1))))]
+    ])
+
+/- A `Sequence` take function with type `∀a. Sequence a → int → Sequence a`.
+   `take(s, n)` returns the first `n` elements of `s`. -/
+def seqTakeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.take" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- 0 <= n <= length(s) ==> length(take(s, n)) == n
+      esM[∀ (Sequence %a): -- %1 s
+          (∀ (int): -- %0 n
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))}
+            if (((~Bool.And : bool → bool → bool)
+                  (((~Int.Ge : int → int → bool) %0) #0))
+                  (((~Int.Le : int → int → bool) %0)
+                    ((~Sequence.length : (Sequence %a) → int) %1)))
+            then
+              ((~Sequence.length : (Sequence %a) → int)
+                (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))
+              == %0
+            else #true)],
+      -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
+      esM[∀ (Sequence %a): -- %2 s
+          (∀ (int): -- %1 n
+            (∀ (int): -- %0 j
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)}
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0) %1))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)
+                ==
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
+              else #true))]
+    ])
+
+/- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
+   `drop(s, n)` returns the sequence with the first `n` elements removed. -/
+def seqDropFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.drop" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- 0 <= n <= length(s) ==> length(drop(s, n)) == length(s) - n
+      esM[∀ (Sequence %a): -- %1 s
+          (∀ (int): -- %0 n
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))}
+            if (((~Bool.And : bool → bool → bool)
+                  (((~Int.Ge : int → int → bool) %0) #0))
+                  (((~Int.Le : int → int → bool) %0)
+                    ((~Sequence.length : (Sequence %a) → int) %1)))
+            then
+              ((~Sequence.length : (Sequence %a) → int)
+                (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))
+              ==
+              (((~Int.Sub : int → int → int)
+                ((~Sequence.length : (Sequence %a) → int) %1))
+                %0)
+            else #true)],
+      -- 0 <= j < length(s) - n ==> select(drop(s, n), j) == select(s, j + n)
+      esM[∀ (Sequence %a): -- %2 s
+          (∀ (int): -- %1 n
+            (∀ (int): -- %0 j
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                  (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)}
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0)
+                      (((~Int.Sub : int → int → int)
+                        ((~Sequence.length : (Sequence %a) → int) %2))
+                        %1)))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)
+                ==
+                (((~Sequence.select : (Sequence %a) → int → %a) %2)
+                    (((~Int.Add : int → int → int) %0) %1))
+              else #true))]
+    ])
+
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
 
@@ -287,6 +718,10 @@ def addTriggerFunc : WFLFunc CoreLParams :=
   polyUneval "TriggerGroup.addTrigger" ["a"]
     [("x", mty[%a]), ("t", mty[TriggerGroup])] mty[TriggerGroup]
 
+end -- public section
+
+public meta section
+
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
   let mut allOps := #[]
@@ -296,6 +731,30 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
       let name := s!"bv{s}" ++ spec.opName ++ "Func"
       allOps := allOps.push (mkIdent (.str (.str .anonymous "Core") name))
   `([$(allOps),*])
+
+open Lean in
+macro "ExpandBVSafeOpFuncNames" "[" sizes:num,* "]" : term => do
+  let mut allOps := #[]
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for spec in BVSafeOpSpecs do
+      let name := s!"bv{s}" ++ spec.opName ++ "Func"
+      allOps := allOps.push (mkIdent (.str (.str .anonymous "Core") name))
+  `([$(allOps),*])
+
+open Lean in
+macro "ExpandBVSafeDivOpFuncNames" "[" sizes:num,* "]" : term => do
+  let mut allOps := #[]
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for spec in BVSafeDivOpSpecs do
+      let name := s!"bv{s}" ++ spec.opName ++ "Func"
+      allOps := allOps.push (mkIdent (.str (.str .anonymous "Core") name))
+  `([$(allOps),*])
+
+end -- public meta section
+
+public section
 
 def bvConcatFunc (size : Nat) : WFLFunc CoreLParams :=
   binaryFuncUneval s!"Bv{size}.Concat"
@@ -319,6 +778,7 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
+@[expose]
 def WFFactory : Lambda.WFLFactory CoreLParams :=
   -- (T := CoreLParams) annotations needed for IntBoolFactory
   -- functions to resolve typeclass instances.
@@ -331,7 +791,9 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   intModFunc (T := CoreLParams),
   intSafeModFunc (T := CoreLParams),
   intDivTFunc (T := CoreLParams),
+  intSafeDivTFunc (T := CoreLParams),
   intModTFunc (T := CoreLParams),
+  intSafeModTFunc (T := CoreLParams),
   intNegFunc (T := CoreLParams),
 
   intLtFunc (T := CoreLParams),
@@ -372,11 +834,19 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   reCompFunc,
   reNoneFunc,
 
-  polyOldFunc,
-
   mapConstFunc,
   mapSelectFunc,
   mapUpdateFunc,
+
+  seqLengthFunc,
+  seqEmptyFunc,
+  seqAppendFunc,
+  seqSelectFunc,
+  seqBuildFunc,
+  seqUpdateFunc,
+  seqContainsFunc,
+  seqTakeFunc,
+  seqDropFunc,
 
   emptyTriggersFunc,
   addTriggerGroupFunc,
@@ -395,9 +865,16 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [1,8,16,32,64]))
+] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
+  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64]))
 
+@[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
+
+end -- public section
+
+public meta section
 
 open Lean Elab Command in
 elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
@@ -408,10 +885,34 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{spec.opName}Func")
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
+open Lean Elab Command in
+elab "DefBVSafeOpFuncExprs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for spec in BVSafeOpSpecs do
+      let opName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Op")
+      let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{spec.opName}Func")
+      elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
+
+open Lean Elab Command in
+elab "DefBVSafeDivOpFuncExprs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for spec in BVSafeDivOpSpecs do
+      let opName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Op")
+      let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{spec.opName}Func")
+      elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
+
+end -- public meta section
+
+public section
+
 instance : Inhabited CoreLParams.Metadata where
   default := ()
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
+DefBVSafeOpFuncExprs [1, 8, 16, 32, 64]
+DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64]
 
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
@@ -443,7 +944,9 @@ def intSafeDivOp : Expression.Expr := (@intSafeDivFunc CoreLParams _ _).opExpr
 def intModOp : Expression.Expr := (@intModFunc CoreLParams _).opExpr
 def intSafeModOp : Expression.Expr := (@intSafeModFunc CoreLParams _ _).opExpr
 def intDivTOp : Expression.Expr := (@intDivTFunc CoreLParams _).opExpr
+def intSafeDivTOp : Expression.Expr := (@intSafeDivTFunc CoreLParams _ _).opExpr
 def intModTOp : Expression.Expr := (@intModTFunc CoreLParams _).opExpr
+def intSafeModTOp : Expression.Expr := (@intSafeModTFunc CoreLParams _ _).opExpr
 def intNegOp : Expression.Expr := (@intNegFunc CoreLParams _).opExpr
 def intLtOp : Expression.Expr := (@intLtFunc CoreLParams _).opExpr
 def intLeOp : Expression.Expr := (@intLeFunc CoreLParams _).opExpr
@@ -458,6 +961,7 @@ def realLtOp : Expression.Expr := realLtFunc.opExpr
 def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
+
 def boolAndOp : Expression.Expr := (@boolAndFunc CoreLParams _).opExpr
 def boolOrOp : Expression.Expr := (@boolOrFunc CoreLParams _).opExpr
 def boolImpliesOp : Expression.Expr := (@boolImpliesFunc CoreLParams _).opExpr
@@ -479,10 +983,18 @@ def reUnionOp : Expression.Expr := reUnionFunc.opExpr
 def reInterOp : Expression.Expr := reInterFunc.opExpr
 def reCompOp : Expression.Expr := reCompFunc.opExpr
 def reNoneOp : Expression.Expr := reNoneFunc.opExpr
-def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
+def seqLengthOp : Expression.Expr := seqLengthFunc.opExpr
+def seqEmptyOp : Expression.Expr := seqEmptyFunc.opExpr
+def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
+def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
+def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr
+def seqUpdateOp : Expression.Expr := seqUpdateFunc.opExpr
+def seqContainsOp : Expression.Expr := seqContainsFunc.opExpr
+def seqTakeOp : Expression.Expr := seqTakeFunc.opExpr
+def seqDropOp : Expression.Expr := seqDropFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
   ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
@@ -495,6 +1007,7 @@ def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
 Get all the built-in functions supported by Strata Core.
 -/
 def builtinFunctions : Array String :=
-  Factory.map (fun f => CoreIdent.toPretty f.name)
+  Core.Factory.toArray.map (fun f => CoreIdent.toPretty f.name)
 
+end
 end Core

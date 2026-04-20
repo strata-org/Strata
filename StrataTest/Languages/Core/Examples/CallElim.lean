@@ -46,7 +46,7 @@ private def testCallElim
       dbg_trace f!"New Program:\n{elimProgram}"
       let runner tempDir :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format none)))
-                    (Core.verify elimProgram tempDir .none Options.quiet)
+                    (Core.verify elimProgram tempDir .none .quiet)
       match tempDir with
       | .none =>
         IO.FS.withTempDir runner
@@ -58,6 +58,8 @@ private def testCallElim
 
 /--
 info: New Program:
+program Core;
+
 procedure Double (n : int) returns (result : int)
 spec {
   ensures [double_correct]: result == n * 2;

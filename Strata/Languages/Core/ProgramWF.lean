@@ -3,12 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.WF
-import Strata.Languages.Core.StatementWF
-import Strata.Languages.Core.ProcedureWF
+public import Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.StatementWF
+public import Strata.Languages.Core.ProcedureWF
+import all Strata.Languages.Core.Program
+import all Strata.Languages.Core.ProgramType
+import all Strata.Languages.Core.StatementType
 
 /-! ## Well-Formedness for Programs
   This file is the entry point of typechecker correctness proofs. Specifically,
@@ -79,10 +83,15 @@ namespace WF
 open Imperative Std Lambda
 open Strata
 
+public section
+
 /- The default program is well-formed -/
-theorem Program.init.wf : WFProgramProp .init := by
-  constructor <;> simp [Program.init, Program.getNames, Program.getNames.go]
-  constructor
+theorem Program.init.wf : WFProgramProp .init where
+  namesNodup := by
+   simp [Program.init, Program.getNames, Program.getNames.go]
+  wfdecls := by
+    unfold WFDeclsProp
+    simp [Program.init]
 
 /- WFProgram is inhabited -/
 instance : Inhabited WFProgram where
@@ -131,7 +140,6 @@ theorem Program.typeCheck.goWF' :
               | intro l r =>
                 apply And.intro
                 . constructor
-                  -- 2. All declared global variables are `CoreIdent.glob`.
                   sorry
                 . exists v.1, {
                   context := res.snd.context.subst res.snd.state.substInfo.subst,
@@ -214,12 +222,12 @@ theorem Program.typeCheck.goWF' :
 -/
 
 
-theorem Program.find?.go_none_of_append : Program.find?.go kind name (acc1 ++ acc2) = none → Program.find?.go kind name acc1 = none := by
+private theorem Program.find?.go_none_of_append : Program.find?.go kind name (acc1 ++ acc2) = none → Program.find?.go kind name acc1 = none := by
   induction acc1 <;> simp [Program.find?.go]
   rename_i h t ind
   split <;> simp_all
 
-theorem Program.typeCheck.go_elim_acc:
+private theorem Program.typeCheck.go_elim_acc:
   (Program.typeCheck.go p C T ds (acc1 ++ acc2) = Except.ok (pp, T') →
   (List.IsPrefix acc2.reverse pp ∧ Program.typeCheck.go p C T ds acc1 = Except.ok (pp.drop acc2.length, T')))
   := by
@@ -236,35 +244,130 @@ theorem Program.typeCheck.go_elim_acc:
   any_goals (split <;> try (intros; contradiction))
   any_goals (rw [← List.cons_append]; intro; apply ind (by assumption))
 
-theorem Program.typeCheckAux_elim_singleton: Program.typeCheck.go p C ds T [s] = Except.ok (pp, T') →
+@[grind →]
+private theorem Program.typeCheckAux_elim_singleton: Program.typeCheck.go p C ds T [s] = Except.ok (pp, T') →
   Program.typeCheck.go p C ds T [] = Except.ok (pp.drop 1, T') := by
   intro H
   have : [s] = [] ++ [s] := by simp
   rw [this] at H; have H:=  Program.typeCheck.go_elim_acc H
   simp [H]
 
+@[local simp, local grind =]
+private theorem Except_ok_bind {E α β}
+  (a : α) (h : α → Except E β) :
+  (.ok a >>= h) = h a := by
+  simp [bind, Except.bind]
+
+@[local simp, local grind =]
+private theorem Except_error_bind {E α β}
+  (e : E) (h : α → Except E β) :
+  (.error e >>= h) = .error e := by
+  simp [bind, Except.bind]
+
+private theorem Except_bind_is_ok {E α β}
+  (m : Except E α) (h : α → Except E β) (r : β) :
+  ((m >>= h) = .ok r) ↔ ∃(a : α), m = .ok a ∧ h a = .ok r := by
+  match m with
+  | .ok a => grind
+  | .error e => grind
+
+@[local grind →]
+private theorem Except_bind_is_ok_rhs {E α β}
+  (m : Except E α) (h : α → Except E β) (r : β) :
+  ((m >>= h) = .ok r) → ∃(a : α), m = .ok a ∧ h a = .ok r :=
+  Except_bind_is_ok m h r |>.mp
+
+@[local grind .]
+private theorem WFVarProp_trivial (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Expression) :
+  WFVarProp p name ty e := by
+  constructor
+
+@[local grind .]
+private theorem WFTypeDeclarationProp_trivial (p : Program) (f : TypeDecl) :
+  WFTypeDeclarationProp p f := by
+  constructor
+
+@[local grind .]
+private theorem WFAxiomDeclarationProp_trivial (p : Program) (f : Axiom) :
+  WFAxiomDeclarationProp p f := by
+  constructor
+
+@[local grind .]
+private theorem WFDistinctDeclarationProp_trivial (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) :
+  WFDistinctDeclarationProp p l es := by
+  constructor
+
+@[local grind .]
+private theorem WFFunctionProp_trivial (p : Program) (f : Function) :
+  WFFunctionProp p f := by
+  constructor
+
+private theorem List.foldlM_error_conditional (f: α → Bool) (g: α → β) (l: List α):
+  List.foldlM (fun _ x =>
+    if f x then Except.error (g x)
+    else Except.ok ()) () l = Except.ok x →
+  ∀ y, y ∈ l → ¬ (f y) := by
+  induction l generalizing x <;> grind
+
+/-
+attribute [local grind .] Procedure.typeCheckWF
+
 /--
 Auxiliary lemma for Program.typeCheckWF
 -/
-theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok (ds', T') → WF.WFDeclsProp p ds := by
+private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok (ds', T') → WF.WFDeclsProp p ds := by
   intros tcok
   induction ds generalizing ds' C T T' with
-  | nil => simp [Program.typeCheck.go] at tcok
-           cases tcok; constructor <;> try assumption
-  | cons h t t_ih =>
-    simp [Program.typeCheck.go, bind, Except.bind, tryCatch] at tcok
-    split at tcok <;> try contradiction
-    any_goals (split at tcok <;> try contradiction)
-    any_goals (split at tcok <;> try contradiction)
-    any_goals (split at tcok <;> try contradiction)
-    simp
-    any_goals simp [t_ih $ Program.typeCheckAux_elim_singleton tcok]
-    have := Statement.typeCheckWF (by assumption)
-    constructor
-    simp [WFCmdExtProp] at this
-    sorry
-    any_goals (apply Procedure.typeCheckWF (by assumption))
-    any_goals constructor
+  | nil => simp
+  | cons h t hyp =>
+    simp only [Program.typeCheck.go, Except_bind_is_ok] at tcok
+    let ⟨idents, ⟨ident_eq, q⟩⟩ := tcok
+    clear tcok
+    match h with
+    | Decl.var x ty val md =>
+      simp only [Except_bind_is_ok] at q
+      grind
+    | Decl.type td md =>
+      grind
+    | .ax a _ =>
+      grind
+    | .distinct l es md =>
+      grind
+    | .proc proc md =>
+      grind
+    | .func func md =>
+      grind
+    | .recFuncBlock funcs md =>
+      simp only [] at q
+      split at q
+      -- First contradiction: empty funcs list
+      case isTrue =>
+        simp [Except_bind_is_ok, tryCatch, tryCatchThe, MonadExceptOf.tryCatch] at q
+        rcases q with ⟨x, ⟨y, ⟨z, ⟨hcon, _⟩⟩⟩⟩
+        contradiction
+      simp only [Except_bind_is_ok] at q
+      rcases q with ⟨res, ⟨q, hty⟩⟩
+      simp only [Except.tryCatch, tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.bind, bind, pure, Except.pure] at q
+      split at q <;> try contradiction
+      cases q
+      rename_i q
+      split at q <;> try contradiction
+      rename_i hinline_poly
+      split at q <;> try contradiction
+      rename_i htypecheck
+      cases q; simp at hty
+      -- Get info about inline, no poly, no dups
+      have hin:= List.foldlM_error_conditional _ _ _ hinline_poly
+      have hnodup := Identifiers.addListWithErrorNoDup ident_eq
+      simp only[Decl.names] at hnodup
+      unfold WFDeclsProp
+      refine (List.Forall_cons (WFDeclProp p) (Decl.recFuncBlock funcs md) t).mpr ?_
+      constructor
+      case right => grind
+      case left =>
+        simp only [WFDeclProp]
+        constructor <;> grind
+-/
 
 -- Reasoning about unique identifiers
 
@@ -295,8 +398,24 @@ macro_rules
   | `(tactic|split_contra_case $t) =>
   `(tactic| split at $t:ident <;> (try contradiction); cases $t:ident)
 
+private theorem addFactoryFunction_idents {T : LExprParams} (C : LContext T) (fn : LFunc T) :
+    (C.addFactoryFunction fn).idents = C.idents := by
+  simp [LContext.addFactoryFunction]
+  if h : fn.name.name ∈ C.functions then
+    simp [h]
+  else
+    simp [h]
+
+/-- `List.foldl addFactoryFunction` does not change `idents`. -/
+private theorem foldl_addFactoryFunction_idents {T : LExprParams} {C : LContext T} {fs : List α} {g : α → LFunc T} :
+    (fs.foldl (fun C f => C.addFactoryFunction (g f)) (init := C)).idents = C.idents := by
+  induction fs generalizing C with
+  | nil => rfl
+  | cons _ _ ih =>
+    simp only [List.foldl, ih, addFactoryFunction_idents]
+
 /-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
-theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
+private theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
     Except.mapError f e = .ok v → e = .ok v := by
   cases e with
   | error _ => simp [Except.mapError]
@@ -306,7 +425,7 @@ theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ
 If a program typechecks successfully, then every identifier in the list of
 program decls is not in the original `LContext`
 -/
-theorem Program.typeCheckFunctionDisjoint :
+private theorem Program.typeCheckFunctionDisjoint :
     Program.typeCheck.go p C T decls acc = .ok (d', T') →
     (∀ x, x ∈ Program.getNames.go decls → ¬ C.idents.contains x) := by
   induction decls generalizing acc p d' T' T C with
@@ -367,6 +486,8 @@ theorem Program.typeCheckFunctionDisjoint :
         grind
     | func f =>
       split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      simp only[pure, Except.pure] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       match hx with
@@ -379,6 +500,25 @@ theorem Program.typeCheckFunctionDisjoint :
         specialize a_in' tcok a_in x_in
         have a_notin := IH x a_in';
         simp only[LContext.addFactoryFunction] at a_notin
+        grind
+    | recFuncBlock fs =>
+      split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      simp only[pure, Except.pure] at Hty
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      cases Hty; simp at tcok
+      rename_i Heq
+      specialize (IH tcok)
+      match hx with
+      | Or.inl hx =>
+        have Hnotin := (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names] at *; grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        specialize a_in' tcok a_in x_in
+        have a_notin := IH x a_in'
+        rw[foldl_addFactoryFunction_idents] at a_notin
         grind
     | type t =>
       cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty; split_contra Hty <;> rename_i Hty)
@@ -420,7 +560,7 @@ theorem Program.typeCheckFunctionDisjoint :
 If a program typechecks succesfully, all identifiers defined in the program are
 unique.
 -/
-theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = .ok (d', T') → (Program.getNames.go decls).Nodup := by
+private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = .ok (d', T') → (Program.getNames.go decls).Nodup := by
   induction decls generalizing acc p C T with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
@@ -464,6 +604,8 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
       simp_all; grind
     | func f =>
       split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      simp only[pure, Except.pure] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
@@ -473,6 +615,23 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
       have x_contains := (Identifiers.addListWithErrorContains Hid x)
       simp_all
       simp[LContext.addFactoryFunction] at Hdisj
+      grind
+    | recFuncBlock fs =>
+      split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      simp only[pure, Except.pure] at Hty
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      cases Hty; simp at tcok
+      specialize (IH tcok)
+      apply List.nodup_append.mpr
+      constructor; apply (Identifiers.addListWithErrorNoDup Hid)
+      constructor; apply IH
+      intros a a_in; simp[Decl.names] at a_in
+      intros x x_in
+      have Hdisj := Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      rw [foldl_addFactoryFunction_idents] at Hdisj
       grind
     | type td =>
       specialize (IH tcok)
@@ -508,17 +667,22 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
         have := addMutualBlockIdents (by assumption);
         grind
 
+/-
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
 -/
 theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFProgramProp p := by
   intros tcok
-  simp [Program.typeCheck] at tcok
-  simp[bind, Except.bind] at tcok
-  split at tcok; contradiction
-  rename_i x v Hgo
-  constructor; exact (Program.typeCheckFunctionNoDup Hgo)
-  exact typeCheck.goWF Hgo
+  simp [Program.typeCheck, Except_bind_is_ok] at tcok
+  let ⟨ds, ⟨tcOk, _⟩⟩ := tcok
+  constructor
+  case namesNodup =>
+    exact typeCheckFunctionNoDup tcOk
+  case wfdecls =>
+    exact typeCheck.goWF tcOk
+-/
+
+end -- public section
 
 end WF
 end Core

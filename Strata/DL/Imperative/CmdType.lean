@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.TypeContext
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -30,7 +31,7 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     match TC.lookup τ x with
     | none =>
       match e with
-      | some expr =>
+      | .det expr =>
         if x ∈ TC.freeVars expr then
           .error <| md.toDiagnosticF f!"Variable {x} cannot appear in its own initialization expression!"
         else
@@ -39,13 +40,13 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
           let τ ← TC.unifyTypes τ [(xty, ety)]
           let (xty, τ) ← TC.postprocess ctx τ xty
           let τ := TC.update τ x xty
-          let c := Cmd.init x xty (some expr) md
+          let c := Cmd.init x xty (.det expr) md
           .ok (c, τ)
-      | none =>
+      | .nondet =>
         let (xty, τ) ← TC.preprocess ctx τ xty
         let (xty, τ) ← TC.postprocess ctx τ xty
         let τ := TC.update τ x xty
-        let c := Cmd.init x xty none md
+        let c := Cmd.init x xty .nondet md
         .ok (c, τ)
     | some xty =>
       .error <| md.toDiagnosticF f!"Variable {x} of type {xty} already in context."
@@ -54,15 +55,14 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     match TC.lookup τ x with
     | none => .error <| md.toDiagnosticF f!"Cannot set undeclared variable {x}."
     | some xty =>
-      let (e, ety, τ) ← TC.inferType ctx τ c e
-      let τ ← TC.unifyTypes τ [(xty, ety)]
-      let c := Cmd.set x e md
-      .ok (c, τ)
-
-  | .havoc x md =>
-    match TC.lookup τ x with
-    | some _ => .ok (c, τ)
-    | none => .error <| md.toDiagnosticF f!"Cannot havoc undeclared variable {x}."
+      match e with
+      | .det expr =>
+        let (expr, ety, τ) ← TC.inferType ctx τ c expr
+        let τ ← TC.unifyTypes τ [(xty, ety)]
+        let c := Cmd.set x (.det expr) md
+        .ok (c, τ)
+      | .nondet =>
+        .ok (c, τ)
 
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -109,4 +109,5 @@ def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     .ok (c :: crest, τ)
 
 ---------------------------------------------------------------------
+end -- public section
 end Imperative

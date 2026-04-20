@@ -78,8 +78,8 @@ can be useful to provide different feedback for an empty list.
 ### Prefer Extrinsic Proofs
 
 Given the `median` function above, we may want to know that it always
-produces an `Int` given a list of even size. We could have included a
-precondition that the list has even size, avoiding the need for error
+produces an `Int` given a list of odd size. We could have included a
+precondition that the list has odd size, avoiding the need for error
 handling, but that would have precluded the possibility of providing
 useful feedback in the case of working with unfiltered input.
 
@@ -128,7 +128,7 @@ main purposes:
 
 * For higher-level tests, e.g., in the `StrataTest` directory, which
   does not contain an end-to-end Strata application but tests for core
-  components (e.g., just the DDM, just the partial evaluator of a
+  components (e.g., just the DDM, just the evaluator of a
   specific dialect, etc.). These tests serve as guides to understand
   how to set up, use, and compose these core components.
   `StrataTest/Languages/[Core|C_Simp]/Examples` showcases
@@ -179,7 +179,7 @@ encouraged.
 
 Every major function and theorem must be documented (NOTE: use `/--
 ... -/` and NOT `/- ... -/`). Use backticks to format code or math
-expressions in the docstring (e.g., `x + y`).
+expressions in the docstring (e.g., ``/-- ... `x + y` ... -/``).
 
 Describe implementation-level details in single- (`--`) or multi-line
 comments (`/- .. -/`) interspersed with the code.

@@ -33,11 +33,11 @@ spec {
 /--
 info:
 Obligation: P_post_result_ok_calls_Int.SafeDiv_0
-Property: assert
+Property: division by zero check
 Result: ✅ pass
 
 Obligation: set_r_calls_Int.SafeDiv_0
-Property: assert
+Property: division by zero check
 Result: ✅ pass
 
 Obligation: result_ok
@@ -46,14 +46,14 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify noFilterWFPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := some ["P"])
 
 -- Don't verify P, and don't produce a procedure for the contract
 /-- info: -/
 #guard_msgs in
 #eval verify noFilterWFPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := some [])
 
 end Strata

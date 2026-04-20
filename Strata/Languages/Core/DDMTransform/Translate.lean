@@ -3,12 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.AST
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.CoreGen
-import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.AST
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Core
+public import Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.CoreOp
+public import Strata.DDM.Util.DecimalRat
 
 
 ---------------------------------------------------------------------
@@ -20,6 +22,8 @@ open Core
 open Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
+public section
+
 ---------------------------------------------------------------------
 
 /- Translation Monad -/
@@ -29,9 +33,11 @@ structure TransState where
   errors : Array String
   globalContext : GlobalContext := {}
 
+@[expose]
 def TransM := StateM TransState
   deriving Monad
 
+@[expose]
 def TransM.run (ictx : InputContext) (m : TransM α) (gctx : GlobalContext := {}) : (α × Array String) :=
   let (v, s) := StateT.run m { inputCtx := ictx, errors := #[], globalContext := gctx }
   (v, s.errors)
@@ -179,13 +185,13 @@ instance : Inhabited (List Core.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Core.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) none
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) .nondet .empty
 
 instance : Inhabited (Core.Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Core.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) none, {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) .nondet .empty, {})
 
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
@@ -252,9 +258,9 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     -- Datatype Declaration (possibly mutual)
                     -- Look up the type name from the GlobalContext using the fvar index
                     let gctx := (← StateT.get).globalContext
-                    let ldatatype : LDatatype Core.Visibility := match gctx.nameOf? i, block with
+                    let ldatatype : LDatatype Unit := match gctx.nameOf? i, block with
                       | some name, _ =>
-                        match block.find? (fun (d : LDatatype Core.Visibility) => d.name == name) with
+                        match block.find? (fun (d : LDatatype Unit) => d.name == name) with
                         | some d => d
                         | none => panic! s!"Error: datatype {name} not found in block"
                       | none, d :: _ => d
@@ -331,48 +337,23 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typedecl 2
   let name ← translateIdent TyIdentifier op.args[0]!
-  let numargs ←
+  let params ←
     translateOption
       (fun maybearg =>
             do match maybearg with
-            | none => pure 0
+            | none => pure []
             | some arg =>
               let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let numargs ←
-                  match bargs[0]! with
-                  | .seq _ .comma args => pure args.size
-                  | _ => TransM.error
-                          s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
+              match bargs[0]! with
+              | .seq _ .comma args => do
+                args.toList.mapM fun argOp => do
+                  let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+                  translateIdent String bindArgs[0]!
+              | _ => TransM.error
+                      s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
   let md ← getOpMetaData op
-  -- Only the number of type arguments is important; the exact identifiers are
-  -- irrelevant.
-  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
-  return (decl, { bindings with freeVars := bindings.freeVars.push decl })
-
-/--
-Translate a forward type declaration. This creates a placeholder entry that will
-be replaced when the actual datatype definition is encountered in a mutual block.
--/
-def translateForwardTypeDecl (bindings : TransBindings) (op : Operation) :
-  TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_forward_typedecl 2
-  let name ← translateIdent TyIdentifier op.args[0]!
-  let numargs ←
-    translateOption
-      (fun maybearg =>
-            do match maybearg with
-            | none => pure 0
-            | some arg =>
-              let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let numargs ←
-                  match bargs[0]! with
-                  | .seq _ .comma args => pure args.size
-                  | _ => TransM.error
-                          s!"translateForwardTypeDecl expects a comma separated list: {repr bargs[0]!}")
-                    op.args[1]!
-  let md ← getOpMetaData op
-  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
+  let decl := Core.Decl.type (.con { name := name, params := params }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 ---------------------------------------------------------------------
@@ -507,6 +488,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .int, q`Core.mod_expr => return Core.intModOp
   | .some .int, q`Core.safediv_expr => return Core.intSafeDivOp
   | .some .int, q`Core.safemod_expr => return Core.intSafeModOp
+  | .some .int, q`Core.divt_expr => return Core.intDivTOp
+  | .some .int, q`Core.modt_expr => return Core.intModTOp
+  | .some .int, q`Core.safedivt_expr => return Core.intSafeDivTOp
+  | .some .int, q`Core.safemodt_expr => return Core.intSafeModTOp
   | .some .int, q`Core.neg_expr => return Core.intNegOp
 
   | .some .real, q`Core.le       => return Core.realLeOp
@@ -535,6 +520,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv1, q`Core.mod_expr => return Core.bv1UModOp
   | .some .bv1, q`Core.bvsdiv   => return Core.bv1SDivOp
   | .some .bv1, q`Core.bvsmod   => return Core.bv1SModOp
+  | .some .bv1, q`Core.safeadd_expr  => return Core.bv1SafeAddOp
+  | .some .bv1, q`Core.safesub_expr  => return Core.bv1SafeSubOp
+  | .some .bv1, q`Core.safemul_expr  => return Core.bv1SafeMulOp
+  | .some .bv1, q`Core.safeneg_expr  => return Core.bv1SafeNegOp
+  | .some .bv1, q`Core.safesdiv_expr => return Core.bv1SafeSDivOp
+  | .some .bv1, q`Core.safesmod_expr => return Core.bv1SafeSModOp
   | .some .bv1, q`Core.bvnot    => return Core.bv1NotOp
   | .some .bv1, q`Core.bvand    => return Core.bv1AndOp
   | .some .bv1, q`Core.bvor     => return Core.bv1OrOp
@@ -559,6 +550,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv8, q`Core.mod_expr => return Core.bv8UModOp
   | .some .bv8, q`Core.bvsdiv   => return Core.bv8SDivOp
   | .some .bv8, q`Core.bvsmod   => return Core.bv8SModOp
+  | .some .bv8, q`Core.safeadd_expr  => return Core.bv8SafeAddOp
+  | .some .bv8, q`Core.safesub_expr  => return Core.bv8SafeSubOp
+  | .some .bv8, q`Core.safemul_expr  => return Core.bv8SafeMulOp
+  | .some .bv8, q`Core.safeneg_expr  => return Core.bv8SafeNegOp
+  | .some .bv8, q`Core.safesdiv_expr => return Core.bv8SafeSDivOp
+  | .some .bv8, q`Core.safesmod_expr => return Core.bv8SafeSModOp
   | .some .bv8, q`Core.bvnot    => return Core.bv8NotOp
   | .some .bv8, q`Core.bvand    => return Core.bv8AndOp
   | .some .bv8, q`Core.bvor     => return Core.bv8OrOp
@@ -583,6 +580,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv16, q`Core.mod_expr => return Core.bv16UModOp
   | .some .bv16, q`Core.bvsdiv   => return Core.bv16SDivOp
   | .some .bv16, q`Core.bvsmod   => return Core.bv16SModOp
+  | .some .bv16, q`Core.safeadd_expr  => return Core.bv16SafeAddOp
+  | .some .bv16, q`Core.safesub_expr  => return Core.bv16SafeSubOp
+  | .some .bv16, q`Core.safemul_expr  => return Core.bv16SafeMulOp
+  | .some .bv16, q`Core.safeneg_expr  => return Core.bv16SafeNegOp
+  | .some .bv16, q`Core.safesdiv_expr => return Core.bv16SafeSDivOp
+  | .some .bv16, q`Core.safesmod_expr => return Core.bv16SafeSModOp
   | .some .bv16, q`Core.bvnot    => return Core.bv16NotOp
   | .some .bv16, q`Core.bvand    => return Core.bv16AndOp
   | .some .bv16, q`Core.bvor     => return Core.bv16OrOp
@@ -607,6 +610,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv32, q`Core.mod_expr => return Core.bv32UModOp
   | .some .bv32, q`Core.bvsdiv   => return Core.bv32SDivOp
   | .some .bv32, q`Core.bvsmod   => return Core.bv32SModOp
+  | .some .bv32, q`Core.safeadd_expr  => return Core.bv32SafeAddOp
+  | .some .bv32, q`Core.safesub_expr  => return Core.bv32SafeSubOp
+  | .some .bv32, q`Core.safemul_expr  => return Core.bv32SafeMulOp
+  | .some .bv32, q`Core.safeneg_expr  => return Core.bv32SafeNegOp
+  | .some .bv32, q`Core.safesdiv_expr => return Core.bv32SafeSDivOp
+  | .some .bv32, q`Core.safesmod_expr => return Core.bv32SafeSModOp
   | .some .bv32, q`Core.bvnot    => return Core.bv32NotOp
   | .some .bv32, q`Core.bvand    => return Core.bv32AndOp
   | .some .bv32, q`Core.bvor     => return Core.bv32OrOp
@@ -631,6 +640,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv64, q`Core.mod_expr => return Core.bv64UModOp
   | .some .bv64, q`Core.bvsdiv   => return Core.bv64SDivOp
   | .some .bv64, q`Core.bvsmod   => return Core.bv64SModOp
+  | .some .bv64, q`Core.safeadd_expr  => return Core.bv64SafeAddOp
+  | .some .bv64, q`Core.safesub_expr  => return Core.bv64SafeSubOp
+  | .some .bv64, q`Core.safemul_expr  => return Core.bv64SafeMulOp
+  | .some .bv64, q`Core.safeneg_expr  => return Core.bv64SafeNegOp
+  | .some .bv64, q`Core.safesdiv_expr => return Core.bv64SafeSDivOp
+  | .some .bv64, q`Core.safesmod_expr => return Core.bv64SafeSModOp
   | .some .bv64, q`Core.bvnot    => return Core.bv64NotOp
   | .some .bv64, q`Core.bvand    => return Core.bv64AndOp
   | .some .bv64, q`Core.bvor     => return Core.bv64OrOp
@@ -652,7 +667,6 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
   | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
-  | _, q`Core.old          => return Core.polyOldOp
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
   | _, q`Core.str_substr   => return Core.strSubstrOp
@@ -693,14 +707,14 @@ def translateQuantifier
 
     -- Create one quantifier constructor per variable
     -- Trigger attached to only the innermost quantifier
-    let buildQuantifier := fun (_, ty) (e, first) =>
+    let buildQuantifier := fun (name, ty) (e, first) =>
       match ty with
       | .forAll [] mty =>
         let triggers := if first then
             triggers
           else
             LExpr.noTrigger ()
-        (.quant () qk (.some mty) triggers e, false)
+        (.quant () qk name.name (.some mty) triggers e, false)
       | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
 
     return xsArray.foldr buildQuantifier (init := (b, true)) |>.1
@@ -730,6 +744,16 @@ def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
     let g ← translateTriggerGroup p bindings group
     return .app () (.app () Core.addTriggerGroupOp g) ts
   | _, _ => panic! s!"Unexpected operator in trigger"
+
+/-- Resolve a function from a `recFuncBlock` by its global-context index. -/
+partial def resolveRecFunc (funcs : List Core.Function) (idx : Nat) : TransM Core.Function := do
+  let gctx := (← StateT.get).globalContext
+  match gctx.nameOf? idx with
+  | some name =>
+    match funcs.find? (fun f => f.name.name == name) with
+    | some f => pure f
+    | none => TransM.error s!"function {name} not found in recFuncBlock"
+  | none => TransM.error s!"resolveRecFunc: no name for index {idx} in global context"
 
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
@@ -826,6 +850,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn ← translateFn ty q`Core.neg_expr
     let x ← translateExpr p bindings xa
     return .mkApp () fn [x]
+  | .fn _ q`Core.safeneg_expr, [tpa, xa] =>
+    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let fn ← translateFn ty q`Core.safeneg_expr
+    let x ← translateExpr p bindings xa
+    return .mkApp () fn [x]
   -- Strings
   | .fn _ q`Core.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
@@ -838,12 +867,14 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      return .mkApp () Core.strSubstrOp [x, i, n]
   | .fn _ q`Core.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
-     return .mkApp () Core.polyOldOp [x]
+     match x with
+     | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
+     | _ => TransM.error s!"old: expected an identifier, got {x}"
   | .fn _ q`Core.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapSelectOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
+     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Select) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
@@ -851,11 +882,81 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapUpdateOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
+     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Update) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
      return .mkApp () fn [m, i, x]
+  -- Seq operations
+  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
+  | .fn _ q`Core.seq_length, [_atp, sa] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Length)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int]))
+     let s ← translateExpr p bindings sa
+     return .mkApp () fn [s]
+  | .fn _ q`Core.seq_select, [_atp, sa, ia] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Select)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety]))
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     return .mkApp () fn [s, i]
+  | .fn _ q`Core.seq_append, [_atp, s1a, s2a] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Append)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [Core.seqTy ety, Core.seqTy ety]))
+     let s1 ← translateExpr p bindings s1a
+     let s2 ← translateExpr p bindings s2a
+     return .mkApp () fn [s1, s2]
+  | .fn _ q`Core.seq_build, [_atp, sa, va] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Build)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let v ← translateExpr p bindings va
+     return .mkApp () fn [s, v]
+  | .fn _ q`Core.seq_update, [_atp, sa, ia, va] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Update)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [.int, ety, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     let v ← translateExpr p bindings va
+     return .mkApp () fn [s, i, v]
+  | .fn _ q`Core.seq_contains, [_atp, sa, va] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Contains)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool]))
+     let s ← translateExpr p bindings sa
+     let v ← translateExpr p bindings va
+     return .mkApp () fn [s, v]
+  | .fn _ q`Core.seq_take, [_atp, sa, na] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Take)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [.int, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let n ← translateExpr p bindings na
+     return .mkApp () fn [s, n]
+  | .fn _ q`Core.seq_drop, [_atp, sa, na] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Drop)
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [.int, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let n ← translateExpr p bindings na
+     return .mkApp () fn [s, n]
   -- Quantifiers
   | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
@@ -887,6 +988,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.safediv_expr
     | q`Core.mod_expr
     | q`Core.safemod_expr
+    | q`Core.divt_expr
+    | q`Core.modt_expr
+    | q`Core.safedivt_expr
+    | q`Core.safemodt_expr
     | q`Core.bvand
     | q`Core.bvor
     | q`Core.bvxor
@@ -895,6 +1000,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.bvsshr
     | q`Core.bvsdiv
     | q`Core.bvsmod
+    | q`Core.safeadd_expr
+    | q`Core.safesub_expr
+    | q`Core.safemul_expr
+    | q`Core.safesdiv_expr
+    | q`Core.safesmod_expr
     | q`Core.le
     | q`Core.lt
     | q`Core.gt
@@ -937,6 +1047,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
             return .mkApp () func.opExpr args.toList
+        | .recFuncBlock funcs _md =>
+          let func ← resolveRecFunc funcs funcIndex
+          match argsa with
+          | [] => return func.opExpr
+          | _ =>
+            let args ← translateExprs p bindings argsa.toArray
+            return .mkApp () func.opExpr args.toList
         | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
       else
         TransM.error s!"translateExpr out-of-range bound variable: {i}"
@@ -953,6 +1070,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | .func func _md =>
       -- 0-ary Function
       return (.op () func.name ty?)
+    | .recFuncBlock funcs _md =>
+      let func ← resolveRecFunc funcs i
+      return (.op () func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
@@ -961,6 +1081,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let decl := bindings.freeVars[i]!
     match decl with
     | .func func _md =>
+      let args ← translateExprs p bindings argsa.toArray
+      return .mkApp () func.opExpr args.toList
+    | .recFuncBlock funcs _md =>
+      let func ← resolveRecFunc funcs i
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | _ =>
@@ -1000,6 +1124,15 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
     pure (i::is)
   | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
 
+def translateMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
+    TransM (Option Core.Expression.Expr) := do
+  match arg with
+  | .option _ (.some m) =>
+    let args ← checkOpArg m q`Core.measure_mk 1
+    let e ← translateExpr p bindings args[0]!
+    pure (some e)
+  | _ => pure none
+
 
 def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBindings)
     (md : MetaData Core.Expression):
@@ -1007,7 +1140,7 @@ def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBi
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp none md
+    let s := Core.Statement.init id tp .nondet md
     let (stmts, bindings) ← initVarStmts rest bindings md
     return ((s :: stmts), bindings)
 
@@ -1039,7 +1172,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let ty := (.forAll [] mty)
     let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
-    return ([.init lhs ty val md], { bindings with boundVars := bbindings })
+    return ([.init lhs ty (.det val) md], { bindings with boundVars := bbindings })
 
 def translateOptionReachCheck (arg : Arg) : TransM Bool := do
   let .option _ rc := arg
@@ -1049,6 +1182,16 @@ def translateOptionReachCheck (arg : Arg) : TransM Bool := do
     let _ ← checkOpArg f q`Core.reachCheck 0
     return true
   | none => return false
+
+/-- Translate an ExprOrNondet argument to ExprOrNondet. -/
+private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg) :
+    TransM (Imperative.ExprOrNondet Core.Expression) := do
+  let .op op := a
+    | TransM.error s!"translateCondBool expected op {repr a}"
+  match op.name, op.args with
+  | q`Core.condNondet, #[] => pure .nondet
+  | q`Core.condDet, #[ca] => pure (.det (← translateExpr p bindings ca))
+  | _, _ => TransM.error s!"translateCondBool: unexpected {repr op.name}"
 
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
@@ -1112,17 +1255,18 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.assume l c md], bindings)
   | q`Core.if_statement, #[ca, ta, fa] =>
-    let c ← translateExpr p bindings ca
     let (tss, thenBindings) ← translateBlock p bindings ta
     let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
     let md ← getOpMetaData op
-    return ([.ite c tss fss md], { bindings with gen := elseBindings.gen })
-  | q`Core.while_statement, #[ca, ia, ba] =>
-    let c ← translateExpr p bindings ca
+    let cond ← translateCondBool p bindings ca
+    return ([.ite cond tss fss md], { bindings with gen := elseBindings.gen })
+  | q`Core.while_statement, #[ca, ma, ia, ba] =>
+    let measure ← translateMeasure p bindings ma
     let invs ← translateInvariants p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop c .none invs bodyss md], bindings)
+    let guard ← translateCondBool p bindings ca
+    return ([.loop guard measure invs bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa
     let f   ← translateIdent String fa
@@ -1136,9 +1280,11 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.call [] f es.toList md], bindings)
   | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
-    let (ss, bindings) ← translateBlock p bindings ba
+    let (ss, innerBindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.block l ss md], bindings)
+    -- Blocks introduce lexical scope: variables declared inside are not
+    -- visible after.  Only propagate counter state (gen), not boundVars.
+    return ([.block l ss md], { bindings with gen := innerBindings.gen })
   | q`Core.exit_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
@@ -1186,6 +1332,33 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- Add the function to boundVars for subsequent statements.
     let updatedBindings := { bindings with boundVars := bindings.boundVars.push funcBinding }
     return ([.funcDecl decl md], updatedBindings)
+  | q`Core.typeDecl_statement, #[namea, argsa] =>
+    let name ← translateIdent String namea
+    let (typeParams : List String) ← match argsa with
+      | .option _ (.some binds) => do
+        let bargs ← checkOpArg binds q`Core.mkBindings 1
+        match bargs[0]! with
+        | .seq _ .comma args => do
+          args.toList.mapM fun argOp => do
+            let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+            translateIdent String bindArgs[0]!
+        | _ => TransM.error
+                s!"typeDecl_statement expects a comma separated list: {repr bargs[0]!}"
+      | .option _ .none => pure []
+      | _ => TransM.error s!"Invalid type arguments {repr argsa}"
+    let md ← getOpMetaData op
+
+    -- Create a TypeConstructor and add it to freeVars (same as program-level types)
+    let tc : TypeConstructor := { name := name, params := typeParams }
+    let typeDecl : Core.Decl := .type (.con tc) md
+
+    -- Add type parameters (not the type name itself) to boundTypeVars
+    -- This matches what the DDM parser does with declareType
+    let updatedBindings := { bindings with
+      freeVars := bindings.freeVars.push typeDecl,
+      boundTypeVars := bindings.boundTypeVars ++ typeParams.toArray }
+
+    return ([.typeDecl tc md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1216,15 +1389,18 @@ end
 ---------------------------------------------------------------------
 
 def translateInitMkBinding (bindings : TransBindings) (op : Arg) :
-  TransM (Core.CoreIdent × LMonoTy) := do
-  -- (FIXME) Account for metadata.
-  let bargs ← checkOpArg op q`Core.mkBinding 2
+  TransM (Core.CoreIdent × LMonoTy × Bool) := do
+  let isCases := match op with
+    | .op o => o.name == q`Core.casesBinding
+    | _ => false
+  let opName := if isCases then q`Core.casesBinding else q`Core.mkBinding
+  let bargs ← checkOpArg op opName 2
   let id ← translateIdent Core.CoreIdent bargs[0]!
   let tp ← translateLMonoTy bindings bargs[1]!
-  return (id, tp)
+  return (id, tp, isCases)
 
 def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
-  TransM (Array (Core.CoreIdent × LMonoTy)) := do
+  TransM (Array (Core.CoreIdent × LMonoTy × Bool)) := do
   ops.mapM (fun op => translateInitMkBinding bindings op)
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
@@ -1233,9 +1409,25 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   match bargs[0]! with
   | .seq _ .comma args =>
     let arr ← translateInitMkBindings bindings args
-    return arr.toList
+    return arr.toList.map fun (id, ty, _) => (id, ty)
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
+
+/-- Like `translateBindings` but also returns the index of the `@[cases]` parameter, if any. -/
+def translateBindingsWithCases (bindings : TransBindings) (op : Arg) :
+  TransM (ListMap Core.CoreIdent LMonoTy × Option Nat) := do
+  let bargs ← checkOpArg op q`Core.mkBindings 1
+  match bargs[0]! with
+  | .seq _ .comma args =>
+    let arr ← translateInitMkBindings bindings args
+    let sig := arr.toList.map fun (id, ty, _) => (id, ty)
+    let casesCount := arr.toList.filter (·.2.2) |>.length
+    if casesCount > 1 then
+      TransM.error s!"Only one @[cases] parameter is allowed, but {casesCount} were found"
+    let casesIdx := arr.toList.findIdx? fun (_, _, c) => c
+    return (sig, casesIdx)
+  | _ =>
+    TransM.error s!"translateBindingsWithCases expects a comma separated list: {repr op}"
 
 def translateModifies (arg : Arg) : TransM (Array Core.CoreIdent) := do
   let args ← checkOpArg arg q`Core.modifies_spec 1
@@ -1416,28 +1608,27 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
-    | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
+    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
+    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  -- This bindings order -- original, then inputs, is
-  -- critical here. Is this right though?
   let orig_bbindings := bindings.boundVars
   let bbindings := bindings.boundVars ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
   let (preconds, body, inline?) ← match status with
-             | .Definition =>
-                let preconds ← translateFnPreconds p fname bindings op.args[4]!
-                let e ← translateExpr p bindings op.args[5]!
-                let inline? ← translateOptionInline op.args[6]!
-                pure (preconds, some e, inline?)
-             | .Declaration => pure ([], none, #[])
+    | .Definition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let e ← translateExpr p bindings op.args[5]!
+      let inline? ← translateOptionInline op.args[6]!
+      pure (preconds, some e, inline?)
+    | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
+                      isRecursive := false,
                       inputs := sig,
                       output := ret,
                       body := body,
@@ -1447,6 +1638,100 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
           { bindings with
             boundVars := orig_bbindings,
             freeVars := bindings.freeVars.push decl })
+
+---------------------------------------------------------------------
+-- Mutual recursive function translation
+-- Follows the same pattern as translateDatatypes:
+-- 1. First pass: collect names, allocate placeholder fvars
+-- 2. Second pass: translate bodies with all placeholders in scope
+-- 3. Build combined recFuncBlock decl
+-- 4. Set each function's fvar index to the combined decl
+
+/--
+Translate a single function within a mutual recursive block.
+`fnOp` is a `recfn_decl` operation.
+`preBindings` has placeholder fvars for all functions in the block.
+`siblingExprs` contains the opExpr for each preceding sibling (for bvar resolution).
+-/
+partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
+    (fnOp : Operation) (siblingExprs : Array Core.Expression.Expr) :
+    TransM Core.Function := do
+  let _ ← @checkOp Core.Function fnOp q`Core.recfn_decl 6
+  let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
+  let typeArgs ← translateTypeArgs fnOp.args[1]!
+  let (sig, casesIdx) ← translateBindingsWithCases preBindings fnOp.args[2]!
+  let ret ← translateLMonoTy preBindings fnOp.args[3]!
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  -- Build boundVars matching the DDM elaborator's typing context.
+  -- @[declareFn] accumulates sibling bvars across NewlineSepBy children.
+  -- Self-reference goes through fvar (from @[preRegisterFunctions]), not bvar.
+  let tyArgPlaceholders := typeArgs.map fun (ta : TyIdentifier) =>
+    LExpr.op () (ta : Core.CoreIdent) .none
+  let bbindings := preBindings.boundVars ++ siblingExprs ++ tyArgPlaceholders ++ in_bindings
+  let bodyBindings := { preBindings with boundVars := bbindings }
+  let casesAttr := match casesIdx with
+    | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
+    | none => #[]
+  let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
+  let body ← translateExpr p bodyBindings fnOp.args[5]!
+  return { name := fname, typeArgs := typeArgs.toList, isRecursive := true,
+           inputs := sig, output := ret, body := some body,
+           attr := casesAttr, preconditions := preconds }
+
+/--
+Translate a `command_recfndefs` block (one or more mutually recursive functions).
+-/
+partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op : Operation) :
+    TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndefs 1
+
+  let .seq _ _ declarations := op.args[0]!
+    | TransM.error s!"translateRecFuncBlock expected sequence: {repr op.args[0]!}"
+
+  let fnOps := declarations.filterMap fun arg =>
+    match arg with
+    | .op op => if op.name == q`Core.recfn_decl then some op else none
+    | _ => none
+
+  if fnOps.size == 0 then
+    TransM.error "Recursive function block must contain at least one function"
+  else
+    -- First pass: allocate placeholder fvars
+    let mut bindingsWithPlaceholders := bindings
+    for fnOp in fnOps do
+      let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
+      let sig ← translateBindings bindingsWithPlaceholders fnOp.args[2]!
+      let ret ← translateLMonoTy bindingsWithPlaceholders fnOp.args[3]!
+      let placeholder : Core.Function := {
+        name := fname, typeArgs := [], inputs := sig, output := ret,
+        body := none, isRecursive := true }
+      let placeholderDecl := Core.Decl.recFuncBlock [placeholder] .empty
+      bindingsWithPlaceholders := { bindingsWithPlaceholders with
+        freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
+
+    -- Second pass: translate each function body with all placeholders in scope.
+    -- @[declareFn] accumulates bvars across siblings, so the i-th function's
+    -- body sees the preceding i siblings as bvars.
+    let (funcsRev, _) ← fnOps.foldlM (init := ([], #[])) fun (acc, siblings) fnOp => do
+      let func ← translateRecFnDecl p bindingsWithPlaceholders fnOp siblings
+      pure (func :: acc, siblings.push func.opExpr)
+    let funcs := funcsRev.reverse
+
+    let md ← getOpMetaData op
+    let decl := Core.Decl.recFuncBlock funcs md
+
+    -- Replace placeholder freeVars with the real combined decl.
+    let mut finalBindings := bindings
+    for i in [:fnOps.size] do
+      let idx := bindings.freeVars.size + i
+      if idx < finalBindings.freeVars.size then
+        finalBindings := { finalBindings with
+          freeVars := finalBindings.freeVars.set! idx decl }
+      else
+        finalBindings := { finalBindings with
+          freeVars := finalBindings.freeVars.push decl }
+
+    return (decl, finalBindings)
 
 ---------------------------------------------------------------------
 
@@ -1482,7 +1767,9 @@ Extract and translate constructor information from a constructor list argument.
 -/
 def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
     TransM (Array TransConstructorInfo) := do
-  let constructorInfos := GlobalContext.extractConstructorInfo p.dialects arg
+  let constructorInfos ← match extractConstructorInfo p.dialects arg with
+    | .ok info => pure info
+    | .error e => TransM.error s!"Constructor extraction error: {e}"
   constructorInfos.mapM (translateConstructorInfo bindings)
 
 ---------------------------------------------------------------------
@@ -1509,7 +1796,7 @@ def translateDatatypeTypeArgs (bindings : TransBindings) (arg : Arg) (errorConte
 /--
 Create a placeholder LDatatype for recursive type references.
 -/
-def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Core.Visibility :=
+def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDatatype Unit :=
   { name := name
     typeArgs := typeArgs
     constrs := [{ name := name, args := [], testerName := "" }]
@@ -1519,35 +1806,26 @@ def mkPlaceholderLDatatype (name : String) (typeArgs : List TyIdentifier) : LDat
 Filter factory function declarations to extract constructor, tester, and field accessor decls
 for a single datatype.
 -/
-def filterDatatypeDecls (ldatatype : LDatatype Core.Visibility) (funcDecls : List Core.Decl) :
-    List Core.Decl × List Core.Decl × List Core.Decl :=
+def filterDatatypeDecls (ldatatype : LDatatype Unit) (funcDecls : List Core.Decl) :
+    List Core.Decl × List Core.Decl × List Core.Decl × List Core.Decl :=
   let constructorNames := ldatatype.constrs.map fun c => c.name.name
   let testerNames := ldatatype.constrs.map fun c => c.testerName
   let fieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
     acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name)) []
+  let unsafeFieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
+    acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name ++ "!")) []
 
-  let constructorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => constructorNames.contains f.name.name
-    | _ => false
+  let filterByNames (names : List String) := funcDecls.filter fun decl =>
+    match decl with | .func f _ => names.contains f.name.name | _ => false
 
-  let testerDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => testerNames.contains f.name.name
-    | _ => false
-
-  let fieldAccessorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => fieldAccessorNames.contains f.name.name
-    | _ => false
-
-  (constructorDecls, testerDecls, fieldAccessorDecls)
+  (filterByNames constructorNames, filterByNames testerNames,
+   filterByNames fieldAccessorNames, filterByNames unsafeFieldAccessorNames)
 
 /--
 Build LConstr list from TransConstructorInfo array.
 -/
 def buildLConstrs (datatypeName : String) (constructors : Array TransConstructorInfo) :
-    List (LConstr Core.Visibility) :=
+    List (LConstr Unit) :=
   let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
   constructors.toList.map fun constr =>
     let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
@@ -1558,128 +1836,67 @@ def buildLConstrs (datatypeName : String) (constructors : Array TransConstructor
 /--
 Generate factory function declarations from a list of LDatatypes.
 -/
-def genDatatypeFactory (ldatatypes : List (LDatatype Core.Visibility)) :
+def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
     TransM (List Core.Decl) := do
   let factory ← match genBlockFactory ldatatypes (T := Core.CoreLParams) with
     | .ok f => pure f
     | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-  return factory.toList.map fun func => Core.Decl.func func
+  return factory.toArray.toList.map fun func => Core.Decl.func func .empty
 
 ---------------------------------------------------------------------
 
 /--
-Translate a datatype declaration to Boogie declarations, updating bindings
-appropriately.
-
-**Important:** The returned `Core.Decls` only contains the type declaration
-itself. Factory functions (constructors, testers, destructors) are generated
-automatically by `Env.addDatatypes` during program evaluation to avoid
-duplicates.
-
-**Parameters:**
-- `p`: The DDM Program (provides dialect map)
-- `bindings`: Current translation bindings
-- `op`: The `command_datatype` operation to translate
+Translate a datatype block (one or more datatype declarations).
+The `@[preRegisterTypes]` metadata on `command_datatypes` ensures that
+type names are pre-registered in the DDM GlobalContext before processing.
 -/
-def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
+def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Core.Decl × TransBindings) := do
-  -- Check operation has correct name and argument count
-  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatype 3
+  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatypes 1
 
-  let datatypeName ← translateIdent String op.args[0]!
+  let .seq _ _ declarations := op.args[0]!
+    | TransM.error s!"translateDatatypes expected sequence: {repr op.args[0]!}"
 
-  -- Extract type arguments (optional bindings)
-  let (typeArgs, bindings) ← translateDatatypeTypeArgs bindings op.args[1]! "translateDatatype"
-
-  /- Note: Add a placeholder for the datatype type BEFORE translating
-  constructors, for recursive constructors. Replaced with actual declaration
-  later. -/
-  let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
-  let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
-
-  -- Extract constructor information (possibly recursive)
-  let constructors ← translateConstructorList p bindingsWithPlaceholder op.args[2]!
-
-  if h : constructors.size == 0 then
-    TransM.error s!"Datatype {datatypeName} must have at least one constructor"
-  else
-    -- Build LConstr list from TransConstructorInfo
-    let lConstrs := buildLConstrs datatypeName constructors
-
-    have constrs_ne : lConstrs.length != 0 := by
-      simp [lConstrs, buildLConstrs]
-      intro heq; subst_vars; apply h; rfl
-
-    let ldatatype : LDatatype Core.Visibility :=
-      { name := datatypeName
-        typeArgs := typeArgs
-        constrs := lConstrs
-        constrs_ne := constrs_ne }
-
-    -- Generate factory from LDatatype
-    let funcDecls ← genDatatypeFactory [ldatatype]
-
-    let md ← getOpMetaData op
-    let typeDecl := Core.Decl.type (.data [ldatatype]) md
-
-    -- Filter and add declarations to bindings
-    let (constructorDecls, testerDecls, fieldAccessorDecls) := filterDatatypeDecls ldatatype funcDecls
-    let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls
-    let bindings := bindingDecls.foldl (fun b d =>
-      { b with freeVars := b.freeVars.push d }
-    ) bindings
-
-    return (typeDecl, bindings)
-
-/--
-Translate a mutual block containing mutually recursive datatype definitions.
-This collects all datatypes, creates a single TypeDecl.data with all of them,
-and updates the forward-declared entries in bindings.freeVars.
--/
-def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operation) :
-    TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_mutual 1
-
-  -- Extract commands from the SpacePrefixSepBy
-  let .seq _ _ commands := op.args[0]!
-    | TransM.error s!"translateMutualBlock expected sequence: {repr op.args[0]!}"
-
-  -- Filter to only datatype commands
-  let datatypeOps := commands.filterMap fun arg =>
+  let datatypeOps := declarations.filterMap fun arg =>
     match arg with
-    | .op op => if op.name == q`Core.command_datatype then some op else none
+    | .op op => if op.name == q`Core.datatype_decl then some op else none
     | _ => none
 
   if datatypeOps.size == 0 then
-    TransM.error "Mutual block must contain at least one datatype"
+    TransM.error "Datatype block must contain at least one datatype"
   else
-    -- First pass: collect all datatype names, type args, and their indices in freeVars
-    -- Forward declarations MUST already be in bindings.freeVars
+    -- First pass: collect all datatype names and type args, allocate placeholders
     let mut datatypeInfos : Array (String × List TyIdentifier × Nat) := #[]
     let mut bindingsWithPlaceholders := bindings
 
     for dtOp in datatypeOps do
       let datatypeName ← translateIdent String dtOp.args[0]!
-      let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateMutualBlock"
+      let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateDatatypes"
 
-      -- Find the index of this datatype in freeVars (from forward declaration)
       let existingIdx := bindings.freeVars.findIdx? fun decl =>
         match decl with
         | .type t _ => t.names.contains datatypeName
         | _ => false
 
+      let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs]) .empty
       match existingIdx with
       | some i =>
-        let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, i)
         bindingsWithPlaceholders := { bindingsWithPlaceholders with
           freeVars := bindingsWithPlaceholders.freeVars.set! i placeholderDecl }
       | none =>
-        TransM.error s!"Mutual datatype {datatypeName} requires a forward declaration"
+        let idx := bindingsWithPlaceholders.freeVars.size
+        datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, idx)
+        bindingsWithPlaceholders := { bindingsWithPlaceholders with
+          freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
 
     -- Second pass: translate all constructors with all placeholders in scope
     let ldatatypes ← (datatypeOps.zip datatypeInfos).toList.mapM fun (dtOp, (datatypeName, typeArgs, _idx)) => do
-      let constructors ← translateConstructorList p bindingsWithPlaceholders dtOp.args[2]!
+      -- Re-translate type args to populate boundTypeVars for this datatype.
+      -- The first pass already translated them but only to collect names/args;
+      -- we need per-datatype bindings here so constructors resolve type vars correctly.
+      let (_, dtBindings) ← translateDatatypeTypeArgs bindingsWithPlaceholders dtOp.args[1]! "translateDatatypes"
+      let constructors ← translateConstructorList p dtBindings dtOp.args[2]!
       if h : constructors.size == 0 then
         TransM.error s!"Datatype {datatypeName} must have at least one constructor"
       else
@@ -1689,32 +1906,27 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
           intro heq; subst_vars; apply h; rfl
         pure { name := datatypeName, typeArgs := typeArgs, constrs := lConstrs, constrs_ne := constrs_ne }
 
-    -- Generate factory functions for the ENTIRE mutual block at once
     let allFuncDecls ← genDatatypeFactory ldatatypes
 
-    -- Create the mutual TypeDecl with all datatypes
     let md ← getOpMetaData op
-    let mutualTypeDecl := Core.Decl.type (.data ldatatypes) md
+    let typeDecl := Core.Decl.type (.data ldatatypes) md
 
-    -- Update bindings.freeVars: replace forward-declared entries with the mutual block
-    -- For each datatype, update its entry to point to the mutual TypeDecl
     let mut finalBindings := bindings
 
     for (_datatypeName, _typeArgs, idx) in datatypeInfos do
       if idx < finalBindings.freeVars.size then
         finalBindings := { finalBindings with
-          freeVars := finalBindings.freeVars.set! idx mutualTypeDecl }
+          freeVars := finalBindings.freeVars.set! idx typeDecl }
       else
         finalBindings := { finalBindings with
-          freeVars := finalBindings.freeVars.push mutualTypeDecl }
+          freeVars := finalBindings.freeVars.push typeDecl }
 
-    -- Add constructor, tester, and accessor functions for each datatype
     for ldatatype in ldatatypes do
-      let (constructorDecls, testerDecls, fieldAccessorDecls) := filterDatatypeDecls ldatatype allFuncDecls
-      for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls do
+      let (constructorDecls, testerDecls, fieldAccessorDecls, unsafeFieldAccessorDecls) := filterDatatypeDecls ldatatype allFuncDecls
+      for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls ++ unsafeFieldAccessorDecls do
         finalBindings := { finalBindings with freeVars := finalBindings.freeVars.push d }
 
-    return (mutualTypeDecl, finalBindings)
+    return (typeDecl, finalBindings)
 
 ---------------------------------------------------------------------
 
@@ -1724,7 +1936,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let md ← getOpMetaData op
-  let decl := (.var id ty none md)
+  let decl := (.var id ty .nondet md)
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 
@@ -1739,19 +1951,11 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    let (newDecls, bindings) ←
-      match op.name with
-      | q`Core.command_forward_typedecl =>
-        -- Forward declarations do NOT produce AST nodes - they only update bindings
-        let (_, bindings) ← translateForwardTypeDecl bindings op
-        pure ([], bindings)
-      | _ =>
+    let (newDecls, bindings) ← do
         let (decl, bindings) ←
           match op.name with
-          | q`Core.command_datatype =>
-            translateDatatype p bindings op
-          | q`Core.command_mutual =>
-            translateMutualBlock p bindings op
+          | q`Core.command_datatypes =>
+            translateDatatypes p bindings op
           | q`Core.command_var =>
             translateGlobalVar bindings op
           | q`Core.command_constdecl =>
@@ -1770,6 +1974,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_recfndefs =>
+            translateRecFuncBlock p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
@@ -1783,5 +1989,7 @@ def translateProgram (p : Program) : TransM Core.Program := do
   return { decls := decls }
 
 ---------------------------------------------------------------------
+
+end -- public section
 
 end Strata

@@ -21,13 +21,17 @@ import Strata.Util.Sarif
 
 /- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
+import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
-import Strata.Transform.DetToNondetCorrect
+import Strata.Transform.CoreSpecification
+import Strata.Transform.DetToKleeneCorrect
+import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.Specification
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver

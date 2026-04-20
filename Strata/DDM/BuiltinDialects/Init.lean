@@ -21,6 +21,7 @@ def SyntaxCat.mkCommaSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := 
 def SyntaxCat.mkSpaceSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.SpaceSepBy, args := #[c] }
 def SyntaxCat.mkSpacePrefixSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.SpacePrefixSepBy, args := #[c] }
 def SyntaxCat.mkNewlineSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.NewlineSepBy, args := #[c] }
+def SyntaxCat.mkSemicolonSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.SemicolonSepBy, args := #[c] }
 
 def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
@@ -58,6 +59,8 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareCat q`Init.SpacePrefixSepBy #["a"]
 
   declareCat q`Init.NewlineSepBy #["a"]
+
+  declareCat q`Init.SemicolonSepBy #["a"]
 
   let QualifiedIdent := q`Init.QualifiedIdent
   declareCat QualifiedIdent

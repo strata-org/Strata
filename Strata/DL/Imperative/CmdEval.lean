@@ -3,77 +3,84 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.EvalContext
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.EvalContext
 
 namespace Imperative
 open Std (ToFormat Format format)
 
+public section
+
 --------------------------------------------------------------------
 
 /--
-Partial evaluator for an Imperative Command.
+Symbolic simulation for an Imperative Command.
 -/
-def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
+def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
   match EC.lookupError σ with
   | some _ => (c, σ)
   | none =>
     match c with
-    | .init x ty eOpt md =>
+    | .init x ty e md =>
       match EC.lookup σ x with
       | none =>
-        match eOpt with
-        | some e =>
-          let (e, σ) := EC.preprocess σ c e
-          let e := EC.eval σ e
-          let σ := EC.update σ x ty e
-          let c' := .init x ty (some e) md
+        match e with
+        | .det expr =>
+          let (expr, σ) := EC.preprocess σ c expr
+          let expr := EC.eval σ expr
+          let σ := EC.update σ x ty expr
+          let c' := .init x ty (.det expr) md
           (c', σ)
-        | none =>
+        | .nondet =>
           -- Unconstrained initialization - generate a fresh value
-          let (e, σ) := EC.genFreeVar σ x ty
-          let σ := EC.update σ x ty e
-          let c' := .init x ty none md
+          let (expr, σ) := EC.genFreeVar σ x ty
+          let σ := EC.update σ x ty expr
+          let c' := .init x ty .nondet md
           (c', σ)
       | some (xv, xty) => (c, EC.updateError σ (.InitVarExists (x, xty) xv))
 
     | .set x e md =>
       match EC.lookup σ x with
-      | none => (c, EC.updateError σ (.AssignVarNotExists x e))
+      | none =>
+        match e with
+        | .det expr => (c, EC.updateError σ (.AssignVarNotExists x expr))
+        | .nondet => (c, EC.updateError σ (.HavocVarNotExists x))
       | some (_xv, xty) =>
-        let (e, σ) := EC.preprocess σ c e
-        let e := EC.eval σ e
-        let σ := EC.update σ x xty e
-        let c' := .set x e md
-        (c', σ)
-
-    | .havoc x md =>
-      match EC.lookup σ x with
-      | none => (c, EC.updateError σ (.HavocVarNotExists x))
-      | some (_, xty) =>
-        let (e, σ) := EC.genFreeVar σ x xty
-        let σ := EC.update σ x xty e
-        let c' := .havoc x (md.pushElem (.var x) (.expr e))
-        (c', σ)
+        match e with
+        | .det expr =>
+          let (expr, σ) := EC.preprocess σ c expr
+          let expr := EC.eval σ expr
+          let σ := EC.update σ x xty expr
+          let c' := .set x (.det expr) md
+          (c', σ)
+        | .nondet =>
+          let (expr, σ) := EC.genFreeVar σ x xty
+          let σ := EC.update σ x xty expr
+          let c' := .set x .nondet (md.pushElem (.var x) (.expr expr))
+          (c', σ)
 
     | .assert label e md =>
       let (e, σ) := EC.preprocess σ c e
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
+      let propType := match md.getPropertyType with
+        | some s => if s == MetaData.divisionByZero then .divisionByZero
+                    else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else .assert
+        | none => .assert
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | some false =>
         if assumptions.isEmpty then
           (c', EC.updateError σ (.AssertFail label e))
         else
-          (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+          (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | none =>
-        (c', EC.deferObligation σ (ProofObligation.mk label .assert assumptions e md))
+        (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
 
     | .assume label e md =>
       let (e, σ) := EC.preprocess σ c e
@@ -96,9 +103,9 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       (c', EC.deferObligation σ (ProofObligation.mk label .cover assumptions e md))
 
 /--
-Partial evaluator for Imperative's Commands.
+Symbolic simulation for Imperative's Commands.
 -/
-def Cmds.eval [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
+def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
   match cs with
   | [] => ([], σ)
   | c :: crest =>
@@ -108,4 +115,5 @@ def Cmds.eval [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P × S :=
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative

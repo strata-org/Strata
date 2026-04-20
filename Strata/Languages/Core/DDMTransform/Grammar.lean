@@ -3,6 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
+/- NOTE: This grammar is the source of truth for Core.st syntax. If you change
+   keywords, operators, types, or built-in functions here, regenerate the
+   editor syntax files by running:
+     lake env lean --run editors/GenSyntax.lean all
+-/
 module
 
 public import Strata.DDM.AST
@@ -17,6 +23,9 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
+-- Sequence operations increase the grammar size enough to require a higher recursion limit.
+set_option maxRecDepth 10000
+
 /- DDM support for parsing and pretty-printing Strata Core -/
 
 #dialect
@@ -25,7 +34,8 @@ dialect Core;
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
-accessorTemplate : FunctionTemplate);
+accessorTemplate : FunctionTemplate,
+unsafeAccessorTemplate : FunctionTemplate);
 
 type bool;
 type int;
@@ -39,6 +49,7 @@ type bv16;
 type bv32;
 type bv64;
 type Map (dom : Type, range : Type);
+type Sequence (elem : Type);
 
 category TypeVar;
 @[declareTVar(name)]
@@ -57,7 +68,7 @@ category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl:0 ", " b:0;
 
 category MonoBind;
 @[declare(v, tp)]
@@ -69,7 +80,7 @@ category MonoDeclList;
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl ", " b;
+  dl:0 ", " b:0;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -82,13 +93,31 @@ fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
-fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:50 " else " f:50;
+fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:0 " else " f:0;
 
-fn old (tp : Type, v : tp) : tp => "old" "(" v ")";
+fn old (tp : Type, v : tp) : tp => "old " v;
 
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
+
+// TODO: seq_empty is not yet supported in the grammar because the DDM parser
+// cannot currently handle 0-ary polymorphic functions (no arguments to infer
+// the type parameter from). The Factory definition exists for programmatic use.
+fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
+fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
+fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
+  "Sequence.append" "(" s1 ", " s2 ")";
+fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>
+  "Sequence.build" "(" s ", " v ")";
+fn seq_update (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
+  "Sequence.update" "(" s ", " i ", " v ")";
+fn seq_contains (A : Type, s : Sequence A, v : A) : bool =>
+  "Sequence.contains" "(" s ", " v ")";
+fn seq_take (A : Type, s : Sequence A, n : int) : Sequence A =>
+  "Sequence.take" "(" s ", " n ")";
+fn seq_drop (A : Type, s : Sequence A, n : int) : Sequence A =>
+  "Sequence.drop" "(" s ", " n ")";
 
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
@@ -130,6 +159,10 @@ fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div "
 fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
 fn safediv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " / " b;
 fn safemod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " % " b;
+fn divt_expr (tp : Type, a : tp, b : tp) : tp => "Int.DivT(" a ", " b ")";
+fn modt_expr (tp : Type, a : tp, b : tp) : tp => "Int.ModT(" a ", " b ")";
+fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " /t " b;
+fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " %t " b;
 
 fn bvnot (tp : Type, a : tp) : tp => "~" a;
 fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
@@ -140,6 +173,12 @@ fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
 fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
 fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
 fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
+fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe+ " b;
+fn safesub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe- " b;
+fn safemul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " safe* " b;
+fn safeneg_expr (tp : Type, a : tp) : tp => "safe_neg " a;
+fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesdiv " b;
+fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesmod " b;
 fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
@@ -203,7 +242,11 @@ op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : St
   reachCheck?:0 "assert " label c ";\n";
 op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
   reachCheck?:0 "cover " label c ";\n";
-op if_statement (c : bool, t : Block, f : Else) : Statement => "if " "(" c ") " t:0 f:0 "\n";
+category ExprOrNondet;
+op condDet (c : bool) : ExprOrNondet => "(" c ")";
+op condNondet : ExprOrNondet => "*";
+
+op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0 "\n";
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
@@ -216,8 +259,11 @@ op nilInvariants : Invariants => ;
 op consInvariants(e : Expr, is : Invariants) : Invariants =>
   "invariant " e "\n" is:0;
 
-op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
-  "while " "(" c ")\n" is body "\n";
+category Measure;
+op measure_mk (e : Expr) : Measure => "decreases " e "\n";
+
+op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
+  "while " c:0 "\n" m:0 is body "\n";
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " vs " := " f "(" expr ")" ";\n";
@@ -244,7 +290,9 @@ op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 
 category Binding;
 @[declare(name, tp)]
-op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
+op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
+@[declare(name, tp)]
+op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp:0;
 
 category Bindings;
 @[scope(bindings)]
@@ -269,10 +317,6 @@ op command_procedure (name : Ident,
 op command_typedecl (name : Ident, args : Option Bindings) : Command =>
   "type " name args ";\n";
 
-@[declareTypeForward(name, some args)]
-op command_forward_typedecl (name : Ident, args : Option Bindings) : Command =>
-  "forward type " name args ";\n";
-
 @[aliasType(name, some args, rhs)]
 op command_typesynonym (name : Ident,
                         args : Option Bindings,
@@ -296,6 +340,8 @@ op command_fndecl (name : Ident,
 category Inline;
 op inline () : Inline => "inline";
 
+// Note: when editing command_fndef, consider whether recfn_decl needs
+// matching edits.
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
@@ -309,6 +355,23 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
+// Recursive (and mutually recursive) function declarations.
+// A single recursive function is a 1-element block, just like datatypes.
+category RecFnDecl;
+
+@[declareFn(name, b, r)]
+op recfn_decl (name : Ident,
+               typeArgs : Option TypeArgs,
+               @[scope(typeArgs)] b : Bindings,
+               @[scope(typeArgs)] r : Type,
+               @[scope(b)] preconds : Seq SpecElt,
+               @[scope(b)] c : r) : RecFnDecl =>
+  "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
+
+@[scope(recfns), preRegisterFunctions(recfns)]
+op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
+  "rec " recfns ";\n";
+
 // Function declaration statement
 @[declareFn(name, b, r)]
 op funcDecl_statement (name : Ident,
@@ -319,6 +382,11 @@ op funcDecl_statement (name : Ident,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }\n";
+
+// Type declaration statement
+@[declareScopedType(name, some args)]
+op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
+  "type " name args ";\n";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>
@@ -344,32 +412,35 @@ category ConstructorList;
 
 @[constructor(name, fields)]
 op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) :
-    Constructor => @[prec(50)] name "(" fields ")";
+    Constructor => name "(" fields ")";
 
 @[constructorListAtom(c)]
-op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c;
+op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c:0;
 
 @[constructorListPush(cl, c)]
 op constructorListPush (cl : ConstructorList, c : Constructor)
-    : ConstructorList => cl ",\n  " c;
+    : ConstructorList => cl:0 ",\n  " c:0;
 
-// @[scopeDatatype(name, typeParams)] brings datatype name and parameters into
-// scope when parsing constructors for recursive types
+// preRegisterTypes on command_datatypes handles bringing datatype names into
+// scope; @[scopeTVar(typeParams)] brings type parameters into scope for constructors.
+category DatatypeDecl;
+
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
-    perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
-op command_datatype (name : Ident,
-                     typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
-      : Command =>
-      "datatype " name typeParams " {" constructors "\n}" ";\n";
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType),
+    perField([.datatype, .literal "..", .field, .literal "!"], [.datatype], .fieldType))]
+op datatype_decl (name : Ident,
+                  typeParams : Option Bindings,
+                  @[scopeTVar(typeParams)] constructors : ConstructorList)
+      : DatatypeDecl =>
+      "datatype " name typeParams " {" constructors "\n}";
 
-// Mutual block for defining mutually recursive types
-// Types should be forward-declared before the mutual block
-@[scope(commands)]
-op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
-  "mutual\n  " indent(2, commands) "end;\n";
+// Unified datatype command: one or more datatype declarations separated by
+// newlines, ending with a semicolon.
+@[scope(datatypes), preRegisterTypes(datatypes)]
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  datatypes ";\n";
 
 #end
 

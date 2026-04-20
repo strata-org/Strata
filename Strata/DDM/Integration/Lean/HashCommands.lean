@@ -57,6 +57,21 @@ private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolve
     throwError s!"Cannot define {name}: {fullName} already exists."
   return fullName
 
+private def offsetPos (base : String.Pos.Raw) (pos : String.Pos.Raw) : String.Pos.Raw :=
+  ⟨base.byteIdx + pos.byteIdx⟩
+
+private def offsetSourceRange (base : String.Pos.Raw) (sr : SourceRange) : SourceRange :=
+  { start := offsetPos base sr.start, stop := offsetPos base sr.stop }
+
+private def offsetMessage
+    (fullCtx snippetCtx : InputContext)
+    (base : String.Pos.Raw)
+    (msg : Lean.Message) : Lean.Message :=
+  let pos := fullCtx.fileMap.toPosition (offsetPos base (snippetCtx.fileMap.ofPosition msg.pos))
+  let endPos := msg.endPos.map fun endPos =>
+    fullCtx.fileMap.toPosition (offsetPos base (snippetCtx.fileMap.ofPosition endPos))
+  { msg with fileName := fullCtx.fileName, pos := pos, endPos := endPos }
+
 /--
 Add a definition to environment and compile it.
 -/
@@ -116,7 +131,8 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
         | throwError s!"Expected input context"
   let inputCtx ← HasInputContext.getInputContext
   let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-  let (_, d, s) ← Strata.Elab.elabDialect {} loaded inputCtx p e
+  let fm ← Strata.DialectFileMap.new loaded
+  let (d, s) ← Strata.Elab.elabDialect fm inputCtx p e
   if !s.errors.isEmpty then
     for e in s.errors do
       logMessage e
@@ -132,11 +148,19 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
-  let inputCtx ← (HasInputContext.getInputContext : CoreM _)
+  let fullInputCtx ← (HasInputContext.getInputContext : CoreM _)
+  let snippet := String.Pos.Raw.extract fullInputCtx.inputString p e
+  let inputCtx : InputContext := {
+    inputString := snippet
+    fileName := fullInputCtx.fileName
+    fileMap := FileMap.ofString snippet
+  }
   let s := (dialectExt.getState (←Lean.getEnv))
   let leanEnv ← Lean.mkEmptyEnvironment 0
-  match Elab.elabProgram s.loaded leanEnv inputCtx p e with
+  match Elab.elabProgram s.loaded leanEnv inputCtx 0 inputCtx.endPos with
   | .ok pgm =>
+    let commands := pgm.commands.map (fun cmd => cmd.mapAnn (offsetSourceRange p))
+    let pgm := Program.create pgm.dialects pgm.dialect commands
     -- Get Lean name for dialect
     let some (.str name root) := s.nameMap[pgm.dialect]?
       | throwError s!"Unknown dialect {pgm.dialect}"
@@ -152,7 +176,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
         (arrayToExpr .zero commandType commandExprs)
   | .error errors =>
     for e in errors do
-      logMessage e
+      logMessage (offsetMessage fullInputCtx inputCtx p e)
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Program) (toExpr true)
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command
@@ -175,12 +199,12 @@ def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
     if ! (← absPath.pathExists) then
       throwErrorAt pathStx "Could not find file {dialectPath}"
     let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-    let (_, r) ← Elab.loadDialectFromPath {} loaded #[]
-                        (path := dialectPath) (actualPath := absPath) (expected := .none)
+    let fm ← Strata.DialectFileMap.new loaded
+    let r ← Elab.loadDialectFromFile fm (path := dialectPath) (actualPath := absPath)
     -- Add dialect to command environment
     match r with
     | .ok d =>
-        declareDialect d
+      declareDialect d
     | .error errorMessages =>
       assert! errorMessages.size > 0
       throwError (← Elab.mkErrorReport errorMessages)

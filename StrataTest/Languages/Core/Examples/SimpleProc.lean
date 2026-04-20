@@ -17,7 +17,7 @@ procedure Test(x : bool) returns (y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
-  ensures (g == old(g));
+  ensures (g == old g);
 }
 {
   y := x || x;
@@ -32,12 +32,14 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.snd |>.isEmpty
 
 /--
-info: var g : bool;
+info: program Core;
+
+var g : bool;
 procedure Test (x : bool) returns (y : bool)
 spec {
   ensures [Test_ensures_0]: y == x;
   ensures [Test_ensures_1]: x == y;
-  ensures [Test_ensures_2]: g == old(g);
+  ensures [Test_ensures_2]: g == old g;
   } {
   y := x || x;
   };

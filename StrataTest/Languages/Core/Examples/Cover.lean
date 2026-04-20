@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core.Options
 import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
@@ -57,7 +58,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm1 (options := Options.quiet)
+#eval verify coverPgm1 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -93,7 +94,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify coverPgm2 (options := Options.quiet)
+#eval verify coverPgm2 (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -129,7 +130,7 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckGlobalPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckGlobalPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -171,18 +172,18 @@ Result: ❌ fail (❗path unreachable)
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✅ pass
+Result: ✅ always true and is reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ✅ pass
+Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ❌ fail
+Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
-#eval verify reachCheckMixedPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
 
@@ -228,7 +229,7 @@ Property: cover
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify reachCheckPerStmtPgm (options := Options.quiet)
+#eval verify reachCheckPerStmtPgm (options := Core.VerifyOptions.quiet)
 
 ---------------------------------------------------------------------
 
@@ -255,7 +256,7 @@ info: #["assertion holds vacuously (path unreachable)", "cover property is unrea
 -/
 #guard_msgs in
 #eval do
-  let results ← verify reachCheckDiagnosticsPgm (options := {Options.quiet with reachCheck := true})
+  let results ← verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
   let diagnostics := results.filterMap toDiagnosticModel
   return diagnostics.map DiagnosticModel.message
 
@@ -304,6 +305,48 @@ Property: cover
 Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
-#eval verify reachCheckPEPgm (options := {Options.quiet with reachCheck := true})
+#eval verify reachCheckPEPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
 
 ---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+
+-- Test: minimalVerbose check level shows detailed messages with one check
+def minimalVerbosePgm :=
+#strata
+program Core;
+procedure Test() returns ()
+{
+  var x : int;
+  assume (x > 0);
+  assert [test_pass]: (x >= 0);
+  assert [test_fail]: (x < 0);
+};
+#end
+
+/--
+info:
+Obligation: test_pass
+Property: assert
+Result: ✔️ always true if reached
+
+Obligation: test_fail
+Property: assert
+Result: ➖ can be false and is reachable from declaration entry
+-/
+#guard_msgs in
+#eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose})
+
+-- Test: minimalVerbose in bugFinding mode (satisfiability check only)
+/--
+info:
+Obligation: test_pass
+Property: assert
+Result: ➕ can be true and is reachable from declaration entry
+
+Obligation: test_fail
+Property: assert
+Result: ✖️ always false if reached
+-/
+#guard_msgs in
+#eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose, checkMode := .bugFinding})

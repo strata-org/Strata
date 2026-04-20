@@ -1,0 +1,618 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.Languages.Core.StatementEval
+
+namespace Core
+---------------------------------------------------------------------
+
+section Tests
+
+open Std (ToFormat Format format)
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative (PureFunc)
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(x : int) → #18]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: x_eq_18
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
+                    .set "x" eb[#18] .empty,
+                    .assert "x_eq_18" eb[x == #18] .empty]) |> format
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(y : int) → _yinit
+(x : int) → _yinit]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: x_eq_12
+Property: assert
+Assumptions:
+Proof Obligation:
+(_yinit == #12)
+-/
+#guard_msgs in
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope [("y", (mty[int], eb[_yinit]))])
+  ∅
+  [.init "x" t[int] (.det eb[#0]) .empty,
+  .set "x" eb[y] .empty,
+  .assert "x_eq_12" eb[x == #12] .empty]) |> format
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(x : bool) → (x == #true)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+-/
+#guard_msgs in
+-- NOTE: no error during evaluation here; the typechecker should flag this
+-- though because `x` can't appear in its own initialization expression.
+#eval evalOne ∅ ∅
+       [
+       .init "x" t[bool] (.det eb[x == #true]) .empty
+       ] |> format
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(minit : (arrow int int)) → (_minit : (arrow int int))
+(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int))
+         %0)))
+      %0)))
+   %0)))
+(m0 : int) → ((_minit : (arrow int int)) #0)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: m_5_eq_50
+Property: assert
+Assumptions:
+Proof Obligation:
+(((_minit : (arrow int int)) #5) == #50)
+
+Label: m_2_eq_20
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+
+Label: m_1_eq_10
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+-/
+#guard_msgs in
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope
+    [("minit", (mty[int → int], eb[(_minit : int → int)]))])
+  ∅
+  [.init "m" t[int → int] (.det eb[minit]) .empty,
+  .init "m0" t[int] (.det eb[(m #0)]) .empty,
+  .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))] .empty,
+  .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))] .empty,
+  .assert "m_5_eq_50" eb[(m #5) == #50] .empty,
+  .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
+  .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))] .empty,
+  .assert "m_1_eq_10" eb[(m #1) == #10] .empty
+  ]) |> format
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[minit → _minit
+(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit
+         %0)))
+      %0)))
+   %0)))]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: m_5_eq_50
+Property: assert
+Assumptions:
+Proof Obligation:
+((_minit #5) == #50)
+
+Label: m_2_eq_20
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+
+Label: m_1_eq_10
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+-/
+#guard_msgs in
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope [("minit", (none, eb[_minit]))])
+  ∅
+  [.init "m" t[int → int] (.det eb[minit]) .empty,
+  .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))] .empty,
+  .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))] .empty,
+  .assert "m_5_eq_50" eb[(m #5) == #50] .empty,
+  .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
+  .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))] .empty,
+  .assert "m_1_eq_10" eb[(m #1) == #10] .empty
+  ]) |> format
+
+
+
+private def prog1 : Statements :=
+ [
+ .init "x" t[int] (.det eb[#0]) .empty,
+ .init "y" t[int] (.det eb[#6]) .empty,
+ .block "label_0"
+
+   [Statement.init "z" t[bool] (.det eb[zinit]) .empty,
+    Statement.assume "z_false" eb[z == #false] .empty,
+
+   .ite (.det eb[z == #false])
+     [Statement.set "x" eb[y] .empty]
+     -- The "trivial" assertion, though unreachable, is still verified away by the
+     -- PE because the conclusion of the proof obligation evaluates to `true`.
+     -- However, if the conclusion were anything else (including `false`) and
+     -- the path conditions weren't empty, then this proof obligation would be
+     -- sent on to the SMT solver.
+     [Statement.assert "trivial" eb[#true] .empty]
+     .empty,
+
+   Statement.assert "x_eq_y_label_0" eb[x == y] .empty,
+   ]
+   .empty,
+ .assert "x_eq_y" eb[x == y] .empty
+ ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(x : int) → (if (zinit == #false) then #6 else #0)
+(y : int) → #6
+zinit → zinit]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+(z_false, (zinit == #false))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: trivial
+Property: assert
+Assumptions:
+(<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
+(z_false, (zinit == #false))
+Proof Obligation:
+#true
+
+Label: x_eq_y_label_0
+Property: assert
+Assumptions:
+(z_false, (zinit == #false))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
+Proof Obligation:
+((if (zinit == #false) then #6 else #0) == #6)
+
+Label: x_eq_y
+Property: assert
+Assumptions:
+(z_false, (zinit == #false))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
+Proof Obligation:
+((if (zinit == #false) then #6 else #0) == #6)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ prog1) |> format
+
+
+private def prog2 : Statements := [
+  .init "x" t[int] (.det eb[#0]) .empty,
+  .set "x" eb[#1] .empty,
+  .havoc "x" .empty,
+  .assert "x_eq_1" eb[x == #1] .empty, -- error
+  .havoc "x" .empty,
+  .set "x" eb[#8] .empty
+]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(x : int) → #8]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 2
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: x_eq_1
+Property: assert
+Assumptions:
+Proof Obligation:
+(($__x0 : int) == #1)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ prog2) |> format
+
+/--
+Test funcDecl: declare a helper function and use it
+-/
+def testFuncDecl : List Statement :=
+  let doubleFunc : PureFunc Expression := {
+    name := ⟨"double", ()⟩,
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(⟨"x", ()⟩, .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) x)],
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl doubleFunc .empty,
+    .init "y" t[int] (.det eb[(~double #5)]) .empty,
+    .assert "y_eq_10" eb[y == #10] .empty
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(y : int) → (~double #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func double :  ((x : int)) → int :=
+  ((~Int.Add x x))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: y_eq_10
+Property: assert
+Assumptions:
+Proof Obligation:
+((~double #5) == #10)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testFuncDecl) |> format
+
+/--
+Test funcDecl with variable capture: function captures variable value at declaration time,
+not affected by subsequent mutations
+-/
+def testFuncDeclSymbolic : List Statement :=
+  let addNFunc : PureFunc Expression := {
+    name := ⟨"addN", ()⟩,
+    typeArgs := [],
+    isConstr := false,
+    inputs := [(⟨"x", ()⟩, .forAll [] .int)],
+    output := .forAll [] .int,
+    body := some eb[((~Int.Add x) n)],  -- Captures 'n' at declaration time
+    attr := #[],
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .init "n" t[int] (.det eb[#10]) .empty,  -- Initialize n to 10
+    .funcDecl addNFunc .empty,  -- Function captures n = 10 at declaration time
+    .set "n" eb[#20] .empty,  -- Mutate n to 20
+    .init "result" t[int] (.det eb[(~addN #5)]) .empty,  -- Call function
+    .assert "result_eq_15" eb[result == #15] .empty  -- Result is 5 + 10 = 15 (uses captured value)
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(n : int) → #20
+(result : int) → (~addN #5)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+func addN :  ((x : int)) → int :=
+  ((~Int.Add x #10))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: result_eq_15
+Property: assert
+Assumptions:
+Proof Obligation:
+((~addN #5) == #15)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |> format
+
+/--
+Test polymorphic funcDecl: declare a polymorphic function `choose` that takes a boolean
+and two values of type `a`, returning the first if true, second if false.
+Then use it with multiple concrete type instantiations (int and bool).
+
+The function has the `inline` attribute so its body gets expanded during evaluation,
+allowing us to verify that the function definition is actually being used.
+-/
+def testPolymorphicFuncDecl : List Statement :=
+  let chooseFunc : PureFunc Expression := {
+    name := ⟨"choose", ()⟩,
+    typeArgs := ["a"],  -- Polymorphic type parameter
+    isConstr := false,
+    inputs := [
+      (⟨"cond", ()⟩, .forAll [] .bool),
+      (⟨"x", ()⟩, .forAll [] (.ftvar "a")),
+      (⟨"y", ()⟩, .forAll [] (.ftvar "a"))
+    ],
+    output := .forAll [] (.ftvar "a"),
+    body := some eb[(if cond then x else y)],
+    attr := #[.inline],  -- Enable inlining so body is expanded during evaluation
+    concreteEval := none,
+    axioms := []
+  }
+  [
+    .funcDecl chooseFunc .empty,
+    -- Use with int type (curried application)
+    .init "intResult" t[int] (.det eb[(((~choose #true) #1) #2)]) .empty,
+    .assert "intResult_eq_1" eb[intResult == #1] .empty,
+    -- Use with bool type (curried application)
+    .init "boolResult" t[bool] (.det eb[(((~choose #false) #true) #false)]) .empty,
+    .assert "boolResult_eq_false" eb[boolResult == #false] .empty
+  ]
+
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(intResult : int) → #1
+(boolResult : bool) → #false]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 0
+Factory Functions:
+@[inline]
+func choose : ∀[a]. ((cond : bool) (x : a) (y : a)) → a :=
+  ((if cond then x else y))
+
+
+Datatypes:
+
+Path Conditions:
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: intResult_eq_1
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+
+Label: boolResult_eq_false
+Property: assert
+Assumptions:
+Proof Obligation:
+#true
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |> format
+
+-- Test nondet if: evaluator introduces a fresh boolean and splits paths
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(x : int) → (if ($__$__nondet_cond_00 : bool) then #1 else #2)
+($__nondet_cond_0 : bool) → ($__$__nondet_cond_00 : bool)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 1
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: x_pos
+Property: assert
+Assumptions:
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+Proof Obligation:
+((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
+                    .ite .nondet
+                      [Statement.set "x" eb[#1] .empty]
+                      [Statement.set "x" eb[#2] .empty]
+                      .empty,
+                    .assert "x_pos" eb[(x == #1)] .empty]) |> format
+
+end Tests
+---------------------------------------------------------------------
+end Core

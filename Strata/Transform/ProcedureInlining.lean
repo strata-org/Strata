@@ -3,22 +3,33 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Core
 import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
-import Strata.Languages.Core.Statement
-import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.Statement
+public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
+
+public section
 
 namespace Core
 namespace ProcedureInlining
 
 open Transform
+
+/-- Statistics keys tracked by the procedure inlining transformation. -/
+inductive Stats where
+  | visitedCalls
+  | inlinedCalls
+
+derive_prefixed_toString Stats "ProcedureInlining"
 
 -- Gathers all labels including those in assert and assume.
 mutual
@@ -37,6 +48,7 @@ def Statement.labels (s : Core.Statement) : List String :=
   -- No other labeled commands.
   | .cmd _ => []
   | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
 end
 
 mutual
@@ -62,6 +74,7 @@ def Statement.replaceLabels
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
   | .funcDecl _ _ => s
+  | .typeDecl _ _ => s
 end
 
 
@@ -90,11 +103,15 @@ private def renameAllLocalNames (c:Procedure)
   let labels := List.flatMap (fun s => Statement.labels s) c.body
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
-      (fun s => { name:=s, metadata := Visibility.temp })
+      (fun s => { name:=s, metadata := () })
   let label_map_id <- genOldToFreshIdMappings label_ids [] proc_name
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 
   -- Do substitution
+  -- Iterated substitution is safe here: each replacement is a fresh `.fvar` generated
+  -- by genOldToFreshIdMappings (counter-based), so a fresh new_id cannot collide with
+  -- a later old_id. The iteration is intentionally sequential because each step also
+  -- renames LHS variables and labels.
   let new_body := List.map (fun (s0:Statement) =>
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
@@ -147,6 +164,35 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let cg_final ← cg_new.decrementEdge f g
   return cg_final
 
+/-! ### Update assertion metadata with call site information -/
+
+-- Update assertions and assumes in inlined body to carry the call site metadata
+-- as the primary file range, moving the original assertion's file range to
+-- relatedFileRange.
+mutual
+def Block.setCallSiteMetadata (b : Block) (callMd : Imperative.MetaData Expression)
+    : Block :=
+  b.map (fun s => Statement.setCallSiteMetadata s callMd)
+
+def Statement.setCallSiteMetadata (s : Statement) (callMd : Imperative.MetaData Expression)
+    : Statement :=
+  match s with
+  | .cmd (.cmd (.assert lbl e md)) =>
+    .assert lbl e (md.setCallSiteFileRange callMd)
+  | .cmd (.cmd (.assume lbl e md)) =>
+    .assume lbl e (md.setCallSiteFileRange callMd)
+  | .cmd (.cmd (.cover lbl e md)) =>
+    .cover lbl e (md.setCallSiteFileRange callMd)
+  | .block lbl b md =>
+    .block lbl (Block.setCallSiteMetadata b callMd) md
+  | .ite cond thenb elseb md =>
+    .ite cond (Block.setCallSiteMetadata thenb callMd)
+              (Block.setCallSiteMetadata elseb callMd) md
+  | .loop g measure inv body md =>
+    .loop g measure inv (Block.setCallSiteMetadata body callMd) md
+  | _ => s
+end
+
 /-
 Procedure Inlining.
 
@@ -158,15 +204,17 @@ use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
 def inlineCallCmd
-    (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
+    (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
     (cmd: Command)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args md =>
+        incrementStat s!"{Stats.visitedCalls}"
 
         let st ← get
-        if ¬ doInline procName st.cachedAnalyses then return .none else
+        if ¬ doInline st.currentProcedureName procName st.cachedAnalyses then return .none else
+        incrementStat s!"{Stats.inlinedCalls}"
 
         let some p := (← get).currentProgram
           | throw s!"currentProgram not set"
@@ -188,21 +236,20 @@ def inlineCallCmd
         -- Insert
         --   init in1 : ty := v1     --- inputInit
         --   init in2 : ty := v2
-        --   init out1 : ty := <placeholder> --- outputInit
-        --   init out2 : ty := <placeholder>
+        --   init out1 : ty := nondet --- outputInit
+        --   init out2 : ty := nondet
         --   ... (f body)
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
         -- already declared variables (per Core.typeCheck)
 
-        -- Create a fresh var statement for each LHS
+        -- Declare each renamed output parameter with a nondet init.
+        -- No havoc is needed since nondet already gives an
+        -- unconstrained value.
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
-        let outputInits := createInitVars
-          (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
-          md
-        let outputHavocs := outputTrips.map (fun
-          (_,orgvar) => Statement.havoc orgvar md)
+        let outputInits := outputTrips.map (fun ((_, ty), orgvar) =>
+          Statement.init orgvar ty .nondet md)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
@@ -221,8 +268,9 @@ def inlineCallCmd
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
-          := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
-             outputSetStmts
+          := inputInits ++ outputInits
+             ++ Block.setCallSiteMetadata proc.body md
+             ++ outputSetStmts
 
         -- Update CallGraph if available
         let σ ← get
@@ -241,4 +289,39 @@ def inlineCallCmd
       | _ => return .none
 
 end ProcedureInlining
+
+/-- A `doInline` predicate that refuses to inline procedures involved in
+    recursion (i.e., part of a cycle in the call graph).  Falls back to
+    `true` when no call graph is available. -/
+def doInlineNonRecursive (callee : String) (analyses : Transform.CachedAnalyses) : Bool :=
+  match analyses.callGraph with
+  | none => true
+  | some cg => !cg.isRecursive callee
+
+/--
+Options to control the behavior of inlining procedure calls in a Core program.
+-/
+structure InlineTransformOptions where
+  -- 'doInline caller callee cachedAnalysis' returns true if the call command
+  -- from caller to callee should be inlined. The caller can be none if the
+  -- command is an orphaned one (rare, but can happen if inlineCallCmd is run
+  -- directly on Command).
+  doInline : Option String → String → Transform.CachedAnalyses → Bool :=
+      fun _ callee analyses => doInlineNonRecursive callee analyses
+  maxIters : Option Nat := none
+
+/-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
+    at call sites. Inlining is semantics-preserving, so models are always
+    sound (model-preserving).
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def procedureInliningPipelinePhase
+    (opts : InlineTransformOptions := {})
+    : PipelinePhase :=
+  open Transform in
+  modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
+    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
+
 end Core
+
+end -- public section

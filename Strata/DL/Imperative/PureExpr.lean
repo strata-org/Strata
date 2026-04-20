@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.Func
+public import Strata.DL.Util.Func
 
 namespace Imperative
 
 open Strata.DL.Util (Func)
+
+public section
 
 /--
 Expected interface for pure expressions that can be used to specialize the
@@ -36,14 +39,16 @@ structure PureExpr : Type 1 where
   /-- Evaluation environment -/
   EvalEnv : Type
 
-abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
-abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
+@[expose] abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
+@[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
 
 /-! ## Type Classes for Expressions -/
 /-- Boolean expressions -/
 class HasBool (P : PureExpr) where
   tt : P.Expr
   ff : P.Expr
+  tt_is_not_ff: tt ≠ ff
+  boolTy : P.Ty
 
 class HasNot (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr
@@ -54,8 +59,18 @@ class HasAnd (P : PureExpr) extends HasBool P where
 class HasImp (P : PureExpr) extends HasBool P where
   imp : P.Expr → P.Expr → P.Expr
 
-class HasEq (P : PureExpr) where
-  eq : P.Expr → P.Expr → P.Expr
+/-- Integer ordering primitives.
+    `zero` is the lower-bound constant for well-foundedness (measure ≥ 0).
+    `intTy` is the type of integer expressions, for variable declarations.
+    `ge` is derivable as `HasNot.not (lt b a)` and is therefore omitted. -/
+class HasIntOrder (P : PureExpr) where
+  eq    : P.Expr → P.Expr → P.Expr
+  lt    : P.Expr → P.Expr → P.Expr
+  zero  : P.Expr
+  intTy : P.Ty
+
+class HasIdent (P : PureExpr) where
+  ident : String → P.Ident
 
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr
@@ -72,15 +87,16 @@ class HasBoolVal (P : PureExpr) [HasBool P] [HasVal P] where
 class HasSubstFvar (P : PureExpr) where
   /-- Substitute a single free variable with an expression -/
   substFvar : P.Expr → P.Ident → P.Expr → P.Expr
-
-/-- Substitute multiple free variables with expressions -/
-def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Ident × P.Expr)) : P.Expr :=
-  substs.foldl (fun e (id, val) => HasSubstFvar.substFvar e id val) e
+  /-- Simultaneously substitute multiple free variables with expressions.
+      Replaces all variables in a single pass, avoiding capture between
+      substitutions. -/
+  substFvars : P.Expr → List (P.Ident × P.Expr) → P.Expr
 
 /--
 A function declaration for use with `PureExpr` - instantiation of `Func` for
 any expression system that implements the `PureExpr` interface.
 -/
-abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
+@[expose] abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
+end -- public section
 end Imperative

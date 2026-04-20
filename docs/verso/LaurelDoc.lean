@@ -10,9 +10,8 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.LiftExpressionAssignments
+import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CorePrelude
 
 open Strata.Laurel
 
@@ -75,7 +74,7 @@ procedure increment(counter: Counter)
   ensures counter.value == old(counter.value) + 1
 {
   counter.value := counter.value + 1;
-}
+};
 ```
 
 ## Implementation Choices
@@ -127,9 +126,9 @@ declarations.
 
 ## Metadata
 
-All AST nodes can carry metadata via the `WithMetadata` wrapper.
+All AST nodes can carry metadata via the `AstNode` wrapper.
 
-{docstring Strata.Laurel.WithMetadata}
+{docstring Strata.Laurel.AstNode}
 
 # Procedures
 
@@ -138,8 +137,6 @@ Procedures are the main unit of specification and verification in Laurel.
 {docstring Strata.Laurel.Procedure}
 
 {docstring Strata.Laurel.Parameter}
-
-{docstring Strata.Laurel.Determinism}
 
 {docstring Strata.Laurel.Body}
 
@@ -184,10 +181,3 @@ The final translation converts Laurel types, expressions, statements, and proced
 their Strata Core equivalents. Procedures with bodies that only have constructs supported by
 Core expressions are translated to a Core function, while other procedures become Core
 procedures.
-
-## Core Prelude
-
-The Laurel translator prepends a Core prelude that defines the heap model types and
-operations: `Composite`, `Field`, `Box`, `readField`, and `updateField`.
-
-{docstring Strata.Laurel.corePreludeDDM}

@@ -18,11 +18,11 @@ abbrev MonoExpr := LExpr Params.mono
 def c (n : Int) : MonoExpr := .const () (.intConst n)
 def bv (i : Nat) : MonoExpr := .bvar () i
 def fv (name : String) (ty : Option LMonoTy := .none) : MonoExpr := .fvar () name ty
-def lam (e : MonoExpr) : MonoExpr := .abs () .none e
+def lam (e : MonoExpr) : MonoExpr := .abs () "" .none e
 def ap (f a : MonoExpr) : MonoExpr := .app () f a
 def eq' (a b : MonoExpr) : MonoExpr := .eq () a b
 def ite' (c t f : MonoExpr) : MonoExpr := .ite () c t f
-def qa (e : MonoExpr) : MonoExpr := .quant () .all .none (bv 0) e
+def qa (e : MonoExpr) : MonoExpr := .quant () .all "" .none (bv 0) e
 
 /-! ### liftBVars tests -/
 

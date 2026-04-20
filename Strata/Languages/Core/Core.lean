@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.ProgramEval
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.DDMTransform.ASTtoCST
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.DDMTransform.ASTtoCST
+public import Strata.Languages.Core.Statistics
 
 ---------------------------------------------------------------------
 
 namespace Core
 open Strata
+
+public section
 
 /-!
 ## Differences between Boogie and Strata.Core
@@ -34,8 +37,8 @@ open Strata
    requiring a tool like `BoogieToStrata` to desugar them.
 -/
 
-def typeCheck (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+def typeCheck (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel Program := do
   let T := Lambda.TEnv.default
   let factory ← Core.Factory.addFactory moreFns
@@ -67,9 +70,9 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-def typeCheckAndPartialEval (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (List (Program × Env)) := do
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel ((List Env) × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
@@ -79,18 +82,47 @@ def typeCheckAndPartialEval (options : Options) (program : Program)
   let σ ← (Lambda.LState.init).addFactory factory
   let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
-  let pEs := Program.eval E
+
+  -- Collect declaration statistics
+  let stats := program.decls.foldl (fun s d =>
+    match d with
+    | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
+    | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
+    | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
+    | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
+    | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
+    | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
+    | .recFuncBlock fs _ => s.increment s!"{Evaluator.Stats.recursiveFunctions}" fs.length)
+    ({} : Statistics)
+
+  let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
+  let (pEs, evalStats) ← Program.eval E
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Program.eval does not modify the program. The Program field is
+  -- kept for convenience.
+  -- kept for convenience.
+  let stats := stats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    for (_p, E) in pEs do
+    for E in pEs do
       dbg_trace f!"{formatProofObligations E.deferred}"
-  return pEs
+  return (pEs, stats)
 
-instance : ToString (Program) where
+instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)
 
-instance : Std.ToFormat Program where
+instance instCoreProgramFormat : Std.ToFormat Program where
   format := Core.formatProgram
+
+/-- Format a single `Core.Expression.Expr` using the DDM pretty-printer.
+    This instance shadows the generic `ToFormat (LExpr T)` from `LExpr.lean`. -/
+instance instCoreExprFormat : Std.ToFormat Expression.Expr where
+  format e := Core.formatExprs [e]
+
+end -- public section
 
 end Core
 

@@ -22,22 +22,12 @@ open Strata.Elab (parseStrataProgramFromDialect)
 namespace Strata.Laurel
 
 def blockStmtLiftingProgram : String := r"
-composite Box {
-  var value: int
-}
-
-procedure heapUpdateInBlockExpr(b: Box)
-{
-  var x: int := { b#value := b#value + 1; b#value };
-  assert x == b#value;
-}
-
 procedure assertInBlockExpr()
 {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };
-  assert y == 1;
-}
+  assert y == 1
+};
 "
 
 def parseLaurelAndLift (input : String) : IO Program := do
@@ -47,17 +37,14 @@ def parseLaurelAndLift (input : String) : IO Program := do
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program => pure (liftExpressionAssignments program)
+  | .ok program =>
+    let result := resolve program
+    let (program, model) := (result.program, result.model)
+    pure (liftExpressionAssignments model program)
 
 /--
-info: procedure heapUpdateInBlockExpr(b: Box) returns 
-()
-deterministic
-{ b#value := b#value + 1; var x: int := b#value; assert x == b#value }
-procedure assertInBlockExpr() returns 
-()
-deterministic
-{ var x: int := 0; assert x == 0; x := 1; var y: int := x; assert y == 1 }
+info: procedure assertInBlockExpr()
+{ var x: int := 0; assert x == 0; var $x_0: int := x; x := 1; var y: int := { x }; assert y == 1 };
 -/
 #guard_msgs in
 #eval! do

@@ -1,0 +1,58 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.MetaVerifier
+
+open Strata
+
+def loop_simple_program : Strata.Program :=
+#strata
+program Boole;
+
+procedure loop_simple (n: int) returns (r: int)
+spec {
+  requires [non_negative]: (n >= 0);
+  ensures [sum_assert]: ((n * (n-1)) div 2 == r);
+}
+{
+  var sum : int := 0;
+  for i : int := 0 to (n - 1) by 1
+    invariant i <= n
+    invariant (i * (i-1)) div 2 == sum
+  {
+    sum := sum + i;
+  }
+  r := sum;
+};
+#end
+
+/-- info: Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: sum_assert
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" loop_simple_program (options := .quiet)
+
+open Strata.SMT
+
+theorem loop_simple_smt_vcs_correct : smtVCsCorrect loop_simple_program := by
+  gen_smt_vcs
+  all_goals (try grind)

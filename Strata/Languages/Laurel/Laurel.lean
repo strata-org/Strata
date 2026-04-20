@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.MetaData
-import Strata.Languages.Core.Expressions
-import Strata.Languages.Core.Procedure
+public import Strata.DL.Imperative.MetaData
+public import Strata.Languages.Core.Expressions
+public import Strata.Languages.Core.Procedure
 import Strata.Util.Tactics
+import Strata.DDM.Util.Decimal
 
 /-
 Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
@@ -15,7 +17,37 @@ Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
 namespace Strata
 namespace Laurel
 
-abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
+public section
+
+abbrev MetaData := Imperative.MetaData Core.Expression
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr MetaData := inferInstance
+
+/-- A name-introduction site (variable declaration, procedure, field, type, etc.).
+    Carries a mandatory unique ID assigned by the resolution pass. -/
+structure Identifier where
+  /-- The declared name. -/
+  text : String
+  /-- Unique ID assigned by the resolution pass. -/
+  uniqueId : Option Nat := none
+  /-- Source-level metadata (locations, annotations). -/
+  md : MetaData
+  deriving Repr
+
+-- Temporary hack because the Python through Laurel pipeline doesn't resolve
+instance : BEq Identifier where
+  beq a b := a.text == b.text
+
+instance : Inhabited Identifier where
+ default := { text := "defaultIdentifier", md := .empty }
+
+instance : ToString Identifier where
+  toString id := id.text
+
+instance : Coe String Identifier where
+  coe s := { text := s, md := .empty }
+
+def mkId (name: String): Identifier := { text := name, md := .empty }
 
 /--
 Primitive operations available in Laurel expressions.
@@ -32,14 +64,18 @@ inductive Operation : Type where
   | Eq
   /-- Inequality test. -/
   | Neq
-  /-- Logical conjunction. -/
+  /-- Logical conjunction (eager). -/
   | And
-  /-- Logical disjunction. -/
+  /-- Logical disjunction (eager). -/
   | Or
   /-- Logical negation. -/
   | Not
-  /-- Logical implication. -/
+  /-- Logical implication (short-circuit). -/
   | Implies
+  /-- Short-circuit logical conjunction. Only evaluates the second argument if the first is true. -/
+  | AndThen
+  /-- Short-circuit logical disjunction. Only evaluates the second argument if the first is false. -/
+  | OrElse
   /-- Arithmetic negation. Works on `Int` and `Float64`. -/
   | Neg
   /-- Addition. Works on `Int` and `Float64`. -/
@@ -56,38 +92,37 @@ inductive Operation : Type where
   | DivT
   /-- Truncation modulus. -/
   | ModT
-  /-- Less than. Works on `Int` and `Float64`. -/
+  /-- Less than. Works on `Int` and `Real`. -/
   | Lt
-  /-- Less than or equal. Works on `Int` and `Float64`. -/
+  /-- Less than or equal. Works on `Int` and `Real`. -/
   | Leq
-  /-- Greater than. Works on `Int` and `Float64`. -/
+  /-- Greater than. Works on `Int` and `Real`. -/
   | Gt
-  /-- Greater than or equal. Works on `Int` and `Float64`. -/
+  /-- Greater than or equal. Works on `Int` and `Real`. -/
   | Geq
   /-- String concatenation. -/
   | StrConcat
   deriving Repr
 
--- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
-
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
-`WithMetadata` so that error messages and verification conditions can
+`AstNode` so that error messages and verification conditions can
 refer back to the original source.
 -/
-structure WithMetadata (t : Type) : Type where
+structure AstNode (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
+  /-- Source location for this AST node. -/
+  source : Option FileRange
   /-- Source-level metadata (locations, annotations). -/
-  md : Imperative.MetaData Core.Expression
+  md : MetaData := .empty
   deriving Repr
 
 /--
 The type system for Laurel programs.
 
-`HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TFloat64`,
+`HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
 `TString`), internal types used by the heap parameterization pass (`THeap`,
 `TTypedField`), collection types (`TSet`), user-defined types (`UserDefined`),
 generic applications (`Applied`), value types (`Pure`), and intersection types
@@ -102,27 +137,37 @@ inductive HighType : Type where
   | TInt
   /-- 64-bit floating point type. Required for JavaScript (`number`), also used by Python (`float`) and Java (`double`). -/
   | TFloat64
+  /-- Mathematical real type. Maps to Core's `real` type. -/
+  | TReal
   /-- String type for text data. -/
   | TString
   /-- Internal type representing the heap. Introduced by the heap parameterization pass; not accessible via grammar. -/
   | THeap
   /-- Internal type for a field constant with a known value type. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | TTypedField (valueType : WithMetadata HighType)
+  | TTypedField (valueType : AstNode HighType)
   /-- Set type, e.g. `Set int`. -/
-  | TSet (elementType : WithMetadata HighType)
+  | TSet (elementType : AstNode HighType)
   /-- Map type. -/
-  | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType)
-  /-- A reference to a user-defined composite or constrained type by name. -/
+  | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
+  /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
-  | Applied (base : WithMetadata HighType) (typeArguments : List (WithMetadata HighType))
+  | Applied (base : AstNode HighType) (typeArguments : List (AstNode HighType))
   /-- A pure (value) variant of a composite type that uses structural equality instead of reference equality. -/
-  | Pure (base : WithMetadata HighType)
+  | Pure (base : AstNode HighType)
   /-- An intersection of types. Used for implicit intersection types, e.g. `Scientist & Scandinavian`. -/
-  | Intersection (types : List (WithMetadata HighType))
+  | Intersection (types : List (AstNode HighType))
+  /-- Bitvector type of a given width. -/
+  | TBv (size : Nat)
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
+  /-- Type used internally by the Laurel compilation pipeline.
+  This type is used when a resolution error occurs,
+  to continue compilation without producing superfluous errors
+  Any type can be assigned to unknown and unknown can be assigned to any type.
+  The unknown type can not be represented in Core so its occurence will abort compilation before evaluating Core -/
+  | Unknown
   deriving Repr
 
 mutual
@@ -140,15 +185,18 @@ structure Procedure : Type where
   /-- Output parameters with their types. Multiple outputs are supported. -/
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
-  preconditions : List (WithMetadata StmtExpr)
-  /-- Whether the procedure is deterministic or nondeterministic. -/
-  determinism : Determinism
+  preconditions : List (AstNode StmtExpr)
+  -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
-  decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
+  decreases : Option (AstNode StmtExpr) -- optionally prove termination
+  /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
+  isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
-  /-- Source-level metadata. -/
-  md : Imperative.MetaData Core.Expression
+  /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
+      whose body is the ensures clause universally quantified over the procedure's inputs,
+      with this expression as the SMT trigger. -/
+  invokeOn : Option (AstNode StmtExpr) := none
 
 /--
 A typed parameter for a procedure.
@@ -157,19 +205,7 @@ structure Parameter where
   /-- The parameter name. -/
   name : Identifier
   /-- The parameter type. -/
-  type : WithMetadata HighType
-
-/--
-Specifies whether a procedure is deterministic or nondeterministic.
-
-For deterministic procedures with a non-empty reads clause, the result can be
-assumed unchanged if the read references are the same.
--/
-inductive Determinism where
-  /-- A deterministic procedure. The optional reads clause lists the heap locations the procedure may read. -/
-  | deterministic (reads : Option (WithMetadata StmtExpr))
-  /-- A nondeterministic procedure. They can read from the heap but there is no benefit from specifying a reads clause. -/
-  | nondeterministic
+  type : AstNode HighType
 
 /--
 The body of a procedure. A body can be transparent (with a visible
@@ -178,14 +214,16 @@ or abstract (requiring overriding in extending types).
 -/
 inductive Body where
   /-- A transparent body whose implementation is visible to callers. -/
-  | Transparent (body : WithMetadata StmtExpr)
+  | Transparent (body : AstNode StmtExpr)
   /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
   | Opaque
-      (postconditions : List (WithMetadata StmtExpr))
-      (implementation : Option (WithMetadata StmtExpr))
-      (modifies : List (WithMetadata StmtExpr))
+      (postconditions : List (AstNode StmtExpr))
+      (implementation : Option (AstNode StmtExpr))
+      (modifies : List (AstNode StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
-  | Abstract (postconditions : List (WithMetadata StmtExpr))
+  | Abstract (postconditions : List (AstNode StmtExpr))
+  /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
+  | External
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -197,112 +235,129 @@ such as conditionals and variable declarations.
 -/
 inductive StmtExpr : Type where
   /-- Conditional with a then-branch and optional else-branch. -/
-  | IfThenElse (cond : WithMetadata StmtExpr) (thenBranch : WithMetadata StmtExpr) (elseBranch : Option (WithMetadata StmtExpr))
+  | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
-  | Block (statements : List (WithMetadata StmtExpr)) (label : Option Identifier)
+  | Block (statements : List (AstNode StmtExpr)) (label : Option String)
   /-- A local variable declaration with a type and optional initializer. The initializer must be set if this `StmtExpr` is pure. -/
-  | LocalVariable (name : Identifier) (type : WithMetadata HighType) (initializer : Option (WithMetadata StmtExpr))
+  | LocalVariable (name : Identifier) (type : AstNode HighType) (initializer : Option (AstNode StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
-  | While (cond : WithMetadata StmtExpr) (invariants : List (WithMetadata StmtExpr))
-    (decreases : Option (WithMetadata StmtExpr))
-    (body : WithMetadata StmtExpr)
+  | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
+    (decreases : Option (AstNode StmtExpr))
+    (body : AstNode StmtExpr)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
-  | Exit (target : Identifier)
+  | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/
-  | Return (value : Option (WithMetadata StmtExpr))
+  | Return (value : Option (AstNode StmtExpr))
   /-- An integer literal. -/
   | LiteralInt (value : Int)
   /-- A boolean literal. -/
   | LiteralBool (value : Bool)
   /-- A string literal. -/
   | LiteralString (value : String)
+  /-- A decimal literal. -/
+  | LiteralDecimal (value : Decimal)
   /-- A variable reference by name. -/
   | Identifier (name : Identifier)
   /-- Assignment to one or more targets. Multiple targets are only allowed when the value is a `StaticCall` to a procedure with multiple outputs. -/
-  | Assign (targets : List (WithMetadata StmtExpr)) (value : WithMetadata StmtExpr)
+  | Assign (targets : List (AstNode StmtExpr)) (value : AstNode StmtExpr)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
-  | FieldSelect (target : WithMetadata StmtExpr) (fieldName : Identifier)
+  | FieldSelect (target : AstNode StmtExpr) (fieldName : Identifier)
   /-- Update a field on a pure (value) type, producing a new value. -/
-  | PureFieldUpdate (target : WithMetadata StmtExpr) (fieldName : Identifier) (newValue : WithMetadata StmtExpr)
+  | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
-  | StaticCall (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
+  | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
   /-- Apply a primitive operation to the given arguments. -/
-  | PrimitiveOp (operator : Operation) (arguments : List (WithMetadata StmtExpr))
+  | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
   /-- Create new object (`new`). -/
-  | New (name: Identifier)
-  /-- Reference to the current object (`this`/`self`). -/
+  | New (ref : Identifier)
+  /-- Identifier to the current object (`this`/`self`). -/
   | This
   /-- Reference equality test between two expressions. -/
-  | ReferenceEquals (lhs : WithMetadata StmtExpr) (rhs : WithMetadata StmtExpr)
+  | ReferenceEquals (lhs : AstNode StmtExpr) (rhs : AstNode StmtExpr)
   /-- Type cast: treat the target as the given type. -/
-  | AsType (target : WithMetadata StmtExpr) (targetType : WithMetadata HighType)
+  | AsType (target : AstNode StmtExpr) (targetType : AstNode HighType)
   /-- Type test: check whether the target is an instance of the given type. -/
-  | IsType (target : WithMetadata StmtExpr) (type : WithMetadata HighType)
+  | IsType (target : AstNode StmtExpr) (type : AstNode HighType)
   /-- Call an instance method on a target object. -/
-  | InstanceCall (target : WithMetadata StmtExpr) (callee : Identifier) (arguments : List (WithMetadata StmtExpr))
-  /-- Universal quantification over a typed variable. -/
-  | Forall (name : Identifier) (type : WithMetadata HighType) (body : WithMetadata StmtExpr)
-  /-- Existential quantification over a typed variable. -/
-  | Exists (name : Identifier) (type : WithMetadata HighType) (body : WithMetadata StmtExpr)
+  | InstanceCall (target : AstNode StmtExpr) (callee : Identifier) (arguments : List (AstNode StmtExpr))
+  /-- Universal quantification over a typed parameter with an optional trigger. -/
+  | Forall (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
+  /-- Existential quantification over a typed parameter with an optional trigger. -/
+  | Exists (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
-  | Assigned (name : WithMetadata StmtExpr)
+  | Assigned (name : AstNode StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/
-  | Old (value : WithMetadata StmtExpr)
+  | Old (value : AstNode StmtExpr)
   /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
-  | Fresh (value : WithMetadata StmtExpr)
+  | Fresh (value : AstNode StmtExpr)
   /-- Assert a condition, generating a proof obligation. -/
-  | Assert (condition : WithMetadata StmtExpr)
+  | Assert (condition : AstNode StmtExpr)
   /-- Assume a condition, restricting the state space. -/
-  | Assume (condition : WithMetadata StmtExpr)
+  | Assume (condition : AstNode StmtExpr)
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
-  | ProveBy (value : WithMetadata StmtExpr) (proof : WithMetadata StmtExpr)
+  | ProveBy (value : AstNode StmtExpr) (proof : AstNode StmtExpr)
   /-- Extract the contract (reads, modifies, precondition, or postcondition) of a function. -/
-  | ContractOf (type : ContractType) (function : WithMetadata StmtExpr)
+  | ContractOf (type : ContractType) (function : AstNode StmtExpr)
   /-- Marker for abstract contracts. Makes the containing type abstract. -/
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole with dynamic type, useful for partially available programs. -/
-  | Hole
+  /-- A hole representing an unknown expression.
+      - `deterministic`: if true, the hole represents a deterministic unknown
+        (translated as an uninterpreted function); if false, a nondeterministic
+        unknown (translated as a havoced variable). Nondeterministic holes are
+        not allowed in functions.
+      - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
+  | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
 
-abbrev HighTypeMd := WithMetadata HighType
-abbrev StmtExprMd := WithMetadata StmtExpr
+@[expose] abbrev HighTypeMd := AstNode HighType
+@[expose] abbrev StmtExprMd := AstNode StmtExpr
 
-theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
+theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
+
+/-- Build Core metadata from an optional source location and Laurel metadata. -/
+def fileRangeToCoreMd (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : Imperative.MetaData Core.Expression :=
+  match source with
+  | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+  | none => md
+
+/-- Build Core metadata from an AstNode's source location and any extra metadata. -/
+def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
+  fileRangeToCoreMd node.source node.md
 
 instance : Inhabited StmtExpr where
   default := .Hole
 
-instance : Inhabited StmtExprMd where
-  default := ⟨ .Hole, .empty ⟩
-
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.TVoid, md := default }
+  default := { val := HighType.Unknown, source := none }
 
 instance : Inhabited StmtExprMd where
-  default := { val := default, md := default }
+  default := { val := default, source := none }
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
+  | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
   | HighType.THeap, HighType.THeap => true
+  | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
-  | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
+  | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
+  | HighType.Unknown, HighType.Unknown => true
   | _, _ => false
   termination_by (SizeOf.sizeOf a)
   decreasing_by
@@ -313,9 +368,18 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
 instance : BEq HighTypeMd where
   beq := highEq
 
+deriving instance BEq for HighType
 
 def HighType.isBool : HighType → Bool
   | TBool => true
+  | _ => false
+
+def Body.isExternal : Body → Bool
+  | .External => true
+  | _ => false
+
+def Body.isTransparent : Body → Bool
+  | .Transparent _ => true
   | _ => false
 
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
@@ -347,6 +411,7 @@ structure CompositeType where
   fields : List Field
   /-- Instance procedures (methods) defined on this type. -/
   instanceProcedures : List Procedure
+  deriving Inhabited
 
 /--
 A constrained (refinement) type defined by a base type and a predicate.
@@ -370,7 +435,7 @@ structure ConstrainedType where
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
   name : Identifier
-  args : List (Identifier × HighTypeMd)
+  args : List Parameter
 
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.
@@ -383,6 +448,19 @@ structure DatatypeDefinition where
   name : Identifier
   typeArgs : List Identifier
   constructors : List DatatypeConstructor
+
+/-- Canonical resolution name for the tester of constructor `ctor` in this datatype.
+    Matches the override name used by `Resolution.resolveTypeDefinition`. -/
+def DatatypeDefinition.testerName (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : String :=
+  s!"{dt.name}..is{ctor.name}"
+
+/-- Canonical resolution name for the destructor of field `field` in this datatype. -/
+def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
+  s!"{dt.name.text}..{field.name.text}"
+
+/-- Canonical resolution name for the unsafe (bang) destructor of field `field`. -/
+def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
+  s!"{dt.name.text}..{field.name.text}!"
 
 /--
 A user-defined type, either a composite type, a constrained type, or an algebraic datatype.
@@ -404,6 +482,12 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  deriving Inhabited
+
+def TypeDefinition.name : TypeDefinition → Identifier
+  | .Composite ty => ty.name
+  | .Constrained ty => ty.name
+  | .Datatype ty => ty.name
 
 structure Constant where
   name : Identifier
@@ -424,3 +508,5 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+end

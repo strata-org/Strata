@@ -148,12 +148,12 @@ Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" 
 in context
 { types := [[]], aliases := [] }
 in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.SafeDiv, Int.Mod, Int.SafeMod, Int.DivT, Int.ModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
+#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.SafeDiv, Int.Mod, Int.SafeMod, Int.DivT, Int.SafeDivT, Int.ModT, Int.SafeModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs in
 #eval Strata.Util.withStdGenSeed 0 do
   IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
-                factory\n{example_lctx.functions.map (fun f : LFunc TrivialParams => f.name)}\n"
+                factory\n{example_lctx.functions.getFunctionNames}\n"
   for i in List.range 100 do
     let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
     let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
@@ -167,12 +167,12 @@ Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" 
 in context
 { types := [[]], aliases := [] }
 in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.SafeDiv, Int.Mod, Int.SafeMod, Int.DivT, Int.ModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
+#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.SafeDiv, Int.Mod, Int.SafeMod, Int.DivT, Int.SafeDivT, Int.ModT, Int.SafeModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs(info, drop error) in
 #eval Strata.Util.withStdGenSeed 0 do
   IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
-                factory\n{example_lctx.functions.map (fun f : LFunc _ => f.name)}\n"
+                factory\n{example_lctx.functions.getFunctionNames}\n"
   for _i in List.range 100 do
     let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t (.forAll [] (.tcons "int" []))
     let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5

@@ -35,7 +35,7 @@ spec {
     modifies count;
     requires [id_not_in_registry]: !is_present(registry[id]);
     ensures  [registry_id_eq_val]: registry[id] == Some(value);
-    ensures  [count_incremented]:  count == old(count) + 1;
+    ensures  [count_incremented]:  count == old count + 1;
 }
 {
     registry := registry[id := Some(value)];
@@ -89,11 +89,15 @@ Obligation: value_for_id
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Register_Requires)id_not_in_registry
+Obligation: callElimAssert_id_not_in_registry_7
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_GetValue_Requires)id_ge_zero
+Obligation: callElimAssert_id_ge_zero_2
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_value_of_101_calls_OptionInt..val_0
 Property: assert
 Result: ✅ pass
 
@@ -110,4 +114,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify safeMapPgm (options := Options.quiet)
+#eval verify safeMapPgm (options := .quiet)

@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
-
-import Strata.DL.Imperative.HasVars
-import Strata.Languages.Core.Statement
+public import Strata.DL.Imperative.HasVars
+public import Strata.Languages.Core.Statement
 
 ---------------------------------------------------------------------
 
 namespace Core
+public section
 
 open Std (ToFormat Format format)
 open Lambda
@@ -187,9 +188,9 @@ structure Procedure.Header where
   /-- Type parameters for polymorphic procedures. -/
   typeArgs : List TyIdentifier
   /-- Input parameters: passed by value from caller to callee (immutable in body). -/
-  inputs   : @LMonoTySignature Visibility
+  inputs   : @LMonoTySignature Unit
   /-- Output parameters: passed by value from callee to caller (mutable in body). -/
-  outputs  : @LMonoTySignature Visibility
+  outputs  : @LMonoTySignature Unit
   /-- If true, FilterProcedures will never remove this procedure. -/
   noFilter : Bool := false
   deriving Repr, DecidableEq, Inhabited
@@ -397,5 +398,5 @@ instance : HasVarsTrans Expression (List Statement) Procedure where
   touchedVarsTrans := Statements.touchedVarsTrans
   allVarsTrans := Statements.allVarsTrans
 
-
+end
 end Core

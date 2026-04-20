@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Python.Specs.Decls
-import Strata.Languages.Python.Specs.PySpecM
+public import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Python.OverloadTable
+import Strata.Languages.Python.PythonLaurelTypedExpr
+public import Strata.Languages.Python.Specs.Decls
+public import Strata.Languages.Python.Specs.Error
+import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
 
 /-!
@@ -25,29 +29,39 @@ converts those signatures into Laurel programs that can be verified.
 - `externTypeDecl`: Ignored — PySpec fully qualifies imported class names
 -/
 
+namespace Strata.Python
+
+public section
+
+/-- Map a PythonIdent to its PyLauType string name, if it's a recognized
+    builtin type. This is the single source of truth for which Python builtins
+    map to PyLauType names. Used by PySpecPipeline (for type extraction).
+    Keep in sync with `pyLauTypesWithTesters` in PythonToLaurel.lean. -/
+def PythonIdent.toPyLauType? (id : PythonIdent) : Option String :=
+  if id == PythonIdent.builtinsInt then some "int"
+  else if id == PythonIdent.builtinsStr then some "str"
+  else if id == PythonIdent.builtinsBool then some "bool"
+  else if id == PythonIdent.builtinsFloat then some "float"
+  else if id == PythonIdent.noneType then some "None"
+  else none
+
+end -- public section
+end Strata.Python
+
 namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
+open Strata.Python.Laurel
 open Strata.Python.Specs (SpecError)
-
-/-! ## Overload Dispatch Table -/
-
-/--
-All overloads for a single function name: maps a string literal
-argument value to the return type (`PythonIdent`).
-
-N.B. Current limitations: dispatch is always on the first positional argument,
-and only string literal values are extracted. -/
-abbrev FunctionOverloads := Std.HashMap String PythonIdent
-
-/-- Dispatch table: function name → its overloads. -/
-abbrev OverloadTable := Std.HashMap String FunctionOverloads
 
 /-! ## ToLaurelM Monad -/
 
 /-- Context for PySpec to Laurel translation. -/
 structure ToLaurelContext where
   filepath : System.FilePath
+  /-- Module prefix prepended to generated type and procedure names
+      to avoid collisions when multiple PySpec files are combined. -/
+  modulePrefix : String
 
 /-- State for PySpec to Laurel translation. -/
 structure ToLaurelState where
@@ -55,14 +69,24 @@ structure ToLaurelState where
   procedures : Array Procedure := #[]
   types : Array TypeDefinition := #[]
   overloads : OverloadTable := {}
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 
 /-- Report an error during translation. -/
-def reportError (loc : SourceRange) (message : String) : ToLaurelM Unit := do
-  let e : SpecError := ⟨(←read).filepath, loc, message⟩
+def reportError (kind : WarningKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
+  let e : SpecError := ⟨(←read).filepath, loc, kind, message⟩
   modify fun s => { s with errors := s.errors.push e }
+
+def runChecked (act : ToLaurelM α) : ToLaurelM (α × Bool) := do
+  let old := (←get).errors.size
+  let r ← act
+  let new := (←get).errors.size
+  pure (r, old = new)
 
 /-- Add a Laurel procedure to the output. -/
 def pushProcedure (proc : Procedure) : ToLaurelM Unit :=
@@ -80,26 +104,53 @@ def pushOverloadEntry (funcName : String) (literalValue : String)
     let updated := existing.insert literalValue returnType
     { s with overloads := s.overloads.insert funcName updated }
 
+/-- Prepend the module prefix to a name. Returns the name unchanged
+    if the prefix is empty. -/
+def prefixName (name : String) : ToLaurelM String := do
+  let ctx ← read
+  if ctx.modulePrefix.isEmpty then return name
+  return ctx.modulePrefix ++ "_" ++ name
+
 /-! ## Helper Functions -/
 
 /-- Create a HighTypeMd with default metadata. -/
 private def mkTy (ty : HighType) : HighTypeMd :=
-  { val := ty, md := default }
+  { val := ty, source := none, md := default }
 
-/-- Create a TCore wrapped type with default metadata. -/
-private def mkCore (s : String) : HighTypeMd :=
-  { val := .TCore s, md := default }
+/-- Create a UserDefined type referencing a Laurel prelude type by name. -/
+private def mkUserDefined (s : String) : HighTypeMd :=
+  { val := .UserDefined (mkId s), source := none, md := default }
 
 /-- Placeholder for types not yet supported in CorePrelude.
     Returns TString so translation can proceed. Callers should
     report a warning via `reportError` so the gap is visible. -/
 private def unsupportedType : HighTypeMd :=
-  { val := .TString, md := default }
+  { val := .TString, source := none, md := default }
+
+/-! ### Laurel type constants
+
+Named constants for Laurel `HighTypeMd` values used in type translation.
+Prelude types (`Any`, `Error`, `DictStrAny`, etc.) use `UserDefined` so
+they participate in Laurel resolution. -/
+
+private def tyBool     : HighTypeMd := mkTy .TBool
+private def tyInt      : HighTypeMd := mkTy .TInt
+private def tyReal     : HighTypeMd := mkTy .TReal
+private def tyString   : HighTypeMd := mkTy .TString
+private def tyVoid     : HighTypeMd := mkTy .TVoid
+
+private def tyAny         : HighTypeMd := mkUserDefined "Any"
+private def tyDictStrAny  : HighTypeMd := mkUserDefined "DictStrAny"
+private def tyError       : HighTypeMd := mkUserDefined "Error"
+private def tyListStr     : HighTypeMd := mkUserDefined "ListStr"
+private def tyStrOrNone   : HighTypeMd := mkUserDefined "StrOrNone"
+private def tyIntOrNone   : HighTypeMd := mkUserDefined "IntOrNone"
+private def tyBoolOrNone  : HighTypeMd := mkUserDefined "BoolOrNone"
 
 mutual
 
 /-- Convert a SpecAtomType to a string for error messages. -/
-partial def atomTypeToString (a : SpecAtomType) : String :=
+def atomTypeToString (a : SpecAtomType) : String :=
   match a with
   | .ident nm args =>
     if nm == PythonIdent.noneType && args.isEmpty then "None"
@@ -115,14 +166,21 @@ partial def atomTypeToString (a : SpecAtomType) : String :=
   | .intLiteral v => s!"Literal[{v}]"
   | .stringLiteral v => s!"Literal[\"{v}\"]"
   | .typedDict _ _ _ => "TypedDict"
+termination_by sizeOf a
 
 /-- Convert a SpecType to a string for error messages. -/
-partial def specTypeToString (t : SpecType) : String :=
-  if t.atoms.size == 1 then
-    atomTypeToString t.atoms[0]!
+def specTypeToString (t : SpecType) : String :=
+  if h : t.atoms.size = 1 then
+    atomTypeToString t.atoms[0]
   else
     let strs := t.atoms.map atomTypeToString
     String.intercalate " | " strs.toList
+termination_by sizeOf t
+decreasing_by
+  · cases t
+    decreasing_tactic
+  · cases t
+    decreasing_tactic
 
 end
 
@@ -136,12 +194,12 @@ def formatUnionType (atoms : Array SpecAtomType) : String :=
 /--
 Detect if a SpecType is a Union[None, T] pattern and return the appropriate Laurel type.
 Handles:
-- Union[None, str] → TCore "StrOrNone"
-- Union[None, int] → TCore "IntOrNone"
-- Union[None, bool] → TCore "BoolOrNone"
-- Union[None, Literal["A"], ...] → TCore "StrOrNone"
-- Union[None, Literal[1], ...] → TCore "IntOrNone"
-- Union[None, TypedDict] → TCore "DictStrAny"
+- Union[None, str] → UserDefined "StrOrNone"
+- Union[None, int] → UserDefined "IntOrNone"
+- Union[None, bool] → UserDefined "BoolOrNone"
+- Union[None, Literal["A"], ...] → UserDefined "StrOrNone"
+- Union[None, Literal[1], ...] → UserDefined "IntOrNone"
+- Union[None, TypedDict] → UserDefined "DictStrAny"
 - Union[None, float/List/Dict/Any/bytes] → TString (unsupported, pending CorePrelude)
 -/
 def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
@@ -157,93 +215,349 @@ def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
 
   -- All non-None string literals → StrOrNone
   if otherAtoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
-    return some (mkCore "StrOrNone")
+    return some tyStrOrNone
 
   -- All non-None int literals → IntOrNone
   if otherAtoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
-    return some (mkCore "IntOrNone")
+    return some tyIntOrNone
 
   -- All non-None TypedDicts → DictStrAny
   if otherAtoms.all (fun a => match a with | .typedDict _ _ _ => true | _ => false) then
-    return some (mkCore "DictStrAny")
+    return some tyDictStrAny
 
   if otherAtoms.size == 1 then
     match otherAtoms[0]! with
     | .ident nm _ =>
-      if nm == PythonIdent.builtinsStr then return some (mkCore "StrOrNone")
-      else if nm == PythonIdent.builtinsInt then return some (mkCore "IntOrNone")
-      else if nm == PythonIdent.builtinsBool then return some (mkCore "BoolOrNone")
+      if nm == PythonIdent.builtinsStr then return some tyStrOrNone
+      else if nm == PythonIdent.builtinsInt then return some tyIntOrNone
+      else if nm == PythonIdent.builtinsBool then return some tyBoolOrNone
       -- TODO: add CorePrelude types for these Optional patterns
       else if nm == PythonIdent.builtinsFloat then
+        reportError .unsupportedOptionalFloat default s!"Optional[float] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.typingList then
+        reportError .unsupportedOptionalList default s!"Optional[List] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.typingDict then
+        reportError .unsupportedOptionalDict default s!"Optional[Dict] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.typingAny then
+        reportError .unsupportedOptionalAny default s!"Optional[Any] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.builtinsBytes then
+        reportError .unsupportedOptionalBytes default s!"Optional[bytes] mapped to TString"
         return some unsupportedType
       else return none
-    | .typedDict _ _ _ => return some (mkCore "DictStrAny")
-    | .intLiteral _ => return some (mkCore "IntOrNone")
+    | .typedDict _ _ _ => return some tyDictStrAny
+    | .intLiteral _ => return some tyIntOrNone
     | _ => return none
   else
     return none
+
+/-- Known PythonIdent → Laurel type mappings for single-atom ident types.
+    - `bytes`/`bytearray` → TString (closest string-like approximation)
+    - `complex` → TReal (no complex type in SMT; real is the closest numeric type)
+    - `Exception` → UserDefined "Error" (matches CorePrelude's Error datatype)
+    - `typing.Any` → UserDefined "Any" (datatype in Laurel prelude) -/
+private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
+  .ofList [
+    (.builtinsBool,      tyBool),
+    (.builtinsBytearray, tyString),
+    (.builtinsBytes,     tyString),
+    (.builtinsComplex,   tyReal),
+    (.builtinsDict,      tyDictStrAny),
+    (.builtinsException, tyError),
+    (.builtinsFloat,     tyReal),
+    (.builtinsInt,       tyInt),
+    (.builtinsStr,       tyString),
+    (.noneType,          tyVoid),
+    (.typingAny,         tyAny),
+    (.typingDict,        tyDictStrAny),
+    (.typingList,        tyListStr),
+  ]
 
 /-- Convert a SpecType to a Laurel HighTypeMd. -/
 def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
   match ty.atoms.size with
   | 0 =>
-    reportError default "Empty type (no atoms) encountered in Laurel conversion"
-    return mkTy .TString
+    reportError .emptyType default "Empty type (no atoms) encountered in Laurel conversion"
+    return tyString
   | _ =>
     -- Check for union types
     if ty.atoms.size > 1 then
       -- All string literals → TString
       if ty.atoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
-        return mkTy .TString
+        return tyString
       -- All int literals → TInt
       if ty.atoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
-        return mkTy .TInt
+        return tyInt
       -- All TypedDicts → DictStrAny
       if ty.atoms.all (fun a => match a with | .typedDict _ _ _ => true | _ => false) then
-        return mkCore "DictStrAny"
+        return tyDictStrAny
       -- Check Union[None, T] patterns
       match ← detectOptionalType ty with
       | some laurelType => return laurelType
       | none =>
         let unionStr := formatUnionType ty.atoms
-        reportError default s!"Union type ({unionStr}) not yet supported in Laurel"
-        return mkTy .TString
+        reportError .unsupportedUnion default s!"Union type ({unionStr}) not yet supported in Laurel"
+        return tyString
     else
       pure ()
     -- Single atom type
     match ty.atoms[0]! with
-    | .ident nm args =>
-      if nm == PythonIdent.builtinsInt then return mkTy .TInt
-      if nm == PythonIdent.builtinsBool then return mkTy .TBool
-      if nm == PythonIdent.builtinsStr then return mkTy .TString
-      if nm == PythonIdent.builtinsFloat then return mkTy .TFloat64
-      if nm == PythonIdent.noneType then return mkTy .TVoid
-      -- TODO: add proper CorePrelude types for these
-      if nm == PythonIdent.typingAny then return unsupportedType
-      if nm == PythonIdent.typingList then return mkCore "ListStr"
-      if nm == PythonIdent.typingDict then return mkCore "DictStrAny"
-      if nm == PythonIdent.builtinsBytes then return unsupportedType
-      if args.size > 0 then
-        reportError default
-          s!"Generic type '{nm}' with type args unsupported"
-      reportError default s!"Unknown type '{nm}' mapped to TString"
-      return mkTy .TString
+    | .ident nm _args =>
+      -- Warn for lossy known-type approximations
+      if nm == .builtinsBytes || nm == .builtinsBytearray then
+        reportError .bytesToString default s!"'{nm}' mapped to TString (bytes have different semantics)"
+      if nm == .builtinsComplex then
+        reportError .complexToReal default s!"'{nm}' mapped to TReal (complex loses imaginary component)"
+      if let some ty := knownIdentTypes[nm]? then
+        return ty
+      reportError .unknownType default s!"Unknown type '{nm}' mapped to TString"
+      return tyString
     | .pyClass name args =>
       if args.size > 0 then
-        reportError default
+        reportError .unsupportedGenericClass default
           s!"Generic class '{name}' with type args unsupported"
-      return mkTy (.UserDefined name)
-    | .intLiteral _ => return mkTy .TInt
-    | .stringLiteral _ => return mkTy .TString
-    | .typedDict _ _ _ => return mkCore "DictStrAny"
+      let prefixed ← prefixName name
+      return mkTy (.UserDefined { text := prefixed, md := .empty })
+    | .intLiteral _ => return tyInt
+    | .stringLiteral _ => return tyString
+    | .typedDict _ _ _ => return tyDictStrAny
+
+/-! ## SpecExpr to Laurel Translation -/
+
+/-- Create file-level metadata from the current pyspec filepath.
+    Uses a default (zero) source range; callers with a specific location
+    should use `mkMdWithFileRange` instead. -/
+private def mkFileMd : ToLaurelM (Imperative.MetaData Core.Expression) := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := default }
+  return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+
+/-- Create metadata with a file range from the current pyspec file. -/
+private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
+    : ToLaurelM (Imperative.MetaData Core.Expression) := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
+  let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+  if !msg.isEmpty then
+    md := md.withPropertySummary msg
+  return md
+
+/-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
+    : ToLaurelM StmtExprMd := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
+  let md ← mkMdWithFileRange loc msg
+  return { val := e, source := some fr, md := md }
+
+/--
+Context for resolving identifiers.
+-/
+structure SpecExprContext where
+  procName : String
+  argTypes : Std.HashMap String HighType
+
+abbrev ToLaurelExprM := ReaderT SpecExprContext ToLaurelM
+
+private def asAny (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) : ToLaurelExprM (TypedStmtExpr Laurel.tyAny) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then
+    return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.UserDefined "Any", e⟩ => pure e
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected Any-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+private def asBool (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) : ToLaurelExprM (TypedStmtExpr .TBool) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then
+    return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.TBool, e⟩ => pure e
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected Bool-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+/-- Look up an identifier's type from the SpecExprContext and create a typed identifier.
+    Reports a typeError if the name is not found in argTypes. -/
+private def lookupIdentifier (name : String) (loc : SourceRange) (md : Md)
+    : ToLaurelExprM SomeTypedStmtExpr := do
+  match (← read).argTypes[name]? with
+  | some tp => return .mkSome <| .identifier name tp md
+  | none =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Unknown identifier '{name}' in '{pn}'"
+    return default
+
+/-- Translate a SpecExpr to a typed Laurel expression (`SomeTypedStmtExpr`).
+    Returns `default` (a `Hole`) for unsupported expressions; callers use
+    `runChecked` to detect whether errors were reported during translation.
+    Uses Core prelude function names (Any_len, DictStrAny_contains, etc.)
+    which are resolved after the Core prelude is prepended. -/
+def specExprToLaurel (e : SpecExpr) (md : Md)
+  : ToLaurelExprM SomeTypedStmtExpr :=
+  -- Use per-node source range when available, falling back to the
+  -- nearest ancestor's md for nodes with default (empty) locations.
+  -- This is intentional: the parent's location is a closer approximation
+  -- than the function-level metadata for nodes without their own location.
+  let nodeMd (loc : SourceRange) : ToLaurelM Md := do
+    if loc == default then
+      pure md
+    else do
+      let fr : FileRange := { file := .file (← read).filepath.toString, range := loc }
+      pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+  match e with
+  | .placeholder loc => do
+    reportError .placeholderExpr loc "Placeholder expression not translatable"
+    return default
+  | .var name loc => do
+    let md ← nodeMd loc
+    lookupIdentifier name loc md
+  | .intLit v loc => do
+    let md ← nodeMd loc
+    return .mkSome <| .fromInt (.literalInt v md)
+  | .floatLit _ loc => do
+    reportError .floatLiteral loc "Float literals not yet supported in preconditions"
+    return default
+  | .getIndex subject field loc =>
+    match subject with
+    | .var "kwargs" .. => do
+      let md ← nodeMd loc
+      lookupIdentifier field loc md
+    | _ => do
+      let md ← nodeMd loc
+      let s ← asAny loc <| specExprToLaurel subject md
+      let from_str := .fromStr (.literalString field md) md
+      return .mkSome <| .anyGet s from_str md
+  | .isInstanceOf _ typeName loc => do
+    reportError .isinstanceUnsupported loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
+    return default
+  | .len subject loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    return .mkSome <| .fromInt (.strLength (.anyAsString s md))
+  | .intGe subject bound loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .intGeq (.anyAsInt s md) (.anyAsInt b md)
+  | .intLe subject bound loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .intLeq (.anyAsInt s md) (.anyAsInt b md)
+  | .floatGe subject bound loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .realGeq (.anyAsFloat s md) (.anyAsFloat b md)
+  | .floatLe subject bound loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .realLeq (.anyAsFloat s md) (.anyAsFloat b md)
+  | .not inner loc => do
+    let md ← nodeMd loc
+    let i ← asBool loc <| specExprToLaurel inner md
+    return .mkSome <| .not i md
+  | .implies cond body loc => do
+    let md ← nodeMd loc
+    let c ← asBool loc <| specExprToLaurel cond md
+    let b ← asBool loc <| specExprToLaurel body md
+    return .mkSome <| .implies c b md
+  | .enumMember subject values loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    let sStr := s.anyAsString md
+    return .mkSome <|
+      values.foldl (init := .literalBool false md) fun acc v =>
+        .or acc (.stringEq sStr (.literalString v md))
+  | .containsKey container key loc => do
+    let md ← nodeMd loc
+    match container with
+    | .var "kwargs" .. =>
+      -- FIXME: Check this.  We may want to move this up
+      let keyAny ← asAny loc <| lookupIdentifier key loc md
+      return .mkSome <| .not (.anyIsfromNone keyAny)
+    | _ =>
+      let c ← asAny loc <| specExprToLaurel container md
+      return .mkSome <| .dictStrAnyContains (c.anyAsDict md) (.literalString key md) md
+  | .regexMatch subject pattern loc => do
+    let md ← nodeMd loc
+    let s ← asAny loc <| specExprToLaurel subject md
+    let sStr := .anyAsString s md
+    return .mkSome <| .reSearchBool (.literalString pattern md) sStr md
+  | .forallList _ _ _ loc => do
+    reportError .forallListUnsupported loc "forallList quantifier not yet supported in preconditions"
+    return default
+  | .forallDict _ _ _ _ loc => do
+    reportError .forallDictUnsupported loc "forallDict quantifier not yet supported in preconditions"
+    return default
+
+private def formatAssertionMessage (msg : Array MessagePart) : String :=
+  let parts := msg.map fun
+    | .str s => s
+    | .expr e => toString e
+  String.join parts.toList
+
+/-- Structured PySpec assertion messages. Rendered to string before storing
+    in metadata so that rewording is centralized. -/
+inductive SpecAssertMsg where
+  | requiredParam (param : String)
+  | userAssertion (text : String)
+  | unnamed (index : Nat)
+
+/-- Render a structured assertion message to a human-readable string. -/
+def SpecAssertMsg.render : SpecAssertMsg → String
+  | .requiredParam param => s!"'{param}' is required"
+  | .userAssertion text  => text
+  | .unnamed index       => s!"precondition {index}"
+
+/-- Build a procedure body that asserts preconditions.
+    Outputs are already initialized non-deterministically. -/
+def buildSpecBody (preconditions : Array Assertion)
+    (md : Imperative.MetaData Core.Expression)
+    (ctx : SpecExprContext)
+    (requiredParams : Array String := #[])
+    : ToLaurelM Body := do
+  let fileMd ← mkFileMd
+  let mut stmts : Array StmtExprMd := #[]
+  let mut idx := 0
+  -- Assert that required parameters are provided (not None)
+  for param in requiredParams do
+    let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier param Laurel.tyAny md))
+    let msg := SpecAssertMsg.requiredParam param |>.render
+    let assertStmt ← mkStmtWithLoc (.Assert cond.stmt) default msg
+    stmts := stmts.push assertStmt
+    idx := idx + 1
+  for assertion in preconditions do
+    let formattedMsg := formatAssertionMessage assertion.message
+    let msg := if formattedMsg.isEmpty
+      then SpecAssertMsg.unnamed idx |>.render
+      else SpecAssertMsg.userAssertion formattedMsg |>.render
+    let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel assertion.formula md ctx
+    if success then
+      if let .TBool := condType then
+        let assertStmt ← mkStmtWithLoc (.Assert condExpr.stmt) default msg
+        stmts := stmts.push assertStmt
+      else
+        reportError .typeError default
+          s!"Precondition expression is not Bool in '{ctx.procName}' (skipping): {msg}"
+    idx := idx + 1
+  let body := {
+      val := .Block stmts.toList none,
+      source := none,
+      md := fileMd
+  }
+  return .Transparent body
 
 /-! ## Declaration Translation -/
 
@@ -252,45 +566,105 @@ def argToParameter (arg : Arg) : ToLaurelM Parameter := do
   let ty ← specTypeToLaurelType arg.type
   return { name := arg.name, type := ty }
 
-/-- Convert a function declaration to a Laurel Procedure. -/
+/-- Expand a `**kwargs: Unpack[TypedDict]` into individual `Arg` entries.
+    Returns an error if kwargs is present but not a TypedDict. -/
+public def expandKwargsArgs (kwargs : Option (String × SpecType))
+    : Except String (Array Arg) :=
+  match kwargs with
+  | none => .ok #[]
+  | some (name, specType) =>
+    match specType.atoms.find? fun a => match a with | .typedDict .. => true | _ => false with
+    | some (.typedDict fields fieldTypes fieldRequired) =>
+      .ok <| fields.mapIdx fun i name =>
+        { name := name
+          type := fieldTypes.getD i default
+          default := if fieldRequired.getD i true then none else some .none }
+    | _ => .error s!"**{name} has non-TypedDict type; kwargs not expanded"
+
+/-- Convert a function declaration to a Laurel Procedure.
+    When `isMethod` is true, the first positional arg (`self`) is stripped. -/
 def funcDeclToLaurel (procName : String) (func : FunctionDecl)
-    : ToLaurelM Procedure := do
-  let allArgs := func.args.args ++ func.args.kwonly
+    (isMethod : Bool := false) : ToLaurelM Procedure := do
+  if isMethod && func.args.args.size == 0 then
+    reportError .missingMethodSelf default
+      s!"Method '{func.name}' has no arguments (expected 'self' as first parameter)"
+  let posArgs := if isMethod then func.args.args.extract 1 func.args.args.size
+                 else func.args.args
+  let kwargsArgs ← match expandKwargsArgs func.args.kwargs with
+    | .ok args => pure args
+    | .error msg => do reportError .kwargsExpansionError default msg; pure #[]
+  let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType
   let outputs : List Parameter :=
-    match retType.val with
-    | .TVoid => []
-    | _ => [{ name := "result", type := retType }]
-  if func.preconditions.size > 0 || func.postconditions.size > 0 then
-    reportError func.loc "Preconditions/postconditions not yet supported"
+    [{ name := "result", type := match retType.val with
+      | .TVoid => tyAny
+      | _ => retType }]
+  if func.postconditions.size > 0 then
+    reportError .postconditionUnsupported func.loc "Postconditions not yet supported"
+  -- When preconditions exist, use TCore "Any" for all parameters and outputs
+  -- to match the Python→Laurel pipeline's Any-wrapping convention.
+  let (inputs, outputs, body) ←
+    if func.preconditions.size > 0 then do
+      let anyTy : HighTypeMd := tyAny
+      let anyInputs := inputs.map fun p => { p with type := anyTy }
+      let anyOutputs := outputs.map fun p => { p with type := anyTy }
+      let argTypes := allArgs.foldl (init := {}) fun m a =>
+        m.insert a.name Laurel.tyAny
+      let specCtx : SpecExprContext := { procName, argTypes }
+      let body ← buildSpecBody func.preconditions .empty specCtx
+        (requiredParams := allArgs.filterMap fun a =>
+          if a.default.isNone then some a.name else none)
+      pure (anyInputs, anyOutputs, body)
+    else
+      pure (inputs, outputs, Body.Opaque [] none [])
+  let md ← mkMdWithFileRange func.loc
   return {
-    name := procName
+    name := { text := procName, md := md }
     inputs := inputs.toList
     outputs := outputs
     preconditions := []
-    determinism := .nondeterministic
     decreases := none
-    body := .Opaque [] none []
-    md := .empty
+    isFunctional := false
+    body := body
   }
 
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+  let prefixedName ← prefixName cls.name
+  -- Register alias from unprefixed to prefixed name for type resolution
+  if prefixedName != cls.name then
+    modify fun s => { s with typeAliases := s.typeAliases.insert cls.name prefixedName }
+  if cls.exhaustive then
+    modify fun s => { s with exhaustiveClasses := s.exhaustiveClasses.insert prefixedName }
+  let laurelFields ← cls.fields.toList.mapM fun f => do
+    let ty ← specTypeToLaurelType f.type
+    pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
+  let prefixedBases ← cls.bases.toList.mapM fun cd => do
+    -- Local bases (empty pythonModule) get prefixed; external ones don't
+    let baseName ← if cd.pythonModule.isEmpty then prefixName cd.name
+                    else pure (toString cd)
+    return mkId baseName
   pushType (.Composite {
-    name := cls.name
-    extending := []
-    fields := []
+    name := prefixedName
+    extending := prefixedBases
+    fields := laurelFields
     instanceProcedures := []
   })
   for method in cls.methods do
-    let proc ← funcDeclToLaurel (cls.name ++ "_" ++ method.name) method
+    let proc ← funcDeclToLaurel (prefixedName ++ "@" ++ method.name) method (isMethod := true)
     pushProcedure proc
+  for sub in cls.subclasses do
+    classDefToLaurel sub
+decreasing_by
+  · cases cls
+    decreasing_tactic
 
 /-- Convert a type definition to a Laurel composite type placeholder. -/
-def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit :=
+def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
+  let prefixedName ← prefixName td.name
   pushType (.Composite {
-    name := td.name
+    name := prefixedName
     extending := []
     fields := []
     instanceProcedures := []
@@ -303,12 +677,12 @@ def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit :=
 def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
   let args := func.args.args
   let .isTrue _ := decideProp (args.size > 0)
-    | reportError func.loc
+    | reportError .overloadNoArgs func.loc
         s!"Overloaded function '{func.name}' has no arguments"
       return
   let firstArgType := args[0].type
   let .isTrue _ := decideProp (firstArgType.atoms.size = 1)
-    | reportError func.loc
+    | reportError .overloadArgArity func.loc
         s!"Overloaded function '{func.name}': first argument \
           has {firstArgType.atoms.size} type atoms, expected 1"
       return
@@ -316,23 +690,26 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
         match firstArgType.atoms[0] with
         | .stringLiteral v => pure v
         | _ =>
-          reportError func.loc
+          reportError .overloadArgNotStringLiteral func.loc
             s!"Overloaded function '{func.name}': first argument \
               type '{specTypeToString firstArgType}' is not a \
               string literal (only string literal dispatch is \
               currently supported)"
           return
   let .isTrue _ := decideProp (func.returnType.atoms.size = 1)
-    | reportError func.loc
+    | reportError .overloadReturnArity func.loc
         s!"Overloaded function '{func.name}': return type \
         has {func.returnType.atoms.size} type atoms, expected 1"
       return
   let retType ←
         match func.returnType.atoms[0] with
-        | .pyClass name _ => pure (PythonIdent.mk "" name)
+        | .pyClass name _ => do
+          let ctx ← read
+          let prefixed ← prefixName name
+          pure (PythonIdent.mk ctx.modulePrefix prefixed)
         | .ident nm _ => pure nm
         | _ =>
-          reportError func.loc
+          reportError .overloadReturnNotClass func.loc
             s!"Overloaded function '{func.name}': return type \
               '{specTypeToString func.returnType}' is not a \
               class type"
@@ -351,22 +728,28 @@ def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
   | .functionDecl func => do
     if func.isOverload then
       extractOverloadEntry func
-    else
-      let proc ← funcDeclToLaurel func.name func
+    else do
+      let procName ← prefixName func.name
+      let proc ← funcDeclToLaurel procName func
       pushProcedure proc
   | .classDef cls => classDefToLaurel cls
 
 /-- Result of translating PySpec signatures to Laurel. -/
-structure TranslationResult where
+public structure TranslationResult where
   program : Laurel.Program
   errors : Array SpecError
   overloads : OverloadTable
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
-def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
+public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
+    (modulePrefix : String)
     : TranslationResult :=
-  let ctx : ToLaurelContext := { filepath }
+  let ctx : ToLaurelContext := { filepath, modulePrefix }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
   let pgm : Laurel.Program := {
     staticProcedures := state.procedures.toList
@@ -376,14 +759,16 @@ def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
   }
   { program := pgm
     errors := state.errors
-    overloads := state.overloads }
+    overloads := state.overloads
+    typeAliases := state.typeAliases
+    exhaustiveClasses := state.exhaustiveClasses }
 
 /-- Extract only the overload dispatch table from PySpec signatures.
     Processes `@overload` function declarations, ignoring classDef,
     typeDef, externTypeDecl, and non-overload functions. -/
-def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
+public def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
     : OverloadTable × Array SpecError :=
-  let ctx : ToLaurelContext := { filepath }
+  let ctx : ToLaurelContext := { filepath, modulePrefix := "" }
   let action := sigs.forM fun sig =>
     match sig with
     | .functionDecl func =>

@@ -108,16 +108,18 @@ def instArbitraryLExpr.arbitrary {T}
             (do
               let a_10 ← Plausible.Arbitrary.arbitrary
               let a_11 ← Plausible.Arbitrary.arbitrary
-              let a_12 ← aux_arb fuel'
-              return Lambda.LExpr.abs a_10 a_11 a_12)),
+              let a_12 ← Plausible.Arbitrary.arbitrary
+              let a_13 ← aux_arb fuel'
+              return Lambda.LExpr.abs a_10 a_11 a_12 a_13)),
           (fuel' + 1,
             (do
-              let a_13 ← Plausible.Arbitrary.arbitrary
               let a_14 ← Plausible.Arbitrary.arbitrary
               let a_15 ← Plausible.Arbitrary.arbitrary
-              let a_16 ← aux_arb fuel'
-              let a_17 ← aux_arb fuel'
-              return Lambda.LExpr.quant a_13 a_14 a_15 a_16 a_17)),
+              let a_16 ← Plausible.Arbitrary.arbitrary
+              let a_17 ← Plausible.Arbitrary.arbitrary
+              let a_18 ← aux_arb fuel'
+              let a_19 ← aux_arb fuel'
+              return Lambda.LExpr.quant a_14 a_15 a_16 a_17 a_18 a_19)),
           (fuel' + 1,
             (do
               let a_18 ← Plausible.Arbitrary.arbitrary
@@ -198,14 +200,11 @@ inductive MapsInsert : Maps α β → α → β → Maps α β → Prop where
 instance instStringSuchThatIsInt : ArbitrarySizedSuchThat String (fun s => s.isInt) where
   arbitrarySizedST _ := toString <$> (Arbitrary.arbitrary : Gen Int)
 
-def ArrayFind (a : Array α) (x : α)  := x ∈ a
-
-instance instArrayFindSuchThat {α} {a} : ArbitrarySizedSuchThat α (fun x => ArrayFind a x) where
+instance instArrayFindSuchThat {α} {a : Array α} : ArbitrarySizedSuchThat α (fun x => x ∈ a) where
   arbitrarySizedST _ := do
   if h:a.size = 0 then throw <| GenError.genError "Gen: cannot generate elements of empty array" else
   let i ← Gen.chooseNatLt 0 a.size (by omega)
   return a[i.val]
-
 
 inductive IsUnaryArg : LTy → LTy → LTy → Prop where
 | mk (ty₁ ty₂ : LMonoTy) : IsUnaryArg (.forAll [] (.tcons "arrow" [ty₁, ty₂])) (.forAll [] ty₁) (.forAll [] ty₂)
@@ -225,8 +224,8 @@ def varClose (k : Nat) (x : IdentT LMonoTy TrivialParams.IDMeta) (e : LExpr Triv
   | .bvar m i => .bvar m i
   | .fvar m y yty => if x.fst == y && (yty == x.snd) then
                       (.bvar m k) else (.fvar m y yty)
-  | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
-  | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
+  | .abs m name ty e' => .abs m name ty (varClose (k + 1) x e')
+  | .quant m qk _ ty tr' e' => .quant m qk "" ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
   | .app m e1 e2 => .app m (varClose k x e1) (varClose k x e2)
   | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
@@ -264,7 +263,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TC
   | tabs : ∀ Γ Γ' m x x_ty e e_ty,
             MapsInsert Γ.types (id x) (.forAll [] x_ty : LTy) Γ' →
             HasType C { Γ with types := Γ'} e (.forAll [] e_ty) →
-            HasType C Γ (.abs m .none <| LExpr.varClose 0 (x, none) e) -- We close in the conclusion rather than opening in the hyps.
+            HasType C Γ (.abs m "" .none <| LExpr.varClose 0 (x, none) e) -- We close in the conclusion rather than opening in the hyps.
                         (.forAll [] (.tcons "arrow" [x_ty, e_ty]))
 
   | tapp : ∀ Γ m e1 e2 t1 t2,
@@ -285,17 +284,17 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TC
 
   | top: ∀ Γ m f ty,
             ty = (LFunc.type! f) →
-            ArrayFind C.functions f →
+            f ∈ C.functions.toArray →
             HasType C Γ (.op m f.name none) ty
 
   | top₁: ∀ Γ m f ty₁ ty₂,
-            ArrayFind C.functions f →
+            f ∈ C.functions.toArray →
             IsUnaryArg (LFunc.type! f) ty₁ ty₂ →
             HasType C Γ t₁ ty₁ →
             HasType C Γ (.app m (.op m f.name none) t₁) ty₂
 
   | top₂: ∀ Γ m f ty₁ ty₂ ty₃,
-            ArrayFind C.functions f →
+            f ∈ C.functions.toArray →
             IsBinaryArg (LFunc.type! f) (ty₁, ty₂) ty₃ →
             HasType C Γ t₁ ty₁ →
             HasType C Γ t₂ ty₂ →
@@ -973,7 +972,7 @@ instance {T : LExprParams}
                           MapsInsert (Lambda.TContext.types ctx_1) x x_ty' Γ') initSize;
                 let e ← aux_arb initSize size' {ctx_1 with types := Γ'} e_ty'
                 let e := LExpr.varClose 0 (x, none) e
-                return .abs m x_ty e
+                return .abs m "" x_ty e
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (Nat.succ size', do
               let (t2 : LMonoTy) ← Plausible.Arbitrary.arbitrary;
@@ -1012,11 +1011,7 @@ instance {T : LExprParams}
                     return Lambda.LExpr.eq m e1 e2
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1, do
-              let (f : LFunc _) ←
-                @ArbitrarySizedSuchThat.arbitrarySizedST _
-                    (fun (f : LFunc _) =>
-                      @ArrayFind (@Lambda.LFunc _) (@Lambda.LContext.functions _ C) f)
-                    _ initSize;
+              let f ← ArbitrarySizedSuchThat.arbitrarySizedST (· ∈ C.functions.toArray) initSize;
               do
                 match f.type with
                 | .ok f_ty =>
@@ -1027,23 +1022,12 @@ instance {T : LExprParams}
                 | _ => throw Plausible.Gen.genericFailure
                 ),
             (10, do
-                  let (f : LFunc T) ←
-                    @ArbitrarySizedSuchThat.arbitrarySizedST _
-                        (fun (f : LFunc T) =>
-                          @ArrayFind (@Lambda.LFunc T) (@Lambda.LContext.functions T C)
-                            f)
-                        _ initSize;
+                  let f ← ArbitrarySizedSuchThat.arbitrarySizedST  (· ∈ C.functions.toArray) initSize;
                   let (ty₁ : LTy) ←  @ArbitrarySizedSuchThat.arbitrarySizedST _ (fun (ty₁ : LTy) => @IsUnaryArg (@LFunc.type! T f) ty₁ ty_1) _ initSize;
                   let (t₁ : LExpr (LExprParams.mono T)) ← aux_arb initSize size' ctx_1 ty₁;
                   let (m : _) ← Plausible.Arbitrary.arbitrary;
                   return Lambda.LExpr.app m (Lambda.LExpr.op m f.name (Option.none)) t₁),
-            (10, do
-                    let (f : LFunc T) ←
-                      @ArbitrarySizedSuchThat.arbitrarySizedST _
-                          (fun (f : LFunc T) =>
-                            @ArrayFind (@Lambda.LFunc T)
-                              (@Lambda.LContext.functions T C) f)
-                          _ initSize;
+            (10, do let f ← ArbitrarySizedSuchThat.arbitrarySizedST (· ∈ C.functions.toArray) initSize;
                     do
                       let vty₁_ty₂ ←
                         @ArbitrarySizedSuchThat.arbitrarySizedST _
@@ -1093,10 +1077,10 @@ instance [Inhabited T.base.IDMeta] : Shrinkable (LExpr T) where
               => []
     | .app m t u =>
       t :: u :: (.app m <$> aux t <*> aux u)
-    | .abs m ty t => (LExpr.varOpen 0 ⟨⟨"x", default⟩, ty⟩ t) :: (.abs m ty <$> aux t) -- IDK about the `"x"`
+    | .abs m name ty t => (LExpr.varOpen 0 ⟨⟨"x", default⟩, ty⟩ t) :: (.abs m name ty <$> aux t) -- IDK about the `"x"`
     | .eq m t u => t :: u :: (.eq m <$> aux t <*> aux u)
     | .ite m cond t u => cond :: t :: u :: (.ite m <$> aux cond <*> aux t <*> aux u)
-    | .quant m k ty tr t => (LExpr.varOpen 0 ⟨⟨"x", default⟩, ty⟩ t) :: (.quant m k ty tr <$> aux t)
+    | .quant m k name ty tr t => (LExpr.varOpen 0 ⟨⟨"x", default⟩, ty⟩ t) :: (.quant m k name ty tr <$> aux t)
   aux t
 
 -- Shrinks an element of `α` recursively.

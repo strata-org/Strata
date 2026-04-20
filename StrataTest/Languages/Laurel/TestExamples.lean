@@ -10,7 +10,7 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Util.IO
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 open StrataTest.Util
 open Strata
@@ -19,7 +19,7 @@ open Lean.Parser (InputContext)
 
 namespace Strata.Laurel
 
-def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
+def processLaurelFileWithOptions (options : Core.VerifyOptions) (input : InputContext) : IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
@@ -29,8 +29,11 @@ def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
   | .error transErrors => throw (IO.userError s!"Translation errors: {transErrors}")
   | .ok laurelProgram =>
     let files := Map.insert Map.empty uri input.fileMap
-    let diagnostics ← Laurel.verifyToDiagnostics files laurelProgram
+    let diagnostics ← Laurel.verifyToDiagnostics files laurelProgram options
 
     pure diagnostics
+
+def processLaurelFile (input : InputContext) : IO (Array Diagnostic) :=
+  processLaurelFileWithOptions Core.VerifyOptions.default input
 
 end Laurel

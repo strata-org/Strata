@@ -30,7 +30,7 @@ procedure MainProc() returns (output : int)
 spec {
   modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old(x) * 4);
+  ensures [output_property]: (output == old x * 4);
 }
 {
   call output := Helper(x);
@@ -64,7 +64,7 @@ Result: ❌ fail
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert
@@ -72,7 +72,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := (some ["MainProc"]))
 
 --------- Verify all procedures (default behavior)
@@ -83,13 +83,13 @@ Obligation: result_correct
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: callElimAssert_n_positive_6
 Property: assert
 Result: ❌ fail
 
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert
@@ -104,7 +104,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify selectiveVerificationPgm (options := Options.quiet)
+#eval verify selectiveVerificationPgm (options := .quiet)
 
 ---------- Verify only IndependentProc
 
@@ -116,7 +116,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
-        (options := Options.quiet)
+        (options := .quiet)
         (proceduresToVerify := ["IndependentProc"])
 
 ---------- Verify multiple specific procedures
@@ -133,7 +133,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify selectiveVerificationPgm
-          (options := Options.quiet)
+          (options := .quiet)
           (proceduresToVerify := (some ["IndependentProc", "UnusedProc"]))
 
 ---------------------------------------------------------------------

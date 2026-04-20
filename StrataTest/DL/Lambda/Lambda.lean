@@ -28,10 +28,10 @@ New Function:func Int.Add :  () → int;
 -/
 #guard_msgs in
 #eval do
-  let F ← (IntBoolFactory : @Factory TestParams).addFactoryFunc (
-    { name := "Int.Add",
+  let F ← (IntBoolFactory : Factory TestParams).tryPush {
+      name := "Int.Add",
       inputs := [],
-      output := .tcons "int" [] } : LFunc TestParams)
+      output := .tcons "int" [] }
   let ans ← typeCheckAndPartialEval TypeFactory.default F esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
   return format ans
 
@@ -53,14 +53,14 @@ info: Annotated expression:
 ((~Int.Div : (arrow int (arrow int int))) ((~Int.Add : (arrow int (arrow int int))) #2 #1))
 
 ---
-info: (λ ((~Int.Div : (arrow int (arrow int int))) #3 %0))
+info: ((~Int.Div : (arrow int (arrow int int))) #3)
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval TypeFactory.default  (IntBoolFactory : @Factory TestParams)
                esM[((~Int.Div ((~Int.Add #2) #1)))]
 /--
 info: Annotated expression:
-((λ (%0 #2)) ((~Int.Div : (arrow int (arrow int int))) #300))
+((λ (bvar:(arrow int int)) (%0 #2)) ((~Int.Div : (arrow int (arrow int int))) #300))
 
 ---
 info: #150

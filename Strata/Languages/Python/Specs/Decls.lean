@@ -6,38 +6,19 @@
 module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.SourceRange
+public import Strata.Languages.Python.OverloadTable
 
 public section
-namespace Strata.Python.Specs
-
-/--
-A fully-qualified Python identifier consisting of a module path and a name.
-For example, `typing.List` has module "typing" and name "List".
--/
-structure PythonIdent where
-  pythonModule : String
-  name : String
-  deriving DecidableEq, Hashable, Inhabited, Ord, Repr
+namespace Strata.Python
 
 namespace PythonIdent
-
-protected def ofString (s : String) : Option PythonIdent :=
-  match s.revFind? '.' with
-  | none => none
-  | some idx =>
-    some {
-      pythonModule := s.extract s.startPos idx
-      name := s.extract idx.next! s.endPos
-    }
-
-instance : ToString PythonIdent where
-  toString i := s!"{i.pythonModule}.{i.name}"
 
 def builtinsBool := mk "builtins" "bool"
 def builtinsBytearray := mk "builtins" "bytearray"
 def builtinsBytes := mk "builtins" "bytes"
 def builtinsComplex := mk "builtins" "complex"
 def builtinsDict := mk "builtins" "dict"
+def builtinsException := mk "builtins" "Exception"
 def builtinsFloat := mk "builtins" "float"
 def builtinsInt := mk "builtins" "int"
 def builtinsStr := mk "builtins" "str"
@@ -56,8 +37,11 @@ def typingUnion := mk "typing" "Union"
 def typingRequired := mk "typing" "Required"
 def typingNotRequired := mk "typing" "NotRequired"
 def typingUnpack := mk "typing" "Unpack"
+def reCompile := mk "re" "compile"
 
 end PythonIdent
+
+namespace Specs
 
 /--
 Represents Python generic types from the `typing` module that require special
@@ -297,15 +281,24 @@ def instDecidableMem (e : SpecAtomType) (tp : SpecType) : Decidable (e ∈ tp) :
 
 end SpecType
 
+/-- A default value for a pyspec argument.
+    TODO: extend with additional constructors (e.g., string, int, bool literals)
+    as PySpec gains support for richer default values. -/
+inductive SpecDefault where
+  /-- Python `None`. -/
+  | none
+deriving Inhabited, Repr
+
 structure Arg where
   name : String
   type : SpecType
-  hasDefault : Bool
+  default : Option SpecDefault := none
 deriving Inhabited
 
 structure ArgDecls where
   args : Array Arg
   kwonly : Array Arg
+  kwargs : Option (String × SpecType) := none
 deriving Inhabited
 
 namespace ArgDecls
@@ -315,17 +308,57 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 end ArgDecls
 
 /--
-A specification predicate with `free` free variables (arguments + return value
-for postconditions). Currently a placeholder; will be extended to support
-actual constraint expressions.
+A composable expression tree for translating Python `assert` statements into
+structured preconditions and postconditions. Leaf nodes are `var`, `intLit`,
+and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
+`intGe`/`intLe`, `isInstanceOf`, and `enumMember`.
 -/
-inductive SpecPred (free : Nat) where
-| placeholder
+inductive SpecExpr where
+/-- Stands in for an assert pattern not yet supported by the translator.
+    The original Python expression is preserved in `Assertion.message`. -/
+| placeholder (loc : SourceRange)
+| var (name : String) (loc : SourceRange)
+| getIndex (subject : SpecExpr) (field : String) (loc : SourceRange)
+| isInstanceOf (subject : SpecExpr) (typeName : String) (loc : SourceRange)
+| len (subject : SpecExpr) (loc : SourceRange)
+| intLit (value : Int) (loc : SourceRange)
+| intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+/-- A floating-point literal, stored as a string to preserve precision. -/
+| floatLit (value : String) (loc : SourceRange)
+| floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| floatLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| enumMember (subject : SpecExpr) (values : Array String) (loc : SourceRange)
+/-- `regexMatch subject pattern` asserts that `subject` matches the regular
+    expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
+    in the Python source. -/
+| regexMatch (subject : SpecExpr) (pattern : String) (loc : SourceRange)
+/-- `containsKey container key` asserts that `key` is present in `container`.
+    Corresponds to `"key" in container` in the Python source. -/
+| containsKey (container : SpecExpr) (key : String) (loc : SourceRange)
+/-- `implies condition body` asserts that if `condition` holds then `body` holds.
+    Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
+| implies (condition : SpecExpr) (body : SpecExpr) (loc : SourceRange)
+/-- Logical negation. Used for else-branch conditions. -/
+| not (e : SpecExpr) (loc : SourceRange)
+/-- `forallList list varName body` asserts that `body` holds for every element
+    of `list`, with `varName` bound to each element in turn. Only `body` may
+    refer to `varName`. Corresponds to `for varName in list: assert body`. -/
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr) (loc : SourceRange)
+/-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
+    key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
+    Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
 deriving Inhabited
 
-structure Assertion (free : Nat) where
-  message : String
-  formula : SpecPred free
+inductive MessagePart where
+| str (s : String)
+| expr (e : SpecExpr)
+deriving Inhabited
+
+structure Assertion where
+  message : Array MessagePart
+  formula : SpecExpr
 deriving Inhabited
 
 structure FunctionDecl where
@@ -335,14 +368,35 @@ structure FunctionDecl where
   args : ArgDecls
   returnType : SpecType
   isOverload : Bool
-  preconditions : Array (Assertion args.count)
-  postconditions : Array (SpecPred (args.count + 1))
+  preconditions : Array Assertion
+  postconditions : Array SpecExpr
+deriving Inhabited
+
+structure ClassField where
+  name : String
+  type : SpecType
+  /-- An optional constant value for the field (e.g., from `self.x = expr` in `__init__`). -/
+  constValue : Option String := none
+deriving Inhabited
+
+structure ClassVariable where
+  name : String
+  value : String
 deriving Inhabited
 
 structure ClassDef where
   loc : SourceRange
   name : String
+  bases : Array PythonIdent := #[]
+  fields : Array ClassField := #[]
+  classVars : Array ClassVariable := #[]
+  subclasses : Array ClassDef := #[]
   methods : Array FunctionDecl
+  /-- When true, the spec is assumed to list every method the class exposes.
+      Calls to unlisted methods are flagged as "Unknown method".
+      Set via `@exhaustive` decorator on the pyspec class body. -/
+  exhaustive : Bool := false
+deriving Inhabited
 
 structure TypeDef where
   loc : SourceRange
@@ -358,4 +412,4 @@ inductive Signature where
   deriving Inhabited
 
 end Strata.Python.Specs
-end
+end -- public section

@@ -1,21 +1,15 @@
-
-==== Verification Results ====
-datetime_now_ensures_0: ✅ pass (at byte 7131)
-datetime_utcnow_ensures_0: ✅ pass (at byte 7369)
-ensures_str_strp_reverse: ✅ pass (at byte 8763)
-assert_name_is_foo: ✅ pass (at byte 11077)
-assert_opt_name_none_or_str: ✅ pass (at byte 11127)
-assert_opt_name_none_or_bar: ✅ pass (at byte 11274)
-ensures_maybe_except_none: ✅ pass (at byte 10980)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10643)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10692)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10838)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10643)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10692)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10838)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 10643)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10692)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10838)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10643)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10692)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10838)
+test_precondition_verification.py(8, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_precondition_verification.py(8, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
+test_precondition_verification.py(8, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(11, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_precondition_verification.py(11, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
+test_precondition_verification.py(11, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(14, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_precondition_verification.py(14, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
+test_precondition_verification.py(14, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(17, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_precondition_verification.py(17, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
+test_precondition_verification.py(17, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(19, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
+DETAIL: 11 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

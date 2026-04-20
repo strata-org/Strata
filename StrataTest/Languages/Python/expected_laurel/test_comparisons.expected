@@ -1,15 +1,25 @@
-
-==== Verification Results ====
-datetime_now_ensures_0: ✅ pass (at byte 7131)
-datetime_utcnow_ensures_0: ✅ pass (at byte 7369)
-ensures_str_strp_reverse: ✅ pass (at byte 8763)
-assert_name_is_foo: ✅ pass (at byte 11077)
-assert_opt_name_none_or_str: ✅ pass (at byte 11127)
-assert_opt_name_none_or_bar: ✅ pass (at byte 11274)
-ensures_maybe_except_none: ✅ pass (at byte 10980)
-assert(89): ✅ pass (at line 5, col 4)
-assert(190): ✅ pass (at line 9, col 4)
-assert(328): ✅ pass (at line 14, col 4)
-assert(385): ✅ pass (at line 15, col 4)
-assert(439): ✅ pass (at line 16, col 4)
-assert(506): ✅ pass (at line 17, col 4)
+test_comparisons.py(3, 4): ✅ pass - assert(57)
+test_comparisons.py(4, 4): ✅ pass - assert(73)
+test_comparisons.py(5, 4): ✅ pass - assert_assert(89)_calls_Any_to_bool_0
+test_comparisons.py(5, 4): ✅ pass - equality implemented incorrectly
+test_comparisons.py(7, 4): ✅ pass - assert(148)
+test_comparisons.py(8, 4): ✅ pass - assert(169)
+test_comparisons.py(9, 4): ✅ pass - assert_assert(190)_calls_Any_to_bool_0
+test_comparisons.py(9, 4): ✅ pass - string equality implemented incorrectly
+test_comparisons.py(12, 4): ✅ pass - assert(298)
+test_comparisons.py(13, 4): ✅ pass - assert(313)
+test_comparisons.py(14, 11): ✅ pass - Check PGt exception
+test_comparisons.py(14, 4): ✅ pass - assert_assert(328)_calls_Any_to_bool_0
+test_comparisons.py(14, 4): ✅ pass - greater than implemented incorrectly
+test_comparisons.py(15, 11): ✅ pass - Check PLt exception
+test_comparisons.py(15, 4): ✅ pass - assert_assert(385)_calls_Any_to_bool_0
+test_comparisons.py(15, 4): ✅ pass - less than implemented incorrectly
+test_comparisons.py(16, 11): ✅ pass - Check PGe exception
+test_comparisons.py(16, 4): ✅ pass - assert_assert(439)_calls_Any_to_bool_0
+test_comparisons.py(16, 4): ✅ pass - greater than or equal implemented incorrectly
+test_comparisons.py(17, 11): ✅ pass - Check PLe exception
+test_comparisons.py(17, 4): ✅ pass - assert_assert(506)_calls_Any_to_bool_0
+test_comparisons.py(17, 4): ✅ pass - less than or equal implemented incorrectly
+test_comparisons.py(19, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
+DETAIL: 23 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

@@ -31,7 +31,7 @@ private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 private def absMulti' (n: Nat) (body: LExpr TestParams.mono) : LExpr TestParams.mono :=
-  List.foldr (fun _ e => .abs () .none e) body (List.range n)
+  List.foldr (fun _ e => .abs () "" .none e) body (List.range n)
 
 /-
 We write the tests as pattern matches, even though we use eliminators
@@ -117,9 +117,9 @@ fst (snd ("a", (1, "b"))) ==> 1
 
 def tupTy : LDatatype Unit := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")], testerName := "Tup$isProd"}], constrs_ne := rfl}
 
-def fst (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () .none (.abs () .none (.bvar () 1))]
+def fst (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () "" .none (.abs () "" .none (.bvar () 1))]
 
-def snd (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () .none (.abs () .none (.bvar () 0))]
+def snd (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () "" .none (.abs () "" .none (.bvar () 0))]
 
 def prod (e1 e2: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () ("Prod" : TestParams.Identifier) .none).mkApp () [e1, e2]
 
@@ -127,7 +127,7 @@ def prod (e1 e2: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () 
 info: Annotated expression:
 ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
  ((~Prod : (arrow int (arrow string (Tup int string)))) #3 #a)
- (λ (λ %1)))
+ (λ (bvar:int) (λ (bvar:string) %1)))
 
 ---
 info: #3
@@ -140,7 +140,7 @@ info: #3
 info: Annotated expression:
 ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string string)) string)))
  ((~Prod : (arrow int (arrow string (Tup int string)))) #3 #a)
- (λ (λ %0)))
+ (λ (bvar:int) (λ (bvar:string) %0)))
 
 ---
 info: #a
@@ -157,8 +157,8 @@ info: Annotated expression:
   ((~Prod : (arrow string (arrow (Tup int string) (Tup string (Tup int string)))))
    #a
    ((~Prod : (arrow int (arrow string (Tup int string)))) #1 #b))
-  (λ (λ %0)))
- (λ (λ %1)))
+  (λ (bvar:string) (λ (bvar:(Tup int string)) %0)))
+ (λ (bvar:int) (λ (bvar:string) %1)))
 
 ---
 info: #1
@@ -194,14 +194,14 @@ info: Annotated expression:
 ((~List$Elim : (arrow (List $__ty5) (arrow int (arrow (arrow $__ty5 (arrow (List $__ty5) (arrow int int))) int))))
  (~Nil : (List $__ty5))
  #1
- (λ (λ (λ #1))))
+ (λ (bvar:$__ty5) (λ (bvar:(List $__ty5)) (λ (bvar:int) #1))))
 
 ---
 info: #1
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [nil, (intConst () 1), .abs () .none (.abs () .none (.abs () .none (intConst () 1)))])
+  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [nil, (intConst () 1), .abs () "" .none (.abs () "" .none (.abs () "" .none (intConst () 1)))])
 
 -- Test: elim(cons 1 nil, 0, fun x y => x) -> (fun x y => x) 1 nil
 
@@ -212,14 +212,14 @@ info: Annotated expression:
 ((~List$Elim : (arrow (List int) (arrow int (arrow (arrow int (arrow (List int) (arrow int int))) int))))
  ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int)))
  #0
- (λ (λ (λ %2))))
+ (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:int) %2))))
 
 ---
 info: #2
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [listExpr [intConst () 2], intConst () 0, .abs () .none (.abs () .none (.abs () .none (bvar () 2)))])
+  typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [listExpr [intConst () 2], intConst () 0, .abs () "" .none (.abs () "" .none (.abs () "" .none (bvar () 2)))])
 
 -- Test testers (isNil and isCons)
 
@@ -284,7 +284,7 @@ info: ((~isCons : (arrow (List int) bool)) (~l : (List int)))
 -/
 #guard_msgs in
 #eval format $ do
-  let f ← ((Factory.default : @Factory TestParams).addFactoryFunc ex_list)
+  let f ← ((Factory.default : Factory TestParams).tryPush ex_list)
   (typeCheckAndPartialEval (T:=TestParams) #[[listTy]] f
   ((LExpr.op () ("isCons" : TestParams.Identifier) (some (LMonoTy.arrow (.tcons "List" [.int]) .bool))).mkApp () [.op () "l" .none]))
 
@@ -351,14 +351,16 @@ info: Annotated expression:
    ((~Prod : (arrow int (arrow string (Tup int string)))) #4 #b)
    (~Nil : (List (Tup int string)))))
  #0
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int)))
-     ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int))) %2 (λ (λ %1)))
+ (λ (bvar:(Tup int string)) (λ (bvar:(List (Tup int string))) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+     ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
+      %2
+      (λ (bvar:int) (λ (bvar:string) %1)))
      ((~List$Elim : (arrow (List (Tup int string)) (arrow int (arrow (arrow (Tup int string) (arrow (List (Tup int string)) (arrow int int))) int))))
       %1
       #1
-      (λ (λ (λ ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
+      (λ (bvar:(Tup int string)) (λ (bvar:(List (Tup int string))) (λ (bvar:int) ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
           %2
-          (λ (λ %1))))))))))))
+          (λ (bvar:int) (λ (bvar:string) %1))))))))))))
 
 ---
 info: #7
@@ -369,10 +371,10 @@ info: #7
     ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp ()
       [listExpr [(prod (intConst () 3) (strConst () "a")), (prod (intConst () 4) (strConst () "b"))],
       intConst () 0,
-      .abs () .none (.abs () .none (.abs () .none
+      .abs () "" .none (.abs () "" .none (.abs () "" .none
         (addOp (fst (.bvar () 2))
           ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp ()
-            [.bvar () 1, intConst () 1, .abs () .none (.abs () .none (.abs () .none (fst (.bvar () 2))))]))))])
+            [.bvar () 1, intConst () 1, .abs () "" .none (.abs () "" .none (.abs () "" .none (fst (.bvar () 2))))]))))])
 
 -- Recursive tests
 
@@ -390,7 +392,7 @@ info: Annotated expression:
    #b
    ((~Cons : (arrow string (arrow (List string) (List string)))) #c (~Nil : (List string)))))
  #0
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
+ (λ (bvar:string) (λ (bvar:(List string)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
 
 ---
 info: #3
@@ -433,7 +435,7 @@ info: Annotated expression:
                #13
                ((~Cons : (arrow int (arrow (List int) (List int)))) #14 (~Nil : (List int)))))))))))))))))
  #0
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
+ (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
 
 ---
 info: #15
@@ -449,7 +451,7 @@ l₁ ++ l₂ := (@List$Elim (List α → List α) l₁ (fun x => x) (fun x xs re
 -/
 
 def append (l1 l2: LExpr TestParams.mono) : LExpr TestParams.mono :=
-  .app () ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [l1, .abs () .none (.bvar () 0), absMulti' 3 (.abs () .none (cons (.bvar () 3) (.app () (.bvar () 1) (.bvar () 0))))]) l2
+  .app () ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [l1, .abs () "" .none (.bvar () 0), absMulti' 3 (.abs () "" .none (cons (.bvar () 3) (.app () (.bvar () 1) (.bvar () 0))))]) l2
 
 def list1 :LExpr TestParams.mono := listExpr [intConst () 2, intConst () 4, intConst () 6]
 def list2 :LExpr TestParams.mono := listExpr [intConst () 1, intConst () 3, intConst () 5]
@@ -464,8 +466,10 @@ info: Annotated expression:
   ((~Cons : (arrow int (arrow (List int) (List int))))
    #4
    ((~Cons : (arrow int (arrow (List int) (List int)))) #6 (~Nil : (List int)))))
- (λ %0)
- (λ (λ (λ (λ ((~Cons : (arrow int (arrow (List int) (List int)))) %3 (%1 %0))))))
+ (λ (bvar:(List int)) %0)
+ (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:(arrow (List int) (List int))) (λ (bvar:(List int)) ((~Cons : (arrow int (arrow (List int) (List int))))
+      %3
+      (%1 %0))))))
  ((~Cons : (arrow int (arrow (List int) (List int))))
   #1
   ((~Cons : (arrow int (arrow (List int) (List int))))
@@ -558,12 +562,14 @@ info: Annotated expression:
      (~Leaf : (binTree int))
      (~Leaf : (binTree int))))))
  (~Nil : (List int))
- (λ (λ (λ (λ (λ ((~Cons : (arrow int (arrow (List int) (List int))))
+ (λ (bvar:int) (λ (bvar:(binTree int)) (λ (bvar:(binTree int)) (λ (bvar:(List int)) (λ (bvar:(List int)) ((~Cons : (arrow int (arrow (List int) (List int))))
        %4
        ((~List$Elim : (arrow (List int) (arrow (arrow (List int) (List int)) (arrow (arrow int (arrow (List int) (arrow (arrow (List int) (List int)) (arrow (List int) (List int))))) (arrow (List int) (List int))))))
         %1
-        (λ %0)
-        (λ (λ (λ (λ ((~Cons : (arrow int (arrow (List int) (List int)))) %3 (%1 %0))))))
+        (λ (bvar:(List int)) %0)
+        (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:(arrow (List int) (List int))) (λ (bvar:(List int)) ((~Cons : (arrow int (arrow (List int) (List int))))
+             %3
+             (%1 %0))))))
         %0))))))))
 
 ---
@@ -609,26 +615,26 @@ def treeTy : LDatatype Unit := {name := "tree", typeArgs := ["a"], constrs := [l
 def node (f: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () ("Node" : TestParams.Identifier) .none).mkApp () [f]
 def leaf (x: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () ("Leaf" : TestParams.Identifier) .none).mkApp () [x]
 
-def tree1 : LExpr TestParams.mono := node (.abs () .none (node (.abs () .none
+def tree1 : LExpr TestParams.mono := node (.abs () "" .none (node (.abs () "" .none
   (.ite () (.eq () (addOp (.bvar () 1) (.bvar () 0)) (intConst () 0))
-    (node (.abs () .none (leaf (intConst () 3))))
+    (node (.abs () "" .none (leaf (intConst () 3))))
     (leaf (intConst () 4))
   ))))
 
 def height (n: Nat) (t: LExpr TestParams.mono) : LExpr TestParams.mono :=
-  (LExpr.op () ("tree$Elim" : TestParams.Identifier) .none).mkApp () [t, .abs () .none (intConst () 0), absMulti' 2 (addOp (intConst () 1) (.app () (.bvar () 0) (intConst () n)))]
+  (LExpr.op () ("tree$Elim" : TestParams.Identifier) .none).mkApp () [t, .abs () "" .none (intConst () 0), absMulti' 2 (addOp (intConst () 1) (.app () (.bvar () 0) (intConst () n)))]
 
 /--
 info: Annotated expression:
 ((~tree$Elim : (arrow (tree int) (arrow (arrow int int) (arrow (arrow (arrow int (tree int)) (arrow (arrow int int) int)) int))))
  ((~Node : (arrow (arrow int (tree int)) (tree int)))
-  (λ ((~Node : (arrow (arrow int (tree int)) (tree int)))
-    (λ (if (((~Int.Add : (arrow int (arrow int int)))
+  (λ (bvar:int) ((~Node : (arrow (arrow int (tree int)) (tree int)))
+    (λ (bvar:int) (if (((~Int.Add : (arrow int (arrow int int)))
         %1
         %0) == #0) then ((~Node : (arrow (arrow int (tree int)) (tree int)))
-       (λ ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
- (λ #0)
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #0)))))
+       (λ (bvar:int) ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
+ (λ (bvar:int) #0)
+ (λ (bvar:(arrow int (tree int))) (λ (bvar:(arrow int int)) ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #0)))))
 
 ---
 info: #3
@@ -641,13 +647,13 @@ info: #3
 info: Annotated expression:
 ((~tree$Elim : (arrow (tree int) (arrow (arrow int int) (arrow (arrow (arrow int (tree int)) (arrow (arrow int int) int)) int))))
  ((~Node : (arrow (arrow int (tree int)) (tree int)))
-  (λ ((~Node : (arrow (arrow int (tree int)) (tree int)))
-    (λ (if (((~Int.Add : (arrow int (arrow int int)))
+  (λ (bvar:int) ((~Node : (arrow (arrow int (tree int)) (tree int)))
+    (λ (bvar:int) (if (((~Int.Add : (arrow int (arrow int int)))
         %1
         %0) == #0) then ((~Node : (arrow (arrow int (tree int)) (tree int)))
-       (λ ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
- (λ #0)
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #1)))))
+       (λ (bvar:int) ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
+ (λ (bvar:int) #0)
+ (λ (bvar:(arrow int (tree int))) (λ (bvar:(arrow int int)) ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #1)))))
 
 ---
 info: #2
@@ -928,12 +934,12 @@ treeSize = 5
 -/
 
 def nodeCaseFn' : LExpr TestParams.mono :=
-  .abs () .none (.abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))))
+  .abs () "" .none (.abs () "" .none (.abs () "" .none (addOp (intConst () 1) (.bvar () 0))))
 
 def fnilCaseFn' : LExpr TestParams.mono := intConst () 0
 
 def fconsCaseFn' : LExpr TestParams.mono :=
-  .abs () .none (.abs () .none (.abs () .none (.abs () .none (addOp (.bvar () 1) (.bvar () 0)))))
+  .abs () "" .none (.abs () "" .none (.abs () "" .none (.abs () "" .none (addOp (.bvar () 1) (.bvar () 0)))))
 
 def treeSize' (t : LExpr TestParams.mono) : LExpr TestParams.mono :=
   (LExpr.op () ("RoseTree$Elim" : TestParams.Identifier) .none).mkApp () [t, nodeCaseFn', fnilCaseFn', fconsCaseFn']
@@ -949,9 +955,11 @@ def roseTree5 : LExpr TestParams.mono :=
 info: Annotated expression:
 ((~RoseTree$Elim : (arrow (RoseTree int) (arrow (arrow int (arrow (Forest int) (arrow int int))) (arrow int (arrow (arrow (RoseTree int) (arrow (Forest int) (arrow int (arrow int int)))) int)))))
  ((~Node : (arrow int (arrow (Forest int) (RoseTree int)))) #1 (~FNil : (Forest int)))
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
+ (λ (bvar:int) (λ (bvar:(Forest int)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
  #0
- (λ (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) %1 %0))))))
+ (λ (bvar:(RoseTree int)) (λ (bvar:(Forest int)) (λ (bvar:int) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+      %1
+      %0))))))
 
 ---
 info: #1
@@ -978,9 +986,11 @@ info: Annotated expression:
     ((~FCons : (arrow (RoseTree int) (arrow (Forest int) (Forest int))))
      ((~Node : (arrow int (arrow (Forest int) (RoseTree int)))) #4 (~FNil : (Forest int)))
      (~FNil : (Forest int))))))
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
+ (λ (bvar:int) (λ (bvar:(Forest int)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
  #0
- (λ (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) %1 %0))))))
+ (λ (bvar:(RoseTree int)) (λ (bvar:(Forest int)) (λ (bvar:int) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+      %1
+      %0))))))
 
 ---
 info: #5
@@ -1089,9 +1099,9 @@ def threeWayTree : LExpr TestParams.mono :=
 def treeSizeA (t : LExpr TestParams.mono) : LExpr TestParams.mono :=
   (LExpr.op () ("TyA$Elim" : TestParams.Identifier) .none).mkApp ()
     [t,
-     .abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))),  -- MkA: 1 + rec(b)
-     .abs () .none (.abs () .none (addOp (intConst () 1) (.bvar () 0))),  -- MkB: 1 + rec(c)
-     .abs () .none (intConst () 1),                                       -- LeafC: 1
+     .abs () "" .none (.abs () "" .none (addOp (intConst () 1) (.bvar () 0))),  -- MkA: 1 + rec(b)
+     .abs () "" .none (.abs () "" .none (addOp (intConst () 1) (.bvar () 0))),  -- MkB: 1 + rec(c)
+     .abs () "" .none (intConst () 1),                                       -- LeafC: 1
      absMulti' 4 (addOp (intConst () 1) (addOp (.bvar () 1) (.bvar () 0)))]  -- NodeC: 1 + rec(l) + rec(r)
 
 /--
@@ -1106,10 +1116,12 @@ info: Annotated expression:
       ((~NodeC : (arrow TyA (arrow TyA TyC)))
        ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #2)))
        ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #3)))))))))
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
- (λ #1)
- (λ (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 ((~Int.Add : (arrow int (arrow int int))) %1 %0)))))))
+ (λ (bvar:TyB) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
+ (λ (bvar:TyC) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
+ (λ (bvar:int) #1)
+ (λ (bvar:TyA) (λ (bvar:TyA) (λ (bvar:int) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+      #1
+      ((~Int.Add : (arrow int (arrow int int))) %1 %0)))))))
 
 ---
 info: #15

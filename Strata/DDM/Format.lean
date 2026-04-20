@@ -19,15 +19,23 @@ namespace Strata
 /--
 Check if a character is valid for starting a regular identifier.
 Regular identifiers must start with a letter or underscore.
+
+NOTE: When updating this function, you will want to consider updating Strata/DDM/Parser.lean as well.
 -/
 private def isIdBegin (c : Char) : Bool :=
-  c.isAlpha || c == '_'
+  c.isAlpha || c == '_' || c == '$'
 
 /--
 Check if a character is valid for continuing a regular identifier.
+Includes @ and $ which are valid in SMT-LIB 2.6 simple symbols and
+used by the encoder for disambiguated names (e.g. x@1) and generated
+names (e.g. $__bv0).
+Note: `'` (apostrophe) is intentionally excluded. Although SMT-LIB 2.6 allows
+it in simple symbols, both cvc5 and Z3 reject it as an unquoted character.
+Names containing `'` (e.g. Lean's `v'`) will be pipe-quoted instead.
 -/
 private def isIdContinue (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+  c.isAlphanum || c == '_' || c == '.' || c == '?' || c == '!' || c == '@' || c == '$'
 
 /--
 Check if a string needs pipe delimiters when formatted as an identifier.
@@ -56,15 +64,14 @@ Strips Lean's «» notation if present.
 Follows SMT-LIB 2.6 specification for quoted symbols.
 -/
 private def formatIdent (s : String) : Format :=
-  -- Strip Lean's «» notation if present
-  let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropEnd 1 |>.toString
-           else
-             s
   if needsPipeDelimiters s then
     Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
     Format.text s
+
+/-- Quote an identifier string for SMT-LIB, adding pipe delimiters if needed. -/
+def quoteIdent (s : String) : String :=
+  if needsPipeDelimiters s then "|" ++ escapePipeIdent s ++ "|" else s
 
 structure PrecFormat where
   format : Format
@@ -85,6 +92,8 @@ Options to control parenthesis
 structure FormatOptions where
   /-- Always add parenthesis when feasible. -/
   alwaysParen : Bool := false
+  /-- Use SMT-LIB 2.7 string escaping (`""` for quotes) instead of C-style (`\"`). -/
+  smtStringEscaping : Bool := false
 
 /--
 A format context provides callbacks and information needed to
@@ -288,7 +297,6 @@ private protected def mformat : PreType → StrataFormat
 | .ident _ tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
 | .bvar _ idx => .bvar idx
 | .tvar _ name => mf!"{name}"
-| .fvar _ idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
 | .arrow _ a r => mf!"{a.mformat} -> {r.mformat}"
 | .funMacro _ idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
 
@@ -367,7 +375,10 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
         let bindings := op.argDecls
         let .isTrue bsize := decEq args.size bindings.size
               | return panic! "Mismatch betweeen binding and arg size"
-        let argResults := formatArguments (← read) (← get) bindings ⟨args, bsize⟩
+        let argResults ← do
+              match formatArguments (← read) (← get) bindings ⟨args, bsize⟩ with
+              | .ok r => pure r
+              | .error e => return panic! e
         pure <| ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
       | none => ppArgs f.fullName
   | .app _ f a => f.mformatM (rargs.push a)
@@ -380,7 +391,10 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .ident _ x => return .atom (formatIdent x)
 | .num _ x => pformat x
 | .decimal _ v => pformat v
-| .strlit _ s => return .atom (.text <| escapeStringLit s)
+| .strlit _ s => do
+    let ctx ← read
+    let esc := if ctx.opts.smtStringEscaping then escapeSMTStringLit s else escapeStringLit s
+    return .atom (.text esc)
 | .bytes _ v => return .atom <| .text <| ByteArray.escapeBytes v
 | .option _ ma =>
   match ma with
@@ -415,6 +429,13 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
       let f i q s := return s ++ "\n" ++ (← entries[i].mformatM).format
       let a := (← entries[0].mformatM).format
       .atom <$> entries.size.foldlM f (start := 1) a
+  | .semicolon =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ "; " ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
@@ -427,20 +448,20 @@ private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM Prec
     let r ← rargs.foldrM (init := init) (fun a r => return f!"{r},{(←a.mformatM).format})")
     pure <| .atom f!"{r})"
 
-private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector (ArgF α) argDecls.size) :=
+private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector (ArgF α) argDecls.size) : Except String (Array (PrecFormat × FormatState)) :=
   let rec aux (a : Array (PrecFormat × FormatState)) :=
         let lvl := a.size
-        if h : lvl < argDecls.size then
-          let s :=
-                match argDecls.argScopeLevel ⟨lvl, h⟩ with
+        if h : lvl < argDecls.size then do
+          let s ← do
+                match ← argDecls.argScopeLevel ⟨lvl, h⟩ with
                 | none =>
-                  initState
+                  pure initState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
-                  a[alvl].snd
+                  pure a[alvl].snd
           aux (a.push (args[lvl].mformatM c s))
         else
-          a
+          .ok a
   aux (.mkEmpty argDecls.size)
 
 private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecFormat := do
@@ -450,15 +471,19 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
     let .isTrue bsize := decEq op.args.size bindings.size
           | return panic! "Mismatch betweeen binding and arg size"
     let args : Vector _ bindings.size := ⟨op.args, bsize⟩
-    let argResults := formatArguments (← read) (← get) bindings args
+    let argResults ← do
+          match formatArguments (← read) (← get) bindings args with
+          | .ok r => pure r
+          | .error e => return panic! e
     let fmt := ppOp (← read).opts decl.syntaxDef (Prod.fst <$> argResults)
     match decl.metadata.resultLevel bindings.size with
-    | some idx =>
+    | .ok (some idx) =>
       if h : idx.val < argResults.size then
         set argResults[idx.val].snd
       else
         panic! "result scope index out of bounds"
-    | none => pure ()
+    | .ok none => pure ()
+    | .error e => return panic! e
     for b in decl.newBindings do
       match args[b.nameIndex.toLevel] with
       | .ident _ e =>

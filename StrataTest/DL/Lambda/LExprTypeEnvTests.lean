@@ -16,9 +16,9 @@ open LTy.Syntax
 -- are instantiated appropriately and the global substitution is updated.
 -- See `resolveAliases` for a version that also de-aliases `BarAlias`.
 /--
-info: ok: Ans: (Foo $__ty0 (BarAlias $__ty0 $__ty0))
+info: ok: Ans: (Foo p (BarAlias p p))
 Subst:
-[(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
+
 -/
 #guard_msgs in
 #eval do let (ans, Env) ← LMonoTy.aliasDef?
@@ -35,7 +35,7 @@ Subst:
           return (format f!"Ans: {ans}\n\
                             Subst:\n{Env.stateSubstInfo.subst}")
 
-/-- info: ok: (Foo $__ty0 (BarAlias q $__ty0)) -/
+/-- info: ok: (Foo p (BarAlias q p)) -/
 #guard_msgs in
 #eval do let (ans, _Env) ← LMonoTy.aliasDef?
           mty[FooAlias %p (BarAlias %q %p)]
@@ -90,9 +90,9 @@ Subst:
          return format ans
 
 /--
-info: ok: De-aliased type: (Foo $__ty2 (Bar $__ty2 $__ty2))
+info: ok: De-aliased type: (Foo p (Bar p p))
 Subst:
-[(p, $__ty2) ($__ty0, $__ty2) ($__ty1, $__ty2) ($__ty3, (Bar $__ty2 $__ty2))]
+
 -/
 #guard_msgs in
 #eval do let (ty, Env) ← LMonoTy.resolveAliases
@@ -122,37 +122,38 @@ Subst:
 /-- info: false -/
 #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
-                            { @LContext.default ⟨Unit, String⟩ with
+                            { LContext.default (T := ⟨Unit, String⟩) with
                                 knownTypes := makeKnownTypes [LTy.toKnownType! t[∀a. myTy %a],
                                                LTy.toKnownType! t[int]] }
 
 abbrev TTyDefault: LExprParams := {Metadata := Unit, IDMeta := TyIdentifier}
 /-- info: false -/
 #guard_msgs in
-#eval isInstanceOfKnownType mty[Foo] (@LContext.default TTyDefault)
+#eval isInstanceOfKnownType mty[Foo] (LContext.default (T := TTyDefault))
 
 /--
 info: error: Type (arrow int Foo) is not an instance of a previously registered type!
 Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
 -/
 #guard_msgs in
-#eval do let ans ← t[int → Foo].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → Foo].instantiateWithCheck (LContext.default (T := TTyDefault)) (@TEnv.default TyIdentifier)
          return format ans
 
 /-- info: ok: (arrow int bool) -/
 #guard_msgs in
-#eval do let ans ← t[int → bool].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → bool].instantiateWithCheck (LContext.default (T := TTyDefault)) (@TEnv.default TyIdentifier)
          return format ans.fst
 
-/-- info: (arrow $__ty0 b) -/
+/-- info: ok: (arrow $__ty0 b) -/
 #guard_msgs in
-#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)).fst
+#eval do let ans ← LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)
+         return format ans.fst
 
 /--
 info: ok: (x : $__ty0) (y : int) (z : $__ty0)
 -/
 #guard_msgs in
-#eval do let ans ← (LMonoTySignature.instantiate (@LContext.default {Metadata := Unit, IDMeta := Unit})
+#eval do let ans ← (LMonoTySignature.instantiate (LContext.default (T := {Metadata := Unit, IDMeta := Unit}))
                     ((@TEnv.default Unit).updateContext
                                           { aliases := [{ typeArgs := ["a", "b"],
                                                           name := "myInt",

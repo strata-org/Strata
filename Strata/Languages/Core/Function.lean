@@ -3,31 +3,37 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
-
-import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Statement
 
 ---------------------------------------------------------------------
 
 namespace Core
+public section
 
 open Std (ToFormat Format format)
 open Lambda
 
 /-! # Strata Core Functions -/
 
+@[expose]
 abbrev Function := Lambda.LFunc CoreLParams
+
+instance : Inhabited Function where
+  default := { name := default, inputs := [], output := default }
 
 -- Type class instances to enable type class resolution for CoreLParams.Identifier
 instance : DecidableEq CoreLParams.IDMeta :=
-  show DecidableEq Visibility from inferInstance
+  show DecidableEq Unit from inferInstance
 
 instance : ToFormat CoreLParams.IDMeta :=
-  show ToFormat Visibility from inferInstance
+  show ToFormat Unit from inferInstance
 
 /-- Convert a `PureFunc Expression` (with polytypes) to a `Function` (with monotypes).
     Returns an error if any type is not a monotype. -/
+@[expose]
 def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format Function := do
   let inputs ← decl.inputs.mapM fun (id, ty) =>
     match Lambda.LTy.toMonoType? ty with
@@ -51,4 +57,5 @@ def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format 
 
 ---------------------------------------------------------------------
 
+end
 end Core

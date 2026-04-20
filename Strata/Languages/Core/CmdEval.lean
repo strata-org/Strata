@@ -3,14 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Core.Expressions
+public import Strata.Languages.Core.Env
+public import Strata.DL.Imperative.EvalContext
+public import Strata.DL.Imperative.CmdEval
 
-
-import Strata.Languages.Core.OldExpressions
-import Strata.Languages.Core.Expressions
-import Strata.Languages.Core.Env
-import Strata.DL.Imperative.EvalContext
-import Strata.DL.Imperative.CmdEval
+public section
 
 namespace Core
 open Lambda Imperative
@@ -47,8 +47,9 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
   | none => none
 
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
-  let substMap := oldVarSubst E.substMap E
-  let e' := OldExpressions.substsOldExpr substMap e
+  -- Substitute "old g" variables with their pre-state values.
+  -- substMap contains only "old g" → pre-state value entries (set by ProcedureEval).
+  let e := if E.substMap.isEmpty then e else Lambda.LExpr.substFvars e E.substMap
   match c with
   | .init _ _ eOpt _ =>
     -- The type checker only allows free variables to appear in `init`
@@ -56,12 +57,12 @@ def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression
     -- command.
     -- See `CmdType.lean` for details.
     match eOpt with
-    | some _ =>
+    | .det _ =>
       let freeVars := e.freeVars
       let E' := E.insertFreeVarsInOldestScope freeVars
-      (e', E')
-    | none => (e', E)
-  | _ => (e', E)
+      (e, E')
+    | .nondet => (e, E)
+  | _ => (e, E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
   if h : ty.isMonoType then
@@ -151,4 +152,7 @@ instance : ToFormat (Cmds Expression × Env) where
 
 end CmdEval
 ---------------------------------------------------------------------
+
 end Core
+
+end -- public section

@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Factory
-import Strata.DL.Lambda.Factory
+public import Strata.Languages.Core.Factory
+public import Strata.DL.Lambda.Factory
 import Strata.DL.Util.Func
-import Strata.DL.Lambda.IntBoolFactory
+public import Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryWF
 
 /-! # Factory Wellformedness Proof
 
@@ -15,17 +20,7 @@ import Strata.DL.Lambda.IntBoolFactory
 -/
 
 namespace Core
-open Lambda
 
-theorem Factory_wf :
-    FactoryWF Factory := by
-  constructor
-  · -- name_nodup: follows from WFFactory.name_nodup
-    simp only [Factory, WFLFactory.toFactory, Array.toList_map, List.map_map]
-    exact WFFactory.name_nodup
-  · intro lf hlf
-    simp only [Factory, WFLFactory.toFactory] at hlf
-    rw [Array.mem_map] at hlf
-    obtain ⟨wflf, _, rfl⟩ := hlf
-    exact wflf.wf
+public theorem Factory_wf : Lambda.FactoryWF Factory := by simp [Factory]
+
 end Core

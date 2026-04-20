@@ -3,16 +3,31 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
-import Strata.Languages.Core.OldExpressions
+public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 
 /-! # Call Elimination Transformation -/
+
+public section
 
 namespace Core
 namespace CallElim
 
 open Core.Transform
+
+/-- Statistics keys tracked by the call elimination transformation. -/
+inductive Stats where
+  | visitedCalls
+
+derive_prefixed_toString Stats "CallElim"
+
+/-- Label prefix for call-elimination assert statements. -/
+def callElimAssertPrefix : String := "callElimAssert_"
+
+/-- Label prefix for call-elimination assume statements. -/
+def callElimAssumePrefix : String := "callElimAssume_"
 
 /--
 The main call elimination transformation algorithm on a single command.
@@ -22,20 +37,18 @@ def callElimCmd (cmd: Command)
   : CoreTransformM (Option (List Statement)) := do
     match cmd with
       | .call lhs procName args md =>
+        incrementStat s!"{Stats.visitedCalls}"
 
         let some p := (← get).currentProgram | throw "program not available"
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
-        let postconditions := OldExpressions.normalizeOldExprs $ proc.spec.postconditions.values.map Procedure.Check.expr
-
-        -- extract old variables in all post conditions
-        let oldVars := postconditions.flatMap OldExpressions.extractOldExprVars
-
-        let oldVars := List.eraseDups oldVars
-
-        -- filter out non-global variables
-        let oldVars := oldVars.filter (isGlobalVar p)
+        -- For each global in modifies, generate a fresh variable to hold its pre-call value,
+        -- but only if "old g" is actually referenced in the postconditions.
+        let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
+        let oldVars := proc.spec.modifies.filter fun g =>
+          isGlobalVar p g &&
+          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
         let argTrips
@@ -47,22 +60,42 @@ def callElimCmd (cmd: Command)
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOutTrips
 
-        -- Monadic operation, generate var mapping for each unique oldVars.
+        -- Generate fresh variables for "old g" (one per modified global).
+        -- Look up types using the original global names, but substitute "old g" in postconditions.
         let genOldTrips := genOldExprIdentsTrip p oldVars
-        let oldTrips
+        let oldTripsRaw
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOldTrips
+        -- Map: ((fresh, ty), "old g") for substitution; init from original global g
+        let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
+        let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
+          ((fresh, ty), oldG)
 
-        -- initialize/declare the newly generated variables
+        -- initialize/declare the newly generated variables (init from original global value)
         let argInit := createInits argTrips md
         let outInit := createInitVars outTrips md
-        let oldInit := createInitVars oldTrips md
+        -- Initialize fresh vars from the current (pre-call) values of the original globals
+        let oldInit := createInitVars oldTripsRaw md
 
-        -- construct substitutions of old variables
-        let oldSubst := createOldVarsSubst oldTrips
+        -- Substitute "old g" in postconditions:
+        -- - For globals IN modifies: use the fresh snapshot variable.
+        -- - For globals NOT in modifies: old g == g at the call site (the callee
+        --   cannot modify them), so substitute old g directly with the current fvar.
+        let unmodifiedOldSubst : Map Expression.Ident Expression.Expr :=
+          p.decls.filterMap fun d => match d with
+            | .var name _ _ _ =>
+              let oldVar := CoreIdent.mkOld name.name
+              if !proc.spec.modifies.contains name &&
+                 postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
+                   (fun (id, _) => id == oldVar))
+              then some (oldVar, createFvar name)
+              else none
+            | _ => none
+        let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
 
-        -- only need to substitute post conditions.
-        let postconditions := OldExpressions.substsOldExprs oldSubst postconditions
+        -- Non-lifting substitution is safe here: values are fresh variables
+        let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
+          (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
         -- generate havoc for return variables, modified variables
         let havoc_ret := createHavocs lhs md
@@ -80,12 +113,13 @@ def callElimCmd (cmd: Command)
         let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
                         (arg_subst ++ ret_subst)
                         md
+                        callElimAssertPrefix
         -- generate assumes based on post-conditions, substituting procedure arguments and returns
         let assumes ← createAssumes
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
                         md
-
+                        callElimAssumePrefix
         -- Update cached CallGraph
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
@@ -103,10 +137,64 @@ def callElimCmd (cmd: Command)
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
       | _ => return .none
 
+/-- After call elimination, a procedure body may contain `havoc` statements for
+    globals from the callee's `modifies` clause. Update each procedure's own
+    `modifies` clause so that it includes every global variable that is now
+    modified in the body. This keeps the program well-formed with respect to
+    `checkModificationRights`. -/
+private def updateModifiesClauses (p : Program) : Program :=
+  let globalNames : List Expression.Ident :=
+    p.decls.filterMap fun d => match d with | .var name _ _ _ => some name | _ => none
+  let decls := p.decls.map fun d => match d with
+    | .proc proc md =>
+      let bodyModified := (Imperative.Block.modifiedVars proc.body).eraseDups
+      let newGlobals := bodyModified.filter fun v =>
+        globalNames.contains v && !proc.spec.modifies.contains v
+      if newGlobals.isEmpty then d
+      else .proc { proc with spec := { proc.spec with
+        modifies := proc.spec.modifies ++ newGlobals } } md
+    | other => other
+  { p with decls := decls }
+
 /-- Call Elimination for an entire program by walking through all procedure
-bodies -/
-def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
-  runProgram (targetProcList := .none) callElimCmd p
+bodies. After eliminating calls, updates each procedure's `modifies` clause
+to include globals that are now modified in the body. -/
+def callElim' (p : Program) : CoreTransformM (Bool × Program) := do
+  let (changed, p') ← runProgram (targetProcList := .none) callElimCmd p
+  if changed then
+    return (true, updateModifiesClauses p')
+  else
+    return (false, p')
 
 end CallElim
+
+/-- Call-elimination pipeline phase: the transform replaces procedure calls
+    with assert/havoc/assume sequences. If the obligation's path includes
+    labels from call elimination, the callee body was replaced by its
+    contract, which is an over-approximation. -/
+def callElimPipelinePhase : PipelinePhase where
+  transform := CallElim.callElim'
+  phase.name := "CallElim"
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
+  phase.getAssertDescription label :=
+    if label.startsWith CallElim.callElimAssertPrefix then
+      let stripped := label.drop CallElim.callElimAssertPrefix.length |>.toString
+      let parts := stripped.splitOn "_"
+      let originalLabel := if parts.length > 1 then
+        "_".intercalate (parts.dropLast)
+      else stripped
+      if originalLabel == "requires" || originalLabel.startsWith "requires_" then
+        some "precondition"
+      else
+        some s!"precondition '{originalLabel}'"
+    else none
+
 end Core
+
+-- NB: workaround for the fact that Core is both a module and a dialect.
+def coreCallElimCmd := Core.CallElim.callElimCmd
+
+end -- public section
