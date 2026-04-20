@@ -294,6 +294,7 @@ private def typeDefinitionToOp : TypeDefinition → Strata.Operation
   | .Composite ct => compositeToOp ct
   | .Constrained ct => constrainedTypeToOp ct
   | .Datatype dt => datatypeToOp dt
+  | .Alias _ => { ann := sr, name := { dialect := "Laurel", name := "typeAlias" }, args := #[] }
 
 private def procedureCommandOp (proc : Procedure) : Strata.Operation :=
   { ann := sr
@@ -350,6 +351,7 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
   | .Datatype ty => formatDatatypeDefinition ty
+  | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
 
 def formatConstant (c : Constant) : Format :=
   "const " ++ format c.name ++ ": " ++ formatHighType c.type ++

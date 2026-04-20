@@ -2226,6 +2226,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | .Composite _ => s
       | .Constrained ct => s.insert ct.name.text
       | .Datatype dt => s.insert dt.name.text
+      | .Alias ta => s.insert ta.name.text
   compositeTypes :=
     prog.types.foldl (init := {}) fun s td =>
       match td with
@@ -2402,6 +2403,19 @@ def pythonToLaurel' (info : PreludeInfo)
       procedures := procedures.push proc.fst
     | .ClassDef _ _ _ _ _ _ _ =>
       pure ()  -- Already processed in first pass
+    | .Assign _ targets value _ =>
+      -- Detect type alias pattern: `MyInt = int` (single Name target, Name RHS that is a known type)
+      if targets.val.size == 1 then
+        match targets.val[0]!, value with
+        | .Name _ lhsName _, .Name _ rhsName _ =>
+          if isKnownType ctx rhsName.val then
+            let targetTy ← translateType ctx rhsName.val
+            compositeTypes := compositeTypes.push (.Alias { name := mkId lhsName.val, target := targetTy })
+          else
+            otherStmts := otherStmts.push stmt
+        | _, _ => otherStmts := otherStmts.push stmt
+      else
+        otherStmts := otherStmts.push stmt
     | _ =>
       otherStmts := otherStmts.push stmt
 

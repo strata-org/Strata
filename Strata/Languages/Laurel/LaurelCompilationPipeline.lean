@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
 
 /-!
@@ -70,6 +71,10 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
   emit "Resolve" program
+
+  let program := typeAliasElim model program
+  emit "TypeAliasElim" program
+
   let diamondErrors := validateDiamondFieldAccesses model program
 
   let (program, nonCompositeDiags) := filterNonCompositeModifies model program
