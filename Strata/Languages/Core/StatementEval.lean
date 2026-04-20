@@ -463,11 +463,13 @@ private def extractMatchingTrue (cond : Expression.Expr) :
 Given false-branch paths and true-branch paths, find pairs with matching
 head `splitConds` condition (same expression, opposite Bool). Returns
 `(merged_pairs, unmatched_trues, unmatched_falses)`.
+Accumulators are built via cons and reversed at the end.
 -/
 private def findCondPairs : List EnvWithNext → List EnvWithNext →
     List EnvWithNext → List EnvWithNext →
     List EnvWithNext × List EnvWithNext × List EnvWithNext
-  | [], unmatched_f, remaining_t, paired => (paired, remaining_t, unmatched_f)
+  | [], unmatched_f, remaining_t, paired =>
+    (paired.reverse, remaining_t, unmatched_f.reverse)
   | e_f :: rest_fs, unmatched_f, remaining_t, paired =>
     match e_f.splitConds.head? with
     | some (cond_f, _) =>
@@ -478,11 +480,11 @@ private def findCondPairs : List EnvWithNext → List EnvWithNext →
           env := merged_env,
           exitLabel := e_t.exitLabel,
           splitConds := e_t.splitConds.tail }
-        findCondPairs rest_fs unmatched_f remaining_t' (paired ++ [merged])
+        findCondPairs rest_fs unmatched_f remaining_t' (merged :: paired)
       | none =>
-        findCondPairs rest_fs (unmatched_f ++ [e_f]) remaining_t paired
+        findCondPairs rest_fs (e_f :: unmatched_f) remaining_t paired
     | none =>
-      findCondPairs rest_fs (unmatched_f ++ [e_f]) remaining_t paired
+      findCondPairs rest_fs (e_f :: unmatched_f) remaining_t paired
 
 /--
 Merge paths by matching condition-equality pairs from `splitConds`.
