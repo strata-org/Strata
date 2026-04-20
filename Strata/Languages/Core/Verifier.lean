@@ -1115,7 +1115,10 @@ def verify (program : Program)
           else .some (IrrelevantAxioms.Cache.build preEvalProgram))
   let oblProgram := oblProgram
   let allStats := pipelineStats
-  -- Build SMT encoding context by running full evaluation on the pre-eval program
+  -- Build SMT encoding context by running full evaluation on the pre-eval program.
+  -- This runs Program.eval a second time (the first is in symbolicEval), which
+  -- causes duplicate warnings (e.g. label clash). This is a known limitation
+  -- until the SMT encoder is decoupled from Program.eval.
   let smtEnv ← match Core.buildEvalEnv preEvalProgram moreFns with
     | .ok (E, _) =>
       match Program.eval E with

@@ -175,8 +175,26 @@ def buildSMTEnv (program : Program)
       validateCasesTypes funcs E.datatypes
       for func in funcs do E ← E.addFactoryFunc func
     | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
+    | .proc proc _ =>
+      -- Load local function declarations from procedure bodies
+      for stmt in proc.body.flatMap collectFuncDecls do
+        match E.exprEnv.addFactoryFunc stmt with
+        | .ok σ' => E := { E with exprEnv := σ' }
+        | .error _ => pure ()
     | _ => pure ()
   return E
+where
+  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
+    | .funcDecl decl _ => [{
+        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+        body := decl.body, attr := decl.attr,
+        concreteEval := decl.concreteEval, axioms := decl.axioms }]
+    | .block _ ss _ => ss.flatMap collectFuncDecls
+    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
+    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
+    | _ => []
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)
