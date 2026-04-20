@@ -154,54 +154,10 @@ theorem substK_denote
       let ⟨_, h_τ_b, h_tr_b, h_body_b⟩ := HasTypeA.quant_inv h_body
       let ⟨_, h_τ_s, h_tr_s, h_body_s⟩ := HasTypeA.quant_inv h_subst
       subst h_τ_b
-      cases qk with
-      | all =>
-        by_cases hall : ∀ x : TyDenote tcInterp vt qty',
-            (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal₁)
-              (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = true
-        · rw [denote_quant_all_true bvarVal₁ h_body_s h_subst hall]
-          symm
-          apply denote_quant_all_true
-          intros x
-          specialize ih_body (.cons x bvarVal₁) h_body_b h_body_s
-          simp at ih_body
-          rw[hall] at ih_body
-          exact ih_body.symm
-        · have ⟨w, hw⟩ := Classical.not_forall.mp hall
-          have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal₁)
-              (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = false :=
-            Bool.eq_false_iff.mpr hw
-          rw [denote_quant_all_false bvarVal₁ h_body_s h_subst w hwf]
-          symm
-          apply denote_quant_all_false _ h_body_b h_body w
-          specialize ih_body (.cons w bvarVal₁) h_body_b h_body_s
-          simp at ih_body
-          rw [hwf] at ih_body
-          exact ih_body.symm
-      | exist =>
-        by_cases hexist : ∃ x : TyDenote tcInterp vt qty',
-            (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal₁)
-              (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = true
-        · obtain ⟨w, hw⟩ := hexist
-          rw [denote_quant_exist_true bvarVal₁ h_body_s h_subst w hw]
-          symm
-          apply denote_quant_exist_true _ h_body_b h_body w
-          specialize ih_body (.cons w bvarVal₁) h_body_b h_body_s
-          simp at ih_body
-          rw [hw] at ih_body
-          exact ih_body.symm
-        · have hexist_f : ∀ x : TyDenote tcInterp vt qty',
-              (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal₁)
-                (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = false :=
-            fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
-          rw [denote_quant_exist_false bvarVal₁ h_body_s h_subst hexist_f]
-          symm
-          apply denote_quant_exist_false _ h_body_b h_body
-          intros x
-          specialize ih_body (.cons x bvarVal₁) h_body_b h_body_s
-          simp at ih_body
-          rw [hexist_f] at ih_body
-          exact ih_body.symm
+      exact denote_quant_congr h_body_s h_body_b h_subst h_body fun x => by
+        specialize ih_body (.cons x bvarVal₁) h_body_b h_body_s
+        simp at ih_body
+        exact ih_body
 
 /-- Bound-variable substitution commutes with denotation. -/
 theorem subst_denote
@@ -436,36 +392,7 @@ theorem liftBVars_denote
             (.cons x (HList.append bv₁ bv_outer)) body .bool h_body_o := by
         intro x
         exact ih_body h_body_o h_body_l (.cons x bv₁)
-      cases qk with
-      | all =>
-        by_cases hall : ∀ x : TyDenote tcInterp vt qty',
-            (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bv₁ (HList.append bv_insert bv_outer)))
-              (LExpr.liftBVars Δ_insert.length body (Δ₁.length + 1)) .bool h_body_l : Bool) = true
-        · rw [denote_quant_all_true _ h_body_l h_lifted hall]
-          symm; apply denote_quant_all_true; intros x
-          rw [← h_ih_body]; exact (hall x)
-        · have ⟨w, hw⟩ := Classical.not_forall.mp hall
-          have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w (HList.append bv₁ (HList.append bv_insert bv_outer)))
-              (LExpr.liftBVars Δ_insert.length body (Δ₁.length + 1)) .bool h_body_l : Bool) = false :=
-            Bool.eq_false_iff.mpr hw
-          rw [denote_quant_all_false _ h_body_l h_lifted w hwf]
-          symm; apply denote_quant_all_false _ h_body_o h_orig w
-          rw [← h_ih_body]; exact hwf
-      | exist =>
-        by_cases hexist : ∃ x : TyDenote tcInterp vt qty',
-            (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bv₁ (HList.append bv_insert bv_outer)))
-              (LExpr.liftBVars Δ_insert.length body (Δ₁.length + 1)) .bool h_body_l : Bool) = true
-        · obtain ⟨w, hw⟩ := hexist
-          rw [denote_quant_exist_true _ h_body_l h_lifted w hw]
-          symm; apply denote_quant_exist_true _ h_body_o h_orig w
-          rw [← h_ih_body]; exact hw
-        · have hexist_f : ∀ x : TyDenote tcInterp vt qty',
-              (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bv₁ (HList.append bv_insert bv_outer)))
-                (LExpr.liftBVars Δ_insert.length body (Δ₁.length + 1)) .bool h_body_l : Bool) = false :=
-            fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
-          rw [denote_quant_exist_false _ h_body_l h_lifted hexist_f]
-          symm; apply denote_quant_exist_false _ h_body_o h_orig; intros x
-          rw [← h_ih_body]; exact (hexist_f x)
+      exact denote_quant_congr h_body_l h_body_o h_lifted h_orig h_ih_body
 
 /-! ### denoteArgs indexing -/
 
@@ -826,36 +753,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
         rw [show (HList.cons x bvarVal_body).append bvarVal_outer =
             HList.cons x (HList.append bvarVal_body bvarVal_outer) from rfl] at h_ih
         exact h_ih
-      cases qk with
-      | all =>
-        by_cases hall : ∀ x : TyDenote tcInterp vt qty',
-            (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bvarVal_body bvarVal_outer))
-              (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = true
-        · rw [denote_quant_all_true _ h_body_s h_subst hall]
-          symm; apply denote_quant_all_true; intros x
-          rw [← h_ih_body]; exact (hall x)
-        · have ⟨w, hw⟩ := Classical.not_forall.mp hall
-          have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w (HList.append bvarVal_body bvarVal_outer))
-              (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = false :=
-            Bool.eq_false_iff.mpr hw
-          rw [denote_quant_all_false _ h_body_s h_subst w hwf]
-          symm; apply denote_quant_all_false _ h_body_b h_body w
-          rw [← h_ih_body]; exact hwf
-      | exist =>
-        by_cases hexist : ∃ x : TyDenote tcInterp vt qty',
-            (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bvarVal_body bvarVal_outer))
-              (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = true
-        · obtain ⟨w, hw⟩ := hexist
-          rw [denote_quant_exist_true _ h_body_s h_subst w hw]
-          symm; apply denote_quant_exist_true _ h_body_b h_body w
-          rw [← h_ih_body]; exact hw
-        · have hexist_f : ∀ x : TyDenote tcInterp vt qty',
-              (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bvarVal_body bvarVal_outer))
-                (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = false :=
-            fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
-          rw [denote_quant_exist_false _ h_body_s h_subst hexist_f]
-          symm; apply denote_quant_exist_false _ h_body_b h_body; intros x
-          rw [← h_ih_body]; exact (hexist_f x)
+      exact denote_quant_congr h_body_s h_body_b h_subst h_body h_ih_body
 
 /-- Free-variable substitution commutes with denotation (generalized to
 arbitrary bound-variable context for replacements). -/

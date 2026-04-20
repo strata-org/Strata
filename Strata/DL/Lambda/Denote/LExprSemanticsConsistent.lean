@@ -541,61 +541,13 @@ theorem Step.denote_preserved
               (LExpr.substFvarsFromState σ body) .bool h_subst_body :=
           fun v => substFvarsFromState_denote_preserved tcInterp opInterp fvarVal vt
             h_body h_subst_body hEnv hEnvLC hEnvTy hAnnot.2
-        rename_i qty _ _ _ _ _ _
-        cases qty with
-        | all =>
-          by_cases hall : ∀ v, (LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-              body .bool h_body : Bool) = true
-          · rw [denote_quant_all_true .nil h_body _ hall]
-            symm; apply denote_quant_all_true .nil h_subst_body
-            intro v; rw [← h_body_eq]; exact hall v
-          · have ⟨w, hw⟩ := Classical.not_forall.mp hall
-            have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w .nil)
-                body .bool h_body : Bool) = false := Bool.eq_false_iff.mpr hw
-            rw [denote_quant_all_false .nil h_body _ w hwf]
-            symm; apply denote_quant_all_false .nil h_subst_body _ w
-            rw [← h_body_eq]; exact hwf
-        | exist =>
-          by_cases hexist : ∃ v, (LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-              body .bool h_body : Bool) = true
-          · obtain ⟨w, hw⟩ := hexist
-            rw [denote_quant_exist_true .nil h_body _ w hw]
-            symm; apply denote_quant_exist_true .nil h_subst_body _ w
-            rw [← h_body_eq]; exact hw
-          · have hexist_f : ∀ v, (LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-                body .bool h_body : Bool) = false :=
-              fun v => Bool.eq_false_iff.mpr (fun h => hexist ⟨v, h⟩)
-            rw [denote_quant_exist_false .nil h_body _ hexist_f]
-            symm; apply denote_quant_exist_false .nil h_subst_body
-            intro v; rw [← h_body_eq]; exact hexist_f v
+        exact denote_quant_congr h_body h_subst_body _ _ h_body_eq
   | quant_subst_fvars_trigger tr body σ x _ h_env_eq =>
     cases h₁ with
     | quant h_tr h_body =>
       cases h₂ with
       | quant h_tr' h_body' =>
-        rename_i qk _ _ _ _ _ _
-        cases qk with
-        | all =>
-          by_cases hall : ∀ v, (LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-              body .bool h_body : Bool) = true
-          · rw [denote_quant_all_true .nil h_body _ hall]
-            symm; apply denote_quant_all_true .nil h_body' _ hall
-          · have ⟨w, hw⟩ := Classical.not_forall.mp hall
-            have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w .nil)
-                body .bool h_body : Bool) = false := Bool.eq_false_iff.mpr hw
-            rw [denote_quant_all_false .nil h_body _ w hwf]
-            symm; apply denote_quant_all_false .nil h_body' _ w hwf
-        | exist =>
-          by_cases hexist : ∃ v, (LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-              body .bool h_body : Bool) = true
-          · obtain ⟨w, hw⟩ := hexist
-            rw [denote_quant_exist_true .nil h_body _ w hw]
-            symm; apply denote_quant_exist_true .nil h_body' _ w hw
-          · have hexist_f : ∀ v, (LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-                body .bool h_body : Bool) = false :=
-              fun v => Bool.eq_false_iff.mpr (fun h => hexist ⟨v, h⟩)
-            rw [denote_quant_exist_false .nil h_body _ hexist_f]
-            symm; apply denote_quant_exist_false .nil h_body' _ hexist_f
+        exact denote_quant_congr h_body h_body' _ _ fun _ => rfl
   | expand_fn e callee fnbody new_body args fn tySubst hcall hbody htySubst heq =>
     -- Step 1: Decompose the call
     obtain ⟨argTys, ty_op, m, name, h_args, hty_op, h_callee_eq, h_denote_e⟩ :=
