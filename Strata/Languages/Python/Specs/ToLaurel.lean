@@ -300,11 +300,6 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     -- Single atom type
     match ty.atoms[0]! with
     | .ident nm _args =>
-      -- Warn for lossy known-type approximations
-      if nm == .builtinsBytes || nm == .builtinsBytearray then
-        reportError .bytesToString default s!"'{nm}' mapped to TString (bytes have different semantics)"
-      if nm == .builtinsComplex then
-        reportError .complexToReal default s!"'{nm}' mapped to TReal (complex loses imaginary component)"
       if let some ty := knownIdentTypes[nm]? then
         return ty
       let prefixed ← prefixName nm.name

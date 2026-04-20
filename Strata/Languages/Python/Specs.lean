@@ -411,10 +411,6 @@ def checkEq {α : Type} (loc : SourceRange) (name : String) (as : Array α) (n :
     pure none
 
 def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
-  let loc := if loc.isNone then
-                @panic _ ⟨loc⟩ s!"Empty location"
-              else
-                loc
   match v with
   | .typeValue itp =>
     pure itp
