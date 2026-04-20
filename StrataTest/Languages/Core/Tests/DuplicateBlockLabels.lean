@@ -26,8 +26,7 @@ procedure test () returns () {
 #end
 
 /--
-error:  ❌ Type checking error.
-Block label "foo" shadows an enclosing block.
+error: ❌ Transform Error. Type checking error: Block label "foo" shadows an enclosing block.
 -/
 #guard_msgs in
 #eval verify blockLabelUniqueTestPgm1
