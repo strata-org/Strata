@@ -95,10 +95,6 @@ fn realLit (d : Decimal) : real => d;
 
 fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:0 " else " f:0;
 
-@[declare(v, tp)]
-fn let_expr (tp : Type, rtp : Type, v : Ident, e : tp, @[scope(v)] body : rtp) : rtp =>
-  "let " v " : " tp " := " e " in " body:0;
-
 fn old (tp : Type, v : tp) : tp => "old " v;
 
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
