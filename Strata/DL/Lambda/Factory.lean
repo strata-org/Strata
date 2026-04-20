@@ -191,8 +191,6 @@ protected def mem {T} (f : Factory T) (name : String) := name ∈ f.nameMap
 def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (f.mem name) :=
   (inferInstance : Decidable (name ∈ f.nameMap))
 
-
-
 instance instMem {T} : Membership String (Factory T) where
   mem := Factory.mem
 

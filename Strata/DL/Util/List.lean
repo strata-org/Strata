@@ -11,11 +11,6 @@ public section
 
 namespace List
 
-/-
-theorem List.subset_append_cons_right {α : Type} [DecidableEq α] {a b c : List α} {x : α}
-  (h : a ⊆ (b ++ c)) : a ⊆ b ++ (x :: c) := by
-  grind
--/
 /--
 Remove duplicates in a list.
 -/

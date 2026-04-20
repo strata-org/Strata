@@ -1421,7 +1421,6 @@ protected def mem (d : Dialect) (name : String) : Bool := name ∈ d.cache
 instance : Membership String Dialect where
   mem d nm := d.mem nm
 
-@[instance]
 instance instDecidableMem (nm : String) (d : Dialect) : Decidable (nm ∈ d) :=
   (inferInstance : Decidable (_ = _))
 
