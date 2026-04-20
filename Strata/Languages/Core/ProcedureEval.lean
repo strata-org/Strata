@@ -69,10 +69,15 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
   let E := E.addToContext global_init_subst
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
+  -- Use original parameter names (not fresh variables) so the obligations
+  -- program is more readable.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)
-  let (vals, E) := E.genFVars (vars.zip var_tys)
+  let vals := (vars.zip var_tys).map fun (name, mty) =>
+    match mty with
+    | some ty => Lambda.LExpr.fvar () name (some ty)
+    | none => Lambda.LExpr.fvar () name none
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap
   let E := { E with pathConditions := E.pathConditions.push [] }

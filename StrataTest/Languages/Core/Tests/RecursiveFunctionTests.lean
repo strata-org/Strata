@@ -56,7 +56,7 @@ VCs:
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
+!(IntList..isNil(xs)) ==> IntList..isCons(xs)
 
 Label: nilLen
 Property: assert
@@ -79,7 +79,7 @@ Obligation:
 true
 
 ---
-info: Obligation: listLen_body_calls_IntList..tl_0
+info:
 Property: assert
 Result: ✅ pass
 
@@ -148,45 +148,45 @@ VCs:
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
+!(IntList..isNil(xs)) ==> IntList..isCons(xs)
 
 Label: nilCase
 Property: assert
 Assumptions:
-TestNilCase_requires_0: IntList..isNil($__xs1)
+TestNilCase_requires_0: IntList..isNil(xs)
 Obligation:
-listLen($__xs1) == 0
+listLen(xs) == 0
 
 Label: TestNilCase_ensures_1
 Property: assert
 Assumptions:
-TestNilCase_requires_0: IntList..isNil($__xs1)
+TestNilCase_requires_0: IntList..isNil(xs)
 Obligation:
 true
 
 Label: assert_consLen_calls_IntList..tl_0
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons($__xs2)
+TestConsCase_requires_0: IntList..isCons(xs)
 Obligation:
-IntList..isCons($__xs2)
+IntList..isCons(xs)
 
 Label: consLen
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons($__xs2)
+TestConsCase_requires_0: IntList..isCons(xs)
 Obligation:
-listLen($__xs2) == 1 + listLen(IntList..tl($__xs2))
+listLen(xs) == 1 + listLen(IntList..tl(xs))
 
 Label: TestConsCase_ensures_1
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons($__xs2)
+TestConsCase_requires_0: IntList..isCons(xs)
 Obligation:
 true
 
 ---
-info: Obligation: listLen_body_calls_IntList..tl_0
+info:
 Property: assert
 Result: ✅ pass
 
@@ -323,12 +323,12 @@ VCs:
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
+!(IntList..isNil(xs)) ==> IntList..isCons(xs)
 
 Label: entry_invariant_0_0
 Property: assert
 Obligation:
-0 + listLen($__xs1) == listLen($__xs1)
+0 + listLen(xs) == listLen(xs)
 
 Label: entry_invariant_0_1
 Property: assert
@@ -342,9 +342,9 @@ Assumptions:
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil(xs))
 Obligation:
-IntList..isCons($__cur6)
+IntList..isCons($__cur3)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
@@ -353,9 +353,9 @@ Assumptions:
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil(xs))
 Obligation:
-$__acc5 + 1 + listLen(IntList..tl($__cur6)) == listLen($__xs1)
+$__acc2 + 1 + listLen(IntList..tl($__cur3)) == listLen(xs)
 
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
@@ -364,9 +364,9 @@ Assumptions:
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil(xs))
 Obligation:
-$__acc5 + 1 >= 0
+$__acc2 + 1 >= 0
 
 Label: equiv
 Property: assert
@@ -379,9 +379,9 @@ assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
 not_guard_0: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
 invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
 invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true
-<label_ite_cond_false: !(~Bool.Not (~IntList..isNil cur))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
+assume_entry_invariant_0_0: 0 + listLen(xs) == listLen(xs)
 Obligation:
-if !(IntList..isNil($__xs1)) then $__acc7 else 0 == listLen($__xs1)
+if !(IntList..isNil(xs)) then $__acc4 else 0 == listLen(xs)
 
 ---
 info:

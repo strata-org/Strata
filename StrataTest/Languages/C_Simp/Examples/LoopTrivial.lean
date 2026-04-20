@@ -127,29 +127,29 @@ VCs:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
+pre: n >= 0
+assume_invariant_0: $__i1 <= n
 Obligation:
-0 <= $__n0
+0 <= n
 
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
-Obligation:
-$__n0 - 0 >= 0
+pre: n >= 0
+assume_invariant_0: $__i1 <= n
+n - ($__i1 + 1) < n - $__i1
+n - 0 >= 0
 
 Label: measure_decreases
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
 assume_guard: $__i3 < $__n0
-assume_invariant_0: $__i3 <= $__n0
-assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
+assume_measure_pos: n - $__i1 >= 0
+assume_guard: $__i1 < n
+pre: n >= 0
 Obligation:
-$__n0 - ($__i3 + 1) < $__n0 - $__i3
+n - ($__i1 + 1) < n - $__i1
 
 Label: measure_imp_not_guard
 Property: assert
@@ -158,9 +158,9 @@ Assumptions:
 assume_guard: $__i3 < $__n0
 assume_invariant_0: $__i3 <= $__n0
 assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
 Obligation:
-if $__n0 - ($__i3 + 1) <= 0 then !($__i3 + 1 < $__n0) else true
+if n - ($__i1 + 1) <= 0 then !($__i1 + 1 < n) else true
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
@@ -169,9 +169,9 @@ Assumptions:
 assume_guard: $__i3 < $__n0
 assume_invariant_0: $__i3 <= $__n0
 assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
 Obligation:
-$__i3 + 1 <= $__n0
+$__i1 + 1 <= n
 
 Label: i_eq_n
 Property: assert
@@ -183,9 +183,9 @@ assume_invariant_0: if 0 < $__n0 then $__i3 <= $__n0 else true
 assume_measure_pos: if 0 < $__n0 then $__n0 - $__i3 >= 0 else true
 not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
 invariant_0: if 0 < $__n0 then $__i4 <= $__n0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+pre: n >= 0
 Obligation:
-if 0 < $__n0 then $__i4 else 0 == $__n0
+if 0 < n then $__i2 else 0 == n
 
 Label: post
 Property: assert
@@ -197,7 +197,7 @@ assume_invariant_0: if 0 < $__n0 then $__i3 <= $__n0 else true
 assume_measure_pos: if 0 < $__n0 then $__n0 - $__i3 >= 0 else true
 not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
 invariant_0: if 0 < $__n0 then $__i4 <= $__n0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+pre: n >= 0
 Obligation:
 true
 

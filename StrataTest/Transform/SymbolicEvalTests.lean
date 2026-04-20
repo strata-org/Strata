@@ -40,10 +40,11 @@ spec { requires [pre]: x >= 0; }
 
 /--
 info: program Core;
+
 procedure test () returns ()
 {
-  assume [pre]: $__x0 >= 0;
-  assert [a]: $__x0 >= 0;
+  assume [pre]: x >= 0;
+  assert [a]: x >= 0;
   };
 -/
 #guard_msgs (whitespace := lax) in
@@ -83,6 +84,7 @@ spec {
 
 /--
 info: program Core;
+
 procedure blockTest () returns ()
 {
   if * {
@@ -90,45 +92,45 @@ procedure blockTest () returns ()
       if * {
         if * {
           if * {
-            assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
-            assume [pre_x]: $__x0 >= 0;
-            assume [pre_y]: $__y1 >= 0;
-            assert [big_x]: $__x0 > 10;
+            assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: x > 10;
+            assume [pre_x]: x >= 0;
+            assume [pre_y]: y >= 0;
+            assert [big_x]: x > 10;
             } else {
-            assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
-            assume [pre_x]: $__x0 >= 0;
-            assume [pre_y]: $__y1 >= 0;
-            assert [final]: $__x0 >= 0;
+            assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: x > 10;
+            assume [pre_x]: x >= 0;
+            assume [pre_y]: y >= 0;
+            assert [final]: x >= 0;
             }
           } else {
-          assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
-          assume [pre_x]: $__x0 >= 0;
-          assume [pre_y]: $__y1 >= 0;
-          assert [post]: $__x0 >= 0;
+          assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: x > 10;
+          assume [pre_x]: x >= 0;
+          assume [pre_y]: y >= 0;
+          assert [post]: x >= 0;
           }
         } else {
-        assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
-        assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_33 then $__$__nondet_cond_33 else true;
-        assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
-        assume [pre_x]: $__x0 >= 0;
-        assume [pre_y]: $__y1 >= 0;
-        assert [after_inner]: if $__$__nondet_cond_33 then $__y1 else $__x0 + $__y1 >= 0;
+        assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if x > 10 then false else true;
+        assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_30 then $__$__nondet_cond_30 else true;
+        assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_30 then false else true then if $__$__nondet_cond_30 then false else true else true;
+        assume [pre_x]: x >= 0;
+        assume [pre_y]: y >= 0;
+        assert [after_inner]: if $__$__nondet_cond_30 then y else x + y >= 0;
         }
       } else {
-      assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
-      assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_33 then $__$__nondet_cond_33 else true;
-      assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
-      assume [pre_x]: $__x0 >= 0;
-      assume [pre_y]: $__y1 >= 0;
-      assert [final]: if $__$__nondet_cond_33 then $__y1 else $__x0 + $__y1 >= 0;
+      assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if x > 10 then false else true;
+      assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_30 then $__$__nondet_cond_30 else true;
+      assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_30 then false else true then if $__$__nondet_cond_30 then false else true else true;
+      assume [pre_x]: x >= 0;
+      assume [pre_y]: y >= 0;
+      assert [final]: if $__$__nondet_cond_30 then y else x + y >= 0;
       }
     } else {
-    assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
-    assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_33 then $__$__nondet_cond_33 else true;
-    assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
-    assume [pre_x]: $__x0 >= 0;
-    assume [pre_y]: $__y1 >= 0;
-    assert [post]: if $__$__nondet_cond_33 then $__y1 else $__x0 + $__y1 >= 0;
+    assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if x > 10 then false else true;
+    assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_30 then $__$__nondet_cond_30 else true;
+    assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_30 then false else true then if $__$__nondet_cond_30 then false else true else true;
+    assume [pre_x]: x >= 0;
+    assume [pre_y]: y >= 0;
+    assert [post]: if $__$__nondet_cond_30 then y else x + y >= 0;
     }
   };
 -/

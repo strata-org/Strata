@@ -171,7 +171,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re("0123456789a", bad_re_loop($__n0)))
+!(str.in.re("0123456789a", bad_re_loop(n)))
 
 Label: assert_1
 Property: assert
@@ -219,7 +219,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re($__s1, re.none()))
+!(str.in.re($__s0, re.none()))
 
 ---
 info:

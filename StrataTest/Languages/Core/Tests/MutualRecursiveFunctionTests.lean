@@ -54,12 +54,12 @@ VCs:
 Label: isEven_body_calls_MyNat..pred_0
 Property: assert
 Obligation:
-!(MyNat..isZero($__n0)) ==> MyNat..isSucc($__n0)
+!(MyNat..isZero(n)) ==> MyNat..isSucc(n)
 
 Label: isOdd_body_calls_MyNat..pred_0
 Property: assert
 Obligation:
-!(MyNat..isZero($__n1)) ==> MyNat..isSucc($__n1)
+!(MyNat..isZero(n)) ==> MyNat..isSucc(n)
 
 Label: zeroEven
 Property: assert
@@ -87,7 +87,7 @@ Obligation:
 true
 
 ---
-info: Obligation: isEven_body_calls_MyNat..pred_0
+info:
 Property: assert
 Result: ✅ pass
 

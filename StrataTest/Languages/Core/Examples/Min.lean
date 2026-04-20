@@ -32,7 +32,7 @@ VCs:
 Label: min_ensures_0
 Property: assert
 Obligation:
-if $__n0 < $__m1 then $__n0 else $__m1 <= $__n0 && if $__n0 < $__m1 then $__n0 else $__m1 <= $__m1
+if n < m then n else m <= n && if n < m then n else m <= m
 
 ---
 info:
