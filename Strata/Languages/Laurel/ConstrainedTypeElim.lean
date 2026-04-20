@@ -218,7 +218,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
-    body := .Transparent ⟨.Block [witnessInit, assert] none, src, md⟩
+    body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src, md⟩) []
     preconditions := []
     isFunctional := false
     decreases := none }
