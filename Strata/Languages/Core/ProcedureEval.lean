@@ -82,9 +82,7 @@ private def mkParamFVars (vars : List Expression.Ident)
           findFresh 1 (seen.length + 1)
         else base
       let id : Expression.Ident := ⟨name, ()⟩
-      let e := match t with
-        | none => Lambda.LExpr.fvar () id none
-        | some ty => Lambda.LExpr.fvar () id (some ty)
+      let e := Lambda.LExpr.fvar () id t
       go (e :: acc) (name :: seen) vrest trest
   go [] [] vars var_tys
 
