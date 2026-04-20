@@ -101,7 +101,9 @@ public def typeAliasElim (_model : SemanticModel) (program : Program) : Program 
     staticProcedures := program.staticProcedures.map (resolveAliasInProc amap)
     staticFields := program.staticFields.map fun f => { f with type := resolveAliasType amap f.type }
     types := (program.types.filter fun | .Alias _ => false | _ => true).map (resolveAliasInType amap)
-    constants := program.constants.map fun c => { c with type := resolveAliasType amap c.type } }
+    constants := program.constants.map fun c => { c with
+      type := resolveAliasType amap c.type
+      initializer := c.initializer.map (mapStmtExpr (resolveAliasExprNode amap)) } }
 
 end -- public section
 end Strata.Laurel
