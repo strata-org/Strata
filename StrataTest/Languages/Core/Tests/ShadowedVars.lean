@@ -22,7 +22,7 @@ procedure Test() returns ()
 #end
 
 /--
-error: ❌ Transform Error. Type checking error: Variable g of type int already in context.
+error: ❌ Transform Error. Variable g of type int already in context.
 -/
 #guard_msgs in
 #eval verify noShadowPgm1 (options := .quiet)
@@ -38,7 +38,7 @@ procedure Test() returns ()
 #end
 
 /--
-error: ❌ Transform Error. Type checking error: Variable g of type bool already in context.
+error: ❌ Transform Error. Variable g of type bool already in context.
 -/
 #guard_msgs in
 #eval verify noShadowPgm2 (options := .quiet)

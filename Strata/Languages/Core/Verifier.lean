@@ -833,7 +833,7 @@ def typeCheckPipelinePhase (options : VerifyOptions)
   transform prog := do
     match Core.typeCheck options prog moreFns with
     | .ok p => return (true, p)
-    | .error e => throw s!"Type checking error: {e.message}"
+    | .error e => throw s!"{e.message}"
   phase := { name := "TypeCheck", getValidation := fun _ => .modelPreserving }
 
 /-- Symbolic evaluation pipeline phase. -/
@@ -842,7 +842,7 @@ def symbolicEvalPipelinePhase (options : VerifyOptions)
   transform prog := do
     match Core.symbolicEval options prog moreFns with
     | .ok (p, _) => return (true, p)
-    | .error e => throw s!"Symbolic evaluation error: {e.message}"
+    | .error e => throw s!"{e.message}"
   phase := { name := "SymbolicEval", getValidation := fun _ => .modelPreserving }
 
 /-- The full pipeline phases including type checking, symbolic eval, and ANF. -/

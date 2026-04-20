@@ -119,7 +119,7 @@ type int := bool;
 #end
 
 /--
-error: ❌ Transform Error. Type checking error: This type declaration's name is reserved!
+error: ❌ Transform Error. This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
 [arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]

@@ -50,9 +50,6 @@ procedure test () returns ()
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint simpleProg
 
-/-! Comprehensive test: labelled blocks, exit statements, deterministic and
-    non-deterministic if statements. No loops or procedure calls. -/
-
 private def blockExitIfProg :=
 #strata
 program Core;

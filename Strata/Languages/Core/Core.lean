@@ -123,9 +123,10 @@ def symbolicEval (options : VerifyOptions) (program : Program)
     let blocks := E.deferred.toList.map fun ob =>
       let assumes := ob.assumptions.flatten.map fun (label, e) =>
         Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
-      let assertStmt := match ob.property with
-        | .cover => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.cover ob.label ob.obligation ob.metadata))
-        | _ => Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+      let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
+        if ob.property == .cover
+        then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
+        else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
       assumes ++ [assertStmt]
     let body := match blocks with
       | [] => []
@@ -153,6 +154,7 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     Except DiagnosticModel (Program × Statistics) := do
   let program ← typeCheck options program moreFns
   symbolicEval options program moreFns
+
 /-- Build an Env suitable for SMT encoding from a program.
     Loads factory functions, datatypes, and distinct constraints
     without running procedure evaluation. -/
