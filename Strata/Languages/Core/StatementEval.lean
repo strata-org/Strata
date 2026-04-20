@@ -439,16 +439,33 @@ private def condEq (a b : Expression.Expr) : Bool :=
 Extract the first element from `ts` whose head `splitConds` condition
 matches `cond`. Returns `(matched_element, remaining_list)` or `none`.
 -/
-private def extractMatchingTrue (cond : Expression.Expr) :
-    List EnvWithNext → List EnvWithNext →
-    Option (EnvWithNext × List EnvWithNext)
-  | [], _ => none
-  | e_t :: rest, acc =>
+private def extractMatchingTrue (cond : Expression.Expr)
+    (ts acc : List EnvWithNext) :
+    Option (EnvWithNext × List EnvWithNext) :=
+  match ts with
+  | [] => none
+  | e_t :: rest =>
     match e_t.splitConds.head? with
     | some (cond_t, _) =>
       if condEq cond_t cond then some (e_t, acc.reverse ++ rest)
       else extractMatchingTrue cond rest (e_t :: acc)
     | none => extractMatchingTrue cond rest (e_t :: acc)
+
+private theorem extractMatchingTrue_length (cond : Expression.Expr)
+    (ts acc : List EnvWithNext) (e : EnvWithNext) (rest : List EnvWithNext)
+    (h : extractMatchingTrue cond ts acc = some (e, rest)) :
+    rest.length + 1 = ts.length + acc.length := by
+  induction ts generalizing acc with
+  | nil => simp [extractMatchingTrue] at h
+  | cons e_t ts' ih =>
+    simp only [extractMatchingTrue] at h
+    split at h
+    · rename_i cond_t _ heq
+      split at h
+      · simp at h; obtain ⟨_, rfl⟩ := h
+        simp [List.length_reverse, List.length_append]; omega
+      · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
+    · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
 
 /--
 Given false-branch paths and true-branch paths, find pairs with matching
@@ -460,12 +477,11 @@ Invariant: every input path appears in exactly one of the three output
 lists (either merged into `paired`, left in `remaining_t`, or in
 `unmatched_f`).
 -/
-private def findCondPairs : List EnvWithNext → List EnvWithNext →
-    List EnvWithNext → List EnvWithNext →
-    List EnvWithNext × List EnvWithNext × List EnvWithNext
-  | [], unmatched_f, remaining_t, paired =>
-    (paired.reverse, remaining_t, unmatched_f.reverse)
-  | e_f :: rest_fs, unmatched_f, remaining_t, paired =>
+private def findCondPairs (fs unmatched_f remaining_t paired : List EnvWithNext) :
+    List EnvWithNext × List EnvWithNext × List EnvWithNext :=
+  match fs with
+  | [] => (paired.reverse, remaining_t, unmatched_f.reverse)
+  | e_f :: rest_fs =>
     match e_f.splitConds.head? with
     | some (cond_f, _) =>
       match extractMatchingTrue cond_f remaining_t [] with
@@ -486,7 +502,8 @@ Merge paths by matching condition-equality pairs from `splitConds`.
 Each round merges at least one pair when `paired` is non-empty,
 reducing the path count, so fuel = initial path count suffices.
 -/
-private def mergeCondPairs : Nat → List EnvWithNext → List EnvWithNext
+private def mergeCondPairs (fuel : Nat) (ewns : List EnvWithNext) : List EnvWithNext :=
+  match fuel, ewns with
   | 0, ewns => ewns
   | _, [] => []
   | _, [e] => [e]
