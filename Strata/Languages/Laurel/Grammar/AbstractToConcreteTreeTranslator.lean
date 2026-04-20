@@ -294,6 +294,7 @@ private def typeDefinitionToOp : TypeDefinition → Strata.Operation
   | .Composite ct => compositeToOp ct
   | .Constrained ct => constrainedTypeToOp ct
   | .Datatype dt => datatypeToOp dt
+  -- Placeholder: aliases are eliminated before CST serialization
   | .Alias _ => { ann := sr, name := { dialect := "Laurel", name := "typeAlias" }, args := #[] }
 
 private def procedureCommandOp (proc : Procedure) : Strata.Operation :=
