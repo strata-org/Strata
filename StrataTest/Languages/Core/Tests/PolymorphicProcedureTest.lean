@@ -43,7 +43,7 @@ VCs:
 Label: callElimAssert_Extract_requires_0_2
 Property: assert
 Obligation:
-List..isCons($__xs3)
+List..isCons($__xs1)
 
 Label: Test_ensures_0
 Property: assert
@@ -56,7 +56,7 @@ Result: Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, Nil)
+($__xs1, Nil)
 
 
 [DEBUG] Evaluated program:
@@ -70,7 +70,7 @@ procedure Extract (xs : List $__ty0) returns (h : ($__ty5))
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
-  assume [Extract_requires_0]: List..isCons($__xs0);
+  assume [Extract_requires_0]: List..isCons(xs);
   };
 procedure Test () returns ()
 spec {
@@ -80,9 +80,9 @@ spec {
   xs := Cons(1, Nil);
   havoc xs;
   var h : int;
-  var tmp_arg_0 : List int := $__xs3;
-  var tmp_h_1 : int := $__h4;
-  assert [callElimAssert_Extract_requires_0_2]: List..isCons($__xs3);
+  var tmp_arg_0 : List int := $__xs1;
+  var tmp_h_1 : int := $__h2;
+  assert [callElimAssert_Extract_requires_0_2]: List..isCons($__xs1);
   havoc h;
   assert [Test_ensures_0]: true;
   };
@@ -93,7 +93,7 @@ Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, Nil)
+($__xs1, Nil)
 
 Obligation: Test_ensures_0
 Property: assert
@@ -137,14 +137,14 @@ true
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_2: List..isCons($__r3)
+callElimAssume_MkCons_ensures_0_2: List..isCons($__r1)
 Obligation:
-List..isCons($__r3)
+List..isCons($__r1)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_2: List..isCons($__r3)
+callElimAssume_MkCons_ensures_0_2: List..isCons($__r1)
 Obligation:
 true
 

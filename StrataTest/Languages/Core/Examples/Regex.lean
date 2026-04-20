@@ -171,7 +171,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re("0123456789a", bad_re_loop($__n0)))
+!(str.in.re("0123456789a", bad_re_loop(n)))
 
 Label: assert_1
 Property: assert
@@ -198,7 +198,7 @@ procedure main (n : int) returns ()
 {
   var n1 : int;
   n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
+  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop(n)));
   assert [assert_1]: str.in.re("a", bad_re_loop(1));
   };
 
@@ -222,7 +222,7 @@ procedure main (n : int) returns ()
 {
   var n1 : int;
   n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
+  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop(n)));
   assert [assert_1]: str.in.re("a", bad_re_loop(1));
   };
 
@@ -267,7 +267,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re($__s1, re.none()))
+!(str.in.re($__s0, re.none()))
 
 ---
 info:

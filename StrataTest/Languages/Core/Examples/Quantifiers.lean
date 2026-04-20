@@ -59,12 +59,12 @@ forall __q0 : int :: !(__q0 == __q0 + 1)
 Label: good
 Property: assert
 Obligation:
-forall __q0 : int :: exists __q1 : int :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1))
+forall __q0 : int :: exists __q1 : int :: x + 1 + (__q1 + __q0) == __q0 + (__q1 + (x + 1))
 
 Label: bad
 Property: assert
 Obligation:
-forall __q0 : int :: __q0 < $__x0
+forall __q0 : int :: __q0 < x
 
 
 
@@ -72,7 +72,7 @@ Result: Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, 0)
+(x, 0)
 
 
 [DEBUG] Evaluated program:
@@ -84,9 +84,9 @@ spec {
   ensures [bad]: forall __q0 : int :: __q0 < x;
   } {
   assert [good_assert]: forall __q0 : ($__unknown_type) :: !(__q0 == __q0 + 1);
-  r := $__x0 + 1;
-  assert [good]: forall __q0 : ($__unknown_type) :: exists __q1 : ($__unknown_type) :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1));
-  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < $__x0;
+  r := x + 1;
+  assert [good]: forall __q0 : ($__unknown_type) :: exists __q1 : ($__unknown_type) :: x + 1 + (__q1 + __q0) == __q0 + (__q1 + (x + 1));
+  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < x;
   };
 
 ---
@@ -103,7 +103,7 @@ Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, 0)
+(x, 0)
 -/
 #guard_msgs in
 #eval verify quantPgm (options := .default)
@@ -125,7 +125,7 @@ f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
 f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
   g(__q0, __q1) < f(__q0)
 Obligation:
-f($__x0) > 0
+f(x) > 0
 
 Label: multi_trigger_assert
 Property: assert
@@ -139,7 +139,7 @@ f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
 f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
   g(__q0, __q1) < f(__q0)
 Obligation:
-forall __q0 : int :: g($__x0, __q0) < f($__x0)
+forall __q0 : int :: g(x, __q0) < f(x)
 
 Label: f_and_g
 Property: assert
@@ -153,7 +153,7 @@ f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
 f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
   g(__q0, __q1) < f(__q0)
 Obligation:
-g(f($__x0), $__x0) < 0
+g(f(x), x) < 0
 
 ---
 info:

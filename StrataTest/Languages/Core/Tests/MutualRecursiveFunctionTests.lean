@@ -47,19 +47,20 @@ spec {
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mutualRecPgm) |>.snd |>.isEmpty
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: isEven_body_calls_MyNat..pred_0
 Property: assert
 Obligation:
-!(MyNat..isZero($__n0)) ==> MyNat..isSucc($__n0)
+!(MyNat..isZero(n)) ==> MyNat..isSucc(n)
 
 Label: isOdd_body_calls_MyNat..pred_0
 Property: assert
 Obligation:
-!(MyNat..isZero($__n1)) ==> MyNat..isSucc($__n1)
+!(MyNat..isZero(n)) ==> MyNat..isSucc(n)
 
 Label: zeroEven
 Property: assert
@@ -87,7 +88,8 @@ Obligation:
 true
 
 ---
-info: Obligation: isEven_body_calls_MyNat..pred_0
+info:
+Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
@@ -113,7 +115,8 @@ Result: ✅ pass
 
 Obligation: TestMutual_ensures_0
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval verify mutualRecPgm (options := .default)
 

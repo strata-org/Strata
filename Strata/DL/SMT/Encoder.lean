@@ -102,6 +102,8 @@ def smtReservedKeywords : List String :=
    "abs", "and", "distinct", "/", "=", ">", ">=", "ite", "=>",
    "div", "is_int", "<", "<=", "-", "mod", "*", "not", "or", "+",
    "to_int", "to_real", "xor",
+   -- Nonlinear arithmetic theory symbols
+   "exp", "sin", "cos", "tan", "sqrt", "pi",
    -- String theory symbols
    "str.at", "str.++", "str.contains", "str.from_code", "str.from_int",
    "str.in_re", "str.indexof", "str.is_digit", "str.<=", "str.len",

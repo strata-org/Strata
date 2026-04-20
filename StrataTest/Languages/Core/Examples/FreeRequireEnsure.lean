@@ -54,9 +54,9 @@ true
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-callElimAssume_g_lt_10_0: $__g4 < 10
+callElimAssume_g_lt_10_0: $__g3 < 10
 Obligation:
-$__g4 == 15
+$__g3 == 15
 
 
 
@@ -64,7 +64,7 @@ Result: Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-($__g4, 0)
+($__g3, 0)
 
 
 [DEBUG] Evaluated program:
@@ -87,8 +87,8 @@ spec {
   modifies g;
   } {
   havoc g;
-  assume [callElimAssume_g_lt_10_0]: $__g4 < 10;
-  assert [g_eq_15_internal]: $__g4 == 15;
+  assume [callElimAssume_g_lt_10_0]: $__g3 < 10;
+  assert [g_eq_15_internal]: $__g3 == 15;
   };
 
 ---
@@ -105,7 +105,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-($__g4, 0)
+($__g3, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

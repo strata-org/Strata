@@ -58,6 +58,37 @@ private def mergeResults (fallback : Procedure × Env) (results : List (Procedur
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 
+/--
+Create `fvar` expressions using original parameter names instead of generating
+fresh `$__`-prefixed names. This makes the obligations program more readable.
+If two parameters share the same name, a `_1`, `_2`, ... suffix is appended.
+-/
+private def mkParamFVars (vars : List Expression.Ident)
+    (var_tys : List (Option Lambda.LMonoTy)) : List Expression.Expr :=
+  let rec go (acc : List Expression.Expr) (seen : List String)
+      (vs : List Expression.Ident) (ts : List (Option Lambda.LMonoTy))
+      : List Expression.Expr :=
+    match vs, ts with
+    | [], _ | _, [] => acc.reverse
+    | v :: vrest, t :: trest =>
+      let base := v.name
+      let name := if seen.contains base then
+          let rec findFresh (n : Nat) (fuel : Nat) : String :=
+            match fuel with
+            | 0 => s!"{base}_{n}"
+            | fuel + 1 =>
+              let candidate := s!"{base}_{n}"
+              if seen.contains candidate then findFresh (n + 1) fuel
+              else candidate
+          findFresh 1 (seen.length + 1)
+        else base
+      let id : Expression.Ident := ⟨name, ()⟩
+      let e := match t with
+        | none => Lambda.LExpr.fvar () id none
+        | some ty => Lambda.LExpr.fvar () id (some ty)
+      go (e :: acc) (name :: seen) vrest trest
+  go [] [] vars var_tys
+
 def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
@@ -70,10 +101,11 @@ def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
   let E := E.addToContext global_init_subst
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
+  -- Use original parameter names for readability in the obligations program.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)
-  let (vals, E) := E.genFVars (vars.zip var_tys)
+  let vals := mkParamFVars vars var_tys
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap
   let E := { E with pathConditions := E.pathConditions.push [] }

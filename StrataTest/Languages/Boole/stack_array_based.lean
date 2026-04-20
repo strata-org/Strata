@@ -172,14 +172,14 @@ VCs:
 Label: StackInit_ensures_1_1066
 Property: assert
 Assumptions:
-StackInit_requires_0_1015: $__cap2 >= 0
+StackInit_requires_0_1015: cap >= 0
 Obligation:
 true
 
 Label: StackInit_ensures_2_1086
 Property: assert
 Assumptions:
-StackInit_requires_0_1015: $__cap2 >= 0
+StackInit_requires_0_1015: cap >= 0
 Obligation:
 true
 
@@ -196,37 +196,37 @@ true
 Label: Push_ensures_6_1494
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: $__top3 < cap
 Obligation:
 true
 
 Label: Push_ensures_7_1525
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: $__top3 < cap
 Obligation:
-($__S4[$__top5 + 1:=$__x6])[$__top5 + 1] == $__x6
+($__S2[$__top3 + 1:=x])[$__top3 + 1] == x
 
 Label: Push_ensures_8_1583
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: $__top3 < cap
 Obligation:
-forall __q0 : int :: 1 <= __q0 && __q0 <= $__top5 ==> ($__S4[$__top5 + 1:=$__x6])[__q0] == $__S4[__q0]
+forall __q0 : int :: 1 <= __q0 && __q0 <= $__top3 ==> ($__S2[$__top3 + 1:=x])[__q0] == $__S2[__q0]
 
 Label: Pop_ensures_10_1840
 Property: assert
 Assumptions:
-Pop_requires_9_1803: $__top7 > 0
+Pop_requires_9_1803: $__top4 > 0
 Obligation:
 true
 
 Label: Pop_ensures_11_1871
 Property: assert
 Assumptions:
-Pop_requires_9_1803: $__top7 > 0
+Pop_requires_9_1803: $__top4 > 0
 Obligation:
-true
+($__S2[$__top3 + 1:=x])[$__top4] == ($__S2[$__top3 + 1:=($__S2[$__top3 + 1:=x])[$__top4]])[$__top4]
 
 ---
 info:
