@@ -168,11 +168,11 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     else []
   let postAssert : List StmtExprMd :=
     if info.hasPostCondition then
-      -- Use the metadata from the first postcondition so the diagnostic
-      -- carries the source location of the `ensures` clause.
-      let baseMd := match postconds.head? with
-        | some pc => pc.md
-        | none => emptyMd
+      -- Use the source location and metadata from the first postcondition so
+      -- the diagnostic carries the source location of the `ensures` clause.
+      let (baseSrc, baseMd) := match postconds.head? with
+        | some pc => (pc.source, pc.md)
+        | none => (none, emptyMd)
       let summary := info.postSummary.getD "postcondition"
       -- Directly assert the postcondition conjunction rather than calling $post.
       -- The $post procedure re-invokes the original (opaque) procedure to obtain
@@ -180,7 +180,7 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
       -- here the output variables (e.g. $heap) are already in scope with their
       -- actual values, so we assert the postcondition directly.
       [⟨.Assert (conjoin postconds),
-        none, baseMd.withPropertySummary summary⟩]
+        baseSrc, baseMd.withPropertySummary summary⟩]
     else []
   match proc.body with
   | .Transparent body =>
