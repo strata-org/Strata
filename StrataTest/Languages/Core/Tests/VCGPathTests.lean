@@ -9,8 +9,8 @@ import Strata.Languages.Core.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
--- `second`'s obligation is checked once. However, `first`'s `post` is checked
--- twice because we don't (yet) do within-procedure path merging.
+-- `second`'s obligation is checked once. `first`'s `post` is checked on two
+-- paths but mergeByAssertion deduplicates the results.
 def issue419TestPgm :=
 #strata
 program Core;
@@ -30,10 +30,6 @@ procedure second() returns () { assert [a]: true; };
 
 /--
 info:
-Obligation: post
-Property: assert
-Result: ✅ pass
-
 Obligation: post
 Property: assert
 Result: ✅ pass
@@ -67,14 +63,6 @@ info:
 Obligation: wrong_ensures_0
 Property: assert
 Result: ❌ fail
-
-Obligation: wrong_ensures_0
-Property: assert
-Result: ✅ pass
-
-Obligation: wrong_ensures_0
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify sequentialExitPgm (options := .quiet)
@@ -279,10 +267,6 @@ Result: ✅ pass
 Obligation: else_path
 Property: assert
 Result: ✅ pass
-
-Obligation: post
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify noDupConcreteTrue (options := .quiet)
@@ -327,10 +311,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: else_path
-Property: assert
-Result: ✅ pass
-
-Obligation: post
 Property: assert
 Result: ✅ pass
 -/
