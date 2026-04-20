@@ -2441,6 +2441,9 @@ def pythonToLaurel' (info : PreludeInfo)
   -- will add a Heap parameter, ensuring the verifier does not assume referential
   -- transparency across heap mutations.
   for ct in compositeTypes do
+    match ct with
+    | .Alias _ => pure ()  -- aliases have no composite layout; skip
+    | _ =>
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
     procedures := procedures.push
       { name := { text := compositeToStringName ct.name.text, md := .empty }

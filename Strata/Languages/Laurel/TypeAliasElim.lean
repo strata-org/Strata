@@ -27,12 +27,16 @@ def buildAliasMap (types : List TypeDefinition) : AliasMap :=
   types.foldl (init := {}) fun m td =>
     match td with | .Alias ta => m.insert ta.name.text ta.target | _ => m
 
-/-- Transitively resolve a HighType through the alias map. -/
-partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd) : HighTypeMd :=
+/-- Transitively resolve a HighType through the alias map.
+    A visited set guards against infinite loops on cyclic aliases. -/
+partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
+    (visited : Std.HashSet String := {}) : HighTypeMd :=
   match ty.val with
-  | .UserDefined name => match amap.get? name.text with
-    | some target => resolveAliasType amap target
-    | none => ty
+  | .UserDefined name =>
+    if visited.contains name.text then ty
+    else match amap.get? name.text with
+      | some target => resolveAliasType amap target (visited.insert name.text)
+      | none => ty
   | .TTypedField vt => ⟨.TTypedField (resolveAliasType amap vt), ty.source, ty.md⟩
   | .TSet et => ⟨.TSet (resolveAliasType amap et), ty.source, ty.md⟩
   | .TMap kt vt => ⟨.TMap (resolveAliasType amap kt) (resolveAliasType amap vt), ty.source, ty.md⟩
@@ -66,7 +70,9 @@ def resolveAliasInProc (amap : AliasMap) (proc : Procedure) : Procedure :=
     body := resolveBody proc.body
     inputs := proc.inputs.map fun p => { p with type := resolveAliasType amap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveAliasType amap p.type }
-    preconditions := proc.preconditions.map resolve }
+    preconditions := proc.preconditions.map resolve
+    decreases := proc.decreases.map resolve
+    invokeOn := proc.invokeOn.map resolve }
 
 def resolveAliasInType (amap : AliasMap) (td : TypeDefinition) : TypeDefinition :=
   match td with
