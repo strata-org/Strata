@@ -148,7 +148,8 @@ def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .n
 
 /-- Runtime assertion that a decidable proposition holds; throws an internal
     error when it does not.  Used to obtain array-size proofs that Lean cannot
-    infer through mutable `for`-loop state. -/
+    infer through mutable `for`-loop state.
+    TODO: This is generically useful — consider moving to `Strata.Util`. -/
 private def guardProp {p : Prop} [Decidable p] (msg : String)
     : Except TranslationError (PLift p) :=
   if h : p then .ok ⟨h⟩ else .error (.internalError msg)
@@ -584,6 +585,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         have : i < compExprs.size := by omega
         let comp := compExprs[i]
         if n > 1 && i < n - 1 && !isSimple (comparators.val[i]) then
+          -- TODO: Prove that this naming scheme cannot conflict with existing
+          -- user variables. Shadowing is semantically fine, but a formal
+          -- non-collision proof would require threading variable-scope info
+          -- through the translator.
           let freshVar := s!"cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
           let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
           tempDecls := tempDecls ++ [varDecl]
