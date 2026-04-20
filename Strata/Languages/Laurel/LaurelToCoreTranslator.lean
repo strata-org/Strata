@@ -273,6 +273,9 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
+  | .Block (⟨ .LocalVariable [] (some initializer), innerSrc, innerMd⟩ :: rest) label =>
+    -- If a local variables has no targets, it can be ignored.
+    translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
   | .Block (⟨ .LocalVariable [⟨ name, ty ⟩] (some initializer), innerSrc, innerMd⟩ :: rest) label => do
       let valueExpr ← translateExpr initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
