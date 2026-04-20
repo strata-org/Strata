@@ -106,8 +106,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let program := liftExpressionAssignments model program
   emit "LiftExpressionAssignments" program
   let program := eliminateReturnsInExpressionTransform program
-  let program := inlineLocalVariablesInExpressions program
-  emit "InlineLocalVariablesInExpressions" program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   emit "EliminateReturns" program
@@ -152,6 +150,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
   let functionsAndProofs := eliminateMultipleOutputs functionsAndProofs
+  let functionsAndProofs := inlineLocalVariablesInExpressions functionsAndProofs
 
   let fnProgram : Program := {
     staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs,
@@ -195,6 +194,9 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
         "Core program was suppressed due to superfluous errors, but no diagnostics were emitted. This is a bug."
         DiagnosticType.StrataBug]
     else allDiagnostics
+
+  dbg_trace "=========== CORE PROGRAM"
+  dbg_trace s!"{Std.format coreProgramOption}"
   let coreProgramOption :=
     if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   return (coreProgramOption, allDiagnostics, program)

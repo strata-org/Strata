@@ -27,7 +27,7 @@ A program in the FunctionsAndProofs IR. Functions are pure computational
 procedures; proofs are verification-only procedures.
 Both reuse `Laurel.Procedure` as their representation.
 -/
-structure FunctionsAndProofsProgram where
+public structure FunctionsAndProofsProgram where
   functions : List Procedure
   proofs : List Procedure
   datatypes : List DatatypeDefinition

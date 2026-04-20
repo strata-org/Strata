@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.FunctionsAndProofs
 import Strata.Util.Tactics
 
 /-!
@@ -50,8 +51,8 @@ private def substIdentifier (name : Identifier) (replacement : StmtExprMd) (expr
 private def inlineLocalsInStmts (stmts : List StmtExprMd) : List StmtExprMd :=
   match stmts with
   | [] => []
-  | ⟨.LocalVariable name _ty (some initializer), _, _⟩ :: rest =>
-    let rest' := rest.map (substIdentifier name initializer)
+  | ⟨.LocalVariable [parameter] (some initializer), _, _⟩ :: rest =>
+    let rest' := rest.map (substIdentifier parameter.name initializer)
     inlineLocalsInStmts rest'
   | s :: rest => s :: inlineLocalsInStmts rest
 termination_by stmts.length
@@ -68,16 +69,15 @@ private def inlineLocalsNode (expr : StmtExprMd) : StmtExprMd :=
   | _ => expr
 
 /-- Apply local-variable inlining to all functional procedure bodies. -/
-def inlineLocalVariablesInExpressions (program : Program) : Program :=
-  { program with staticProcedures := program.staticProcedures.map fun proc =>
-    if !proc.isFunctional then proc
-    else
+def inlineLocalVariablesInExpressions (program : FunctionsAndProofsProgram) : FunctionsAndProofsProgram :=
+  { program with functions := program.functions.map fun proc =>
       match proc.body with
       | .Transparent body =>
         { proc with body := .Transparent (mapStmtExpr inlineLocalsNode body) }
       | .Opaque postconds (some impl) modif =>
         { proc with body := .Opaque postconds (some (mapStmtExpr inlineLocalsNode impl)) modif }
-      | _ => proc }
+      | _ => proc
+  }
 
 end -- public section
 end Strata.Laurel

@@ -209,20 +209,24 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     | some info =>
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
-      -- Pass only call args; $post internally calls the procedure to get outputs.
+      -- Assume $post *before* the assignment so that args still reference
+      -- pre-call values (e.g. $heap before it is overwritten by the call result).
+      -- The $post procedure internally calls the original to obtain outputs.
       let postAssume := if info.hasPostCondition
         then [mkWithMd (.Assume (mkCall info.postName args))] else []
-      preAssert ++ [e] ++ postAssume
+      preAssert ++ postAssume ++ [e]
     | none => [e]
   | .LocalVariable _params (some (.mk (.StaticCall callee args) ..)) =>
     match contractInfoMap.get? callee.text with
     | some info =>
       let preAssert := if info.hasPreCondition
         then [mkWithMdSummary (.Assert (mkCall info.preName args)) (info.preSummary.getD "precondition")] else []
-      -- Pass only call args; $post internally calls the procedure to get outputs.
+      -- Assume $post *before* the local variable binding so that args still
+      -- reference pre-call values.  The $post procedure internally calls the
+      -- original to obtain outputs.
       let postAssume := if info.hasPostCondition
         then [mkWithMd (.Assume (mkCall info.postName args))] else []
-      preAssert ++ [e] ++ postAssume
+      preAssert ++ postAssume ++ [e]
     | none => [e]
   | .StaticCall callee args =>
     match contractInfoMap.get? callee.text with
