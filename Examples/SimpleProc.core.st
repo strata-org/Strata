@@ -15,7 +15,7 @@ program Core;
 //  limitations under the License.
 //
 
-procedure Test(x : bool, out y : bool)
+procedure Test(inout g : bool, x : bool, out y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
