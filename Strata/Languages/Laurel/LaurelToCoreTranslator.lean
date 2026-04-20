@@ -88,7 +88,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TBool => return LMonoTy.bool
   | .TString => return LMonoTy.string
   | .TBv n => return LMonoTy.bitvec n
-  | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
+  | .TVoid => return .tcons "errorVoid" []
   | .THeap => return .tcons "Heap" []
   | .TTypedField _ => return .tcons "Field" []
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
@@ -100,7 +100,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
       modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-      return .tcons "error" []
+      return .tcons "errorUserDefined" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
   | .Unknown => throwTypeDiagnostic ty "could not infer type"
