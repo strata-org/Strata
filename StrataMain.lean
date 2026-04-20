@@ -518,7 +518,10 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .arg "dir" },
             { name := "entry-point",
               help := "Which procedures to verify: main (main fn only), roots (user procs with no user callers, default), or all (all user procs). Only valid in bugFinding mode.",
-              takesArg := .arg "mode" }]
+              takesArg := .arg "mode" },
+            { name := "warning-summary",
+              help := "Write PySpec warning summary as JSON to <file>.",
+              takesArg := .arg "file" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -542,10 +545,12 @@ def pyAnalyzeLaurelCommand : Command where
     let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
+    let warningSummaryFile := pflags.getString "warning-summary"
     let combinedLaurel ←
       match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
-                (quiet := quiet) |>.toBaseIO with
+                (quiet := quiet)
+                (warningSummaryFile := warningSummaryFile) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -554,8 +559,6 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
-        -- Emit structured set-info metadata before DETAIL/RESULT lines.
-        -- Also write the set-info metadata to user_errors.txt.
         let filePath' := sourcePath.getD filePath
         let mut lines := #[
           s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
@@ -856,7 +859,7 @@ def pyResolveOverloadsCommand : Command where
     -- Read dispatch overload table
     let overloads ←
       match ← readDispatchOverloads #[dispatchPath] |>.toBaseIO with
-      | .ok r => pure r
+      | .ok (r, _) => pure r
       | .error msg => exitFailure msg
     -- Convert .py to Python AST
     let stmts ←
