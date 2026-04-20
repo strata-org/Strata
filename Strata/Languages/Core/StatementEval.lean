@@ -558,6 +558,11 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                             exitLabel := exitLabel })
             -- At block boundary, merge paths via condition-equality matching
             -- when pathCap is active and path count exceeds the cap.
+            -- Grouping by exitLabel is safe even with duplicate sibling
+            -- labels: after a block consumes its matching exits, all
+            -- consumed paths continue with `.none` at the same control
+            -- flow point. Paths in the same exit-label group are
+            -- guaranteed to execute the same subsequent statements.
             let Ewns := match Ewn.env.pathCap with
               | .some cap =>
                 if Ewns.length > cap then
