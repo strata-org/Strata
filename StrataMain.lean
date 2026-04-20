@@ -22,7 +22,8 @@ import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
 import Strata.SimpleAPI
-import Strata.Languages.Python.PyInterpret
+-- import Strata.Languages.Python.PyInterpret
+import Strata.Languages.Core.Interpreter
 import Strata.Util.Profile
 import Strata.Util.Json
 
@@ -1226,42 +1227,37 @@ def pyInterpretCommand : Command where
   name := "pyInterpret"
   args := [ "file" ]
   flags := [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" },
-            { name := "verbose", help := "Show the generated Core program." },
-            { name := "direct", help := "Use direct Python→Core path (no Laurel)." }]
+            { name := "verbose", help := "Show the generated Core program." }]
   help := "Interpret a Python Ion program concretely (Python → Laurel → Core → execute)."
   callback := fun v pflags => do
     let filePath := v[0]
     let verbose := pflags.getBool "verbose"
-    let direct := pflags.getBool "direct"
     let fuel := match pflags.getString "fuel" with
       | some s => s.toNat!
       | none => Core.defaultFuel
-    let result ←
-      if direct then
-        match ← Strata.pyInterpretDirect filePath fuel |>.toBaseIO with
-        | .ok r => pure r
-        | .error msg => exitInternalError (toString msg)
-      else
-        match ← Strata.pyInterpret filePath (fuel := fuel) |>.toBaseIO with
-        | .ok r => pure r
-        | .error msg => exitInternalError msg
-    match result with
-    | .success E =>
-      if verbose then
-        IO.println s!"{Std.format E}"
-      IO.println "Execution completed successfully."
-    | .assertionFailure label expr _ =>
-      IO.eprintln s!"Assertion failure: {label}"
-      IO.eprintln s!"  Expression: {Std.format expr}"
-      IO.Process.exit ExitCode.failuresFound
-    | .error msg =>
-      IO.eprintln s!"Execution error: {msg}"
-      IO.Process.exit ExitCode.failuresFound
-    | .fuelExhausted =>
-      IO.eprintln "Fuel exhausted"
-      IO.Process.exit ExitCode.failuresFound
-    | .stuck msg =>
-      IO.eprintln s!"Stuck: {msg}"
+
+    let (core, _diags) ←
+      match <- pyTranslateLaurel filePath #[] #[] (specDir := ".") |>.toBaseIO with
+      | .ok r => pure r
+      | .error msg => exitFailure msg
+    let core ← match Core.typeCheck Core.VerifyOptions.quiet core
+        (moreFns := Strata.Python.ReFactory) with
+      | .ok prog => pure prog
+      | .error e =>
+        println!  s!"Core type checking failed: {e.message}"
+        IO.Process.exit ExitCode.userError
+    match Core.interpProcedure core "__main__" [] fuel with
+    | .ok E =>
+      match E.error with
+      | none =>
+        if verbose then
+          IO.println s!"{Std.format E}"
+          IO.println "Execution completed successfully."
+      | some e =>
+          IO.println f!"{e}"
+          IO.Process.exit ExitCode.failuresFound
+    | .error diag =>
+      IO.eprintln s!"Error: {diag}"
       IO.Process.exit ExitCode.failuresFound
 
 def commandGroups : List CommandGroup := [

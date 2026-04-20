@@ -74,40 +74,19 @@ def interpExpr (E : Env) (e : Expression.Expr) : Expression.Expr :=
 /-- Result of a single interpreter step. Carries full information about
     why execution stopped. -/
 inductive StepResult where
-  /-- Normal completion. -/
+  /-- Normal completion (although E may have .error set). -/
   | normal (E : Env)
   /-- An `exit` statement propagating upward. -/
   | exiting (label : Option String) (E : Env)
-  /-- Fuel exhausted. -/
-  | outOfFuel
-  /-- Stuck on an unsupported or irreducible construct. -/
-  | stuck (msg : String)
   deriving Inhabited
 
 /-- Extract the environment from a successful outcome, or `none`. -/
 def StepResult.env? : StepResult → Option Env
-  | .normal E => some E
+  | .normal E =>
+    match E.error with
+      | none => E
+      | some _ => none
   | .exiting _ E => some E
-  | _ => none
-
-/-! ## Interpreter Result -/
-
-/-- Result of interpreting a full program. -/
-inductive InterpResult where
-  | success (env : Env)
-  | assertionFailure (label : String) (expr : Expression.Expr) (env : Env)
-  | error (msg : String)
-  | fuelExhausted
-  | stuck (msg : String)
-  deriving Inhabited
-
-instance : ToString InterpResult where
-  toString
-  | .success _ => "success"
-  | .assertionFailure label expr _ => s!"assertion failure: {label}: {format expr}"
-  | .error msg => s!"error: {msg}"
-  | .fuelExhausted => "fuel exhausted"
-  | .stuck msg => s!"stuck: {msg}"
 
 /-! ## Interpreter Core -/
 
@@ -118,7 +97,7 @@ mutual
 /-- Interpret a single command. -/
 def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
   match fuel with
-  | 0 => .outOfFuel
+  | 0 => .normal { E with error := some EvalError.OutOfFuel }
   | fuel + 1 =>
   match c with
   | .cmd (.init x ty e _md) =>
@@ -138,22 +117,22 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
     match LExpr.denoteBool v with
     | some true => .normal E
     | some false => .normal { E with error := some (.AssertFail label v) }
-    | none => .stuck s!"assert condition did not reduce to bool: {format v}"
+    | none => stuck E s!"assert condition did not reduce to bool: {format v}"
 
   | .cmd (.assume _label expr _md) =>
     let v := interpExpr E expr
     match LExpr.denoteBool v with
     | some true => .normal E
-    | some false => .stuck s!"assume condition is false"
-    | none => .stuck s!"assume condition did not reduce to bool: {format v}"
+    | some false => stuck E s!"assume condition is false"
+    | none => stuck E s!"assume condition did not reduce to bool: {format v}"
 
   | .cmd (.cover _ _ _) => .normal E
 
   | .call lhs pname args _md =>
     match Program.Procedure.find? E.program ⟨pname, ()⟩ with
-    | none => .stuck s!"procedure '{pname}' not found"
+    | none => stuck E s!"procedure '{pname}' not found"
     | some proc =>
-      if proc.body.isEmpty then .stuck s!"procedure '{pname}' has no body"
+      if proc.body.isEmpty then stuck E s!"procedure '{pname}' has no body"
       else
         let argVals := args.map (interpExpr E)
         let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
@@ -166,8 +145,6 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
           exprEnv := { E.exprEnv with
             state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
         match interpBlock fuel callEnv proc.body with
-        | .outOfFuel => .outOfFuel
-        | .stuck msg => .stuck msg
         | .exiting _ callEnv' | .normal callEnv' =>
           match callEnv'.error with
           | some err => .normal { E with error := some err }
@@ -185,7 +162,7 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
 /-- Interpret a block (list of statements). -/
 def interpBlock (fuel : Nat) (E : Env) (stmts : Statements) : StepResult :=
   match fuel with
-  | 0 => .outOfFuel
+  | 0 => .normal { E with error := some EvalError.OutOfFuel }
   | fuel + 1 =>
   match stmts with
   | [] => .normal E
@@ -194,18 +171,19 @@ def interpBlock (fuel : Nat) (E : Env) (stmts : Statements) : StepResult :=
     | some _ => .normal E
     | none =>
       match interpStmt fuel E stmt with
-      | .outOfFuel => .outOfFuel
-      | .stuck msg => .stuck msg
       | .exiting label E' => .exiting label E'
       | .normal E' =>
         match E'.error with
         | some _ => .normal E'
         | none => interpBlock fuel E' rest
 
+def stuck (E : Env) (message : String) : StepResult :=
+  .normal { E with error := some (EvalError.Misc message) }
+
 /-- Interpret a single statement. -/
 def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
   match fuel with
-  | 0 => .outOfFuel
+  | 0 =>  .normal { E with error := some EvalError.OutOfFuel }
   | fuel + 1 =>
   match stmt with
   | .cmd c => interpCmd fuel E c
@@ -213,8 +191,6 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
   | .block label stmts _md =>
     let E' := { E with exprEnv := { E.exprEnv with state := E.exprEnv.state.push [] } }
     match interpBlock fuel E' stmts with
-    | .outOfFuel => .outOfFuel
-    | .stuck msg => .stuck msg
     | .normal E'' =>
       .normal { E'' with exprEnv := { E''.exprEnv with state := E''.exprEnv.state.pop } }
     | .exiting exitLabel E'' =>
@@ -227,31 +203,29 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
 
   | .ite cond thenBr elseBr _md =>
     match cond with
-    | .nondet => .stuck "nondeterministic ite"
+    | .nondet => stuck E "nondeterministic ite"
     | .det c =>
       let v := interpExpr E c
       match LExpr.denoteBool v with
       | some true => interpBlock fuel E thenBr
       | some false => interpBlock fuel E elseBr
-      | none => interpBlock fuel E elseBr  -- default to else for irreducible guards
+      | none => stuck E s!"ite condition did not reduce to bool: {format v}"
 
   | .loop guard _measure _invariants body _md =>
     match guard with
-    | .nondet => .stuck "nondeterministic loop"
+    | .nondet => stuck E "nondeterministic loop"
     | .det g =>
       let v := interpExpr E g
       match LExpr.denoteBool v with
       | some true =>
         match interpBlock fuel E body with
-        | .outOfFuel => .outOfFuel
-        | .stuck msg => .stuck msg
         | .exiting label E' => .exiting label E'
         | .normal E' =>
           match E'.error with
           | some _ => .normal E'
           | none => interpStmt fuel E' (.loop (.det g) _measure _invariants body _md)
       | some false => .normal E
-      | none => .stuck s!"loop guard did not reduce to bool: {format v}"
+      | none => stuck E s!"loop guard did not reduce to bool: {format v}"
 
   | .funcDecl decl _md =>
     let paramNames := decl.inputs.map (·.1)
@@ -317,15 +291,24 @@ def processDecls (E : Env) : Env :=
 /-- Interpret a specific procedure by name from a type-checked program. -/
 def interpProcedure (prog : Program) (procName : String)
     (args : List Expression.Expr := [])
-    (fuel : Nat := defaultFuel) : InterpResult :=
+    (fuel : Nat := defaultFuel) : Except DiagnosticModel Env :=
   match initInterpreterEnv prog with
-  | .error e => .error e.message
+  | .error e => .error e
   | .ok E =>
     let E := processDecls E
     match Program.Procedure.find? prog ⟨procName, ()⟩ with
-    | none => .error s!"procedure '{procName}' not found"
+    | none => .error {
+      fileRange := FileRange.unknown
+      type := DiagnosticType.UserError
+      message := s!"procedure '{procName}' not found"
+    }
     | some proc =>
-      if proc.body.isEmpty then .error s!"procedure '{procName}' has no body"
+      if proc.body.isEmpty then
+        .error {
+          fileRange := FileRange.unknown
+          type := DiagnosticType.UserError
+          message := s!"procedure '{procName}' has no body"
+        }
       else
         let argVals := args.map (interpExpr E)
         let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
@@ -338,19 +321,7 @@ def interpProcedure (prog : Program) (procName : String)
           exprEnv := { E.exprEnv with
             state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
         match interpBlock fuel E proc.body with
-        | .outOfFuel => .fuelExhausted
-        | .stuck msg => .stuck msg
-        | .exiting _ E' | .normal E' =>
-          match E'.error with
-          | some (.AssertFail label expr) => .assertionFailure label expr E'
-          | some _ => .error "evaluation error"
-          | none => .success E'
-
-/-- Read the value of a variable from an `InterpResult`. -/
-def InterpResult.getValue? (r : InterpResult) (name : String) : Option Expression.Expr :=
-  match r with
-  | .success E => (E.exprEnv.state.find? ⟨name, ()⟩).map (·.snd)
-  | .assertionFailure _ _ E => (E.exprEnv.state.find? ⟨name, ()⟩).map (·.snd)
-  | _ => none
+        -- TODO: Is it allowed for an exit to propagate right out of a procedure?
+        | .exiting _ E' | .normal E' => .ok E'
 
 end Core
