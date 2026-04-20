@@ -46,8 +46,7 @@ private def replaceReturn (outputs : List Parameter) (expr : StmtExprMd) : StmtE
 
 /-- Transform a single procedure: wrap body in a labelled block and replace returns. -/
 private def eliminateReturnStmts (proc : Procedure) : Procedure :=
-  if proc.isFunctional then proc
-  else match proc.body with
+  match proc.body with
   | .Opaque postconds (some impl) mods =>
     let impl' := replaceReturn proc.outputs impl
     let wrapped := mkMd (.Block [impl'] (some returnLabel))
