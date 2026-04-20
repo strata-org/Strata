@@ -386,7 +386,7 @@ calls but not checked on exit from implementations.
 
 Postconditions and procedure bodies are *two-state contexts*: they can refer to
 both the pre-state (on entry) and the post-state (on exit) of a procedure
-invocation. The pre-state value of a variable `v` is denoted by `old v`.
+invocation. The pre-state value of an inout parameter `v` is denoted by `old v`.
 `old` is not allowed in preconditions.
 
 ## Procedure calls
