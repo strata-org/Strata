@@ -76,7 +76,7 @@ private meta def buildOverloadTable
     let some ionPath := pySpecOutputPath testDir outDir pyFile
       | throw <| .userError s!"Cannot derive output path for {pyFile}"
     match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with
-    | .ok tbl => return tbl
+    | .ok (tbl, _) => return tbl
     | .error msg =>
       throw <| .userError s!"readDispatchOverloads failed: {msg}"
 

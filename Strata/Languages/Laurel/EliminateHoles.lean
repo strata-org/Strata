@@ -26,7 +26,7 @@ namespace Laurel
 public section
 
 private def emptyMd : Imperative.MetaData Core.Expression := #[]
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none, emptyMd⟩
 
 structure ElimHoleState where
   counter : Nat := 0
@@ -59,7 +59,7 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
 private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr.val with
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Unknown, expr.md⟩
+  | .Hole true none => mkHoleCall ⟨.Unknown, expr.source, expr.md⟩
   | .Hole false _ => return expr -- Non-deterministic holes are preserved
   | _ => return expr
 

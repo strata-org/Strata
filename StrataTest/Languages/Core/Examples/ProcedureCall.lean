@@ -52,11 +52,14 @@ procedure Q2() returns () {
 #end
 
 /--
-info: { callees := Std.HashMap.ofList [("Inc", Std.HashMap.ofList []),
-              ("Q2", Std.HashMap.ofList [("Q1", 1)]),
-              ("P", Std.HashMap.ofList [("Inc", 2)]),
-              ("Q1", Std.HashMap.ofList [])],
-  callers := Std.HashMap.ofList [("Inc", Std.HashMap.ofList [("P", 2)]), ("Q1", Std.HashMap.ofList [("Q2", 1)])] }
+info: CallGraph(callees: [("Inc", []),
+("P", [("Inc", 2)]),
+("Q1", []),
+("Q2", [("Q1", 1)])],
+         callers: [("Inc", [("P", 2)]),
+("P", []),
+("Q1", [("Q2", 1)]),
+("Q2", [])])
 -/
 #guard_msgs in
 #eval let (program, _) := Core.getProgram globalCounterPgm
