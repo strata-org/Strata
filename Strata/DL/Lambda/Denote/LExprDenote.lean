@@ -6,7 +6,7 @@
 module
 
 import Strata.DL.Lambda.Denote.LExprAnnotated
-public import Strata.DL.Lambda.Denote.HList
+public import Strata.DL.Util.HList
 import Strata.DL.Lambda.Factory
 import Strata.DL.Lambda.TypeFactory
 
@@ -125,10 +125,23 @@ where
   | x :: xs => substTyVars ρ x :: map xs
 
 /-- Interpretation of type constructors: maps a constructor name and its
-sort arguments to a Lean `Type`. -/
+sort arguments to a Lean `Type`.
+
+A `TyConstrInterp` is total, so every constructor name is interpreted. Three
+kinds of type constructors may be encountered:
+1. Defined type constructors (ADTs in the `TypeFactory`): their interpretation
+   is constrained by `Factory.ConstrInterpConsistent` together with
+   `Factory.ConstrWellFormed` (see `Assumptions.lean`).
+2. Uninterpreted type constructors: their interpretation is arbitrary; proofs
+   must hold for any interpretation.
+3. Type constructors not appearing in any Core program: by typing, these never
+   appear in proof goals we care about, so their interpretation may be chosen
+   arbitrarily (e.g. `Unit`). -/
 @[expose] public def TyConstrInterp := String → List LSort → Type
 
-/-- Every type produced by a `TyConstrInterp` is inhabited. -/
+/-- Every type produced by a `TyConstrInterp` is inhabited. This holds for
+inductive datatypes defined in Core because `adt_inhab` ensures the existence
+of an inhabited constructor. -/
 class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
   inhabited : ∀ name args, Inhabited (tcInterp name args)
 
@@ -166,7 +179,9 @@ instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
     (s : LSort) : Inhabited (SortDenote tcInterp s) :=
   SortDenote.inhabited tcInterp TyConstrInterp.AllInhabited.inhabited s
 
-/-- Type-variable valuation: maps each type variable to a sort. -/
+/-- Type-variable valuation: maps each type variable to a sort. This is a total
+function; type variables that do not appear in the term's type may be assigned
+any sort (e.g. `int`) since their value will never be used. -/
 def TyVarVal := TyIdentifier → LSort
 
 /-- Two-pass type denotation: substitute type variables, then interpret. -/
@@ -281,17 +296,12 @@ noncomputable def LExpr.denote
     let v1 := denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1
     let v2 := denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
     h_bool ▸ (Classical.propDecidable (v1 = v2) |>.decide)
-  | .quant _ .all _ (some qty) tr body =>
+  | .quant _ k _ (some qty) tr body =>
     let ⟨_τ_tr, h_bool, _h_tr, h_body⟩ := HasTypeA.quant_inv h
+    let pred := fun x : TyDenote tcInterp vt qty =>
+      (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true
     h_bool ▸ (Classical.propDecidable
-      (∀ x : TyDenote tcInterp vt qty,
-        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true)
-      |>.decide)
-  | .quant _ .exist _ (some qty) tr body =>
-    let ⟨_τ_tr, h_bool, _h_tr, h_body⟩ := HasTypeA.quant_inv h
-    h_bool ▸ (Classical.propDecidable
-      (∃ x : TyDenote tcInterp vt qty,
-        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true)
+      (match k with | .all => ∀ x, pred x | .exist => ∃ x, pred x)
       |>.decide)
   | .quant _ _ _ none _ _ =>
     absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
@@ -1049,6 +1059,11 @@ arguments that give rise to a given ADT interpretation instance
 over these types)
 
 TODO: add these properties as they are needed
+
+Note that this approach involves axiomatizing ADTs rather than representing
+them as inductive types in Lean. See Section 5 of
+https://dl.acm.org/doi/10.1145/3632902 for an explanation of this method
+and a demonstration of how one could provide models for the axioms.
 -/
 
 /-- ADT interpretation consistency: the semantic interpretation of constructors

@@ -472,6 +472,7 @@ theorem Map.find?_index [DecidableEq α] {m : Map α β} {a : α} {b : β}
       cases j with
       | zero => simp; exact hne
       | succ n => simpa using hfirst n (by omega)
+
 /-- If `find?` succeeds on `m` at key `a`, and `cs` has the same length as `m`,
 then `find?` on `m.map fst |>.zip cs` also succeeds, and the values come from
 the same index. -/

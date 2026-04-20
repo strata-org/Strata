@@ -12,8 +12,6 @@ Type-indexed lists used to represent bound-variable valuations in the
 denotational semantics.
 -/
 
-namespace Lambda
-
 public section
 
 /-- A heterogeneous list indexed by a list of elements of type `α`. -/

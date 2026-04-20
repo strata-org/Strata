@@ -11,7 +11,6 @@ equality checking reasoning, and the presence of an operational semantics.
 
 Each file's header lists the key theorems and definitions.
 The organization of the directory is as follows:
-- `HList.lean` - definition of heterogenous lists
 - `LExprAnnotated.lean` - definition of a type system for well-annotated Lambda
 terms (i.e. those that are annotated with their inferred types)
 - `Assumptions.lean` - typing and annotation-consistency assumptions for
