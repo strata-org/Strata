@@ -79,8 +79,8 @@ def buildEvalEnv (program : Program)
   let σ ← (Lambda.LState.init).addFactory factory
   let datatypes := program.decls.filterMap fun decl =>
     match decl with | .type (.data d) _ => some d | _ => none
-  let E := { Env.init with exprEnv := σ, program := program }
-  let E ← E.addDatatypes datatypes
+  let mut E : Env := { Env.init with exprEnv := σ, program := program }
+  E ← E.addDatatypes datatypes
   let stats := program.decls.foldl (fun s d =>
     match d with
     | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
@@ -98,7 +98,7 @@ def buildEvalEnv (program : Program)
     Runs symbolic execution and converts obligations to a program. -/
 def symbolicEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Program × Env × Statistics) := do
+    Except DiagnosticModel (Program × Statistics) := do
   let (E, declStats) ← buildEvalEnv program moreFns
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
@@ -145,7 +145,7 @@ def symbolicEval (options : VerifyOptions) (program : Program)
     dbg_trace f!"{Std.Format.line}VCs:"
     for E in pEs do
       dbg_trace f!"{formatProofObligations E.deferred}"
-  return (oblProgram, pEs.head?.getD E, stats)
+  return (oblProgram, stats)
 
 
 /-- Convenience: type check then symbolic eval. -/
@@ -153,8 +153,7 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
   let program ← typeCheck options program moreFns
-  let (prog, _, stats) ← symbolicEval options program moreFns
-  return (prog, stats)
+  symbolicEval options program moreFns
 
 /-- Build an Env suitable for SMT encoding from a program.
     Loads factory functions, datatypes, and distinct constraints

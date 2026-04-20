@@ -842,7 +842,7 @@ def symbolicEvalPipelinePhase (options : VerifyOptions)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase where
   transform prog := do
     match Core.symbolicEval options prog moreFns with
-    | .ok (p, _, _) => return (true, p)
+    | .ok (p, _) => return (true, p)
     | .error e => throw s!"{e.message}"
   phase := { name := "SymbolicEval", getValidation := fun _ => .modelPreserving }
 
@@ -1074,7 +1074,9 @@ def verify (program : Program)
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
-  let evalPhases := [typeCheckPipelinePhase options moreFns]
+  let evalPhases := [typeCheckPipelinePhase options moreFns,
+                     symbolicEvalPipelinePhase options moreFns,
+                     Core.anfEncoderPipelinePhase]
   let allPhases := pipelinePhases ++ evalPhases
   let phases := allPhases.map (·.phase)
   let ((oblProgram, preEvalProgram), pipelineStats) ← profileStep profile "  Pipeline" do
@@ -1111,16 +1113,15 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build preEvalProgram))
+  let oblProgram := oblProgram
   let allStats := pipelineStats
-  -- Run symbolic evaluation separately to capture the Env for SMT encoding
-  let ((oblProgram, smtEnv), symEvalStats) ← profileStep profile "  Symbolic eval" do
-    match Core.symbolicEval options oblProgram moreFns with
-    | .ok (prog, env, stats) => .ok ((prog, env), stats)
+  -- Build SMT encoding context by running full evaluation on the pre-eval program
+  let smtEnv ← match Core.buildEvalEnv preEvalProgram moreFns with
+    | .ok (E, _) =>
+      match Program.eval E with
+      | .ok (pEs, _) => pure (pEs.head?.getD E)
+      | .error e => .error e
     | .error e => .error e
-  let allStats := allStats.merge symEvalStats
-  -- Run ANF encoding on the obligations program
-  let (oblProgram, _) ← profileStep profile "  ANF encoding" do
-    pure (Core.ANFEncoder.anfEncodeProgram oblProgram, ({} : Statistics))
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
