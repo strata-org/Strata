@@ -182,10 +182,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     constants := fnResolveResult.program.constants
   }
 
-  let ordered := orderFunctionsAndProofs functionsAndProofs
+  let coreWithLaurelTypes := orderFunctionsAndProofs functionsAndProofs
   let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+  dbg_trace "=========== COREWithLaurelTypes PROGRAM"
+  dbg_trace s!"{Std.format coreWithLaurelTypes}"
   let (coreProgramOption, translateState) :=
-    runTranslateM initState (translateLaurelToCore options program ordered)
+    runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
   let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
   let allDiagnostics :=
     if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then

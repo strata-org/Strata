@@ -102,7 +102,7 @@ private def freshTempFor (varName : Identifier) : LiftM Identifier := do
 private def freshCondVar : LiftM Identifier := do
   let n := (← get).condCounter
   modify fun s => { s with condCounter := n + 1 }
-  return s!"$c_{n}"
+  return s!"$cndtn_{n}"
 
 private def prepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
@@ -233,7 +233,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Hole false (some holeType) =>
       -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
       let holeVar ← freshCondVar
-      prepend (bare (.LocalVariable [{ name := holeVar, type := holeType }] none))
+      prepend ⟨ .LocalVariable [{ name := holeVar, type := holeType }] none, source, md⟩
       return bare (.Identifier holeVar)
 
   | .Assign targets value =>
@@ -312,7 +312,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
         -- Output order: declaration, then if-then-else
         prepend (⟨.IfThenElse seqCond thenBlock seqElse, source, md⟩)
-        prepend (bare (.LocalVariable [{ name := condVar, type := condType }] none))
+        prepend ⟨ .LocalVariable [{ name := condVar, type := condType }] none, source, md ⟩
         return bare (.Identifier condVar)
       else
         -- No assignments in branches — recurse normally

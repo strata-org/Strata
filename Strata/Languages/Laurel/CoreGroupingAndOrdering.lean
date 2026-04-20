@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.FunctionsAndProofs
 import Strata.DL.Lambda.LExpr
 import Strata.DDM.Util.Graph.Tarjan
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
 ## Grouping and Ordering for Core Translation
@@ -187,6 +188,27 @@ using Laurel types. Produced by `orderFunctionsAndProofs` from a
 -/
 public structure CoreWithLaurelTypes where
   decls : List OrderedDecl
+
+open Std (Format ToFormat)
+
+public section
+
+def formatOrderedDecl : OrderedDecl → Format
+  | .funcs funcs _ => Format.joinSep (funcs.map ToFormat.format) "\n\n"
+  | .procedure proc => ToFormat.format proc
+  | .datatypes dts => Format.joinSep (dts.map ToFormat.format) "\n\n"
+  | .constant c => ToFormat.format c
+
+instance : ToFormat OrderedDecl where
+  format := formatOrderedDecl
+
+def formatCoreWithLaurelTypes (p : CoreWithLaurelTypes) : Format :=
+  Format.joinSep (p.decls.map formatOrderedDecl) "\n\n"
+
+instance : ToFormat CoreWithLaurelTypes where
+  format := formatCoreWithLaurelTypes
+
+end -- public section
 
 /--
 Produce a `CoreWithLaurelTypes` from a `FunctionsAndProofsProgram` by

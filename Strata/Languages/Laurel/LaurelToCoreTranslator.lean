@@ -126,8 +126,7 @@ private def freshId : TranslateM Nat := do
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  let id ← freshId
-  return LExpr.fvar () (⟨s!"DUMMY_VAR_{id}", ()⟩) none
+  return default
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
