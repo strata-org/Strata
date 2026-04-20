@@ -384,6 +384,7 @@ def DictStrAny_get_param (dict : StmtExprMd) (key : String) (isOptional : Bool) 
 def resolveDispatch (ctx : TranslationContext)
     (f : Python.expr SourceRange)
     (args : Array (Python.expr SourceRange))
+    (kwords : List (Python.keyword SourceRange) := [])
     : Except TranslationError (Option String) := do
   let funcName := match f with
     | .Attribute _ _ attr _ => attr.val
@@ -392,11 +393,17 @@ def resolveDispatch (ctx : TranslationContext)
   match ctx.overloadTable[funcName]? with
   | none => return none
   | some fnOverloads =>
-    let .isTrue _ := decideProp (args.size > 0)
+    -- Use the first positional arg, or fall back to the first keyword arg's value
+    let firstArg? : Option (Python.expr SourceRange) :=
+      if h : args.size > 0 then some args[0]
+      else match kwords with
+        | (.mk_keyword _ _ value) :: _ => some value
+        | [] => none
+    let some firstArg := firstArg?
       | throw (.typeError
           s!"Dispatched function '{funcName}' called with no \
             arguments (expected a string literal first argument)")
-    match args[0] with
+    match firstArg with
     | .Constant range (.ConString _ s) _ =>
       let some ident := fnOverloads[s.val]?
         | let knownServices := fnOverloads.keysArray.insertionSort.take 2
@@ -786,13 +793,15 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   -- FormattedValue produces string-typed Any
   | .FormattedValue _ _ _ _ => return PyLauType.Str
 
-  | .Call _ f args _ => getFunctionReturnType ctx f args.val
+  | .Call _ f args kwargs =>
+    getFunctionReturnType ctx f args.val kwargs.val.toList
 
   | _ => return PyLauType.Any
 
 partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr SourceRange) (args : Array (Python.expr SourceRange))
+    (kwords : List (Python.keyword SourceRange) := [])
     : Except TranslationError String := do
-  match resolveDispatch ctx func args with
+  match resolveDispatch ctx func args kwords with
   |.ok (some classname) => return classname
   | _=>
     let (fname, _) ← refineFunctionCallExpr ctx func
@@ -958,7 +967,7 @@ partial def translateCall (ctx : TranslationContext)
                           (kwords : List (Python.keyword SourceRange))
     : Except TranslationError StmtExprMd := do
   -- Step 1: factory dispatch (e.g., boto3.client('iam'))
-  if let some className ← resolveDispatch ctx f args.toArray then
+  if let some className ← resolveDispatch ctx f args.toArray kwords then
     return mkStmtExprMd (.New className)
   -- Step 2: method call on typed variable (e.g., iam.get_role())
   --   Resolve to ClassName_method(obj, args)

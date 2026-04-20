@@ -59,9 +59,14 @@ partial def walkExpr
   match e with
   -- The interesting case: function calls
   | .Call _ f ⟨_, args⟩ ⟨_, kwargs⟩ => do
-    -- Check dispatch
-    if h : args.size > 0 then
-      if let (.Constant _ (.ConString _ ⟨_, s⟩) _) := args[0] then
+    -- Check dispatch: use first positional arg, or fall back to first keyword arg's value
+    let firstArg? : Option (expr SourceRange) :=
+      if h : args.size > 0 then some args[0]
+      else match kwargs.toList with
+        | (.mk_keyword _ _ value) :: _ => some value
+        | [] => none
+    if let some firstArg := firstArg? then
+      if let (.Constant _ (.ConString _ ⟨_, s⟩) _) := firstArg then
         let maybeFuncName :=
               match f with
               | .Attribute _ _ attr _ => some attr.val

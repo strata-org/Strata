@@ -190,6 +190,7 @@ private meta def testCases : List (String × Expected) := [
     .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
   -- Type alias resolution tests (TDD for resolveTypeName refactoring)
   .mk "test_method_dispatch.py" .success,
+  .mk "test_keyword_dispatch.py" .success,
   .mk "test_annotation_dispatch.py" .success,
   .mk "test_constructor_dispatch.py" .success,
   .mk "test_reassign_dispatch.py" .success,
