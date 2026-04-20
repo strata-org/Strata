@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Core
+import Strata.Languages.Core.CmdEval
 
 /-! # Concrete Interpreter for Strata Core Programs
 
@@ -43,31 +44,10 @@ private def defaultValue (ty : Expression.Ty) : Expression.Expr :=
     defaultValueOfMonoTy (ty.toMonoType h)
   else .intConst () 0
 
-/-- Insert a variable with a type into the environment. -/
-private def insertVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty)
-    (v : Expression.Expr) : Env :=
-  if h : ty.isMonoType then
-    E.insertInContext (x, some (ty.toMonoType h)) v
-  else
-    E.insertInContext (x, none) v
-
 /-- Update a variable that already exists in the environment. -/
 private def updateVar (E : Env) (x : Expression.Ident) (v : Expression.Expr) : Env :=
   let tyOpt := (E.exprEnv.state.find? x).bind (·.fst)
   E.insertInContext (x, tyOpt) v
-
-/-! ## Expression Evaluation -/
-
-/-- Evaluate an expression using the interpreter's environment.
-
-This is the interpreter's own expression evaluator, defined as a separate
-function so that we can later prove it consistent with the small-step
-`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
-
-Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
--/
-def interpExpr (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  e.eval E.exprEnv.config.fuel E.exprEnv
 
 /-! ## Step Result -/
 
@@ -80,13 +60,40 @@ inductive StepResult where
   | exiting (label : Option String) (E : Env)
   deriving Inhabited
 
-/-- Extract the environment from a successful outcome, or `none`. -/
-def StepResult.env? : StepResult → Option Env
-  | .normal E =>
-    match E.error with
-      | none => E
-      | some _ => none
-  | .exiting _ E => some E
+def stuck (E : Env) (message : String) : Env :=
+  { E with error := some (EvalError.Misc message) }
+
+/-! ## Expression Evaluation -/
+
+def isValue (E : Env) (e : Expression.Expr) : Bool :=
+  LExpr.isCanonicalValue E.factory e || true -- TODO
+
+/-- Evaluate an expression using the interpreter's environment.
+
+This is the interpreter's own expression evaluator, defined as a separate
+function so that we can later prove it consistent with the small-step
+`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
+
+Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
+-/
+def interpExpr (E : Env) (e : Expression.Expr) : Except Env Expression.Expr :=
+  let v := e.eval E.exprEnv.config.fuel E.exprEnv
+  if isValue E v then
+    .ok v
+  else
+    .error (stuck E s!"expression condition did not reduce to a value: {v}")
+
+-- TODO: foldlM?
+def interpExprList (E : Env) (es : List Expression.Expr) : Except Env (List Expression.Expr) :=
+  match es with
+  | [] => .ok []
+  | e::rest =>
+    match interpExpr E e with
+    | .error e => .error e
+    | .ok v =>
+      match interpExprList E rest with
+      | .error e => .error e
+      | .ok vs => .ok (v::vs)
 
 /-! ## Interpreter Core -/
 
@@ -102,62 +109,74 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
   match c with
   | .cmd (.init x ty e _md) =>
     match e with
-    | .det expr => .normal (insertVar E x ty (interpExpr E expr))
-    | .nondet => .normal (insertVar E x ty (defaultValue ty))
+    | .det expr =>
+      match interpExpr E expr with
+      | .ok v => .normal (CmdEval.update E x ty v)
+      | .error sr => .normal sr
+    | .nondet => .normal (CmdEval.update E x ty (defaultValue ty))
 
   | .cmd (.set x e _md) =>
     match e with
-    | .det expr => .normal (updateVar E x (interpExpr E expr))
+    | .det expr =>
+      match interpExpr E expr with
+      | .ok v => .normal (updateVar E x v)
+      | .error sr => .normal sr
     | .nondet =>
       let tyOpt := (E.exprEnv.state.find? x).bind (·.fst)
       .normal (updateVar E x (defaultValueOfMonoTy tyOpt))
 
   | .cmd (.assert label expr _md) =>
-    let v := interpExpr E expr
-    match LExpr.denoteBool v with
-    | some true => .normal E
-    | some false => .normal { E with error := some (.AssertFail label v) }
-    | none => stuck E s!"assert condition did not reduce to bool: {format v}"
+    match interpExpr E expr with
+    | .error sr => .normal sr
+    | .ok v =>
+      match LExpr.denoteBool v with
+      | some true => .normal E
+      | some false => .normal { E with error := some (.AssertFail label v) }
+      | none => .normal (stuck E s!"assert condition did not reduce to bool: {format v}")
 
   | .cmd (.assume _label expr _md) =>
-    let v := interpExpr E expr
-    match LExpr.denoteBool v with
-    | some true => .normal E
-    | some false => stuck E s!"assume condition is false"
-    | none => stuck E s!"assume condition did not reduce to bool: {format v}"
+    match interpExpr E expr with
+    | .error sr => .normal sr
+    | .ok v =>
+      match LExpr.denoteBool v with
+      | some true => .normal E
+      | some false => .normal (stuck E s!"assume condition is false")
+      | none => .normal (stuck E s!"assume condition did not reduce to bool: {format v}")
 
-  | .cmd (.cover _ _ _) => .normal E
+  | .cmd (.cover _ _ _) => .normal (stuck E "cover not yet supported")
 
   | .call lhs pname args _md =>
     match Program.Procedure.find? E.program ⟨pname, ()⟩ with
-    | none => stuck E s!"procedure '{pname}' not found"
+    | none => .normal (stuck E s!"procedure '{pname}' not found")
     | some proc =>
-      if proc.body.isEmpty then stuck E s!"procedure '{pname}' has no body"
+      if proc.body.isEmpty then .normal (stuck E s!"procedure '{pname}' has no body")
       else
-        let argVals := args.map (interpExpr E)
-        let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-          proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
-          |>.map fun ((name, ty), val) => (name, (some ty, val))
-        let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-          proc.header.outputs.keys.zip proc.header.outputs.values
-          |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-        let callEnv := { E with
-          exprEnv := { E.exprEnv with
-            state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
-        match interpBlock fuel callEnv proc.body with
-        | .exiting _ callEnv' | .normal callEnv' =>
-          match callEnv'.error with
-          | some err => .normal { E with error := some err }
-          | none =>
-            let outputVals := proc.header.outputs.keys.map fun name =>
-              (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            let modifiedVals := proc.spec.modifies.map fun name =>
-              (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            let E' := lhs.zip outputVals |>.foldl (fun env (name, val) =>
-              updateVar env name val) E
-            let E' := proc.spec.modifies.zip modifiedVals |>.foldl (fun env (name, val) =>
-              updateVar env name val) E'
-            .normal E'
+        match interpExprList E args with
+        | .error e => .normal e
+        | .ok argVals =>
+          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
+            |>.map fun ((name, ty), val) => (name, (some ty, val))
+          let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.outputs.keys.zip proc.header.outputs.values
+            |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+          let callEnv := { E with
+            exprEnv := { E.exprEnv with
+              state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
+          match interpBlock fuel callEnv proc.body with
+          | .exiting _ callEnv' | .normal callEnv' =>
+            match callEnv'.error with
+            | some err => .normal { E with error := some err }
+            | none =>
+              let outputVals := proc.header.outputs.keys.map fun name =>
+                (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+              let modifiedVals := proc.spec.modifies.map fun name =>
+                (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+              let E' := lhs.zip outputVals |>.foldl (fun env (name, val) =>
+                updateVar env name val) E
+              let E' := proc.spec.modifies.zip modifiedVals |>.foldl (fun env (name, val) =>
+                updateVar env name val) E'
+              .normal E'
 
 /-- Interpret a block (list of statements). -/
 def interpBlock (fuel : Nat) (E : Env) (stmts : Statements) : StepResult :=
@@ -176,9 +195,6 @@ def interpBlock (fuel : Nat) (E : Env) (stmts : Statements) : StepResult :=
         match E'.error with
         | some _ => .normal E'
         | none => interpBlock fuel E' rest
-
-def stuck (E : Env) (message : String) : StepResult :=
-  .normal { E with error := some (EvalError.Misc message) }
 
 /-- Interpret a single statement. -/
 def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
@@ -203,29 +219,33 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
 
   | .ite cond thenBr elseBr _md =>
     match cond with
-    | .nondet => stuck E "nondeterministic ite"
+    | .nondet => .normal (stuck E "nondeterministic ite")
     | .det c =>
-      let v := interpExpr E c
-      match LExpr.denoteBool v with
-      | some true => interpBlock fuel E thenBr
-      | some false => interpBlock fuel E elseBr
-      | none => stuck E s!"ite condition did not reduce to bool: {format v}"
+      match interpExpr E c with
+      | .error sr => .normal sr
+      | .ok v =>
+        match LExpr.denoteBool v with
+        | some true => interpBlock fuel E thenBr
+        | some false => interpBlock fuel E elseBr
+        | none => .normal (stuck E s!"ite condition did not reduce to bool: {format v}")
 
   | .loop guard _measure _invariants body _md =>
     match guard with
-    | .nondet => stuck E "nondeterministic loop"
+    | .nondet => .normal (stuck E "nondeterministic loop")
     | .det g =>
-      let v := interpExpr E g
-      match LExpr.denoteBool v with
-      | some true =>
-        match interpBlock fuel E body with
-        | .exiting label E' => .exiting label E'
-        | .normal E' =>
-          match E'.error with
-          | some _ => .normal E'
-          | none => interpStmt fuel E' (.loop (.det g) _measure _invariants body _md)
-      | some false => .normal E
-      | none => stuck E s!"loop guard did not reduce to bool: {format v}"
+      match interpExpr E g with
+      | .error sr => .normal sr
+      | .ok v =>
+        match LExpr.denoteBool v with
+        | some true =>
+          match interpBlock fuel E body with
+          | .exiting label E' => .exiting label E'
+          | .normal E' =>
+            match E'.error with
+            | some _ => .normal E'
+            | none => interpStmt fuel E' (.loop (.det g) _measure _invariants body _md)
+        | some false => .normal E
+        | none => .normal (stuck E s!"loop guard did not reduce to bool: {format v}")
 
   | .funcDecl decl _md =>
     let paramNames := decl.inputs.map (·.1)
@@ -271,9 +291,11 @@ def processDecls (E : Env) : Env :=
     | none =>
     match decl with
     | .var name ty (.det e) _md =>
-      insertVar E name ty (interpExpr E e)
+      match interpExpr E e with
+      | .error sr => sr
+      | .ok v => CmdEval.update E name ty v
     | .var name ty .nondet _md =>
-      insertVar E name ty (defaultValue ty)
+      CmdEval.update E name ty (defaultValue ty)
     | .func f _md =>
       match E.addFactoryFunc f with
       | .ok E' => E'
@@ -288,6 +310,13 @@ def processDecls (E : Env) : Env :=
     | _ => E
   ) E
 
+def diagModel (message : String) : Except DiagnosticModel Env :=
+  .error {
+    fileRange := FileRange.unknown
+    type := DiagnosticType.UserError
+    message := message
+  }
+
 /-- Interpret a specific procedure by name from a type-checked program. -/
 def interpProcedure (prog : Program) (procName : String)
     (args : List Expression.Expr := [])
@@ -297,31 +326,25 @@ def interpProcedure (prog : Program) (procName : String)
   | .ok E =>
     let E := processDecls E
     match Program.Procedure.find? prog ⟨procName, ()⟩ with
-    | none => .error {
-      fileRange := FileRange.unknown
-      type := DiagnosticType.UserError
-      message := s!"procedure '{procName}' not found"
-    }
+    | none => .ok (stuck E s!"procedure '{procName}' not found")
     | some proc =>
       if proc.body.isEmpty then
-        .error {
-          fileRange := FileRange.unknown
-          type := DiagnosticType.UserError
-          message := s!"procedure '{procName}' has no body"
-        }
+        .ok (stuck E s!"procedure '{procName}' has no body")
       else
-        let argVals := args.map (interpExpr E)
-        let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-          proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
-          |>.map fun ((name, ty), val) => (name, (some ty, val))
-        let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-          proc.header.outputs.keys.zip proc.header.outputs.values
-          |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-        let E := { E with
-          exprEnv := { E.exprEnv with
-            state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
-        match interpBlock fuel E proc.body with
-        -- TODO: Is it allowed for an exit to propagate right out of a procedure?
-        | .exiting _ E' | .normal E' => .ok E'
+        match interpExprList E args with
+        | .error e => .ok e
+        | .ok argVals =>
+          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
+            |>.map fun ((name, ty), val) => (name, (some ty, val))
+          let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.outputs.keys.zip proc.header.outputs.values
+            |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+          let E := { E with
+            exprEnv := { E.exprEnv with
+              state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
+          match interpBlock fuel E proc.body with
+          -- TODO: Is it allowed for an exit to propagate right out of a procedure?
+          | .exiting _ E' | .normal E' => .ok E'
 
 end Core
