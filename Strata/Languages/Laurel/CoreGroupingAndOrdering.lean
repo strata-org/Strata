@@ -193,11 +193,6 @@ Produce a `CoreWithLaurelTypes` from a `FunctionsAndProofsProgram` by
 computing a combined ordering of functions and proofs using the call graph,
 then collecting datatypes and constants.
 
-/--
-Produce a `CoreWithLaurelTypes` from a `FunctionsAndProofsProgram` by
-computing a combined ordering of functions and proofs using the call graph,
-then collecting datatypes and constants.
-
 Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that `invokeOn` axioms are available to functions that need them.
