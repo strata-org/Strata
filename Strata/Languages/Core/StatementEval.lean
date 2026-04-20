@@ -438,9 +438,11 @@ private def mergeDownPaths (cond : Expression.Expr)
         { acc with env := Env.merge cond acc.env ewn.env }) first])
   errors ++ merged.flatten
 
-/-- Compare two conditions for structural equality, ignoring metadata. -/
+/-- Compare two conditions for structural equality, ignoring metadata
+    and type annotations. This ensures matching remains robust if
+    ExpressionMetadata or type annotations diverge across paths. -/
 private def condEq (a b : Expression.Expr) : Bool :=
-  a.eraseMetadata == b.eraseMetadata
+  a.eraseMetadata.eraseTypes == b.eraseMetadata.eraseTypes
 
 /--
 Extract the first element from `ts` whose head `splitConds` condition
