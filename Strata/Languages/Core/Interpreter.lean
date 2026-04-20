@@ -14,7 +14,7 @@ performing symbolic verification.
 
 ## Design
 
-- Reuses `Core.Env` and its `exprEval` for expression evaluation.
+- Uses `interpExpr` for expression evaluation (a thin wrapper around `LExpr.eval`).
 - Three mutually recursive functions (`interpStmt`, `interpBlock`, `interpCmd`)
   with a shared `fuel : Nat` parameter decremented on each recursive call.
 - Returns a structured `StepResult` distinguishing normal completion, exit
@@ -28,17 +28,6 @@ open Std (ToFormat Format format)
 
 /-! ## Helpers -/
 
-/-- Produce a default value for a type. Used for havoc and uninitialized variables. -/
-private def defaultValue (ty : Expression.Ty) : Expression.Expr :=
-  if h : ty.isMonoType then
-    match ty.toMonoType h with
-    | .tcons "int" _ => .intConst () 0
-    | .tcons "bool" _ => .boolConst () false
-    | .tcons "string" _ => .const () (.strConst "")
-    | .tcons "real" _ => .const () (.realConst 0)
-    | _ => .intConst () 0
-  else .intConst () 0
-
 /-- Default value based on an optional monotype from the store. -/
 private def defaultValueOfMonoTy (ty : Option LMonoTy) : Expression.Expr :=
   match ty with
@@ -47,6 +36,12 @@ private def defaultValueOfMonoTy (ty : Option LMonoTy) : Expression.Expr :=
   | some (.tcons "string" _) => .const () (.strConst "")
   | some (.tcons "real" _) => .const () (.realConst 0)
   | _ => .intConst () 0
+
+/-- Produce a default value for a type. Used for havoc and uninitialized variables. -/
+private def defaultValue (ty : Expression.Ty) : Expression.Expr :=
+  if h : ty.isMonoType then
+    defaultValueOfMonoTy (ty.toMonoType h)
+  else .intConst () 0
 
 /-- Insert a variable with a type into the environment. -/
 private def insertVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty)
@@ -60,6 +55,19 @@ private def insertVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty)
 private def updateVar (E : Env) (x : Expression.Ident) (v : Expression.Expr) : Env :=
   let tyOpt := (E.exprEnv.state.find? x).bind (·.fst)
   E.insertInContext (x, tyOpt) v
+
+/-! ## Expression Evaluation -/
+
+/-- Evaluate an expression using the interpreter's environment.
+
+This is the interpreter's own expression evaluator, defined as a separate
+function so that we can later prove it consistent with the small-step
+`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
+
+Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
+-/
+def interpExpr (E : Env) (e : Expression.Expr) : Expression.Expr :=
+  e.eval E.exprEnv.config.fuel E.exprEnv
 
 /-! ## Step Result -/
 
@@ -104,7 +112,7 @@ instance : ToString InterpResult where
 /-! ## Interpreter Core -/
 
 /-- Default fuel for the interpreter. -/
-def defaultFuel : Nat := 100000
+def defaultFuel : Nat := 10000
 
 mutual
 /-- Interpret a single command. -/
@@ -115,25 +123,25 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
   match c with
   | .cmd (.init x ty e _md) =>
     match e with
-    | .det expr => .normal (insertVar E x ty (E.exprEval expr))
+    | .det expr => .normal (insertVar E x ty (interpExpr E expr))
     | .nondet => .normal (insertVar E x ty (defaultValue ty))
 
   | .cmd (.set x e _md) =>
     match e with
-    | .det expr => .normal (updateVar E x (E.exprEval expr))
+    | .det expr => .normal (updateVar E x (interpExpr E expr))
     | .nondet =>
       let tyOpt := (E.exprEnv.state.find? x).bind (·.fst)
       .normal (updateVar E x (defaultValueOfMonoTy tyOpt))
 
   | .cmd (.assert label expr _md) =>
-    let v := E.exprEval expr
+    let v := interpExpr E expr
     match LExpr.denoteBool v with
     | some true => .normal E
     | some false => .normal { E with error := some (.AssertFail label v) }
     | none => .stuck s!"assert condition did not reduce to bool: {format v}"
 
   | .cmd (.assume _label expr _md) =>
-    let v := E.exprEval expr
+    let v := interpExpr E expr
     match LExpr.denoteBool v with
     | some true => .normal E
     | some false => .stuck s!"assume condition is false"
@@ -147,7 +155,7 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
     | some proc =>
       if proc.body.isEmpty then .stuck s!"procedure '{pname}' has no body"
       else
-        let argVals := args.map E.exprEval
+        let argVals := args.map (interpExpr E)
         let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
           proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
           |>.map fun ((name, ty), val) => (name, (some ty, val))
@@ -221,7 +229,7 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
     match cond with
     | .nondet => .stuck "nondeterministic ite"
     | .det c =>
-      let v := E.exprEval c
+      let v := interpExpr E c
       match LExpr.denoteBool v with
       | some true => interpBlock fuel E thenBr
       | some false => interpBlock fuel E elseBr
@@ -231,7 +239,7 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : StepResult :=
     match guard with
     | .nondet => .stuck "nondeterministic loop"
     | .det g =>
-      let v := E.exprEval g
+      let v := interpExpr E g
       match LExpr.denoteBool v with
       | some true =>
         match interpBlock fuel E body with
@@ -289,7 +297,7 @@ def processDecls (E : Env) : Env :=
     | none =>
     match decl with
     | .var name ty (.det e) _md =>
-      insertVar E name ty (E.exprEval e)
+      insertVar E name ty (interpExpr E e)
     | .var name ty .nondet _md =>
       insertVar E name ty (defaultValue ty)
     | .func f _md =>
@@ -319,7 +327,7 @@ def interpProcedure (prog : Program) (procName : String)
     | some proc =>
       if proc.body.isEmpty then .error s!"procedure '{procName}' has no body"
       else
-        let argVals := args.map E.exprEval
+        let argVals := args.map (interpExpr E)
         let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
           proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
           |>.map fun ((name, ty), val) => (name, (some ty, val))
