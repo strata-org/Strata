@@ -277,10 +277,10 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .LocalVariable [⟨ name, ty ⟩] (some initializer), innerSrc, innerMd⟩ :: rest) label => do
       let valueExpr ← translateExpr initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
-      -- disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
+      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
-      let coreMonoType ← translateType ty
-      return .app () (.abs () "" (some coreMonoType) bodyExpr) valueExpr
+      -- let coreMonoType ← translateType ty
+      -- return .app () (.abs () "" (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable _params none, innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
   | .Block (⟨ .LocalVariable (x::xs) _, innerSrc, innerMd⟩ :: rest) label =>
