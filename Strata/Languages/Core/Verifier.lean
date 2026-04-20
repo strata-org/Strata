@@ -833,7 +833,8 @@ def typeCheckPipelinePhase (options : VerifyOptions)
   transform prog := do
     match Core.typeCheck options prog moreFns with
     | .ok p => return (true, p)
-    | .error e => throw s!"{e.message}"
+    | .error e => throw s!"{e.formatRange none true} ❌ Type checking error.
+{e.message}"
   phase := { name := "TypeCheck", getValidation := fun _ => .modelPreserving }
 
 /-- Symbolic evaluation pipeline phase. -/
@@ -1103,7 +1104,7 @@ def verify (program : Program)
           IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
             (IO.FS.writeFile path (toString current ++ "\n"))
       | .error e =>
-        throw (DiagnosticModel.fromFormat f!"❌ {pp.phase.name} Error. {e}")
+        throw (DiagnosticModel.fromFormat f!"{e}")
     .ok ((current, preEvalProgram), state.statistics)
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
