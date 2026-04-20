@@ -426,19 +426,6 @@ private def groupByExitLabel (ewns : List EnvWithNext) :
   ) []
   groups.map (fun (l, ms) => (l, ms.reverse))
 
-private def mergeDownPaths (cond : Expression.Expr)
-    (ewns : List EnvWithNext) : List EnvWithNext :=
-  let (errors, good) := ewns.partition (fun ewn => ewn.env.error.isSome)
-  let groups := groupByExitLabel good
-  let merged := groups.map (fun (_, members) =>
-    match members with
-    | [] => []
-    | [single] => [single]
-    | first :: rest =>
-      [rest.foldl (fun acc ewn =>
-        { acc with env := Env.merge cond acc.env ewn.env }) first])
-  errors ++ merged.flatten
-
 /-- Compare two conditions for structural equality, ignoring metadata
     and type annotations. This ensures matching remains robust if
     ExpressionMetadata or type annotations diverge across paths. -/
@@ -673,14 +660,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
     | .some cap =>
       let Ewns_tagged := tagSplit Ewns_t true ++ tagSplit Ewns_f false
       if Ewns_tagged.length > cap then
-        -- Try same-exit-label merge first
-        let merged := mergeDownPaths cond' Ewns_tagged
+        let groups := groupByExitLabel Ewns_tagged
+        let merged := groups.map (fun (_, members) =>
+          mergeCondPairs members.length members)
+        let merged := merged.flatten
         if merged.length < Ewns_tagged.length then
           (popAll merged,
            branchStats.increment s!"{Evaluator.Stats.processIteBranches_capMerged}")
         else
-          -- Can't merge here (different exit labels); leave splitConds
-          -- for the block boundary to resolve.
           (popAll Ewns_tagged,
            branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}")
       else
