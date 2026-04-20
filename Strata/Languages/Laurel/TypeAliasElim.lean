@@ -18,9 +18,7 @@ Chained aliases are resolved transitively. Runs after the first resolution.
 
 namespace Strata.Laurel
 
-public section
-
-abbrev AliasMap := Std.HashMap String HighTypeMd
+private abbrev AliasMap := Std.HashMap String HighTypeMd
 
 /-- Build a map from alias name to target type. -/
 def buildAliasMap (types : List TypeDefinition) : AliasMap :=
@@ -40,13 +38,16 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     else match amap.get? name.text with
       | some target => resolveAliasType amap target (visited.insert name.text)
       | none => ty
-  | .TTypedField vt => ⟨.TTypedField (resolveAliasType amap vt), ty.source, ty.md⟩
-  | .TSet et => ⟨.TSet (resolveAliasType amap et), ty.source, ty.md⟩
-  | .TMap kt vt => ⟨.TMap (resolveAliasType amap kt) (resolveAliasType amap vt), ty.source, ty.md⟩
+  | .TTypedField vt => ⟨.TTypedField (resolveAliasType amap vt visited), ty.source, ty.md⟩
+  | .TSet et => ⟨.TSet (resolveAliasType amap et visited), ty.source, ty.md⟩
+  | .TMap kt vt =>
+    ⟨.TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), ty.source, ty.md⟩
   | .Applied base args =>
-    ⟨.Applied (resolveAliasType amap base) (args.map (resolveAliasType amap)), ty.source, ty.md⟩
-  | .Pure base => ⟨.Pure (resolveAliasType amap base), ty.source, ty.md⟩
-  | .Intersection tys => ⟨.Intersection (tys.map (resolveAliasType amap)), ty.source, ty.md⟩
+    ⟨.Applied (resolveAliasType amap base visited)
+      (args.map (resolveAliasType amap · visited)), ty.source, ty.md⟩
+  | .Pure base => ⟨.Pure (resolveAliasType amap base visited), ty.source, ty.md⟩
+  | .Intersection tys =>
+    ⟨.Intersection (tys.map (resolveAliasType amap · visited)), ty.source, ty.md⟩
   | _ => ty
 
 /-- Resolve aliases in expression type positions. -/
@@ -108,5 +109,4 @@ public def typeAliasElim (_model : SemanticModel) (program : Program) : Program 
       type := resolveAliasType amap c.type
       initializer := c.initializer.map (mapStmtExpr (resolveAliasExprNode amap)) } }
 
-end -- public section
 end Strata.Laurel
