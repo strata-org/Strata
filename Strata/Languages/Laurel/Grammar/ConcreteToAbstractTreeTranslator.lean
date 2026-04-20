@@ -484,7 +484,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External
-      else if isFunction && !isOpaque then match body with
+      else if isOpaque then Body.Opaque postconditions body modifies
+      else if isFunction then match body with
         | some b => Body.Transparent b postconditions
         | none => Body.Opaque postconditions none modifies
       else match postconditions, body with

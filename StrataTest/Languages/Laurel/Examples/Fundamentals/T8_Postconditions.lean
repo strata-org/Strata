@@ -113,6 +113,14 @@ procedure quantifierPostcond() {
   assert b
 };
 
+// Opaque function without ensures — body should be hidden from callers
+opaque function hiddenBody(x: int): int { x + 1 };
+procedure callerOfHidden() {
+  var y: int := hiddenBody(5);
+  assert y == 6
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Postcondition with quantifier that shadows 'result'
 opaque function shadowTest(x: int): int
 //              ^^^^^^^^^^ error: assertion does not hold
