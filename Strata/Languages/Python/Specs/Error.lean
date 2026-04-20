@@ -29,10 +29,6 @@ namespace WarningKind
 -- Type translation warnings
 def emptyType : WarningKind := { phase := "pySpecToLaurel", category := "emptyType" }
 def unsupportedUnion : WarningKind := { phase := "pySpecToLaurel", category := "unsupportedUnion" }
-def unknownType : WarningKind := { phase := "pySpecToLaurel", category := "unknownType" }
-def unsupportedGenericClass : WarningKind := { phase := "pySpecToLaurel", category := "unsupportedGenericClass" }
-def bytesToString : WarningKind := { phase := "pySpecToLaurel", category := "bytesToString" }
-def complexToReal : WarningKind := { phase := "pySpecToLaurel", category := "complexToReal" }
 
 -- Unsupported Optional patterns
 def unsupportedOptionalFloat : WarningKind := { phase := "pySpecToLaurel", category := "unsupportedOptionalFloat" }
