@@ -161,13 +161,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     constants := program.constants
   }
   let fnResolveResult := resolve fnProgram (some model)
-  let fnResolutionErrors : List DiagnosticModel :=
-    if fnResolveResult.errors.size > 0 then
-      let firstErr := fnResolveResult.errors.toList.head?.map (·.message) |>.getD "unknown"
-      [DiagnosticModel.fromMessage
-        s!"Strata bug: {fnResolveResult.errors.size} resolution error(s) in fnProgram re-resolve. First error: {firstErr}"
-        DiagnosticType.StrataBug]
-    else []
   let fnModel := fnResolveResult.model
 
   -- Reconstruct FunctionsAndProofsProgram from the resolved fnProgram so that
@@ -188,7 +181,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   dbg_trace s!"{Std.format coreWithLaurelTypes}"
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
-  let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
+  let allDiagnostics := passDiags ++ translateState.diagnostics
   let allDiagnostics :=
     if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
       -- The program was suppressed but no diagnostics explain why — that's a bug.

@@ -776,15 +776,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
         body := body
       } mdWithUnknownLoc]
 
-
-  -- TODO move this to another location
-  -- Emit diagnostics for composite types with instance procedures.
-  for td in program.types do
-    if let .Composite ct := td then
-      for proc in ct.instanceProcedures do
-        emitDiagnostic $ proc.name.md.toDiagnostic
-          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-          DiagnosticType.NotYetImplemented
   pure { decls := coreDecls }
 
 end -- public section
