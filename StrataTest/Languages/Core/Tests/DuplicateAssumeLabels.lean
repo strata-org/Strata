@@ -40,18 +40,18 @@ VCs:
 Label: after_double_internal
 Property: assert
 Assumptions:
-test: n >= 2
-test_1: n >= 0
+test: $__n0 >= 2
+test_1: $__n0 >= 0
 Obligation:
-n + n >= 4
+$__n0 + $__n0 >= 4
 
 Label: double_correct
 Property: assert
 Assumptions:
-test: n >= 2
-test_1: n >= 0
+test: $__n0 >= 2
+test_1: $__n0 >= 0
 Obligation:
-n + n == n * 2
+$__n0 + $__n0 == $__n0 * 2
 
 ⚠️ [addPathCondition] Label clash detected for test, using unique label test_1.
 ---

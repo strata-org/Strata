@@ -162,126 +162,126 @@ VCs:
 Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: n >= 0
+sum_requires_0: $__n0 >= 0
 Obligation:
 true
 
 Label: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: n >= 0
+sum_requires_0: $__n2 >= 0
 Obligation:
 true
 
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-sum_requires_0: n >= 0
+sum_requires_0: $__n2 >= 0
 Obligation:
 true
 
 Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-sum_requires_0: n >= 0
+sum_requires_0: $__n2 >= 0
 Obligation:
-0 <= n
+0 <= $__n2
 
 Label: entry_invariant_0_2
 Property: assert
 Assumptions:
-sum_requires_0: n >= 0
+sum_requires_0: $__n2 >= 0
 Obligation:
 true
 
 Label: measure_lb_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard_0: $__i1 < n
-assume_invariant_0_0: 0 <= $__i1
-assume_invariant_0_1: $__i1 <= n
-assume_invariant_0_2: $__s2 == $__i1 * ($__i1 + 1) / 2
-assume_measure_0: $__$__loop_measure_03 == n - $__i1
-sum_requires_0: n >= 0
-assume_entry_invariant_0_1: 0 <= n
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
-!($__$__loop_measure_03 < 0)
+!($__$__loop_measure_07 < 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard_0: $__i1 < n
-assume_invariant_0_0: 0 <= $__i1
-assume_invariant_0_1: $__i1 <= n
-assume_invariant_0_2: $__s2 == $__i1 * ($__i1 + 1) / 2
-assume_measure_0: $__$__loop_measure_03 == n - $__i1
-sum_requires_0: n >= 0
-assume_entry_invariant_0_1: 0 <= n
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
-0 <= $__i1 + 1
+0 <= $__i5 + 1
 
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard_0: $__i1 < n
-assume_invariant_0_0: 0 <= $__i1
-assume_invariant_0_1: $__i1 <= n
-assume_invariant_0_2: $__s2 == $__i1 * ($__i1 + 1) / 2
-assume_measure_0: $__$__loop_measure_03 == n - $__i1
-sum_requires_0: n >= 0
-assume_entry_invariant_0_1: 0 <= n
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
-$__i1 + 1 <= n
+$__i5 + 1 <= $__n2
 
 Label: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard_0: $__i1 < n
-assume_invariant_0_0: 0 <= $__i1
-assume_invariant_0_1: $__i1 <= n
-assume_invariant_0_2: $__s2 == $__i1 * ($__i1 + 1) / 2
-assume_measure_0: $__$__loop_measure_03 == n - $__i1
-sum_requires_0: n >= 0
-assume_entry_invariant_0_1: 0 <= n
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
-$__s2 + ($__i1 + 1) == ($__i1 + 1) * ($__i1 + 1 + 1) / 2
+$__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
 
 Label: measure_decrease_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard_0: $__i1 < n
-assume_invariant_0_0: 0 <= $__i1
-assume_invariant_0_1: $__i1 <= n
-assume_invariant_0_2: $__s2 == $__i1 * ($__i1 + 1) / 2
-assume_measure_0: $__$__loop_measure_03 == n - $__i1
-sum_requires_0: n >= 0
-assume_entry_invariant_0_1: 0 <= n
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
-n - ($__i1 + 1) < $__$__loop_measure_03
+$__n2 - ($__i5 + 1) < $__$__loop_measure_07
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-sum_requires_0: n >= 0
-assume_entry_invariant_0_1: 0 <= n
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n then 0 < n else true
-assume_guard_0: if 0 < n then $__i1 < n else true
-assume_invariant_0_0: if 0 < n then 0 <= $__i1 else true
-assume_invariant_0_1: if 0 < n then $__i1 <= n else true
-assume_invariant_0_2: if 0 < n then $__s2 == $__i1 * ($__i1 + 1) / 2 else true
-assume_measure_0: if 0 < n then $__$__loop_measure_03 == n - $__i1 else true
-not_guard_0: if 0 < n then !($__i4 < n) else true
-invariant_0_0: if 0 < n then 0 <= $__i4 else true
-invariant_0_1: if 0 < n then $__i4 <= n else true
-invariant_0_2: if 0 < n then $__s5 == $__i4 * ($__i4 + 1) / 2 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n then false else true then if 0 < n then false else true else true
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then 0 < $__n2 else true
+assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
+assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
+assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
+assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
+assume_measure_0: if 0 < $__n2 then $__$__loop_measure_07 == $__n2 - $__i5 else true
+not_guard_0: if 0 < $__n2 then !($__i8 < $__n2) else true
+invariant_0_0: if 0 < $__n2 then 0 <= $__i8 else true
+invariant_0_1: if 0 < $__n2 then $__i8 <= $__n2 else true
+invariant_0_2: if 0 < $__n2 then $__s9 == $__i8 * ($__i8 + 1) / 2 else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
-if 0 < n then $__s5 else 0 == n * (n + 1) / 2
+if 0 < $__n2 then $__s9 else 0 == $__n2 * ($__n2 + 1) / 2
 
 ---
 info:

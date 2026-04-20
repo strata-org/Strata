@@ -137,77 +137,77 @@ VCs:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+pre: $__n0 >= 0
 Obligation:
-0 <= n && true
+0 <= $__n0 && true
 
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+pre: $__n0 >= 0
 Obligation:
-n - 0 >= 0
+$__n0 - 0 >= 0
 
 Label: measure_decreases
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard: $__i3 < n
-assume_invariant_0: $__i3 <= n && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: n - $__i3 >= 0
-pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i5 < $__n0
+assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
+pre: $__n0 >= 0
 Obligation:
-n - ($__i3 + 1) < n - $__i3
+$__n0 - ($__i5 + 1) < $__n0 - $__i5
 
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard: $__i3 < n
-assume_invariant_0: $__i3 <= n && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: n - $__i3 >= 0
-pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i5 < $__n0
+assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
+pre: $__n0 >= 0
 Obligation:
-if n - ($__i3 + 1) <= 0 then !($__i3 + 1 < n) else true
+if $__n0 - ($__i5 + 1) <= 0 then !($__i5 + 1 < $__n0) else true
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
-assume_guard: $__i3 < n
-assume_invariant_0: $__i3 <= n && $__i3 * ($__i3 - 1) div 2 == $__sum2
-assume_measure_pos: n - $__i3 >= 0
-pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i5 < $__n0
+assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
+pre: $__n0 >= 0
 Obligation:
-$__i3 + 1 <= n && ($__i3 + 1) * ($__i3 + 1 - 1) div 2 == $__sum2 + $__i3
+$__i5 + 1 <= $__n0 && ($__i5 + 1) * ($__i5 + 1 - 1) div 2 == $__sum4 + $__i5
 
 Label: sum_assert
 Property: assert
 Assumptions:
-pre: n >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n then 0 < n else true
-assume_guard: if 0 < n then $__i3 < n else true
-assume_invariant_0: if 0 < n then $__i3 <= n && $__i3 * ($__i3 - 1) div 2 == $__sum2 else true
-assume_measure_pos: if 0 < n then n - $__i3 >= 0 else true
-not_guard: if 0 < n then !($__i5 < n) else true
-invariant_0: if 0 < n then $__i5 <= n && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n then false else true then if 0 < n then false else true else true
+pre: $__n0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
+assume_guard: if 0 < $__n0 then $__i5 < $__n0 else true
+assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
+assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
+not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
+invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
-n * (n - 1) div 2 == if 0 < n then $__sum4 else 0
+$__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum6 else 0
 
 Label: post
 Property: assert
 Assumptions:
-pre: n >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n then 0 < n else true
-assume_guard: if 0 < n then $__i3 < n else true
-assume_invariant_0: if 0 < n then $__i3 <= n && $__i3 * ($__i3 - 1) div 2 == $__sum2 else true
-assume_measure_pos: if 0 < n then n - $__i3 >= 0 else true
-not_guard: if 0 < n then !($__i5 < n) else true
-invariant_0: if 0 < n then $__i5 <= n && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n then false else true then if 0 < n then false else true else true
+pre: $__n0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
+assume_guard: if 0 < $__n0 then $__i5 < $__n0 else true
+assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
+assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
+not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
+invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 true
 
