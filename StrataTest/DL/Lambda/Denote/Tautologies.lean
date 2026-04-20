@@ -193,18 +193,6 @@ theorem valid_eq_refl_poly : Valid F eq_refl_poly eq_refl_poly_ty := by
   apply denote_eq_true (.cons x .nil) (.bvar (by rfl)) (.bvar (by rfl))
   rfl
 
-/-! ### 4. p ∧ q → p (and-elimination left): ∀ p q, (p ∧ q) → p -/
-
-private def and_elim_left : LExpr TP.mono :=
-  .quant m .all "p" (some boolTy) trg
-    (.quant m .all "q" (some boolTy) trg
-      (mkImpl (mkAnd bv1 bv0) bv1))
-
-private def and_elim_left_ty : LExpr.HasTypeA [] and_elim_left boolTy :=
-  .quant .const
-    (.quant .const
-      (mkImpl_ty (mkAnd_ty (.bvar (by rfl)) (.bvar (by rfl))) (.bvar (by rfl))))
-
 /-! ## Section 2: Operator Interpretation Lemmas
 
 Each factory operator (Bool.And, Bool.Or, Bool.Implies, Bool.Not) is shown to
@@ -381,6 +369,18 @@ lemmas (`op_inv`, `bvar_inv`) to simplify casts and conclude.
 
 TODO: this should be automated
 -/
+
+/-! ### 4. p ∧ q → p (and-elimination left): ∀ p q, (p ∧ q) → p -/
+
+private def and_elim_left : LExpr TP.mono :=
+  .quant m .all "p" (some boolTy) trg
+    (.quant m .all "q" (some boolTy) trg
+      (mkImpl (mkAnd bv1 bv0) bv1))
+
+private def and_elim_left_ty : LExpr.HasTypeA [] and_elim_left boolTy :=
+  .quant .const
+    (.quant .const
+      (mkImpl_ty (mkAnd_ty (.bvar (by rfl)) (.bvar (by rfl))) (.bvar (by rfl))))
 
 theorem valid_and_elim_left : Valid F and_elim_left and_elim_left_ty := by
   intro I vt fvarVal
