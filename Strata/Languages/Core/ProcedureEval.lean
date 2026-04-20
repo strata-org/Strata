@@ -58,9 +58,9 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } }
 
 /--
-Create `fvar` expressions using original parameter names instead of generating
-fresh `$__`-prefixed names. This makes the obligations program more readable.
-If two parameters share the same name, a `_1`, `_2`, ... suffix is appended.
+Create `fvar` expressions with original parameter names for readability.
+Duplicate names are disambiguated with `@1`, `@2`, ... suffixes, consistent
+with the convention used by `Strata.SMT.Encoder.disambiguateName`.
 -/
 private def mkParamFVars (vars : List Expression.Ident)
     (var_tys : List (Option Lambda.LMonoTy)) : List Expression.Expr :=
@@ -74,9 +74,9 @@ private def mkParamFVars (vars : List Expression.Ident)
       let name := if seen.contains base then
           let rec findFresh (n : Nat) (fuel : Nat) : String :=
             match fuel with
-            | 0 => s!"{base}_{n}"
+            | 0 => s!"{base}@{n}"
             | fuel + 1 =>
-              let candidate := s!"{base}_{n}"
+              let candidate := s!"{base}@{n}"
               if seen.contains candidate then findFresh (n + 1) fuel
               else candidate
           findFresh 1 (seen.length + 1)
@@ -89,6 +89,10 @@ private def mkParamFVars (vars : List Expression.Ident)
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
+  -- Note: modifies-clause globals must keep `$__`-prefixed names because their
+  -- fvar values are stored in the same scope as the global variables themselves.
+  -- Using the original name would cause the evaluator to confuse the symbolic
+  -- pre-state value with the mutable global.
   let modifies_tys :=
     p.spec.modifies.map
     (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
