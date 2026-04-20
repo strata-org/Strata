@@ -15,6 +15,12 @@ Size control:
   --max-examples N   Number of Hypothesis examples to try (default: 100).
   --max-nodes N      Filter: discard programs with more than N AST nodes (default: 50).
   --seed S           Fixed Hypothesis seed for reproducibility.
+
+Options:
+  --unrestricted     Include generators for Python constructs that may be
+                     beyond what Strata supports today (classes, generators,
+                     comprehensions, try/except, match, async, decorators,
+                     etc.). Useful for discovering gaps in Strata's coverage.
 """
 
 import argparse
@@ -207,6 +213,18 @@ GENERATORS = [
 ]
 
 
+def _get_generators(unrestricted):
+    if not unrestricted:
+        return GENERATORS
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location(
+        "gen_unrestricted",
+        os.path.join(os.path.dirname(__file__), "gen_unrestricted.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return GENERATORS + mod.UNRESTRICTED_GENERATORS
+
+
 def gen_semantic(args):
     """Generate typed Python programs with known-true assertions."""
     out = Path(args.output_dir)
@@ -215,10 +233,12 @@ def gen_semantic(args):
     if args.seed is not None:
         random.seed(args.seed)
 
+    generators = _get_generators(args.unrestricted)
+
     for i in range(args.max_examples):
         # Pick 1-5 random blocks per program
         n_blocks = random.randint(1, 5)
-        blocks = [random.choice(GENERATORS)() for _ in range(n_blocks)]
+        blocks = [random.choice(generators)() for _ in range(n_blocks)]
 
         # Wrap in a function and call it (matches Strata test convention)
         body = "\n".join(blocks)
@@ -240,6 +260,8 @@ def main():
                         help="Max AST nodes per program (syntax mode)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducibility")
+    parser.add_argument("--unrestricted", action="store_true",
+                        help="Include generators beyond what Strata supports today")
     args = parser.parse_args()
 
     if args.mode == "syntax":

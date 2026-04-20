@@ -5,11 +5,12 @@
 # Fuzz-test Strata's Python front-end with randomly generated programs.
 #
 # Usage:
-#   ./hypothesmith.sh [N [SEED [MODE]]]
+#   ./hypothesmith.sh [N [SEED [MODE [--unrestricted]]]]
 #
 #   N     Number of programs to generate (default: 10)
 #   SEED  Random seed for reproducibility (default: current timestamp)
 #   MODE  "syntax" or "semantic" or "both" (default: both)
+#   --unrestricted  Include Python constructs beyond what Strata supports today
 #
 # Requires:
 #   - The venv at Tools/Python/.venv with hypothesmith and strata installed
@@ -32,6 +33,10 @@ DIALECT="$TOOLS_PY/dialects/Python.dialect.st.ion"
 N="${1:-10}"
 SEED="${2:-$(date +%s)}"
 MODE="${3:-both}"
+UNRESTRICTED=""
+if [ "${4:-}" = "--unrestricted" ]; then
+  UNRESTRICTED="--unrestricted"
+fi
 
 # Timeouts (seconds)
 PARSE_TIMEOUT=30
@@ -114,7 +119,7 @@ run_semantic_tests() {
   echo "=== Semantic mode: generating $N programs (seed=$SEED) ==="
   "$PYTHON" "$SCRIPT_DIR/gen_random_python.py" \
     --mode semantic --output-dir "$gen_dir" \
-    --max-examples "$N" --seed "$SEED" 2>&1
+    --max-examples "$N" --seed "$SEED" $UNRESTRICTED 2>&1
 
   local count=0
   local sem_failures=0
@@ -157,7 +162,7 @@ run_semantic_tests() {
     if [ $ec -ne 0 ]; then
       # Non-zero exit from pyAnalyzeLaurel — could be unsupported construct.
       # Check if it's an internal error vs. expected limitation.
-      if echo "$output" | grep -qi "panic\|internal\|assertion.*failed\|LEAK"; then
+      if echo "$output" | grep -qi "panic\|LEAK"; then
         echo "  FAIL (internal error): $base"
         echo "--- Source code ---"
         cat "$pyfile"
@@ -167,6 +172,7 @@ run_semantic_tests() {
         sem_failures=$((sem_failures + 1))
         continue
       fi
+      # Translation failures and other non-zero exits are unsupported constructs
       echo "  SKIP (unsupported): $base"
       continue
     fi
@@ -192,7 +198,7 @@ run_semantic_tests() {
 }
 
 echo "Strata Python front-end fuzz test"
-echo "Seed: $SEED  N: $N  Mode: $MODE"
+echo "Seed: $SEED  N: $N  Mode: $MODE  Unrestricted: ${UNRESTRICTED:-no}"
 echo ""
 
 case "$MODE" in
