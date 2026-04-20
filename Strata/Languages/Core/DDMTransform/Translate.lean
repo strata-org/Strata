@@ -812,7 +812,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let f ← translateExpr p bindings fa
     return .ite () c t f
   -- Let expression: desugared to (λ v : tp. body) e
-  | .fn _ q`Core.let_expr, [tpa, _rtpa, _va, ea, bodya] =>
+  | .fn _ q`Core.let_expr, [tpa, _rtpa, _ba, ea, bodya] =>
     let vty ← translateLMonoTy bindings tpa
     let e ← translateExpr p bindings ea
     let newBoundVar : LExpr Core.CoreLParams.mono := LExpr.bvar () 0
