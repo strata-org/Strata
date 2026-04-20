@@ -35,6 +35,7 @@ Obligation:
 
 ---
 info:
+Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 -/
@@ -175,6 +176,7 @@ Obligation:
 
 ---
 info:
+Obligation: foo_precond_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
@@ -323,6 +325,7 @@ Obligation:
 
 ---
 info:
+Obligation: set_z_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 -/
@@ -367,6 +370,7 @@ Obligation:
 
 ---
 info:
+Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
@@ -415,6 +419,7 @@ forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 
 ---
 info:
+Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
@@ -512,20 +517,20 @@ true
 Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / n < 10
 assume_guard_0: $__i0 / n < 10
 assume_invariant_0_0: $__i0 >= 0
+test_requires_0: !(n == 0)
 Obligation:
 !(n == 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / n < 10
 assume_guard_0: $__i0 / n < 10
 assume_invariant_0_0: $__i0 >= 0
+test_requires_0: !(n == 0)
 Obligation:
 $__i0 + 1 >= 0
 

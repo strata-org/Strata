@@ -65,7 +65,7 @@ spec
 }
 {
   if (top == 0) {
-    b := ($__S2[$__top3 + 1:=x])[$__top4] == ($__S2[$__top3 + 1:=($__S2[$__top3 + 1:=x])[$__top4]])[$__top4];
+    b := true;
   } else {
     b := false;
   }
@@ -113,7 +113,7 @@ spec
 #end
 
 /--
-error: aborting evaluation since the expression depends on the 'sorry' axiom, which can lead to runtime instability and crashes.
+info:
 
 [DEBUG] Boole program:
  type Array := Map int int;
@@ -226,13 +226,13 @@ Property: assert
 Assumptions:
 Pop_requires_9_1803: $__top4 > 0
 Obligation:
-true
+($__S2[$__top3 + 1:=x])[$__top4] == ($__S2[$__top3 + 1:=($__S2[$__top3 + 1:=x])[$__top4]])[$__top4]
 
 ---
 info:
 Obligation: StackInit_ensures_1_1066
 Property: assert
-To attempt to evaluate anyway despite the risks, use the '#eval!' command.
+Result: ✅ pass
 
 Obligation: StackInit_ensures_2_1086
 Property: assert

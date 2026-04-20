@@ -54,27 +54,27 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: T1_z_eq_g2
 Property: assert
-true
+Obligation:
 true
 
 Label: T1_g_unchanged
 Property: assert
-true
+Obligation:
 true
 
 Label: T1_g2_eq_old_g
 Property: assert
-true
+Obligation:
 true
 
 Label: T1_y_eq_old_g2
 Property: assert
-true
+Obligation:
 true
 
 Label: T1_z_eq_y
 Property: assert
-true
+Obligation:
 true
 
 Label: T2_g2_eq_g
@@ -83,33 +83,33 @@ Assumptions:
 callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
 callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
 callElimAssume_T1_z_eq_y_6: $__b8 == false
-true
+Obligation:
 $__g29 == true
 
 Label: T2_g_true
 Property: assert
 Assumptions:
-callElimAssume_T1_z_eq_y_6: $__b8 == false
-callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
 callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
+callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
+callElimAssume_T1_z_eq_y_6: $__b8 == false
 Obligation:
 true
 
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
 callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
+callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
+callElimAssume_T1_z_eq_y_6: $__b8 == false
 Obligation:
-$__a9 == false
+$__a7 == false
 
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
 callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
+callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
+callElimAssume_T1_z_eq_y_6: $__b8 == false
 Obligation:
 $__b8 == false
 

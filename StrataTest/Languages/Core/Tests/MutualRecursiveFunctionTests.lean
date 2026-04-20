@@ -88,6 +88,7 @@ true
 
 ---
 info:
+Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 

@@ -100,29 +100,29 @@ true
 Label: callElimAssert_counter_ge_zero_3
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter4 >= 0
-callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
 counter_ge_zero: $__counter2 >= 0
+callElimAssume_new_g_value_12: $__counter4 == $__counter2 + 8
+callElimAssume_old_g_property_13: $__b3 - 8 == $__counter2
 Obligation:
 $__counter4 >= 0
 
 Label: callElimAssert_a_positive_4
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter4 >= 0
-callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
 counter_ge_zero: $__counter2 >= 0
+callElimAssume_new_g_value_12: $__counter4 == $__counter2 + 8
+callElimAssume_old_g_property_13: $__b3 - 8 == $__counter2
 Obligation:
 true
 
 Label: return_value_lemma
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter4 >= 0
-callElimAssume_new_g_value_12: $__counter7 == $__counter4 + 8
-callElimAssume_old_g_property_13: $__b6 - 8 == $__counter4
-callElimAssume_new_g_value_5: $__counter9 == $__counter7 + 8
 counter_ge_zero: $__counter2 >= 0
+callElimAssume_new_g_value_12: $__counter4 == $__counter2 + 8
+callElimAssume_old_g_property_13: $__b3 - 8 == $__counter2
+callElimAssume_new_g_value_5: $__counter6 == $__counter4 + 8
+callElimAssume_old_g_property_6: $__b5 - 8 == $__counter4
 Obligation:
 $__b5 == $__counter2 + 16
 
