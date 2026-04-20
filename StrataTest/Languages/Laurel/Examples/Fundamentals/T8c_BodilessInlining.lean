@@ -38,6 +38,7 @@ procedure caller()
 "
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "Postconditions" laurelSource 23 (fun p => processLaurelFile p {inlineFunctionsWhenPossible := true})
+#eval testInputWithOffset "Postconditions" laurelSource 23
+  (fun p => processLaurelFileWithOptions default {inlineFunctionsWhenPossible := true} p)
 
 end Strata.Laurel.BodilessInliningTest
