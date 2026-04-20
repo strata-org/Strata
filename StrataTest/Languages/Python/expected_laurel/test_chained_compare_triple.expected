@@ -9,10 +9,10 @@ test_chained_compare_triple.py(4, 4): ✅ pass - assert_assert(69)_calls_Any_to_
 test_chained_compare_triple.py(4, 4): ✅ pass - triple chain
 test_chained_compare_triple.py(5, 11): ✅ pass - assert_assert(118)_calls_PAnd_0
 test_chained_compare_triple.py(5, 11): ✅ pass - assert_assert(118)_calls_PAnd_1
-test_chained_compare_triple.py(5, 11): ✅ pass - Check PNot exception
+test_chained_compare_triple.py(5, 11): ✅ pass - Check PAnd exception
 test_chained_compare_triple.py(5, 4): ✅ pass - assert_assert(111)_calls_PAnd_0
 test_chained_compare_triple.py(5, 4): ✅ pass - assert_assert(111)_calls_PAnd_1
 test_chained_compare_triple.py(5, 4): ✅ pass - assert_assert(111)_calls_Any_to_bool_2
-test_chained_compare_triple.py(5, 4): ✅ pass - reversed triple should fail
-DETAIL: 16 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_chained_compare_triple.py(5, 4): ❓ unknown - reversed triple should fail
+DETAIL: 15 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

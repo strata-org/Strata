@@ -7,9 +7,9 @@ test_chained_compare_mixed.py(5, 4): ✅ pass - assert_assert(83)_calls_PAnd_0
 test_chained_compare_mixed.py(5, 4): ✅ pass - assert_assert(83)_calls_Any_to_bool_1
 test_chained_compare_mixed.py(5, 4): ✅ pass - mixed operators
 test_chained_compare_mixed.py(6, 11): ✅ pass - assert_assert(131)_calls_PAnd_0
-test_chained_compare_mixed.py(6, 11): ✅ pass - Check PNot exception
+test_chained_compare_mixed.py(6, 11): ✅ pass - Check PAnd exception
 test_chained_compare_mixed.py(6, 4): ✅ pass - assert_assert(124)_calls_PAnd_0
 test_chained_compare_mixed.py(6, 4): ✅ pass - assert_assert(124)_calls_Any_to_bool_1
-test_chained_compare_mixed.py(6, 4): ✅ pass - reversed mixed should fail
-DETAIL: 13 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_chained_compare_mixed.py(6, 4): ❓ unknown - reversed mixed should fail
+DETAIL: 12 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive
