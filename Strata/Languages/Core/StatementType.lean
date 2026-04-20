@@ -22,8 +22,8 @@ open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
 ---------------------------------------------------------------------
 
--- Every inout parameter (in both inputs and outputs) must be called with a
--- simple variable of the same name
+-- In a call statement, every inout parameter (which appear in both inputs and outputs of the call) must be
+-- matched with a simple variable of the same name
 private def areInoutArgsValid (proc : Procedure) (args : List Expression.Expr) : Bool :=
   (proc.header.inputs.toList.zip args).all fun ((paramId, _), arg) =>
     !(ListMap.keys proc.header.outputs).contains paramId ||  -- not inout, or …
