@@ -19,7 +19,7 @@ open Lean.Parser (InputContext)
 
 namespace Strata.Laurel
 
-def processLaurelFileWithOptions (options : Core.VerifyOptions) (laurelOptions : LaurelTranslateOptions) (input : InputContext) : IO (Array Diagnostic) := do
+def processLaurelFileWithOptions (options : Core.VerifyOptions) (laurelOptions : LaurelTranslateOptions := {}) (input : InputContext) : IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
@@ -33,7 +33,7 @@ def processLaurelFileWithOptions (options : Core.VerifyOptions) (laurelOptions :
 
     pure diagnostics
 
-def processLaurelFile (input : InputContext) (laurelOptions : LaurelTranslateOptions := {}): IO (Array Diagnostic) :=
-  processLaurelFileWithOptions Core.VerifyOptions.default laurelOptions input
+def processLaurelFile (input : InputContext): IO (Array Diagnostic) :=
+  processLaurelFileWithOptions Core.VerifyOptions.default {} input
 
 end Laurel
