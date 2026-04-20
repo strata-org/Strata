@@ -7,6 +7,7 @@
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Transform.ProcedureInlining
+import Strata.Transform.DatatypePartialEval
 
 /-! ## Core-to-GOTO translation pipeline
 
@@ -510,6 +511,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
     | .error msg => throw msg
+  let inlined := Strata.partialEvalDatatypesInProgram inlined
   let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg
