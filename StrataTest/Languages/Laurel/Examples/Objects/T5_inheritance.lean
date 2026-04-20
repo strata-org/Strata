@@ -25,7 +25,10 @@ composite Extender extends Base, Base2 {
   var zValue: int
 }
 
-procedure inheritedFields(a: Extender) opaque {
+procedure inheritedFields(a: Extender)
+  opaque
+  modifies a
+{
   a#xValue := 1;
   a#yValue := 2;
   a#zValue := 3;
