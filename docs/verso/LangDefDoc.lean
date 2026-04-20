@@ -366,7 +366,7 @@ Parameter names must be disjoint from each other.
 A procedure's specification ({name Procedure.Spec}`Procedure.Spec`) consists of
 two parts: preconditions (`requires`) that must hold before invocation, and
 postconditions (`ensures`) that must hold on return. Postconditions may reference
-`old v` for pre-state values of variables.
+`old v` for pre-state values of inout variables.
 
 {docstring Core.Procedure.Spec}
 
