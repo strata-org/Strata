@@ -215,8 +215,9 @@ Verify a Laurel program using an SMT solver.
 -/
 def verifyToVcResults (program : Program)
     (options : VerifyOptions := .default)
+    (laurelOptions : LaurelTranslateOptions)
     : IO (Option VCResults × List DiagnosticModel) := do
-  let (coreProgramOption, translateDiags) ← translate {} program
+  let (coreProgramOption, translateDiags) ← translate laurelOptions program
 
   match coreProgramOption with
   | some coreProgram =>
@@ -236,13 +237,15 @@ duplicated assertions merged at the VCOutcome level.
 -/
 def verifyToMergedResults (program : Program)
     (options : VerifyOptions := .default)
+    (laurelOptions : LaurelTranslateOptions)
     : IO (Option VCResults × List DiagnosticModel) := do
-  let (vcOpt, diags) ← verifyToVcResults program options
+  let (vcOpt, diags) ← verifyToVcResults program options laurelOptions
   return (vcOpt.map (·.mergeByAssertion), diags)
 
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : VerifyOptions := .default) : IO (Array Diagnostic) := do
-  let results ← verifyToMergedResults program options
+    (options : VerifyOptions := .default)
+    (laurelOptions : LaurelTranslateOptions := {}) : IO (Array Diagnostic) := do
+  let results ← verifyToMergedResults program options laurelOptions
   let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
@@ -252,7 +255,7 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default)
     : IO (Array DiagnosticModel) := do
-  let results ← verifyToMergedResults program options
+  let results ← verifyToMergedResults program options {}
   let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
