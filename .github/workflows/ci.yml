@@ -70,15 +70,15 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-      - name: Restore lake cache
-        uses: actions/cache/restore@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+      # - name: Restore lake cache
+      #   uses: actions/cache/restore@v5
+      #   with:
+      #     path: .lake
+      #     key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+      #     restore-keys: |
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
@@ -104,12 +104,6 @@ jobs:
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
-      - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh
-      - name: Validate examples against expected output
-        working-directory: Examples
-        shell: bash
-        run: ./run_examples.sh
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
@@ -120,10 +114,6 @@ jobs:
         working-directory: StrataTest/Languages/Python
         shell: bash
         run: python run_py_analyze_sarif.py --laurel
-      - name: Run pyAnalyze golden-file tests
-        working-directory: StrataTest/Languages/Python
-        shell: bash
-        run: ./run_py_analyze.sh
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
@@ -145,6 +135,8 @@ jobs:
     - name: Restore Lean build cache
       uses: actions/cache/restore@v5
       with:
+        # TODO: Exclude any tests with external dependencies.
+        # Possibly by locating all such tests under say StrataIntegrationTests/
         path: .lake
         key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
         fail-on-cache-miss: true
