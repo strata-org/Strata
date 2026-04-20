@@ -366,7 +366,7 @@ Parameter names must be disjoint from each other.
 A procedure's specification ({name Procedure.Spec}`Procedure.Spec`) consists of
 two parts: preconditions (`requires`) that must hold before invocation, and
 postconditions (`ensures`) that must hold on return. Postconditions may reference
-`old v` for pre-state values of variables.
+`old v` for pre-state values of inout variables.
 
 {docstring Core.Procedure.Spec}
 
@@ -386,7 +386,7 @@ calls but not checked on exit from implementations.
 
 Postconditions and procedure bodies are *two-state contexts*: they can refer to
 both the pre-state (on entry) and the post-state (on exit) of a procedure
-invocation. The pre-state value of a variable `v` is denoted by `old v`.
+invocation. The pre-state value of an inout parameter `v` is denoted by `old v`.
 `old` is not allowed in preconditions.
 
 ## Procedure calls
