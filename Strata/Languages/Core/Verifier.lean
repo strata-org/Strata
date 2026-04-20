@@ -1113,7 +1113,6 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build preEvalProgram))
-  let oblProgram := oblProgram
   let allStats := pipelineStats
   -- Build SMT encoding context by running full evaluation on the pre-eval program.
   -- This runs Program.eval a second time (the first is in symbolicEval), which
