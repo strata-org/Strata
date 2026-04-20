@@ -1,27 +1,115 @@
 """Unrestricted Python program generators for fuzz testing.
 
-These generators produce constructs that may be beyond what Strata supports
-today. Used when --unrestricted is passed to gen_random_python.py.
+This module contains ~60 generators that produce Python code blocks using
+constructs that may be beyond what Strata supports today. It is loaded by
+gen_random_python.py when the --unrestricted flag is passed.
+
+Each generator function returns a string of indented Python statements
+(4-space indent) that can be placed inside a ``def main():`` body. Every
+block includes at least one ``assert`` whose expected value is computed by
+CPython at generation time. If Strata's verifier disagrees with CPython
+on any of these assertions, that indicates a semantic modelling bug.
+
+## Categories of generators
+
+### Operators
+  - Bitwise: &, |, ^, ~ (gen_bitwise, gen_bitnot)
+  - Shifts: <<, >> (gen_shift)
+  - Power: ** (gen_power)
+  - Augmented assignment: +=, -=, *= (gen_augmented_assign)
+
+### Expressions
+  - Ternary: x if cond else y (gen_ternary)
+  - Chained comparisons: a <= b <= c (gen_chained_cmp)
+  - F-strings (gen_fstring)
+  - Lambda (gen_lambda)
+  - Walrus operator := (gen_walrus, gen_walrus_while)
+
+### Data structures
+  - Lists: create, index, slice, concat, in, append (gen_list_*)
+  - Dicts: create, access, in (gen_dict_*)
+  - Sets: union, intersection (gen_set_ops)
+  - Tuple unpacking, star unpacking (gen_tuple_unpack, gen_star_unpack)
+  - Multiple assignment / swap (gen_multi_assign)
+
+### Strings
+  - len, indexing, multiply, methods (upper/lower/strip), format
+
+### Control flow
+  - For loops over lists and range (gen_for_sum, gen_for_range)
+  - While loops (gen_while_countdown)
+  - Break (gen_break)
+  - Nested if, elif chains (gen_nested_if, gen_elif)
+  - Nested loops (gen_nested_loop)
+
+### Functions
+  - Nested calls (gen_nested_call)
+  - Default arguments (gen_default_args)
+  - *args, **kwargs (gen_varargs, gen_kwargs)
+  - Recursion (gen_recursion)
+  - Decorators (gen_decorator)
+  - Generators / yield (gen_generator)
+
+### Classes
+  - Basic class with __init__ (gen_class_basic)
+  - Class with methods (gen_class_method)
+
+### Exception handling
+  - try/except (gen_try_except)
+  - try/except/else (gen_try_except_else)
+  - try/finally (gen_try_finally)
+  - Multiple except clauses (gen_multi_except)
+  - raise (gen_raise)
+
+### Other
+  - None checks, Optional type (gen_none_check, gen_optional)
+  - isinstance (gen_isinstance)
+  - Type conversions: int(), str(), bool(), float(), list() (gen_type_conv)
+  - With statement / context managers (gen_with_stmt)
+  - Nonlocal (gen_nonlocal)
+  - Pass, del (gen_pass, gen_del)
+  - Async def / asyncio.run (gen_async_def)
+  - Match statement, Python 3.10+ (gen_match)
+
+## Adding new generators
+
+To add a new generator:
+1. Write a function that returns a string of 4-space-indented Python
+   statements including at least one assert with a CPython-computed
+   expected value.
+2. Test it: ``python3 -c "exec('def main():\\n' + gen_your_thing() + 'main()')"``
+3. Add it to the UNRESTRICTED_GENERATORS list at the bottom.
 """
 
 import random
 
+# ---------------------------------------------------------------------------
+# Helpers — shared random value generators
+# ---------------------------------------------------------------------------
+
 def _rand_int():
+    """Random integer in [-100, 100]."""
     return random.randint(-100, 100)
 
 def _rand_bool():
+    """Random boolean."""
     return random.choice([True, False])
 
 def _rand_str():
+    """Random short string from a fixed vocabulary."""
     return random.choice(["hello", "world", "foo", "bar", "", "abc", "x"])
 
 def _nonzero():
+    """Random non-zero integer in [-10, 10]."""
     return random.choice([x for x in range(-10, 11) if x != 0])
 
 def _rand_var(prefix="v"):
+    """Random variable name like v42."""
     return f"{prefix}{random.randint(0, 99)}"
 
-# --- Bitwise operations ---
+# ---------------------------------------------------------------------------
+# Operators
+# ---------------------------------------------------------------------------
 
 def gen_bitwise():
     a, b = _rand_int(), _rand_int()
@@ -37,12 +125,15 @@ def gen_shift():
     return f"    assert ({a} {sym} {b}) == {r}, \"{op}\"\n"
 
 def gen_bitnot():
+    """Bitwise NOT (~)."""
     a = _rand_int()
     return f"    assert ~{a} == {~a}, \"bitnot\"\n"
 
 # --- Power ---
 
 def gen_power():
+    """Exponentiation (**). Uses non-negative base to avoid precedence issues
+    with unary minus (``-2 ** 2`` is ``-(2**2)`` in Python)."""
     base = random.randint(0, 5)
     exp = random.randint(0, 4)
     r = base ** exp
@@ -692,6 +783,13 @@ def gen_match():
         f'    assert r == {r!r}, "match"\n'
     )
 
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+# All unrestricted generators, imported by gen_random_python.py when
+# --unrestricted is passed. The order doesn't matter — generators are
+# chosen uniformly at random.
 
 UNRESTRICTED_GENERATORS = [
     gen_bitwise, gen_shift, gen_bitnot, gen_power,
