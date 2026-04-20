@@ -26,7 +26,6 @@ composite Container {
 
 procedure incWithPrimitiveModifies(x: int) returns (r: int)
   opaque
-  ensures true
   modifies x
 //         ^ error: modifies clause entry has non-composite type 'int' and will be ignored
 {
@@ -35,7 +34,6 @@ procedure incWithPrimitiveModifies(x: int) returns (r: int)
 
 procedure modifyContainerAndPrimitive(c: Container, x: int)
   opaque
-  ensures true
   modifies c
   modifies x
 //         ^ error: modifies clause entry has non-composite type 'int' and will be ignored

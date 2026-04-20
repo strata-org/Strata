@@ -25,7 +25,7 @@ composite Extender extends Base, Base2 {
   var zValue: int
 }
 
-procedure inheritedFields(a: Extender) {
+procedure inheritedFields(a: Extender) opaque {
   a#xValue := 1;
   a#yValue := 2;
   a#zValue := 3;
@@ -35,7 +35,7 @@ procedure inheritedFields(a: Extender) {
   assert a#zValue == 3
 };
 
-procedure typeCheckingAndCasting() {
+procedure typeCheckingAndCasting() opaque {
   var a: Base := new Base;
   assert a is Base;
   assert !(a is Extender);
@@ -64,7 +64,7 @@ composite Bottom extends Left, Right {
   var bValue: int
 }
 
-procedure diamondInheritance() {
+procedure diamondInheritance() opaque {
   var b: Bottom := new Bottom;
   b#lValue := 1;
   b#rValue := 2;
@@ -82,7 +82,7 @@ procedure diamondInheritance() {
 };
 
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.
-//procedure typedParameter(b: Bottom) {
+//procedure typedParameter(b: Bottom) opaque {
 //  var b: Bottom := b;
 //  assert b is Left;
 //  assert b is Right;
