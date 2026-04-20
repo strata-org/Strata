@@ -28,7 +28,10 @@ def buildAliasMap (types : List TypeDefinition) : AliasMap :=
     match td with | .Alias ta => m.insert ta.name.text ta.target | _ => m
 
 /-- Transitively resolve a HighType through the alias map.
-    A visited set guards against infinite loops on cyclic aliases. -/
+    A visited set guards against infinite loops on cyclic aliases.
+
+    Key invariant: for a non-cyclic alias map, the result contains no
+    `UserDefined` references whose name is a key in `amap`. -/
 partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     (visited : Std.HashSet String := {}) : HighTypeMd :=
   match ty.val with

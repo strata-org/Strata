@@ -2404,7 +2404,16 @@ def pythonToLaurel' (info : PreludeInfo)
     | .ClassDef _ _ _ _ _ _ _ =>
       pure ()  -- Already processed in first pass
     | .Assign _ targets value _ =>
-      -- Detect type alias pattern: `MyInt = int` (single Name target, Name RHS that is a known type)
+      -- Detect type alias pattern: `MyInt = int` (single Name target, Name RHS that is a known type).
+      -- Current scope (intentional limitations for initial version):
+      --   • Only simple `X = <name>` where RHS passes `isKnownType` (primitives, core mappings,
+      --     imported composites, prelude types).
+      --   • Chained aliases (`A = int; B = A`) are not detected — newly created aliases are not
+      --     added to `isKnownType`'s lookup sets. The transitive resolution in `TypeAliasElim`
+      --     handles chains, but the Python frontend won't produce them yet.
+      --   • Complex type aliases (`MyDict = Dict[str, Any]`) are not detected — the RHS must be
+      --     a `.Name` node, not `.Subscript`.
+      --   • PEP 695 `type` statements (`type X = int`) are not handled.
       if targets.val.size == 1 then
         match targets.val[0]!, value with
         | .Name _ lhsName _, .Name _ rhsName _ =>
