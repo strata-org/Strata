@@ -417,13 +417,14 @@ private def noStats : Statistics := {}
 
 private def groupByExitLabel (ewns : List EnvWithNext) :
     List (Option (Option String) × List EnvWithNext) :=
-  ewns.foldl (fun acc ewn =>
+  let groups := ewns.foldl (fun acc ewn =>
     match acc.find? (fun (label, _) => label == ewn.exitLabel) with
     | some _ =>
-      acc.map (fun (l, ms) => if l == ewn.exitLabel then (l, ms ++ [ewn]) else (l, ms))
+      acc.map (fun (l, ms) => if l == ewn.exitLabel then (l, ewn :: ms) else (l, ms))
     | none =>
       acc ++ [(ewn.exitLabel, [ewn])]
   ) []
+  groups.map (fun (l, ms) => (l, ms.reverse))
 
 private def mergeDownPaths (cond : Expression.Expr)
     (ewns : List EnvWithNext) : List EnvWithNext :=
