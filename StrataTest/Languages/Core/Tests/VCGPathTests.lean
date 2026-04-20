@@ -316,3 +316,44 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify noDupConcreteFalse (options := .quiet)
+
+---------------------------------------------------------------------
+-- Evaluator statistics tests
+--
+-- These verify that path splitting is observable in the evaluator stats
+-- (diverged count, obligation count) independently of mergeByAssertion
+-- which only deduplicates at the outcome/display level.
+---------------------------------------------------------------------
+
+/-- Extract evaluator statistics from a program without running the solver. -/
+private def getEvalStats (program : Strata.Program) : IO (Statistics × Nat) := do
+  let (coreProgram, _) := Core.getProgram program
+  match Core.typeCheckAndEval .quiet coreProgram with
+  | .error _ => return ({}, 0)
+  | .ok (envs, stats) =>
+    let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
+    return (stats, numObligations)
+
+-- issue419TestPgm: the evaluator produces 2 paths (1 diverged ITE) and
+-- 3 obligations (2 for `post`, 1 for `a`). mergeByAssertion collapses
+-- the 2 `post` results into 1 displayed result, but the evaluator still
+-- explored both paths.
+/--
+info: diverged=1 obligations=3
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats issue419TestPgm
+  let key := s!"{Core.Evaluator.Stats.processIteBranches_diverged}"
+  IO.println s!"diverged={stats.get key} obligations={numObs}"
+
+-- sequentialExitPgm: 2 diverged ITEs, 3 paths, 3 obligations for
+-- `wrong_ensures_0`. mergeByAssertion collapses to 1 displayed result.
+/--
+info: diverged=2 obligations=3
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats sequentialExitPgm
+  let key := s!"{Core.Evaluator.Stats.processIteBranches_diverged}"
+  IO.println s!"diverged={stats.get key} obligations={numObs}"
