@@ -415,6 +415,9 @@ private def collectDeadBranchDeferred
 
 private def noStats : Statistics := {}
 
+/-- Partition paths into groups by exit label.
+    Invariant: every input element appears in exactly one group, and
+    group order matches first-occurrence order of each label. -/
 private def groupByExitLabel (ewns : List EnvWithNext) :
     List (Option (Option String) × List EnvWithNext) :=
   let groups := ewns.foldl (fun acc ewn =>
@@ -452,6 +455,10 @@ Given false-branch paths and true-branch paths, find pairs with matching
 head `splitConds` condition (same expression, opposite Bool). Returns
 `(merged_pairs, unmatched_trues, unmatched_falses)`.
 Accumulators are built via cons and reversed at the end.
+
+Invariant: every input path appears in exactly one of the three output
+lists (either merged into `paired`, left in `remaining_t`, or in
+`unmatched_f`).
 -/
 private def findCondPairs : List EnvWithNext → List EnvWithNext →
     List EnvWithNext → List EnvWithNext →
@@ -476,7 +483,8 @@ private def findCondPairs : List EnvWithNext → List EnvWithNext →
 
 /--
 Merge paths by matching condition-equality pairs from `splitConds`.
-Fuel bounds the recursion (each round merges at least one pair).
+Each round merges at least one pair when `paired` is non-empty,
+reducing the path count, so fuel = initial path count suffices.
 -/
 private def mergeCondPairs : Nat → List EnvWithNext → List EnvWithNext
   | 0, ewns => ewns
