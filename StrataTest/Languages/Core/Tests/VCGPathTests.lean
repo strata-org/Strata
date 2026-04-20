@@ -330,8 +330,10 @@ private def getEvalStats (program : Strata.Program) : IO (Statistics × Nat) := 
   let (coreProgram, _) := Core.getProgram program
   match Core.typeCheckAndEval .quiet coreProgram with
   | .error _ => return ({}, 0)
-  | .ok (envs, stats) =>
-    let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
+  | .ok (oblProgram, stats) =>
+    let numObligations := match Core.ObligationExtraction.extractObligations oblProgram with
+      | .ok obs => obs.size
+      | .error _ => 0
     return (stats, numObligations)
 
 -- issue419TestPgm: the evaluator produces 2 paths (1 diverged ITE) and
