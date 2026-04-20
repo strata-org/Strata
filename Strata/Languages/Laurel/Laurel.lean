@@ -92,13 +92,13 @@ inductive Operation : Type where
   | DivT
   /-- Truncation modulus. -/
   | ModT
-  /-- Less than. Works on `Int` and `Float64`. -/
+  /-- Less than. Works on `Int` and `Real`. -/
   | Lt
-  /-- Less than or equal. Works on `Int` and `Float64`. -/
+  /-- Less than or equal. Works on `Int` and `Real`. -/
   | Leq
-  /-- Greater than. Works on `Int` and `Float64`. -/
+  /-- Greater than. Works on `Int` and `Real`. -/
   | Gt
-  /-- Greater than or equal. Works on `Int` and `Float64`. -/
+  /-- Greater than or equal. Works on `Int` and `Real`. -/
   | Geq
   /-- String concatenation. -/
   | StrConcat
