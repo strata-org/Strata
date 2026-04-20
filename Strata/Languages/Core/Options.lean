@@ -176,6 +176,13 @@ structure VerifyOptions where
   checkLevel : CheckLevel
   /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
   overflowChecks : OverflowChecks := {}
+  -- Path merging
+  /-- Maximum number of symbolic-evaluation paths allowed after each ITE.
+      When the path count exceeds this cap, the evaluator merges paths
+      (grouped by exit label) using `Env.merge`.
+      `none` (default) means no cap — paths diverge freely.
+      `some 1` is eager merging; `some N` allows bounded exploration. -/
+  pathCap : Option Nat := .none
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool
@@ -200,6 +207,7 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
+  pathCap := .none
 }
 
 instance : Inhabited VerifyOptions where

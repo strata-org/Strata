@@ -336,3 +336,96 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify noDupConcreteFalse (options := .quiet)
+
+---------------------------------------------------------------------
+-- Path cap tests
+--
+-- When `pathCap` is set, the evaluator merges paths to stay under the
+-- cap. Merging happens at two sites:
+-- 1. processIteBranches: same-exit-label groups merged via Env.merge
+-- 2. Block boundary: condition-equality matching pairs paths from
+--    different exits that reconverge after exit-label consumption
+---------------------------------------------------------------------
+
+-- Cap 1 on issue419TestPgm: merges the two `post` paths at the block
+-- boundary (different exit labels during ITE, same after block consumes).
+/--
+info:
+Obligation: post
+Property: assert
+Result: ✅ pass
+
+Obligation: a
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify issue419TestPgm
+  (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+
+-- Cap 1 on sequentialExitPgm: 3 paths collapse to 1 via nested
+-- condition-equality matching at the block boundary.
+/--
+info:
+Obligation: wrong_ensures_0
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval verify sequentialExitPgm
+  (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+
+-- Same exit label in both branches: merged directly in processIteBranches.
+def sameExitCapPgm :=
+#strata
+program Core;
+procedure p(c1 : bool) returns (r : int)
+spec { ensures [post]: (r >= 0); }
+{
+  done: {
+    if (c1) { r := 1; exit done; } else { r := 2; exit done; }
+  }
+};
+#end
+
+/--
+info:
+Obligation: post
+Property: assert
+Result: ✅ pass
+
+Obligation: post
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify sameExitCapPgm (options := .quiet)
+
+/--
+info:
+Obligation: post
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify sameExitCapPgm
+  (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+
+-- Cap 4 on a 2-ITE program: 2 paths stays under cap, no merging.
+/--
+info:
+Obligation: post
+Property: assert
+Result: ✅ pass
+
+Obligation: post
+Property: assert
+Result: ✅ pass
+
+Obligation: a
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify issue419TestPgm
+  (options := { Core.VerifyOptions.quiet with pathCap := some 4 })
