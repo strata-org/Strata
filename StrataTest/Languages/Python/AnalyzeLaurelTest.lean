@@ -191,6 +191,8 @@ private meta def testCases : List (String × Expected) := [
   -- Type alias resolution tests (TDD for resolveTypeName refactoring)
   .mk "test_method_dispatch.py" .success,
   .mk "test_keyword_dispatch.py" .success,
+  .mk "test_wrong_keyword_dispatch.py" $
+    .failPrefix "Python to Laurel translation failed: Type error: Dispatched function 'connect' called with no arguments",
   .mk "test_annotation_dispatch.py" .success,
   .mk "test_constructor_dispatch.py" .success,
   .mk "test_reassign_dispatch.py" .success,

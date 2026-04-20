@@ -393,21 +393,16 @@ def resolveDispatch (ctx : TranslationContext)
   match ctx.overloadTable[funcName]? with
   | none => return none
   | some fnOverloads =>
-    -- Use the first positional arg, or fall back to the first keyword arg's value
-    let firstArg? : Option (Python.expr SourceRange) :=
-      if h : args.size > 0 then some args[0]
-      else match kwords with
-        | (.mk_keyword _ _ value) :: _ => some value
-        | [] => none
-    let some firstArg := firstArg?
+    let kwPairs := kwords.map Python.keyword.nameAndValue
+    let some firstArg := fnOverloads.findDispatchArg args kwPairs
       | throw (.typeError
           s!"Dispatched function '{funcName}' called with no \
             arguments (expected a string literal first argument)")
     match firstArg with
     | .Constant range (.ConString _ s) _ =>
-      let some ident := fnOverloads[s.val]?
-        | let knownServices := fnOverloads.keysArray.insertionSort.take 2
-          let suffix := if fnOverloads.size > 2 then s!" ... ({fnOverloads.size} total)" else ""
+      let some ident := fnOverloads.entries[s.val]?
+        | let knownServices := fnOverloads.entries.keysArray.insertionSort.take 2
+          let suffix := if fnOverloads.entries.size > 2 then s!" ... ({fnOverloads.entries.size} total)" else ""
           throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
       let className :=
@@ -2336,7 +2331,7 @@ def pythonToLaurel' (info : PreludeInfo)
   }
 
   let overloadCompositeType := Std.HashSet.ofList $
-      (overloadTable.values.flatMap (·.values)).map fun ident =>
+      (overloadTable.values.flatMap (·.entries.values)).map fun ident =>
         if ident.pythonModule.isEmpty then
           ident.name
         else

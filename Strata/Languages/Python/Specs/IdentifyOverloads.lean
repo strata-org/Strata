@@ -25,7 +25,7 @@ to determine which `.pyspec.st.ion` files are needed.
 
 namespace Strata.Python.Specs.IdentifyOverloads
 
-open Strata.Python (stmt expr OverloadTable PythonIdent)
+open Strata.Python (stmt expr keyword FunctionOverloads OverloadTable PythonIdent)
 
 /-- State accumulated while walking the AST. -/
 public structure ResolveState where
@@ -59,22 +59,18 @@ partial def walkExpr
   match e with
   -- The interesting case: function calls
   | .Call _ f ⟨_, args⟩ ⟨_, kwargs⟩ => do
-    -- Check dispatch: use first positional arg, or fall back to first keyword arg's value
-    let firstArg? : Option (expr SourceRange) :=
-      if h : args.size > 0 then some args[0]
-      else match kwargs.toList with
-        | (.mk_keyword _ _ value) :: _ => some value
-        | [] => none
-    if let some firstArg := firstArg? then
-      if let (.Constant _ (.ConString _ ⟨_, s⟩) _) := firstArg then
-        let maybeFuncName :=
-              match f with
-              | .Attribute _ _ attr _ => some attr.val
-              | .Name _ n _ => some n.val
-              | _ => none
-        if let some funcName := maybeFuncName then
-          if let some fnOverloads := (← read)[funcName]? then
-            if let some pyId := fnOverloads[s]? then
+    -- Check dispatch: use first positional arg, or keyword arg matching the expected param name
+    let maybeFuncName :=
+          match f with
+          | .Attribute _ _ attr _ => some attr.val
+          | .Name _ n _ => some n.val
+          | _ => none
+    if let some funcName := maybeFuncName then
+      if let some fnOverloads := (← read)[funcName]? then
+        let kwPairs := kwargs.toList.map keyword.nameAndValue
+        if let some firstArg := fnOverloads.findDispatchArg args kwPairs then
+          if let (.Constant _ (.ConString _ ⟨_, s⟩) _) := firstArg then
+            if let some pyId := fnOverloads.entries[s]? then
               recordModule pyId.pythonModule
     -- Recurse into func, args, keyword values
     walkExpr f

@@ -97,11 +97,13 @@ def pushType (td : TypeDefinition) : ToLaurelM Unit :=
   modify fun s => { s with types := s.types.push td }
 
 /-- Add an overload dispatch entry for a function. -/
-def pushOverloadEntry (funcName : String) (literalValue : String)
-    (returnType : PythonIdent) : ToLaurelM Unit :=
+def pushOverloadEntry (funcName : String) (paramName : String)
+    (literalValue : String) (returnType : PythonIdent) : ToLaurelM Unit :=
   modify fun s =>
     let existing := s.overloads.getD funcName {}
-    let updated := existing.insert literalValue returnType
+    let updated := { existing with
+      paramName := existing.paramName <|> some paramName
+      entries := existing.entries.insert literalValue returnType }
     { s with overloads := s.overloads.insert funcName updated }
 
 /-- Prepend the module prefix to a name. Returns the name unchanged
@@ -714,7 +716,7 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
               '{specTypeToString func.returnType}' is not a \
               class type"
           return
-  pushOverloadEntry func.name literalValue retType
+  pushOverloadEntry func.name args[0].name literalValue retType
 
 /-- Convert a single PySpec signature to Laurel declarations. -/
 def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
