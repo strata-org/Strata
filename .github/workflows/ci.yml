@@ -82,12 +82,20 @@ jobs:
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install Python strata package
+        run: pip install .
+        working-directory: Tools/Python
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
+        env:
+          PYTHON_TEST: 1
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
@@ -113,12 +121,6 @@ jobs:
         working-directory: Examples
         shell: bash
         run: ./run_examples.sh
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.14'
-      - name: Build using pip
-        run: pip install .
-        working-directory: Tools/Python
       - name: Run pyAnalyze SARIF tests
         working-directory: StrataTest/Languages/Python
         shell: bash
