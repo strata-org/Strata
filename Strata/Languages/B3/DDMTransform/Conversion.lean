@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.DefinitionAST
+public import Strata.Languages.B3.DDMTransform.ParseCST
+public import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.Util.Tactics
+
+public section
 
 /-!
 # B3 ↔ DDM Bidirectional Conversion

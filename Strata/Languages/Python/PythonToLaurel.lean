@@ -2237,6 +2237,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | .Composite _ => s
       | .Constrained ct => s.insert ct.name.text
       | .Datatype dt => s.insert dt.name.text
+      | .Alias ta => s.insert ta.name.text
   compositeTypes :=
     prog.types.foldl (init := {}) fun s td =>
       match td with
@@ -2416,6 +2417,28 @@ def pythonToLaurel' (info : PreludeInfo)
       procedures := procedures.push proc.fst
     | .ClassDef _ _ _ _ _ _ _ =>
       pure ()  -- Already processed in first pass
+    | .Assign _ targets value _ =>
+      -- Detect type alias pattern: `MyInt = int` (single Name target, Name RHS that is a known type).
+      -- Current scope (intentional limitations for initial version):
+      --   • Only simple `X = <name>` where RHS passes `isKnownType` (primitives, core mappings,
+      --     imported composites, prelude types).
+      --   • Chained aliases (`A = int; B = A`) are not detected — newly created aliases are not
+      --     added to `isKnownType`'s lookup sets. The transitive resolution in `TypeAliasElim`
+      --     handles chains, but the Python frontend won't produce them yet.
+      --   • Complex type aliases (`MyDict = Dict[str, Any]`) are not detected — the RHS must be
+      --     a `.Name` node, not `.Subscript`.
+      --   • PEP 695 `type` statements (`type X = int`) are not handled.
+      if targets.val.size == 1 then
+        match targets.val[0]!, value with
+        | .Name _ lhsName _, .Name _ rhsName _ =>
+          if isKnownType ctx rhsName.val then
+            let targetTy ← translateType ctx rhsName.val
+            compositeTypes := compositeTypes.push (.Alias { name := mkId lhsName.val, target := targetTy })
+          else
+            otherStmts := otherStmts.push stmt
+        | _, _ => otherStmts := otherStmts.push stmt
+      else
+        otherStmts := otherStmts.push stmt
     | _ =>
       otherStmts := otherStmts.push stmt
 
@@ -2441,6 +2464,9 @@ def pythonToLaurel' (info : PreludeInfo)
   -- will add a Heap parameter, ensuring the verifier does not assume referential
   -- transparency across heap mutations.
   for ct in compositeTypes do
+    match ct with
+    | .Alias _ => pure ()  -- aliases have no composite layout; skip
+    | _ =>
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
     procedures := procedures.push
       { name := { text := compositeToStringName ct.name.text, md := .empty }
