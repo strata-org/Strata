@@ -53,7 +53,6 @@ test_1: $__n0 >= 0
 Obligation:
 $__n0 + $__n0 == $__n0 * 2
 
-⚠️ [addPathCondition] Label clash detected for test, using unique label test_1.
 ---
 info:
 Obligation: after_double_internal

@@ -947,12 +947,16 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     return result
 
 
-def verifySingleEnv (oblProgram : Program) (E : Env) (options : VerifyOptions)
+def verifySingleEnv (oblProgram : Program)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel (VCResults × Statistics) := do
+  -- Build SMT encoding context from the obligations program itself
+  let E ← EIO.ofExcept (Core.buildSMTEnv oblProgram moreFns)
   let p := E.program
   let profile := options.profile
     -- Extract obligations from the obligations program via ObligationExtraction
@@ -1079,7 +1083,7 @@ def verify (program : Program)
                      Core.anfEncoderPipelinePhase]
   let allPhases := pipelinePhases ++ evalPhases
   let phases := allPhases.map (·.phase)
-  let ((oblProgram, preEvalProgram), pipelineStats) ← profileStep profile "  Pipeline" do
+  let ((oblProgram, _), pipelineStats) ← profileStep profile "  Pipeline" do
     if let some pfx := keepAllFilesPrefix then
       if let some parent := (System.FilePath.mk pfx).parent then
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
@@ -1112,24 +1116,14 @@ def verify (program : Program)
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
-          else .some (IrrelevantAxioms.Cache.build preEvalProgram))
+          else .some (IrrelevantAxioms.Cache.build oblProgram))
   let allStats := pipelineStats
-  -- Build SMT encoding context by running full evaluation on the pre-eval program.
-  -- This runs Program.eval a second time (the first is in symbolicEval), which
-  -- causes duplicate warnings (e.g. label clash). This is a known limitation
-  -- until the SMT encoder is decoupled from Program.eval.
-  let smtEnv ← match Core.buildEvalEnv preEvalProgram moreFns with
-    | .ok (E, _) =>
-      match Program.eval E with
-      | .ok (pEs, _) => pure (pEs.head?.getD E)
-      | .error e => .error e
-    | .error e => .error e
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure []
     else
-      pure [← verifySingleEnv oblProgram smtEnv options counter tempDir axiomCache? externalPhases phases]
+      pure [← verifySingleEnv oblProgram moreFns options counter tempDir axiomCache? externalPhases phases]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)

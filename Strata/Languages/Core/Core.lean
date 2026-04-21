@@ -141,6 +141,18 @@ def symbolicEval (options : VerifyOptions) (program : Program)
     Decl.proc proc .empty
   let oblProgram : Program := { decls := typeDecls ++ oblProcs }
 
+  -- Also include function declarations and distinct constraints from the
+  -- evaluation environment, so the SMT encoder can build its context
+  -- from the program without needing a separate Program.eval call.
+  let postEvalEnv := pEs.head?.getD E
+  -- Get functions added during evaluation (not in the initial factory)
+  let initialFactorySize := E.exprEnv.config.factory.toArray.size
+  let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
+  let funcDecls := evalFuncs.map fun func => Decl.func func .empty
+  let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
+    Decl.distinct s!"distinct_{i}" es .empty
+  let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
+
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for E in pEs do

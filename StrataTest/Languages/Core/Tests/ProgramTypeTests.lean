@@ -73,23 +73,14 @@ info: ok: program Core;
 
 type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo int bool;
+function fooAliasVal () : Foo int bool;
+function fooVal () : Foo int bool;
 procedure P () returns ()
 {
-  assert [test]: re.none() == re.none();
+  assert [test]: fooAliasVal == fooVal;
   };
 
 
--- Errors encountered during conversion:
-Unsupported construct in lopToExpr: 0-ary op not found: fooAliasVal
-Context: Global scope:
-  freeVars: [Foo, FooAlias]
-Scope 1:
-Scope 2:
-Unsupported construct in lopToExpr: 0-ary op not found: fooVal
-Context: Global scope:
-  freeVars: [Foo, FooAlias]
-Scope 1:
-Scope 2:
 -/
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .quiet good_prog
@@ -202,7 +193,7 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 
 ---
-info: ok: []
+info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
 -/
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm

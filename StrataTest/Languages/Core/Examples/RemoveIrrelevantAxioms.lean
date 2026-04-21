@@ -112,9 +112,7 @@ Result: ✅ pass
 
 Obligation: a1
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a2
 Property: assert
@@ -126,51 +124,35 @@ Result: ❓ unknown
 
 Obligation: a4
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a5
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a6
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a7
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a8
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a9
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a10
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 
 Obligation: a1
 Property: assert
-Result: ❌ fail
-Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+Result: ❓ unknown
 -/
 #guard_msgs in
 #eval do
