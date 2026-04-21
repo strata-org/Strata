@@ -55,6 +55,8 @@ info:
 Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
+Model:
+(xs@3, Nil)
 
 Obligation: Test_ensures_0
 Property: assert

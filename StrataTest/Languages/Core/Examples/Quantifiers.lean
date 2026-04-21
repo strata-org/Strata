@@ -79,6 +79,8 @@ Result: ✅ pass
 Obligation: bad
 Property: assert
 Result: ❌ fail
+Model:
+(x@0, 0)
 -/
 #guard_msgs in
 #eval verify quantPgm (options := .default)

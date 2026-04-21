@@ -71,6 +71,8 @@ Result: ✅ pass
 Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
+Model:
+(g@4, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

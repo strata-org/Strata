@@ -56,6 +56,8 @@ info:
 Obligation: x_eq_1
 Property: assert
 Result: ❌ fail
+Model:
+(x@1, 0)
 -/
 #guard_msgs in
 #eval verify havocPgm

@@ -88,7 +88,9 @@ procedure Q3(x : int) returns ()
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    if line.startsWith "($__x" && line.contains ", " then
+    -- Match model lines with either old ($__xN, val) or new (x@N, val) naming
+    let isModelLine := (line.startsWith "($__x" || line.startsWith "(x@") && line.contains ", "
+    if isModelLine then
       -- Extract the value after the comma
       match line.splitOn ", " with
       | [var, rest] =>
@@ -128,34 +130,50 @@ Result: ❓ unknown
 Obligation: a4
 Property: assert
 Result: ❌ fail
+Model:
+(x@0, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
+Model:
+(x@0, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
+Model:
+(x@1, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
+Model:
+(x@1, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
+Model:
+(x@2, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
+Model:
+(x@2, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
+Model:
+(x@3, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
+Model:
+(x@3, model_not_2)
 -/
 #guard_msgs in
 #eval do
