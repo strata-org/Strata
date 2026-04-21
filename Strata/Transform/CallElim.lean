@@ -17,6 +17,12 @@ namespace CallElim
 
 open Core.Transform
 
+/-- Statistics keys tracked by the call elimination transformation. -/
+inductive Stats where
+  | visitedCalls
+
+derive_prefixed_toString Stats "CallElim"
+
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"
 
@@ -31,6 +37,7 @@ def callElimCmd (cmd: Command)
   : CoreTransformM (Option (List Statement)) := do
     match cmd with
       | .call lhs procName args md =>
+        incrementStat s!"{Stats.visitedCalls}"
 
         let some p := (← get).currentProgram | throw "program not available"
 

@@ -39,6 +39,13 @@ def VerificationMode.ofString? (s : String) : Option VerificationMode :=
   | "bugFindingAssumingCompleteSpec" => some .bugFindingAssumingCompleteSpec
   | _ => none
 
+def VerificationMode.toString : VerificationMode → String
+  | .deductive => "deductive"
+  | .bugFinding => "bugFinding"
+  | .bugFindingAssumingCompleteSpec => "bugFindingAssumingCompleteSpec"
+
+instance : ToString VerificationMode := ⟨VerificationMode.toString⟩
+
 def VerificationMode.options : String :=
   "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
 
@@ -98,6 +105,18 @@ inductive CheckLevel where
 instance : Inhabited CheckLevel where
   default := .minimal
 
+/-- Configuration for which arithmetic overflow checks to enable.
+    Defaults match C/IEEE 754 semantics: signed BV overflow is UB (checked),
+    unsigned BV wraps (unchecked), float64 overflows to ±∞ (unchecked). -/
+structure OverflowChecks where
+  /-- Check signed bitvector overflow (undefined behavior in C). -/
+  signedBV   : Bool := true
+  /-- Check unsigned bitvector overflow (defined wrapping in C). -/
+  unsignedBV : Bool := false
+  /-- Check float64 overflow to ±∞ (defined in IEEE 754). -/
+  float64    : Bool := false
+  deriving Repr, Inhabited
+
 def CheckLevel.ofString? (s : String) : Option CheckLevel :=
   match s with
   | "minimal" => some .minimal
@@ -132,7 +151,7 @@ structure VerifyOptions where
   /-- Directory to store generated SMT-Lib (`.smt2`) files. -/
   vcDirectory : Option System.FilePath
   /-- Always generate SMT-Lib files, even if the verification
-      condition is trivial (i.e. resolved by partial evaluation
+      condition is trivial (i.e. resolved by symbolic evaluation
       without needing the solver). -/
   alwaysGenerateSMT : Bool
   -- Encoding options
@@ -155,6 +174,8 @@ structure VerifyOptions where
   /-- How many checks to run per VC and how detailed the
       messages should be. -/
   checkLevel : CheckLevel
+  /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
+  overflowChecks : OverflowChecks := {}
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool

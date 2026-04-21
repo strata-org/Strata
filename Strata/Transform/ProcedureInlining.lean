@@ -24,6 +24,13 @@ namespace ProcedureInlining
 
 open Transform
 
+/-- Statistics keys tracked by the procedure inlining transformation. -/
+inductive Stats where
+  | visitedCalls
+  | inlinedCalls
+
+derive_prefixed_toString Stats "ProcedureInlining"
+
 -- Gathers all labels including those in assert and assume.
 mutual
 def Block.labels (b : Block): List String :=
@@ -197,15 +204,17 @@ use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
 def inlineCallCmd
-    (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
+    (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
     (cmd: Command)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args md =>
+        incrementStat s!"{Stats.visitedCalls}"
 
         let st ← get
-        if ¬ doInline procName st.cachedAnalyses then return .none else
+        if ¬ doInline st.currentProcedureName procName st.cachedAnalyses then return .none else
+        incrementStat s!"{Stats.inlinedCalls}"
 
         let some p := (← get).currentProgram
           | throw s!"currentProgram not set"
@@ -284,16 +293,21 @@ end ProcedureInlining
 /-- A `doInline` predicate that refuses to inline procedures involved in
     recursion (i.e., part of a cycle in the call graph).  Falls back to
     `true` when no call graph is available. -/
-def doInlineNonRecursive (name : String) (analyses : Transform.CachedAnalyses) : Bool :=
+def doInlineNonRecursive (callee : String) (analyses : Transform.CachedAnalyses) : Bool :=
   match analyses.callGraph with
   | none => true
-  | some cg => !cg.isRecursive name
+  | some cg => !cg.isRecursive callee
 
 /--
 Options to control the behavior of inlining procedure calls in a Core program.
 -/
 structure InlineTransformOptions where
-  doInline : String → Transform.CachedAnalyses → Bool := doInlineNonRecursive
+  -- 'doInline caller callee cachedAnalysis' returns true if the call command
+  -- from caller to callee should be inlined. The caller can be none if the
+  -- command is an orphaned one (rare, but can happen if inlineCallCmd is run
+  -- directly on Command).
+  doInline : Option String → String → Transform.CachedAnalyses → Bool :=
+      fun _ callee analyses => doInlineNonRecursive callee analyses
   maxIters : Option Nat := none
 
 /-- Procedure-inlining pipeline phase: the transform inlines procedure bodies

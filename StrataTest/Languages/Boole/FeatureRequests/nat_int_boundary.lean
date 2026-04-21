@@ -14,6 +14,12 @@ Near-upstream anchors from `differential_status.md`:
 - `verus-examples:quantifiers`
 - `verus-examples:guide/integers`
 - `verus-examples:power_of_2`
+- Verus links:
+  `quantifiers`: https://github.com/verus-lang/verus/blob/main/examples/quantifiers.rs
+  `guide/integers`: https://github.com/verus-lang/verus/blob/main/examples/guide/integers.rs
+  `power_of_2`: https://github.com/verus-lang/verus/blob/main/examples/power_of_2.rs
+- Current status: the seed verifies with abstract `nat` plus explicit coercions
+- Remaining gap: native `nat` support and less burdensome coercion handling
 -/
 
 private def natIntBoundarySeed : Strata.Program :=
@@ -29,7 +35,7 @@ type nat;
 function nat_to_int(n: nat) : int;
 function int_to_nat(i: int) : nat;
 
-axiom (forall i: int :: 0 <= i ==> nat_to_int(int_to_nat(i)) == i);
+axiom (∀ i: int . 0 <= i ==> nat_to_int(int_to_nat(i)) == i);
 
 procedure nat_int_boundary_seed(n: nat, i: int) returns ()
 spec {

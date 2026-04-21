@@ -505,7 +505,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
   let phase := Core.procedureInliningPipelinePhase
-    { doInline := (fun name _ => name ≠ "main"), maxIters := some 10 }
+    { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
   let inlined ← match Core.Transform.run program (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
