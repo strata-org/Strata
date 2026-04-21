@@ -61,7 +61,7 @@ private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
   | .some x => x == to
 
 
-private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: Bool) :=
+private def substExpr (e1:Expression.Expr) (map:Map String String) :=
   map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
@@ -74,8 +74,8 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
 
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst) false).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd) true).eraseTypes == e1.eraseTypes
+  (substExpr e1 (map.vars.fst)).eraseTypes == e2.eraseTypes &&
+  (substExpr e2 (map.vars.snd)).eraseTypes == e1.eraseTypes
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=
@@ -181,8 +181,8 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     | .cmd (.set n1 (.det e1) _), .cmd (.set n2 (.det e2) _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
-        \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
-        \n(subst of e2: {repr (substExpr e2 map.vars.snd true)})\n(e1: {repr e1})"
+        \n(subst of e1: {repr (substExpr e1 map.vars.fst)})\n(e2: {repr e2})
+        \n(subst of e2: {repr (substExpr e2 map.vars.snd)})\n(e1: {repr e1})"
       else if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of sets do not match"
       else

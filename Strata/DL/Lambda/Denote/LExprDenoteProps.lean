@@ -53,7 +53,7 @@ theorem cast_injective {α β : Sort _} (h : α = β) {a b : α}
 theorem denoteConst_cast_vt (vt vt' : TyVarVal) (c : LConst)
     (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
     : denoteConst tcInterp vt c = cast h (denoteConst tcInterp vt' c) := by
-  cases c <;> simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> exact h ▸ rfl
+  cases c <;> simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> grind
 
 /-- If the body denotation agrees for all witnesses, the quantifier denotation
 agrees regardless of quantifier kind. Allows different expressions, metadata,
