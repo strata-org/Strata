@@ -38,7 +38,8 @@ procedure fireAxiomUsingPattern(x: int)
 };
 
 procedure axiomDoesNotFireBecauseOfPattern(x: int)
-  opaque {
+  opaque
+{
   assert Q(x)
 //^^^^^^^^^^^ error: assertion could not be proved
 };
@@ -50,11 +51,15 @@ procedure AAndB(x: int, y: real)
   opaque
   ensures A(x, y) && B(y);
 
-procedure invokeA(x: int, y :real) opaque {
+procedure invokeA(x: int, y :real)
+  opaque
+{
   assert A(x, y)
 };
 
-procedure invokeB(x: int, y :real) opaque {
+procedure invokeB(x: int, y :real)
+  opaque
+{
   assert B(y)
 //^^^^^^^^^^^ error: assertion could not be proved
 };

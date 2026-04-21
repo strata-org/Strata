@@ -192,8 +192,11 @@ private def ensuresClauseToArg (e : StmtExprMd) : Arg :=
   laurelOp "ensuresClause" #[stmtExprToArg e, errOpt]
 
 private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
-  let refs := modifies.map stmtExprToArg |>.toArray
-  laurelOp "modifiesClause" #[commaSep refs]
+  if modifies.any (fun e => match e.val with | .All => true | _ => false) then
+    laurelOp "modifiesWildcard" #[]
+  else
+    let refs := modifies.map stmtExprToArg |>.toArray
+    laurelOp "modifiesClause" #[commaSep refs]
 
 private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let opName := if proc.isFunctional then "function" else "procedure"

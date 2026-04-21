@@ -20,13 +20,17 @@ composite Container {
   var stringValue: string
 }
 
-procedure newsAreNotEqual() opaque {
+procedure newsAreNotEqual()
+  opaque
+{
   var c: Container := new Container;
   var d: Container := new Container;
   assert c != d
 };
 
-procedure simpleAssign() opaque {
+procedure simpleAssign()
+  opaque
+{
   var c: Container := new Container;
   var iv: int := c#intValue;
   var rv: real := c#realValue;
@@ -84,7 +88,9 @@ procedure implicitEquality() opaque {
   }
 };
 
-procedure useBool(c: Container) returns (r: bool) opaque {
+procedure useBool(c: Container) returns (r: bool)
+  opaque
+{
   r := c#boolValue
 };
 

@@ -19,8 +19,10 @@ composite Counter {
 //          ^^^^^^^^^^ error: Instance procedure 'increment2' on composite type 'Counter' is not yet supported
     self#count := self#count + 1
   };
-  procedure reset(self: Counter) opaque {
+  procedure reset(self: Counter)
 //          ^^^^^ error: Instance procedure 'reset' on composite type 'Counter' is not yet supported
+    opaque
+  {
     self#count := 0
   };
 }

@@ -59,24 +59,23 @@ procedure caller()
 //    var i: int := modifyContainerTransparant(c);
 //}
 
-// TODO add wildcard support
-// procedure modifyContainerWildcard(c: Container) returns (i: int)
-//  opaque
-//  modifies *
-//{
-//  c#value := c#value + 1;
-//  7
-//};
+procedure modifyContainerWildcard(c: Container) returns (i: int)
+  opaque
+  modifies *
+{
+  c#value := c#value + 1;
+  7
+};
 
-//procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//          error: postcondition does not hold
-//  opaque
-//{
-//    var i: int := modifyContainerWildcard(c)
-//};
+procedure modifyContainerWithoutPermission1(c: Container, d: Container)
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  opaque
+{
+    var i: int := modifyContainerWildcard(c)
+};
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   opaque
   modifies d
 {
@@ -84,7 +83,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   opaque
   modifies d
 {

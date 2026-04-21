@@ -378,6 +378,8 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
         | q`Laurel.modifiesClause, #[refsArg] =>
           let refs ← translateModifiesExprs refsArg
           allModifies := allModifies ++ refs
+        | q`Laurel.modifiesWildcard, #[] =>
+          allModifies := allModifies ++ [{ val := .All, source := none }]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
     pure allModifies
@@ -465,16 +467,16 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected invokeOnClause operation, got {repr invokeOnOp.name}"
       | .option _ none => pure none
       | _ => pure none
-    -- Parse optional opaque spec (ensures + modifies)
-    let (postconditions, modifies, isOpaque) ← match opaqueSpecArg with
-      | .option _ (some (.op opaqueOp)) => match opaqueOp.name, opaqueOp.args with
+    -- Parse optional opaqueSpec (contains ensures and modifies)
+    let (isOpaque, postconditions, modifies) ← match opaqueSpecArg with
+      | .option _ (some (.op opaqueSpecOp)) => match opaqueSpecOp.name, opaqueSpecOp.args with
         | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
           let postconditions ← translateEnsuresClauses ensuresArg
           let modifies ← translateModifiesClauses modifiesArg
-          pure (postconditions, modifies, true)
-        | _, _ => TransM.error s!"Expected opaqueSpec operation, got {repr opaqueOp.name}"
-      | .option _ none => pure ([], [], false)
-      | _ => TransM.error s!"Expected opaqueSpec, got {repr opaqueSpecArg}"
+          pure (true, postconditions, modifies)
+        | _, _ => TransM.error s!"Expected opaqueSpec operation, got {repr opaqueSpecOp.name}"
+      | .option _ none => pure (false, [], [])
+      | _ => pure (false, [], [])
     -- Parse optional body
     let isExternal ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
@@ -494,7 +496,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       else if isOpaque then Body.Opaque postconditions body modifies
       else match body with
       | some b => Body.Transparent b
-      | none => Body.Opaque [] none []
+      | none => Body.Opaque [] none modifies
     return {
       name := name
       inputs := parameters

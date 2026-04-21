@@ -21,7 +21,8 @@ composite Left extends Top {}
 composite Right extends Top {}
 composite Bottom extends Left, Right {}
 
-procedure diamondField(b: Bottom) opaque
+procedure diamondField(b: Bottom)
+  opaque
   modifies b
 {
   b#xValue := 1

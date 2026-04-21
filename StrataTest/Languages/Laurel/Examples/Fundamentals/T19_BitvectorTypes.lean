@@ -37,9 +37,7 @@ procedure localBv() returns (r: bv 16)
 };
 
 // Opaque procedure returning bv64 — caller gets typed result
-procedure opaqueBv64() returns (r: bv 64)
-  opaque;
-
+procedure opaqueBv64() returns (r: bv 64);
 procedure callOpaque() returns (r: bv 64)
   opaque
 {

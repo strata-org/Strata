@@ -75,9 +75,7 @@ procedure reassignInvalid()
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int)
   opaque
-{
-  return n
-};
+{ return n };
 procedure argValid() returns (r: int)
   opaque
 {
@@ -176,7 +174,9 @@ procedure existsNat() opaque {
 
 // Quantifier constraint injection — nested constrained type
 // n - 1 >= 0 is only provable with n > 0 injected
-procedure forallPosnat() opaque {
+procedure forallPosnat()
+  opaque
+{
   var b: bool := forall(n: posnat) => n - 1 >= 0;
   assert b
 };
@@ -184,7 +184,9 @@ procedure forallPosnat() opaque {
 // Capture avoidance — bound var y in constraint must not collide with parameter y
 // Without capture avoidance, requires becomes exists(y) => y > y (false), making body vacuously true
 constrained haslarger = x: int where (exists(y: int) => y > x) witness 0
-procedure captureTest(y: haslarger) opaque {
+procedure captureTest(y: haslarger)
+  opaque
+{
   assert false
 //^^^^^^^^^^^^ error: assertion does not hold
 };

@@ -157,6 +157,7 @@ op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClau
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs;
+op modifiesWildcard: ModifiesClause => "\n  modifies *";
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";

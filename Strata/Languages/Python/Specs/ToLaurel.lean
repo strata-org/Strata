@@ -557,7 +557,7 @@ def buildSpecBody (preconditions : Array Assertion)
       source := none,
       md := fileMd
   }
-  return .Transparent body
+  return .Opaque [] (some body) [{ val := .All, source := none }]
 
 /-! ## Declaration Translation -/
 
@@ -617,7 +617,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
           if a.default.isNone then some a.name else none)
       pure (anyInputs, anyOutputs, body)
     else
-      pure (inputs, outputs, Body.Opaque [] none [])
+      pure (inputs, outputs, Body.Opaque [] none [{ val := .All, source := none }])
   let md ← mkMdWithFileRange func.loc
   return {
     name := { text := procName, md := md }
