@@ -21,7 +21,9 @@ procedure S() returns ()
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram havocPgm) |>.snd |>.isEmpty
@@ -34,8 +36,7 @@ procedure S () returns ()
   var x : int;
   x := 1;
   havoc x;
-  assert [x_eq_1]: x == 1;
-  };
+  assert [x_eq_1]: x == 1;};
 , #[])
 -/
 #guard_msgs in
@@ -68,8 +69,7 @@ procedure S () returns ()
   var x : int;
   x := 1;
   havoc x;
-  assert [x_eq_1]: $__x1 == 1;
-  };
+  assert [x_eq_1]: $__x1 == 1;};
 
 ---
 info:

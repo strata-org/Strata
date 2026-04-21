@@ -58,7 +58,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionTesterPgm) |>.snd |>.isEmpty
 
@@ -116,7 +118,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionHavocPgm) |>.snd |>.isEmpty
 
@@ -159,7 +163,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionExhaustivePgm) |>.snd |>.isEmpty
 
@@ -205,7 +211,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionMutualExclusionPgm) |>.snd |>.isEmpty
 
@@ -256,7 +264,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionEqualityPgm) |>.snd |>.isEmpty
 
@@ -304,7 +314,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionInequalityPgm) |>.snd |>.isEmpty
 
@@ -355,7 +367,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionDestructorPgm) |>.snd |>.isEmpty
 

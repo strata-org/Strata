@@ -23,7 +23,9 @@ procedure P() returns ()
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
@@ -36,8 +38,7 @@ procedure P () returns ()
 {
   assume [a_zero_true_assumption]: a[0] == true;
   assert [a_zero_true]: a[0];
-  assert [a_one_true]: a[1];
-  };
+  assert [a_one_true]: a[1];};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst
@@ -76,8 +77,7 @@ procedure P () returns ()
 {
   assume [a_zero_true_assumption]: a[0] == true;
   assert [a_zero_true]: a[0];
-  assert [a_one_true]: a[1];
-  };
+  assert [a_one_true]: a[1];};
 
 ---
 info:

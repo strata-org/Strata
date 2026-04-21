@@ -32,7 +32,9 @@ procedure P() returns ()
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram seqPgm) |>.snd |>.isEmpty
@@ -50,8 +52,7 @@ procedure P () returns ()
   assert [t_0]: Sequence.select(t, 0) == 10;
   assert [t_1]: Sequence.select(t, 1) == 20;
   assert [t_2]: Sequence.select(t, 2) == 30;
-  assert [t_length_wrong]: Sequence.length(t) == 0;
-  };
+  assert [t_length_wrong]: Sequence.length(t) == 0;};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram seqPgm) |>.fst
@@ -116,8 +117,7 @@ procedure P () returns ()
   assert [t_0]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10;
   assert [t_1]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20;
   assert [t_2]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30;
-  assert [t_length_wrong]: Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 0;
-  };
+  assert [t_length_wrong]: Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 0;};
 
 ---
 info:
@@ -192,7 +192,9 @@ procedure SeqOps() returns ()
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram seqOpsPgm) |>.snd |>.isEmpty
 
@@ -311,8 +313,7 @@ procedure SeqOps () returns ()
   assert [take_elem]: Sequence.select(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10;
   u := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
   assert [drop_length]: Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)) == 2;
-  assert [drop_elem]: Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20;
-  };
+  assert [drop_elem]: Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20;};
 
 ---
 info:

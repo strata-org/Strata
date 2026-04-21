@@ -70,8 +70,7 @@ procedure Extract (xs : List $__ty0) returns (h : ($__ty5))
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
-  assume [Extract_requires_0]: List..isCons($__xs0);
-  };
+  assume [Extract_requires_0]: List..isCons($__xs0);};
 procedure Test () returns ()
 spec {
   ensures [Test_ensures_0]: true;
@@ -84,8 +83,7 @@ spec {
   var tmp_h_1 : int := $__h4;
   assert [callElimAssert_Extract_requires_0_2]: List..isCons($__xs3);
   havoc h;
-  assert [Test_ensures_0]: true;
-  };
+  assert [Test_ensures_0]: true;};
 
 ---
 info:

@@ -86,8 +86,7 @@ spec {
   assert [good_assert]: forall __q0 : ($__unknown_type) :: !(__q0 == __q0 + 1);
   r := $__x0 + 1;
   assert [good]: forall __q0 : ($__unknown_type) :: exists __q1 : ($__unknown_type) :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1));
-  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < $__x0;
-  };
+  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < $__x0;};
 
 ---
 info:

@@ -180,8 +180,7 @@ datatype IntList {
 };
 procedure Test1 (x : bool) returns (y : bool)
 {
-  y := x;
-  };
+  y := x;};
 function intId (x : int) : int;
 var g : bool;
 procedure Test2 (x : bool) returns (y : bool)
@@ -196,8 +195,7 @@ spec {
   y := x || x;
   call b0 := Test1(5);
   var b1 : bool;
-  call b1 := Test1(6);
-  };
+  call b1 := Test1(6);};
 function boolId (x : bool) : bool;
 -/
 #guard_msgs in
@@ -257,8 +255,7 @@ function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations () returns ()
 {
   var m : (Map int bool);
-  m := makePair(identity(42), identity(true));
-  };
+  m := makePair(identity(42), identity(true));};
 -/
 #guard_msgs in
 #eval ASTtoCST polyFns
@@ -297,8 +294,7 @@ procedure P (x : bv8, y : bv8, z : bv8) returns ()
   assert [bad_shift]: x >> y == x << y;
   var xy : bv16 := bvconcat{8}{8}(x, y);
   var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
-  };
+  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);};
 -/
 #guard_msgs in
 #eval ASTtoCST bitvecPgm
@@ -351,8 +347,7 @@ spec {
   assume [assume_1]: f == FCons(t, FNil);
   assert [valIs42]: RoseTree..val(t) == 42;
   assert [headIsT]: Forest..head(f) == t;
-  assert [headVal]: RoseTree..val(Forest..head(f)) == 42;
-  };
+  assert [headVal]: RoseTree..val(Forest..head(f)) == 42;};
 -/
 #guard_msgs in
 #eval ASTtoCST polyRoseTreeHavocPgm
@@ -380,8 +375,7 @@ procedure testFuncDecl (c : int) returns ()
   function double (x : int) : int { x + x + c }
   var y : int := 5;
   var result : int := double(y);
-  assert [assert_0]: result == 12;
-  };
+  assert [assert_0]: result == 12;};
 -/
 #guard_msgs in
 #eval ASTtoCST funcDeclStmtPgm
@@ -439,14 +433,11 @@ spec {
   invariant i <= nums_len
   invariant forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i ==> max >=s nums[__q0]
   invariant exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i && max == nums[__q0]
-  {
+  ({
     if (nums[i] >s max) {
-      max := nums[i];
-      }
-    i := i + bv{64}(1);
-    }
-  ret := max;
-  };
+      max := nums[i];}
+    i := i + bv{64}(1);})
+  ret := max;};
 -/
 #guard_msgs in
 #eval ASTtoCST findMaxPgm
@@ -558,22 +549,17 @@ procedure TestNondetIf () returns ()
 {
   var x : int := 0;
   if * {
-    x := 1;
-    } else {
-    x := 2;
-    }
-  assert [x_pos]: x >= 0;
-  };
+    x := 1;} else {
+    x := 2;}
+  assert [x_pos]: x >= 0;};
 procedure TestNondetWhile () returns ()
 {
   var x : int := 0;
   while *
   invariant x >= 0
-  {
-    x := x + 1;
-    }
-  assert [x_pos]: x >= 0;
-  };
+  ({
+    x := x + 1;})
+  assert [x_pos]: x >= 0;};
 -/
 #guard_msgs in
 #eval ASTtoCST nondetCondPgm

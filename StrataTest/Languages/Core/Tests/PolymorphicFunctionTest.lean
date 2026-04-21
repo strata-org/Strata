@@ -68,8 +68,7 @@ spec {
   var x : int;
   var y : int;
   x := 42;
-  y := identity(x);
-  };
+  y := identity(x);};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
@@ -103,8 +102,7 @@ spec {
   ensures [TestMakePair_ensures_0]: true;
   } {
   var m : (Map int bool);
-  m := makePair(42, true);
-  };
+  m := makePair(42, true);};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
@@ -140,8 +138,7 @@ spec {
   ensures [TestApply_ensures_0]: true;
   } {
   var result : bool;
-  result := apply(intToBool, 42);
-  };
+  result := apply(intToBool, 42);};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
@@ -177,8 +174,7 @@ spec {
   ensures [TestDifferentInstantiations_ensures_0]: true;
   } {
   var m : (Map int bool);
-  m := makePair(identity(42), identity(true));
-  };
+  m := makePair(identity(42), identity(true));};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
@@ -204,7 +200,7 @@ spec {
 #end
 
 /--
-info: error: (4726-4749) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4714-4737) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in

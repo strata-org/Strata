@@ -42,7 +42,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram listLenPgm) |>.snd |>.isEmpty
 
@@ -136,7 +138,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram listLenAxiomPgm) |>.snd |>.isEmpty
 
@@ -241,7 +245,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram lookupPgm) |>.snd |>.isEmpty
 
@@ -311,7 +317,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram impEquivPgm) |>.snd |>.isEmpty
 
@@ -450,7 +458,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram recPrecondPgm) |>.snd |>.isEmpty
 

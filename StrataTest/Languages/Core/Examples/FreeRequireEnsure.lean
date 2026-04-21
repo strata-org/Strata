@@ -80,16 +80,14 @@ spec {
   assume [g_eq_15]: $__g1 == 15;
   assert [g_gt_10_internal]: $__g1 > 10;
   g := $__g1 + 1;
-  assert [g_lt_10]: true;
-  };
+  assert [g_lt_10]: true;};
 procedure ProcCaller () returns (x : int)
 spec {
   modifies g;
   } {
   havoc g;
   assume [callElimAssume_g_lt_10_0]: $__g4 < 10;
-  assert [g_eq_15_internal]: $__g4 == 15;
-  };
+  assert [g_eq_15_internal]: $__g4 == 15;};
 
 ---
 info:

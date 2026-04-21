@@ -50,8 +50,7 @@ program Core;
 procedure bitVecParseTest () returns ()
 {
   assert [bitvec32_test]: true;
-  assert [bitvec64_test]: false;
-  };
+  assert [bitvec64_test]: false;};
 
 ---
 info:

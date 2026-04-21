@@ -47,8 +47,7 @@ axiom [axiom_3]: forall __q0 : Heap :: forall __q1 : Ref :: forall __q2 : Struct
 procedure test (h : Heap, ref : Ref, field : Field) returns ()
 {
   var newH : Heap := h[ref:=(h[ref])[field:=(h[ref])[field] + 1]];
-  assert [assert_0]: (newH[ref])[field] == (h[ref])[field] + 1;
-  };
+  assert [assert_0]: (newH[ref])[field] == (h[ref])[field] + 1;};
 -/
 #guard_msgs in
 #eval (TransM.run Inhabited.default (translateProgram genLabelsPgm) |>.fst)

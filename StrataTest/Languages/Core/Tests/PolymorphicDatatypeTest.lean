@@ -82,8 +82,7 @@ spec {
   x := None;
   y := Some(42);
   v := Option..value(y);
-  assert [valIs42]: v == 42;
-  };
+  assert [valIs42]: v == 42;};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram optionIntPgm)).fst
@@ -127,8 +126,7 @@ spec {
   var h : int;
   xs := Cons(1, Cons(2, Nil));
   h := List..head(xs);
-  assert [headIs1]: h == 1;
-  };
+  assert [headIs1]: h == 1;};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram listIntPgm)).fst
@@ -177,8 +175,7 @@ spec {
   y := Right(true);
   assert [xIsLeft]: Either..isLeft(x);
   assert [yIsRight]: Either..isRight(y);
-  assert [lValue]: Either..l(x) == 42;
-  };
+  assert [lValue]: Either..l(x) == 42;};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram eitherUsePgm)).fst
@@ -223,8 +220,7 @@ spec {
   } {
   var x : (Option (List int));
   x := Some(Cons(1, Nil));
-  assert [isSome]: Option..isSome(x);
-  };
+  assert [isSome]: Option..isSome(x);};
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram nestedPolyPgm)).fst
@@ -258,7 +254,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram polyListHavocPgm) |>.snd |>.isEmpty
 
@@ -310,7 +308,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram multiInstSMTPgm) |>.snd |>.isEmpty
 
@@ -356,7 +356,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram eitherHavocPgm) |>.snd |>.isEmpty
 
@@ -409,7 +411,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionHavocPgm) |>.snd |>.isEmpty
 
@@ -458,7 +462,9 @@ spec { ensures true; }
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram polyWithUserDatatypePgm) |>.snd |>.isEmpty
 
@@ -520,7 +526,9 @@ spec { ensures true; }
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram nonDatatypeWithDatatypeArgPgm) |>.snd |>.isEmpty
 

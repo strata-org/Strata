@@ -80,24 +80,23 @@ fooAliasVal == fooVal
 
 ---
 info: ok: [(program Core;
-  ⏎
+  
   type Foo (a : Type, b : Type);
   type FooAlias (a : Type) := Foo int bool;
   function fooAliasVal () : Foo int bool;
   function fooVal () : Foo int bool;
   procedure P () returns ()
   {
-    assert [test]: fooAliasVal == fooVal;
-    };
+    assert [test]: fooAliasVal == fooVal;};
   ,
   Error:
   none
   Subst Map:
-  ⏎
+  
   Expression Env:
   State:
-  ⏎
-  ⏎
+  
+  
   Evaluation Config:
   Eval Depth: 200
   Variable Prefix: $__
@@ -298,25 +297,25 @@ info: ok: [(program Core;
   func Bv64.SGe :  ((x : bv64) (y : bv64)) → bool;
   func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
-  ⏎
-  ⏎
+  
+  
   Datatypes:
-  ⏎
+  
   Path Conditions:
-  ⏎
-  ⏎
-  ⏎
+  
+  
+  
   Warnings:
   []
   Deferred Proof Obligations:
   Label: test
   Property: assert
   Assumptions:
-  ⏎
-  ⏎
+  
+  
   Proof Obligation:
   ((~fooAliasVal : (Foo int bool)) == (~fooVal : (Foo int bool)))
-  ⏎
+  
   )]
 -/
 #guard_msgs in
@@ -399,8 +398,7 @@ function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure Test () returns ()
 {
   var m : (Map int bool);
-  m := makePair(identity(42), identity(true));
-  };
+  m := makePair(identity(42), identity(true));};
 -/
 #guard_msgs in
 #eval do
