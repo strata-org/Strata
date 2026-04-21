@@ -615,42 +615,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
-def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
-    : TranslateM (Option Core.Decl) := do
-  let postconds := match proc.body with
-    | .Opaque postconds _ _ | .Abstract postconds => postconds
-    | _ => []
-  if postconds.isEmpty then return none
-  -- All input param names become bound variables.
-  -- buildQuants nests ∀ p1, ∀ p2, ..., ∀ pn :: body, so inside body the innermost
-  -- binder (pn) is de Bruijn index 0, and the outermost (p1) is index n-1.
-  -- translateExpr uses findIdx? on boundVars, so we must list params innermost-first
-  -- (i.e. reversed) so that pn → 0, ..., p1 → n-1.
-  let boundVars := proc.inputs.reverse.map (·.name)
-  -- Translate postconditions and trigger with the full bound-var context
-  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
-  let bodyExpr : Core.Expression.Expr := match postcondExprs with
-    | [] => .const () (.boolConst true)
-    | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp () boolAndOp [acc, x]) e
-  let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
-  -- Wrap in ∀ from outermost (first param) to innermost (last param).
-  -- The trigger is placed on the innermost quantifier.
-  let quantified ← buildQuants proc.inputs bodyExpr triggerExpr
-  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } proc.name.md)
-where
-  /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
-  buildQuants (params : List Parameter)
-      (body : Core.Expression.Expr) (trigger : Core.Expression.Expr)
-      : TranslateM Core.Expression.Expr := do
-    match params with
-    | [] => return body
-    | [p] =>
-      return LExpr.allTr () p.name.text (some (← translateType p.type)) trigger body
-    | p :: rest => do
-      let inner ← buildQuants rest body trigger
-      return LExpr.all () p.name.text (some (← translateType p.type)) inner
-
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
@@ -755,12 +719,10 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
     | .procedure proc => do
       modify fun s => { s with proof := true }
       let procDecl ← translateProcedure proc
-      -- Turn free postconditions into axioms placed right behind the related procedure
-      let axiomDecls : List Core.Decl ← match proc.invokeOn with
-        | none => pure []
-        | some trigger => do
-          let axDecl? ← translateInvokeOnAxiom proc trigger
-          pure axDecl?.toList
+      -- Translate axioms (populated by the contract pass from invokeOn + ensures)
+      let axiomDecls ← proc.axioms.mapM fun ax => do
+        let coreExpr ← translateExpr ax [] (isPureContext := true)
+        return Core.Decl.ax { name := s!"invokeOn_{proc.name.text}", e := coreExpr } proc.name.md
       return [Core.Decl.proc procDecl proc.name.md] ++ axiomDecls
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition

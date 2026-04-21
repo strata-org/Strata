@@ -115,13 +115,14 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .External => return proc
 
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
-    (preconditions, decreases, body, and invokeOn). -/
+    (preconditions, decreases, body, invokeOn, and axioms). -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
   return { proc with
     preconditions := ← proc.preconditions.mapM f
     decreases := ← proc.decreases.mapM f
-    invokeOn := ← proc.invokeOn.mapM f }
+    invokeOn := ← proc.invokeOn.mapM f
+    axioms := ← proc.axioms.mapM f }
 
 /-- Apply a monadic transformation to procedure bodies in a program.
     Does **not** traverse preconditions, decreases, or invokeOn — use

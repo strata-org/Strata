@@ -197,6 +197,9 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (AstNode StmtExpr) := none
+  /-- Axioms to emit alongside this procedure. Populated by the contract pass from
+      `invokeOn` and ensures clauses. -/
+  axioms : List (AstNode StmtExpr) := []
 
 /--
 A typed parameter for a procedure.

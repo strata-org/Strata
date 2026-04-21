@@ -460,10 +460,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -486,10 +488,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a type definition. -/

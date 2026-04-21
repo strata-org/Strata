@@ -107,18 +107,18 @@ Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
 as a list of procedures paired with a flag indicating whether the SCC is recursive.
 Results are in reverse topological order: dependencies before dependents.
 
-Procedures with an `invokeOn` trigger are placed as early as possible — before
-unrelated procedures without one — by stably partitioning them first before building
+Procedures with axioms are placed as early as possible — before
+unrelated procedures without them — by stably partitioning them first before building
 the graph. Tarjan then naturally assigns them lower indices, causing them to appear
 earlier in the output.
 -/
 public def computeSccDecls (program : FunctionsAndProofsProgram) : List (List Procedure × Bool) :=
-  -- Stable partition: procedures with invokeOn come first, preserving relative
+  -- Stable partition: procedures with axioms come first, preserving relative
   -- order within each group. Tarjan then places them earlier in the topological output.
   let allProcs := program.functions ++ program.proofs
-  let (withInvokeOn, withoutInvokeOn) :=
-    allProcs.partition (fun p => p.invokeOn.isSome)
-  let orderedProcs : List Procedure := withInvokeOn ++ withoutInvokeOn
+  let (withAxioms, withoutAxioms) :=
+    allProcs.partition (fun p => !p.axioms.isEmpty)
+  let orderedProcs : List Procedure := withAxioms ++ withoutAxioms
 
   -- Build a call-graph over all procedures.
   -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
@@ -136,7 +136,7 @@ public def computeSccDecls (program : FunctionsAndProofsProgram) : List (List Pr
       | _ => []
     let contractExprs : List StmtExprMd :=
       proc.preconditions ++
-      proc.invokeOn.toList
+      proc.axioms
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
   -- Build the OutGraph for Tarjan.
@@ -217,7 +217,7 @@ then collecting datatypes and constants.
 
 Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
-so that `invokeOn` axioms are available to functions that need them.
+so that axioms are available to functions that need them.
 -/
 public def orderFunctionsAndProofs (program : FunctionsAndProofsProgram) : CoreWithLaurelTypes :=
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
