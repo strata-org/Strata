@@ -88,10 +88,8 @@ procedure Q3(x : int) returns ()
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    -- Match model lines with either old ($__xN, val) or new (x@N, val) naming
-    let isModelLine := (line.startsWith "($__x" || line.startsWith "(x@") && line.contains ", "
-    if isModelLine then
-      -- Extract the value after the comma
+    -- Match model lines like (x@N, val)
+    if line.startsWith "(x@" && line.contains ", " then
       match line.splitOn ", " with
       | [var, rest] =>
         -- Remove trailing ")" and strip LExpr integer prefix "#"

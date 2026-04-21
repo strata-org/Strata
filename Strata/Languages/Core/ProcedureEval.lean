@@ -62,7 +62,7 @@ Create `fvar` expressions with globally unique names for procedure parameters.
 Uses `genFVars` to ensure names cannot collide across procedures, which is
 necessary because expressions built during one procedure (e.g. modified globals)
 persist in the global state and may contain references to parameter fvars.
-Names use `@N` suffixes for readability (e.g. `x@6` instead of `$__x6`).
+Names use `@N` suffixes for readability (e.g. `x@6`).
 -/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
