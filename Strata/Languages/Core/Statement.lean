@@ -54,15 +54,6 @@ instance : HasHavoc Expression Command where
 instance : HasInit Expression Command where
   init x ty e md := .cmd (.init x ty e md)
 
-instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
-    [ToFormat (List P.Ident)] [ToFormat P.Expr] :
-    ToFormat (CmdExt P) where
-  format c := match c with
-    | .cmd c => format c
-    | .call lhs pname args _md =>
-      f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
-      f!"{pname}({nestD <| group <| joinSep args ("," ++ line)})"
-
 ---------------------------------------------------------------------
 
 @[expose]

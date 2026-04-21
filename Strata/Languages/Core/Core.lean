@@ -111,25 +111,6 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
       dbg_trace f!"{formatProofObligations E.deferred}"
   return (pEs, stats)
 
-instance instCoreProgramString : ToString (Program) where
-  toString p := toString (Core.formatProgram p)
-
-instance instCoreProgramFormat : Std.ToFormat Program where
-  format := Core.formatProgram
-
-/-- Format a single `Core.Expression.Expr` using the DDM pretty-printer.
-    This instance shadows the generic `ToFormat (LExpr T)` from `LExpr.lean`. -/
-instance instCoreExprFormat : Std.ToFormat Expression.Expr where
-  format e := Core.formatExprs [e]
-
-/-- Format a `Core.Procedure` using the DDM pretty-printer. -/
-instance instCoreProcedureFormat : Std.ToFormat Procedure where
-  format := Core.formatProcedure
-
-/-- Format a `Core.Command` (`CmdExt Expression`) using the DDM pretty-printer. -/
-instance instCoreCommandFormat : Std.ToFormat Command where
-  format := Core.formatCommand
-
 end -- public section
 
 end Core
