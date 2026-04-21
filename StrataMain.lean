@@ -192,7 +192,7 @@ def verifyOptionsFlags : List Flag := [
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
     takesArg := .arg "checks" },
   { name := "path-cap",
-    help := "Maximum paths after each symbolic ITE before merging. 'none' (default) disables; a number N forces merge when paths > N.",
+    help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths down to N when exceeded.",
     takesArg := .arg "N|none" }
 ]
 

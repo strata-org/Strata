@@ -487,13 +487,17 @@ private def findCondPairs (fs unmatched_f remaining_t paired : List EnvWithNext)
 Merge paths by matching condition-equality pairs from `splitConds`.
 Each round merges at least one pair when `paired` is non-empty,
 reducing the path count, so fuel = initial path count suffices.
+Stops when the path count is at or below `target`.
 -/
-private def mergeCondPairs (fuel : Nat) (ewns : List EnvWithNext) : List EnvWithNext :=
+private def mergeCondPairs (fuel : Nat) (ewns : List EnvWithNext)
+    (target : Nat := 1) : List EnvWithNext :=
   match fuel, ewns with
   | 0, ewns => ewns
   | _, [] => []
   | _, [e] => [e]
   | fuel + 1, ewns =>
+    if ewns.length <= target then ewns
+    else
     let (trues, falses) := ewns.partition (fun e =>
       match e.splitConds.head? with
       | some (_, b) => b
@@ -502,141 +506,134 @@ private def mergeCondPairs (fuel : Nat) (ewns : List EnvWithNext) : List EnvWith
     if paired.isEmpty then
       ewns
     else
-      mergeCondPairs fuel (paired ++ remaining_t ++ unmatched_f)
+      mergeCondPairs fuel (paired ++ remaining_t ++ unmatched_f) target
+
+private def evalOneStmt (old_var_subst : SubstMap)
+    (Ewn : EnvWithNext) (s : Statement)
+    (evalSub : EnvWithNext → Statements → List EnvWithNext × Statistics)
+    (processBranches : EnvWithNext → Expression.Expr → Expression.Expr →
+      Statements → Statements → List EnvWithNext × Statistics) :
+    List EnvWithNext × Statistics :=
+  match s with
+  | .cmd c =>
+    let (_, E) := Command.eval Ewn.env old_var_subst c
+    ([{ Ewn with env := E, exitLabel := .none }], noStats)
+  | .block label ss _ =>
+    let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
+    let (Ewns, blockStats) := evalSub Ewn ss
+    let Ewns := Ewns.map
+                    (fun (ewn : EnvWithNext) =>
+                         let exitLabel := match ewn.exitLabel with
+                           | .some .none => .none
+                           | .some (.some l) => if l == label then .none else .some (.some l)
+                           | other => other
+                         { ewn with env := ewn.env.popScope,
+                                    exitLabel := exitLabel })
+    (Ewns, blockStats)
+  | .ite cond then_ss else_ss _ =>
+    match cond with
+    | .nondet =>
+      let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+      let freshVar : Expression.Expr := .fvar () freshName none
+      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet Imperative.MetaData.empty
+      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss Imperative.MetaData.empty
+      evalSub Ewn [initStmt, iteStmt]
+    | .det c =>
+      let cond' := Ewn.env.exprEval c
+      match cond' with
+      | .true _ | .false _ =>
+        let (ss_live, ss_dead) :=
+          if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
+        let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
+        let (Ewns, liveStats) := evalSub Ewn ss_live
+        match Ewns with
+        | [] => ([], liveStats)
+        | first :: restEwns =>
+          ({ first with env.deferred :=
+              deadDeferred ++ first.env.deferred } :: restEwns, liveStats)
+      | _ => processBranches Ewn c cond' then_ss else_ss
+  | .loop _ _ _ _ _ =>
+    panic! "Cannot evaluate `loop` statement. \
+            Please transform your program to eliminate loops before \
+            calling Core.Statement.evalAux"
+  | .funcDecl decl _ =>
+    let paramNames := decl.inputs.map (·.1)
+    let func : Lambda.LFunc CoreLParams := {
+      name := decl.name,
+      typeArgs := decl.typeArgs,
+      isConstr := decl.isConstr,
+      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+      output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+      body := decl.body.map (captureFreevars Ewn.env paramNames),
+      attr := decl.attr,
+      concreteEval := decl.concreteEval,
+      axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
+    }
+    match Ewn.env.addFactoryFunc func with
+    | .ok env' => ([{ Ewn with env := env' }], noStats)
+    | .error e =>
+      ([{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }], noStats)
+  | .typeDecl _ _ => ([Ewn], noStats)
+  | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats)
+
+private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
+    List EnvWithNext × Statistics :=
+  match ewns with
+  | [] => ([], stats)
+  | ewn :: _ =>
+    match ewn.env.pathCap with
+    | .some cap =>
+      let (noExit, hasExit) :=
+        ewns.partition (fun (e : EnvWithNext) => e.exitLabel.isNone)
+      if noExit.length > cap then
+        let merged := mergeCondPairs noExit.length noExit cap
+        (merged ++ hasExit,
+         stats.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
+      else (ewns, stats)
+    | .none => (ewns, stats)
 
 mutual
-def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
+/-- Batch symbolic evaluator: evaluates a statement list for all input
+    paths simultaneously. Between each statement, enforces the path cap
+    by merging continuing (.none exit) paths. -/
+def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
+    (Ewns : List EnvWithNext) (ss : Statements) :
     List EnvWithNext × Statistics :=
-  match steps, Ewn.env.error with
-  | _, some _ => ([{Ewn with exitLabel := .none}], noStats)
-  | 0, none => ([{Ewn with env := { Ewn.env with error := some .OutOfFuel}, exitLabel := .none}],
-      noStats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}")
-  | steps' + 1, none =>
+  -- Separate error paths — they pass through unchanged.
+  let (errors, good) := Ewns.partition (fun (ewn : EnvWithNext) => ewn.env.error.isSome)
+  if good.isEmpty then (Ewns, noStats)
+  else
+  match steps with
+  | 0 => (good.map (fun ewn =>
+      { ewn with env := { ewn.env with error := some .OutOfFuel }, exitLabel := .none })
+      ++ errors,
+      noStats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}" good.length)
+  | steps' + 1 =>
     have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
-    let go' := evalAuxGo steps' old_var_subst
-    match processExit ss optExit with
-    | ([], .none) => ([{ Ewn with exitLabel := .none }], noStats)
-    | (_, .some l) => ([{ Ewn with exitLabel := .some l }], noStats) -- Exit propagating, statement list skipped
-    | (s :: rest, .none) =>
-      let (EAndNexts, stmtStats) : List EnvWithNext × Statistics :=
-        match s with
-
-          | .cmd c =>
-            let (c', E) := Command.eval Ewn.env old_var_subst c
-            ([{ Ewn with
-                  env := E
-                  exitLabel := .none }], noStats)
-
-          | .block label ss md =>
-            let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
-            -- Not allowed to jump into a block
-            let (Ewns, blockStats) := go' Ewn ss .none
-            let Ewns := Ewns.map
-                            (fun (ewn : EnvWithNext) =>
-                                 let exitLabel := match ewn.exitLabel with
-                                   -- exit with no label: consumed by this block
-                                   | .some .none => .none
-                                   -- exit with matching label: consumed by this block
-                                   | .some (.some l) => if l == label then .none else .some (.some l)
-                                   -- no exit or non-matching: pass through
-                                   | other => other
-                                 { ewn with env := ewn.env.popScope,
-                                            exitLabel := exitLabel })
-            (Ewns, blockStats)
-
-          | .ite cond then_ss else_ss md =>
-            match cond with
-            | .nondet =>
-              -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
-              let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
-              let freshVar : Expression.Expr := .fvar () freshName none
-              let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
-              let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
-              go' Ewn [initStmt, iteStmt] optExit
-            | .det c =>
-            let cond' := Ewn.env.exprEval c
-            match cond' with
-            | .true _ | .false _ =>
-              let (ss_live, ss_dead) :=
-                if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
-              let (Ewns, liveStats) := go' Ewn ss_live .none
-              -- Prepend dead-branch obligations to the first result only.
-              -- Pre-ITE obligations flow through the live branch naturally;
-              -- processIteBranches keeps them in the first (true-path) result,
-              -- so mergeResults won't duplicate them.
-              match Ewns with
-              | [] => ([], liveStats)
-              | first :: restEwns =>
-                ({ first with env.deferred :=
-                    deadDeferred ++ first.env.deferred } :: restEwns, liveStats)
-            | _ =>
-              -- Process both branches.
-              processIteBranches steps' old_var_subst
-                Ewn c cond' then_ss else_ss
-
-          | .loop _ _ _ _ _ =>
-            panic! "Cannot evaluate `loop` statement. \
-                    Please transform your program to eliminate loops before \
-                    calling Core.Statement.evalAux"
-
-          | .funcDecl decl _ =>
-            -- Add function to factory with value capture semantics
-            let paramNames := decl.inputs.map (·.1)
-            let func : Lambda.LFunc CoreLParams := {
-              name := decl.name,
-              typeArgs := decl.typeArgs,
-              isConstr := decl.isConstr,
-              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-              body := decl.body.map (captureFreevars Ewn.env paramNames),
-              attr := decl.attr,
-              concreteEval := decl.concreteEval,
-              axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
-            }
-            match Ewn.env.addFactoryFunc func with
-            | .ok env' => ([{ Ewn with env := env' }], noStats)
-            | .error e =>
-              ([{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }], noStats)
-
-          | .typeDecl tc _ =>
-            -- Type declarations have no runtime effect (only used during type checking)
-            ([Ewn], noStats)
-
-          | .exit l md => ([{ Ewn with exitLabel := .some l}], noStats)
-
-      let stmtStats := stmtStats.increment s!"{Evaluator.Stats.simulatedStmts}"
-      -- Path cap: merge continuing (.none exit) paths in EAndNexts
-      -- before feeding them to subsequent statements. This bounds
-      -- the total path count — each subsequent statement sees at most
-      -- `cap` continuing paths.
-      let (EAndNexts, stmtStats) := match Ewn.env.pathCap with
-        | .some cap =>
-          let (noExit, hasExit) :=
-            EAndNexts.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
-          if noExit.length > cap then
-            let merged := mergeCondPairs noExit.length noExit
-            (merged ++ hasExit,
-             stmtStats.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
-          else (EAndNexts, stmtStats)
-        | .none => (EAndNexts, stmtStats)
-      let (continuations, contStats) := EAndNexts.foldl
-        (fun (acc, statsAcc) ewn =>
-          let (results, s) := go' ewn rest ewn.exitLabel
-          let acc := acc ++ results
-          let statsAcc := statsAcc.merge s
-          match Ewn.env.pathCap with
-          | .some cap =>
-            let (noExit, hasExit) :=
-              acc.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
-            if noExit.length > cap then
-              let merged := mergeCondPairs noExit.length noExit
-              (merged ++ hasExit,
-               statsAcc.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
-            else (acc, statsAcc)
-          | .none => (acc, statsAcc))
-        ([], stmtStats)
-      (continuations, contStats)
+    match ss with
+    | [] => (Ewns, noStats)
+    | s :: rest =>
+      -- Separate continuing paths from exiting paths.
+      -- Exiting paths skip this statement (same as processExit).
+      let (continuing, exiting) :=
+        good.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
+      -- Evaluate the current statement for each continuing path.
+      let (results, stmtStats) := continuing.foldl
+        (fun (acc, statsAcc) (ewn : EnvWithNext) =>
+          let (res, stmtS) := evalOneStmt old_var_subst ewn s
+            (fun e ss => evalAuxGo steps' old_var_subst [e] ss)
+            (fun e c c' t f => processIteBranches steps' old_var_subst e c c' t f)
+          (acc ++ res, statsAcc.merge stmtS))
+        ([], noStats)
+      let stmtStats := stmtStats.increment
+        s!"{Evaluator.Stats.simulatedStmts}" continuing.length
+      -- Enforce path cap on combined results before next statement.
+      let (results, stmtStats) := enforcePathCap results stmtStats
+      -- Recurse on remaining statements with merged results + passthrough.
+      let allPaths := results ++ exiting ++ errors
+      let (finalResults, restStats) :=
+        evalAuxGo steps' old_var_subst allPaths rest
+      (finalResults, stmtStats.merge restStats)
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
@@ -658,15 +655,15 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                                           Imperative.Block.sizeOf else_ss := by
    omega
   let (Ewns_t, stats_t) := evalAuxGo steps old_var_subst
-                  {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
-                  then_ss .none
+                  [{Ewn with env := {Ewn.env with pathConditions := path_conds_true}}]
+                  then_ss
   -- We empty the deferred proof obligations in the `else` path to
   -- avoid duplicate verification checks -- the deferred obligations
   -- would be checked in the `then` branch anyway.
   let (Ewns_f, stats_f) := evalAuxGo steps old_var_subst
-                  {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
-                                                 deferred := #[]}}
-                  else_ss .none
+                  [{Ewn with env := {Ewn.env with pathConditions := path_conds_false,
+                                                  deferred := #[]}}]
+                  else_ss
   let branchStats := stats_t.merge stats_f
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
@@ -695,7 +692,8 @@ end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext × Statistics :=
-  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst { env := E } ss optExit
+  let ewn : EnvWithNext := { env := E, exitLabel := optExit }
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst [ewn] ss
 
 def exitToError : EnvWithNext → Env
   | { env, exitLabel := .none, .. } => env

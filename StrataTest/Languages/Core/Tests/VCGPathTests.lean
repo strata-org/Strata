@@ -513,8 +513,10 @@ spec { ensures [post]: (r >= 0); }
 };
 #end
 
--- Without cap: 4 diverged ITEs, 5 paths (linear — each ITE only
--- splits the single fallthrough path).
+-- Without cap: 4 diverged ITEs, 5 obligations (linear, not
+-- exponential). Exiting paths accumulate linearly: each ITE adds
+-- one exiting path, giving 4 exiting + 1 fallthrough = 5 total.
+-- Compare with exponentialItePgm which has 2^4 = 16 without cap.
 /--
 info: merged=0 diverged=4 stmtMerged=0 obligations=5
 -/
@@ -573,12 +575,10 @@ info: merged=0 diverged=4 stmtMerged=4 obligations=1
     (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
   IO.println (statsLine stats numObs)
 
--- With cap 2: each block produces 2 paths (at the cap), so the
--- pre-statement merge doesn't fire. The fold accumulator merge
--- fires when independent branches combine, but obligations are
--- already generated inside each recursive call.
+-- With cap 2: batch evaluation processes both paths through each
+-- block, then merges combined results down to 2. Stops at cap.
 /--
-info: merged=0 diverged=15 stmtMerged=5 obligations=16
+info: merged=0 diverged=7 stmtMerged=3 obligations=2
 -/
 #guard_msgs in
 #eval do
