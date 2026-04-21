@@ -36,10 +36,10 @@ VCs:
 Label: trans
 Property: assert
 Assumptions:
-ab: $__a0 == $__b1
-bc: $__b1 == $__c2
+ab: a@0 == b@1
+bc: b@1 == c@2
 Obligation:
-$__a0 == $__c2
+a@0 == c@2
 
 ---
 info:
@@ -98,7 +98,7 @@ VCs:
 Label: reflexive
 Property: assert
 Assumptions:
-x_eq_z: $__x0 == $__z2
+x_eq_z: x@0 == z@2
 Obligation:
 true
 
@@ -137,9 +137,9 @@ VCs:
 Label: neq
 Property: assert
 Assumptions:
-diff: !($__x0 == $__y1)
+diff: !(x@0 == y@1)
 Obligation:
-!($__x0 == $__y1)
+!(x@0 == y@1)
 
 ---
 info:

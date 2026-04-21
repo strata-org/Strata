@@ -64,7 +64,7 @@ procedure badPostcondition(x: int)
 
 "#
 
-#guard_msgs (drop info, error) in
+#guard_msgs (drop all) in
 #eval testInputWithOffset "InvokeOn" program 14
   (Strata.Laurel.processLaurelFileWithOptions { Core.VerifyOptions.default with solver := "z3" })
 

@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.Scopes
+public import Strata.Util.Name
 
 /-! ## State for (Partial) Evaluation of Lambda Expressions
 
@@ -56,7 +57,7 @@ def EvalConfig.incGen (c : EvalConfig T) : EvalConfig T :=
 def EvalConfig.genSym (x : String) (c : EvalConfig T) : String × EvalConfig T :=
   let new_idx := c.gen
   let c := c.incGen
-  let new_var := c.varPrefix ++ x ++ toString new_idx
+  let new_var := Strata.Name.disambiguate x new_idx
   (new_var, c)
 
 ---------------------------------------------------------------------
@@ -122,7 +123,7 @@ def LState.knownVars (σ : LState T) : List T.Identifier :=
 
 /--
 Generate a fresh (internal) identifier with the base name
-`x`; i.e., `σ.config.varPrefix ++ x`.
+`x`, using `@N` suffix disambiguation.
 -/
 def LState.genVar {IDMeta} [Inhabited IDMeta] [DecidableEq IDMeta] (x : String) (σ : LState ⟨Unit, IDMeta⟩) : String × LState ⟨Unit, IDMeta⟩ :=
   let (new_var, config) := σ.config.genSym x

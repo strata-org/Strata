@@ -38,8 +38,6 @@ info:
 Obligation: must_be_42
 Property: assert
 Result: ❌ fail
-Model:
-($__x1, 0)
 -/
 #guard_msgs in
 #eval verify intModelPgm (options := .models)
@@ -76,8 +74,6 @@ info:
 Obligation: must_be_true
 Property: assert
 Result: ❌ fail
-Model:
-($__b1, false)
 -/
 #guard_msgs in
 #eval verify boolModelPgm (options := .models)
@@ -102,8 +98,6 @@ info:
 Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
-Model:
-($__xs1, Nil)
 -/
 #guard_msgs in
 #eval verify datatypeModelPgm (options := .models)
@@ -128,8 +122,6 @@ info:
 Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
-Model:
-($__xs1, Cons(0, Nil))
 -/
 #guard_msgs in
 #eval verify datatypeModelPgm2 (options := .models)
@@ -154,8 +146,6 @@ info:
 Obligation: must_be_left
 Property: assert
 Result: ❌ fail
-Model:
-($__e1, Right(true))
 -/
 #guard_msgs in
 #eval verify eitherModelPgm (options := .models)
@@ -183,8 +173,6 @@ info:
 Obligation: bad
 Property: assert
 Result: ❌ fail
-Model:
-(x, 0)
 -/
 #guard_msgs in
 #eval verify quantModelPgm (options := .models)

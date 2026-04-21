@@ -370,7 +370,7 @@ Label: x_eq_1
 Property: assert
 Assumptions:
 Proof Obligation:
-(($__x0 : int) == #1)
+((x@0 : int) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |> format
@@ -576,8 +576,8 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (if ($__$__nondet_cond_00 : bool) then #1 else #2)
-($__nondet_cond_0 : bool) → ($__$__nondet_cond_00 : bool)]
+[(x : int) → (if ($__nondet_cond_0@0 : bool) then #1 else #2)
+($__nondet_cond_0 : bool) → ($__nondet_cond_0@0 : bool)]
 
 Evaluation Config:
 Eval Depth: 200
@@ -590,8 +590,8 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__nondet_cond_0@0 then $__nondet_cond_0@0 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__nondet_cond_0@0 : bool) then #false else #true) then (if ($__nondet_cond_0@0 : bool) then #false else #true) else #true))
 
 
 Warnings:
@@ -600,10 +600,10 @@ Deferred Proof Obligations:
 Label: x_pos
 Property: assert
 Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__nondet_cond_0@0 then $__nondet_cond_0@0 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__nondet_cond_0@0 : bool) then #false else #true) then (if ($__nondet_cond_0@0 : bool) then #false else #true) else #true))
 Proof Obligation:
-((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
+((if ($__nondet_cond_0@0 : bool) then #1 else #2) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

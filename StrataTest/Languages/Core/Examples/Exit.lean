@@ -76,16 +76,16 @@ true
 Label: a6
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Gt x #0)>: x > 0
+<label_ite_cond_true: (~Int.Gt x #0)>: x@3 > 0
 Obligation:
-x * 2 > x
+x@3 * 2 > x@3
 
 Label: a7
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(~Int.Gt x #0)>: if x > 0 then false else true
+<label_ite_cond_false: !(~Int.Gt x #0)>: if x@3 > 0 then false else true
 Obligation:
-x <= 0
+x@3 <= 0
 
 ---
 info:

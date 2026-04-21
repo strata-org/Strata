@@ -120,9 +120,9 @@ private theorem readBack_digitLoopFuel (n : Nat) :
       simp [List.foldl]
       omega
 
-/-- `digitsToNat` on the digits of `n` recovers `n`. -/
+/-- `Strata.Name.digitsToNat` on the digits of `n` recovers `n`. -/
 theorem digitsToNat_digitLoopFuel (n : Nat) :
-    digitsToNat (digitLoopFuel (n + 1) n []) = n :=
+    Strata.Name.digitsToNat (digitLoopFuel (n + 1) n []) = n :=
   readBack_digitLoopFuel n
 
 /-- `Nat.repr n` is non-empty. -/
@@ -164,7 +164,10 @@ set_option linter.unusedSimpArgs false
 theorem breakDisambiguatedName_disambiguateName (baseName : String) (n : Nat)
     (_h : ¬ baseName.any (· == '@')) :
     breakDisambiguatedName (disambiguateName baseName n) = (baseName, n + 1) := by
-  simp only [disambiguateName, breakDisambiguatedName, toString, String.toList_append,
+  simp only [disambiguateName, breakDisambiguatedName,
+    Strata.Name.disambiguate, Strata.Name.breakDisambiguated,
+    Strata.Name.digitsToNat,
+    toString, String.toList_append,
     List.reverse_append, List.append_assoc]
   have hat : "@".toList.reverse = ['@'] := by native_decide
   rw [hat]
@@ -185,11 +188,12 @@ theorem breakDisambiguatedName_disambiguateName (baseName : String) (n : Nat)
   | [] => exact absurd h hne
   | c :: cs =>
     simp only []
-    -- digitsToNat (c :: cs) = digitsToNat n.repr.toList = n
+    -- Strata.Name.digitsToNat (c :: cs) = Strata.Name.digitsToNat n.repr.toList = n
     -- via digitLoopFuel bridge
-    simp only [digitsToNat, Nat.repr, String.toList_ofList, Nat.toDigits,
+    simp only [Strata.Name.digitsToNat,
+      Nat.repr, String.toList_ofList, Nat.toDigits,
       ← digitLoopFuel_eq_toDigitsCore] at h
-    rw [← h, digitsToNat, readBack_digitLoopFuel]
+    rw [← h, readBack_digitLoopFuel]
     simp only [List.reverse_cons, List.reverse_reverse, List.dropLast_concat,
       String.mk_eq_ofList, String.ofList_toList]
 

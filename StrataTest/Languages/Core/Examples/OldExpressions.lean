@@ -80,38 +80,38 @@ true
 Label: T2_g2_eq_g
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
-callElimAssume_T1_z_eq_y_6: $__b8 == false
+callElimAssume_T1_g2_eq_old_g_4: g2@11 == true
+callElimAssume_T1_y_eq_old_g2_5: a@9 == false
+callElimAssume_T1_z_eq_y_6: b@10 == false
 Obligation:
-$__g29 == true
+g2@11 == true
 
 Label: T2_g_true
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
-callElimAssume_T1_z_eq_y_6: $__b8 == false
+callElimAssume_T1_g2_eq_old_g_4: g2@11 == true
+callElimAssume_T1_y_eq_old_g2_5: a@9 == false
+callElimAssume_T1_z_eq_y_6: b@10 == false
 Obligation:
 true
 
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
-callElimAssume_T1_z_eq_y_6: $__b8 == false
+callElimAssume_T1_g2_eq_old_g_4: g2@11 == true
+callElimAssume_T1_y_eq_old_g2_5: a@9 == false
+callElimAssume_T1_z_eq_y_6: b@10 == false
 Obligation:
-$__a7 == false
+a@9 == false
 
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g29 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a7 == false
-callElimAssume_T1_z_eq_y_6: $__b8 == false
+callElimAssume_T1_g2_eq_old_g_4: g2@11 == true
+callElimAssume_T1_y_eq_old_g2_5: a@9 == false
+callElimAssume_T1_z_eq_y_6: b@10 == false
 Obligation:
-$__b8 == false
+b@10 == false
 
 ---
 info:

@@ -8,6 +8,7 @@ module
 public import Strata.DL.SMT.DDMTransform.Translate
 public import Strata.DL.SMT.Factory
 public import Strata.DL.SMT.Op
+public import Strata.Util.Name
 public import Strata.DL.SMT.Solver
 public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.TermType
@@ -117,43 +118,24 @@ def smtReservedKeywords : List String :=
    "select", "store"]
 
 /-- Generate a disambiguated name by appending @suffix -/
-def disambiguateName (baseName : String) (suffix : Nat) : String :=
-  s!"{baseName}@{suffix}"
-
-/-- Parse a list of digit characters as a natural number. -/
-def digitsToNat (cs : List Char) : Nat :=
-  cs.foldl (fun n c => n * 10 + (c.toNat - '0'.toNat)) 0
+abbrev disambiguateName (baseName : String) (suffix : Nat) : String :=
+  Strata.Name.disambiguate baseName suffix
 
 /-- Break a potentially disambiguated name into its base name and next suffix.
     If the name has an `@N` suffix, returns `(base, N + 1)`.
     Otherwise returns `(name, 1)`. -/
-def breakDisambiguatedName (name : String) : String × Nat :=
-  let cs := name.toList
-  let digitSuffix := cs.reverse.takeWhile Char.isDigit |>.reverse
-  let rest := cs.reverse.dropWhile Char.isDigit |>.reverse
-  match rest.reverse, digitSuffix with
-  | '@' :: _, _ :: _ => (String.ofList rest.dropLast, digitsToNat digitSuffix + 1)
-  | _, _ => (name, 1)
+abbrev breakDisambiguatedName (name : String) : String × Nat :=
+  Strata.Name.breakDisambiguated name
 
 /-- Find a unique name by trying candidates with increasing suffixes.
     The `isUsed` predicate checks if a candidate name is already taken. -/
-def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
-  let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
-    if h : remaining == 0 then candidate  -- Fallback after limit attempts
-    else if isUsed candidate then
-      loop (disambiguateName baseName suffix) (suffix + 1) (remaining - 1)
-    else
-      candidate
-  termination_by remaining
-  decreasing_by
-    have : remaining ≠ 0 := by intro h'; simp [h'] at h
-    omega
-  loop (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix limit
+abbrev findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
+  Strata.Name.findUnique baseName startSuffix isUsed limit
 
 /-- The `$__` prefix is reserved for internal use and cannot appear in user
     identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
-    The `.` after `t`/`f` prevents collision with Lambda-generated names
-    like `$__t0` (variable `t`, index 0). -/
+    The `.` after `t`/`f` prevents collision with evaluation-generated names
+    (which use `@N` suffixes). -/
 def termId (n : Nat)                    : String := s!"$__t.{n}"
 def ufId (n : Nat)                      : String := s!"$__f.{n}"
 

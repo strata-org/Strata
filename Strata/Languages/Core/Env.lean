@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
+public import Strata.Util.Name
 
 public section
 
@@ -242,11 +243,11 @@ def Env.addToContext
     : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
--- TODO: prove uniqueness, add different prefix
+-- TODO: prove uniqueness
 def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × Lambda.EvalConfig CoreLParams :=
   let new_idx := c.gen
   let c := c.incGen
-  let new_var := c.varPrefix ++ x ++ toString new_idx
+  let new_var := Strata.Name.disambiguate x new_idx
   (⟨new_var, ()⟩, c)
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :

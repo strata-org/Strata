@@ -58,41 +58,18 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } }
 
 /--
-Create `fvar` expressions with original parameter names for readability.
-Duplicate names are disambiguated with `@1`, `@2`, ... suffixes, consistent
-with the convention used by `Strata.SMT.Encoder.disambiguateName`.
+Create `fvar` expressions with globally unique names for procedure parameters.
+Uses `genFVars` to ensure names cannot collide across procedures, which is
+necessary because expressions built during one procedure (e.g. modified globals)
+persist in the global state and may contain references to parameter fvars.
+Names use `@N` suffixes for readability (e.g. `x@6` instead of `$__x6`).
 -/
-private def mkParamFVars (vars : List Expression.Ident)
-    (var_tys : List (Option Lambda.LMonoTy)) : List Expression.Expr :=
-  let rec go (acc : List Expression.Expr) (seen : List String)
-      (vs : List Expression.Ident) (ts : List (Option Lambda.LMonoTy))
-      : List Expression.Expr :=
-    match vs, ts with
-    | [], _ | _, [] => acc.reverse
-    | v :: vrest, t :: trest =>
-      let base := v.name
-      let name := if seen.contains base then
-          let rec findFresh (n : Nat) (fuel : Nat) : String :=
-            match fuel with
-            | 0 => s!"{base}@{n}"
-            | fuel + 1 =>
-              let candidate := s!"{base}@{n}"
-              if seen.contains candidate then findFresh (n + 1) fuel
-              else candidate
-          findFresh 1 (seen.length + 1)
-        else base
-      let id : Expression.Ident := ⟨name, ()⟩
-      let e := Lambda.LExpr.fvar () id t
-      go (e :: acc) (name :: seen) vrest trest
-  go [] [] vars var_tys
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
-  -- Note: modifies-clause globals must keep `$__`-prefixed names because their
-  -- fvar values are stored in the same scope as the global variables themselves.
-  -- Using the original name would cause the evaluator to confuse the symbolic
-  -- pre-state value with the mutable global.
+  -- Fresh names use `@N` suffixes (via `genSym`) to avoid collisions with the
+  -- mutable globals in the same scope.
   let modifies_tys :=
     p.spec.modifies.map
     (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
@@ -102,11 +79,12 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
   let E := E.addToContext global_init_subst
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
-  -- Use original parameter names for readability in the obligations program.
+  -- Parameters go through genFVars for globally unique names.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)
-  let vals := mkParamFVars vars var_tys
+  let vars_typed := vars.zip var_tys
+  let (vals, E) := E.genFVars vars_typed
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap
   let E := { E with pathConditions := E.pathConditions.push [] }

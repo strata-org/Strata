@@ -41,27 +41,27 @@ VCs:
 Label: implies_and_eq_not_or_1
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a@0 ==> b@1) && (c@2 ==> d@3)) == foo(a@0, b@1, c@2, d@3)
 
 Label: implies_and_eq_not_or_2
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a@0 ==> b@1) && (c@2 ==> d@3)) == foo(a@0, b@1, c@2, d@3)
 
 Label: implies_and_eq_not_or_3
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a@0 ==> b@1) && (c@2 ==> d@3)) == foo(a@0, b@1, c@2, d@3)
 
 Label: implies_and_eq_not_or_4
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a@0 ==> b@1) && (c@2 ==> d@3)) == foo(a@0, b@1, c@2, d@3)
 
 Label: implies_equiv
 Property: assert
 Obligation:
-$__a0 ==> $__b1 <==> !$__a0 || $__b1
+a@0 ==> b@1 <==> !a@0 || b@1
 
 ---
 info:
