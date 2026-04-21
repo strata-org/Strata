@@ -827,34 +827,11 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
   -- set up at CoreTransformState.
   filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
-/-- Type checking pipeline phase. -/
-def typeCheckPipelinePhase (options : VerifyOptions)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase where
-  transform prog := do
-    match Core.typeCheck options prog moreFns with
-    | .ok p => return (true, p)
-    | .error e => throw s!"❌ Type checking error.
-{e.message}"
-  phase := { name := "TypeCheck", getValidation := fun _ => .modelPreserving }
-
-/-- Symbolic evaluation pipeline phase. -/
-def symbolicEvalPipelinePhase (options : VerifyOptions)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase where
-  transform prog := do
-    match Core.symbolicEval options prog moreFns with
-    | .ok (p, _) => return (true, p)
-    | .error e => throw s!"❌ Type checking error.
-{e.message}"
-  phase := { name := "SymbolicEval", getValidation := fun _ => .modelPreserving }
-
-/-- The full pipeline phases including type checking, symbolic eval, and ANF. -/
-def corePipelinePhases (options : VerifyOptions)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
-    (procs : Option (List String) := none) : List PipelinePhase :=
-  transformPipelinePhases procs ++
-  [typeCheckPipelinePhase options moreFns,
-   symbolicEvalPipelinePhase options moreFns,
-   Core.anfEncoderPipelinePhase]
+/-- The full pipeline phases for program-to-program transforms. Type checking,
+    symbolic evaluation, and ANF encoding run separately so that DiagnosticModel
+    errors (with source locations) propagate without being converted to strings. -/
+def corePipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
+  transformPipelinePhases procs
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none) : List AbstractedPhase :=
@@ -1049,9 +1026,6 @@ def verifySingleEnv (oblProgram : Program)
         | .error _ => result
       results := results.push result
       if result.isNotSuccess then
-        if options.verbose >= .debug then
-          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-          dbg_trace f!"\n\nResult: {result}\n{prog}"
         if options.stopOnFirstError then break
   if profile then
     let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
@@ -1078,20 +1052,17 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases options moreFns (procs := proceduresToVerify)
-  let allPhases := pipelinePhases
-  let phases := allPhases.map (·.phase)
-  let ((oblProgram, _), pipelineStats) ← profileStep profile "  Pipeline" do
+  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
+  let phases := pipelinePhases.map (·.phase)
+  let (finalProgram, pipelineStats) ← profileStep profile "  Program transformations" do
     if let some pfx := keepAllFilesPrefix then
       if let some parent := (System.FilePath.mk pfx).parent then
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
           (IO.FS.createDirAll parent)
     let mut current := program
-    let mut preEvalProgram := program
     let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
-    let numPreEvalPhases := pipelinePhases.length + 1  -- transforms + typeCheck
-    for pp in allPhases do
+    for pp in pipelinePhases do
       let (result, newState) := Transform.runWith current (fun prog => do
         let (_, next) ← pp.transform prog
         return next) state
@@ -1100,22 +1071,27 @@ def verify (program : Program)
         current := next
         state := newState
         step := step + 1
-        -- Save program state after typeCheck (for SMT env construction)
-        if step == numPreEvalPhases then
-          preEvalProgram := current
         if let some pfx := keepAllFilesPrefix then
           let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
           IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
             (IO.FS.writeFile path (toString current ++ "\n"))
       | .error e =>
         throw (DiagnosticModel.fromFormat f!"{e}")
-    .ok ((current, preEvalProgram), state.statistics)
+    .ok (current, state.statistics)
+  -- Type check and symbolically evaluate (outside the pipeline loop so that
+  -- DiagnosticModel errors with source locations propagate directly).
+  let (oblProgram, evalStats) ← profileStep profile "  Type check and symbolic eval" do
+    match Core.typeCheckAndEval options finalProgram moreFns with
+    | .error err =>
+      .error { err with message := s!"❌ Type checking error.\n{err.message}" }
+    | .ok (oblProgram, stats) => .ok (oblProgram, stats)
+  let oblProgram := Core.ANFEncoder.anfEncodeProgram oblProgram
+  let allStats := pipelineStats.merge evalStats
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build oblProgram))
-  let allStats := pipelineStats
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
