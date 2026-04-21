@@ -50,7 +50,7 @@ inductive Stats where
   | wfProceduresGenerated
   | numFuncsRemovedAfterPrecondStripped
 
-derive_prefixed_toString Stats "PrecondElim"
+#derive_prefixed_toString Stats "PrecondElim"
 
 /-! ## Naming conventions -/
 

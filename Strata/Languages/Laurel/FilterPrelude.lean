@@ -159,6 +159,8 @@ private def collectTypeDefDeps (td : TypeDefinition) : CollectM Unit := do
   | .Datatype dt =>
     for c in dt.constructors do
       c.args.forM fun arg => collectHighTypeNames arg.type
+  | .Alias ta =>
+    collectHighTypeNames ta.target
 
 /-- Run a CollectM action and return the collected state. -/
 private def runCollect (action : CollectM Unit) : CollectState :=

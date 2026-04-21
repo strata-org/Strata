@@ -3,8 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.DDMTransform.Grammar
+meta import Strata.DDM.Integration.Lean
 
 ---------------------------------------------------------------------
 

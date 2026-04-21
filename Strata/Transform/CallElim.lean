@@ -21,7 +21,7 @@ open Core.Transform
 inductive Stats where
   | visitedCalls
 
-derive_prefixed_toString Stats "CallElim"
+#derive_prefixed_toString Stats "CallElim"
 
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"

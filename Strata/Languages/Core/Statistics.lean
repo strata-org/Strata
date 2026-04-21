@@ -50,7 +50,7 @@ inductive Stats where
       obligation, summed across all obligations encoded to SMT. -/
   | smtProofObligation_numAssumptions
 
-derive_prefixed_toString Stats "Evaluator"
+#derive_prefixed_toString Stats "Evaluator"
 
 end Evaluator
 end Core

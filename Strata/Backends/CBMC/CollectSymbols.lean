@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.InstToJson
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+public import Strata.Backends.CBMC.GOTO.InstToJson
+public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 import Strata.DL.Lambda.TypeConstructor
 import Strata.DL.Lambda.TypeFactory
-import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Program
 
 namespace Strata
+
+public section
 
 private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
     (mutualNames : List String := [dt.name]) :
@@ -119,5 +122,6 @@ def collectExtraSymbols (pgm : Core.Program) :
     Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
   collectDatatypeSymbols pgm
 
+end -- public section
 
 end Strata

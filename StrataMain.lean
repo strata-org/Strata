@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -- Executable with utilities for working with Strata files.
 import Strata.Backends.CBMC.CollectSymbols
@@ -27,6 +28,12 @@ import Strata.Util.IO
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
+import Strata.DDM.BuiltinDialects
+import Strata.DDM.Util.String
+import Strata.Languages.Python.PyFactory
+import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.DDM
+import Strata.Languages.Python.ReadPython
 
 open Strata
 
@@ -586,10 +593,13 @@ def pyAnalyzeLaurelCommand : Command where
 
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
 
-    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel) ←
+    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel, laurelPassStats) ←
       profileStep profile "Laurel to Core translation" do
         Strata.translateCombinedLaurelWithLowered combinedLaurel
-          (keepAllFilesPrefix := keepPrefix)
+          (keepAllFilesPrefix := keepPrefix) (profile := profile)
+
+    if profile && !laurelPassStats.data.isEmpty then
+      IO.println laurelPassStats.format
 
     let coreProgram ←
       match coreProgramOption with
@@ -1376,6 +1386,7 @@ private def parseArgs (cmdName : String)
   | [] =>
     pure (acc, pflags)
 
+public
 def main (args : List String) : IO Unit := do
   try do
     match args with

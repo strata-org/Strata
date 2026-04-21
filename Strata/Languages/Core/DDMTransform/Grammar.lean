@@ -352,7 +352,7 @@ op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
                   @[scope(typeArgs)] b : Bindings,
                   @[scope(typeArgs)] r : Type,
-                  @[scope(b)] preconds : Seq SpecElt,
+                  @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                   @[scope(b)] c : r,
                   // Prefer adding the inline attribute here so
                   // that the order of the arguments in the fndecl and fndef
@@ -369,7 +369,7 @@ op recfn_decl (name : Ident,
                typeArgs : Option TypeArgs,
                @[scope(typeArgs)] b : Bindings,
                @[scope(typeArgs)] r : Type,
-               @[scope(b)] preconds : Seq SpecElt,
+               @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                @[scope(b)] c : r) : RecFnDecl =>
   "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
 
@@ -383,7 +383,7 @@ op funcDecl_statement (name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
                        @[scope(typeArgs)] r : Type,
-                       @[scope(b)] preconds : Seq SpecElt,
+                       @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }\n";
