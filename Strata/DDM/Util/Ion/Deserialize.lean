@@ -8,7 +8,9 @@ module
 public import Strata.DDM.Util.Ion.AST
 
 import Strata.DDM.Util.ByteArray
+import Strata.Util.DecideProp
 
+open Strata (decideProp)
 namespace Ion
 
 structure TypeDesc where
@@ -84,7 +86,7 @@ def readVarUInt (bytes : @ByteArray) (off : Nat) (p : off < bytes.size := by ome
 
 @[inline]
 def readVarUInt' (bytes : @ByteArray) (off : Nat) : SReadM off Nat := do
-  let .isTrue p := inferInstanceAs (Decidable (off < bytes.size))
+  let .isTrue p := decideProp (off < bytes.size)
     | rfail off s!"Unexpected end of file"
   readVarUInt bytes off
 
@@ -269,7 +271,7 @@ partial def popFinishedValues {size} {base} (ds : DeserializeState size) (off : 
         pure (symbols, .mk <| (.sexp a))
       | .struct =>
         let cnt := values.size - value_index
-        let .isTrue symp := inferInstanceAs (Decidable (symbols.size ≥ cnt))
+        let .isTrue symp := decideProp (symbols.size ≥ cnt)
           | rfail off "Bad symbols"
         let base := symbols.size - cnt
         let v := Array.ofFn fun (i : Fin cnt) => (symbols[base + i.val], values[value_index + i])
@@ -390,7 +392,7 @@ def readDecimalToken  (bytes : @ByteArray) (ds : DeserializeState bytes.size)
     ds.appendValue (off+1) (.decimal .zero)
   else
     let ⟨off, limit, p⟩ ← readLength bytes (off+1) td_length
-    let .isTrue p := inferInstanceAs (Decidable (off < limit))
+    let .isTrue p := decideProp (off < limit)
       | rfail off s!"Unexpected empty decimal"
     let ⟨e, off⟩ ← readVarInt bytes off
     let d : Decimal :=
@@ -524,7 +526,7 @@ def deserializeAux (bytes : ByteArray) (ds : DeserializeState bytes.size)
     let (ds, ⟨off, sym_offp⟩) ←
       if inStruct then
         let (symId, ⟨off, offp⟩) ← readVarUInt bytes ds.off
-        let .isTrue offp := inferInstanceAs (Decidable (off < bytes.size))
+        let .isTrue offp := decideProp (off < bytes.size)
           | rfail off "Unexpected end of file"
         let ds := { ds with symbols := ds.symbols.push ⟨symId⟩ }
         let off' : InRange off0 bytes.size := ⟨off, by omega⟩
