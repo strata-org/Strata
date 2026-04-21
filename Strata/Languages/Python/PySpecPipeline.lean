@@ -191,12 +191,7 @@ public def readDispatchOverloads
     let (overloads, errors) :=
       Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     allWarnings := allWarnings ++ errors
-    for (funcName, fnOverloads) in overloads do
-      let existing := tbl.getD funcName {}
-      tbl := tbl.insert funcName
-        { paramName := existing.paramName <|> fnOverloads.paramName
-          entries := fnOverloads.entries.fold (init := existing.entries)
-            fun acc k v => acc.insert k v }
+    tbl := mergeOverloads tbl overloads
   return (tbl, allWarnings)
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
