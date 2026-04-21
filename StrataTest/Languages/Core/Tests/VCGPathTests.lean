@@ -424,23 +424,22 @@ private def getEvalStats (program : Strata.Program)
 private def statsLine (stats : Statistics) (numObs : Nat) : String :=
   let merged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_merged}"
   let diverged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_diverged}"
-  let capMerged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_capMerged}"
-  let blockMerged := stats.get s!"{Core.Evaluator.Stats.blockBoundary_capMerged}"
-  s!"merged={merged} diverged={diverged} capMerged={capMerged} blockMerged={blockMerged} obligations={numObs}"
+  let stmtMerged := stats.get s!"{Core.Evaluator.Stats.betweenStmt_capMerged}"
+  s!"merged={merged} diverged={diverged} stmtMerged={stmtMerged} obligations={numObs}"
 
 -- issue419TestPgm without cap: 1 diverged ITE, 3 obligations.
 /--
-info: merged=0 diverged=1 capMerged=0 blockMerged=0 obligations=3
+info: merged=0 diverged=1 stmtMerged=0 obligations=3
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats issue419TestPgm
   IO.println (statsLine stats numObs)
 
--- issue419TestPgm with cap 1: ITE diverges (different exit labels),
--- block boundary merges the 2 paths into 1 → 2 obligations.
+-- issue419TestPgm with cap 1: ITE diverges, between-statement merge
+-- collapses the 2 continuing paths before the next statement.
 /--
-info: merged=0 diverged=1 capMerged=0 blockMerged=1 obligations=2
+info: merged=0 diverged=1 stmtMerged=1 obligations=2
 -/
 #guard_msgs in
 #eval do
@@ -450,17 +449,17 @@ info: merged=0 diverged=1 capMerged=0 blockMerged=1 obligations=2
 
 -- sequentialExitPgm without cap: 2 diverged ITEs, 3 obligations.
 /--
-info: merged=0 diverged=2 capMerged=0 blockMerged=0 obligations=3
+info: merged=0 diverged=2 stmtMerged=0 obligations=3
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats sequentialExitPgm
   IO.println (statsLine stats numObs)
 
--- sequentialExitPgm with cap 1: both ITEs diverge (exit labels differ),
--- block boundary condition-equality matching merges 3 → 1 obligation.
+-- sequentialExitPgm with cap 1: ITEs diverge, between-statement merge
+-- keeps the fallthrough path to 1, exiting paths accumulate linearly.
 /--
-info: merged=0 diverged=2 capMerged=0 blockMerged=1 obligations=1
+info: merged=0 diverged=2 stmtMerged=1 obligations=1
 -/
 #guard_msgs in
 #eval do
@@ -470,16 +469,17 @@ info: merged=0 diverged=2 capMerged=0 blockMerged=1 obligations=1
 
 -- sameExitCapPgm without cap: 1 diverged, 2 obligations.
 /--
-info: merged=0 diverged=1 capMerged=0 blockMerged=0 obligations=2
+info: merged=0 diverged=1 stmtMerged=0 obligations=2
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats sameExitCapPgm
   IO.println (statsLine stats numObs)
 
--- sameExitCapPgm with cap 1: same-exit-label merge in processIteBranches.
+-- sameExitCapPgm with cap 1: ITE diverges, between-statement merge
+-- collapses the 2 paths (both have .none exit after block consumes).
 /--
-info: merged=0 diverged=0 capMerged=1 blockMerged=0 obligations=1
+info: merged=0 diverged=1 stmtMerged=1 obligations=1
 -/
 #guard_msgs in
 #eval do
@@ -488,19 +488,15 @@ info: merged=0 diverged=0 capMerged=1 blockMerged=0 obligations=1
   IO.println (statsLine stats numObs)
 
 ---------------------------------------------------------------------
--- Sequential ITE path explosion test
+-- Sequential ITE path explosion tests
 --
--- 4 sequential symbolic ITEs with no exits: without cap this produces
--- 2^4 = 16 paths and 16 obligations. With cap 1, we want 1 path and
--- 1 obligation — but currently cap only merges at block boundaries and
--- ITE sites, not between statements, so paths still explode.
+-- These test between-statement merging: after each ITE produces
+-- multiple paths, the cap is enforced before the next statement.
 ---------------------------------------------------------------------
 
--- Sequential ITEs where one branch exits — the special-case merge doesn't
--- fire (different exit labels), so paths accumulate. 4 ITEs inside a block
--- where each true branch does `exit done` produces 2^4 = 16 paths without
--- cap. With cap 1, current merging only fires at block/ITE boundaries —
--- between-statement merging is not yet implemented.
+-- Sequential ITEs where one branch exits: each ITE splits the
+-- fallthrough into (exit, continue). Between-statement merge keeps
+-- the continuing paths to 1.
 def sequentialExitItePgm :=
 #strata
 program Core;
@@ -517,20 +513,21 @@ spec { ensures [post]: (r >= 0); }
 };
 #end
 
--- Without cap: 4 diverged ITEs, 5 paths (linear, not exponential since
--- each ITE only splits the fallthrough).
+-- Without cap: 4 diverged ITEs, 5 paths (linear — each ITE only
+-- splits the single fallthrough path).
 /--
-info: merged=0 diverged=4 capMerged=0 blockMerged=0 obligations=5
+info: merged=0 diverged=4 stmtMerged=0 obligations=5
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats sequentialExitItePgm
   IO.println (statsLine stats numObs)
 
--- With cap 1: ITEs still diverge (different exit labels), but block
--- boundary merges all 5 paths down to 1.
+-- With cap 1: between-statement merge keeps fallthrough to 1 path.
+-- Exiting paths accumulate linearly (4 exits + 1 fallthrough → merged
+-- by procedure-level mergeResults).
 /--
-info: merged=0 diverged=4 capMerged=0 blockMerged=1 obligations=1
+info: merged=0 diverged=4 stmtMerged=1 obligations=1
 -/
 #guard_msgs in
 #eval do
@@ -538,11 +535,11 @@ info: merged=0 diverged=4 capMerged=0 blockMerged=1 obligations=1
     (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
   IO.println (statsLine stats numObs)
 
--- Exponential path explosion: sequential ITEs where both branches modify
--- state and continue (no exit). Each ITE has a nested block+exit so the
--- special-case merge doesn't fire. 4 ITEs → 2^4 = 16 paths.
--- With cap 1, the current implementation cannot merge between statements
--- so all 16 paths still accumulate.
+-- Exponential path explosion: sequential ITEs where both branches
+-- modify state and continue. Each ITE has a block+exit so the
+-- special-case merge doesn't fire. 4 ITEs → 2^4 = 16 paths without
+-- cap. With cap 1, between-statement merge collapses paths after
+-- each ITE.
 def exponentialItePgm :=
 #strata
 program Core;
@@ -556,20 +553,19 @@ spec { ensures [post]: (r >= 0); }
 };
 #end
 
--- Without cap: paths multiply across blocks. Each of the 16 paths hits
--- 4 ITEs but most diverge from already-split paths: 15 diverged total.
+-- Without cap: 15 diverged ITEs (exponential), 16 obligations.
 /--
-info: merged=0 diverged=15 capMerged=0 blockMerged=0 obligations=16
+info: merged=0 diverged=15 stmtMerged=0 obligations=16
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats exponentialItePgm
   IO.println (statsLine stats numObs)
 
--- With cap 1: each block boundary merges its 2 paths back to 1,
--- preventing the exponential blowup. 4 block merges, 1 obligation.
+-- With cap 1: between-statement merge after each block keeps paths
+-- to 1 throughout. 4 statement merges, 1 obligation.
 /--
-info: merged=0 diverged=4 capMerged=0 blockMerged=4 obligations=1
+info: merged=0 diverged=4 stmtMerged=4 obligations=1
 -/
 #guard_msgs in
 #eval do

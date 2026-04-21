@@ -179,9 +179,16 @@ structure VerifyOptions where
   -- Path merging
   /-- Maximum number of symbolic-evaluation paths allowed after each ITE.
       When the path count exceeds this cap, the evaluator merges paths
-      (grouped by exit label) using `Env.merge`.
+      using `Env.merge` with condition-equality matching on `splitConds`.
       `none` (default) means no cap — paths diverge freely.
-      `some 1` is eager merging; `some N` allows bounded exploration. -/
+      `some 1` is eager merging; `some N` allows bounded exploration.
+
+      Merging is enforced between statements: after any statement
+      produces multiple continuing paths (`.none` exit label), paths
+      exceeding the cap are merged via `mergeCondPairs` before the
+      next statement executes. Paths with active exit labels are left
+      untouched — they skip remaining statements and accumulate at
+      most linearly. -/
   pathCap : Option Nat := .none
   -- Output
   /-- Output results in SARIF format. -/

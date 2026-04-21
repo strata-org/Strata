@@ -415,20 +415,6 @@ private def collectDeadBranchDeferred
 
 private def noStats : Statistics := {}
 
-/-- Partition paths into groups by exit label.
-    Invariant: every input element appears in exactly one group, and
-    group order matches first-occurrence order of each label. -/
-private def groupByExitLabel (ewns : List EnvWithNext) :
-    List (Option (Option String) × List EnvWithNext) :=
-  let groups := ewns.foldl (fun acc ewn =>
-    match acc.find? (fun (label, _) => label == ewn.exitLabel) with
-    | some _ =>
-      acc.map (fun (l, ms) => if l == ewn.exitLabel then (l, ewn :: ms) else (l, ms))
-    | none =>
-      acc ++ [(ewn.exitLabel, [ewn])]
-  ) []
-  groups.map (fun (l, ms) => (l, ms.reverse))
-
 /-- Compare two conditions for structural equality, ignoring metadata
     and type annotations. This ensures matching remains robust if
     ExpressionMetadata or type annotations diverge across paths. -/
@@ -556,27 +542,6 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                    | other => other
                                  { ewn with env := ewn.env.popScope,
                                             exitLabel := exitLabel })
-            -- At block boundary, merge paths via condition-equality matching
-            -- when pathCap is active and path count exceeds the cap.
-            -- Grouping by exitLabel is safe even with duplicate sibling
-            -- labels: after a block consumes its matching exits, all
-            -- consumed paths continue with `.none` at the same control
-            -- flow point. Paths in the same exit-label group are
-            -- guaranteed to execute the same subsequent statements.
-            let (Ewns, blockStats) := match Ewn.env.pathCap with
-              | .some cap =>
-                if Ewns.length > cap then
-                  let preMergeLen := Ewns.length
-                  let groups := groupByExitLabel Ewns
-                  let merged := groups.map (fun (_, members) =>
-                    mergeCondPairs members.length members)
-                  let Ewns := merged.flatten
-                  if Ewns.length < preMergeLen then
-                    (Ewns, blockStats.increment
-                      s!"{Evaluator.Stats.blockBoundary_capMerged}")
-                  else (Ewns, blockStats)
-                else (Ewns, blockStats)
-              | .none => (Ewns, blockStats)
             (Ewns, blockStats)
 
           | .ite cond then_ss else_ss md =>
@@ -641,6 +606,21 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           | .exit l md => ([{ Ewn with exitLabel := .some l}], noStats)
 
       let stmtStats := stmtStats.increment s!"{Evaluator.Stats.simulatedStmts}"
+      -- Between-statement merge: when pathCap is active and the number
+      -- of continuing (.none exit) paths exceeds the cap, merge them
+      -- before feeding to subsequent statements. Exiting paths are
+      -- left untouched — they skip remaining statements via processExit
+      -- and accumulate at most linearly.
+      let (EAndNexts, stmtStats) := match Ewn.env.pathCap with
+        | .some cap =>
+          let (noExit, hasExit) :=
+            EAndNexts.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
+          if noExit.length > cap then
+            let merged := mergeCondPairs noExit.length noExit
+            (merged ++ hasExit,
+             stmtStats.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
+          else (EAndNexts, stmtStats)
+        | .none => (EAndNexts, stmtStats)
       let (continuations, contStats) := EAndNexts.foldl
         (fun (acc, statsAcc) ewn =>
           let (results, s) := go' ewn rest ewn.exitLabel
@@ -688,26 +668,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   | _, _ =>
     let popAll (ewns : List EnvWithNext) :=
       ewns.map (fun ewn => { ewn with env := ewn.env.popScope })
-    let tagSplit (ewns : List EnvWithNext) (side : Bool) :=
-      ewns.map (fun ewn =>
-        { ewn with splitConds := (cond', side) :: ewn.splitConds })
     match Ewn.env.pathCap with
-    | .some cap =>
+    | .some _ =>
+      let tagSplit (ewns : List EnvWithNext) (side : Bool) : List EnvWithNext :=
+        ewns.map (fun ewn =>
+          { ewn with splitConds := (cond', side) :: ewn.splitConds })
       let Ewns_tagged := tagSplit Ewns_t true ++ tagSplit Ewns_f false
-      if Ewns_tagged.length > cap then
-        let groups := groupByExitLabel Ewns_tagged
-        let merged := groups.map (fun (_, members) =>
-          mergeCondPairs members.length members)
-        let merged := merged.flatten
-        if merged.length < Ewns_tagged.length then
-          (popAll merged,
-           branchStats.increment s!"{Evaluator.Stats.processIteBranches_capMerged}")
-        else
-          (popAll Ewns_tagged,
-           branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}")
-      else
-        (popAll Ewns_tagged,
-         branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}")
+      (popAll Ewns_tagged,
+       branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}")
     | .none =>
       (popAll (Ewns_t ++ Ewns_f),
        branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}")
