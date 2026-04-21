@@ -135,21 +135,21 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
   | .error _ => Subst.empty
 
 /--
-Evaluate a procedure call `lhs := pname(args)` by inlining the contract of the
-call. The operational semantics of call is formally specified at EvalCommand.
+Evaluate a procedure call by inlining its contract.
+`args` and `lhs` are matched positionally against
+`proc.header.inputs` and `proc.header.outputs` respectively.
 -/
 def Command.inlineCallContract (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
-    -- Compute type substitution to instantiate polymorphic type variables.
     let tySubst := computeTypeSubst proc.header.inputs.values
       proc.header.outputs.values args lhs E
 
-    -- (Pre-call) Create formal-to-actual argument mapping.
+    -- positional: formal_arg_subst zips header.inputs.keys with args
     let formal_arg_subst := mkFormalArgSubst proc args E
-    -- (Post-call) Create return variable mappings and fresh LHS variables.
+    -- positional: return_lhs_subst zips header.outputs.keys with lhs
     let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
 
     -- Apply type substitution to preconditions to instantiate type variables.
@@ -182,11 +182,13 @@ def Command.inlineCallContract (E : Env)
     let post_vars_mdata := lhs_post_subst.map
         (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
     let md' := md ++ post_vars_mdata.toArray
-    let c' := CmdExt.call lhs pname args md'
+    let callArgs := args.map .inArg ++ lhs.map .outArg
+    let c' := CmdExt.call pname callArgs md'
     let E := E.addToContext lhs_post_subst
     (c', E)
   | _ =>
-    let c' := CmdExt.call lhs pname args md
+    let callArgs := args.map .inArg ++ lhs.map .outArg
+    let c' := CmdExt.call pname callArgs md
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
 
@@ -195,8 +197,10 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
   | .cmd c =>
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
-  | .call lhs pname args md =>
-    Command.inlineCallContract E lhs pname args md
+  | .call pname callArgs md =>
+    let lhs := CallArg.getLhs callArgs
+    let inArgs := CallArg.getInputExprs callArgs
+    Command.inlineCallContract E lhs pname inArgs md
 
 ---------------------------------------------------------------------
 

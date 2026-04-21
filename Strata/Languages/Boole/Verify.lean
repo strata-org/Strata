@@ -472,7 +472,9 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .boole_call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
     let (extraArgs, extraLhs) ← getModifiesExtras n
-    return Core.Statement.call (extraLhs ++ lhs.toList.map (mkIdent ·.val)) n (extraArgs ++ (← args.toList.mapM toCoreExpr)) (← toCoreMetaData m)
+    let inArgs := (extraArgs ++ (← args.toList.mapM toCoreExpr)).map Core.CallArg.inArg
+    let outArgs := (extraLhs ++ lhs.toList.map (mkIdent ·.val)).map Core.CallArg.outArg
+    return Core.Statement.call n (inArgs ++ outArgs) (← toCoreMetaData m)
   | .call_statement m ⟨_, n⟩ ⟨_, callArgs⟩ => do
     -- Reject Core-only out/inout call argument syntax in Boole.
     -- Boole uses `call lhs := f(args)` for calls with outputs.
@@ -488,7 +490,9 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       match ca with
       | .callArgExpr _ e => return some (← toCoreExpr e)
       | _ => return none  -- unreachable: out/inout rejected above
-    return Core.Statement.call extraLhs n (extraArgs ++ args) (← toCoreMetaData m)
+    let inArgs := (extraArgs ++ args).map Core.CallArg.inArg
+    let outArgs := extraLhs.map Core.CallArg.outArg
+    return Core.Statement.call n (inArgs ++ outArgs) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>

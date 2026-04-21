@@ -50,18 +50,18 @@ structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
 
 structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
 
-structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) : Prop where
+structure WFcallProp (p : Program) (procName : String) (callArgs : List (CallArg Expression)) : Prop where
   defined : (Program.Procedure.find? p procName).isSome
   arglen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.inputs.length = args.length
+          proc.header.inputs.length = (CallArg.getInputExprs callArgs).length
   outlen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.outputs.length = lhs.length
-  lhsWF : lhs.Nodup
-  wfargs : Forall (WFargProp p) args
+          proc.header.outputs.length = (CallArg.getLhs callArgs).length
+  lhsWF : (CallArg.getLhs callArgs).Nodup
+  wfargs : Forall (WFargProp p) (CallArg.getInputExprs callArgs)
 
 @[expose] def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
-  | .call (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) _ => WFcallProp p lhs procName args
+  | .call procName callArgs _ => WFcallProp p procName callArgs
 
 structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : Prop where
 

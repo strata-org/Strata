@@ -260,10 +260,10 @@ def transformStmt (s : Statement)
     let asserts := collectCmdPrecondAsserts F c
     incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
     return (!asserts.isEmpty, asserts ++ [.cmd (.cmd c)])
-  | .cmd (.call lhs pname args md) =>
-    let asserts := collectCallPrecondAsserts F pname args md
+  | .cmd (.call pname callArgs md) =>
+    let asserts := collectCallPrecondAsserts F pname (CallArg.getInputExprs callArgs) md
     incrementStat s!"{Stats.callSiteAssertsEmitted}" asserts.length
-    return (!asserts.isEmpty, asserts ++ [.call lhs pname args md])
+    return (!asserts.isEmpty, asserts ++ [.call pname callArgs md])
   | .block lbl b md => do
     let savedF ← getFactory
     let (changed, b') ← transformStmts b

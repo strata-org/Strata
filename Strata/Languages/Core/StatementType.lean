@@ -43,7 +43,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c
     .ok (.cmd c, Env)
-  | .call lhs pname args md => try
+  | .call pname callArgs md => try
+    let lhs := CallArg.getLhs callArgs
+    let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
      | none => .error <| md.toDiagnosticF f!"[{c}]: Procedure {pname} not found!"
@@ -81,7 +83,8 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
            let Env := Env.updateSubst S
-           let s' := .call lhs pname args' md
+           let newCallArgs := CallArg.replaceInArgs callArgs args'
+           let s' := .call pname newCallArgs md
            .ok (s', Env)
       catch e =>
         -- Add source location to error messages if not already present.
@@ -250,8 +253,11 @@ def Command.subst (S : Subst) (c : Command) : Command :=
       .cmd $ .assume label (b.applySubst S) md
     | .cover label b md =>
       .cmd $ .cover label (b.applySubst S) md
-  | .call lhs pname args md =>
-    .call lhs pname (args.map (fun a => a.applySubst S)) md
+  | .call pname callArgs md =>
+    .call pname (callArgs.map fun
+      | .inArg e => .inArg (e.applySubst S)
+      | .inoutArg id => .inoutArg id
+      | .outArg id => .outArg id) md
 
 /--
 Apply type substitution `S` to a statement.

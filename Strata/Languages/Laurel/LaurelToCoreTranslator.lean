@@ -386,7 +386,7 @@ def translateStmt (stmt : StmtExprMd)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr ← defaultExprForType ty
             let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
+            let callStmt := Core.Statement.call callee.text (coreArgs.map .inArg ++ [.outArg ident]) md
             return [initStmt, callStmt]
       | some (⟨ .InstanceCall .., _, _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
@@ -429,7 +429,8 @@ def translateStmt (stmt : StmtExprMd)
                   let coreType := LTy.forAll [] (← translateType out.type)
                   inits := inits ++ [Core.Statement.init unusedIdent coreType .nondet md]
                   lhs := lhs ++ [unusedIdent]
-                return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
+                let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
+                return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
@@ -446,7 +447,8 @@ def translateStmt (stmt : StmtExprMd)
                 match t.val with
                 | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return [Core.Statement.call lhsIdents callee.text coreArgs (astNodeToCoreMd value)]
+              let outArgs : List (Core.CallArg Core.Expression) := lhsIdents.map .outArg
+              return [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) (astNodeToCoreMd value)]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
@@ -485,7 +487,8 @@ def translateStmt (stmt : StmtExprMd)
           let coreType := LTy.forAll [] (← translateType out.type)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           lhs := lhs ++ [ident]
-        return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
+        let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
+        return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])

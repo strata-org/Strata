@@ -2068,11 +2068,11 @@ NOTE:
   variables (that is, lhs which now includes modified globals)
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ lhs n args σ' p md md'},
+  ∀ {π φ δ σ n callArgs σ' p md md'},
   π n = .some p →
-  EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' false →
-  EvalCommandContract π δ σ (CmdExt.call lhs n args md') σ' false := by
-  intros π φ δ σ lhs n args σ' p md md' pFound H
+  EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false →
+  EvalCommandContract π δ σ (CmdExt.call n callArgs md') σ' false := by
+  intros π φ δ σ n callArgs σ' p md md' pFound H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry

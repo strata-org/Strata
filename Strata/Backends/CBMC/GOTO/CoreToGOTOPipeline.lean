@@ -138,7 +138,9 @@ private partial def coreStmtsToGoto
   | [] => return trans
   | stmt :: rest =>
     let trans ← match stmt with
-      | .cmd (.call lhs procName args _md) =>
+      | .cmd (.call procName callArgs _md) =>
+        let lhs := Core.CallArg.getLhs callArgs
+        let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
         let argExprs ← renamedArgs.mapM toExpr

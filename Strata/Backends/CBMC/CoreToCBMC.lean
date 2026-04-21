@@ -83,7 +83,7 @@ def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)
 
 def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
   match e with
-  | .call _ _ _ _ => throw "cmdToJson: call not supported"
+  | .call _ _ _ => throw "cmdToJson: call not supported"
   | .cmd c =>
     match c with
     | .init name _ _ _ =>

@@ -398,11 +398,13 @@ A procedure is invoked via the `call` statement:
 call ProcName(e₁, ..., eₙ);
 ```
 
-The semantics of a call are: (1) evaluate argument expressions, (2) assert each
-non-free precondition with actuals substituted for formals, (3) havoc the `out`
-variables (not `inout` and `in`), (4) assume each postcondition with actuals substituted
-for formals and `old v` bound to the pre-call value of `v`, and (5) update the
-caller's state. This enables *modular verification*: each procedure is verified
+The semantics of a call are:
+(1) evaluate argument expressions,
+(2) assert each non-free precondition with actuals substituted for formals,
+(3) assume each postcondition with actuals substituted for formals and `old v`
+bound to the pre-call value of `v`, and
+(4) update the caller's state.
+This enables *modular verification*: each procedure is verified
 against its contract independently, and callers reason only about the contract.
 
 ## Body and verification

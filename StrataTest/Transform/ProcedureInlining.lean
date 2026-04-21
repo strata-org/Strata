@@ -158,7 +158,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
-    | .call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _ =>
+    | .call procName1 callArgs1 _, .call procName2 callArgs2 _ =>
+      let lhs1 := Core.CallArg.getLhs callArgs1
+      let lhs2 := Core.CallArg.getLhs callArgs2
+      let args1 := Core.CallArg.getInArgs callArgs1
+      let args2 := Core.CallArg.getInArgs callArgs2
       if procName1 ≠ procName2 then
         .error "Procedure name does not match"
       else if lhs1.length ≠ lhs2.length then

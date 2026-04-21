@@ -866,26 +866,18 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
       else
         ⟨default, none⟩
     pure (.cover default rcAnn labelAnn exprCST)
-  | .call lhs pname args _md => do
+  | .call pname coreCallArgs _md => do
     let pnameAnn : Ann String M := ⟨default, pname⟩
-    let lhsNames := lhs.map (·.name)
     let mut callArgs : Array (CallArg M) := #[]
-    let mut inoutEmitted : Array String := #[]
-    for a in args do
+    for a in coreCallArgs do
       match a with
-      | .fvar _ id _ =>
-        if lhsNames.contains id.name then
-          let nameAnn : Ann String M := ⟨default, id.name⟩
-          callArgs := callArgs.push (.callArgInout default nameAnn)
-          inoutEmitted := inoutEmitted.push id.name
-        else
-          let exprCST ← lexprToExpr a 0
-          callArgs := callArgs.push (.callArgExpr default exprCST)
-      | _ =>
-        let exprCST ← lexprToExpr a 0
+      | .inArg e =>
+        let exprCST ← lexprToExpr e 0
         callArgs := callArgs.push (.callArgExpr default exprCST)
-    for id in lhs do
-      if !inoutEmitted.contains id.name then
+      | .inoutArg id =>
+        let nameAnn : Ann String M := ⟨default, id.name⟩
+        callArgs := callArgs.push (.callArgInout default nameAnn)
+      | .outArg id =>
         let nameAnn : Ann String M := ⟨default, id.name⟩
         callArgs := callArgs.push (.callArgOut default nameAnn)
     let callArgsAnn : Ann (Array (CallArg M)) M := ⟨default, callArgs⟩

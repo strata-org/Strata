@@ -36,7 +36,9 @@ The returned result is a sequence of statements
 def callElimCmd (cmd: Command)
   : CoreTransformM (Option (List Statement)) := do
     match cmd with
-      | .call lhs procName args md =>
+      | .call procName callArgs md =>
+        let lhs := CallArg.getLhs callArgs
+        let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
         let some p := (← get).currentProgram | throw "program not available"

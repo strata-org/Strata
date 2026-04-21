@@ -1268,26 +1268,23 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let f ← translateIdent String fa
     let .seq _ .comma rawArgs := callArgsa
       | TransM.error s!"Expected comma-separated call args: {repr callArgsa}"
-    let mut args : List Core.Expression.Expr := []
-    let mut lhs : List Core.CoreIdent := []
+    let mut callArgs : List (Core.CallArg Core.Expression) := []
     for a in rawArgs do
       let .op aop := a
         | TransM.error s!"translateCallArg expects an op: {repr a}"
       match aop.name with
       | q`Core.callArgOut =>
         let bargs ← checkOpArg a q`Core.callArgOut 1
-        lhs := lhs ++ [← translateIdent Core.CoreIdent bargs[0]!]
+        callArgs := callArgs ++ [.outArg (← translateIdent Core.CoreIdent bargs[0]!)]
       | q`Core.callArgInout =>
         let bargs ← checkOpArg a q`Core.callArgInout 1
-        let id ← translateIdent Core.CoreIdent bargs[0]!
-        args := args ++ [Lambda.LExpr.fvar () id none]
-        lhs := lhs ++ [id]
+        callArgs := callArgs ++ [.inoutArg (← translateIdent Core.CoreIdent bargs[0]!)]
       | q`Core.callArgExpr =>
         let bargs ← checkOpArg a q`Core.callArgExpr 1
-        args := args ++ [← translateExpr p bindings bargs[0]!]
+        callArgs := callArgs ++ [.inArg (← translateExpr p bindings bargs[0]!)]
       | _ => TransM.error s!"translateCallArg: unexpected op {repr aop.name}"
     let md ← getOpMetaData op
-    return ([.call lhs f args md], bindings)
+    return ([.call f callArgs md], bindings)
   | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
     let (ss, innerBindings) ← translateBlock p bindings ba

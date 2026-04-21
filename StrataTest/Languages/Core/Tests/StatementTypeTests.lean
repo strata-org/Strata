@@ -263,7 +263,7 @@ info: error: [call Foo((x == x), out [x,
 #eval do
   let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
   let ans ← typeCheck LContext.default env testProgram none
-    [.cmd (.call [⟨"x", ()⟩, ⟨"y", ()⟩] "Foo" [eb[x == x]] .empty)]
+    [.cmd (.call "Foo" [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ans
 
 -- Passing a bare variable `x` as an inout argument should succeed.
@@ -272,7 +272,7 @@ info: error: [call Foo((x == x), out [x,
 #eval do
   let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
   let _ ← typeCheck LContext.default env testProgram none
-    [.cmd (.call [⟨"x", ()⟩, ⟨"y", ()⟩] "Foo" [eb[x]] .empty)]
+    [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ()
 
 end CallOutArgTests
