@@ -266,6 +266,7 @@ def LExpr.sizeOf: LExpr T → Nat
 /--
 Get type of a constant `c`
 -/
+@[expose]
 def LConst.ty (c: LConst) : LMonoTy :=
   match c with
   | .intConst _ => .int
@@ -505,6 +506,7 @@ def size (T : LExprParamsT) (e : LExpr T) : Nat :=
 Erase all type annotations from `e` except the bound variables of abstractions
 and quantified expressions.
 -/
+@[expose]
 def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
   match e with
   | .const m c => .const m c

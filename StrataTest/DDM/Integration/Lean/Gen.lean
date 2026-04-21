@@ -65,9 +65,9 @@ trace: [Strata.generator] Generating Command.toAst
 ---
 trace: [Strata.generator] Generating Command.ofAst
 ---
-trace: [Strata.generator] Declarations group: [Init.Expr]
-[Strata.generator] Declarations group: [Init.Type]
-[Strata.generator] Declarations group: [Init.Command]
+trace: [Strata.generator] ✅️ Declarations group: [Init.Expr]
+[Strata.generator] ✅️ Declarations group: [Init.Type]
+[Strata.generator] ✅️ Declarations group: [Init.Command]
 -/
 #guard_msgs in
 set_option trace.Strata.generator true in

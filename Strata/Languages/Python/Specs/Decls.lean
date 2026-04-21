@@ -250,7 +250,7 @@ private def removeAdjDups {α} [BEq α] (a : Array α) : Array α :=
 /-- Construct a `SpecType` from an array of atoms by sorting and
     removing duplicates to produce a canonical representation. -/
 protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
-  let elts := atoms.qsort (· < ·)
+  let elts := atoms.qsort (compare · · == .lt)
   { loc := loc, atoms := removeAdjDups elts }
 
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
@@ -262,13 +262,6 @@ def asSingleton (tp : SpecType) : Option SpecAtomType := do
   none
 
 def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
-
-instance : Membership SpecAtomType SpecType where
-  mem a e := private a.atoms.binSearchContains e (· < ·) = true
-
-@[instance]
-def instDecidableMem (e : SpecAtomType) (tp : SpecType) : Decidable (e ∈ tp) :=
-  inferInstanceAs (Decidable (_ = _))
 
 end SpecType
 
