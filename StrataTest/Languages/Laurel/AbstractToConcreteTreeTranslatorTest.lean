@@ -106,6 +106,7 @@ info: procedure divide(x: int, y: int): int
 #eval do IO.println (← roundtrip r"
 procedure divide(x: int, y: int): int
   requires y != 0
+  opaque
   ensures result >= 0
 { x / y };
 ")
@@ -208,6 +209,7 @@ procedure modify(c: Container)
 #eval do IO.println (← roundtrip r"
 composite Container { var value: int }
 procedure modify(c: Container)
+  opaque
   ensures true
   modifies c
 { c#value := c#value + 1; true };

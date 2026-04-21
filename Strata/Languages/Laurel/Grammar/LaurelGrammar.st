@@ -152,9 +152,6 @@ op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "\n  invokeOn " trigger:
 category RequiresClause;
 op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  requires " cond:0 errorMessage;
 
-category OpaqueClause;
-op opaqueClause: OpaqueClause => "\n  opaque";
-
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  ensures " cond:0 errorMessage;
 
@@ -163,6 +160,10 @@ op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " 
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
+
+category OpaqueSpec;
+op opaqueSpec(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause): OpaqueSpec =>
+  "\n  opaque" ensures modifies;
 
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
@@ -174,22 +175,18 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  opaque: Option OpaqueClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaque ensures modifies body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  opaque: Option OpaqueClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaque ensures modifies body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 
