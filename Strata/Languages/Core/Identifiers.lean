@@ -54,7 +54,7 @@ theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreId
   have h_name := congrArg Lambda.Identifier.name h
   simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
   have h1 := congrArg String.toList h_name
-  simp [String.toList_append] at h1
+  simp at h1
   exact String.ext h1
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
