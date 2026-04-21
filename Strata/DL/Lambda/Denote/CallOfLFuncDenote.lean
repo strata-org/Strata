@@ -622,6 +622,7 @@ private theorem denote_app_chain_go
     have ⟨_, h_tys⟩ := LMonoTy.mkArrow'_injective hlen h_eq
     subst h_tys; rfl
 
+set_option backward.isDefEq.respectTransparency false in
 private theorem denote_app_chain
     {e : LExpr T.mono} {τ : LMonoTy}
     {op : LExpr T.mono} {args : List (LExpr T.mono)}

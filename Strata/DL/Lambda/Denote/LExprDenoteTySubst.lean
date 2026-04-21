@@ -297,7 +297,7 @@ private theorem denote_applySubst_gen
     have h_cast_fn := cast_fn_apply h_fn_eq h_td_aty h_td_rty
         (fun x => LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal)
           (body.replaceUserProvidedType (LMonoTy.subst S)) (LMonoTy.subst S rty) h_body_s) y
-    rw [h_cast_fn]
+    apply Eq.trans h_cast_fn
     apply ih h_body' h_td_rty
     exact bvar_compat_cons (tcInterp := tcInterp) hvt' h_bvar_compat y h_td_aty
   | app m fn arg ih_fn ih_arg =>
@@ -327,12 +327,12 @@ private theorem denote_applySubst_gen
       h_subst_arrow ▸ h_fn_s
     rw [denote_cast_ty (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt)
         h_subst_arrow.symm h_fn_s h_fn_s' bvarVal]
-    simp only [cast_cast]
+    set_option backward.isDefEq.respectTransparency false in simp only [cast_cast]
     have h_td_fn' : TyDenote tcInterp vt (LMonoTy.subst S (aty.arrow τ)) = TyDenote tcInterp vt' (aty.arrow τ) :=
       h_subst_arrow ▸ h_td_fn
     have h_ih_fn := ih_fn h_fn h_td_fn' h_bvar_compat h_fn_s'
     have h_ih_arg := ih_arg h_arg h_td_arg h_bvar_compat h_arg_s
-    rw [h_ih_arg, h_ih_fn]
+    set_option backward.isDefEq.respectTransparency false in rw [h_ih_arg, h_ih_fn]
   | ite m c t e ih_c ih_t ih_e =>
     intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
     simp only [LExpr.replaceUserProvidedType] at h_subst ⊢
@@ -480,6 +480,6 @@ theorem denote_applySubst
   have h_gen := denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
     (bvarVal := .nil) (bvarVal' := .nil)
     (fun i _ hb _ => absurd hb (by simp))
-  rw [← h_gen, cast_cast, cast_eq]
+  set_option backward.isDefEq.respectTransparency false in rw [← h_gen, cast_cast, cast_eq]
 
 end Lambda
