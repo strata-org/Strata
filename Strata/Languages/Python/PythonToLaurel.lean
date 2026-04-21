@@ -1864,7 +1864,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn::bodyStmts) label}
     | _ => bodyBlock
 
-    -- Create procedure with transparent body (no contracts for now)
+    -- Create procedure
     let proc : Procedure := {
       name := { text := funcDecl.name, md := sourceRangeToMetaData ctx.filePath sourceRange }
       inputs := inputs
