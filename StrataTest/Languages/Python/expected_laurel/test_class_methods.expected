@@ -11,6 +11,5 @@ test_class_methods.py(29, 4): ✔️ always true if reached - set_balance should
 test_class_methods.py(31, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_methods.py(31, 4): ✔️ always true if reached - assert_opt_name_none_or_str
 test_class_methods.py(31, 4): ✔️ always true if reached - assert_opt_name_none_or_bar
-unknown location: ✔️ always true if reached - postcondition
-DETAIL: 14 passed, 0 failed, 0 inconclusive
+DETAIL: 13 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
