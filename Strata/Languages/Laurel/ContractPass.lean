@@ -163,8 +163,13 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let postconds := getPostconditions proc.body
+  -- Use the source location from the first precondition for the assume node
   let preAssume : List StmtExprMd :=
-    if info.hasPreCondition then [mkMd (.Assume (mkCall info.preName inputArgs))]
+    if info.hasPreCondition then
+      let (preSrc, preMd) := match proc.preconditions.head? with
+        | some pc => (pc.source, pc.md)
+        | none => (none, emptyMd)
+      [⟨.Assume (mkCall info.preName inputArgs), preSrc, preMd⟩]
     else []
   let postAssert : List StmtExprMd :=
     if info.hasPostCondition then
@@ -182,13 +187,17 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
       [⟨.Assert (conjoin postconds),
         baseSrc, baseMd.withPropertySummary summary⟩]
     else []
+  -- Use the body's source location for the wrapping Block
+  let wrapBlock (src : Option FileRange) (stmts : List StmtExprMd) : StmtExprMd :=
+    ⟨.Block stmts none, src, emptyMd⟩
   match proc.body with
   | .Transparent body =>
-    .Transparent (mkMd (.Block (preAssume ++ [body] ++ postAssert) none))
+    .Transparent (wrapBlock body.source (preAssume ++ [body] ++ postAssert))
   | .Opaque _ (some impl) _ =>
-    .Opaque [] (mkMd (.Block (preAssume ++ [impl] ++ postAssert) none)) []
+    .Opaque [] (some (wrapBlock impl.source (preAssume ++ [impl] ++ postAssert))) []
   | .Opaque _ none _ | .Abstract _ =>
-    .Opaque [] (mkMd (.Block [] none)) []
+    let emptyBlock : StmtExprMd := ⟨.Block [] none, none, emptyMd⟩
+    .Opaque [] emptyBlock []
   | b => b
 
 /-- Rewrite a single statement that may be a call to a contracted procedure.
