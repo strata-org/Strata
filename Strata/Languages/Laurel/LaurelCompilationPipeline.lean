@@ -44,8 +44,8 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 structure LaurelPass where
   /-- Human-readable name, used for profiling and file emission. -/
   name : String
-  /-- How many times `resolve` should be run after the pass. -/
-  resolvesAfter : Nat := 0
+  /-- Whether `resolve` should be run after the pass. -/
+  needsResolves : Bool := false
   /-- The pass action. -/
   run : Program → SemanticModel → Program × List DiagnosticModel × Statistics
 
@@ -60,15 +60,15 @@ private def laurelPipeline : Array LaurelPass := #[
       let (p', diags) := eliminateValueReturnsTransform p
       (p', diags.toList, {}) },
   { name := "HeapParameterization"
-    resolvesAfter := 1
+    needsResolves := true
     run := fun p m =>
       (heapParameterization m p, [], {}) },
   { name := "TypeHierarchyTransform"
-    resolvesAfter := 1
+    needsResolves := true
     run := fun p m =>
       (typeHierarchyTransform m p, [], {}) },
   { name := "ModifiesClausesTransform"
-    resolvesAfter := 2
+    needsResolves := true
     run := fun p m =>
       let (p', diags) := modifiesClausesTransform m p
       (p', diags, {}) },
@@ -87,11 +87,11 @@ private def laurelPipeline : Array LaurelPass := #[
     run := fun p m =>
       (liftExpressionAssignments m p, [], {}) },
   { name := "EliminateReturns"
-    resolvesAfter := 1
+    needsResolves := true
     run := fun p _m =>
       (eliminateReturnsInExpressionTransform p, [], {}) },
   { name := "ConstrainedTypeElim"
-    resolvesAfter := 1
+    needsResolves := true
     run := fun p m =>
       let (p', diags) := constrainedTypeElim m p
       (p', diags, {}) }
@@ -145,8 +145,8 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     program := program'
     allDiags := allDiags ++ diags
     allStats := allStats.merge stats
-    -- Run resolve the requested number of times after the pass
-    for _ in List.range pass.resolvesAfter do
+    -- Run resolve after the pass if needed
+    if pass.needsResolves then
       let result := resolve program (some model)
       program := result.program
       model := result.model
