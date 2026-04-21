@@ -588,7 +588,7 @@ def pyAnalyzeLaurelCommand : Command where
           (keepAllFilesPrefix := keepPrefix) (profile := profile)
 
     if profile && !laurelPassStats.data.isEmpty then
-      let _ ← (IO.println laurelPassStats.format |>.toBaseIO)
+      IO.println laurelPassStats.format
 
     let coreProgram ←
       match coreProgramOption with

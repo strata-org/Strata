@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
-public import Strata.Util.Statistics
 
 /-!
 # Constrained Type Elimination

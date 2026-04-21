@@ -68,6 +68,12 @@ private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   modify fun s => { s with currentInputs := proc.inputs }
   mapProcedureBodiesM (mapStmtExprM elimHoleNode) proc
 
+inductive ElimHoleStats where
+  /-- Number of deterministic holes replaced with calls to uninterpreted functions. -/
+  | holesEliminated
+
+#derive_prefixed_toString ElimHoleStats "EliminateHoles"
+
 /--
 Replace every deterministic `.Hole` in the program with a call to a freshly
 generated uninterpreted function. Works uniformly for both procedures and
@@ -76,12 +82,6 @@ After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/
-inductive ElimHoleStats where
-  /-- Number of deterministic holes replaced with calls to uninterpreted functions. -/
-  | holesEliminated
-
-#derive_prefixed_toString ElimHoleStats "EliminateHoles"
-
 def eliminateHoles (program : Program) : Program × Statistics :=
   let initState : ElimHoleState := {}
   let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
