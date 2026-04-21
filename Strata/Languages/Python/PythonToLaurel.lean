@@ -1419,9 +1419,28 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) bodyBlock elseBlock) md
+    let exceptionAsserts := getExceptionAssertions ctx condExpr
+    -- When exception assertions are generated, extract the condition into a
+    -- temporary variable so the procedure call appears only once (in the
+    -- variable initializer, which is a statement context) rather than being
+    -- duplicated into the assert (a pure context where procedure calls are
+    -- disallowed).  See issue #1000.
+    let (preamble, condRef) :=
+      if exceptionAsserts.isEmpty then
+        ([], condExpr)
+      else
+        let varName := s!"$if_cond_{test.toAst.ann.start.byteIdx}"
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
+        -- Re-derive exception assertions using the variable reference so the
+        -- assert bodies are pure (no procedure calls).
+        let asserts := (getMaybeExceptionExprs ctx condExpr).map fun mbe =>
+          mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+            (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])) mbe.md
+        ([varDecl] ++ asserts, varRef)
+    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condRef) bodyBlock elseBlock) md
 
-    return (bodyCtx, (getExceptionAssertions ctx condExpr) ++ [ifStmt])
+    return (bodyCtx, preamble ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
@@ -1432,20 +1451,47 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let loopCtx := { ctx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
     let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
-    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condExpr) [] none bodyBlock) md
+    -- Same fix as the If case: extract condition into a variable when
+    -- exception assertions are needed.  See issue #1000.
+    let exceptionAsserts := getExceptionAssertions ctx condExpr
+    let (preamble, condRef) :=
+      if exceptionAsserts.isEmpty then
+        ([], condExpr)
+      else
+        let varName := s!"$while_cond_{test.toAst.ann.start.byteIdx}"
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
+        let asserts := (getMaybeExceptionExprs ctx condExpr).map fun mbe =>
+          mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+            (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])) mbe.md
+        ([varDecl] ++ asserts, varRef)
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, (getExceptionAssertions ctx condExpr) ++ [whileWrapped])
+    return (loopCtx, preamble ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
-        let exceptionCheck := getExceptionAssertions ctx e
+        -- Same fix as the If case: extract return value into a variable when
+        -- exception assertions are needed.  See issue #1000.
+        let exceptionAsserts := getExceptionAssertions ctx e
+        let (preamble, eRef) :=
+          if exceptionAsserts.isEmpty then
+            ([], e)
+          else
+            let varName := s!"$ret_exc_{expr.toAst.ann.start.byteIdx}"
+            let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some e))
+            let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
+            let asserts := (getMaybeExceptionExprs ctx e).map fun mbe =>
+              mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+                (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])) mbe.md
+            ([varDecl] ++ asserts, varRef)
         -- Coerce Composite return values to Any for LaurelResult : Any
-        let e ← coerceToAny ctx expr e
-        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e) md
-        .ok $ exceptionCheck ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
+        let eRef ← coerceToAny ctx expr eRef
+        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] eRef) md
+        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
       | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
     return (ctx, stmts)
 
@@ -1475,7 +1521,22 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else
       mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
 
-    return (condCtx, (getExceptionAssertions ctx condExpr) ++ [result])
+    -- Same fix as the If case: extract condition into a variable when
+    -- exception assertions are needed.  See issue #1000.
+    let exceptionAsserts := getExceptionAssertions ctx condExpr
+    let preamble :=
+      if exceptionAsserts.isEmpty then
+        []
+      else
+        let varName := s!"$assert_exc_{test.toAst.ann.start.byteIdx}"
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
+        let asserts := (getMaybeExceptionExprs ctx condExpr).map fun mbe =>
+          mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+            (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])) mbe.md
+        [varDecl] ++ asserts
+
+    return (condCtx, preamble ++ [result])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])
@@ -1635,7 +1696,21 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyStmts := assumeStmts ++ bodyStmts
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ targetDecls ++ [loopBlock])
+    -- Same fix as the If case: extract iter into a variable when
+    -- exception assertions are needed.  See issue #1000.
+    let exceptionAsserts := getExceptionAssertions ctx iterExpr
+    let preamble :=
+      if exceptionAsserts.isEmpty then
+        []
+      else
+        let varName := s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some iterExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
+        let asserts := (getMaybeExceptionExprs ctx iterExpr).map fun mbe =>
+          mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+            (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])) mbe.md
+        [varDecl] ++ asserts
+    return (finalCtx, preamble ++ targetDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
