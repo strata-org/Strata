@@ -644,5 +644,18 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
       show ¬ x ∈ List.map Prod.fst ((m :: rest : Maps α β).flatten)
       grind
 
+theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
+    Map.find? ms.toSingleMap x = Maps.find? ms x := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    unfold Map at m
+    show Map.find? ((m ++ rest.flatten)) x = _
+    rw [Map.find?_append]
+    simp only [Maps.find?]
+    cases Map.find? m x with
+    | none => exact ih
+    | some v => rfl
+
 ---------------------------------------------------------------------
 end
