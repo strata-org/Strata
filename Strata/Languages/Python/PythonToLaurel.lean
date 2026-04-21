@@ -539,8 +539,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     if h: (n == 0 || comparators.val.size != n) then
       throw (.internalError "Compare: ops/comparators size mismatch")
     else
-      have hN : 0 < n := by simp_all [Bool.or_eq_true, beq_iff_eq, bne_iff_ne]; omega
-      have hComp : comparators.val.size = n := by simp_all [Bool.or_eq_true, beq_iff_eq, bne_iff_ne]
+      have ⟨hN, hComp⟩ : 0 < n ∧ comparators.val.size = n := by
+        simp_all [Bool.or_eq_true, beq_iff_eq, bne_iff_ne]; omega
       -- Translate a single comparison operator to its Laurel prelude name.
       -- `is`/`is not` are only sound when the RHS is None, because Python's
       -- `is` checks object identity, not equality (e.g., True == 1 but
@@ -562,7 +562,13 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           | .IsNot _ => match comparators.val[i]'(by omega) with
               | .Constant _ (.ConNone _) _ => .ok "PNEq"
               | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
-      -- Check if a Python expression is simple (no side effects when duplicated)
+      -- Check if a Python expression is simple (no side effects when duplicated).
+      -- Only `Name` and `Constant` are treated as simple. `Subscript` (e.g.,
+      -- `a[0]`) and `Attribute` (e.g., `self.x`) are intentionally non-simple
+      -- because Python's `__getitem__`/`__getattr__` can have side effects.
+      -- Similarly, `BoolOp`, `UnaryOp`, and `BinOp` with simple sub-expressions
+      -- are technically pure, but treating them as non-simple is correct since
+      -- the temp variable overhead is negligible and avoids subtle bugs.
       let isSimple (pyExpr : Python.expr SourceRange) : Bool :=
         match pyExpr with
         | .Name .. | .Constant .. => true
@@ -577,7 +583,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       -- intermediate operands that are not simple names/literals.
       -- This preserves Python's evaluate-once semantics for side-effecting
       -- intermediate expressions (e.g., `a < f() < b` calls `f()` only once).
-      let mut tempDecls : List StmtExprMd := []
+      let mut tempDecls : Array StmtExprMd := #[]
       let mut operandRefs : Array StmtExprMd := #[leftExpr]
       for h : i in [:n] do
         have hi : i < n := Membership.mem.upper h
@@ -591,7 +597,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           -- through the translator.
           let freshVar := s!"cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
           let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
-          tempDecls := tempDecls ++ [varDecl]
+          tempDecls := tempDecls.push varDecl
           operandRefs := operandRefs.push (mkStmtExprMd (StmtExpr.Identifier freshVar))
         else
           operandRefs := operandRefs.push comp
@@ -618,7 +624,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       if tempDecls.isEmpty then
         return { result with md := md }
       else
-        return mkStmtExprMdWithLoc (StmtExpr.Block (tempDecls ++ [result]) none) md
+        return mkStmtExprMdWithLoc (StmtExpr.Block (tempDecls.toList ++ [result]) none) md
 
   -- Boolean operations
   | .BoolOp _ op values => do

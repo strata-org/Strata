@@ -1,15 +1,18 @@
-test_chained_compare_mixed.py(2, 4): ✅ pass - assert(38)
-test_chained_compare_mixed.py(3, 4): ✅ pass - assert(53)
-test_chained_compare_mixed.py(4, 4): ✅ pass - assert(68)
-test_chained_compare_mixed.py(5, 11): ✅ pass - assert_assert(90)_calls_PAnd_0
-test_chained_compare_mixed.py(5, 11): ✅ pass - Check PAnd exception
-test_chained_compare_mixed.py(5, 4): ✅ pass - assert_assert(83)_calls_PAnd_0
-test_chained_compare_mixed.py(5, 4): ✅ pass - assert_assert(83)_calls_Any_to_bool_1
-test_chained_compare_mixed.py(5, 4): ✅ pass - mixed operators
-test_chained_compare_mixed.py(6, 11): ✅ pass - assert_assert(131)_calls_PAnd_0
-test_chained_compare_mixed.py(6, 11): ✅ pass - Check PAnd exception
-test_chained_compare_mixed.py(6, 4): ✅ pass - assert_assert(124)_calls_PAnd_0
-test_chained_compare_mixed.py(6, 4): ✅ pass - assert_assert(124)_calls_Any_to_bool_1
-test_chained_compare_mixed.py(6, 4): ❓ unknown - reversed mixed should fail
-DETAIL: 12 passed, 0 failed, 1 inconclusive
-RESULT: Inconclusive
+test_chained_compare_mixed.py(3, 4): ❓ unknown - test_chained_compare_mixed_assert(77)_7
+test_chained_compare_mixed.py(4, 4): ❓ unknown - test_chained_compare_mixed_assert(92)_8
+test_chained_compare_mixed.py(5, 4): ❓ unknown - test_chained_compare_mixed_assert(107)_9
+test_chained_compare_mixed.py(6, 11): ❓ unknown - assert_test_chained_compare_mixed_assert(129)_10_calls_PAnd_0
+test_chained_compare_mixed.py(6, 11): ❓ unknown - Check PAnd exception
+test_chained_compare_mixed.py(6, 4): ❓ unknown - assert_test_chained_compare_mixed_assert(122)_11_calls_PAnd_0
+test_chained_compare_mixed.py(6, 4): ❓ unknown - assert_test_chained_compare_mixed_assert(122)_11_calls_Any_to_bool_1
+test_chained_compare_mixed.py(6, 4): ❓ unknown - mixed operators
+test_chained_compare_mixed.py(7, 11): ❓ unknown - assert_test_chained_compare_mixed_assert(170)_12_calls_PAnd_0
+test_chained_compare_mixed.py(7, 11): ❓ unknown - Check PAnd exception
+test_chained_compare_mixed.py(7, 4): ❓ unknown - assert_test_chained_compare_mixed_assert(163)_13_calls_PAnd_0
+test_chained_compare_mixed.py(7, 4): ❓ unknown - assert_test_chained_compare_mixed_assert(163)_13_calls_Any_to_bool_1
+test_chained_compare_mixed.py(7, 4): ❌ fail - reversed mixed should fail
+test_chained_compare_mixed.py(8, 11): ❓ unknown - Check PGt exception
+test_chained_compare_mixed.py(8, 4): ❓ unknown - assert_test_chained_compare_mixed_assert(215)_15_calls_Any_to_bool_0
+test_chained_compare_mixed.py(8, 4): ❌ fail - should fail: a is 1
+DETAIL: 0 passed, 2 failed, 14 inconclusive
+RESULT: Failures found

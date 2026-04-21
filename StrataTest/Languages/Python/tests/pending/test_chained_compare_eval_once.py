@@ -1,7 +1,7 @@
 # Tests evaluate-once semantics for chained comparisons.
 # `f()` should be called exactly once in `a < f() < b`.
 # Currently blocked by "local variables in functions are not YET supported"
-# in the Laurel-to-Core translator.
+# in the Laurel-to-Core translator (see #892 for tracking).
 counter: int = 0
 
 def f() -> int:
