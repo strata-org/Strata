@@ -135,9 +135,10 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
   | .error _ => Subst.empty
 
 /--
-Evaluate a procedure call `lhs := pname(args)`.
+Evaluate a procedure call `lhs := pname(args)` by inlining the contract of the
+call. The operational semantics of call is formally specified at EvalCommand.
 -/
-def Command.evalCall (E : Env)
+def Command.inlineCallContract (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
@@ -195,7 +196,7 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
   | .call lhs pname args md =>
-    Command.evalCall E lhs pname args md
+    Command.inlineCallContract E lhs pname args md
 
 ---------------------------------------------------------------------
 
