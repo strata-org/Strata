@@ -163,6 +163,7 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let postconds := getPostconditions proc.body
+  -- Use the source location from the first precondition for the assume node
   let preAssume : List StmtExprMd :=
     if info.hasPreCondition then
       let (preSrc, preMd) := match proc.preconditions.head? with

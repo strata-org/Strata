@@ -180,8 +180,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     return (none, passDiags, program)
   else
     let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
-    dbg_trace "=========== COREWithLaurelTypes PROGRAM"
-    dbg_trace s!"{Std.format coreWithLaurelTypes}"
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
     -- Because of the duplication between functions and proofs, this translation is liable to create duplicate diagnostics
@@ -195,8 +193,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
           DiagnosticType.StrataBug]
       else allDiagnostics
 
-    dbg_trace "=========== CORE PROGRAM"
-    dbg_trace s!"{Std.format coreProgramOption}"
     let coreProgramOption :=
       if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
     return (coreProgramOption, allDiagnostics, program)
