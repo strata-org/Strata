@@ -99,6 +99,16 @@ instance instCoreProgramFormat : Std.ToFormat Program where
 instance instCoreExprFormat : Std.ToFormat Expression.Expr where
   format e := Core.formatExprs [e]
 
+/-- Format a `Core.Procedure` using the DDM pretty-printer.
+    This instance shadows the custom `ToFormat Procedure` from `Procedure.lean`. -/
+instance instCoreProcedureFormat : Std.ToFormat Procedure where
+  format := Core.formatProcedure
+
+/-- Format a `Core.Command` (`CmdExt Expression`) using the DDM pretty-printer.
+    This instance shadows the generic `ToFormat (CmdExt P)` from `Statement.lean`. -/
+instance instCoreCommandFormat : Std.ToFormat Command where
+  format := Core.formatCommand
+
 end -- public section
 
 end Core

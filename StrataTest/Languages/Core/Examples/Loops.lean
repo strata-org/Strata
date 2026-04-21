@@ -44,20 +44,28 @@ spec {
 info: Entry: before_loop$_7
 
 before_loop$_7:
-  i := 0
+  i := 0;
+
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_5] 0 <= i
-  assert [inv$_6] i <= n
-  init (loop_measure$_2 : int)
-  assume [assume_loop_measure$_2] loop_measure$_2 == n
-  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  assert [inv$_5]: 0 <= i;
+
+  assert [inv$_6]: i <= n;
+
+  var loop_measure$_2 : int;
+
+  assume [assume_loop_measure$_2]: loop_measure$_2 == n;
+
+  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
+
   condGoto i < n l$_4 end$_0
 l$_4:
-  i := i + 1
+  i := i + 1;
+
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2] n < loop_measure$_2
+  assert [measure_decrease_loop_measure$_2]: n < loop_measure$_2;
+
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -129,24 +137,36 @@ spec {
 info: Entry: before_loop$_8
 
 before_loop$_8:
-  init (i : int)
-  i := 0
-  s := 0
+  var i : int;
+
+  i := 0;
+
+  s := 0;
+
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_5] 0 <= i
-  assert [inv$_6] i <= n
-  assert [inv$_7] s == i * (i + 1) / 2
-  init (loop_measure$_2 : int)
-  assume [assume_loop_measure$_2] loop_measure$_2 == n - i
-  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  assert [inv$_5]: 0 <= i;
+
+  assert [inv$_6]: i <= n;
+
+  assert [inv$_7]: s == i * (i + 1) / 2;
+
+  var loop_measure$_2 : int;
+
+  assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
+
+  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
+
   condGoto i < n l$_4 end$_0
 l$_4:
-  i := i + 1
-  s := s + i
+  i := i + 1;
+
+  s := s + i;
+
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2] n - i < loop_measure$_2
+  assert [measure_decrease_loop_measure$_2]: n - i < loop_measure$_2;
+
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -372,39 +392,62 @@ spec {
 info: Entry: before_loop$_15
 
 before_loop$_15:
-  init (x : int)
-  init (y : int)
-  x := 0
+  var x : int;
+
+  var y : int;
+
+  x := 0;
+
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_12] x >= 0
-  assert [inv$_13] x <= n
-  assert [inv$_14] n < top
-  init (loop_measure$_2 : int)
-  assume [assume_loop_measure$_2] loop_measure$_2 == n - x
-  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  assert [inv$_12]: x >= 0;
+
+  assert [inv$_13]: x <= n;
+
+  assert [inv$_14]: n < re.none();
+
+
+-- Errors encountered during conversion:
+Unsupported construct in lopToExpr: 0-ary op not found: top
+Context: Global scope:
+  var loop_measure$_2 : int;
+
+  assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
+
+  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
+
   condGoto x < n before_loop$_11 end$_0
 before_loop$_11:
-  y := 0
+  y := 0;
+
   condGoto true loop_entry$_5 loop_entry$_5
 loop_entry$_5:
-  assert [inv$_9] y >= 0
-  assert [inv$_10] y <= x
-  init (loop_measure$_6 : int)
-  assume [assume_loop_measure$_6] loop_measure$_6 == x - y
-  assert [measure_lb_loop_measure$_6] !(loop_measure$_6 < 0)
+  assert [inv$_9]: y >= 0;
+
+  assert [inv$_10]: y <= x;
+
+  var loop_measure$_6 : int;
+
+  assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
+
+  assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
+
   condGoto y < x l$_8 l$_4
 l$_8:
-  y := y + 1
+  y := y + 1;
+
   condGoto true measure_decrease$_7 measure_decrease$_7
 measure_decrease$_7:
-  assert [measure_decrease_loop_measure$_6] x - y < loop_measure$_6
+  assert [measure_decrease_loop_measure$_6]: x - y < loop_measure$_6;
+
   condGoto true loop_entry$_5 loop_entry$_5
 l$_4:
-  x := x + 1
+  x := x + 1;
+
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2] n - x < loop_measure$_2
+  assert [measure_decrease_loop_measure$_2]: n - x < loop_measure$_2;
+
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish

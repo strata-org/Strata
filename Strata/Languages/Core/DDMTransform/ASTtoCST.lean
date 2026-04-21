@@ -1182,6 +1182,23 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | _ => #[]
   exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
 
+/-- Run the DDM formatting pipeline on a converted CST, appending any conversion errors. -/
+private def formatWithDDM (finalCtx : ToCSTContext SourceRange)
+    (toFormat : FormatContext → FormatState → Std.Format) : Std.Format :=
+  let dialects := Core_map
+  let ddmCtx := recreateGlobalContext finalCtx
+  let ctx := FormatContext.ofDialects dialects ddmCtx {}
+  let state : FormatState := {
+    openDialects := dialects.toList.foldl (init := {})
+      fun a (d : Dialect) => a.insert d.name
+  }
+  let formatted := toFormat ctx state
+  if finalCtx.errors.isEmpty then
+    formatted
+  else
+    formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
+    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
+
 /-- Render a list of `Core.Expression.Expr` to a format object.
 
 If the expression references constructs not defined in the Grammar,
@@ -1193,6 +1210,7 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars (extraFreeVars ++ extractedNames)
   let (exprsCST, finalCtx) := (exprs.mapM (lexprToExpr · 0)).run initCtx
+  -- formatExprs uses a different error format for backward compatibility
   let dialects := Core_map
   let ddmCtx := recreateGlobalContext finalCtx
   let ctx := FormatContext.ofDialects dialects ddmCtx {}
@@ -1220,40 +1238,32 @@ def Core.formatProgram (ast : Core.Program)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (finalCtx, cmds) := programToCST ast initCtx
-  let dialects := Core_map
-  let ddmCtx := recreateGlobalContext finalCtx
-  let ctx := FormatContext.ofDialects dialects ddmCtx {}
-  let state : FormatState := {
-    openDialects := dialects.toList.foldl (init := {})
-      fun a (d : Dialect) => a.insert d.name
-  }
-  let formatted := Std.Format.joinSep (cmds.map fun cmd =>
-    (mformat (ArgF.op cmd.toAst) ctx state).format) ""
   let header : Std.Format := "program Core;\n\n"
-  if finalCtx.errors.isEmpty then
-    header ++ formatted
-  else
-    header ++ formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
-    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
+  header ++ formatWithDDM finalCtx fun ctx state =>
+    Std.Format.joinSep (cmds.map fun cmd =>
+      (mformat (ArgF.op cmd.toAst) ctx state).format) ""
 
 def Core.formatStatement (stmt : Core.Statement)
     (extraFreeVars : Array String := #[]) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (cst, finalCtx) := stmtToCST stmt initCtx
-  let dialects := Core_map
-  let ddmCtx := recreateGlobalContext finalCtx
-  let ctx := FormatContext.ofDialects dialects ddmCtx {}
-  let state : FormatState := {
-    openDialects := dialects.toList.foldl (init := {})
-      fun a (d : Dialect) => a.insert d.name
-  }
-  let formatted := (mformat (ArgF.op cst.toAst) ctx state).format
-  if finalCtx.errors.isEmpty then
-    formatted
-  else
-    formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
-    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
+  formatWithDDM finalCtx fun ctx state =>
+    (mformat (ArgF.op cst.toAst) ctx state).format
+
+/-- Render a `Core.Procedure` to a format object using the DDM pretty-printer. -/
+def Core.formatProcedure (proc : Core.Procedure)
+    (extraFreeVars : Array String := #[]) : Std.Format :=
+  let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := initCtx.addGlobalFreeVars extraFreeVars
+  let (cst, finalCtx) := procToCST proc initCtx
+  formatWithDDM finalCtx fun ctx state =>
+    (mformat (ArgF.op cst.toAst) ctx state).format
+
+/-- Render a `Core.Command` (`CmdExt Expression`) to a format object using the DDM pretty-printer. -/
+def Core.formatCommand (cmd : Core.Command)
+    (extraFreeVars : Array String := #[]) : Std.Format :=
+  Core.formatStatement (.cmd cmd) extraFreeVars
 
 end ToCST
 
