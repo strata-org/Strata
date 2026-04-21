@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Boole.Grammar
+public import Strata.Languages.Boole.Grammar
+meta import Strata.DDM.Integration.Lean
+
+public section
 
 namespace Strata.BooleDDM
 
