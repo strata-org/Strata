@@ -47,8 +47,6 @@ procedure impureContractIsNotLegal1(x: int)
 procedure impureContractIsNotLegal2(x: int)
   requires (x := 2) == 2
 //          ^^^^^^ error: destructive assignments are not supported in functions or contracts
-//          ^^^^^^ error: destructive assignments are not supported in functions or contracts (should have been lifted)
-// TODO: remove the duplication of the above error. Is caused before it is emitted both from the function and the proof
   opaque
 {
   assert (x := 2) == 2

@@ -173,10 +173,7 @@ def translateExpr (expr : StmtExprMd)
   let md := astNodeToCoreMd expr
   let proof := (← get).proof
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
-    if isPureContext then
-      throwExprDiagnostic $ md.toDiagnostic msg
-    else
-      throwExprDiagnostic $ md.toDiagnostic s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
+    throwExprDiagnostic $ md.toDiagnostic msg DiagnosticType.StrataBug
 
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)

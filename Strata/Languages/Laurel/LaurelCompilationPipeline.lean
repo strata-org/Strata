@@ -184,7 +184,9 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     dbg_trace s!"{Std.format coreWithLaurelTypes}"
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options program coreWithLaurelTypes)
-    let allDiagnostics := translateState.diagnostics
+    -- Because of the duplication between functions and proofs, this translation is liable to create duplicate diagnostics
+    -- User errors should be checked in an earlier phase, and all dumb translation errors are Strata bugs
+    let allDiagnostics := translateState.diagnostics.eraseDups
     let allDiagnostics :=
       if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
         -- The program was suppressed but no diagnostics explain why — that's a bug.
