@@ -353,7 +353,7 @@ op command_fndef (name : Ident,
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
+  inline? "function " name typeArgs b " : " r " " indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
 // Recursive (and mutually recursive) function declarations.
 // A single recursive function is a 1-element block, just like datatypes.
@@ -366,7 +366,7 @@ op recfn_decl (name : Ident,
                @[scope(typeArgs)] r : Type,
                @[scope(b)] preconds : Seq SpecElt,
                @[scope(b)] c : r) : RecFnDecl =>
-  "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
+  "function " name typeArgs b " : " r " " indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
 
 @[scope(recfns), preRegisterFunctions(recfns)]
 op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
