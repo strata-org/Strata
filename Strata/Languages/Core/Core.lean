@@ -139,7 +139,6 @@ def symbolicEval (options : VerifyOptions) (program : Program)
       body := body
     }
     Decl.proc proc .empty
-  let oblProgram : Program := { decls := typeDecls ++ oblProcs }
 
   -- Also include function declarations and distinct constraints from the
   -- evaluation environment, so the SMT encoder can build its context
