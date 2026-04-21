@@ -57,6 +57,9 @@ inductive StepResult where
   /-- Normal completion (although E may have .error set). -/
   | normal (E : Env)
   /-- An `exit` statement propagating upward. -/
+  -- TODO: would it be better to add this state to Env instead, similar to .error?
+  -- That would make this datatype unnecessary, and it would likely
+  -- help define the semantics for .exit as well.
   | exiting (label : Option String) (E : Env)
   deriving Inhabited
 
@@ -68,7 +71,10 @@ def stuck (E : Env) (message : String) : Env :=
 /-- Walk a post-eval expression looking for a stuck redex: a fully-applied
 non-constructor factory function whose arguments are all canonical values.
 Such a call *should* have reduced during `eval` but didn't (e.g. missing body
-or `concreteEval`). Returns the stuck subexpression if found. -/
+or `concreteEval`). Returns the stuck subexpression if found.
+
+This helps errors point more precisely to where the interpreter got stuck.
+ -/
 def findStuckRedex (F : @Lambda.Factory CoreLParams) : Expression.Expr → Option Expression.Expr
   | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _ => none
   | .eq _m e1 e2 =>
