@@ -96,6 +96,7 @@ jobs:
           use-github-cache: false
         env:
           PYTHON_TEST: 1
+          PYTHON: python3
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
