@@ -12,7 +12,7 @@ open Strata
 
 namespace Strata.Laurel
 
-def multiOutputProgram := r"
+def localWithMultipleTargetsProgram := r"
 procedure twoOutputs(x: int) returns (a: int, b: int)
   ensures a == x + 1
   ensures b == x + 2
@@ -37,6 +37,6 @@ procedure callTwoOutputsFailing()
 "
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "MultiOutput" multiOutputProgram 14 processLaurelFile
+#eval testInputWithOffset "LocalWithMultipleTargets" localWithMultipleTargetsProgram 14 processLaurelFile
 
 end Strata.Laurel
