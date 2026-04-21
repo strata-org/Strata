@@ -29,7 +29,7 @@ inductive Stats where
   | visitedCalls
   | inlinedCalls
 
-derive_prefixed_toString Stats "ProcedureInlining"
+#derive_prefixed_toString Stats "ProcedureInlining"
 
 -- Gathers all labels including those in assert and assume.
 mutual
