@@ -96,13 +96,9 @@ where
       | none => laurelOp "block" #[semicolonSep stmtArgs]
       | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
     | .LocalVariable params init =>
-      -- Grammar only supports single-target varDecl; use first parameter or placeholder
-      let (nameText, ty) := match params with
-        | p :: _ => (p.name.text, p.type)
-        | [] => ("_", ⟨.TVoid, none, #[]⟩)
-      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg ty]))
+      let paramArgs := params.map (fun p => laurelOp "parameter" #[ident p.name.text, highTypeToArg p.type]) |>.toArray
       let initOpt := optionArg (init.map fun e => laurelOp "initializer" #[stmtExprToArg e])
-      laurelOp "varDecl" #[ident nameText, typeOpt, initOpt]
+      laurelOp "varDecl" #[commaSep paramArgs, initOpt]
     | .Assign targets value =>
       -- Grammar only supports single-target assign; use first target or placeholder
       let targetArg := match targets with

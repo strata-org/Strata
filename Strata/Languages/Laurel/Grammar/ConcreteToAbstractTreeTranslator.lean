@@ -227,20 +227,15 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.LiteralString s) src
     | q`Laurel.hole, #[] => return mkStmtExprMd (.Hole true none) src
     | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) src
-    | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
-      let name ← translateIdent arg0
-      let varType ← match typeArg with
-        | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
-          | q`Laurel.typeAnnotation, #[typeArg0] => translateHighType typeArg0
-          | _, _ => TransM.error s!"Variable {name} requires explicit type"
-        | _ => TransM.error s!"Variable {name} requires explicit type"
+    | q`Laurel.varDecl, #[targetsArg, assignArg] =>
+      let params ← translateParameters targetsArg
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
-          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
+          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for varDecl"
         | .option _ none => pure none
-        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
-      return mkStmtExprMd (.LocalVariable [{ name := name, type := varType }] value) src
+        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for varDecl"
+      return mkStmtExprMd (.LocalVariable params value) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
       return mkStmtExprMd (.Identifier name) src

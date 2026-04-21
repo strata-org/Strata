@@ -32,7 +32,7 @@ procedure callTwoOutputsFailing()
 {
   var p: int, q: int := twoOutputs(10);
   assert p == 99
-//^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 "
 

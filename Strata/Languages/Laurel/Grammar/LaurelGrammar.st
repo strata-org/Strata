@@ -30,8 +30,11 @@ op typeAnnotation(varType: LaurelType): TypeAnnotation => ": " varType;
 category Initializer;
 op initializer(value: StmtExpr): Initializer => " := " value:0;
 
-op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Initializer): StmtExpr
-  => @[prec(0)] "var " name varType assignment;
+category Parameter;
+op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
+
+op varDecl (targets: CommaSepBy Parameter, assignment: Option Initializer): StmtExpr
+  => @[prec(0)] "var " targets assignment;
 
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
@@ -109,9 +112,6 @@ op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): Stmt
 
 op forLoop (init: StmtExpr, cond: StmtExpr, step: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
   => "for" "(" init ";" cond ";" step ")" invariants " " body:0;
-
-category Parameter;
-op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
 
 // Composite types
 category Field;
