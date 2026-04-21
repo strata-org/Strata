@@ -412,34 +412,77 @@ Result: ✅ pass
 ---------------------------------------------------------------------
 
 /-- Extract evaluator statistics from a program without running the solver. -/
-private def getEvalStats (program : Strata.Program) : IO (Statistics × Nat) := do
+private def getEvalStats (program : Strata.Program)
+    (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
-  match Core.typeCheckAndEval .quiet coreProgram with
+  match Core.typeCheckAndEval options coreProgram with
   | .error _ => return ({}, 0)
   | .ok (envs, stats) =>
     let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
     return (stats, numObligations)
 
--- issue419TestPgm: the evaluator produces 2 paths (1 diverged ITE) and
--- 3 obligations (2 for `post`, 1 for `a`). mergeByAssertion collapses
--- the 2 `post` results into 1 displayed result, but the evaluator still
--- explored both paths.
+private def statsLine (stats : Statistics) (numObs : Nat) : String :=
+  let merged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_merged}"
+  let diverged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_diverged}"
+  let capMerged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_capMerged}"
+  let blockMerged := stats.get s!"{Core.Evaluator.Stats.blockBoundary_capMerged}"
+  s!"merged={merged} diverged={diverged} capMerged={capMerged} blockMerged={blockMerged} obligations={numObs}"
+
+-- issue419TestPgm without cap: 1 diverged ITE, 3 obligations.
 /--
-info: diverged=1 obligations=3
+info: merged=0 diverged=1 capMerged=0 blockMerged=0 obligations=3
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats issue419TestPgm
-  let key := s!"{Core.Evaluator.Stats.processIteBranches_diverged}"
-  IO.println s!"diverged={stats.get key} obligations={numObs}"
+  IO.println (statsLine stats numObs)
 
--- sequentialExitPgm: 2 diverged ITEs, 3 paths, 3 obligations for
--- `wrong_ensures_0`. mergeByAssertion collapses to 1 displayed result.
+-- issue419TestPgm with cap 1: ITE diverges (different exit labels),
+-- block boundary merges the 2 paths into 1 → 2 obligations.
 /--
-info: diverged=2 obligations=3
+info: merged=0 diverged=1 capMerged=0 blockMerged=1 obligations=2
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats issue419TestPgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+  IO.println (statsLine stats numObs)
+
+-- sequentialExitPgm without cap: 2 diverged ITEs, 3 obligations.
+/--
+info: merged=0 diverged=2 capMerged=0 blockMerged=0 obligations=3
 -/
 #guard_msgs in
 #eval do
   let (stats, numObs) ← getEvalStats sequentialExitPgm
-  let key := s!"{Core.Evaluator.Stats.processIteBranches_diverged}"
-  IO.println s!"diverged={stats.get key} obligations={numObs}"
+  IO.println (statsLine stats numObs)
+
+-- sequentialExitPgm with cap 1: both ITEs diverge (exit labels differ),
+-- block boundary condition-equality matching merges 3 → 1 obligation.
+/--
+info: merged=0 diverged=2 capMerged=0 blockMerged=1 obligations=1
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats sequentialExitPgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+  IO.println (statsLine stats numObs)
+
+-- sameExitCapPgm without cap: 1 diverged, 2 obligations.
+/--
+info: merged=0 diverged=1 capMerged=0 blockMerged=0 obligations=2
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats sameExitCapPgm
+  IO.println (statsLine stats numObs)
+
+-- sameExitCapPgm with cap 1: same-exit-label merge in processIteBranches.
+/--
+info: merged=0 diverged=0 capMerged=1 blockMerged=0 obligations=1
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats sameExitCapPgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+  IO.println (statsLine stats numObs)

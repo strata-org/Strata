@@ -563,15 +563,20 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             -- consumed paths continue with `.none` at the same control
             -- flow point. Paths in the same exit-label group are
             -- guaranteed to execute the same subsequent statements.
-            let Ewns := match Ewn.env.pathCap with
+            let (Ewns, blockStats) := match Ewn.env.pathCap with
               | .some cap =>
                 if Ewns.length > cap then
+                  let preMergeLen := Ewns.length
                   let groups := groupByExitLabel Ewns
                   let merged := groups.map (fun (_, members) =>
                     mergeCondPairs members.length members)
-                  merged.flatten
-                else Ewns
-              | .none => Ewns
+                  let Ewns := merged.flatten
+                  if Ewns.length < preMergeLen then
+                    (Ewns, blockStats.increment
+                      s!"{Evaluator.Stats.blockBoundary_capMerged}")
+                  else (Ewns, blockStats)
+                else (Ewns, blockStats)
+              | .none => (Ewns, blockStats)
             (Ewns, blockStats)
 
           | .ite cond then_ss else_ss md =>
