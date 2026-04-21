@@ -44,6 +44,10 @@ def format (stats : Statistics) : String :=
   let lines := sorted.map fun (k, v) => s!"[statistics] {k}: {v}"
   "\n".intercalate lines.toList
 
+/-- Look up a counter value, returning 0 if absent. -/
+def get (stats : Statistics) (key : String) : Int :=
+  stats.data.getD key 0
+
 end Statistics
 
 /-! ## Derive `ToString` for enum-like stat key inductives
