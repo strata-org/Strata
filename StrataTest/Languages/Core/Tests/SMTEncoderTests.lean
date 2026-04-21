@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.SMTEncoder
+meta import Strata.Languages.Core.Verifier
+
+
+meta section
 
 /-! ## Tests for SMTEncoder -/
 

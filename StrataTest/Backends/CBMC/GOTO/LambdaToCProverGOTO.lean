@@ -4,13 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+module
+meta import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 
 namespace Lambda
 
-private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+meta abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-private instance : Coe String TestParams.Identifier where
+meta instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 open LTy.Syntax LExpr.Syntax in

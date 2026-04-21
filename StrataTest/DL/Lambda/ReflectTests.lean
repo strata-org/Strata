@@ -4,7 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Reflect
+module
+public meta import Strata.DL.Lambda.Reflect
+public import Lean.Elab.Term.TermElabM
+
+
+meta section
 
 /-! ## Tests for Reflect -/
 

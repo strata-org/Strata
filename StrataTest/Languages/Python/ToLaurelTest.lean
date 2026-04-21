@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+module
+meta import Strata.Languages.Python.Specs.ToLaurel
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+
+meta section
 
 namespace Strata.Python.Specs.ToLaurel.Tests
 

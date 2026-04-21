@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.IntBoolFactory
+module
+meta import Strata.DL.Lambda.LExprEval
+meta import Strata.DL.Lambda.IntBoolFactory
+
+
+meta section
 
 /-! # Iterated substFvar bug in substFvarsFromState (LState) -/
 

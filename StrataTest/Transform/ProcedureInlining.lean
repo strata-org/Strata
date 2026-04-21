@@ -4,16 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.Transform.CoreTransform
-import Strata.Transform.ProcedureInlining
-import Strata.Util.Tactics
+module
+meta import Strata.DDM.Integration.Lean
+meta import Strata.DDM.Util.Format
+meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.Transform.CoreTransform
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Util.Tactics
+
+
+meta section
 
 open Core
 open Core.Transform

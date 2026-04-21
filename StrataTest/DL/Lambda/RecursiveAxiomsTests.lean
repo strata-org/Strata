@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.RecursiveAxioms
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.IntBoolFactory
+module
+meta import Strata.DL.Lambda.RecursiveAxioms
+meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.IntBoolFactory
+
+
+meta section
 
 /-!
 ## Tests for genRecursiveAxioms

@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LExprWF
+module
+meta import Strata.DL.Lambda.LExprWF
+
+
+meta section
 
 namespace Lambda.LExpr.WFTests
 

@@ -4,8 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.TestGen
-import Strata.Util.Random
+module
+meta import all Strata.DL.Lambda.TestGen
+meta import Strata.DL.Lambda.PlausibleHelpers
+meta import Strata.Util.Random
+
+
+meta section
 
 /-! ## Tests for TestGen -/
 

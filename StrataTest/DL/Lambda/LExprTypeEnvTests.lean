@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LExprTypeEnv
+module
+meta import Strata.DL.Lambda.LExprTypeEnv
+
+
+meta section
 
 /-! ## Tests for LExprTypeEnv -/
 

@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CallGraph
+module
+meta import Strata.Languages.Core.CallGraph
+
+
+meta section
 
 /-!
 # CallGraph.isRecursive Tests

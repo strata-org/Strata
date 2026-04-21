@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.SMT.DDMTransform.Translate
+module
+meta import Strata.DL.SMT.DDMTransform.Translate
 
 /-! ## Tests for SMT DDM Translate -/
 

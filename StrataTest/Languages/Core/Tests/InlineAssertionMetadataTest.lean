@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
-import Strata.SimpleAPI
+module
+meta import Strata.Languages.Core.Verifier
+meta import Strata.SimpleAPI
+
+
+meta section
 
 /-!
 # Inline Assertion Metadata Test

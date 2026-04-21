@@ -6,7 +6,11 @@
 
 -- Fix for https://github.com/strata-org/Strata/issues/105.
 
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.Verifier
+
+
+meta section
 
 namespace Strata
 

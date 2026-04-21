@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Python.TestExamples
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Util.Python
+module
+meta import StrataTest.Languages.Python.TestExamples
+meta import StrataTest.Util.TestDiagnostics
+meta import StrataTest.Util.Python
+
+
+meta section
 
 /-! ## Tests: None-for-typed-parameter detection
 

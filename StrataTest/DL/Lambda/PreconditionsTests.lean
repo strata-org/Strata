@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.Preconditions
+module
+meta import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.DL.Lambda.Preconditions
+
+
+meta section
 
 /-! # Preconditions Tests -/
 

@@ -3,7 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Python.Specs.Decls
+module
+meta import Strata.Languages.Python.Specs.Decls
+
+
+meta section
 
 open Strata.Python.Specs
 

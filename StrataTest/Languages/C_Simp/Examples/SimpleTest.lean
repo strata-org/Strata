@@ -4,8 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
+module
+meta import Strata.Languages.C_Simp.DDMTransform.Parse
+meta import Strata.Languages.C_Simp.Verify
+
+meta section
 
 def SimpleTestEnv :=
 #strata

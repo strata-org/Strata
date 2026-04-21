@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.SimpleAPI
+module
+meta import Strata.SimpleAPI
 
 /-! # Bodiless Procedure Inlining Test
 

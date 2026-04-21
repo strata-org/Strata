@@ -4,8 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
+module
+meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.DDM.Integration.Lean.HashCommands
+
+
+meta section
 
 namespace Strata
 

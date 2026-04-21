@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Semantics
-import Strata.DL.Lambda.LExprEval
+module
+meta import all Strata.DL.Lambda.Semantics
+meta import all Strata.DL.Lambda.LExprEval
+
+
+meta section
 
 ---------------------------------------------------------------------
 

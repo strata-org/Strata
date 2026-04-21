@@ -4,21 +4,26 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.LTy
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.Encoder
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.Factory
-import Strata.Languages.Core.Identifiers
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.Verifier
-import Strata.DL.Lambda.TestGen
-import Strata.DL.Lambda.PlausibleHelpers
+module
+meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.LExpr
+meta import Strata.DL.Lambda.LState
+meta import Strata.DL.Lambda.LTy
+meta import Strata.DL.SMT.Term
+meta import Strata.DL.SMT.Encoder
+meta import Strata.Languages.Core.Env
+meta import Strata.Languages.Core.Factory
+meta import Strata.Languages.Core.Identifiers
+meta import Strata.Languages.Core.Options
+meta import Strata.Languages.Core.SMTEncoder
+meta import Strata.Languages.Core.Verifier
+meta import Strata.DL.Lambda.TestGen
+meta import Strata.DL.Lambda.PlausibleHelpers
+meta import Plausible.Arbitrary
 import Plausible.Gen
+
+
+meta section
 
 /-! This file does random testing of Strata Core operations registered in factory, by
 (1) choosing random constant inputs to the operations
@@ -197,8 +202,6 @@ open Lambda.LTy.Syntax
 #eval (checkFactoryOps false)
 
 open Plausible TestGen
-
-deriving instance Arbitrary for Unit
 
 def test_lctx : LContext CoreLParams :=
 {

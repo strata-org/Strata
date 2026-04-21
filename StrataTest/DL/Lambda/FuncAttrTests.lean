@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.TypeFactory
+module
+meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.TypeFactory
+
+
+meta section
 
 /-!
 ## Tests for FuncAttr with non-zero paramIdx

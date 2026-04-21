@@ -4,8 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.B3.DDMFormatTests
-import Strata.Languages.B3.DDMTransform.Conversion
+module
+public import StrataTest.Languages.B3.DDMFormatTests
+meta import StrataTest.Languages.B3.DDMFormatTests
+public import Strata.Languages.B3.DDMTransform.Conversion
+meta import Strata.Languages.B3.DDMTransform.Conversion
+
+
+
+public section
 
 /-!
 # B3 Declaration Formatting Tests
@@ -84,6 +91,8 @@ def roundtripDecl (p : Program) : Format :=
   | _ => "Error: expected single command"
 
 
+
+meta section
 
 section DeclarationRoundtripTests
 
@@ -833,5 +842,7 @@ procedure incrementWithOld(inout x: int)
 #end
 
 end DeclarationRoundtripTests
+
+end -- meta section
 
 end B3

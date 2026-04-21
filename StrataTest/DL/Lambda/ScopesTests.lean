@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Scopes
+module
+meta import Strata.DL.Lambda.Scopes
+
+
+meta section
 
 /-! ## Tests for Scopes -/
 

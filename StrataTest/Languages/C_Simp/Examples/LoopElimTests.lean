@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
-import Strata.Languages.Core.CoreOp
+module
+meta import Strata.Languages.C_Simp.C_Simp
+meta import Strata.Languages.C_Simp.Verify
+meta import Strata.Languages.Core.CoreOp
+
+
+meta section
 
 /-! ## Loop elimination: deterministic guard without measure
 

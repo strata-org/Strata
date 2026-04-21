@@ -4,8 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.CmdType
-import StrataTest.DL.Imperative.ArithExpr
+module
+public import Strata.DL.Imperative.CmdType
+meta import Strata.DL.Imperative.CmdType
+public import StrataTest.DL.Imperative.ArithExpr
+meta import StrataTest.DL.Imperative.ArithExpr
+
+
+
+public section
 
 open Strata
 
@@ -117,6 +124,8 @@ instance : ToFormat (Cmds PureExpr × TEnv) where
 
 ---------------------------------------------------------------------
 
+meta section
+
 private def testProgram1 : Cmds Arith.PureExpr :=
   [.init "x" .Num (.det (.Num 0)) .empty,
    .set "x" (.det (.Plus (.Var "x" .none) (.Num 100))) .empty,
@@ -210,6 +219,8 @@ private def testProgram8 : Cmds Arith.PureExpr :=
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram8
           return format (cs, τ)
+
+end -- meta section
 
 ---------------------------------------------------------------------
 

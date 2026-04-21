@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.SMT.Translate
+module
+meta import Strata.DL.SMT.Translate
+
+
+meta section
 
 open Lean
 open Strata

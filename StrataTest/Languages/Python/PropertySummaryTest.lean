@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.Python
-import Strata.SimpleAPI
-import Strata.Languages.Python.PyFactory
+module
+meta import StrataTest.Util.Python
+meta import Strata.SimpleAPI
+meta import Strata.Languages.Python.PyFactory
+
+
+meta section
 
 /-! ## Test: Python assert messages propagate as property summaries
 

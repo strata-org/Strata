@@ -5,8 +5,12 @@
 -/
 
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.CallGraph
+module
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.CallGraph
+
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Strata

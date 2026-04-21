@@ -4,10 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.TypeFactory
-import Strata.DL.Lambda.Lambda
+module
+meta import Strata.DL.Lambda.LExprEval
+meta import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.DL.Lambda.TypeFactory
+meta import Strata.DL.Lambda.Lambda
+
+
+meta section
 
 /-!
 ## Tests for `eql`

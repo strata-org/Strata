@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.Verifier
+
+
+meta section
 
 /-!
 # Polymorphic Function Integration Tests
@@ -204,7 +208,7 @@ spec {
 #end
 
 /--
-info: error: (4726-4749) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4753-4776) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in

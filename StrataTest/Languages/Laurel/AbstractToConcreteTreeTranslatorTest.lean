@@ -9,12 +9,16 @@ Tests that the Laurel AST to DDM concrete syntax tree conversion
 (programToStrata) preserves program structure through roundtripping.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+module
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)

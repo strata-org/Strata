@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.Regex.ReParser
+module
+meta import Strata.Languages.Python.Regex.ReParser
 
 /-! ## Tests for Python Regex ReParser -/
 

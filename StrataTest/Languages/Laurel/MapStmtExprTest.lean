@@ -9,13 +9,17 @@ Tests for the generic `mapStmtExprM` traversal. Verifies that `mapStmtExpr id`
 is the identity: applying it to a parsed program produces identical output.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.MapStmtExpr
-import Strata.Languages.Laurel.Resolution
+module
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+meta import Strata.Languages.Laurel.MapStmtExpr
+meta import Strata.Languages.Laurel.Resolution
+
+
+meta section
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)

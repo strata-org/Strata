@@ -5,7 +5,11 @@
 -/
 
 
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.Verifier
+
+
+meta section
 
 ---------------------------------------------------------------------
 open Strata

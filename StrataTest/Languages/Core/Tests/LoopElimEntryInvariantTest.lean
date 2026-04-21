@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.Verifier
 
+
+
+meta section
 
 -- Regression tests for LoopElim entry invariant soundness:
 -- The loop-to-passive transformation must check the loop invariant unconditionally

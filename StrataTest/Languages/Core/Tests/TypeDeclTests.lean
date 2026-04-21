@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.TypeDecl
+module
+meta import Strata.Languages.Core.TypeDecl
 
 /-! ## Tests for TypeDecl -/
 

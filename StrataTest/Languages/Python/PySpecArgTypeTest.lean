@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.Specs.DDM
+module
+meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Python.Specs.DDM
+
+
+meta section
 
 /-! ## Test: specArgToFuncDeclArg preserves original parameter types
 

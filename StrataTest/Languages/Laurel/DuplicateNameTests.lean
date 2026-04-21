@@ -9,12 +9,15 @@ Tests that the resolution pass detects duplicate names in the same scope.
 Uses inline error annotations like the other Laurel tests (e.g. T1_AssertFalse).
 -/
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Resolution
+module
+meta import StrataTest.Util.TestDiagnostics
+meta import Strata.DDM.Elab
+meta import Strata.DDM.BuiltinDialects.Init
+meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+meta import Strata.Languages.Laurel.Resolution
+
+meta section
 
 open StrataTest.Util
 open Strata
@@ -174,4 +177,5 @@ datatype Foo { A }
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "DupCompositeDatatype" dupCompositeDatatype 135 processResolution
 
-end Laurel
+end Strata.Laurel
+end

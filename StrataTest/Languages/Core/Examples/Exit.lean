@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.Verifier
-import StrataTest.Languages.Core.Examples.Loops
+module
+meta import Strata.Languages.Core.Core
+meta import Strata.Languages.Core.Verifier
+meta import StrataTest.Languages.Core.Examples.Loops
+
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Strata

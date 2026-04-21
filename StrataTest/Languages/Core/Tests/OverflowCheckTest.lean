@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+module
 import Strata.Languages.Core.Factory
-import Strata.DL.Lambda.Preconditions
-import Strata.Transform.PrecondElim
+meta import Strata.DL.Lambda.Preconditions
+meta import Strata.Transform.PrecondElim
+
+
+meta section
 
 /-! # Tests: overflow safe operators
 

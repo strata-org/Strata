@@ -4,10 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.DL.Imperative.Arith
-import Strata.DL.Imperative.EvalContext
-import Strata.DL.SMT.SMT
+module
+public import StrataTest.DL.Imperative.Arith
+meta import StrataTest.DL.Imperative.Arith
+meta import Strata.DL.Imperative.EvalContext
+meta import Strata.DL.SMT.SMT
+public import Strata.DL.SMT.TermType
+public import Strata.DL.SMT.Term
+public import Strata.DL.SMT.Solver
+public import Strata.DL.SMT.Encoder
+import Strata.DL.SMT.Factory
+import Strata.DL.SMT.Encoder
 import Init.Data.String.Extra
+
+public section
 
 namespace Arith
 

@@ -4,9 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.IntBoolFactory
-import Strata.DL.Lambda.TypeFactory
+module
+meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.IntBoolFactory
+meta import Strata.DL.Lambda.TypeFactory
+
+
+meta section
 
 /-!
 # TypeFactory Tests

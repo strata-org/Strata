@@ -4,7 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+module
+public import Strata.DDM.HNF
 import Strata.DDM.Integration.Lean
+public import Strata.DDM.Integration.Lean.OfAstM
+
+public section
+
 ---------------------------------------------------------------------
 
 /-! # Getting Started with `ArithPrograms`

@@ -6,8 +6,12 @@
 
 
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.IntBoolFactory
+module
+meta import Strata.DL.Lambda.Lambda
+meta import Strata.DL.Lambda.IntBoolFactory
+
+
+meta section
 
 ---------------------------------------------------------------------
 
