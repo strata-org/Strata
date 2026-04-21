@@ -505,4 +505,21 @@ def test() -> None:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
+-- PreludeInfo.ofLaurelProgram should strip the $in_ prefix from parameter
+-- names so that cross-module keyword argument calls use the original names.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def add(x: int, y: int) -> int:
+    return x + y
+"
+  let laurel ← processPythonToLaurel pythonCmd (stringInputContext "test.py" program)
+  let prelude := Python.PreludeInfo.ofLaurelProgram laurel
+  match prelude.functionSignatures.find? (fun f => f.name == "add") with
+  | none => throw <| .userError "add not found in functionSignatures"
+  | some sig =>
+    for arg in sig.args do
+      if arg.name.startsWith "$in_" then
+        throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
+
 end Strata.Python.VerifyPythonTest

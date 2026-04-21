@@ -414,7 +414,7 @@ theorem denoteArgs_get
       simp [denoteArgs]
     | succ n =>
       simp at h_e h_ty
-      simp only [denoteArgs, HList.get_cons_succ]
+      simp only [denoteArgs]
       exact ih n h_e h_ty (by simpa using h_sort)
 
 /-! ### withArgs lemmas -/

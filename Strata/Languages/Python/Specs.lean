@@ -403,7 +403,7 @@ structure TypeTranslator where
 
 def checkEq {α : Type} (loc : SourceRange) (name : String) (as : Array α) (n : Nat) :
     PySpecM (Option (PULift.{1, 0} (as.size = n))) :=
-  match inferInstanceAs (Decidable (as.size = n)) with
+  match decideProp (as.size = n) with
   | .isTrue p =>
     pure (some ⟨p⟩)
   | .isFalse _ => do
@@ -553,7 +553,7 @@ def translateSubscript (paramLoc : SourceRange) (paramType : String)
     specError paramLoc s!"Unknown parameterized type {paramType}."
     return default
   | some (.typeValue tpp) =>
-    let .isTrue tpp_sizep := inferInstanceAs (Decidable (tpp.atoms.size = 1))
+    let .isTrue tpp_sizep := decideProp (tpp.atoms.size = 1)
       | specError paramLoc s!"Expected type name"
         return default
     let tpa := tpp.atoms[0]
@@ -624,7 +624,7 @@ def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
     assert! kind.isNone
     translateConstant constLoc value
   | .Dict loc ⟨_, keys⟩ ⟨_, values⟩ =>
-    let .isTrue size_eq := inferInstanceAs (Decidable (keys.size = values.size))
+    let .isTrue size_eq := decideProp (keys.size = values.size)
       | specError loc s!"Dict key value mismatch"; return default
     let  m : Array (String × SpecValue) ← Array.ofFnM fun (⟨i, _⟩ : Fin keys.size) => do
       let key ← translateDictKey loc keys[i]
@@ -1237,7 +1237,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     else
       specError fnLoc s!"internal: bad index"; return default
 
-  let .isTrue kw_bnd := inferInstanceAs (Decidable (kwonly.size = kw_defaults.size))
+  let .isTrue kw_bnd := decideProp (kwonly.size = kw_defaults.size)
     | specError fnLoc s!"Keyword only arguments must have defaults."; return default
   assert! vararg.isNone
   let min_default := argc - defaults.size
@@ -1663,7 +1663,7 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       let (success, v) ← runChecked <| pySpecValue value
       if not success then
         continue
-      let .isTrue eq := inferInstanceAs (Decidable (targets.size = 1))
+      let .isTrue eq := decideProp (targets.size = 1)
         | specError loc s!"Only single target expected."; continue
       let .Name nameLoc ⟨_, name⟩ _ := targets[0]
         | specError loc s!"Unsupported target {targets[0]}"; continue

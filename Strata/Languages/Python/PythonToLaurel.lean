@@ -1794,6 +1794,10 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
     }
   | _ => throw (.internalError "Expected FunctionDef")
 
+/-- Prefix applied to Core input parameters so the original name can be used
+    for a mutable local copy inside the procedure body. -/
+def paramInputPrefix : String := "$in_"
+
 def getSingleTypeConstraint (var: String) (ty: String): Option StmtExprMd :=
   if isOfAnyType ty && ty ≠ "Any" then mkStmtExprMd (.StaticCall ("Any..isfrom_" ++ ty) [freeVar var]) else none
 
@@ -1803,18 +1807,16 @@ def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   | [expr] => expr
   | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
 
-def getUnionTypeConstraint (var: String) (md: MetaData) (tys: List String) (funcname: String): Option StmtExprMd :=
+def getUnionTypeConstraint (var: String) (md: MetaData) (tys: List String) (funcname: String)
+    (displayName : String := var): Option StmtExprMd :=
   let type_constraints := tys.filterMap (getSingleTypeConstraint var)
   if type_constraints.isEmpty then none else
-    let md: MetaData := md.withPropertySummary $ "(" ++ funcname ++ " requires) Type constraint of " ++ var
+    let md: MetaData := md.withPropertySummary $ "(" ++ funcname ++ " requires) Type constraint of " ++ displayName
     some {createBoolOrExpr type_constraints with md:=md}
 
 def getReturnTypeEnsure (md: MetaData) (tys: List String) (funcname: String): Option StmtExprMd :=
   getUnionTypeConstraint PyLauFuncReturnVar md tys funcname
   |>.map fun c => {c with md := md.withPropertySummary $ "(" ++ funcname ++ " ensures) Return type constraint"}
-
-def getInputTypePreconditions (funcDecl : PythonFunctionDecl): List StmtExprMd :=
-  funcDecl.args.filterMap (λ arg => getUnionTypeConstraint arg.name arg.md arg.tys funcDecl.name)
 
 /-- Translate a Python function body: collect all variable declarations, hoist them
     to the top, and translate the remaining statements. --/
@@ -1827,6 +1829,21 @@ def translateFunctionBody (ctx : TranslationContext) (inputTypes : List (String 
     let bodyStmts := prependExceptHandlingHelper (varDecls ++ bodyStmts)
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
     return (mkStmtExprMd (StmtExpr.Block bodyStmts none), newctx)
+
+/-- Rename input parameters with `paramInputPrefix` and produce local-copy
+    statements so the function body can freely modify the original names.
+    Parameters for which `exclude` returns true are left unchanged (e.g. `self`). -/
+def renameInputParams (inputs : List Parameter) (exclude : String → Bool := fun _ => false)
+    : List Parameter × List StmtExprMd :=
+  let renamed := inputs.map fun p =>
+    if exclude p.name.text then p
+    else { p with name := mkId (paramInputPrefix ++ p.name.text) }
+  let copies := inputs.filter (fun p => !exclude p.name.text) |>.map fun p =>
+    let orig : String := p.name.text
+    let prefixed : String := paramInputPrefix ++ orig
+    mkStmtExprMd (StmtExpr.LocalVariable (mkId orig) p.type
+      (some (mkStmtExprMd (StmtExpr.Identifier prefixed))))
+  (renamed, copies)
 
 /-- Translate Python function to Laurel Procedure -/
 def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
@@ -1845,7 +1862,8 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     | some kwargs => inputs:= inputs ++ [{ name := kwargs, type := mkCoreType PyLauType.DictStrAny}]
     | _ => pure ()
 
-    let typeConstraintPreconditions := getInputTypePreconditions funcDecl
+    let typeConstraintPreconditions := funcDecl.args.filterMap
+      (fun arg => getUnionTypeConstraint (paramInputPrefix ++ arg.name) arg.md arg.tys funcDecl.name arg.name)
     let typeConstraintPostcondition :=
       match funcDecl.ret.map fun (tys, md) => getReturnTypeEnsure md tys funcDecl.name with
         | some (some constraint) => [constraint]
@@ -1860,14 +1878,16 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       match arg.tys with | [ty] => (arg.name, ty) | _ => (arg.name, PyLauType.Any))
     let (bodyBlock, newCtx) ←  translateFunctionBody ctx inputTypes body
     let noneReturn := mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier PyLauFuncReturnVar)] AnyNone)
+    let (renamedInputs, paramCopies) := renameInputParams inputs
+      (match funcDecl.kwargsName with | some kw => (· == kw) | none => fun _ => false)
     let bodyBlock : StmtExprMd := match bodyBlock.val with
-    | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn::bodyStmts) label}
+    | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn :: paramCopies ++ bodyStmts) label}
     | _ => bodyBlock
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
       name := { text := funcDecl.name, md := sourceRangeToMetaData ctx.filePath sourceRange }
-      inputs := inputs
+      inputs := renamedInputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
       decreases := none
@@ -1967,10 +1987,13 @@ def translateMethod (ctx : TranslationContext) (className : String)
           match arg with
           | .mk_arg _ paramName _paramAnnotation _ =>
             inputs := inputs ++ [{name := paramName.val, type := AnyTy}]
+    let mut kwargsName : Option String := none
     match args with
       | .mk_arguments _ _ _ _ _ _ kwargs _ =>
           match kwargs.val with
-          | some (.mk_arg _ name _ _ ) => inputs:= inputs ++ [{ name := name.val, type := mkCoreType PyLauType.DictStrAny }]
+          | some (.mk_arg _ name _ _ ) =>
+            inputs:= inputs ++ [{ name := name.val, type := mkCoreType PyLauType.DictStrAny }]
+            kwargsName := some name.val
           | _ => pure ()
 
     -- Translate return type
@@ -1988,20 +2011,8 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let (varDecls, ctxWithClass) ←  createVarDeclStmtsAndCtx ctxWithClass newDecls
     let (_, bodyStmts) ← translateStmtList ctxWithClass body.val.toList
     let bodyStmts := prependExceptHandlingHelper (varDecls ++ bodyStmts)
-    -- In Python, parameters are mutable local variables.  In Core, input
-    -- parameters cannot be modified.  To bridge this gap we rename each
-    -- non-self input parameter to "$in_<name>" and prepend a local variable
-    -- declaration  var <name> := $in_<name>  so the body works with a
-    -- freely-modifiable local copy.
-    let nonSelfParams := inputs.filter (fun p => p.name.text != "self")
-    let renamedInputs := inputs.map fun p =>
-      if p.name.text == "self" then p
-      else { p with name := mkId ("$in_" ++ p.name.text) }
-    let paramCopies := nonSelfParams.map fun p =>
-      let origName := p.name.text
-      let renamedName := "$in_" ++ origName
-      mkStmtExprMd (StmtExpr.LocalVariable origName p.type
-        (some (mkStmtExprMd (StmtExpr.Identifier renamedName))))
+    let (renamedInputs, paramCopies) := renameInputParams inputs
+      (fun n => n == "self" || kwargsName == some n)
     let bodyStmts := paramCopies ++ bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
@@ -2246,7 +2257,10 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       else
         let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
         let args := p.inputs.map fun param =>
-          {name:= param.name.text, md:= default, tys:= [getHighTypeName param.type.val], default:= some noneexpr}
+          let argName := if param.name.text.startsWith paramInputPrefix then
+            (param.name.text.drop paramInputPrefix.length).toString
+          else param.name.text
+          {name:= argName, md:= default, tys:= [getHighTypeName param.type.val], default:= some noneexpr}
         let ret := p.outputs.head?.map fun param => ([getHighTypeName param.type.val], defaultMetadata)
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
