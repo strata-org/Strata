@@ -43,7 +43,8 @@ spec {
   ensures [Test_ensures_1]: x == y;
   ensures [Test_ensures_2]: g == old g;
   } {
-  y := x || x;};
+  y := x || x;
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.fst

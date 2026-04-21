@@ -46,9 +46,12 @@ procedure test (cond : bool, x : int, y : int) returns ()
 {
   if (cond) {
     function f (a : int) : int { a + x }
-    var r1 : int := f(10);} else {
+    var r1 : int := f(10);
+  } else {
     function f (a : int) : int { a + y }
-    var r2 : int := f(20);}};
+    var r2 : int := f(20);
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue436Pgm).stripMetaData))
@@ -91,8 +94,10 @@ procedure test () returns ()
   blk: {
     var y : int;
     y := 2;
-    x := y;}
-  assert [use_x]: x == 2;};
+    x := y;
+  }
+  assert [use_x]: x == 2;
+};
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm blockScopePgm).stripMetaData))
@@ -129,7 +134,8 @@ procedure test () returns ()
   var x : int := 1;
   function safeDiv (y : int) : int { y div x }
   assert [assert_0]: 5 div x > 0;
-  var z : int := safeDiv(5);};
+  var z : int := safeDiv(5);
+};
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue445Pgm).stripMetaData))

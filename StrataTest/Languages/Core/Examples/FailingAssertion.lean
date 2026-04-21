@@ -46,7 +46,8 @@ spec {
   modifies a;
   requires [P_requires_1]: a[0] == 0;
   } {
-  assert [assert_0]: a[0] == 1;};
+  assert [assert_0]: a[0] == 1;
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram failing) |>.fst

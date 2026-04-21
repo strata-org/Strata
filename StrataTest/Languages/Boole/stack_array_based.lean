@@ -129,15 +129,19 @@ spec {
   ensures top == 0;
   } {
   n := cap;
-  top := 0;};
+  top := 0;
+};
  procedure StackEmpty () returns (b : bool)
 spec {
   ensures b ==> top == 0;
   ensures top == 0 ==> b;
   } {
   if (top == 0) {
-    b := true;} else {
-    b := false;}};
+    b := true;
+  } else {
+    b := false;
+  }
+};
  procedure Push (x : int) returns ()
 spec {
   requires top < n;
@@ -148,7 +152,8 @@ spec {
   ensures ∀ i : int :: 1 <= i && i <= old top ==> S[i] == old (S[i]);
   } {
   top := top + 1;
-  S := S[top:=x];};
+  S := S[top:=x];
+};
  procedure Pop () returns (x : int)
 spec {
   requires top > 0;
@@ -157,7 +162,8 @@ spec {
   ensures x == old (S[old top]);
   } {
   x := S[top];
-  top := top - 1;};
+  top := top - 1;
+};
 
 [Strata.Core] Type checking succeeded.
 

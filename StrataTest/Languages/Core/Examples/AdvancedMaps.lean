@@ -78,7 +78,8 @@ spec {
   assert [a0neq2]: !(a[0] == 2);
   b := b[true:=-1];
   assert [bTrueEqTrue]: b[true] == -1;
-  assert [mix]: a[1] == -(b[true]);};
+  assert [mix]: a[1] == -(b[true]);
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst

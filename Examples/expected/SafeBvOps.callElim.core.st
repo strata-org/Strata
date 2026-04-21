@@ -14,4 +14,5 @@ procedure safe_bv_ops (x : bv32, y : bv32) returns (r : bv32)
   d := safe_neg x;
   e := x safesdiv y;
   f := x safesmod y;
-  r := a;};
+  r := a;
+};

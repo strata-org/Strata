@@ -20,7 +20,8 @@ info: ok: (procedure P (x : int) returns (y : int)
    requires [|0_lt_x|]: 0 < x;
    ensures [ret_y_lt_0]: y < 0;
    } {
-   y := 0 - x;};
+   y := 0 - x;
+ };
  ,
  context:
  types:   ⏎

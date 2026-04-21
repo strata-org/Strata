@@ -96,28 +96,35 @@ spec {
   if (i < n) {
     first_iter_asserts: {
       assert [entry_invariant_0]: i <= n && i * (i - 1) div 2 == sum;
-      assert [assert_measure_pos]: n - i >= 0;}
+      assert [assert_measure_pos]: n - i >= 0;
+    }
     |arbitrary iter facts|: {
       |loop havoc|: {
         havoc sum;
-        havoc i;}
+        havoc i;
+      }
       arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant_0]: i <= n && i * (i - 1) div 2 == sum;
-        assume [assume_measure_pos]: n - i >= 0;}
+        assume [assume_measure_pos]: n - i >= 0;
+      }
       var |special-name-for-old-measure-value| : int := n - i;
       sum := sum + i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
-      assert [arbitrary_iter_maintain_invariant_0]: i <= n && i * (i - 1) div 2 == sum;}
+      assert [arbitrary_iter_maintain_invariant_0]: i <= n && i * (i - 1) div 2 == sum;
+    }
     |loop havoc|: {
       havoc sum;
-      havoc i;}
+      havoc i;
+    }
     assume [not_guard]: !(i < n);
-    assume [invariant_0]: i <= n && i * (i - 1) div 2 == sum;}
+    assume [invariant_0]: i <= n && i * (i - 1) div 2 == sum;
+  }
   assert [sum_assert]: n * (n - 1) div 2 == sum;
-  return := sum;};
+  return := sum;
+};
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program LoopSimplePgm)

@@ -543,7 +543,8 @@ function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure Test () returns ()
 {
   var m : (Map int bool);
-  m := makePair(identity(42), identity(true));};
+  m := makePair(identity(42), identity(true));
+};
 -/
 #guard_msgs in
 #eval do

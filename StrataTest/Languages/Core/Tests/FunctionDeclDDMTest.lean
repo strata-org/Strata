@@ -34,7 +34,8 @@ procedure testFuncDecl (c : int) returns ()
   function double (x : int) : int { x + x + c }
   var y : int := 5;
   var result : int := double(y);
-  assert result == 12;};
+  assert result == 12;
+};
 -/
 #guard_msgs in
 #eval IO.println funcDeclStmtPgm
@@ -68,7 +69,8 @@ info: program Core;
   function double (x : int) : int { x + x + c }
   var y : int := 5;
   var result : int := double(y);
-  assert result == 12;});
+  assert result == 12;
+});
 -/
 #guard_msgs in
 #eval IO.println funcDeclBlockPgm

@@ -271,7 +271,7 @@ op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " f "(" expr ")" ";";
 
 @[scope(c)]
-op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "}";
+op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
 op exit_statement (label : Ident) : Statement => "exit " label ";";
 op exit_unlabeled_statement : Statement => "exit;";

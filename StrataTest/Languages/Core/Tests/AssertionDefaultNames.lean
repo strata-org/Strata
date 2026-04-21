@@ -37,7 +37,8 @@ procedure Test (x : int) returns ()
 spec {
   requires [Test_requires_0]: x == 1;
   } {
-  assert [assert_0]: x == 1;};
+  assert [assert_0]: x == 1;
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram assertionNames) |>.fst

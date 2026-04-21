@@ -10,4 +10,5 @@ procedure TestF (x : int) returns (result : int)
 spec {
   ensures [result_positive]: result > 0;
   } {
-  result := f(x);};
+  result := f(x);
+};

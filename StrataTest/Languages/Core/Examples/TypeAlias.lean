@@ -71,7 +71,8 @@ procedure P () returns ()
 {
   assume [fooConst1_value]: fooConst1 == fooVal;
   assume [fooConst2_value]: fooConst2 == fooVal;
-  assert [fooAssertion]: fooConst1 == fooConst2;};
+  assert [fooAssertion]: fooConst1 == fooConst2;
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.fst
