@@ -245,9 +245,7 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
 /-- Convert `LTy` to `CoreType` -/
 def lTyToCoreType {M} [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
   match ty with
-  | .forAll _typeVars monoTy => do
-    let result ← lmonoTyToCoreType monoTy
-    pure result
+  | .forAll _typeVars monoTy => lmonoTyToCoreType monoTy
 
 /-- Convert a type constructor declaration to CST -/
 def typeConArgsToCST {M} [Inhabited M] (tcons : TypeConstructor)
@@ -924,7 +922,7 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.
-def recreateGlobalContext (ctx : ToCSTContext M)
+private def recreateGlobalContext (ctx : ToCSTContext M)
     : GlobalContext :=
   let allFreeVars := ctx.allFreeVars
   let (nameMap, _) := allFreeVars.foldl
@@ -1003,6 +1001,7 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
     (fmtErrors := fun errs => "\n" ++ "-- Errors: " ++
       Std.Format.joinSep (errs.toList.map (Std.format ∘ toString)) "; ")
 
+/-- Render a `Core.Statement` to a format object using the DDM pretty-printer. -/
 def Core.formatStatement (stmt : Core.Statement)
     (extraFreeVars : Array String := #[]) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
