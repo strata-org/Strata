@@ -572,3 +572,64 @@ info: merged=0 diverged=4 stmtMerged=4 obligations=1
   let (stats, numObs) ← getEvalStats exponentialItePgm
     (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
   IO.println (statsLine stats numObs)
+
+-- With cap 2: each block produces 2 paths (at the cap), so the
+-- pre-statement merge doesn't fire. The fold accumulator merge
+-- fires when independent branches combine, but obligations are
+-- already generated inside each recursive call.
+/--
+info: merged=0 diverged=15 stmtMerged=5 obligations=16
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats exponentialItePgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 2 })
+  IO.println (statsLine stats numObs)
+
+-- If-then-else where both branches produce multiple results (nested
+-- ITE with exit inside each branch). The special-case merge in
+-- processIteBranches doesn't fire because each branch returns 2
+-- results. Without cap: 2×2 = 4 paths per ITE, 4^2 = 16 for two.
+def nestedItePgm :=
+#strata
+program Core;
+procedure p(c1 : bool, c2 : bool, x : bool, y : bool) returns (r : int)
+spec { ensures [post]: (r >= 0); }
+{
+  b1: {
+    if (c1) {
+      inner1: { if (x) { r := 1; exit inner1; } r := 2; }
+    } else {
+      inner2: { if (y) { r := 3; exit inner2; } r := 4; }
+    }
+  }
+  b2: {
+    if (c2) {
+      inner3: { if (x) { r := r + 10; exit inner3; } r := r + 20; }
+    } else {
+      inner4: { if (y) { r := r + 30; exit inner4; } r := r + 40; }
+    }
+  }
+};
+#end
+
+-- Without cap: 16 paths (4 per outer ITE × 4 across two ITEs),
+-- 15 diverged (exponential multiplication of inner paths).
+/--
+info: merged=0 diverged=15 stmtMerged=0 obligations=16
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats nestedItePgm
+  IO.println (statsLine stats numObs)
+
+-- With cap 1: inner ITEs merge (special case), outer ITEs diverge
+-- but between-statement merge collapses paths after each block.
+/--
+info: merged=2 diverged=4 stmtMerged=4 obligations=1
+-/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats nestedItePgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+  IO.println (statsLine stats numObs)

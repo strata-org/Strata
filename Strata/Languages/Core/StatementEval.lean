@@ -606,11 +606,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           | .exit l md => ([{ Ewn with exitLabel := .some l}], noStats)
 
       let stmtStats := stmtStats.increment s!"{Evaluator.Stats.simulatedStmts}"
-      -- Between-statement merge: when pathCap is active and the number
-      -- of continuing (.none exit) paths exceeds the cap, merge them
-      -- before feeding to subsequent statements. Exiting paths are
-      -- left untouched — they skip remaining statements via processExit
-      -- and accumulate at most linearly.
+      -- Path cap: merge continuing (.none exit) paths in EAndNexts
+      -- before feeding them to subsequent statements. This bounds
+      -- the total path count — each subsequent statement sees at most
+      -- `cap` continuing paths.
       let (EAndNexts, stmtStats) := match Ewn.env.pathCap with
         | .some cap =>
           let (noExit, hasExit) :=
@@ -624,7 +623,18 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
       let (continuations, contStats) := EAndNexts.foldl
         (fun (acc, statsAcc) ewn =>
           let (results, s) := go' ewn rest ewn.exitLabel
-          (acc ++ results, statsAcc.merge s))
+          let acc := acc ++ results
+          let statsAcc := statsAcc.merge s
+          match Ewn.env.pathCap with
+          | .some cap =>
+            let (noExit, hasExit) :=
+              acc.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
+            if noExit.length > cap then
+              let merged := mergeCondPairs noExit.length noExit
+              (merged ++ hasExit,
+               statsAcc.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
+            else (acc, statsAcc)
+          | .none => (acc, statsAcc))
         ([], stmtStats)
       (continuations, contStats)
   termination_by (steps, Imperative.Block.sizeOf ss)
