@@ -292,10 +292,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
 
-  /-- Operational semantics: eval inputs → snapshot lhs → init callee
-      params → check pre → run body → check post → write outputs back.
-
-      Arguments are matched positionally: `inArgs` (from `getInputExprs`)
+  /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
       aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
       with `p.header.outputs`. -/
   | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' ρ' md} :

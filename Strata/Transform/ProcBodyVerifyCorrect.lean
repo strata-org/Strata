@@ -409,7 +409,7 @@ private theorem mkOld_name_injective {a b : Expression.Ident}
   have h1 := congrArg Lambda.Identifier.name h
   simp [CoreIdent.mkOld, CoreIdent.oldStr] at h1
   have h2 := congrArg String.toList h1
-  simp [String.toList_append] at h2
+  simp at h2
   have h3 := String.ext h2
   cases a; cases b; simp_all
 

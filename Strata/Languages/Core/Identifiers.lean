@@ -32,9 +32,11 @@ instance : Coe String CoreIdent where
 def CoreIdent.toPretty (x : CoreIdent) : String := x.name
 
 /-- String used to prefix identifiers representing pre-state inout parameters. -/
+@[expose]
 def CoreIdent.oldStr : String := "old "
 
 /-- Create the `old name` identifier for an inout parameter named `name`. -/
+@[expose]
 def CoreIdent.mkOld (name : String) : CoreIdent := ⟨CoreIdent.oldStr ++ name, ()⟩
 
 /-- `g ≠ CoreIdent.mkOld g.name` because `"old " ++ s` is strictly longer than `s`. -/

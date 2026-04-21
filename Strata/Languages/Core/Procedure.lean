@@ -186,11 +186,11 @@ structure Procedure.Header where
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).
     These are the parameters for which `old x` snapshots are meaningful. -/
-def Procedure.Header.getInoutParams (h : Procedure.Header) : @LMonoTySignature Unit :=
+@[expose] def Procedure.Header.getInoutParams (h : Procedure.Header) : @LMonoTySignature Unit :=
   h.inputs.filter fun (id, _) => (ListMap.keys h.outputs).contains id
 
 /-- Output parameters that do NOT appear in `inputs` (output-only parameters). -/
-def Procedure.Header.getOutputOnlyParams (h : Procedure.Header) : @LMonoTySignature Unit :=
+@[expose] def Procedure.Header.getOutputOnlyParams (h : Procedure.Header) : @LMonoTySignature Unit :=
   h.outputs.filter fun (id, _) => !(ListMap.keys h.inputs).contains id
 
 instance : ToFormat Procedure.Header where
