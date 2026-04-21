@@ -1714,6 +1714,7 @@ partial def getArgumentTypes (arg: Python.expr SourceRange) : Except Translation
     let subscriptRoot := match subscriptList[0]! with
     | .Attribute _ _ {val:= "Dict", ..} _ => "Dict"
     | .Attribute _ _ {val:= "List", ..} _ => "List"
+    | .Attribute _ _ {val:= "Callable", ..} _ => "Callable"
     | _ => pyExprToString subscriptList[0]!
     let sliceHead := subscriptList[1]!
     match subscriptRoot with
