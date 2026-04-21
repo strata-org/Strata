@@ -7,6 +7,7 @@ module
 
 import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+public import Strata.Util.Statistics
 public import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
@@ -357,17 +358,19 @@ public def splitProcNames (prog : Core.Program)
     Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`. -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
-    : IO (Option Core.Program × List DiagnosticModel × Laurel.Program) := do
-  let (coreOption, errors, lowered) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+    (profile : Bool := false)
+    : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
+  let (coreOption, errors, lowered, stats) ←
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, profile } combined
       (keepAllFilesPrefix := keepAllFilesPrefix)
-  return (coreOption.map appendCorePartOfRuntime, errors, lowered)
+  return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
+    (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel) := do
-  let (coreOption, errors, _) ← translateCombinedLaurelWithLowered combined
+  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined (profile := profile)
   return (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
