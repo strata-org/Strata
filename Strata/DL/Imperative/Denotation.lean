@@ -4,10 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.Stmt
+module
+
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.Stmt
 
 namespace Imperative
+
+public section Classes
 
 structure TypedId (Id : Type) where
   name : Id
@@ -45,15 +49,30 @@ def whileLoop {m} [MonadIter m] (c : m Bool) (body : m Unit) : m Unit :=
       return .inr ()
   ) ()
 
+end Classes
+
+public section Denotations
+
 structure DenotationContext (P : PureExpr) (m : Type → Type) [MonadMemRead P.Ident m] where
-  env : P.Ident → Type
-  denoteExpr : P.Expr → (t : Type) → m t
+  tyTy : Type
+  boolType : tyTy
+  denoteType : tyTy → Type
+  env : P.Ident → tyTy
+  denoteExpr : P.Expr → (t : tyTy) → m (denoteType t)
+  denoteBoolBool : denoteType boolType = Bool
+
+def mcast {α β : Type} [Monad m] (h : Eq α β) (a : m α) : m β := do
+  return (cast h (← a))
+
+def mcastBool {P : PureExpr} [Monad m] [MonadMemRead P.Ident m] (ctx : DenotationContext P m) (a : m (ctx.denoteType ctx.boolType)) : m Bool :=
+  mcast ctx.denoteBoolBool a
 
 def denoteExprOrNondet
-  [MonadNondet m] [MonadMemRead P.Ident m] :
-  DenotationContext P m → ExprOrNondet P → (ty : Type) → m ty
-| ctx, .det e,  ty => ctx.denoteExpr e ty
-| _,   .nondet, ty => MonadNondet.choose ty
+  [MonadNondet m] [MonadMemRead P.Ident m]
+  (ctx : DenotationContext P m) (e? : ExprOrNondet P) (ty : ctx.tyTy) : m (ctx.denoteType ty) :=
+  match e? with
+  | .det e => ctx.denoteExpr e ty
+  | .nondet => MonadNondet.choose (ctx.denoteType ty)
 
 def writeExprOrNondet
   {m}
@@ -64,7 +83,7 @@ def writeExprOrNondet
   (x : P.Ident)
   (e? : ExprOrNondet P) : m Unit := do
     let ty := ctx.env x
-    MonadMemory.write ⟨ x, ty ⟩ (← denoteExprOrNondet ctx e? ty)
+    MonadMemory.write ⟨ x, ctx.denoteType ty ⟩ (← denoteExprOrNondet ctx e? ty)
 
 def denoteCmd
   {m}
@@ -75,8 +94,8 @@ def denoteCmd
   (ctx : DenotationContext P m)
   (c : Cmd P) : m Unit :=
   match c with
-  | .assert _ e _  => do MonadAssert.assert (← ctx.denoteExpr e Bool)
-  | .assume _ e _  => do MonadAssume.assume (← ctx.denoteExpr e Bool)
+  | .assert _ e _  => do MonadAssert.assert (← mcastBool ctx (ctx.denoteExpr e ctx.boolType))
+  | .assume _ e _  => do MonadAssume.assume (← mcastBool ctx (ctx.denoteExpr e ctx.boolType))
   | .set x e? _    => writeExprOrNondet ctx x e?
   | .init x _ e? _ => writeExprOrNondet ctx x e?
   | .cover _ _ _   => pure ()
@@ -105,13 +124,13 @@ def denoteStmt
         | .none => return ())
   | .exit l? _ => MonadExcept.throw l?
   | .ite c? t e _ => do
-    if (← denoteExprOrNondet ctx c? Bool) then
+    if (← mcastBool ctx (denoteExprOrNondet ctx c? ctx.boolType)) then
       denoteStmts ctx denoteCmd t
     else
       denoteStmts ctx denoteCmd e
   | .loop c? _ _ ss _ =>
     MonadExcept.tryCatch
-      (whileLoop (denoteExprOrNondet ctx c? Bool) (denoteStmts ctx denoteCmd ss))
+      (whileLoop (mcastBool ctx (denoteExprOrNondet ctx c? ctx.boolType)) (denoteStmts ctx denoteCmd ss))
       (fun e =>
         match e with
         -- TODO: if loops had labels, we could potentially catch an
@@ -140,4 +159,8 @@ def denoteStmts
     denoteStmt ctx denoteCmd s
     denoteStmts ctx denoteCmd rest
 
-end
+end -- mutual
+
+end Denotations
+
+end Imperative
