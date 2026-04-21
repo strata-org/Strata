@@ -73,7 +73,7 @@ quantify over the type identifiers in it.
 /--
 Helper constructor for LFunc to maintain backward compatibility.
 -/
-def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
+@[expose] def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
     (isConstr : Bool := false) (isRecursive : Bool := false)
     (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
     (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
@@ -154,6 +154,8 @@ structure Factory (T : LExprParams) where
   private toArrayDefined : ∀ (i : Fin toArray.size), nameMap[toArray[i].name.name]? = some i
   /-- Every key in `nameMap` maps to a valid index in `toArray`. -/
   private nameMapValid : ∀{k : String} (p : k ∈ nameMap), nameMap[k] < toArray.size
+  /-- Every key in `nameMap` is the name of the element it points to. -/
+  private nameMapConsistent : ∀ {k : String} (p : k ∈ nameMap), (toArray[nameMap[k]]'(nameMapValid p)).name.name = k
 
 namespace Factory
 
@@ -177,7 +179,7 @@ private theorem List_inj_implies_nodup {α} (l : List α)
 /-- The function names in a factory are unique. -/
 theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map (·.name.name)) := by
   match f with
-  | { toArray := ⟨l⟩, nameMap, toArrayDefined, nameMapValid } =>
+  | { toArray := ⟨l⟩, nameMap, toArrayDefined, nameMapValid, nameMapConsistent } =>
     apply List_inj_implies_nodup
     intro i j hi hj heq
     simp only [List.length_map] at hi hj
@@ -188,12 +190,14 @@ theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map 
 
 protected def mem {T} (f : Factory T) (name : String) := name ∈ f.nameMap
 
+def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (f.mem name) :=
+  (inferInstance : Decidable (name ∈ f.nameMap))
+
 instance instMem {T} : Membership String (Factory T) where
   mem := Factory.mem
 
-@[instance]
-def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (name ∈ f) :=
-  inferInstanceAs (Decidable (name ∈ f.nameMap))
+instance instMembershipDecidable {T} (f : Factory T) (name : String) : Decidable (name ∈ f) :=
+  f.instMemDecidable name
 
 def get {T} (f : Factory T) (name : String) (p : name ∈ f): LFunc T :=
   let idx := f.nameMap[name]
@@ -220,10 +224,12 @@ protected def default {T} : Factory T := {
   toArray := #[]
   nameMap := {}
   toArrayDefined := by intro ⟨i, hi⟩; exact absurd hi (by simp [Array.size])
-  nameMapValid := by
-    intro k km
-    grind
+  nameMapValid := by intro k km; grind
+  nameMapConsistent := by intro k km; grind
 }
+
+theorem default_empty {T} (x : String) : ¬(x ∈ (Factory.default : Factory T)) := by
+  simp +instances [instMem, Factory.mem, Factory.default]
 
 instance {T} : Inhabited (Factory T) where
   default := Factory.default
@@ -235,7 +241,8 @@ def push {T} (F : Factory T) (fn : LFunc T) (is_new : ¬(fn.name.name ∈ F)) : 
     toArrayDefined := by
       intro ⟨i, hi⟩
       if heq : i < F.toArray.size then
-        simp only [instMem, Factory.mem] at is_new
+        unfold instMem at is_new
+        simp only [Factory.mem] at is_new
         have r := F.toArrayDefined ⟨i, heq⟩
         grind
       else
@@ -244,6 +251,15 @@ def push {T} (F : Factory T) (fn : LFunc T) (is_new : ¬(fn.name.name ∈ F)) : 
       intro nm nm_mem
       have p := @F.nameMapValid
       grind
+    nameMapConsistent := by
+      intro k km
+      simp +instances only [instMem, Factory.mem] at is_new
+      if heq : k = fn.name.name then
+        grind
+      else
+        have km' : k ∈ F.nameMap := by grind
+        have := F.nameMapConsistent km'
+        grind
   }
 
 /-- Insert `fn` into the factory if no function with the same name already exists. -/
@@ -296,11 +312,35 @@ theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
 
 @[simp]
 theorem default_mem_is_false (T) (name : String) : name ∈ Factory.default (T := T) ↔ False := by
-  simp [Factory.default, Factory.instMem, Factory.mem]
+  simp +instances[Factory.default, Factory.instMem, Factory.mem]
+
+theorem push_mem_iff {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
+    name ∈ f.push fn h ↔ name = fn.name.name ∨ name ∈ f := by
+  simp +instances only [instMem, Factory.mem, push]
+  simp only [Std.HashMap.mem_insert]
+  constructor <;> intro hm <;> grind
+
+theorem mem_iff_mem_names {T} (f : Factory T) (s : String) :
+    s ∈ f ↔ s ∈ f.toArray.map (·.name.name) := by
+  constructor
+  · intro hs
+    have hvalid := f.nameMapValid hs
+    have hcons := f.nameMapConsistent hs
+    rw [Array.mem_iff_getElem]
+    exact ⟨f.nameMap[s], by simp [Array.size_map]; exact hvalid, by simp [Array.getElem_map]; exact hcons⟩
+  · intro hs
+    rw [Array.mem_iff_getElem] at hs
+    obtain ⟨i, hi, hname⟩ := hs
+    simp [Array.size_map] at hi
+    simp [Array.getElem_map] at hname
+    have := f.toArrayDefined ⟨i, hi⟩
+    simp +instances [instMem, Factory.mem]
+    rw [← hname]
+    grind
 
 theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
   (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
-  simp [push, instGetElem?, Factory.get?]
+  simp +instances [push, instGetElem?, Factory.get?]
   grind
 
 theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
@@ -318,6 +358,39 @@ theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : L
       rw [←h_val]
       exact f.nameMapValid h_mem
     exact Array.mem_def.mpr (Array.getElem_mem_toList idx_lt)
+
+theorem getElem?_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
+    (eq : f[name]? = some fn) : name ∈ f := by
+  simp +instances [instGetElem?, Factory.get?, instMem, Factory.mem] at eq ⊢
+  grind
+
+theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
+    (eq : f[name]? = some fn) : f[name]'(getElem?_some_implies_mem eq) = fn := by
+  simp +instances [instGetElem?, Factory.get?, Factory.get] at eq ⊢
+  split at eq
+  · contradiction
+  · rename_i idx h_idx; simp at eq; grind
+
+/-- If `fn ∈ F.toArray` and `fn.name.name = s`, then `s ∈ F` and `F[s] = fn`. -/
+theorem mem_name_eq_getElem {T} {F : Factory T} {fn : LFunc T} {s : String}
+    (hmem : fn ∈ F.toArray) (hname : fn.name.name = s) :
+    ∃ (hs : s ∈ F), F[s]'hs = fn := by
+  rw [Array.mem_def] at hmem
+  rw [List.mem_iff_getElem] at hmem
+  obtain ⟨i, hi, hval⟩ := hmem
+  have hi' : i < F.toArray.size := by grind
+  have hval' : F.toArray[i]'hi' = fn := by simpa using hval
+  have hdef : F.nameMap[s]? = some i := by
+    have hdef := F.toArrayDefined ⟨i, hi'⟩
+    simp at hdef
+    grind
+  have hs : s ∈ F := by
+    simp +instances only [instMem, Factory.mem]
+    grind
+  refine ⟨hs, ?_⟩
+  simp +instances only [instGetElem?, Factory.get]
+  have hidx : F.nameMap[s] = i := (Std.HashMap.getElem?_eq_some_iff.mp hdef).2
+  grind
 
 def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
   F.toArray.map (fun f => f.name)
@@ -390,6 +463,29 @@ def Factory.callOfLFunc {GenericTy} (F : Factory T) (e : LExpr ⟨T, GenericTy�
       | true => (op, args, func) | false => none
   | _ => none
 
+theorem callOfLFunc_eq_some {GenericTy} {F : Factory T}
+    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : ∃ m name ty, callee = .op m name ty ∧
+      F[name.name]? = some fn ∧ args.length = fn.inputs.length := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  grind
+
+theorem callOfLFunc_getLFuncCall {GenericTy} {F : Factory T}
+    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
+    {aPA : Bool}
+    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
+    : getLFuncCall e = (callee, args) := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
+  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; exact Prod.ext ‹_› rfl)
+
 end Factory
 
 theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
@@ -427,6 +523,44 @@ theorem Factory.callOfLFunc_smaller {T} {F : Factory T.base} {e : LExpr T} {op a
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
+/-- If `F[s]?` finds a function, its name matches the query. -/
+theorem Factory.getElem?_name {T} {F : Factory T} {s : String} {fn : LFunc T}
+    (h : F[s]? = some fn) : fn.name.name = s := by
+  simp +instances [instGetElem?, Factory.get?] at h
+  split at h
+  · contradiction
+  · rename_i idx h_idx; simp at h
+    have h_mem : s ∈ F.nameMap := by grind
+    have h_idx_val : F.nameMap[s] = idx :=
+      (Std.HashMap.getElem?_eq_some_iff.mp h_idx).2
+    have h_cons := F.nameMapConsistent h_mem
+    grind
+
+/-- `callOfLFunc` ensures the number of args equals the number of inputs. -/
+theorem Factory.callOfLFunc_arity {T} {F : Factory T} {e callee : LExpr T.mono}
+    {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : args.length = fn.inputs.length := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  grind
+
+/-- The callee of `callOfLFunc` is an `.op` whose name resolves to `fn` via `F[_]?`. -/
+theorem Factory.callOfLFunc_getElem?
+    {T} {F : Factory T} {e callee : LExpr T.mono}
+    {args : List (LExpr T.mono)} {fn : LFunc T}
+    {aPA : Bool}
+    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
+    : ∃ m name ty, callee = .op m name ty ∧ F[name.name]? = some fn := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
+  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
+
 /-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
 theorem callOfLFunc_func_mem
     {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
@@ -454,6 +588,17 @@ If e is an LExprT whose metadata contains type information, use applySubstT.
 def LExpr.applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
   if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
 
+theorem LExpr.applySubst_eq_replaceUserProvidedType {T : LExprParams}
+    (e : LExpr T.mono) (S : Subst) :
+    e.applySubst S = replaceUserProvidedType e (LMonoTy.subst S) := by
+  unfold applySubst
+  split
+  case isTrue h_empty =>
+    have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS h_empty)
+    rw [h_id]
+    induction e <;> unfold replaceUserProvidedType <;> grind
+  case isFalse => rfl
+
 /--
 Best-effort type extraction from an `LExpr` without a typing context.
 Returns `none` when the type cannot be determined syntactically.
@@ -471,33 +616,60 @@ def LExpr.typeOf {T : LExprParams} : LExpr T.mono → Option LMonoTy
   | .eq _ _ _               => some .bool
 
 /--
+Derive a type substitution from the `.op` type annotation alone, by unifying it
+against the function's generic type. On annotated terms (i.e., terms that have
+undergone type inference), the `.op` node always carries a type annotation, so
+this suffices.
+
+Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
+Returns `none` if the callee is not annotated or unification fails.
+-/
+@[expose] def LFunc.opTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
+    : Option Subst :=
+  if fn.typeArgs.isEmpty then some Subst.empty
+  else match callee with
+    | .op _ _ (some instTy) =>
+      let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
+      match Constraints.unify [(instTy, genericTy)] SubstInfo.empty with
+      | .ok substInfo => some substInfo.subst
+      | .error _ => none
+    | _ => none
+
+/--
 Derive a type substitution by unifying the instantiated operator type against the
 function's generic type. Used when inlining a polymorphic function body to
 instantiate type variables.
 
+Prefers the `.op` annotation (via `opTypeSubst`). Falls back to a best-effort
+approach using argument types when the `.op` is not annotated. On annotated terms
+(after type inference), the `.op` always carries a type annotation, so the fallback
+is never needed.
+
 Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
 Returns `none` if the type substitution cannot be derived.
 -/
-def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
+@[expose] def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
     (args : List (LExpr T.mono)) : Option Subst :=
-  if fn.typeArgs.isEmpty then some Subst.empty
-  else
-    -- Try the instantiated type on the .op node first
-    let opConstraints := match callee with
-      | .op _ _ (some instTy) =>
-        let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
-        [(instTy, genericTy)]
-      | _ => []
-    -- Also unify argument types against formal parameter types
-    -- Note that the best-effort mechanism is OK: on typechecked terms,
-    -- everything will have been found by the `opConstraints` anyway
-    let argConstraints := (args.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))
-    let allConstraints := opConstraints ++ argConstraints
-    if allConstraints.isEmpty then none
-    else match Constraints.unify allConstraints SubstInfo.empty with
-      | .ok substInfo => some substInfo.subst
-      | .error _ => none
+  match fn.opTypeSubst callee with
+  | some s => some s
+  | none =>
+    -- Fallback: use argument types (best-effort, only when .op is unannotated)
+    if fn.typeArgs.isEmpty then some Subst.empty
+    else
+      let argConstraints := (args.zip fn.inputs.values).filterMap
+        (fun (arg, formal) => arg.typeOf.map (·, formal))
+      if argConstraints.isEmpty then none
+      else match Constraints.unify argConstraints SubstInfo.empty with
+        | .ok substInfo => some substInfo.subst
+        | .error _ => none
+
+/-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
+theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
+    {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
+    (h : fn.opTypeSubst callee = some s)
+    : fn.computeTypeSubst callee args = some s := by
+  unfold LFunc.computeTypeSubst
+  rw [h]
 
 end -- public section
 end Lambda

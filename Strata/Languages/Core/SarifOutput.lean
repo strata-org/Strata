@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Util.Sarif
+public import Strata.Util.Sarif
+public import Strata.Languages.Core.Verifier
+
+
+
+public section
 
 /-!
 # Core SARIF Output
