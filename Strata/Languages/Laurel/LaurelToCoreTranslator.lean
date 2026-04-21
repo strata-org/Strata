@@ -702,7 +702,7 @@ abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
 The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
-def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
+def translateLaurelToCore (options: LaurelTranslateOptions) (_program : Program) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
