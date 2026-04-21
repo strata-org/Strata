@@ -115,12 +115,12 @@ procedure LetConst () returns (y : int)
 #guard_msgs in
 #eval ASTtoCST testLetConst
 
--- Let with unused bound variable (body references procedure param)
-private def testLetUnused : Strata.Program :=
+-- Let with body referencing procedure parameter
+private def testLetRefParam : Strata.Program :=
 #strata
 program Core;
 
-procedure LetUnused(x : int) returns (y : int)
+procedure LetRefParam(x : int) returns (y : int)
 {
   y := let v : int := 5 in x;
 };
@@ -129,13 +129,35 @@ procedure LetUnused(x : int) returns (y : int)
 /--
 info: program Core;
 
-procedure LetUnused (x : int) returns (y : int)
+procedure LetRefParam (x : int) returns (y : int)
 {
   y := let __q0 : int := 5 in x;
   };
 -/
 #guard_msgs in
-#eval ASTtoCST testLetUnused
+#eval ASTtoCST testLetRefParam
+
+-- Let with body using the bound variable
+private def testLetUseBound : Strata.Program :=
+#strata
+program Core;
+
+procedure LetUseBound() returns (y : int)
+{
+  y := let v : int := 5 in v;
+};
+#end
+
+/--
+info: program Core;
+
+procedure LetUseBound () returns (y : int)
+{
+  y := let __q0 : int := 5 in __q0;
+  };
+-/
+#guard_msgs in
+#eval ASTtoCST testLetUseBound
 
 -- Let with boolean type
 private def testLetBool : Strata.Program :=
@@ -197,6 +219,72 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.verify testLetVerifyConst
+
+-- Verify a let binding where the body uses the bound variable
+private def testLetVerifyBoundVar : Strata.Program :=
+#strata
+program Core;
+
+procedure LetBoundVar() returns (y : int)
+spec {
+  ensures (y == 5);
+}
+{
+  y := let v : int := 5 in v;
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: LetBoundVar_ensures_0
+Property: assert
+Obligation:
+true
+
+---
+info:
+Obligation: LetBoundVar_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.verify testLetVerifyBoundVar
+
+-- Verify a let binding where the body references a procedure parameter
+private def testLetVerifyParam : Strata.Program :=
+#strata
+program Core;
+
+procedure LetParam(x : int) returns (y : int)
+spec {
+  ensures (y == x);
+}
+{
+  y := let v : int := 42 in x;
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: LetParam_ensures_0
+Property: assert
+Obligation:
+true
+
+---
+info:
+Obligation: LetParam_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.verify testLetVerifyParam
 
 end Verification
 

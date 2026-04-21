@@ -751,8 +751,9 @@ partial def lappToExpr {M} [Inhabited M]
     let bodyExpr ← lexprToExpr body (qLevel + 1)
     modify ToCSTContext.popScope
     let nameIdent : Ann String M := ⟨default, varName⟩
+    let bindExpr := MonoBind.mono_bind_mk default nameIdent tyExpr
     let rtpExpr := CoreType.tvar default unknownTypeVar
-    pure (.let_expr default tyExpr rtpExpr nameIdent valExpr bodyExpr)
+    pure (.let_expr default tyExpr rtpExpr bindExpr valExpr bodyExpr)
   | .app _ (.app m fn e1) e2 => do
     let e2Expr ← lexprToExpr e2 qLevel
     lappToExpr (.app m fn e1) qLevel (e2Expr :: acc)
