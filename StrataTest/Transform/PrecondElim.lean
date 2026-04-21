@@ -28,7 +28,7 @@ def translate (t : Strata.Program) : Core.Program :=
 
 def transformProgram (t : Strata.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program (PrecondElim.precondElim · Core.Factory) with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with

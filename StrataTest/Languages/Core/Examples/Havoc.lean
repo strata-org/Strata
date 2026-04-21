@@ -21,9 +21,7 @@ procedure S() returns ()
 };
 #end
 
-/--
-info: true
--/
+/-- info: true -/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram havocPgm) |>.snd |>.isEmpty
@@ -51,25 +49,6 @@ Label: x_eq_1
 Property: assert
 Obligation:
 $__x1 == 1
-
-
-
-Result: Obligation: x_eq_1
-Property: assert
-Result: ❌ fail
-Model:
-($__x1, 0)
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-procedure S () returns ()
-{
-  var x : int;
-  x := 1;
-  havoc x;
-  assert [x_eq_1]: $__x1 == 1;};
 
 ---
 info:

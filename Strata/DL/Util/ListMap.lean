@@ -103,11 +103,21 @@ def ListMap.keys (m : ListMap α β) : List α :=
   | [] => []
   | (a, _) :: m => a :: keys m
 
+theorem ListMap.keys_eq_map_fst (m : ListMap α β) : m.keys = m.map Prod.fst := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => cases p; simp [ListMap.keys, ih]
+
 @[expose]
 def ListMap.values (m : ListMap α β) : List β :=
   match m with
   | [] => []
   | (_, a) :: m => a :: values m
+
+theorem ListMap.values_eq_map_snd (m : ListMap α β) : m.values = m.map Prod.snd := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => cases p; simp [ListMap.values, ih]
 
 /-- Are the keys of `m1` and `m2` disjoint? -/
 def ListMap.disjointp [DecidableEq α] (m1 m2 : ListMap α β) : Prop :=
@@ -156,11 +166,6 @@ theorem ListMap.keys.length :
   induction ls <;> simp [keys]
   case cons h t ih => assumption
 
-theorem ListMap.keys_eq_map_fst {α β : Type} (m : ListMap α β) :
-    m.keys = m.toList.map Prod.fst := by
-  induction m with
-  | nil => rfl
-  | cons h t ih => simp [ListMap.keys, ListMap.toList, ih]
 
 -------------------------------------------------------------------------------
 end

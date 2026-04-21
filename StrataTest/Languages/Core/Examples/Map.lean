@@ -23,9 +23,7 @@ procedure P() returns ()
 };
 #end
 
-/--
-info: true
--/
+/-- info: true -/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
@@ -61,23 +59,6 @@ Assumptions:
 a_zero_true_assumption: a[0] == true
 Obligation:
 a[1]
-
-
-
-Result: Obligation: a_one_true
-Property: assert
-Result: ❌ fail
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-function a () : Map int bool;
-procedure P () returns ()
-{
-  assume [a_zero_true_assumption]: a[0] == true;
-  assert [a_zero_true]: a[0];
-  assert [a_one_true]: a[1];};
 
 ---
 info:

@@ -26,9 +26,7 @@ procedure P() returns ()
 };
 #end
 
-/--
-info: true
--/
+/-- info: true -/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.snd |>.isEmpty
@@ -69,25 +67,6 @@ real_y_ge_2: y >= 2.0
 Obligation:
 x + y >= 4.0
 
-
-
-Result: Obligation: real_add_ge_bad
-Property: assert
-Result: ❌ fail
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-function x () : real;
-function y () : real;
-axiom [real_x_ge_1]: x >= 1.0;
-axiom [real_y_ge_2]: y >= 2.0;
-procedure P () returns ()
-{
-  assert [real_add_ge_good]: x + y >= 3.0;
-  assert [real_add_ge_bad]: x + y >= 4.0;};
-
 ---
 info:
 Obligation: real_add_ge_good
@@ -126,9 +105,7 @@ spec {
 };
 #end
 
-/--
-info: true
--/
+/-- info: true -/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.snd |>.isEmpty

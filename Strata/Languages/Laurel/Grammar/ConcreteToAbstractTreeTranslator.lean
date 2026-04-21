@@ -35,13 +35,17 @@ def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
 def TransM.error (msg : String) : TransM α :=
   throw msg
 
-private def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :=
+  ⟨ uri, sr ⟩
+
+private def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
+  return match (← get).uri with
+  | some uri => some (SourceRange.toFileRange uri arg.ann)
+  | none => none
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
   return match (← get).uri with
-  | some uri => SourceRange.toMetaData uri arg.ann
+  | some uri => #[⟨Imperative.MetaData.fileRange, .fileRange (SourceRange.toFileRange uri arg.ann)⟩]
   | none => #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
@@ -78,10 +82,10 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := "" , type := ⟨.Unknown, #[]⟩ }
+  default := { name := "" , type := { val := .Unknown, source := none } }
 
-def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
-def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
+def mkHighTypeMd (t : HighType) (source : Option FileRange) : HighTypeMd := { val := t, source := source }
+def mkStmtExprMd (e : StmtExpr) (source : Option FileRange) : StmtExprMd := { val := e, source := source }
 
 def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
@@ -89,26 +93,26 @@ def translateNat (arg : Arg) : TransM Nat := do
   return n
 
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
-  let md ← getArgMetaData arg
+  let src ← getArgFileRange arg
   match arg with
   | .op op =>
     match op.name, op.args with
-    | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
-    | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
-    | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
-    | q`Laurel.realType, _ => return mkHighTypeMd .TReal md
-    | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
+    | q`Laurel.intType, _ => return mkHighTypeMd .TInt src
+    | q`Laurel.boolType, _ => return mkHighTypeMd .TBool src
+    | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 src
+    | q`Laurel.realType, _ => return mkHighTypeMd .TReal src
+    | q`Laurel.stringType, _ => return mkHighTypeMd .TString src
     | q`Laurel.bvType, #[widthArg] =>
       let width ← translateNat widthArg
-      return mkHighTypeMd (.TBv width) md
-    | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.TCore name) md
+      return mkHighTypeMd (.TBv width) src
+    | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.TCore name) src
     | q`Laurel.mapType, #[keyArg, valArg] =>
       let keyType ← translateHighType keyArg
       let valType ← translateHighType valArg
-      return mkHighTypeMd (.TMap keyType valType) md
+      return mkHighTypeMd (.TMap keyType valType) src
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
-      return mkHighTypeMd (.UserDefined name) md
+      return mkHighTypeMd (.UserDefined name) src
     | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
@@ -150,7 +154,7 @@ instance : Inhabited Procedure where
     decreases := none
     isFunctional := false
     invokeOn := none
-    body := .Transparent ⟨.LiteralBool true, #[]⟩
+    body := .Transparent ⟨.LiteralBool true, none, #[]⟩
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -185,7 +189,7 @@ def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
 mutual
 
 partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
-  let md ← getArgMetaData arg
+  let src ← getArgFileRange arg
   match arg with
   | .op op => match op.name, op.args with
     | q`Laurel.assert, #[arg0, errMsgArg] =>
@@ -194,35 +198,35 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
           | q`Laurel.errorSummary, #[strArg] => do
             let msg ← translateString strArg
-            pure (md.withPropertySummary msg)
-          | _, _ => pure md
-        | _ => pure md
-      return mkStmtExprMd (.Assert cond) md'
+            pure (Imperative.MetaData.empty.withPropertySummary msg)
+          | _, _ => pure Imperative.MetaData.empty
+        | _ => pure Imperative.MetaData.empty
+      return { val := .Assert cond, source := src, md := md' }
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
-      return mkStmtExprMd (.Assume cond) md
+      return mkStmtExprMd (.Assume cond) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
-      return mkStmtExprMd (.Block stmts none) md
+      return mkStmtExprMd (.Block stmts none) src
     | q`Laurel.labelledBlock, #[arg0, arg1] =>
       let stmts ← translateSeqCommand arg0
       let label ← translateIdent arg1
-      return mkStmtExprMd (.Block stmts (some label.text)) md
+      return mkStmtExprMd (.Block stmts (some label.text)) src
     | q`Laurel.exit, #[arg0] =>
       let label ← translateIdent arg0
-      return mkStmtExprMd (.Exit label.text) md
-    | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) md
+      return mkStmtExprMd (.Exit label.text) src
+    | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) src
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
-      return mkStmtExprMd (.LiteralInt n) md
+      return mkStmtExprMd (.LiteralInt n) src
     | q`Laurel.real, #[arg0] =>
       let d ← translateDecimal arg0
-      return mkStmtExprMd (.LiteralDecimal d) md
+      return mkStmtExprMd (.LiteralDecimal d) src
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
-      return mkStmtExprMd (.LiteralString s) md
-    | q`Laurel.hole, #[] => return mkStmtExprMd (.Hole true none) md
-    | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) md
+      return mkStmtExprMd (.LiteralString s) src
+    | q`Laurel.hole, #[] => return mkStmtExprMd (.Hole true none) src
+    | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) src
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
       let varType ← match typeArg with
@@ -236,26 +240,26 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
         | .option _ none => pure none
         | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
-      return mkStmtExprMd (.LocalVariable name varType value) md
+      return mkStmtExprMd (.LocalVariable name varType value) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
-      return mkStmtExprMd (.Identifier name) md
+      return mkStmtExprMd (.Identifier name) src
     | q`Laurel.parenthesis, #[arg0] => translateStmtExpr arg0
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
       let value ← translateStmtExpr arg1
-      return mkStmtExprMd (.Assign [target] value) md
+      return mkStmtExprMd (.Assign [target] value) src
     | q`Laurel.new, #[nameArg] =>
       let name ← translateIdent nameArg
-      return mkStmtExprMd (.New name) md
+      return mkStmtExprMd (.New name) src
     | q`Laurel.isType, #[targetArg, typeNameArg] =>
       let target ← translateStmtExpr targetArg
       let typeName ← translateIdent typeNameArg
-      return mkStmtExprMd (.IsType target (mkHighTypeMd (.UserDefined typeName) md)) md
+      return mkStmtExprMd (.IsType target (mkHighTypeMd (.UserDefined typeName) src)) src
     | q`Laurel.asType, #[targetArg, typeNameArg] =>
       let target ← translateStmtExpr targetArg
       let typeName ← translateIdent typeNameArg
-      return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) md)) md
+      return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) src)) src
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
@@ -264,10 +268,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let argsList ← match argsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
-      return mkStmtExprMd (.StaticCall calleeName argsList) md
+      return mkStmtExprMd (.StaticCall calleeName argsList) src
     | q`Laurel.return, #[arg0] =>
       let value ← translateStmtExpr arg0
-      return mkStmtExprMd (.Return (some value)) md
+      return mkStmtExprMd (.Return (some value)) src
     | q`Laurel.ifThenElse, #[arg0, arg1, elseArg] =>
       let cond ← translateStmtExpr arg0
       let thenBranch ← translateStmtExpr arg1
@@ -276,12 +280,12 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | q`Laurel.elseBranch, #[elseArg0] => translateStmtExpr elseArg0 >>= (pure ∘ some)
           | _, _ => pure none
         | _ => pure none
-      return mkStmtExprMd (.IfThenElse cond thenBranch elseBranch) md
+      return mkStmtExprMd (.IfThenElse cond thenBranch elseBranch) src
     | q`Laurel.fieldAccess, #[objArg, fieldArg] =>
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
-      let fieldMd ← getArgMetaData fieldArg
-      return mkStmtExprMd (.FieldSelect obj field) fieldMd
+      let fieldSrc ← getArgFileRange fieldArg
+      return mkStmtExprMd (.FieldSelect obj field) fieldSrc
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
       let invariants ← match invSeqArg with
@@ -292,7 +296,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
             | _ => TransM.error "Expected operation"
         | _ => pure []
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.While cond invariants none body) md
+      return mkStmtExprMd (.While cond invariants none body) src
     | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
       let init ← translateStmtExpr initArg
       let cond ← translateStmtExpr condArg
@@ -305,9 +309,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
             | _ => TransM.error "Expected operation"
         | _ => pure []
       let body ← translateStmtExpr bodyArg
-      let whileBody := mkStmtExprMd (.Block [body, step] none) md
-      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) md
-      return mkStmtExprMd (.Block [init, whileStmt] none) md
+      let whileBody := mkStmtExprMd (.Block [body, step] none) src
+      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) src
+      return mkStmtExprMd (.Block [init, whileStmt] none) src
     | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
@@ -318,7 +322,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | _, _ => pure none
         | _ => pure none
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Forall { name := name, type := ty } trigger body) md
+      return mkStmtExprMd (.Forall { name := name, type := ty } trigger body) src
     | q`Laurel.existsExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
@@ -329,17 +333,17 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | _, _ => pure none
         | _ => pure none
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.Exists { name := name, type := ty } trigger body) md
+      return mkStmtExprMd (.Exists { name := name, type := ty } trigger body) src
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
-        return mkStmtExprMd (.PrimitiveOp primOp [inner]) md
+        return mkStmtExprMd (.PrimitiveOp primOp [inner]) src
       | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
         let rhs ← translateStmtExpr arg1
-        return mkStmtExprMd (.PrimitiveOp primOp [lhs, rhs]) md
+        return mkStmtExprMd (.PrimitiveOp primOp [lhs, rhs]) src
       | none => TransM.error s!"Unknown operation: {op.name}"
     | _, _ => TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"
