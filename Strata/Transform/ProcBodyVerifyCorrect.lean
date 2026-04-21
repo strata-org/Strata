@@ -24,7 +24,17 @@ private theorem coreIsAtAssert_not_terminal (ρ : Env Expression) (a : AssertId 
 private theorem coreIsAtAssert_not_exiting (lbl : Option String) (ρ : Env Expression) (a : AssertId Expression) :
     ¬ coreIsAtAssert (.exiting lbl ρ) a := by simp [coreIsAtAssert]
 
-/-! ## Input Environment Reconstruction, from the prefix statements of ProcBodyVerify -/
+/-! ## Input Environment Reconstruction, from the prefix statements of ProcBodyVerify
+
+"Prefix statements" are the init + assume statements that ProcBodyVerify places
+before the procedure body (param inits, old-var inits, precondition assumes).
+"Input environment reconstruction" (prefixInitEnv) reverses the inits:
+given the environment after the prefix has executed, it computes
+what it was before by setting each init'd variable back to none.
+The `procToVerifyStmt_structure` theorem uses the `prefixInitEnv` reconstruction
+function to show that there exists an initial state that doesn't make the
+prefix statements (`prefixStmt`) stuck.
+-/
 
 /-- Identify the variable initialized by a statement, if any. -/
 private def stmtInitVar : Statement → Option Expression.Ident
@@ -439,7 +449,6 @@ private theorem getInoutParams_keys_subset_inputs (h : Procedure.Header) :
   intro id hid
   unfold Procedure.Header.getInoutParams at hid
   rw [ListMap.keys_eq_map_fst] at hid ⊢
-  simp only [ListMap.toList] at hid ⊢
   obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
   exact List.mem_map_of_mem (f := Prod.fst) (List.mem_filter.mp hmem).1
 
@@ -449,7 +458,6 @@ private theorem getOutputOnlyParams_keys_disjoint_inputs (h : Procedure.Header) 
   intro id hid
   unfold Procedure.Header.getOutputOnlyParams at hid
   rw [ListMap.keys_eq_map_fst] at hid
-  simp only [ListMap.toList] at hid
   obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
   have hfilt := (List.mem_filter.mp hmem).2
   -- hfilt : !(ListMap.keys h.inputs).contains id' = true
@@ -465,7 +473,6 @@ private theorem getOutputOnlyParams_keys_subset_outputs (h : Procedure.Header) :
   intro id hid
   unfold Procedure.Header.getOutputOnlyParams at hid
   rw [ListMap.keys_eq_map_fst] at hid ⊢
-  simp only [ListMap.toList] at hid ⊢
   obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
   exact List.mem_map_of_mem (f := Prod.fst) (List.mem_filter.mp hmem).1
 
@@ -475,7 +482,6 @@ private theorem getInoutParams_nodup (h : Procedure.Header)
     (ListMap.keys h.getInoutParams).Nodup := by
   unfold Procedure.Header.getInoutParams
   rw [ListMap.keys_eq_map_fst] at hnd ⊢
-  simp only [ListMap.toList] at hnd ⊢
   exact (List.filter_sublist.map Prod.fst).nodup hnd
 
 /-- Nodup of `getOutputOnlyParams` keys follows from nodup of outputs keys. -/
@@ -484,7 +490,6 @@ private theorem getOutputOnlyParams_nodup (h : Procedure.Header)
     (ListMap.keys h.getOutputOnlyParams).Nodup := by
   unfold Procedure.Header.getOutputOnlyParams
   rw [ListMap.keys_eq_map_fst] at hnd ⊢
-  simp only [ListMap.toList] at hnd ⊢
   exact (List.filter_sublist.map Prod.fst).nodup hnd
 
 /-- Keys of `getInoutParams` are in both inputs and outputs,
@@ -654,7 +659,7 @@ theorem procToVerifyStmt_structure
             -- oid is in getOutputOnlyParams, so oid ∉ inputs
             have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
               rw [ListMap.keys_eq_map_fst]
-              simp only [ListMap.toList]
+              simp only [ListMap.toList] at hmem
               exact List.mem_map_of_mem (f := Prod.fst) hmem
             have h_oid_not_in_inputs := getOutputOnlyParams_keys_disjoint_inputs proc.header oid h_oid_keys
             -- But heq_s says id = oid, so id ∉ inputs, contradiction
