@@ -301,8 +301,8 @@ def CoreOp.ofString (name : String) : CoreOp :=
   match numResult with
   | some op => op
   | none =>
-  -- Note: String.drop returns String.Slice in Lean 4.27, so .toString is
-  -- needed to convert back to String for the ofString? calls below.
+  -- Note: String.drop returns String.Slice, so .toString is needed to
+  -- convert back to String for the ofString? calls below.
   if name.startsWith "Bool." then
     match BoolOpKind.ofString? (name.drop 5).toString with
     | some kind => .bool kind
