@@ -34,7 +34,7 @@ def CoreIdent.toPretty (x : CoreIdent) : String := x.name
 /-- String used to prefix identifiers representing pre-state inout parameters. -/
 def CoreIdent.oldStr : String := "old "
 
-/-- Create the `old g` identifier for an in-out parameter named `name`. -/
+/-- Create the `old name` identifier for an inout parameter named `name`. -/
 def CoreIdent.mkOld (name : String) : CoreIdent := ⟨CoreIdent.oldStr ++ name, ()⟩
 
 /-- `g ≠ CoreIdent.mkOld g.name` because `"old " ++ s` is strictly longer than `s`. -/

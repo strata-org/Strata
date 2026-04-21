@@ -29,9 +29,8 @@ dialect Boole;
 
 import Core;
 
-// Boole retains global variable declarations and modifies clauses in its
-// concrete syntax. During translation to Core, these are converted into
-// additional input/output parameters on procedure headers.
+// Boole's global variables declarations and modifies clauses are converted into
+// inout parameters in Core.
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";

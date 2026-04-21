@@ -44,7 +44,7 @@ open Core
 open Strata.CoreDDM
 
 private inductive ParamKind where
-  | input | out | inout
+  | inParam | outParam | inoutParam
 
 ---------------------------------------------------------------------
 -- Conversion Errors
@@ -979,18 +979,18 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
     let paramName : Ann String M := ⟨default, id.toPretty⟩
     let paramType ← lmonoTyToCoreType ty
     let binding := match kind with
-      | .out => Binding.outBinding default paramName (TypeP.expr paramType)
-      | .inout => Binding.inoutBinding default paramName (TypeP.expr paramType)
-      | .input => Binding.mkBinding default paramName (TypeP.expr paramType)
+      | .outParam => Binding.outBinding default paramName (TypeP.expr paramType)
+      | .inoutParam => Binding.inoutBinding default paramName (TypeP.expr paramType)
+      | .inParam => Binding.mkBinding default paramName (TypeP.expr paramType)
     pure (binding, id.toPretty)
   let mut allBindings : Array (Binding M × String) := #[]
   for (id, ty) in proc.header.inputs.toArray do
-    let kind := if outputSet.contains id then ParamKind.inout else ParamKind.input
+    let kind := if outputSet.contains id then ParamKind.inoutParam else ParamKind.inParam
     allBindings := allBindings.push (← mkBinding' id ty kind)
   let inoutSet := proc.header.inputs.toArray.map (·.1)
   for (id, ty) in proc.header.outputs.toArray do
     if !inoutSet.contains id then
-      allBindings := allBindings.push (← mkBinding' id ty .out)
+      allBindings := allBindings.push (← mkBinding' id ty .outParam)
   let allNames := allBindings.map (·.2)
   modify (ToCSTContext.addScopedBoundVars (reverse? := false) · allNames)
   let arguments : Bindings M := .mkBindings default ⟨default, allBindings.map (·.1)⟩

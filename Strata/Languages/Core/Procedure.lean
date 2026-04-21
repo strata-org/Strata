@@ -75,7 +75,8 @@ Each procedure has three kinds of parameters:
   returned to the caller.
 - **Input-output parameters** (`inout name : T`) appear in both input and output roles.
   The input value is the pre-state and the output value is the post-state. These
-  are used to model mutable global variables.
+  are not only used to model mutable global variables but also pass mutable
+  "references" to local variables.
 
 ## Specification
 
@@ -83,13 +84,11 @@ A procedure's specification (`Procedure.Spec`) consists of two parts:
 
 - **Preconditions** (`requires`): Boolean expressions that must hold at the call site
   before the procedure is invoked. Their free variables must be a subset of the
-  input parameters. At a call site, preconditions are checked (asserted) before
-  the call.
+  input parameters.
 
 - **Postconditions** (`ensures`): Boolean expressions that must hold when the procedure
   returns. Their free variables may reference input parameters, output parameters,
-  and `old(expr)` expressions. At a call site, postconditions are assumed after
-  the call.
+  and `old(expr)` expressions.
 
 ### Free specifications
 

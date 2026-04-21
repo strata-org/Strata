@@ -354,7 +354,8 @@ name, type parameters, and input/output signatures.
 ## Parameters
 
 Each procedure has three groups of parameters: (1) input parameters, which are passed
-by value from the caller to the callee and are immutable within the body,
+by value from the caller to the callee and any update to the variable within the
+procedure body is not visible to the caller,
 (2) inout parameters, which are mutable within the body, whose initial values
 are passed from the caller and final values are returned to the caller, and
 (3) output parameters, which are equal to the inout parameters except that

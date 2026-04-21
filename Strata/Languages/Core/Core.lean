@@ -24,7 +24,7 @@ public section
 1. Strata.Core does not have global variables.
 
 2. Unlike Boogie, Strata.Core is sensitive to global declaration order. E.g.,
-   an axiom must be declared before it can be used in a procedure.
+   a function must be declared before it can be used in a procedure.
 
 3. Strata.Core does not (yet) support polymorphism.
 
