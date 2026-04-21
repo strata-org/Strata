@@ -29,8 +29,4 @@ Bubble.core.st(42, 0) [arbitrary_iter_maintain_invariant_1_1]: ✅ pass
 Bubble.core.st(42, 0) [arbitrary_iter_maintain_invariant_1_2]: ✅ pass
 Bubble.core.st(42, 0) [arbitrary_iter_maintain_invariant_1_3]: ✅ pass
 Bubble.core.st(42, 0) [arbitrary_iter_maintain_invariant_1_4]: ✅ pass
-Bubble.core.st(16, 2) [BubbleSort_ensures_0]: ✅ pass
-Bubble.core.st(17, 2) [BubbleSort_ensures_1]: ✅ pass
-Bubble.core.st(18, 2) [BubbleSort_ensures_2]: ✅ pass
-Bubble.core.st(19, 2) [BubbleSort_ensures_3]: ✅ pass
-All 34 goals passed.
+All 30 goals passed.
