@@ -178,6 +178,9 @@ def mkCoreType (s: String): HighTypeMd :=
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
   { val := expr, source := none }
 
+/-- A wildcard modifies list, meaning the procedure may modify anything. -/
+def wildcardModifies : List StmtExprMd := [mkStmtExprMd .All]
+
 /-- Create a StmtExprMd with source location metadata.
     NOTE: stores location in `md` (legacy); a follow-up should migrate to `source`. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
@@ -1871,7 +1874,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       outputs := outputs
       preconditions := typeConstraintPreconditions
       decreases := none
-      body := Body.Opaque typeConstraintPostcondition bodyBlock []
+      body := Body.Opaque typeConstraintPostcondition bodyBlock wildcardModifies
       isFunctional := false
     }
 
@@ -2013,7 +2016,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       isFunctional := false
       decreases := none
-      body := .Opaque [] (some bodyBlock) []
+      body := .Opaque [] (some bodyBlock) wildcardModifies
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -2063,7 +2066,7 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
     isFunctional := false
     decreases := none
-    body := .Opaque [] .none []
+    body := .Opaque [] .none wildcardModifies
   }
   (decl, proc)
 
@@ -2121,7 +2124,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
         if inHierarchy then
-          instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+          instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none wildcardModifies }
         else
           instanceProcedures := instanceProcedures.push proc
     -- Add synthesized default __init__ if needed
@@ -2421,7 +2424,7 @@ def pythonToLaurel' (info : PreludeInfo)
     outputs := [],
     preconditions := [],
     decreases := none,
-    body := .Opaque [] (some bodyBlock) []
+    body := .Opaque [] (some bodyBlock) wildcardModifies
     isFunctional := false
   }
 
@@ -2437,7 +2440,7 @@ def pythonToLaurel' (info : PreludeInfo)
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none []
+        body := .Opaque [] none wildcardModifies
         isFunctional := false }
     procedures := procedures.push
       { name := { text := compositeToStringAnyName ct.name.text, md := .empty }
@@ -2445,7 +2448,7 @@ def pythonToLaurel' (info : PreludeInfo)
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none []
+        body := .Opaque [] none wildcardModifies
         isFunctional := false }
 
   let program : Laurel.Program := {
