@@ -1182,9 +1182,15 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | _ => #[]
   exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
 
-/-- Run the DDM formatting pipeline on a converted CST, appending any conversion errors. -/
+/-- Run the DDM formatting pipeline on a converted CST, appending any conversion errors.
+    The optional `fmtErrors` parameter controls how errors are rendered; the default
+    appends them on separate lines. -/
 private def formatWithDDM (finalCtx : ToCSTContext SourceRange)
-    (toFormat : FormatContext → FormatState → Std.Format) : Std.Format :=
+    (toFormat : FormatContext → FormatState → Std.Format)
+    (fmtErrors : Array (ASTToCSTError SourceRange) → Std.Format :=
+      fun errs => "\n\n-- Errors encountered during conversion:\n" ++
+        Std.Format.joinSep (errs.toList.map (Std.format ∘ toString)) "\n")
+    : Std.Format :=
   let dialects := Core_map
   let ddmCtx := recreateGlobalContext finalCtx
   let ctx := FormatContext.ofDialects dialects ddmCtx {}
@@ -1196,8 +1202,7 @@ private def formatWithDDM (finalCtx : ToCSTContext SourceRange)
   if finalCtx.errors.isEmpty then
     formatted
   else
-    formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
-    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
+    formatted ++ fmtErrors finalCtx.errors
 
 /-- Render a list of `Core.Expression.Expr` to a format object.
 
@@ -1210,22 +1215,12 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars (extraFreeVars ++ extractedNames)
   let (exprsCST, finalCtx) := (exprs.mapM (lexprToExpr · 0)).run initCtx
-  -- formatExprs uses a different error format for backward compatibility
-  let dialects := Core_map
-  let ddmCtx := recreateGlobalContext finalCtx
-  let ctx := FormatContext.ofDialects dialects ddmCtx {}
-  let state : FormatState := {
-    openDialects := dialects.toList.foldl (init := {})
-      fun a (d : Dialect) => a.insert d.name
-  }
-  let formatted := Std.Format.joinSep (exprsCST.map fun exprCST =>
-    (mformat (ArgF.expr exprCST.toAst) ctx state).format) ", "
-  if finalCtx.errors.isEmpty then
-    formatted
-  else
-    formatted ++ "\n" ++
-    "-- Errors: " ++
-      Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "; "
+  formatWithDDM finalCtx
+    (toFormat := fun ctx state =>
+      Std.Format.joinSep (exprsCST.map fun exprCST =>
+        (mformat (ArgF.expr exprCST.toAst) ctx state).format) ", ")
+    (fmtErrors := fun errs => "\n" ++ "-- Errors: " ++
+      Std.Format.joinSep (errs.toList.map (Std.format ∘ toString)) "; ")
 
 /-- Render `Core.Program` to a format object.
 
