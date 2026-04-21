@@ -65,8 +65,26 @@ def stuck (E : Env) (message : String) : Env :=
 
 /-! ## Expression Evaluation -/
 
-def isValue (E : Env) (e : Expression.Expr) : Bool :=
-  LExpr.isCanonicalValue E.factory e || true -- TODO
+/-- Walk a post-eval expression looking for a stuck redex: a fully-applied
+non-constructor factory function whose arguments are all canonical values.
+Such a call *should* have reduced during `eval` but didn't (e.g. missing body
+or `concreteEval`). Returns the stuck subexpression if found. -/
+def findStuckRedex (F : @Lambda.Factory CoreLParams) : Expression.Expr → Option Expression.Expr
+  | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _ => none
+  | .eq _m e1 e2 =>
+    (findStuckRedex F e1).orElse (fun _ => findStuckRedex F e2)
+  | .ite _m c t f =>
+    (findStuckRedex F c).orElse (fun _ => (findStuckRedex F t).orElse (fun _ => findStuckRedex F f))
+  | e@(.app _m fn arg) =>
+    match Factory.callOfLFunc F e false with
+    | some (_, args, f) =>
+      if !f.isConstr && args.all (LExpr.isCanonicalValue F) then
+        some e
+      else
+        -- Non-stuck call: recurse into fn and arg (structural subterms)
+        (findStuckRedex F fn).orElse (fun _ => findStuckRedex F arg)
+    | none =>
+      (findStuckRedex F fn).orElse (fun _ => findStuckRedex F arg)
 
 /-- Evaluate an expression using the interpreter's environment.
 
@@ -75,13 +93,14 @@ function so that we can later prove it consistent with the small-step
 `Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
 
 Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
+If the result contains a stuck redex (a fully-applied function that should
+have reduced but didn't), returns an error.
 -/
 def interpExpr (E : Env) (e : Expression.Expr) : Except Env Expression.Expr :=
   let v := e.eval E.exprEnv.config.fuel E.exprEnv
-  if isValue E v then
-    .ok v
-  else
-    .error (stuck E s!"expression condition did not reduce to a value: {v}")
+  match findStuckRedex E.factory v with
+  | some stuckExpr => .error (stuck E s!"expression contains stuck redex: {format stuckExpr}")
+  | none => .ok v
 
 -- TODO: foldlM?
 def interpExprList (E : Env) (es : List Expression.Expr) : Except Env (List Expression.Expr) :=
