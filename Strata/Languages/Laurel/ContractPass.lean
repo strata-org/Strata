@@ -164,7 +164,11 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let postconds := getPostconditions proc.body
   let preAssume : List StmtExprMd :=
-    if info.hasPreCondition then [mkMd (.Assume (mkCall info.preName inputArgs))]
+    if info.hasPreCondition then
+      let (preSrc, preMd) := match proc.preconditions.head? with
+        | some pc => (pc.source, pc.md)
+        | none => (none, emptyMd)
+      [⟨.Assume (mkCall info.preName inputArgs), preSrc, preMd⟩]
     else []
   let postAssert : List StmtExprMd :=
     if info.hasPostCondition then
@@ -184,11 +188,11 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     else []
   match proc.body with
   | .Transparent body =>
-    .Transparent (mkMd (.Block (preAssume ++ [body] ++ postAssert) none))
+    .Transparent ⟨.Block (preAssume ++ [body] ++ postAssert) none, body.source, emptyMd ⟩
   | .Opaque _ (some impl) _ =>
-    .Opaque [] (mkMd (.Block (preAssume ++ [impl] ++ postAssert) none)) []
+    .Opaque [] (some ⟨.Block (preAssume ++ [impl] ++ postAssert) none, impl.source, emptyMd⟩)  []
   | .Opaque _ none _ | .Abstract _ =>
-    .Opaque [] (mkMd (.Block [] none)) []
+    .Opaque [] (some ⟨ .Block [] none, none, emptyMd⟩)  []
   | b => b
 
 /-- Rewrite a single statement that may be a call to a contracted procedure.
