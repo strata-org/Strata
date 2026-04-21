@@ -39,8 +39,8 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, md⟩
   | .Block stmts label =>
     pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) label, source, md⟩
-  | .LocalVariable name ty init =>
-    pure ⟨.LocalVariable name ty (← init.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, md⟩
+  | .LocalVariable params init =>
+    pure ⟨.LocalVariable params (← init.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, md⟩
   | .While cond invs dec body =>
     pure ⟨.While (← mapStmtExprM f cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)

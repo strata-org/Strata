@@ -240,7 +240,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
         | .option _ none => pure none
         | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
-      return mkStmtExprMd (.LocalVariable name varType value) src
+      return mkStmtExprMd (.LocalVariable [{ name := name, type := varType }] value) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
       return mkStmtExprMd (.Identifier name) src
