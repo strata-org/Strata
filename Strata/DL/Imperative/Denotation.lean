@@ -17,15 +17,6 @@ structure TypedId (Id : Type) where
 class MonadIter (m : Type u → Type v) extends Monad m where
   iter : {A B : Type u} -> (f : A -> m (A ⊕ B)) -> (a₀ : A) -> m B
 
-def whileLoop {m} [MonadIter m] (c : m Bool) (body : m Unit) : m Unit :=
-  MonadIter.iter (fun () => do
-    if (<- c) then do
-      body
-      return .inl ()
-    else
-      return .inr ()
-  ) ()
-
 class MonadMemRead (Id : Type) (m : Type → Type) extends Monad m where
   read : (id : TypedId Id) → m id.ty
 
@@ -45,9 +36,35 @@ class MonadAssertAssume (m : Type → Type) extends MonadAssert m, MonadAssume m
 class MonadNondet (m : Type → Type) extends Monad m where
   choose : (t : Type) → m t
 
+def whileLoop {m} [MonadIter m] (c : m Bool) (body : m Unit) : m Unit :=
+  MonadIter.iter (fun () => do
+    if (<- c) then do
+      body
+      return .inl ()
+    else
+      return .inr ()
+  ) ()
+
 structure DenotationContext (P : PureExpr) (m : Type → Type) [MonadMemRead P.Ident m] where
   env : P.Ident → Type
   denoteExpr : P.Expr → (t : Type) → m t
+
+def denoteExprOrNondet
+  [MonadNondet m] [MonadMemRead P.Ident m] :
+  DenotationContext P m → ExprOrNondet P → (ty : Type) → m ty
+| ctx, .det e,  ty => ctx.denoteExpr e ty
+| _,   .nondet, ty => MonadNondet.choose ty
+
+def writeExprOrNondet
+  {m}
+  {P : PureExpr}
+  [MonadMemory P.Ident m]
+  [MonadNondet m]
+  (ctx : DenotationContext P m)
+  (x : P.Ident)
+  (e? : ExprOrNondet P) : m Unit := do
+    let ty := ctx.env x
+    MonadMemory.write ⟨ x, ty ⟩ (← denoteExprOrNondet ctx e? ty)
 
 def denoteCmd
   {m}
@@ -58,24 +75,11 @@ def denoteCmd
   (ctx : DenotationContext P m)
   (c : Cmd P) : m Unit :=
   match c with
-  | .assert _ e _ => do
-    MonadAssert.assert (← ctx.denoteExpr e Bool)
-  | .assume _ e _ => do
-    MonadAssume.assume (← ctx.denoteExpr e Bool)
-  | .set x e _ => do
-    let ty := ctx.env x
-    MonadMemory.write ⟨ x, ty ⟩ (← ctx.denoteExpr e ty)
-  | .havoc x _ => do
-    let ty := ctx.env x
-    let v ← MonadNondet.choose (ctx.env x)
-    MonadMemory.write ⟨ x, ty ⟩ v
-  | .init x _ .none _ => do
-    let ty := ctx.env x
-    MonadMemory.write ⟨ x, ty ⟩ (← MonadNondet.choose ty)
-  | .init x _ (.some e) _ => do
-    let ty := ctx.env x
-    MonadMemory.write ⟨ x, ty ⟩ (← ctx.denoteExpr e ty)
-  | .cover _ _ _ => pure ()
+  | .assert _ e _  => do MonadAssert.assert (← ctx.denoteExpr e Bool)
+  | .assume _ e _  => do MonadAssume.assume (← ctx.denoteExpr e Bool)
+  | .set x e? _    => writeExprOrNondet ctx x e?
+  | .init x _ e? _ => writeExprOrNondet ctx x e?
+  | .cover _ _ _   => pure ()
 
 mutual
 
@@ -92,7 +96,6 @@ def denoteStmt
   (s : Stmt P CmdT) : m Unit :=
   match s with
   | .cmd c => denoteCmd ctx c
-  | .funcDecl _ _ => return () -- TODO: Not supported for now
   | .block l ss _ =>
     MonadExcept.tryCatch
       (denoteStmts ctx denoteCmd ss)
@@ -101,14 +104,14 @@ def denoteStmt
         | .some el => if el == l then return () else MonadExcept.throw e
         | .none => return ())
   | .exit l? _ => MonadExcept.throw l?
-  | .ite c t e _ => do
-    if (← ctx.denoteExpr c Bool) then
+  | .ite c? t e _ => do
+    if (← denoteExprOrNondet ctx c? Bool) then
       denoteStmts ctx denoteCmd t
     else
       denoteStmts ctx denoteCmd e
-  | .loop c _ _ ss _ =>
+  | .loop c? _ _ ss _ =>
     MonadExcept.tryCatch
-    (whileLoop (ctx.denoteExpr c Bool) (denoteStmts ctx denoteCmd ss))
+      (whileLoop (denoteExprOrNondet ctx c? Bool) (denoteStmts ctx denoteCmd ss))
       (fun e =>
         match e with
         -- TODO: if loops had labels, we could potentially catch an
@@ -116,6 +119,8 @@ def denoteStmt
         -- without a label can lead to early loop termination.
         | .some _ => MonadExcept.throw e
         | .none => return ())
+  | .funcDecl _ _ => return () -- TODO: Not supported for now
+  | .typeDecl _ _ => return () -- TODO: Not supported for now
 
 def denoteStmts
   {m CmdT}
