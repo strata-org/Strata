@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Lean.Data.Json.Basic
+public import Lean.Data.Json.FromToJson
 import Lean.Data.Json
+
+public section
 
 /-!
 # SARIF Output
