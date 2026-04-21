@@ -1876,6 +1876,9 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     -- Translate function body
     let inputTypes := funcDecl.args.map (λ arg =>
       match arg.tys with | [ty] => (arg.name, ty) | _ => (arg.name, PyLauType.Any))
+    let inputTypes := inputTypes ++ match funcDecl.kwargsName with
+      | some kw => [(kw, PyLauType.DictStrAny)]
+      | none => []
     let (bodyBlock, newCtx) ←  translateFunctionBody ctx inputTypes body
     let noneReturn := mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier PyLauFuncReturnVar)] AnyNone)
     let (renamedInputs, paramCopies) := renameInputParams inputs
@@ -2004,7 +2007,9 @@ def translateMethod (ctx : TranslationContext) (className : String)
     -- Add method parameters to variableTypes so that hoisting (e.g. in
     -- try/except) does not re-declare them as local variables.
     let paramTypes : List (String × String) := inputs.map fun p =>
-      if p.name.text == "self" then (p.name.text, className) else (p.name.text, PyLauType.Any)
+      if p.name.text == "self" then (p.name.text, className)
+      else if kwargsName == some p.name.text then (p.name.text, PyLauType.DictStrAny)
+      else (p.name.text, PyLauType.Any)
     let ctxWithClass := {ctx with currentClassName := some className,
                                   variableTypes := paramTypes}
     let newDecls := collectDeclaredNamesAndTypes ctxWithClass body.val.toList

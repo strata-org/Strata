@@ -538,4 +538,17 @@ def test() -> None:
       if arg.name.startsWith "$in_" then
         throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
 
+-- Regression test for issue #1002: **kwargs should not trigger
+-- "local variables in functions must have initializers".
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def create_client(service: str, **kwargs) -> None:
+    x: int = 1
+    assert x == 1
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest
