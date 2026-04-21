@@ -627,4 +627,60 @@ theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : Lis
       | tail _ hb => exact ih hnd.2 ha hb
 
 end List
+
+/-! ### List.Forall₂ -/
+
+/-- Pointwise relation between two lists. -/
+inductive List.Forall₂ (R : α → β → Prop) : List α → List β → Prop where
+  | nil : Forall₂ R [] []
+  | cons : R a b → Forall₂ R as bs → Forall₂ R (a :: as) (b :: bs)
+
+theorem List.Forall₂.head {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : R a b := by
+  cases h; assumption
+
+theorem List.Forall₂.tail {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : Forall₂ R as bs := by
+  cases h; assumption
+
+theorem List.Forall₂.length_eq {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Forall₂ R as bs) : as.length = bs.length := by
+  induction h with
+  | nil => rfl
+  | cons _ _ ih => simp [ih]
+
+theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Forall₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
+    : R a b := by
+  induction h generalizing i with
+  | nil => simp at ha
+  | cons h_head _ ih =>
+    cases i with
+    | zero => simp at ha hb; cases ha; cases hb; exact h_head
+    | succ n => simp at ha hb; exact ih n ha hb
+
+/-- If `Forall₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
+`l2[i]? = some b` and `R a b`. -/
+theorem List.Forall₂.getElem?_some {R : α → β → Prop}
+    {l1 : List α} {l2 : List β}
+    (h : List.Forall₂ R l1 l2) {i : Nat} {a : α}
+    (ha : l1[i]? = some a)
+    : ∃ b, l2[i]? = some b ∧ R a b := by
+  induction h generalizing i with
+  | nil => simp at ha
+  | cons hr _ ih =>
+    cases i with
+    | zero => simp at ha; subst ha; exact ⟨_, rfl, hr⟩
+    | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
+
+/-! ### Zip / map lemmas -/
+
+theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
+  List.length l1 = List.length l2 →
+  (l1.zip l2).map Prod.fst = l1 := by
+  induction l1 generalizing l2 <;> cases l2 <;> simp_all
+
+theorem zip_map_snd_eq {α β: Type} (l1: List α) (l2: List β) :
+  List.length l1 = List.length l2 →
+  (l1.zip l2).map Prod.snd = l2 := by
+  induction l1 generalizing l2 <;> cases l2 <;> simp_all
+
 end

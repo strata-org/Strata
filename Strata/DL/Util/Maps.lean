@@ -646,5 +646,18 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
       rw [List.flatten_cons, List.map_append, List.mem_append]
       exact fun hor => hor.elim hm_not_mem hr_not_mem
 
+theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
+    Map.find? ms.toSingleMap x = Maps.find? ms x := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    unfold Map at m
+    show Map.find? ((m ++ rest.flatten)) x = _
+    rw [Map.find?_append]
+    simp only [Maps.find?]
+    cases Map.find? m x with
+    | none => exact ih
+    | some v => rfl
+
 ---------------------------------------------------------------------
 end
