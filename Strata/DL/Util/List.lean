@@ -11,14 +11,6 @@ public section
 
 namespace List
 
-theorem List.subset_append_cons_right {α : Type} [DecidableEq α] {a b c : List α} {x : α}
-  (h : a ⊆ (b ++ c)) : a ⊆ b ++ (x :: c) := by
-  simp_all [List.instHasSubset, List.Subset]
-  intro e he
-  have := @h e he
-  cases this <;> simp_all
-  done
-
 /--
 Remove duplicates in a list.
 -/
@@ -348,8 +340,7 @@ theorem length_dedup_append_all_in_right {α : Type} [DecidableEq α] (l₁ l₂
 theorem length_dedup_append_subset_right {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) :
   (l₁ ++ l₂).dedup.length = l₂.dedup.length := by
-  simp_all [List.instHasSubset, List.Subset]
-  exact @length_dedup_append_all_in_right _ _ l₁ l₂ (by simp_all)
+  exact @length_dedup_append_all_in_right _ _ l₁ l₂ (by grind)
 
 theorem length_dedup_append_all_in_left {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₂.all (fun e => e ∈ l₁)) :
@@ -380,7 +371,7 @@ theorem length_dedup_subset_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α
   (h1 : l₁ ⊆ l₂) (h2 : l₂ ⊆ l₁) :
   l₁.dedup.length = l₂.dedup.length := by
   have := @length_dedup_all_in_eq _ _ l₁ l₂
-  simp_all [List.instHasSubset, List.Subset]
+  grind
 
 theorem length_dedup_append_le_right {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
   l₂.dedup.length ≤ (l₁ ++ l₂).dedup.length := by
@@ -429,7 +420,7 @@ theorem length_dedup_of_subset_not_mem_lt {α : Type} [DecidableEq α] (l₁ l�
   (h1 : l₁ ⊆ l₂) (h2 : a ∉ l₁) (h3 : a ∈ l₂) :
   l₁.dedup.length < l₂.dedup.length := by
   have := @length_dedup_of_all_in_not_mem_lt _ _ l₁ l₂ a
-  simp_all [List.instHasSubset, List.Subset]
+  grind
 
 theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) : l₁.dedup.length ≤ l₂.dedup.length := by

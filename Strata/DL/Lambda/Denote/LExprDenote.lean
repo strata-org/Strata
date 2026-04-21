@@ -157,8 +157,11 @@ are delegated to `tcInterp`. -/
   | .tcons "arrow" [a, b] => SortDenote tcInterp a → SortDenote tcInterp b
   | .tcons name args      => tcInterp name args
 
-/-- Every sort denotes an inhabited type, given that the type constructor
-interpretation produces inhabited types. -/
+/--
+Every sort denotes an inhabited type, given that the type constructor
+interpretation produces inhabited types.
+-/
+@[reducible]
 def SortDenote.inhabited (tcInterp : TyConstrInterp)
     (h : ∀ name args, Inhabited (tcInterp name args))
     (s : LSort) : Inhabited (SortDenote tcInterp s) := by
@@ -657,7 +660,8 @@ theorem Denotes_denote
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
     typecheck_split h_body h_body h_body h_tr heq =>
-      apply Eq.symm; rw [decide_eq_false_iff_not]
+      apply Eq.symm
+      apply decide_eq_false_iff_not.mpr
       intro hall; have := (hall w).symm.trans ih.symm; contradiction
   | quant_exist_true _ w hbody ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
@@ -670,7 +674,8 @@ theorem Denotes_denote
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
     typecheck_split h_body h_body h_body h_tr heq =>
-      apply Eq.symm; rw [decide_eq_false_iff_not]
+      apply Eq.symm
+      apply decide_eq_false_iff_not.mpr
       intro ⟨w, hw⟩; have := hw.symm.trans (ih w).symm; contradiction
 
 /-! ### Unfolding lemmas for `denote`
