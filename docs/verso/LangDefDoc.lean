@@ -401,7 +401,9 @@ A procedure is invoked via the `call` statement:
 call ProcName(e₁, ..., eₙ);
 ```
 
-The semantics of a call are:
+When Strata in the deductive verification mode sees this `call` statement,
+it eliminates the `call` with the following sequence of statements, rather
+than jumping into the procedure body of the callee.
 (1) evaluate argument expressions,
 (2) assert each non-free precondition with actuals substituted for formals,
 (3) assume each postcondition with actuals substituted for formals and `old v`
