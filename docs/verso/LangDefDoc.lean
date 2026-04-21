@@ -358,8 +358,11 @@ by value from the caller to the callee and any update to the variable within the
 procedure body is not visible to the caller,
 (2) inout parameters, which are mutable within the body, whose initial values
 are passed from the caller and final values are returned to the caller, and
-(3) output parameters, which are equal to the inout parameters except that
-their initial values are nondeterministic, havoced in the caller.
+(3) out parameters, which are equal to the inout parameters except that
+their initial values are not accessible by the `old` syntax, if overriden.
+The ensures clauses cannot reason about the initial value of an out variable,
+but requires clauses can.
+
 Parameter names must be disjoint from each other.
 
 ## Specification
