@@ -1153,7 +1153,7 @@ partial def translateAssign  (ctx : TranslationContext)
           | some _ =>
             throw (.userPythonError lhs.ann s!"'{annType}' is not a type")
           | _ => pure (AnyTy, "Any")
-        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
+        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable [{ name := n.val, type := varTy }] (mkStmtExprMd .Hole))
         let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
         return (newctx, [initStmt] ++ exceptHavoc, true)
     | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc, false)
@@ -1174,7 +1174,7 @@ partial def translateAssign  (ctx : TranslationContext)
                 let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] newExpr) md
                 [assignStmt, initStmt]
               else
-                let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some newExpr)) md
+                let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable [{ name := n.val, type := varType }] (some newExpr)) md
                 [newStmt, initStmt]
             else if withException ctx fnname.text then
               [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans) md]
@@ -1185,7 +1185,7 @@ partial def translateAssign  (ctx : TranslationContext)
               [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
             else
               let varType := mkHighTypeMd (.UserDefined className)
-              let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some rhs_trans)) md
+              let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable [{ name := n.val, type := varType }] (some rhs_trans)) md
               [newStmt]
         | _ => [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         newctx := match rhs_trans.val with
@@ -1207,7 +1207,7 @@ partial def translateAssign  (ctx : TranslationContext)
                -- If the annotation isn't a recognized type, prefer the
                -- inferred type from the RHS (e.g., overload dispatch).
                if isKnownType ctx annStr then annStr else inferType
-          let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy AnyNone)
+          let initStmt := mkStmtExprMd (StmtExpr.LocalVariable [{ name := n.val, type := AnyTy }] AnyNone)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
           return (newctx, initStmt :: assignStmts, true)
     | .Subscript _ _ _ _ =>
@@ -1311,7 +1311,7 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
       then acc else acc ++ [(n, ty)]) []
   let hoistedDecls : List StmtExprMd ←  newDecls.mapM fun (name, tyStr) => do
       let ty ← translateType ctx tyStr
-      pure $ mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
+      pure $ mkStmtExprMd (StmtExpr.LocalVariable [{ name := (name : String), type := ty }] (some (mkStmtExprMd .Hole)))
   let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (newDecls.map fun (n, ty) =>
         if isCompositeType ctx ty then (n, ty) else (n, PyLauType.Any)) }
@@ -1405,7 +1405,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           return (ctx, [])
       let newctx := {ctx with variableTypes:=(varName, varType)::ctx.variableTypes}
       let varType ← translateType ctx varType
-      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable varName varType AnyNone)
+      let declStmt := mkStmtExprMd (StmtExpr.LocalVariable [{ name := varName, type := varType }] AnyNone)
       return (newctx, [declStmt])
 
   -- If statement
@@ -1462,7 +1462,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .Hole =>
         let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
         let varType := mkHighTypeMd .TBool
-        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable [{ name := freshVar, type := varType }] (some condExpr))
         let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
@@ -1565,7 +1565,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let mgrExpr ← translateExpr currentCtx ctxExpr
         let mgrTy ← inferExprType currentCtx ctxExpr
         let mgrLauTy ← translateType currentCtx mgrTy
-        let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
+        let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable [{ name := mgrName, type := mgrLauTy }] (some mgrExpr))
         let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
         let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef [] md
@@ -1579,7 +1579,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             setupStmts := setupStmts ++ [mgrDecl, assignStmt]
           else
             -- New variable — declare outside the block so it's visible after
-            let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some enterCall))
+            let varDecl := mkStmtExprMd (StmtExpr.LocalVariable [{ name := varName, type := AnyTy }] (some enterCall))
             currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(varName, PyLauType.Any)]}
             setupStmts := setupStmts ++ [mgrDecl, varDecl]
         | none =>
@@ -1665,7 +1665,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => (target, [], [])
     let slices ← slices.mapM (translateExpr ctx)
     let tempVarDecls := (tempVars.zip slices).map λ (var, slice) =>
-              mkStmtExprMd (.LocalVariable { text := var, md := default } AnyTy slice)
+              mkStmtExprMd (.LocalVariable [{ name := { text := var, md := default }, type := AnyTy }] slice)
     let rhs : Python.expr SourceRange := .BinOp sr target op value
     let pyNormalAssign : Python.stmt SourceRange :=
           .Assign sr {val:= #[target], ann:= target.ann} rhs {val:= none, ann:= sr}
@@ -1687,7 +1687,7 @@ partial def translateStmtList (ctx : TranslationContext) (stmts : List (Python.s
 end
 
 def prependExceptHandlingHelper (l: List StmtExprMd) : List StmtExprMd :=
-  mkStmtExprMd (.LocalVariable "maybe_except" (mkCoreType "Error") (some NoError)) :: l
+  mkStmtExprMd (.LocalVariable [{ name := "maybe_except", type := mkCoreType "Error" }] (some NoError)) :: l
 
 partial def getNestedSubscripts (expr:  Python.expr SourceRange) : List ( Python.expr SourceRange) :=
   match expr with
@@ -1825,7 +1825,7 @@ def translateFunctionBody (ctx : TranslationContext) (inputTypes : List (String 
     let (varDecls, ctx) ←  createVarDeclStmtsAndCtx ctx newDecls
     let (newctx, bodyStmts) ← translateStmtList ctx body
     let bodyStmts := prependExceptHandlingHelper (varDecls ++ bodyStmts)
-    let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
+    let bodyStmts := (mkStmtExprMd (.LocalVariable [{ name := "nullcall_ret", type := AnyTy }] (some AnyNone))) :: bodyStmts
     return (mkStmtExprMd (StmtExpr.Block bodyStmts none), newctx)
 
 /-- Translate Python function to Laurel Procedure -/
@@ -2000,7 +2000,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let paramCopies := nonSelfParams.map fun p =>
       let origName := p.name.text
       let renamedName := "$in_" ++ origName
-      mkStmtExprMd (StmtExpr.LocalVariable origName p.type
+      mkStmtExprMd (StmtExpr.LocalVariable [{ name := origName, type := p.type }]
         (some (mkStmtExprMd (StmtExpr.Identifier renamedName))))
     let bodyStmts := paramCopies ++ bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)

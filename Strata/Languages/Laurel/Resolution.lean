@@ -307,11 +307,13 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     withScope do
       let stmts' ← stmts.mapM resolveStmtExpr
       pure (.Block stmts' label)
-  | .LocalVariable name ty init =>
-    let ty' ← resolveHighType ty
+  | .LocalVariable params init =>
     let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let name' ← defineNameCheckDup name (.var name ty')
-    pure (.LocalVariable name' ty' init')
+    let params' ← params.mapM fun p => do
+      let ty' ← resolveHighType p.type
+      let name' ← defineNameCheckDup p.name (.var p.name ty')
+      pure { name := name', type := ty' }
+    pure (.LocalVariable params' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
     let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
@@ -579,9 +581,8 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .LocalVariable name ty init =>
-    let map := register map name (.var name ty)
-    let map := collectHighType map ty
+  | .LocalVariable params init =>
+    let map := params.foldl (fun m p => register (collectHighType m p.type) p.name (.var p.name p.type)) map
     match init with
     | some i => collectStmtExpr map i
     | none => map
