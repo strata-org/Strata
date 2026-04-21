@@ -39,7 +39,8 @@ rec function len<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
 
 /--
-error: Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
+error: ❌ Type checking error.
+Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
 #eval verify polyRecPgm (options := .quiet)
@@ -62,7 +63,8 @@ rec function listLen (xs : IntList) : int
 #end
 
 /--
-error: Recursive function 'listLen' requires a @[cases] parameter
+error: ❌ Type checking error.
+Recursive function 'listLen' requires a @[cases] parameter
 -/
 #guard_msgs in
 #eval verify noCasesPgm (options := .quiet)

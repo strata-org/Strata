@@ -26,7 +26,7 @@ procedure test () returns () {
 #end
 
 /--
-error: (329-347) ❌ Type checking error.
+error: ❌ Type checking error.
 Block label "foo" shadows an enclosing block.
 -/
 #guard_msgs in

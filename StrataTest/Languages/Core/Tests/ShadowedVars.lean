@@ -22,7 +22,7 @@ procedure Test() returns ()
 #end
 
 /--
-error: (354-367) ❌ Type checking error.
+error: ❌ Type checking error.
 Variable g of type int already in context.
 -/
 #guard_msgs in
@@ -39,7 +39,7 @@ procedure Test() returns ()
 #end
 
 /--
-error: (621-633) ❌ Type checking error.
+error: ❌ Type checking error.
 Variable g of type bool already in context.
 -/
 #guard_msgs in

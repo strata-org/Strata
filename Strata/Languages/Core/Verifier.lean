@@ -814,7 +814,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT. -/
-def corePipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
+def transformPipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
     | none => []
@@ -833,7 +833,7 @@ def typeCheckPipelinePhase (options : VerifyOptions)
   transform prog := do
     match Core.typeCheck options prog moreFns with
     | .ok p => return (true, p)
-    | .error e => throw s!"{e.formatRange none true} ❌ Type checking error.
+    | .error e => throw s!"❌ Type checking error.
 {e.message}"
   phase := { name := "TypeCheck", getValidation := fun _ => .modelPreserving }
 
@@ -843,21 +843,22 @@ def symbolicEvalPipelinePhase (options : VerifyOptions)
   transform prog := do
     match Core.symbolicEval options prog moreFns with
     | .ok (p, _) => return (true, p)
-    | .error e => throw s!"{e.message}"
+    | .error e => throw s!"❌ Type checking error.
+{e.message}"
   phase := { name := "SymbolicEval", getValidation := fun _ => .modelPreserving }
 
 /-- The full pipeline phases including type checking, symbolic eval, and ANF. -/
-def fullPipelinePhases (options : VerifyOptions)
+def corePipelinePhases (options : VerifyOptions)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (procs : Option (List String) := none) : List PipelinePhase :=
-  corePipelinePhases procs ++
+  transformPipelinePhases procs ++
   [typeCheckPipelinePhase options moreFns,
    symbolicEvalPipelinePhase options moreFns,
    Core.anfEncoderPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none) : List AbstractedPhase :=
-  (corePipelinePhases procs).map (·.phase)
+  (transformPipelinePhases procs).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -1077,11 +1078,8 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
-  let evalPhases := [typeCheckPipelinePhase options moreFns,
-                     symbolicEvalPipelinePhase options moreFns,
-                     Core.anfEncoderPipelinePhase]
-  let allPhases := pipelinePhases ++ evalPhases
+  let pipelinePhases := prefixPhases ++ corePipelinePhases options moreFns (procs := proceduresToVerify)
+  let allPhases := pipelinePhases
   let phases := allPhases.map (·.phase)
   let ((oblProgram, _), pipelineStats) ← profileStep profile "  Pipeline" do
     if let some pfx := keepAllFilesPrefix then
