@@ -530,6 +530,10 @@ private def mergeCondPairs (ewns : List EnvWithNext)
   let trues := ewns.filter p
   let falses := ewns.filter (not ∘ p)
   let r := findCondPairs trues [] falses []
+  -- processIteBranches always tags both sides of a split with the same
+  -- splitId, so findCondPairs always finds at least one pair when paths
+  -- from opposite sides exist. This guard prevents an infinite loop if
+  -- that invariant were ever violated.
   if h_nonempty : r.paired.isEmpty then
     ewns
   else
