@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.B3.DDMTransform.Conversion
+module
+meta import Strata.Languages.B3.DDMTransform.Conversion
+
+
+meta section
 
 /-!
 # B3 Conversion Error Tests

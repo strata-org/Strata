@@ -59,9 +59,11 @@ Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - r
 ## Usage
 -/
 
+public meta section
+
 -- Example: Verify a simple B3 program (meta to avoid including in production)
 -- This is not a test, it only demonstrates the end-to-end API
-public meta def exampleVerification : IO Unit := do
+def exampleVerification : IO Unit := do
   -- Parse B3 program using DDM syntax
   let ddmProgram : Strata.Program := #strata program B3CST;
     function f(x : int) : int { x + 1 }
@@ -130,3 +132,4 @@ public meta def exampleVerification : IO Unit := do
   pure ()
 
 -- See StrataTest/Languages/B3/Verifier/VerifierTests.lean for test of this example.
+end

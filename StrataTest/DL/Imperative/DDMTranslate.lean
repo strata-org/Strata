@@ -4,8 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.DL.Imperative.Arith
-import StrataTest.DL.Imperative.DDMDefinition
+module
+public import StrataTest.DL.Imperative.Arith
+import all StrataTest.DL.Imperative.Arith
+public import StrataTest.DL.Imperative.DDMDefinition
+import all StrataTest.DL.Imperative.DDMDefinition
+meta import StrataTest.DL.Imperative.Arith
+meta import StrataTest.DL.Imperative.DDMDefinition
+
+public section
 
 namespace ArithPrograms
 open Std (ToFormat Format format)
@@ -23,7 +30,7 @@ Abstract Syntax is in the file `ArithExpr.lean`.
 structure TransState where
   errors : Array Format
 
-def TransM := StateM TransState
+@[expose] def TransM := StateM TransState
   deriving Monad
 
 def TransM.run (m : TransM α) : (α × Array Format) :=

@@ -4,7 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.SMT.Encoder
+module
+meta import all Strata.DL.SMT.Encoder
+import all Init.Data.Repr
+
+
+meta section
 
 /-! ## Tests and proofs for disambiguateName / breakDisambiguatedName -/
 

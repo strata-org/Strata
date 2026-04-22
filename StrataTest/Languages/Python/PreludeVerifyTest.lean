@@ -4,9 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.PyFactory
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Python.PyFactory
+meta import Strata.Languages.Python.PythonRuntimeLaurelPart
+meta import Strata.Languages.Core.Verifier
+
+
+meta section
 
 /-! # Prelude Verification Test
 

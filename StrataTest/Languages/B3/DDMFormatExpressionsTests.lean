@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.B3.DDMFormatTests
-import Strata.Languages.B3.DDMTransform.Conversion
+module
+meta import StrataTest.Languages.B3.DDMFormatTests
+meta import Strata.Languages.B3.DDMTransform.Conversion
+
+
+meta section
 
 /-!
 # B3 Expression Formatting Tests

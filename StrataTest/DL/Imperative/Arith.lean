@@ -4,19 +4,25 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.DL.Imperative.ArithExpr
-import StrataTest.DL.Imperative.ArithEval
-import StrataTest.DL.Imperative.ArithType
+module
+public import StrataTest.DL.Imperative.ArithExpr
+public import StrataTest.DL.Imperative.ArithEval
+public import StrataTest.DL.Imperative.ArithType
+meta import StrataTest.DL.Imperative.ArithExpr
+meta import StrataTest.DL.Imperative.ArithEval
+meta import StrataTest.DL.Imperative.ArithType
 
 ---------------------------------------------------------------------
 namespace Arith
 open Std (ToFormat Format format)
 
-def typeCheckAndPartialEval (cmds : Commands) : Except Format (Commands × Eval.State) := do
+public def typeCheckAndPartialEval (cmds : Commands) : Except Format (Commands × Eval.State) := do
   let (cmds, _T) ← Imperative.Cmds.typeCheck () TEnv.init cmds
     |>.mapError (fun dm => dm.message)
   let (cmds, S) := Imperative.Cmds.eval Eval.State.init cmds
   return (cmds, S)
+
+meta section
 
 private def testProgram1 : Commands :=
   [.init "x" .Num (.det (.Var "y" (.some .Num))) .empty,
@@ -75,5 +81,6 @@ genNum: 0
 #eval do let (cmds, S) ← typeCheckAndPartialEval testProgram2
          return format (cmds, S)
 
+end -- meta section
 end Arith
 ---------------------------------------------------------------------

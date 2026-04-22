@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LExprT
+module
+meta import Strata.DL.Lambda.LExprT
+
+
+meta section
 
 namespace Lambda
 ---------------------------------------------------------------------

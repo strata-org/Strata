@@ -5,8 +5,12 @@
 -/
 
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+module
+meta import StrataTest.Util.TestDiagnostics
+meta import StrataTest.Languages.Laurel.TestExamples
+
+
+meta section
 
 open StrataTest.Util
 

@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.Regex.ReToCore
-import Strata.Languages.Core.DDMTransform.ASTtoCST
+module
+meta import Strata.Languages.Python.Regex.ReToCore
+meta import Strata.Languages.Core.DDMTransform.ASTtoCST
+
+
+meta section
 
 namespace Strata.Python.Tests
 

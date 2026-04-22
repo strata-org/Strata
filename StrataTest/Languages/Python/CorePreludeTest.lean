@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Python.CorePrelude
-import Strata.DDM.Ion
+module
+meta import Strata.Languages.Python.CorePrelude
+meta import Strata.DDM.Ion
+
+
+meta section
 
 namespace Strata.Python
 

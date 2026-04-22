@@ -4,9 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.B3.Verifier
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.Conversion
+module
+meta import Strata.Languages.B3.Verifier.State
+meta import Strata.Languages.B3.Verifier.Program
+
+meta section
 
 /-!
 # B3 to SMT Translation Tests

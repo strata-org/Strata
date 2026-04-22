@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+module
+meta import Strata.Backends.CBMC.CollectSymbols
+meta import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+
+
+meta section
 
 /-! ## End-to-end tests: Core program → GOTO JSON
 

@@ -4,9 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Python.TestExamples
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Parser
+module
+meta import StrataTest.Languages.Python.TestExamples
+meta import StrataTest.Util.TestDiagnostics
+meta import StrataTest.Util.Python
+meta import Strata.DDM.Parser
+meta import Strata.Languages.Python.PythonToLaurel
+
+
+meta section
 
 /-! ## Test: Inline Python verification via processPythonFile
 

@@ -6,8 +6,15 @@
 
 
 
-import StrataTest.DL.Imperative.ArithExpr
-import Strata.DL.Imperative.CmdEval
+module
+public import StrataTest.DL.Imperative.ArithExpr
+meta import StrataTest.DL.Imperative.ArithExpr
+public import Strata.DL.Imperative.CmdEval
+meta import Strata.DL.Imperative.CmdEval
+
+
+
+public section
 
 namespace Arith
 
@@ -169,6 +176,8 @@ instance : ToFormat (Cmds PureExpr × State) where
 
 /- Tests -/
 
+meta section
+
 private def testProgram1 : Cmds PureExpr :=
   [.init "x" .Num (.det (.Num 0)) .empty,
    .set "x" (.det (.Plus (.Var "x" .none) (.Num 100))) .empty,
@@ -223,6 +232,8 @@ genNum: 1
 -/
 #guard_msgs in
 #eval format $ Cmds.eval State.init testProgram2
+
+end -- meta section
 
 ---------------------------------------------------------------------
 

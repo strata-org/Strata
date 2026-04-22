@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Core
+module
+meta import Strata.Languages.Core.Core
+
+
+meta section
 
 namespace Core
 

@@ -4,8 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
-import Lean.Elab.Command
+module
+public import Strata.Languages.Core.Verifier
+public import Strata.DDM.Parser
+public import Lean.Elab.Command
+
+
+public section
 
 open Strata
 open String

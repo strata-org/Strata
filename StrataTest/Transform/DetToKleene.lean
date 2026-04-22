@@ -4,11 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Transform.DetToKleene
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.DL.Lambda.IntBoolFactory
+module
+meta import Strata.Transform.DetToKleene
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.DL.Lambda.IntBoolFactory
+
+
+meta section
 
 open Core
 

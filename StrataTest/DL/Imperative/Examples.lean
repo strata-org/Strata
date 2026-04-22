@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.DL.Imperative.Verify
+module
+meta import StrataTest.DL.Imperative.Verify
+
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Strata

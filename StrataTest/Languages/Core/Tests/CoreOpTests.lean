@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.CoreOp
+module
+meta import Strata.Languages.Core.CoreOp
+
+
+meta section
 
 /-! ## Tests for CoreOp structured operator types -/
 

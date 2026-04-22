@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.SMT.Solver
+module
+meta import Strata.DL.SMT.Solver
+
+
+meta section
 
 /-! ## Tests for Solver.termToSMTString / Solver.typeToSMTString error handling
 

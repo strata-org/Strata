@@ -4,9 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Program
+module
 import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.Verifier
 import Strata.Transform.StructuredToUnstructured
+meta import Strata.Languages.Core.DDMTransform.Grammar
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.Options
+public import Strata.DDM.AST
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
+
+
+public section
 
 namespace Strata
 

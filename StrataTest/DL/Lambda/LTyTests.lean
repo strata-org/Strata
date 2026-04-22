@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LTy
+module
+meta import Strata.DL.Lambda.LTy
 
 /-! ## Tests for LTy -/
 

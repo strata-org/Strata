@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Util.IO
+module
+meta import Strata.Util.IO
+
+
+meta section
 
 -- Test that readInputSource can read from a regular file
 def testReadFile : IO Unit := do

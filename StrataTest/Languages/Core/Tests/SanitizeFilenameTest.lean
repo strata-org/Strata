@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
+module
+meta import Strata.Languages.Core.Verifier
 
 /-! # Tests: sanitizeFilename -/
 

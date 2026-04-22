@@ -4,11 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
+module
+public import StrataTest.Util.TestDiagnostics
 import StrataTest.Util.Python
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+public import Strata.Languages.Laurel.LaurelToCoreTranslator
+
+
+public section
 
 open StrataTest.Util
 open Strata
