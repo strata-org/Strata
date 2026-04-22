@@ -269,11 +269,18 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
-  /-- Ordered log of solver results: the raw solver results followed by
-      per-phase adjusted results (e.g. sat→unknown when a phase cannot
-      validate the model). Consumed by future diagnostic and traceability
-      tooling. -/
-  solverLog : List SolverPhaseLog := []
+  /-- Ordered log of solver results per path. Each inner array is one path's
+      log: the raw solver results followed by per-phase adjusted results
+      (e.g. sat→unknown when a phase cannot validate the model).
+      When outcomes from multiple paths are merged, each path's log is
+      preserved as a separate entry in the outer array. Consumed by future
+      diagnostic and traceability tooling. -/
+  solverLog : Array (Array SolverPhaseLog) := #[]
+  /-- When this outcome was produced by merging multiple paths, stores the
+      pre-merge per-path outcomes. Empty for unmerged (single-path) results.
+      Used by the rendering phase to compute per-path classification summaries
+      without storing rendering-mode-dependent strings. -/
+  mergedFrom : Array VCOutcome := #[]
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -476,7 +483,58 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
     else if o.passReachabilityUnknown then "✔️"
     else "❓"
 
+/-- Compute a per-path classification summary for a merged outcome.
+    Returns a parenthesized string like "(always true if reached on 1 path,
+    always false if reached on 1 path)" when the merged result differs from
+    individual paths. Returns the empty string for unmerged results or when
+    all paths have the same classification as the merged result. -/
+def pathSummary (o : VCOutcome) (property : Imperative.PropertyType)
+    (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
+  if o.mergedFrom.isEmpty then ""
+  else
+    let mergedLabel := o.label property checkLevel checkMode
+    -- Count per-path classifications
+    let counts := o.mergedFrom.foldl (init := Std.HashMap.emptyWithCapacity (α := String) (β := Nat))
+      fun acc pathOutcome =>
+        let pathLabel := pathOutcome.label property checkLevel checkMode
+        acc.insert pathLabel ((acc.getD pathLabel 0) + 1)
+    -- If all paths have the same label as the merged result, no extra info needed
+    if counts.size == 1 && counts.contains mergedLabel then ""
+    else
+      let parts := counts.toList.mergeSort (fun a b => a.1 < b.1)
+        |>.map fun (lbl, n) =>
+          s!"{lbl} on {n} path{if n > 1 then "s" else ""}"
+      s!" ({", ".intercalate parts})"
+
 end VCOutcome
+
+/-- Merge two SMT results, where `err` dominates `sat` dominates `unknown` dominates `unsat`.
+    If either result is an error, the merged result is an error.
+    If either result is `sat`, the merged result is `sat` (keeping the first model).
+    If either is `unknown`, the merged result is `unknown`.
+    Only if both are `unsat` is the merged result `unsat`. -/
+def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
+  match a, b with
+  | .err e, _ => .err e
+  | _, .err e => .err e
+  | .sat m, _ => .sat m
+  | _, .sat m => .sat m
+  | .unknown m, _ => .unknown m
+  | _, .unknown m => .unknown m
+  | .unsat, .unsat => .unsat
+
+/-- Merge two `VCOutcome`s from different paths to the same assertion.
+    For each SMT check (satisfiability and validity), `sat` dominates:
+    if the assertion is satisfiable on any path, the merged result is sat.
+    Each path's `solverLog` is preserved as a separate entry.
+    Pre-merge per-path outcomes are stored in `mergedFrom` for rendering. -/
+def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
+  let aPaths := if a.mergedFrom.isEmpty then #[a] else a.mergedFrom
+  let bPaths := if b.mergedFrom.isEmpty then #[b] else b.mergedFrom
+  { satisfiabilityProperty := a.satisfiabilityProperty.merge b.satisfiabilityProperty
+    validityProperty := a.validityProperty.merge b.validityProperty
+    solverLog := a.solverLog ++ b.solverLog
+    mergedFrom := aPaths ++ bPaths }
 
 
 /--
@@ -519,10 +577,10 @@ structure VCResult where
   lexprModel : LExprModel := []
 
 /-- Mask outcome properties that were not requested.
-    When PE (partial evaluation) resolves a check that wasn't requested by the
+    When the evaluator resolves a check that wasn't requested by the
     check mode/level, we set it to `.unknown` so the label function displays
     the appropriate message for the checks that were actually requested.
-    For example, in minimal deductive mode we only request validity, so if PE
+    For example, in minimal deductive mode we only request validity, so if evaluator
     also determined satisfiability, we mask it to `.unknown`. -/
 def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool) : VCOutcome :=
   if satisfiabilityCheck && validityCheck then
@@ -556,8 +614,9 @@ def VCResult.formatOutcome (r : VCResult) : String :=
   let prop := r.obligation.property
   match r.outcome with
   | .ok o =>
+    let suffix := o.pathSummary prop r.checkLevel r.checkMode
     s!"{o.emoji prop r.checkLevel r.checkMode} \
-       {o.label prop r.checkLevel r.checkMode}"
+       {o.label prop r.checkLevel r.checkMode}{suffix}"
   | .error e => s!"🚨 {e}"
 
 /-- Deductive-mode success: the assertion's validity is proven (`isPass`).
@@ -622,34 +681,83 @@ instance : ToFormat VCResults where
 instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
+/-- Merge two `VCResult`s from different paths to the same assertion.
+    Outcomes are merged at the `VCOutcome` level (sat dominates).
+    The first result's obligation metadata is preserved.
+    The model from the result with a sat outcome is preferred. -/
+def VCResult.merge (a b : VCResult) : VCResult :=
+  match a.outcome, b.outcome with
+  | .error _, _ => a  -- preserve errors
+  | _, .error _ => b
+  | .ok oa, .ok ob =>
+    let merged := oa.merge ob
+    -- Keep the model from whichever result had a sat satisfiability or validity
+    let model := if oa.satisfiabilityProperty.isSat || oa.validityProperty.isSat
+                 then a.lexprModel else b.lexprModel
+    { a with outcome := .ok merged, lexprModel := model }
+
+/-- Compute a grouping key for a VCResult based on its source location.
+    Uses the display label (property summary) combined with the primary FileRange
+    and related FileRanges (from inlining). When the file range is unknown,
+    returns `none` so the result is not merged with others. -/
+private def vcResultGroupKey (r : VCResult) (uid : Nat) : String × Nat :=
+  let displayLabel := r.obligation.metadata.getPropertySummary.getD r.obligation.label
+  match Imperative.getFileRange r.obligation.metadata with
+  | some fr =>
+    if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
+    else
+      let related := Imperative.getRelatedFileRanges r.obligation.metadata
+      let relatedKey := related.foldl (fun acc r => s!"{acc}+{repr r}") ""
+      (s!"{displayLabel}@{repr fr}{relatedKey}", uid)
+  | none => (s!"{displayLabel}@__unique_{uid}", uid + 1)
+
+/-- Merge `VCResults` that originate from the same assertion (identified by
+    source location + related locations from inlining). Outcomes are merged
+    at the `VCOutcome` level: if a proposition is sat on any path, the merged
+    result is sat. Preserves first-occurrence order.
+    When the file range is unknown, each VCResult is kept as-is. -/
+def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
+  let (resultsByKey, order, _) := rs.foldl
+    (init := (Std.HashMap.emptyWithCapacity (α := String) (β := VCResult),
+              (#[] : Array String),
+              (0 : Nat)))
+    fun (resultsByKey, order, uid) r =>
+      let (k, uid) := vcResultGroupKey r uid
+      match resultsByKey.get? k with
+      | some existing =>
+        (resultsByKey.insert k (existing.merge r), order, uid)
+      | none =>
+        (resultsByKey.insert k r, order.push k, uid)
+  order.filterMap fun k => resultsByKey.get? k
+
 /--
-Preprocess a proof obligation using partial evaluation (PE).
-Returns PE-determined results for satisfiability and validity independently.
-Each result is `some r` if PE can determine it, `none` if the solver is needed.
+Preprocess a proof obligation using symbolic simulation.
+Returns the symbolic results for satisfiability and validity independently.
+Each result is `some r` if evaluator can determine it, `none` if the solver is needed.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
-  -- PE can determine satisfiability if the obligation is literally false (unsat)
+  -- Evaluator can determine satisfiability if the obligation is literally false (unsat)
   let peSatResult : Option SMT.Result :=
     if !satisfiabilityCheck then some .unknown
     else if obligation.obligation.isFalse then some .unsat
     else none
-  -- PE can determine validity if the obligation is literally true (valid = unsat)
+  -- Evaluator can determine validity if the obligation is literally true (valid = unsat)
   -- or literally false with empty assumptions (invalid = sat)
   let peValResult : Option SMT.Result :=
     if !validityCheck then some .unknown
     else if obligation.obligation.isTrue then some .unsat
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
     else none
-  -- If PE resolved both, log for the assert(false) case
+  -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then
       let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
-                   \n\nResult obtained during partial evaluation.\
-                   {if options.verbose >= .normal then prog else ""}"
+                   \n\nResult obtained during evaluation.\
+                   {if options.verbose >= .debug then prog else ""}"
   -- Apply axiom pruning if needed.
   -- Axiom removal is unsound for cover obligations (removing axioms weakens
   -- path conditions, potentially making unreachable paths appear satisfiable).
@@ -724,10 +832,12 @@ def coreAbstractedPhases (procs : Option (List String) := none) : List Abstracte
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
     (satisfiabilityCheck validityCheck : Bool)
-    (satPhaseLog valPhaseLog : List SolverPhaseLog) : List SolverPhaseLog :=
-  (if satisfiabilityCheck then [{ phase := "solver.sat", result := satResult }] else []) ++
-  (if validityCheck then [{ phase := "solver.val", result := valResult }] else []) ++
-  satPhaseLog ++ valPhaseLog
+    (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
+  let sat : Array SolverPhaseLog :=
+    if satisfiabilityCheck then #[{ phase := "solver.sat", result := satResult }] else #[]
+  let val : Array SolverPhaseLog :=
+    if validityCheck then #[{ phase := "solver.val", result := valResult }] else #[]
+  sat ++ val ++ satPhaseLog.toArray ++ valPhaseLog.toArray
 
 /-- Adjust an SMT result through pipeline phase validation. A `.sat` result
     may be demoted to `.unknown` if a phase cannot validate the model, and
@@ -776,7 +886,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
-                 {if options.verbose >= .normal then prog else ""}"
+                 {if options.verbose >= .debug then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
     -- Convert unvalidated sat results to unknown when phases require validation
@@ -788,7 +898,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     let rawOutcome : VCOutcome := {
       satisfiabilityProperty := adjSat,
       validityProperty := adjVal,
-      solverLog := smtLog }
+      solverLog := #[smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
     -- Extract model from sat results (using raw solver results)
     let model := match satResult, validityResult with
@@ -804,13 +914,13 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
-def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
+def verifySingleEnv (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel (VCResults × Statistics) := do
-  let (p, E) := pE
+  let p := E.program
   let profile := options.profile
   match E.error with
   | some err =>
@@ -842,7 +952,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       let t1 ← IO.monoNanosNow
       preprocessNs := preprocessNs + (t1 - t0)
-      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
+      -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
           let phases := externalPhases ++ corePhases
@@ -853,13 +963,13 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           let outcome : VCOutcome := {
             satisfiabilityProperty := adjPeSat,
             validityProperty := adjPeVal,
-            solverLog := peLog }
+            solverLog := #[peLog] }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
           results := results.push result
           peResolvedCount := peResolvedCount + 1
           if result.isFailure || result.isImplementationError then
-            if options.verbose >= .normal then
+            if options.verbose >= .debug then
               let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
               dbg_trace f!"\n\nResult: {result}\n{prog}"
             if options.stopOnFirstError then break
@@ -880,7 +990,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
                         checkLevel := options.checkLevel,
                         checkMode := options.checkMode,
                         lexprModel := [] }
-        if options.verbose >= .normal then
+        if options.verbose >= .debug then
           let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
@@ -892,7 +1002,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
                       counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
-        -- Merge PE results with solver results
+        -- Merge evaluator results with solver results
         let result := match result.outcome with
           | .ok solverOutcome =>
             let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
@@ -903,7 +1013,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .error _ => result
         results := results.push result
         if result.isNotSuccess then
-          if options.verbose >= .normal then
+          if options.verbose >= .debug then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
@@ -911,7 +1021,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
     return (results, stats)
 
 /-- Run the Strata Core verification pipeline on a program: transform,
@@ -963,8 +1073,8 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  let (pEs, evalStats) ← profileStep profile "  Type check and partial eval" do
-    match Core.typeCheckAndPartialEval options finalProgram moreFns with
+  let (pEs, evalStats) ← profileStep profile "  Type check and symbolic eval" do
+    match Core.typeCheckAndEval options finalProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
     | .ok (pEs, stats) => .ok (pEs, stats)
@@ -978,7 +1088,8 @@ def verify (program : Program)
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
-  .ok (VCss.map (·.fst)).toArray.flatten
+  let results : VCResults := (VCss.map (·.fst)).toArray.flatten
+  .ok results.mergeByAssertion
 
 end -- public section
 end Core

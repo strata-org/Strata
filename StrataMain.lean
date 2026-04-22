@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -- Executable with utilities for working with Strata files.
 import Strata.Backends.CBMC.CollectSymbols
@@ -25,6 +26,12 @@ import Strata.Util.IO
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
+import Strata.DDM.BuiltinDialects
+import Strata.DDM.Util.String
+import Strata.Languages.Python.PyFactory
+import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.DDM
+import Strata.Languages.Python.ReadPython
 
 open Strata
 
@@ -311,7 +318,7 @@ def printCommand : Command where
     match pd with
     | .dialect d =>
       let ld ← searchPath.getLoaded
-      let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ ld.dialects))
+      let .isTrue mem := (inferInstance : Decidable (d.name ∈ ld.dialects))
         | exitInternalError "Internal error reading file."
       IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
@@ -330,7 +337,7 @@ def diffCommand : Command where
     | .program p1, .program p2 =>
       if p1.dialect != p2.dialect then
         exitFailure s!"Dialects differ: {p1.dialect} and {p2.dialect}"
-        let Decidable.isTrue eq := inferInstanceAs (Decidable (p1.commands.size = p2.commands.size))
+        let Decidable.isTrue eq := (inferInstance : Decidable (p1.commands.size = p2.commands.size))
           | exitFailure s!"Number of commands differ {p1.commands.size} and {p2.commands.size}"
         for (c1, c2) in Array.zip p1.commands p2.commands do
           if c1 != c2 then
@@ -518,7 +525,10 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .arg "dir" },
             { name := "entry-point",
               help := "Which procedures to verify: main (main fn only), roots (user procs with no user callers, default), or all (all user procs). Only valid in bugFinding mode.",
-              takesArg := .arg "mode" }]
+              takesArg := .arg "mode" },
+            { name := "warning-summary",
+              help := "Write PySpec warning summary as JSON to <file>.",
+              takesArg := .arg "file" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -542,10 +552,12 @@ def pyAnalyzeLaurelCommand : Command where
     let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
+    let warningSummaryFile := pflags.getString "warning-summary"
     let combinedLaurel ←
       match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
-                (quiet := quiet) |>.toBaseIO with
+                (quiet := quiet)
+                (warningSummaryFile := warningSummaryFile) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -554,8 +566,6 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
-        -- Emit structured set-info metadata before DETAIL/RESULT lines.
-        -- Also write the set-info metadata to user_errors.txt.
         let filePath' := sourcePath.getD filePath
         let mut lines := #[
           s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
@@ -579,10 +589,13 @@ def pyAnalyzeLaurelCommand : Command where
 
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
 
-    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel) ←
+    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel, laurelPassStats) ←
       profileStep profile "Laurel to Core translation" do
         Strata.translateCombinedLaurelWithLowered combinedLaurel
-          (keepAllFilesPrefix := keepPrefix)
+          (keepAllFilesPrefix := keepPrefix) (profile := profile)
+
+    if profile && !laurelPassStats.data.isEmpty then
+      IO.println laurelPassStats.format
 
     let coreProgram ←
       match coreProgramOption with
@@ -639,7 +652,7 @@ def pyAnalyzeLaurelCommand : Command where
                 (prefixPhases := inlinePhases)
                 (keepAllFilesPrefix := keepPrefix)
                 |>.toBaseIO with
-      | .ok r => pure r
+      | .ok r => pure r.mergeByAssertion
       | .error msg => exitPyAnalyzeInternalError msg
 
     -- Print translation errors (always on stderr)
@@ -856,7 +869,7 @@ def pyResolveOverloadsCommand : Command where
     -- Read dispatch overload table
     let overloads ←
       match ← readDispatchOverloads #[dispatchPath] |>.toBaseIO with
-      | .ok r => pure r
+      | .ok (r, _) => pure r
       | .error msg => exitFailure msg
     -- Convert .py to Python AST
     let stmts ←
@@ -1365,6 +1378,7 @@ private def parseArgs (cmdName : String)
   | [] =>
     pure (acc, pflags)
 
+public
 def main (args : List String) : IO Unit := do
   try do
     match args with

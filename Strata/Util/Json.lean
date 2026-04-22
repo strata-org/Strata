@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Lean.Data.Json.Basic
 import Lean.Data.Json.Printer
+
+public section
 
 /-! Streaming JSON writer that avoids stack overflow on large values. -/
 

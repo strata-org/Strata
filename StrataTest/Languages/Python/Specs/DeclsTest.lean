@@ -12,9 +12,8 @@ namespace DeclsTest
 private abbrev mk1 (a : SpecAtomType) : SpecType := ⟨#[a], ⟨0, 0⟩⟩
 private abbrev mk2 (a : SpecAtomType) : SpecType := ⟨#[a], ⟨⟨1⟩, ⟨2⟩⟩⟩
 
--- Atom ordering: ident < pyClass < intLiteral < stringLiteral < typedDict
-#guard compare (SpecAtomType.ident .builtinsInt #[]) (.pyClass "Foo" #[]) == .lt
-#guard compare (SpecAtomType.pyClass "Foo" #[]) (.intLiteral 0) == .lt
+-- Atom ordering: ident < intLiteral < stringLiteral < typedDict
+#guard compare (SpecAtomType.ident .builtinsInt #[]) (.intLiteral 0) == .lt
 #guard compare (SpecAtomType.intLiteral 0) (.stringLiteral "a") == .lt
 
 -- Same variant compares by fields
