@@ -1060,7 +1060,7 @@ partial def translateCall (ctx : TranslationContext)
         let val := DictStrAny_get_param trans_dict arg.name true
         let isCorrectType := mkStmtExprMd (.StaticCall testerName [val])
         let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
-        typeAsserts := mkStmtExprMd (.Assert cond) :: typeAsserts
+        typeAsserts := mkStmtExprMd (.Assert { condition := cond }) :: typeAsserts
     let typeAssertsOrdered := typeAsserts.reverse
     let call ← emitCall (allArgs ++ kwargsArg)
     if typeAssertsOrdered.isEmpty then return call
@@ -1356,7 +1356,7 @@ partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) :
     propagates the exceptions from its arguments (see the body of PAdd, PMul,..),
     so we don't need to recurse this function here.-/
     if isMaybeExceptAnyFunc ctx funcname.text then
-      [{e with md:= e.md.withPropertySummary $ "Check " ++ funcname.text ++ " exception"}]
+      [e]
     else args.flatMap $ getMaybeExceptionExprs ctx
   | .PrimitiveOp _ args => args.flatMap $ getMaybeExceptionExprs ctx
   | .IfThenElse cond thenBranch elseBranch =>
@@ -1365,8 +1365,11 @@ partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) :
 
 partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) : List StmtExprMd :=
   let maybeExceptExprs := getMaybeExceptionExprs ctx e
-  maybeExceptExprs.map (λ mbe => mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
-    (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [mbe]])) mbe.md)
+  maybeExceptExprs.map fun mbe =>
+    let funcName := match mbe.val with | .StaticCall f _ => f.text | _ => "expression"
+    let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [mbe]])
+    let cond : Condition := { condition := condExpr, summary := some s!"Check {funcName} exception" }
+    mkStmtExprMdWithLoc (.Assert cond) mbe.md
 
 def withExceptionChecks (ctx : TranslationContext)
     (result : TranslationContext × List StmtExprMd)
@@ -1422,7 +1425,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           | some testerName =>
             let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
             let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
-            [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
+            [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := cond }) md]
           | none => []
         | _ => []
       return withExceptionChecks ctx (ctx, stmts ++ typeAssert)
@@ -1482,9 +1485,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
     -- Extract assert message as property summary
-    let md' := match msg.val with
-      | some (.Constant _ (.ConString _ str) _) => md.withPropertySummary str.val
-      | _ => md
+    let summary := match msg.val with
+      | some (.Constant _ (.ConString _ str) _) => some str.val
+      | _ => none
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -1496,7 +1499,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr)) md'
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := Any_to_bool finalCondExpr, summary }) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
@@ -1667,11 +1670,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Break _ =>
     match ctx.loopBreakLabel with
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := mkStmtExprMd .Hole }) md])
   | .Continue _ =>
     match ctx.loopContinueLabel with
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := mkStmtExprMd .Hole }) md])
 
   -- Augmented assignment: x += expr  →  x = x op expr
   | .AugAssign sr target op value => do
@@ -1835,15 +1838,16 @@ def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
 
 def getUnionTypeConstraint (var: String) (md: MetaData) (tys: List String) (funcname: String)
-    (displayName : String := var): Option StmtExprMd :=
+    (displayName : String := var): Option Condition :=
   let type_constraints := tys.filterMap (getSingleTypeConstraint var)
   if type_constraints.isEmpty then none else
-    let md: MetaData := md.withPropertySummary $ "(" ++ funcname ++ " requires) Type constraint of " ++ displayName
-    some {createBoolOrExpr type_constraints with md:=md}
+    some { condition := {createBoolOrExpr type_constraints with md := md},
+           summary := some $ "(" ++ funcname ++ " requires) Type constraint of " ++ displayName }
 
-def getReturnTypeEnsure (md: MetaData) (tys: List String) (funcname: String): Option StmtExprMd :=
+def getReturnTypeEnsure (md: MetaData) (tys: List String) (funcname: String): Option Condition :=
   getUnionTypeConstraint PyLauFuncReturnVar md tys funcname
-  |>.map fun c => {c with md := md.withPropertySummary $ "(" ++ funcname ++ " ensures) Return type constraint"}
+  |>.map fun c => { c with summary := some $ "(" ++ funcname ++ " ensures) Return type constraint" }
+
 
 /-- Translate a Python function body: collect all variable declarations, hoist them
     to the top, and translate the remaining statements. --/
@@ -2048,7 +2052,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       name := { text := manglePythonMethod className methodName, md := md }
       inputs := renamedInputs
       outputs := outputs
-      preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+      preconditions := [{ condition := mkStmtExprMd (StmtExpr.LiteralBool true) }]
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
@@ -2098,7 +2102,7 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     name := { text := decl.name, md := defaultMetadata }
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
-    preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+    preconditions := [{ condition := mkStmtExprMd (StmtExpr.LiteralBool true) }]
     isFunctional := false
     decreases := none
     body := .Opaque [] .none []
@@ -2307,7 +2311,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | _ => []
     funcNames ++ dtFuncs
   maybeExceptionFunctions :=  prog.staticProcedures.filterMap fun p =>
-    if p.name.md.getPropertySummary.getD "" == "AnyMaybeExcept" then some p.name.text else none
+    if p.name.md.findElem (.label "maybeException") |>.isSome then some p.name.text else none
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
