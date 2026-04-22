@@ -47,8 +47,8 @@ info: ok: verify_Test: {
     y := x;
     g := g + 1;
   }
-  assert [Test_ensures_2]: y > 0;
-  assert [Test_ensures_3]: g == old g + 1;
+  assert [Test_ensures_1]: y > 0;
+  assert [Test_ensures_2]: g == old g + 1;
 }
 -/
 #guard_msgs in
@@ -146,9 +146,9 @@ info: ok: verify_MultipleModifies: {
     g1 := g1 + 1;
     g2 := true;
   }
-  assert [MultipleModifies_ensures_2]: y == x;
-  assert [MultipleModifies_ensures_3]: g1 == old g1 + 1;
-  assert [MultipleModifies_ensures_4]: g2;
+  assert [MultipleModifies_ensures_1]: y == x;
+  assert [MultipleModifies_ensures_2]: g1 == old g1 + 1;
+  assert [MultipleModifies_ensures_3]: g2;
 }
 -/
 #guard_msgs in

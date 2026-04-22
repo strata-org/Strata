@@ -260,8 +260,7 @@ private def testProgram : Program :=
 
 -- Passing `x == x` (which contains output variable `x` inside an expression) should fail.
 /--
-info: error: [call Foo((x == x), out [x,
- y])]: In-out arguments (parameters appearing in both inputs and outputs) must be simple variable references
+info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters appearing in both inputs and outputs) must be simple variable references
 -/
 #guard_msgs in
 #eval do

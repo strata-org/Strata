@@ -194,7 +194,7 @@ spec {
   y := x || x;
   call Test1(5, out b0);
   var b1 : bool;
-  call b1 := Test1(6);
+  call Test1(6, out b1);
 };
 function boolId (x : bool) : bool;
 -/
@@ -226,7 +226,7 @@ procedure Extract<a> (xs : List a, out h : a)
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
-  
+  ⏎
 };
 -/
 #guard_msgs in
@@ -563,7 +563,7 @@ procedure TestNondetIf ()
   }
   assert [x_pos]: x >= 0;
 };
-procedure TestNondetWhile () returns ()
+procedure TestNondetWhile ()
 {
   var x : int := 0;
   while *
@@ -616,18 +616,18 @@ spec {
   } {
   z := x + y;
   y := y + 1;
-  };
+};
 procedure UnitCallee (a : int)
 {
   assert [assert_0]: a > 0;
-  };
+};
 procedure Caller (inout g : int, out result : int)
 {
   var tmp : int := 0;
   call Callee(42, inout g, out tmp);
   call Callee(tmp, inout g, out result);
   call UnitCallee(result);
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST callArgKindsPgm

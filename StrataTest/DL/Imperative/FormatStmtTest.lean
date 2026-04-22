@@ -49,11 +49,11 @@ private def xEq1 : E := .eq () x int1
 #guard_msgs in #eval! format (Statement.assume "lbl" xEq5 .empty : S)
 
 -- 6. cmd: call (no lhs)
-/-- info: call foo(#1, #2) -/
+/-- info: call foo(1, 2); -/
 #guard_msgs in #eval! format (Statement.call "foo" [.inArg int1, .inArg int2] .empty : S)
 
 -- 7. cmd: call (with lhs)
-/-- info: call bar(#1, out [y]) -/
+/-- info: call bar(1, out y); -/
 #guard_msgs in #eval! format (Statement.call "bar" [.inArg int1, .outArg "y"] .empty : S)
 
 -- 8. block: empty

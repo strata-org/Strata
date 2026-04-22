@@ -122,7 +122,7 @@ procedure P ()
 {
   assert [bv_add_ge]: x + y == y + x;
 };
-procedure Q (x : bv1) returns (r : bv1)
+procedure Q (x : bv1, out r : bv1)
 spec {
   ensures [Q_ensures_0]: r == x - x;
   } {

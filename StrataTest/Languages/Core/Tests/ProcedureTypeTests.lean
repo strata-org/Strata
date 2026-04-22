@@ -15,7 +15,7 @@ open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /--
-info: ok: (procedure P (x : int) returns (y : int)
+info: ok: (procedure P (x : int, out y : int)
  spec {
    requires [|0_lt_x|]: 0 < x;
    ensures [ret_y_lt_0]: y < 0;

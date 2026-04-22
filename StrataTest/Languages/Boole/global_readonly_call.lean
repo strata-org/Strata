@@ -126,7 +126,7 @@ spec {
   ensures g == old g + x + z;
   } {
   g := g + x + z;
-  };
+};
  procedure main_caller () returns ()
 spec {
   modifies g, z;
@@ -135,7 +135,7 @@ spec {
   ensures g == 15;
   } {
   call inc(5);
-  };
+};
 
 [Strata.Core] Type checking succeeded.
 

@@ -275,7 +275,7 @@ op callArgOut (v : Ident) : CallArg => "out " v;
 op callArgInout (v : Ident) : CallArg => "inout " v;
 
 op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
-   "call " f "(" args ")" ";\n";
+   "call " f "(" args ")" ";";
 
 @[scope(c)]
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";

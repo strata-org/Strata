@@ -139,7 +139,7 @@ procedure test$$wf (xs : List)
   assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
   assume [test_requires_1]: List..head(xs) > 0;
 };
-procedure test (xs : List) returns ()
+procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
   requires [test_requires_1]: List..head(xs) > 0;
@@ -188,7 +188,7 @@ procedure test$$wf (xs : List)
   assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
   assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
 };
-procedure test (xs : List) returns ()
+procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
   ensures [test_ensures_1]: List..head(xs) > 0;
@@ -336,7 +336,7 @@ procedure proc1 (x : int)
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
 };
-procedure proc2 (y : int) returns ()
+procedure proc2 (y : int)
 {
   f$$wf: {
     var a : int;

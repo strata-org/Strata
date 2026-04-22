@@ -30,9 +30,7 @@ procedure caller() {
 };
 #end
 
-/--
-info: "willFail: ❌ fail\n Assertion is 63 characters after the related location"
--/
+/-- info: "willFail: ❌ fail\n Assertion is 52 characters after the related location" -/
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm
