@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
+public import Strata.DDM.Integration.Lean
+public import Strata.DDM.Util.Format
+
+public section
 
 ---------------------------------------------------------------------
 

@@ -85,14 +85,14 @@ instance : ToFormat (LDatatype IDMeta) where
 /--
 A datatype applied to arguments
 -/
-def data (d: LDatatype IDMeta) (args: List LMonoTy) : LMonoTy :=
+@[expose] def data (d: LDatatype IDMeta) (args: List LMonoTy) : LMonoTy :=
   .tcons d.name args
 
 /--
 The default type application for a datatype. E.g. for datatype
 `type List α = | Nil | Cons α (List α)`, produces LMonoTy `List α`.
 -/
-def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
+@[expose] def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
   data d (d.typeArgs.map .ftvar)
 
 /-- A group of mutually recursive datatypes. -/
@@ -198,7 +198,7 @@ The `LFunc` corresponding to constructor `c` of datatype `d`. Constructor
 functions do not have bodies or `concreteEval` functions, as they are values
 when applied to value arguments.
 -/
-def constrFunc (c: LConstr T.IDMeta) (d: LDatatype T.IDMeta) : LFunc T :=
+@[expose] def constrFunc (c: LConstr T.IDMeta) (d: LDatatype T.IDMeta) : LFunc T :=
   { name := c.name, typeArgs := d.typeArgs, inputs := c.args, output := dataDefault d, isConstr := true }
 
 /--
@@ -271,6 +271,16 @@ def genRecTy (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier) (ty
   | none =>
     match ty with
     | .arrow t1 t2 => (genRecTy block retTyVars t2).map (fun r => .arrow t1 r)
+    | _ => none
+
+/-- Like `genRecTy`, but with concrete return types instead of type variable names.
+    For example, given `ty = int → List α` and `retTys = [Bool]`, returns `int → Bool`. -/
+def genRecTyDirect (block : MutualDatatype IDMeta) (retTys : List LMonoTy) (ty : LMonoTy) : Option LMonoTy :=
+  match block.findIdx? (fun d => ty == dataDefault d) with
+  | some idx => retTys[idx]?
+  | none =>
+    match ty with
+    | .arrow t1 t2 => (genRecTyDirect block retTys t2).map (fun r => .arrow t1 r)
     | _ => none
 
 /-- Find which datatype in a mutual block a recursive type refers to. -/
@@ -456,11 +466,20 @@ for ALL constructors across the block, not just the constructors of one datatype
 -/
 def testerFuncBody {T : LExprParams} [Inhabited T.IDMeta] (block: MutualDatatype T.IDMeta)
     (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (input: LExpr T.mono) (m: T.Metadata) : LExpr T.mono :=
-  -- Number of arguments for a constructor in a mutual block
-  let numargs (c: LConstr T.IDMeta) := c.args.length + ((c.args.map Prod.snd).filter (isRecTy block)).length
+  -- For the tester, all return types are .bool (one per datatype in the block)
+  let retTys := block.map (fun _ => LMonoTy.bool)
+  -- Argument types for each case function lambda
+  let caseArgTypes (c1: LConstr T.IDMeta) : List LMonoTy :=
+    let recTypes := c1.args.filterMap fun (_, ty) => genRecTyDirect block retTys ty
+    c1.args.map Prod.snd ++ recTypes
+  -- Build typed lambdas for each constructor's case
   let args := block.flatMap (fun d' => d'.constrs.map (fun c1 =>
-    LExpr.absMultiInfer m (numargs c1) (.boolConst m (c.name.name == c1.name.name))))
-  .mkApp m (.op m (elimFuncName d) .none) (input :: args)
+    LExpr.absMulti m (caseArgTypes c1) (.boolConst m (c.name.name == c1.name.name))))
+  -- Compute the eliminator type at the tester instantiation (all return types = bool)
+  let allCaseTypes := block.flatMap (fun d' => d'.constrs.map (fun c1 =>
+    LMonoTy.mkArrow' .bool (caseArgTypes c1)))
+  let elimType := LMonoTy.mkArrow' .bool (dataDefault d :: allCaseTypes)
+  .mkApp m (.op m (elimFuncName d) (some elimType)) (input :: args)
 
 /--
 Generate tester function for a constructor in a mutual block.
@@ -472,7 +491,7 @@ def testerFunc {T} [Inhabited T.IDMeta] (block: MutualDatatype T.IDMeta)
    typeArgs := d.typeArgs,
    inputs := [(arg, dataDefault d)],
    output := .bool,
-   body := testerFuncBody block d c (.fvar m arg .none) m,
+   body := testerFuncBody block d c (.fvar m arg (some (dataDefault d))) m,
    attr := #[.inlineIfConstr 0]
   }
 

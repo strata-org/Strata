@@ -52,7 +52,7 @@ end Statistics
 
 /-! ## Derive `ToString` for enum-like stat key inductives
 
-`derive_prefixed_toString Ty "Prefix"` generates:
+`#derive_prefixed_toString Ty "Prefix"` generates:
 
 ```
 instance : ToString Ty where
@@ -65,7 +65,7 @@ instance : ToString Ty where
 open Lean Elab Command Parser in
 /-- Generate a `ToString` instance for an enum-like inductive type where each
     constructor `.foo` is rendered as `"Prefix.foo"`. -/
-elab "derive_prefixed_toString " ty:ident pfx:str : command => do
+elab "#derive_prefixed_toString " ty:ident pfx:str : command => do
   let tyName ← resolveGlobalConstNoOverload ty
   let some (.inductInfo val) := (← getEnv).find? tyName
     | throwError m!"'{tyName}' is not an inductive type"

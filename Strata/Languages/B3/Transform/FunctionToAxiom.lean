@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.DDMTransform.DefinitionAST
+public import Strata.Languages.B3.DDMTransform.DefinitionAST
+
+public section
 
 /-!
 # Function-to-Axiom Transformation
