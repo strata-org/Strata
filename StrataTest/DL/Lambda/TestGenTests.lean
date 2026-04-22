@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Lambda.TestGen
+import Strata.Util.Random
 
 /-! ## Tests for TestGen -/
 
