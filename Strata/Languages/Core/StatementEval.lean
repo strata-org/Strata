@@ -541,8 +541,8 @@ private def mergeCondPairs (ewns : List EnvWithNext)
       List.partition_length ewns p
     have h_fcpl : 2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
         parts.1.length + parts.2.length := by
-      have := findCondPairs_length parts.1 [] parts.2 []
-      simp at this; exact this
+      have h := findCondPairs_length parts.1 [] parts.2 []
+      simp at h; exact h
     have h_pos : r.paired.length ≥ 1 := by
       cases h : r.paired
       · simp [h, List.isEmpty] at h_nonempty
