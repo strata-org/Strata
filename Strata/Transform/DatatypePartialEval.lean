@@ -18,7 +18,6 @@ public section
 Simplify tester and selector applications on known constructor terms:
 - `tester(C(args))` → `true` if tester matches C, `false` otherwise
 - `selector_i(C(args))` → `args[i]` if selector matches C
-- `eq(C(args₁), C(args₂))` → conjunction of field equalities
 
 This is a pure Core-to-Core transform that reduces the number of
 uninterpreted function applications downstream consumers need to handle.
@@ -59,20 +58,44 @@ def collectDatatypeInfo (pgm : Core.Program) : DatatypeInfo :=
           constrNames := info.constrNames.insert cname }
     | _ => info
 
-/-- Collect arguments from a fully-applied constructor: `C(a₁, ..., aₙ)` → `(C, [a₁,...,aₙ])`.
-    Returns `none` if the head is not a known constructor. -/
+/-- Decompose a constructor application: `C(a₁, ..., aₙ)` → `(C, [a₁,...,aₙ])`.
+    Returns `none` if the head is not a known constructor.
+    Does not check arity — partial applications return fewer arguments. -/
 def matchConstrApp (dtInfo : DatatypeInfo) (e : Lambda.LExpr Core.CoreLParams.mono)
     : Option (String × List (Lambda.LExpr Core.CoreLParams.mono)) :=
   let rec collect (e : Lambda.LExpr Core.CoreLParams.mono)
+      (args : List (Lambda.LExpr Core.CoreLParams.mono))
       : Lambda.LExpr Core.CoreLParams.mono × List (Lambda.LExpr Core.CoreLParams.mono) :=
     match e with
-    | .app _ f a => let (h, as) := collect f; (h, as ++ [a])
-    | other => (other, [])
-  let (head, args) := collect e
+    | .app _ f a => collect f (a :: args)
+    | other => (other, args)
+  let (head, args) := collect e []
   match head with
   | .op _ o _ =>
     if dtInfo.constrNames.contains o.1 then some (o.1, args) else none
   | _ => none
+
+/-- Try to simplify a unary application `op(arg)` where `arg` is already simplified.
+    Returns `none` if no simplification applies. -/
+def trySimplifyUnaryApp (dtInfo : DatatypeInfo)
+    (appMd opMd : Core.ExpressionMetadata) (fn : Lambda.Identifier Core.CoreLParams.mono.base.IDMeta)
+    (opTy : Option Core.CoreLParams.mono.TypeType)
+    (arg' : Lambda.LExpr Core.CoreLParams.mono) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
+  let m : Core.ExpressionMetadata := default
+  let fname := fn.1
+  match dtInfo.testerToConstr.get? fname, matchConstrApp dtInfo arg' with
+  | some expectedConstr, some (actualConstr, _) =>
+    if actualConstr == expectedConstr then some (.const m (.boolConst true))
+    else some (.const m (.boolConst false))
+  | _, _ =>
+  match dtInfo.selectorInfo.get? fname, matchConstrApp dtInfo arg' with
+  | some (expectedConstr, fieldIdx), some (actualConstr, args) =>
+    if actualConstr == expectedConstr then
+      match args[fieldIdx]? with
+      | some fieldVal => some fieldVal
+      | none => none
+    else none
+  | _, _ => none
 
 /-- Partially evaluate datatype tester and selector applications on known constructors.
 - `tester(C(args))` → `true` if tester matches C, `false` otherwise
@@ -80,30 +103,16 @@ def matchConstrApp (dtInfo : DatatypeInfo) (e : Lambda.LExpr Core.CoreLParams.mo
 Recurses into subexpressions. -/
 def partialEvalDatatypesCore (dtInfo : DatatypeInfo)
     (e : Lambda.LExpr Core.CoreLParams.mono) : Lambda.LExpr Core.CoreLParams.mono :=
-  let m : Core.ExpressionMetadata := default
   match e with
   -- Unary application: tester(arg) or selector(arg)
   | .app appMd (.op opMd fn opTy) arg =>
     let arg' := partialEvalDatatypesCore dtInfo arg
-    let fname := fn.1
-    match dtInfo.testerToConstr.get? fname, matchConstrApp dtInfo arg' with
-    | some expectedConstr, some (actualConstr, _) =>
-      if actualConstr == expectedConstr then .const m (.boolConst true)
-      else .const m (.boolConst false)
-    | _, _ =>
-    match dtInfo.selectorInfo.get? fname, matchConstrApp dtInfo arg' with
-    | some (expectedConstr, fieldIdx), some (actualConstr, args) =>
-      if actualConstr == expectedConstr then
-        match args[fieldIdx]? with
-        | some fieldVal => fieldVal
-        | none => .app appMd (.op opMd fn opTy) arg'
-      else .app appMd (.op opMd fn opTy) arg'
-    | _, _ => .app appMd (.op opMd fn opTy) arg'
-  -- Binary application: recurse into both sides
+    match trySimplifyUnaryApp dtInfo appMd opMd fn opTy arg' with
+    | some result => result
+    | none => .app appMd (.op opMd fn opTy) arg'
+  -- Binary application: recurse into all subexpressions
   | .app m1 (.app m2 op l) r =>
-    let l' := partialEvalDatatypesCore dtInfo l
-    let r' := partialEvalDatatypesCore dtInfo r
-    .app m1 (.app m2 op l') r'
+    .app m1 (.app m2 (partialEvalDatatypesCore dtInfo op) (partialEvalDatatypesCore dtInfo l)) (partialEvalDatatypesCore dtInfo r)
   -- General application: recurse
   | .app m f a => .app m (partialEvalDatatypesCore dtInfo f) (partialEvalDatatypesCore dtInfo a)
   -- Quantifiers, ite: recurse into subexpressions
@@ -118,7 +127,8 @@ def partialEvalDatatypes (dtInfo : DatatypeInfo)
     (e : Lambda.LExpr Core.CoreLParams.mono) : Lambda.LExpr Core.CoreLParams.mono :=
   partialEvalDatatypesCore dtInfo e
 
-/-- Apply datatype partial evaluation to all expressions in a Core program. -/
+/-- Apply datatype partial evaluation to procedure bodies, specifications
+    (pre/postconditions), and axioms in a Core program. -/
 def partialEvalDatatypesInProgram (pgm : Core.Program) : Core.Program :=
   let dtInfo := collectDatatypeInfo pgm
   if dtInfo.constrNames.isEmpty then pgm

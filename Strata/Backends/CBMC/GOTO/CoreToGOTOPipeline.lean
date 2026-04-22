@@ -511,8 +511,8 @@ public def inlineCoreToGotoFiles (program : Core.Program)
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
     | .error msg => throw msg
-  let inlined := Strata.partialEvalDatatypesInProgram inlined
-  let (tcPgm, Env) ← match typeCheckCore inlined factory with
+  let simplified := Strata.partialEvalDatatypesInProgram inlined
+  let (tcPgm, Env) ← match typeCheckCore simplified factory with
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints
