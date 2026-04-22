@@ -6,7 +6,7 @@ testDriver = "StrataTest"
 [[require]]
 name = "plausible"
 git = "https://github.com/leanprover-community/plausible.git"
-rev = "bump_to_v4.27.0"
+rev = "bump_to_v4.29.0-rc8"
 
 [[lean_lib]]
 name = "Strata"

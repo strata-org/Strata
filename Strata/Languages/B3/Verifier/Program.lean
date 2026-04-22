@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.Statements
-import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Transform.FunctionToAxiom
 import Strata.Languages.B3.DDMTransform.Conversion
+
+public section
 
 /-!
 # B3 Program Verification

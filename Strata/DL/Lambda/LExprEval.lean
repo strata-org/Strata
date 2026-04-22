@@ -33,7 +33,7 @@ inductive EvalProvenance
 
 /--
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
-type annotations.
+metadata.
 -/
 def eqModuloMeta (e1 e2 : LExpr T) : Bool :=
   e1.eraseMetadata == e2.eraseMetadata

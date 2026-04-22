@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+public import Strata.Backends.CBMC.CollectSymbols
+public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Transform.ProcedureInlining
 
 /-! ## Core-to-GOTO translation pipeline
@@ -40,6 +41,8 @@ The following are not yet handled:
 -/
 
 namespace Strata
+
+public section
 
 private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
@@ -514,5 +517,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints
+
+end -- public section
 
 end Strata

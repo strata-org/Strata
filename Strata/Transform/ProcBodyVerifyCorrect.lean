@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.ProcBodyVerify
-import Strata.Transform.CoreSpecification
-import Strata.Languages.Core.WF
+public import Strata.Transform.ProcBodyVerify
+public import Strata.Transform.CoreSpecification
+public import Strata.Languages.Core.WF
 import Strata.DL.Util.ListMap
 import Strata.DL.Util.List
+
+public section
 
 /-! # Procedure Body Verification Correctness Proof -/
 
