@@ -136,33 +136,38 @@ private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr
   ) ([] : List Expression.Expr)
   revDups.reverse
 
-/-- Replace all occurrences of `target` (compared with erased types) with
-    `replacement` in an expression. Erases `target` once upfront to avoid
-    redundant traversals at each node. -/
-partial def replaceExpr (target replacement : Expression.Expr)
+/-- Replace all occurrences of any target (compared with erased types) with
+    its corresponding replacement in an expression. Uses a HashMap keyed by
+    hash for O(1) lookup at each node, falling back to equality check only
+    on hash match. The map stores (erasedTarget, replacement) pairs. -/
+partial def replaceExprs (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
     (e : Expression.Expr) : Expression.Expr :=
-  go target.eraseTypes replacement e
-where
-  go (targetErased replacement : Expression.Expr)
-      (e : Expression.Expr) : Expression.Expr :=
+  let h := hashExpr e
+  match replacements[h]? with
+  | some (targetErased, replacement) =>
     if e.eraseTypes == targetErased then replacement
-    else match e with
+    else descend replacements e
+  | none => descend replacements e
+where
+  descend (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
+      (e : Expression.Expr) : Expression.Expr :=
+    match e with
     | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => e
     | .app m fn arg =>
-      .app m (go targetErased replacement fn)
-             (go targetErased replacement arg)
+      .app m (replaceExprs replacements fn)
+             (replaceExprs replacements arg)
     | .ite m c t f =>
-      .ite m (go targetErased replacement c)
-             (go targetErased replacement t)
-             (go targetErased replacement f)
+      .ite m (replaceExprs replacements c)
+             (replaceExprs replacements t)
+             (replaceExprs replacements f)
     | .eq m e1 e2 =>
-      .eq m (go targetErased replacement e1)
-            (go targetErased replacement e2)
+      .eq m (replaceExprs replacements e1)
+            (replaceExprs replacements e2)
     | .abs m name ty body =>
-      .abs m name ty (go targetErased replacement body)
+      .abs m name ty (replaceExprs replacements body)
     | .quant m k name ty tr body =>
-      .quant m k name ty (go targetErased replacement tr)
-                         (go targetErased replacement body)
+      .quant m k name ty (replaceExprs replacements tr)
+                         (replaceExprs replacements body)
 
 /-- Get the type annotation from an expression, if available. -/
 private def getExprType? : Expression.Expr → Option LMonoTy
@@ -186,27 +191,31 @@ private def exprSize : Expression.Expr → Nat
   | .abs _ _ _ body => 1 + exprSize body
   | .quant _ _ _ _ tr body => 1 + exprSize tr + exprSize body
 
-/-- Check if `sub` is a subexpression of `e` (type-erased comparison). -/
-private partial def isSubexprOf (sub e : Expression.Expr) : Bool :=
-  go sub.eraseTypes e
+/-- Collect all subexpression hashes from an expression,
+    excluding the expression itself. -/
+private def collectSubexprHashes (e : Expression.Expr) : Std.HashSet UInt64 :=
+  let topHash := hashExpr e
+  go e |>.erase topHash
 where
-  go (subErased : Expression.Expr) (e : Expression.Expr) : Bool :=
-    if e.eraseTypes == subErased then true
-    else match e with
-    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => false
-    | .app _ fn arg => go subErased fn || go subErased arg
-    | .ite _ c t f =>
-      go subErased c || go subErased t || go subErased f
-    | .eq _ e1 e2 => go subErased e1 || go subErased e2
-    | .abs _ _ _ body => go subErased body
-    | .quant _ _ _ _ tr body =>
-      go subErased tr || go subErased body
+  go (e : Expression.Expr) : Std.HashSet UInt64 :=
+    let h := hashExpr e
+    match e with
+    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => ({} : Std.HashSet UInt64).insert h
+    | .app _ fn arg => (go fn |>.union (go arg)).insert h
+    | .ite _ c t f => (go c |>.union (go t) |>.union (go f)).insert h
+    | .eq _ e1 e2 => (go e1 |>.union (go e2)).insert h
+    | .abs _ _ _ body => (go body).insert h
+    | .quant _ _ _ _ tr body => (go tr |>.union (go body)).insert h
 
-/-- Remove entries that are subexpressions of other entries in the list. -/
+/-- Remove entries that are subexpressions of larger entries in the list.
+    Uses hash-based lookup for O(n) per-target instead of O(n × tree_size). -/
 private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr :=
-  exprs.filter (fun e =>
-    !exprs.any (fun other =>
-      exprSize other > exprSize e && isSubexprOf e other))
+  -- Build a set of all subexpression hashes from all targets
+  let subHashes := exprs.foldl (fun (acc : Std.HashSet UInt64) e =>
+    acc.union (collectSubexprHashes e)
+  ) {}
+  -- Keep only expressions whose hash is NOT a subexpression of another target
+  exprs.filter (fun e => !subHashes.contains (hashExpr e))
 
 /-- Shared pipeline: collect subexpressions, filter, find duplicates, remove
     subsumed, and sort by size (largest first). -/
@@ -280,8 +289,8 @@ where
     the next available dedup index. -/
 def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let targets := findANFEncoderTargets (collectExprsFromStatements body)
-  -- Build var declarations in reverse, then reverse at the end
-  let (revDecls, body', nextIdx) := targets.foldl (fun (decls, body, idx) dup =>
+  -- Build all var declarations and the replacement map
+  let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
     let freshName : CoreIdent := ⟨s!"$__anf.{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
@@ -289,9 +298,11 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
       | some mty => LTy.forAll [] mty
       | none => LTy.forAll ["α"] (.ftvar "α")
     let varDecl := Statement.init freshName ty (.det dup) .empty
-    let body' := mapExprsInStatements (replaceExpr dup freshVar) body
-    (varDecl :: decls, body', idx + 1)
-  ) ([], body, startIdx)
+    let h := hashExpr dup
+    (varDecl :: decls, repMap.insert h (dup.eraseTypes, freshVar), idx + 1)
+  ) ([], ({} : Std.HashMap UInt64 (Expression.Expr × Expression.Expr)), startIdx)
+  -- Single pass: replace all targets at once
+  let body' := mapExprsInStatements (replaceExprs replacements) body
   (revDecls.reverse ++ body', nextIdx)
 
 /-- Deduplicate all procedures in a program. -/
