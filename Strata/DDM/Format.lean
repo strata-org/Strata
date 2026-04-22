@@ -375,9 +375,10 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
         let bindings := op.argDecls
         let .isTrue bsize := decEq args.size bindings.size
               | do
-                -- When a declared function (e.g. lambda) is applied to extra
-                -- arguments, format the function with its declared args and
-                -- then apply the remaining args with call syntax.
+                -- When a function is applied to more arguments than it declares
+                -- (e.g. a function returning a function type via funMacro),
+                -- format it with its declared args, then apply the remaining
+                -- args with call syntax.
                 let declArgCount := bindings.size
                 if rargs.size > declArgCount then
                   let fnArgs := args.toList.take declArgCount |>.toArray
