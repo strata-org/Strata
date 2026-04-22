@@ -57,14 +57,14 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt x #0)>: $__x0 < 0
+<label_ite_cond_true: x < 0>: $__x0 < 0
 Obligation:
 0 - $__x0 >= 0
 
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(~Int.Lt x #0)>: if $__x0 < 0 then false else true
+<label_ite_cond_false: !(x < 0)>: if $__x0 < 0 then false else true
 Obligation:
 $__x0 >= 0
 
@@ -103,8 +103,8 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt x #0)>: if $__x0 < 0 then $__x0 < 0 else true
-<label_ite_cond_false: !(~Int.Lt x #0)>: if if $__x0 < 0 then false else true then if $__x0 < 0 then false else true else true
+<label_ite_cond_true: x < 0>: if $__x0 < 0 then $__x0 < 0 else true
+<label_ite_cond_false: !(x < 0)>: if if $__x0 < 0 then false else true then if $__x0 < 0 then false else true else true
 Obligation:
 if $__x0 < 0 then 0 - $__x0 else $__x0 >= 0
 
