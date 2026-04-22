@@ -2064,8 +2064,7 @@ NOTE:
   created in the concrete semantics. That is, evaluating the procedure body may
   create new variables in the store, and since the temporary variables are
   discarded at the end of the call, it is possible to show that those created
-  variables are irrelevant, and can be approximated by updating the relevant
-  variables (that is, lhs which now includes modified globals)
+  variables are irrelevant.
 -/
 theorem EvalCallBodyRefinesContract :
   ∀ {π φ δ σ n callArgs σ' p md md'},

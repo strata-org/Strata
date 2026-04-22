@@ -880,8 +880,6 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals : List Core.Decl := []
-
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)
                (acc : TranslationContext) :
@@ -908,7 +906,7 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
-  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++
+  {decls := class_ty_decls ++ func_defs ++ class_defs ++
     [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos) .empty]}
 
 end -- public section
