@@ -8,7 +8,7 @@ test_havoc_callee_after_hole_call.py(21, 0): ✔️ always true if reached - ass
 test_havoc_callee_after_hole_call.py(21, 0): ✔️ always true if reached - expected pass nothing should be havocked
 test_havoc_callee_after_hole_call.py(26, 0): ✔️ always true if reached - assert_assert(612)_calls_Any_to_bool_0
 test_havoc_callee_after_hole_call.py(26, 0): ❓ unknown - expected unknown because heap should be havocked
-test_havoc_callee_after_hole_call.py(31, 0): ✔️ always true if reached - assert_assert(756)_calls_Any_to_bool_0
+test_havoc_callee_after_hole_call.py(31, 0): ✔️ always true if reached - assert_assert(776)_calls_Any_to_bool_0
 test_havoc_callee_after_hole_call.py(31, 0): ❓ unknown - expected unknown because argument locals should be havocked
 DETAIL: 7 passed, 0 failed, 5 inconclusive
 RESULT: Inconclusive

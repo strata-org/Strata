@@ -25,7 +25,7 @@ a.val = 1
 some_unmodeled_call_6(a)
 assert a.val == 1, "expected unknown because heap should be havocked" 
 
-d: dict[str, int] = {"a": 1}
-other: dict[str, int] = {}
-d.update(other)
-assert other == {}, "expected unknown because argument locals should be havocked"
+xs2: list[int] = [1, 2]
+ys: list[int] = []
+xs2.unknown_method_that_may_modify_arguments(ys)
+assert ys == [], "expected unknown because argument locals should be havocked"
