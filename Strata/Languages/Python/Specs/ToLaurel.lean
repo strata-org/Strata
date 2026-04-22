@@ -97,12 +97,19 @@ def pushType (td : TypeDefinition) : ToLaurelM Unit :=
   modify fun s => { s with types := s.types.push td }
 
 /-- Add an overload dispatch entry for a function. -/
-def pushOverloadEntry (funcName : String) (literalValue : String)
-    (returnType : PythonIdent) : ToLaurelM Unit :=
+def pushOverloadEntry (funcName : String) (paramName : String)
+    (literalValue : String) (returnType : PythonIdent) : ToLaurelM Unit :=
   modify fun s =>
     let existing := s.overloads.getD funcName {}
-    let updated := existing.insert literalValue returnType
-    { s with overloads := s.overloads.insert funcName updated }
+    let updated : FunctionOverloads := { existing with
+      paramName := existing.paramName <|> some paramName
+      entries := existing.entries.insert literalValue returnType }
+    if existing.paramName.any (· != paramName) then
+      dbg_trace s!"Warning: overload entries for '{funcName}' disagree on \
+        dispatch parameter name: existing '{existing.paramName.get!}', new '{paramName}'"
+      { s with overloads := s.overloads.insert funcName updated }
+    else
+      { s with overloads := s.overloads.insert funcName updated }
 
 /-- Prepend the module prefix to a name. Returns the name unchanged
     if the prefix is empty. -/
@@ -690,7 +697,8 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
               '{specTypeToString func.returnType}' is not a \
               class type"
           return
-  pushOverloadEntry func.name literalValue retType
+  -- args[0].name is the formal parameter name from the PySpec (not a call-site argument)
+  pushOverloadEntry func.name args[0].name literalValue retType
 
 /-- Convert a single PySpec signature to Laurel declarations. -/
 def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
