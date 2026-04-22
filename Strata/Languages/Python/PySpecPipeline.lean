@@ -359,8 +359,7 @@ public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program) := do
   let (coreOption, errors, lowered) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
-      (keepAllFilesPrefix := keepAllFilesPrefix)
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix := keepAllFilesPrefix } combined
   return (coreOption.map appendCorePartOfRuntime, errors, lowered)
 
 /-- Translate a combined Laurel program to Core and prepend the full

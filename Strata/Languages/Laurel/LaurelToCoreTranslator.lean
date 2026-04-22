@@ -610,10 +610,19 @@ where
       let inner ← buildQuants rest body trigger
       return LExpr.all () p.name.text (some (← translateType p.type)) inner
 
+
+
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
+  keepAllFilesPrefix : Option String := none
+  deriving Inhabited
+
+structure LaurelVerifyOptions where
+  translateOptions : LaurelTranslateOptions := {}
+  verifyOptions: Core.VerifyOptions := .default
+  deriving Inhabited
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
