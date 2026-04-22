@@ -3,19 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LExprTypeSpec
-import Strata.DL.Lambda.LExprTypeEnv
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LExprT
-import Strata.DL.Lambda.LExprEval
+import Plausible.Arbitrary
+public import Plausible.ArbitraryFueled
+import Plausible.Gen
+
+public meta import Strata.DL.Lambda.Factory
+public meta import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.IntBoolFactory
-import Plausible.Sampleable
-import Plausible.DeriveArbitrary
-import Plausible.Attr
-import Strata.DL.Lambda.PlausibleHelpers
-import Strata.Util.Random
+public meta import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprT
+public meta import Strata.DL.Lambda.LExprTypeEnv
+public meta import Strata.DL.Lambda.LExprWF
+public meta import Strata.DL.Lambda.MetaData
+public import Strata.DL.Lambda.PlausibleHelpers
 
 -- -- Add these if depending on Chamelean for instance generation.
 -- import Plausible.Chamelean.ArbitrarySizedSuchThat
@@ -32,6 +34,9 @@ import Strata.Util.Random
 
 open Plausible
 
+public section
+
+meta section
 deriving instance Arbitrary for Lambda.Identifier
 deriving instance Arbitrary for Lambda.Info
 deriving instance Arbitrary for Lambda.QuantifierKind
@@ -142,6 +147,7 @@ def instArbitraryLExpr.arbitrary {T}
   fun fuel => aux_arb fuel
 
 instance {T} [Arbitrary T.base.Metadata] [Arbitrary T.base.IDMeta] [Arbitrary T.TypeType] : Plausible.ArbitraryFueled (@Lambda.LExpr T) := ⟨instArbitraryLExpr.arbitrary⟩
+end
 
 -- -- Prints a few examples of random expressions.
 -- #eval Gen.printSamples (Arbitrary.arbitrary : Gen <| Lambda.LExpr ⟨⟨String, String⟩, String⟩)
@@ -197,10 +203,10 @@ inductive MapsInsert : Maps α β → α → β → Maps α β → Prop where
 | empty : MapsInsert [] x y [[(x, y)]]
 
 -- -- We hand write this to avoid guessing and checking for strings.
-instance instStringSuchThatIsInt : ArbitrarySizedSuchThat String (fun s => s.isInt) where
+private meta instance instStringSuchThatIsInt : ArbitrarySizedSuchThat String (fun s => s.isInt) where
   arbitrarySizedST _ := toString <$> (Arbitrary.arbitrary : Gen Int)
 
-instance instArrayFindSuchThat {α} {a : Array α} : ArbitrarySizedSuchThat α (fun x => x ∈ a) where
+meta instance instArrayFindSuchThat {α} {a : Array α} : ArbitrarySizedSuchThat α (fun x => x ∈ a) where
   arbitrarySizedST _ := do
   if h:a.size = 0 then throw <| GenError.genError "Gen: cannot generate elements of empty array" else
   let i ← Gen.chooseNatLt 0 a.size (by omega)
@@ -215,8 +221,9 @@ inductive IsBinaryArg : LTy → (LTy × LTy) → LTy → Prop where
 -- Compare `LExpr.HasType` in `LExprTypeSpec.lean`
 
 -- Parameters for terms without metadata
-abbrev TrivialParams : LExprParams := ⟨Unit, Unit⟩
+public abbrev TrivialParams : LExprParams := ⟨Unit, Unit⟩
 
+public
 def varClose (k : Nat) (x : IdentT LMonoTy TrivialParams.IDMeta) (e : LExpr TrivialParams.mono) : LExpr TrivialParams.mono :=
   match e with
   | .const m c => .const m c
@@ -230,6 +237,7 @@ def varClose (k : Nat) (x : IdentT LMonoTy TrivialParams.IDMeta) (e : LExpr Triv
   | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
 
+meta section
 def LFunc.type! (f : (LFunc T)) : LTy :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
@@ -237,11 +245,12 @@ def LFunc.type! (f : (LFunc T)) : LTy :=
   | [] => .forAll f.typeArgs f.output
   | ity :: irest =>
     .forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys))
+end
 
 -- We massage the `HasType` definition to be more amenable to generation. The main differences are that
 -- polymorphism is not supported, and we tend to move function applications in the "output" position to the conclusion.
 -- This avoids an additional costly check in the hypothesis.
-inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
+public inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
   | tbool_const : ∀ Γ m b,
             C.knownTypes.containsName "bool" →
             HasType C Γ (.boolConst m b) (.forAll [] .bool)
@@ -303,6 +312,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TC
   -- -- We only generate monomorphic types for now
 
 -- -- We hand write this instance to control the base type names.
+meta section
 instance : Arbitrary LMonoTy where
   arbitrary :=
     let rec aux (n : Nat) : Gen LMonoTy :=
@@ -749,7 +759,6 @@ instance : ArbitrarySizedSuchThat LTy (fun ty₁_1 => @IsUnaryArg ty_1 ty₁_1 t
             ])
     fun size => aux_arb size size ty_1 ty₂_1
 
-
 -- -- This works
 -- derive_generator fun ty ty₂ => ∃ ty₁, IsUnaryArg ty ty₁ ty₂
 
@@ -1041,8 +1050,9 @@ instance {T : LExprParams}
         ])
     fun size => aux_arb size size ctx_1 ty_1
 
+end
 
-abbrev example_lctx : LContext TrivialParams :=
+private abbrev example_lctx : LContext TrivialParams :=
 { LContext.empty with knownTypes := KnownTypes.default
                       functions := Lambda.IntBoolFactory
 }
@@ -1051,11 +1061,13 @@ abbrev example_ctx : TContext Unit := ⟨[[]], []⟩
 -- abbrev example_ty : LTy := .forAll [] <| .tcons "bool" []
 abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
 
-def example_lstate :=
+private def example_lstate :=
   { LState.init (T := TrivialParams) with config :=
     { LState.init.config (T := TrivialParams) with
       factory := Lambda.IntBoolFactory (T := TrivialParams)}
   }
+
+meta section
 
 /-- `Monad` instance for List.
     Note that:
@@ -1066,8 +1078,7 @@ private instance : Monad List where
   pure x := [x]
   bind xs f := xs.flatMap f
 
-instance [Inhabited T.base.IDMeta] : Shrinkable (LExpr T) where
-  shrink t :=
+def shrinkLExpr {T} [Inhabited T.base.IDMeta] (t : LExpr T) : List (LExpr T) :=
   let rec aux (t : LExpr T) : List (LExpr T) :=
   match t with
     | .fvar _ _ _
@@ -1082,6 +1093,11 @@ instance [Inhabited T.base.IDMeta] : Shrinkable (LExpr T) where
     | .ite m cond t u => cond :: t :: u :: (.ite m <$> aux cond <*> aux t <*> aux u)
     | .quant m k name ty tr t => (LExpr.varOpen 0 ⟨⟨"x", default⟩, ty⟩ t) :: (.quant m k name ty tr <$> aux t)
   aux t
+
+instance [Inhabited T.base.IDMeta] : Shrinkable (LExpr T) where
+  shrink := shrinkLExpr
+
+end
 
 -- Shrinks an element of `α` recursively.
 partial def shrinkFunAux [Shrinkable α] (f : α → Bool) (x : α) : Option α := do
@@ -1112,3 +1128,5 @@ match t with
 def reduces (t : LExpr TrivialParams.mono) : Bool :=
   let t' := t.eval 1000 example_lstate
   isIntConst t'
+
+end

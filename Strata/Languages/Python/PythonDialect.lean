@@ -136,7 +136,7 @@ end stmt
 instance {α} [Inhabited α] : ToString (Strata.Python.expr α) where
   toString s := toString (eformat s.toAst)
 
-def stmt.format {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
+@[reducible] def stmt.format {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
   toString s := toString (mformat s.toAst (.ofDialects Python_map) .empty |>.format)
 
 instance {α} [Inhabited α] : ToString (Strata.Python.stmt α) where

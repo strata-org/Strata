@@ -181,7 +181,7 @@ datatype IntList {
 procedure Test1 (x : bool) returns (y : bool)
 {
   y := x;
-  };
+};
 function intId (x : int) : int;
 var g : bool;
 procedure Test2 (x : bool) returns (y : bool)
@@ -197,7 +197,7 @@ spec {
   call b0 := Test1(5);
   var b1 : bool;
   call b1 := Test1(6);
-  };
+};
 function boolId (x : bool) : bool;
 -/
 #guard_msgs in
@@ -228,7 +228,8 @@ procedure Extract<a> (xs : List a) returns (h : (a))
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
-  };
+  
+};
 -/
 #guard_msgs in
 #eval ASTtoCST testPolyProc
@@ -258,7 +259,7 @@ procedure TestDifferentInstantiations () returns ()
 {
   var m : (Map int bool);
   m := makePair(identity(42), identity(true));
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST polyFns
@@ -298,7 +299,7 @@ procedure P (x : bv8, y : bv8, z : bv8) returns ()
   var xy : bv16 := bvconcat{8}{8}(x, y);
   var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
   var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST bitvecPgm
@@ -352,7 +353,7 @@ spec {
   assert [valIs42]: RoseTree..val(t) == 42;
   assert [headIsT]: Forest..head(f) == t;
   assert [headVal]: RoseTree..val(Forest..head(f)) == 42;
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST polyRoseTreeHavocPgm
@@ -381,7 +382,7 @@ procedure testFuncDecl (c : int) returns ()
   var y : int := 5;
   var result : int := double(y);
   assert [assert_0]: result == 12;
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST funcDeclStmtPgm
@@ -442,11 +443,11 @@ spec {
   {
     if (nums[i] >s max) {
       max := nums[i];
-      }
-    i := i + bv{64}(1);
     }
+    i := i + bv{64}(1);
+  }
   ret := max;
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST findMaxPgm
@@ -559,11 +560,11 @@ procedure TestNondetIf () returns ()
   var x : int := 0;
   if * {
     x := 1;
-    } else {
+  } else {
     x := 2;
-    }
+  }
   assert [x_pos]: x >= 0;
-  };
+};
 procedure TestNondetWhile () returns ()
 {
   var x : int := 0;
@@ -571,13 +572,70 @@ procedure TestNondetWhile () returns ()
   invariant x >= 0
   {
     x := x + 1;
-    }
+  }
   assert [x_pos]: x >= 0;
-  };
+};
 -/
 #guard_msgs in
 #eval ASTtoCST nondetCondPgm
 
 -------------------------------------------------------------------------------
+
+-- Lambda formatting tests: construct Core.Program values with lambda
+-- expressions and verify the DDM formatter output.
+
+open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+
+private def formatCore (p : Core.Program) : IO Unit :=
+  IO.println f!"{Core.formatProgram p}"
+
+private def lambdaIdentityPgm : Core.Program := { decls := [
+  .func { name := "intID", typeArgs := [], inputs := [],
+          output := .arrow .int .int,
+          body := some (.abs () "" (.some .int) (.bvar () 0)) } .empty
+]}
+
+/--
+info: program Core;
+
+function intID () : int -> int {
+  lambda __q0 : int :: __q0
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaIdentityPgm
+
+private def lambdaNestedPgm : Core.Program := { decls := [
+  .func { name := "constFn", typeArgs := [], inputs := [],
+          output := .arrow .int (.arrow .int .int),
+          body := some (.abs () "" (.some .int)
+            (.abs () "" (.some .int) (.bvar () 1))) } .empty
+]}
+
+/--
+info: program Core;
+
+function constFn () : int -> int -> int {
+  lambda __q0 : int :: lambda __q1 : int :: __q0
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaNestedPgm
+
+private def lambdaNamedPgm : Core.Program := { decls := [
+  .func { name := "namedLam", typeArgs := [], inputs := [],
+          output := .arrow .int .int,
+          body := some (.abs () "x" (.some .int) (.bvar () 0)) } .empty
+]}
+
+/--
+info: program Core;
+
+function namedLam () : int -> int {
+  lambda x : int :: x
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaNamedPgm
 
 end Strata.Test

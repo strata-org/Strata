@@ -1073,7 +1073,7 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
 };
 
-procedure print(msg : Any, sep : Any, end : Any, file : Any, flush : Any) returns ();
+procedure print(msg : Any, opt : Any, sep : Any, end : Any, file : Any, flush : Any) returns ();
 
 #end
 
@@ -1091,7 +1091,7 @@ public def pythonRuntimeLaurelPart : Laurel.Program :=
   | .ok p =>
     let addExceptionMd := p.staticProcedures.map (λ f =>
       if f.name.text ∈ AnyMaybeExceptionList then
-        {f with name := {f.name with md := f.name.md.withPropertySummary "AnyMaybeExcept" }}
+        {f with name := {f.name with md := f.name.md.pushElem (.label "maybeException") (.switch true) }}
       else f)
     {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default

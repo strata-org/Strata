@@ -58,7 +58,7 @@ procedure test (a : int) returns ()
 {
   assert [init_calls_Int.SafeDiv_0]: !(a == 0);
   var z : int := 10 / a;
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram divInBodyPgm))
@@ -89,7 +89,7 @@ procedure safeMod$$wf (x : int, y : int) returns ()
 {
   assume [precond_safeMod_0]: !(y == 0);
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
-  };
+};
 function safeMod (x : int, y : int) : int {
   x % y
 }
@@ -97,7 +97,7 @@ procedure foo$$wf (x : int, y : int) returns ()
 {
   assert [foo_precond_calls_safeMod_0]: !(y == 0);
   assume [precond_foo_0]: safeMod(x, y) > 0;
-  };
+};
 function foo (x : int, y : int) : int {
   x + y
 }
@@ -138,13 +138,14 @@ procedure test$$wf (xs : List) returns ()
   assume [test_requires_0]: List..isCons(xs);
   assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
   assume [test_requires_1]: List..head(xs) > 0;
-  };
+};
 procedure test (xs : List) returns ()
 spec {
   requires [test_requires_0]: List..isCons(xs);
   requires [test_requires_1]: List..head(xs) > 0;
   } {
-  };
+  ⏎
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram procContractADTPgm))
@@ -186,14 +187,15 @@ procedure test$$wf (xs : List) returns ()
   assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
   assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
   assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
-  };
+};
 procedure test (xs : List) returns ()
 spec {
   requires [test_requires_0]: List..isCons(xs);
   ensures [test_ensures_1]: List..head(xs) > 0;
   ensures [test_ensures_2]: List..head(List..tail(xs)) > 0;
   } {
-  };
+  ⏎
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
@@ -229,11 +231,11 @@ procedure test () returns ()
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
     assume [precond_safeDiv_0]: y / x > 0;
     assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
+  }
   function safeDiv (y : int) : int { y / x }
   assert [init_calls_safeDiv_0]: 5 / x > 0;
   var z : int := safeDiv(5);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcDeclPrecondPgm))
@@ -274,21 +276,21 @@ procedure test (cond : bool, x : int, y : int) returns ()
       var a : int;
       assume [precond_f_0]: !(x == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-      }
+    }
     function f (a : int) : int { a / x }
     assert [init_calls_f_0]: !(x == 0);
     var r1 : int := f(10);
-    } else {
+  } else {
     f$$wf: {
       var a : int;
       assume [precond_f_0]: !(y == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-      }
+    }
     function f (a : int) : int { a / y }
     assert [init_calls_f_0]: !(y == 0);
     var r2 : int := f(20);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
@@ -329,22 +331,22 @@ procedure proc1 (x : int) returns ()
     var a : int;
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
+  }
   function f (a : int) : int { a / x }
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
-  };
+};
 procedure proc2 (y : int) returns ()
 {
   f$$wf: {
     var a : int;
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-    }
+  }
   function f (a : int) : int { a / y }
   assert [init_calls_f_0]: !(y == 0);
   var r : int := f(20);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcInMultipleProcsPgm))
@@ -376,10 +378,10 @@ procedure test (x : int, y : int) returns ()
   assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
   if (x / y > 0) {
     var z : int := 1;
-    } else {
+  } else {
     var z : int := 2;
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram iteCondPrecondPgm))
@@ -415,8 +417,8 @@ spec {
     g := g - 1;
     assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
     assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram loopGuardPrecondPgm))

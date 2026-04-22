@@ -319,21 +319,19 @@ private def mkFileMd : ToLaurelM (Imperative.MetaData Core.Expression) := do
   return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
 
 /-- Create metadata with a file range from the current pyspec file. -/
-private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
+private def mkMdWithFileRange (loc : SourceRange)
     : ToLaurelM (Imperative.MetaData Core.Expression) := do
   let ctx ← read
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-  let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
-  if !msg.isEmpty then
-    md := md.withPropertySummary msg
+  let md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   return md
 
-/-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
-private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
+/-- Wrap a StmtExpr with metadata containing a file range. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange)
     : ToLaurelM StmtExprMd := do
   let ctx ← read
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-  let md ← mkMdWithFileRange loc msg
+  let md ← mkMdWithFileRange loc
   return { val := e, source := some fr, md := md }
 
 /--
@@ -518,7 +516,7 @@ def buildSpecBody (preconditions : Array Assertion)
   for param in requiredParams do
     let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier param Laurel.tyAny md))
     let msg := SpecAssertMsg.requiredParam param |>.render
-    let assertStmt ← mkStmtWithLoc (.Assert cond.stmt) default msg
+    let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
     stmts := stmts.push assertStmt
     idx := idx + 1
   for assertion in preconditions do
@@ -529,7 +527,7 @@ def buildSpecBody (preconditions : Array Assertion)
     let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel assertion.formula md ctx
     if success then
       if let .TBool := condType then
-        let assertStmt ← mkStmtWithLoc (.Assert condExpr.stmt) default msg
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := condExpr.stmt, summary := some msg }) default
         stmts := stmts.push assertStmt
       else
         reportError .typeError default
