@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+public section
+
 /-!
 # A Lean Model of SMT-LIB Arrays
 

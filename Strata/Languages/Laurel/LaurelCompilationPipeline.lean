@@ -10,7 +10,10 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
+import Strata.Util.Profile
+import Strata.Util.Statistics
 
 /-!
 ## Laurel Compilation Pipeline
@@ -34,18 +37,77 @@ public section
 
 /-- Like `translate` but also returns the lowered Laurel program (after all
     Laurel-to-Laurel passes, before the final translation to Core). -/
-abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program × Statistics
+
+/-- A single Laurel-to-Laurel pass. Each pass receives the current program and
+    semantic model and returns the (possibly modified) program, accumulated
+    diagnostics, and statistics. -/
+structure LaurelPass where
+  /-- Human-readable name, used for profiling and file emission. -/
+  name : String
+  /-- Whether `resolve` should be run after the pass. -/
+  needsResolves : Bool := false
+  /-- The pass action. -/
+  run : Program → SemanticModel → Program × List DiagnosticModel × Statistics
+
+/-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
+private def laurelPipeline : Array LaurelPass := #[
+  { name := "FilterNonCompositeModifies"
+    run := fun p m =>
+      let (p', diags) := filterNonCompositeModifies m p
+      (p', diags, {}) },
+  { name := "EliminateValueReturns"
+    run := fun p _m =>
+      let (p', diags) := eliminateValueReturnsTransform p
+      (p', diags.toList, {}) },
+  { name := "HeapParameterization"
+    needsResolves := true
+    run := fun p m =>
+      (heapParameterization m p, [], {}) },
+  { name := "TypeHierarchyTransform"
+    needsResolves := true
+    run := fun p m =>
+      (typeHierarchyTransform m p, [], {}) },
+  { name := "ModifiesClausesTransform"
+    needsResolves := true
+    run := fun p m =>
+      let (p', diags) := modifiesClausesTransform m p
+      (p', diags, {}) },
+  { name := "InferHoleTypes"
+    run := fun p m =>
+      let (p', stats) := inferHoleTypes m p
+      (p', [], stats) },
+  { name := "EliminateHoles"
+    run := fun p _m =>
+      let (p', stats) := eliminateHoles p
+      (p', [], stats) },
+  { name := "DesugarShortCircuit"
+    run := fun p m =>
+      (desugarShortCircuit m p, [], {}) },
+  { name := "LiftExpressionAssignments"
+    run := fun p m =>
+      (liftExpressionAssignments m p, [], {}) },
+  { name := "EliminateReturns"
+    needsResolves := true
+    run := fun p _m =>
+      (eliminateReturnsInExpressionTransform p, [], {}) },
+  { name := "ConstrainedTypeElim"
+    needsResolves := true
+    run := fun p m =>
+      let (p', diags) := constrainedTypeElim m p
+      (p', diags, {}) }
+]
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
-program, the semantic model, and accumulated diagnostics.
+program, the semantic model, accumulated diagnostics, and merged statistics.
 
 When `keepAllFilesPrefix` is provided, the program state after each named
 Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses (options : LaurelTranslateOptions) (program : Program)
     (keepAllFilesPrefix : Option String := none)
-    : IO (Program × SemanticModel × List DiagnosticModel) := do
+    : IO (Program × SemanticModel × List DiagnosticModel × Statistics) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -65,54 +127,37 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   -- Step 0: the input program before any passes
   emit "Initial" program
 
+  -- Initial resolution
   let result := resolve program
   let resolutionErrors : List DiagnosticModel :=
     if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
   emit "Resolve" program
+
+  let program := typeAliasElim model program
+  emit "TypeAliasElim" program
+
   let diamondErrors := validateDiamondFieldAccesses model program
 
-  let (program, nonCompositeDiags) := filterNonCompositeModifies model program
-  emit "FilterNonCompositeModifies" program
+  let mut program := program
+  let mut model := model
+  let mut allDiags : List DiagnosticModel := resolutionErrors ++ diamondErrors
+  let mut allStats : Statistics := {}
 
-  let (program, valueReturnDiags) := eliminateValueReturnsTransform program
+  for pass in laurelPipeline do
+    let (program', diags, stats) ← profileStep options.profile s!"  {pass.name}" do
+      pure (pass.run program model)
+    program := program'
+    allDiags := allDiags ++ diags
+    allStats := allStats.merge stats
+    -- Run resolve after the pass if needed
+    if pass.needsResolves then
+      let result := resolve program (some model)
+      program := result.program
+      model := result.model
+    emit pass.name program
 
-  let program := heapParameterization model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "HeapParameterization" program
-
-  let program := typeHierarchyTransform model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "TypeHierarchyTransform" program
-  let (program, modifiesDiags) := modifiesClausesTransform model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "ModifiesClausesTransform" program
-  let program := inferHoleTypes model program
-  emit "InferHoleTypes" program
-  let program := eliminateHoles program
-  emit "EliminateHoles" program
-  let program := desugarShortCircuit model program
-  emit "DesugarShortCircuit" program
-  let program := liftExpressionAssignments model program
-  emit "LiftExpressionAssignments" program
-  let program := eliminateReturnsInExpressionTransform program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "EliminateReturns" program
-
-  let (program, constrainedTypeDiags) := constrainedTypeElim model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "ConstrainedTypeElim" program
-
-  let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
-    valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags
-  return (program, model, allDiags)
+  return (program, model, allDiags, allStats)
 
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
@@ -123,7 +168,7 @@ Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     (keepAllFilesPrefix : Option String := none)
     : IO TranslateResultWithLaurel := do
-  let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
+  let (program, model, passDiags, stats) ← runLaurelPasses options program keepAllFilesPrefix
   let ordered := orderProgram program
   let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
   let (coreProgramOption, translateState) :=
@@ -131,13 +176,13 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let allDiagnostics := passDiags ++ translateState.diagnostics
   let coreProgramOption :=
     if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  return (coreProgramOption, allDiagnostics, program)
+  return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
 Translate Laurel Program to Core Program.
 -/
 def translate (options : LaurelTranslateOptions) (program : Program) : IO TranslateResult := do
-  let (core, diags, _) ← translateWithLaurel options program
+  let (core, diags, _, _) ← translateWithLaurel options program
   return (core, diags)
 
 /--
