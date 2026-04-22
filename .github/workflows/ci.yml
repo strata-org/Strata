@@ -71,6 +71,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Restore lake cache
+        # Only use the caches on PRs because there is a risk of stale results:
+        # https://github.com/strata-org/Strata/issues/952
+        if: github.event_name == 'pull_request'
         uses: actions/cache/restore@v5
         with:
           path: .lake
@@ -143,6 +146,9 @@ jobs:
       run: pip install .
       working-directory: Tools/Python
     - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in the build_and_test_lean job
+      # https://github.com/strata-org/Strata/issues/952
       uses: actions/cache/restore@v5
       with:
         path: .lake
@@ -255,6 +261,9 @@ jobs:
       run: pip install .
       working-directory: Tools/Python
     - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in the build_and_test_lean job from ci.yml
+      # https://github.com/strata-org/Strata/issues/952
       uses: actions/cache/restore@v5
       with:
         path: .lake

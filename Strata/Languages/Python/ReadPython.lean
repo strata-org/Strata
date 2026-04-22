@@ -21,7 +21,7 @@ def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except Str
       | .error msg =>
         throw s!"Error reading {strataPath}: {msg}"
       | .ok r => pure r
-    let isTrue p := inferInstanceAs (Decidable (pyCmds.size = 1))
+    let isTrue p := (inferInstance : Decidable (pyCmds.size = 1))
       | throw s!"Error reading {strataPath}: Expected Python module"
     let .Module _ ⟨_, stmts⟩ _ := pyCmds[0]
       | throw s!"Error reading {strataPath}: Expected Python module"

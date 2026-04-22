@@ -51,7 +51,7 @@ variable {IDMeta : Type} [DecidableEq IDMeta]
 /-!
 ### Lean 4 Standard Library Gaps
 
-The `String.startsWith` and `String.drop` APIs in Lean 4.27 go through the
+The `String.startsWith` and `String.drop` APIs go through the
 `Slice`/`Pattern` infrastructure with private internal definitions that have
 no proof-level lemmas. To avoid this, `TState.isFutureGenVar` uses
 `List.isPrefixOf` on `Char` lists, making the prefix-detection and
@@ -1738,20 +1738,14 @@ theorem genTyVar_genFresh'
   · simp at h
   · simp at h; obtain ⟨h_tv, h_env⟩ := h
     rw [← h_tv, ← h_env]
-    simp [TState.genTySym, TState.incTyGen]
+    simp only [TState.genTySym, TState.incTyGen]
+    simp [-Nat.toString_eq_repr]
     intro n hn h_eq
     -- genTySym gives tyPrefix ++ toString Env.genState.tyGen
     -- Env'.genState.tyGen = Env.genState.tyGen + 1
     -- So the name has index Env.genState.tyGen < n, hence ≠
     have h_ne : Env.genState.tyGen ≠ n := by omega
-    simp [TState.tyPrefix] at h_eq
-    -- h_eq : tyPrefix ++ toString Env.genState.tyGen = tyPrefix ++ toString n
-    -- By String left-cancellation + Nat.toString injectivity, Env.genState.tyGen = n
-    -- Left-cancel the common prefix to get toString equality,
-    -- then Nat.toString injectivity gives k = n, contradicting h_ne.
-    rw [String.ext_iff] at h_eq
-    simp [String.toList_append] at h_eq
-    exact absurd (Nat.toString_injective (String.toList_injective h_eq)) h_ne
+    exact absurd (Nat.toString_injective h_eq) h_ne
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- All vars produced by `TGenEnv.genTyVars` satisfy gen-freshness for the
@@ -2374,8 +2368,8 @@ private theorem knownTypeVars_addInNewestContext_cases
       List.mem_append, List.not_mem_nil, or_false] at h
     show v ∈ TContext.types.knownTypeVars [] ∨ v ∈ LTy.freeVars ty
     right
-    have : ([] : List (T.Identifier × LTy)) ++ [(xv, ty)] = [(xv, ty)] := List.nil_append _
-    rw [this] at h
+    change v ∈ TContext.types.knownTypeVars.go (List.append [] [(xv, ty)]) at h
+    simp at h
     unfold TContext.types.knownTypeVars.go at h
     simp [TContext.types.knownTypeVars.go] at h
     exact h
