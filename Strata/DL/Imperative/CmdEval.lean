@@ -113,6 +113,87 @@ def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P ×
     let (crest, σ) := Cmds.eval σ crest
     (c :: crest, σ)
 
+--------------------------------------------------------------------
+
+def stuck {P S} [EC : EvalContext P S] (σ : S) (message : String) : S :=
+  EC.updateError σ (.Misc message)
+
+/--
+Concrete execution for an Imperative Command.
+-/
+def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S :=
+  match EC.lookupError σ with
+  | some _ => σ
+  | none =>
+    match c with
+    | .init x ty e _ =>
+      match EC.lookup σ x with
+      | none =>
+        match e with
+        | .det expr =>
+          let (expr, σ) := EC.preprocess σ c expr
+          let expr := EC.eval σ expr
+          EC.update σ x ty expr
+        | .nondet =>
+          -- Unconstrained initialization - generate a fresh value
+          let (expr, σ) := EC.genFreeVar σ x ty
+          EC.update σ x ty expr
+      | some (xv, xty) => EC.updateError σ (.InitVarExists (x, xty) xv)
+
+    | .set x e _ =>
+      match EC.lookup σ x with
+      | none =>
+        match e with
+        | .det expr => EC.updateError σ (.AssignVarNotExists x expr)
+        | .nondet => EC.updateError σ (.HavocVarNotExists x)
+      | some (_xv, xty) =>
+        match e with
+        | .det expr =>
+          let (expr, σ) := EC.preprocess σ c expr
+          let expr := EC.eval σ expr
+          EC.update σ x xty expr
+        | .nondet =>
+          --
+          let (expr, σ) := EC.genFreeVar σ x xty
+          EC.update σ x xty expr
+
+    | .assert label e _ =>
+      let (e, σ) := EC.preprocess σ c e
+      let e := EC.eval σ e
+      match EC.denoteBool e with
+      | some true =>
+        σ
+      | some false =>
+        EC.updateError σ (.Misc f!"assert ({label}) condition is false")
+      | none =>
+        EC.updateError σ (.Misc f!"assert ({label}) condition did not reduce to bool")
+
+    | .assume label e _ =>
+      let (e, σ) := EC.preprocess σ c e
+      let e := EC.eval σ e
+      match EC.denoteBool e with
+      | some true =>
+        σ
+      | some false =>
+        EC.updateError σ (.Misc f!"assume ({label}) condition is false")
+      | none =>
+        EC.updateError σ (.Misc f!"assume ({label}) condition did not reduce to bool")
+
+    | .cover _ _ _ =>
+      -- In the future we can record when a cover is true
+      -- and assert it was hit at least once later on
+      EC.updateError σ (.Misc s!"cover is not yet supported")
+
+/--
+Symbolic simulation for Imperative's Commands.
+-/
+def Cmds.run [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : S :=
+  match cs with
+  | [] => σ
+  | c :: crest =>
+    let σ := Cmd.run σ c
+    Cmds.run σ crest
+
 ---------------------------------------------------------------------
 
 end -- public section

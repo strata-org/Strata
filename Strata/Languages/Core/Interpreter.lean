@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.Core
 import Strata.Languages.Core.CmdEval
+import Strata.DL.Lambda.LExprEval
 
 /-! # Concrete Interpreter for Strata Core Programs
 
@@ -66,62 +67,7 @@ inductive StepResult where
 def stuck (E : Env) (message : String) : Env :=
   { E with error := some (EvalError.Misc message) }
 
-/-! ## Expression Evaluation -/
 
-/-- Walk a post-eval expression looking for a stuck redex: a fully-applied
-non-constructor factory function whose arguments are all canonical values.
-Such a call *should* have reduced during `eval` but didn't (e.g. missing body
-or `concreteEval`). Returns the stuck subexpression if found.
-
-This helps errors point more precisely to where the interpreter got stuck.
- -/
-def findStuckRedex (F : @Lambda.Factory CoreLParams) : Expression.Expr → Option Expression.Expr
-  | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _ => none
-  | .eq _m e1 e2 =>
-    (findStuckRedex F e1).orElse (fun _ => findStuckRedex F e2)
-  | .ite _m c t f =>
-    (findStuckRedex F c).orElse (fun _ => (findStuckRedex F t).orElse (fun _ => findStuckRedex F f))
-  | e@(.app _m fn arg) =>
-    match Factory.callOfLFunc F e false with
-    | some (_, args, f) =>
-      if !f.isConstr && args.all (LExpr.isCanonicalValue F) then
-        some e
-      else
-        -- Non-stuck call: recurse into fn and arg (structural subterms)
-        (findStuckRedex F fn).orElse (fun _ => findStuckRedex F arg)
-    | none =>
-      (findStuckRedex F fn).orElse (fun _ => findStuckRedex F arg)
-
-/-- Evaluate an expression using the interpreter's environment.
-
-This is the interpreter's own expression evaluator, defined as a separate
-function so that we can later prove it consistent with the small-step
-`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
-
-Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
-If the result contains a stuck redex (a fully-applied function that should
-have reduced but didn't), returns an error.
--/
-def interpExpr (E : Env) (e : Expression.Expr) : Except Env Expression.Expr :=
-  let v := e.eval E.exprEnv.config.fuel E.exprEnv
-  if LExpr.isCanonicalValue E.factory v then
-    .ok v
-  else
-    match findStuckRedex E.factory v with
-    | some stuckExpr => .error (stuck E s!"expression contains stuck redex: {format stuckExpr}")
-    | none => .ok v
-
--- TODO: foldlM?
-def interpExprList (E : Env) (es : List Expression.Expr) : Except Env (List Expression.Expr) :=
-  match es with
-  | [] => .ok []
-  | e::rest =>
-    match interpExpr E e with
-    | .error e => .error e
-    | .ok v =>
-      match interpExprList E rest with
-      | .error e => .error e
-      | .ok vs => .ok (v::vs)
 
 /-! ## Interpreter Core -/
 
@@ -138,7 +84,7 @@ def interpCmd (fuel : Nat) (E : Env) (c : Command) : StepResult :=
   | .cmd (.init x ty e _md) =>
     match e with
     | .det expr =>
-      match interpExpr E expr with
+      match LExprEval.run interpExpr E expr with
       | .ok v => .normal (CmdEval.update E x ty v)
       | .error sr => .normal sr
     | .nondet => .normal (CmdEval.update E x ty (defaultValue ty))
@@ -300,79 +246,5 @@ end
 
 /-! ## Program-Level Interpreter -/
 
-/-- Set up the interpreter environment from a type-checked program. -/
-def initInterpreterEnv (prog : Program) : Except DiagnosticModel Env := do
-  let factory ← Core.Factory.addFactory Lambda.Factory.default
-  let datatypes := prog.decls.filterMap fun decl =>
-    match decl with
-    | .type (.data d) _ => some d
-    | _ => none
-  let σ ← Lambda.LState.init.addFactory factory
-  let E := { Env.init with exprEnv := σ, program := prog }
-  E.addDatatypes datatypes
-
-/-- Process top-level declarations (globals, functions, axioms). -/
-def processDecls (E : Env) : Env :=
-  E.program.decls.foldl (fun E decl =>
-    match E.error with
-    | some _ => E
-    | none =>
-    match decl with
-    | .var name ty (.det e) _md =>
-      match interpExpr E e with
-      | .error sr => sr
-      | .ok v => CmdEval.update E name ty v
-    | .var name ty .nondet _md =>
-      CmdEval.update E name ty (defaultValue ty)
-    | .func f _md =>
-      match E.addFactoryFunc f with
-      | .ok E' => E'
-      | .error _ => E
-    | .recFuncBlock fs _md =>
-      fs.foldl (fun E f =>
-        match E.addFactoryFunc f with
-        | .ok E' => E'
-        | .error _ => E) E
-    | .ax a _md =>
-      { E with pathConditions := E.pathConditions.addInNewest [(toString a.name, a.e)] }
-    | _ => E
-  ) E
-
-def diagModel (message : String) : Except DiagnosticModel Env :=
-  .error {
-    fileRange := FileRange.unknown
-    type := DiagnosticType.UserError
-    message := message
-  }
-
-/-- Interpret a specific procedure by name from a type-checked program. -/
-def interpProcedure (prog : Program) (procName : String)
-    (args : List Expression.Expr := [])
-    (fuel : Nat := defaultFuel) : Except DiagnosticModel Env :=
-  match initInterpreterEnv prog with
-  | .error e => .error e
-  | .ok E =>
-    let E := processDecls E
-    match Program.Procedure.find? prog ⟨procName, ()⟩ with
-    | none => .ok (stuck E s!"procedure '{procName}' not found")
-    | some proc =>
-      if proc.body.isEmpty then
-        .ok (stuck E s!"procedure '{procName}' has no body")
-      else
-        match interpExprList E args with
-        | .error e => .ok e
-        | .ok argVals =>
-          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-            proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
-            |>.map fun ((name, ty), val) => (name, (some ty, val))
-          let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-            proc.header.outputs.keys.zip proc.header.outputs.values
-            |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-          let E := { E with
-            exprEnv := { E.exprEnv with
-              state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
-          match interpBlock fuel E proc.body with
-          -- TODO: Is it allowed for an exit to propagate right out of a procedure?
-          | .exiting _ E' | .normal E' => .ok E'
 
 end Core

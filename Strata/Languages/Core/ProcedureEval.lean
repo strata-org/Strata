@@ -9,6 +9,10 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementEval
 public import Strata.Languages.Core.StatementSemantics
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Imperative.StmtEval
+public import Strata.DL.Imperative.CmdEval
+
 public section
 
 ---------------------------------------------------------------------
@@ -19,6 +23,7 @@ namespace Procedure
 open Std
 
 open Statement Lambda LExpr
+open Strata (DiagnosticModel DiagnosticType FileRange)
 
 def fixupError (E : Env) : Env :=
   match E.error with
@@ -116,6 +121,91 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       p.spec.preconditions
   let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ p.body ++ postcond_asserts)
   (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
+
+---------------------------------------------------------------------
+
+def stuck (E : Env) (message : String) : Env :=
+  { E with error := some (Imperative.EvalError.Misc message) }
+
+/-- Set up the interpreter environment from a type-checked program. -/
+def initInterpreterEnv (prog : Program) : Except DiagnosticModel Env := do
+  let factory ← Core.Factory.addFactory Lambda.Factory.default
+  let datatypes := prog.decls.filterMap fun decl =>
+    match decl with
+    | .type (.data d) _ => some d
+    | _ => none
+  let σ ← Lambda.LState.init.addFactory factory
+  let E := { Env.init with exprEnv := σ, program := prog }
+  E.addDatatypes datatypes
+
+/-- Process top-level declarations (globals, functions, axioms). -/
+def processDecls (E : Env) : Env :=
+  E.program.decls.foldl (fun E decl =>
+    match E.error with
+    | some _ => E
+    | none =>
+    match decl with
+    | .var name ty (.det e) _md =>
+      match LExpr.run E.exprEnv e with
+      | .error sr => stuck E sr
+      | .ok v => CmdEval.update E name ty v
+    | .var name ty .nondet _md =>
+      stuck E "nondet global variables not yet supported"
+    | .func f _md =>
+      match E.addFactoryFunc f with
+      | .ok E' => E'
+      | .error _ => E
+    | .recFuncBlock fs _md =>
+      fs.foldl (fun E f =>
+        match E.addFactoryFunc f with
+        | .ok E' => E'
+        | .error _ => E) E
+    | .ax a _md =>
+      { E with pathConditions := E.pathConditions.addInNewest [(toString a.name, a.e)] }
+    | _ => E
+  ) E
+
+def diagModel (message : String) : Except DiagnosticModel Env :=
+  .error {
+    fileRange := FileRange.unknown
+    type := DiagnosticType.UserError
+    message := message
+  }
+
+/-- Interpret a specific procedure by name from a type-checked program. -/
+def interpProcedure (prog : Program) (procName : String)
+    (args : List Expression.Expr := [])
+    (fuel : Nat := defaultFuel) : Except DiagnosticModel Env :=
+  match initInterpreterEnv prog with
+  | .error e => .error e
+  | .ok E =>
+    let E := processDecls E
+    match Program.Procedure.find? prog ⟨procName, ()⟩ with
+    | none => .ok (stuck E s!"procedure '{procName}' not found")
+    | some proc =>
+      if proc.body.isEmpty then
+        .ok (stuck E s!"procedure '{procName}' has no body")
+      else
+        match LExpr.runList E.exprEnv args with
+        | .error s => .ok (stuck E s)
+        | .ok argVals =>
+          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
+            |>.map fun ((name, ty), val) => (name, (some ty, val))
+          let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.outputs.keys.zip proc.header.outputs.values
+            |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+          let E: Env := { E with
+            exprEnv := { E.exprEnv with
+              state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
+          let stmtEnv: Imperative.Env Expression := 5
+          let config: CoreConfig := .stmts proc.body stmtEnv
+          let extendEval: ExtendEval := 4
+          let configAfter: CoreConfig := Imperative.runStmt Imperative.Cmd.run E fuel config
+          match configAfter with
+          | .terminal E' => .ok E'
+          | _ => diagModel "Aw crap"
+
 
 ---------------------------------------------------------------------
 
