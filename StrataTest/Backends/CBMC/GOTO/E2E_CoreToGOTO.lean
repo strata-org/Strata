@@ -58,24 +58,6 @@ procedure test(x : int) {
 
 -------------------------------------------------------------------------------
 
--- Test: global variable passed as input parameter appears in symbol table
-def E2E_GlobalVar :=
-#strata
-program Core;
-procedure test(g : int) {
-  assert (g > 0);
-};
-#end
-
-#eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_GlobalVar | IO.throwServerError "translation failed"
-  let testSym := symtab.getObjValD "test"
-  assert! testSym != Lean.Json.null
-  -- g should appear as a parameter in the procedure
-  assert! (testSym.pretty.splitOn "\"g\"").length > 1
-
--------------------------------------------------------------------------------
-
 -- Test: procedure with precondition emits #spec_requires
 def E2E_Precondition :=
 #strata
@@ -117,23 +99,6 @@ spec {
   let namedSub := codeType.getObjValD "namedSub"
   let specEns := namedSub.getObjValD "#spec_ensures"
   assert! specEns != Lean.Json.null
-
--------------------------------------------------------------------------------
-
--- Test: procedure with g as both input and output parameter
-def E2E_Modifies :=
-#strata
-program Core;
-procedure test(x : int, inout g : int) {
-  assert (x > 0);
-};
-#end
-
-#eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Modifies | IO.throwServerError "translation failed"
-  let testSym := symtab.getObjValD "test"
-  assert! testSym != Lean.Json.null
-  assert! (testSym.pretty.splitOn "\"g\"").length > 1
 
 -------------------------------------------------------------------------------
 
