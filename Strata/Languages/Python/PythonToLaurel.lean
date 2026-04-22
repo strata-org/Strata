@@ -803,8 +803,9 @@ partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr 
     (kwords : List (Python.keyword SourceRange) := [])
     : Except TranslationError String := do
   match resolveDispatch ctx func args kwords with
-  |.ok (some classname) => return classname
-  | _=>
+  | .ok (some classname) => return classname
+  | .error e => throw e
+  | .ok none =>
     let (fname, _) ← refineFunctionCallExpr ctx func
     match ctx.functionSignatures.find? (λ f => f.name == fname) with
       | some funcDecl => match funcDecl.ret with

@@ -191,6 +191,7 @@ private meta def testCases : List (String × Expected) := [
   -- Type alias resolution tests (TDD for resolveTypeName refactoring)
   .mk "test_method_dispatch.py" .success,
   .mk "test_keyword_dispatch.py" .success,
+  .mk "test_keyword_dispatch_variable.py" .success,
   .mk "test_wrong_keyword_dispatch.py" $
     .failPrefix "Python to Laurel translation failed: Type error: Dispatched function 'connect' called with wrong keyword argument, expected 'service_name' but got 'wrong_param'",
   .mk "test_annotation_dispatch.py" .success,
