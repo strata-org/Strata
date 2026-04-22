@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Expressions
+public import Strata.DL.Lambda.TypeFactory
 
 namespace Strata
 
@@ -21,55 +22,28 @@ Simplify tester and selector applications on known constructor terms:
 
 This is a pure Core-to-Core transform that reduces the number of
 uninterpreted function applications downstream consumers need to handle.
+
+Uses `Lambda.DatatypeInfo` (shared with the Lambda evaluator) for
+constructor/tester/selector metadata, and `Lambda.getLFuncCall` for
+decomposing applications.
 -/
 
-/-- Collected datatype metadata for partial evaluation. -/
-structure DatatypeInfo where
-  /-- Constructor name → its tester name -/
-  constrToTester : Std.HashMap String String := {}
-  /-- Tester name → the constructor it tests for -/
-  testerToConstr : Std.HashMap String String := {}
-  /-- All tester names for a given datatype (keyed by any constructor name) -/
-  constrSiblingTesters : Std.HashMap String (List String) := {}
-  /-- Selector name (e.g. "Any..as_int!") → (constructor name, field index) -/
-  selectorInfo : Std.HashMap String (String × Nat) := {}
-  /-- Set of all constructor names -/
-  constrNames : Std.HashSet String := {}
-
-/-- Build DatatypeInfo from a Core program's declarations. -/
-def collectDatatypeInfo (pgm : Core.Program) : DatatypeInfo :=
+/-- Build DatatypeInfo from a Core program's datatype declarations. -/
+def collectDatatypeInfo (pgm : Core.Program) : Lambda.DatatypeInfo :=
   pgm.decls.foldl (init := {}) fun info decl =>
     match decl with
-    | .type (.data dts) _ => dts.foldl (init := info) fun info dt =>
-      let allTesters := dt.constrs.map (·.testerName)
-      dt.constrs.foldl (init := info) fun info c =>
-        let cname := c.name.name
-        let selectors := (List.range c.args.length).foldl (init := info.selectorInfo) fun m i =>
-          match c.args[i]? with
-          | some (fieldId, _) =>
-            let selName := s!"{dt.name}..{fieldId.name}!"
-            m.insert selName (cname, i)
-          | none => m
-        { info with
-          constrToTester := info.constrToTester.insert cname c.testerName
-          testerToConstr := info.testerToConstr.insert c.testerName cname
-          constrSiblingTesters := info.constrSiblingTesters.insert cname allTesters
-          selectorInfo := selectors
-          constrNames := info.constrNames.insert cname }
+    | .type (.data dts) _ =>
+      let dtInfo := Lambda.DatatypeInfo.ofDatatypes dts
+      { testerToConstr := dtInfo.testerToConstr.fold (init := info.testerToConstr) fun m k v => m.insert k v
+        selectorInfo := dtInfo.selectorInfo.fold (init := info.selectorInfo) fun m k v => m.insert k v
+        constrNames := dtInfo.constrNames.fold (init := info.constrNames) fun s v => s.insert v }
     | _ => info
 
-/-- Decompose a constructor application: `C(a₁, ..., aₙ)` → `(C, [a₁,...,aₙ])`.
-    Returns `none` if the head is not a known constructor.
-    Does not check arity — partial applications return fewer arguments. -/
-def matchConstrApp (dtInfo : DatatypeInfo) (e : Lambda.LExpr Core.CoreLParams.mono)
+/-- Decompose a constructor application using `getLFuncCall`.
+    Returns `(constructorName, args)` if the head is a known constructor. -/
+def matchConstrApp (dtInfo : Lambda.DatatypeInfo) (e : Lambda.LExpr Core.CoreLParams.mono)
     : Option (String × List (Lambda.LExpr Core.CoreLParams.mono)) :=
-  let rec collect (e : Lambda.LExpr Core.CoreLParams.mono)
-      (args : List (Lambda.LExpr Core.CoreLParams.mono))
-      : Lambda.LExpr Core.CoreLParams.mono × List (Lambda.LExpr Core.CoreLParams.mono) :=
-    match e with
-    | .app _ f a => collect f (a :: args)
-    | other => (other, args)
-  let (head, args) := collect e []
+  let (head, args) := Lambda.getLFuncCall e
   match head with
   | .op _ o _ =>
     if dtInfo.constrNames.contains o.1 then some (o.1, args) else none
@@ -77,7 +51,7 @@ def matchConstrApp (dtInfo : DatatypeInfo) (e : Lambda.LExpr Core.CoreLParams.mo
 
 /-- Try to simplify a unary application `op(arg)` where `arg` is already simplified.
     Returns `none` if no simplification applies. -/
-def trySimplifyUnaryApp (dtInfo : DatatypeInfo)
+def trySimplifyUnaryApp (dtInfo : Lambda.DatatypeInfo)
     (appMd opMd : Core.ExpressionMetadata) (fn : Lambda.Identifier Core.CoreLParams.mono.base.IDMeta)
     (opTy : Option Core.CoreLParams.mono.TypeType)
     (arg' : Lambda.LExpr Core.CoreLParams.mono) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
@@ -101,7 +75,7 @@ def trySimplifyUnaryApp (dtInfo : DatatypeInfo)
 - `tester(C(args))` → `true` if tester matches C, `false` otherwise
 - `selector_i(C(args))` → `args[i]` if selector matches C
 Recurses into subexpressions. -/
-def partialEvalDatatypesCore (dtInfo : DatatypeInfo)
+def partialEvalDatatypesCore (dtInfo : Lambda.DatatypeInfo)
     (e : Lambda.LExpr Core.CoreLParams.mono) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
   -- Unary application: tester(arg) or selector(arg)
@@ -123,7 +97,7 @@ def partialEvalDatatypesCore (dtInfo : DatatypeInfo)
   -- Leaves: unchanged
   | other => other
 
-def partialEvalDatatypes (dtInfo : DatatypeInfo)
+def partialEvalDatatypes (dtInfo : Lambda.DatatypeInfo)
     (e : Lambda.LExpr Core.CoreLParams.mono) : Lambda.LExpr Core.CoreLParams.mono :=
   partialEvalDatatypesCore dtInfo e
 

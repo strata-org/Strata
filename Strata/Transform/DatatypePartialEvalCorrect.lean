@@ -22,7 +22,7 @@ namespace Strata
 open Lambda
 
 /-- Two expressions are equivalent under the datatype axioms. -/
-inductive DtEquiv (dtInfo : DatatypeInfo) :
+inductive DtEquiv (dtInfo : Lambda.DatatypeInfo) :
     LExpr Core.CoreLParams.mono → LExpr Core.CoreLParams.mono → Prop where
   | refl (e) : DtEquiv dtInfo e e
   | symm {e₁ e₂} : DtEquiv dtInfo e₁ e₂ → DtEquiv dtInfo e₂ e₁
@@ -61,7 +61,7 @@ inductive DtEquiv (dtInfo : DatatypeInfo) :
 /-! ## Helper correctness -/
 
 /-- When `trySimplifyUnaryApp` succeeds, the result is DtEquiv to the original application. -/
-theorem trySimplifyUnaryApp_correct (dtInfo : DatatypeInfo)
+theorem trySimplifyUnaryApp_correct (dtInfo : Lambda.DatatypeInfo)
     (appMd opMd : Core.ExpressionMetadata)
     (fn : Lambda.Identifier Core.CoreLParams.mono.base.IDMeta)
     (opTy : Option Core.CoreLParams.mono.TypeType)
@@ -75,7 +75,7 @@ theorem trySimplifyUnaryApp_correct (dtInfo : DatatypeInfo)
 /-! ## Main theorem -/
 
 theorem partialEvalDatatypesCore_correct
-    (dtInfo : DatatypeInfo)
+    (dtInfo : Lambda.DatatypeInfo)
     (e : LExpr Core.CoreLParams.mono) :
     DtEquiv dtInfo (partialEvalDatatypesCore dtInfo e) e := by
   induction e with
@@ -97,7 +97,7 @@ theorem partialEvalDatatypesCore_correct
     sorry
 
 theorem partialEvalDatatypes_correct
-    (dtInfo : DatatypeInfo)
+    (dtInfo : Lambda.DatatypeInfo)
     (e : LExpr Core.CoreLParams.mono) :
     DtEquiv dtInfo (partialEvalDatatypes dtInfo e) e := by
   unfold partialEvalDatatypes

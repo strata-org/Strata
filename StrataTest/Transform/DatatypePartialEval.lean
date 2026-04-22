@@ -41,7 +41,7 @@ datatype Any {
   assert! info.constrNames.contains "from_str"
   assert! info.constrNames.contains "from_None"
   assert! info.testerToConstr.contains "Any..isfrom_int"
-  assert! info.constrToTester["from_int"]? == some "Any..isfrom_int"
+  assert! info.testerToConstr["Any..isfrom_int"]? == some "from_int"
   assert! info.selectorInfo.contains "Any..intVal!"
 
 /-! ### Test: tester on known constructor simplifies to true/false -/
