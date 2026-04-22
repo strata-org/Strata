@@ -127,7 +127,11 @@ private def encodeFunction (uf : UF) (body : Term) : AbstractEncoderM String := 
 
 end AbstractEncoder
 
-/-- Unwrap an `Except String` result, throwing on error. -/
+/-- Unwrap an `Except String` result, throwing on error.
+    `AbstractSolver` methods like `assert` and `declareSort` return
+    `m (Except String _)` to signal failures. After `←` we get the
+    `Except`; this helper converts `.error` into an `IO.userError`
+    exception so callers can use a simple `unwrap "label" (← …)` pattern. -/
 private def unwrap (label : String) (r : Except String α) : IncrementalSolverM α :=
   match r with
   | .ok a => return a
@@ -156,11 +160,18 @@ private def emitDatatypesAbstract (ctx : Core.SMT.Context) : IncrementalSolverM 
 
 /-- Encode declarations and assertions through the `AbstractSolver` API.
     Replaces `encodeDeclarations` for the incremental path — all commands
-    go through `AbstractSolver` methods instead of `SolverM`. -/
+    go through `AbstractSolver` methods instead of `SolverM`.
+
+    `prelude` is a deferred monadic action (e.g. solver option settings)
+    executed after `setLogic` but before declarations. The caller constructs
+    it inside the solver session and passes it in as a callback. -/
 def encodeDeclarationsAbstract (ctx : Core.SMT.Context)
     (prelude : IncrementalSolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     : IncrementalSolverM (Term × List String × EncoderState) := do
+  -- NOTE: The concrete solver is hardcoded here because `AbstractEncoder`
+  -- is also tied to `IncrementalSolverM`. Parameterizing both over the
+  -- solver backend is tracked as a follow-up.
   let solver := IncrementalSolver.mkAbstractSolver
   solver.setLogic "ALL"
   prelude
