@@ -374,7 +374,27 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
         let args := rargs.reverse
         let bindings := op.argDecls
         let .isTrue bsize := decEq args.size bindings.size
-              | return panic! "Mismatch betweeen binding and arg size"
+              | do
+                -- When a declared function (e.g. lambda) is applied to extra
+                -- arguments, format the function with its declared args and
+                -- then apply the remaining args with call syntax.
+                let declArgCount := bindings.size
+                if rargs.size > declArgCount then
+                  let fnArgs := rargs.reverse.toList.take declArgCount |>.toArray
+                  let extraArgs := rargs.reverse.toList.drop declArgCount |>.toArray
+                  let .isTrue bsize' := decEq fnArgs.size bindings.size
+                        | return panic! "Mismatch betweeen binding and arg size"
+                  let argResults ← do
+                        match formatArguments (← read) (← get) bindings ⟨fnArgs, bsize'⟩ with
+                        | .ok r => pure r
+                        | .error e => return panic! e
+                  let fnFmt := ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
+                  let extraFmts := (← extraArgs.mapM (·.mformatM)) |>.map (·.format)
+                  let extraFmts := Format.joinSep extraFmts.toList f!", "
+                  return .mk f!"({fnFmt.format})({extraFmts})" callPrec
+                else
+                  -- Fewer args than expected: format as name(args)
+                  ppArgs f.fullName
         let argResults ← do
               match formatArguments (← read) (← get) bindings ⟨args, bsize⟩ with
               | .ok r => pure r

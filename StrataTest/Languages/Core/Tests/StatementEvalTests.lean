@@ -133,10 +133,7 @@ Subst Map:
 Expression Env:
 State:
 [(minit : (arrow int int)) → _minit
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int))
-         %0)))
-      %0)))
-   %0)))
+(m : (arrow int int)) → lambda __q0 : ($__unknown_type) :: if __q0 == 3 then 30 else (lambda __q1 : ($__unknown_type) :: if __q1 == 2 then 20 else (lambda __q2 : ($__unknown_type) :: if __q2 == 1 then 10 else _minit(__q2))(__q1))(__q0)
 (m0 : int) → _minit(0)]
 
 Evaluation Config:
@@ -196,8 +193,7 @@ Subst Map:
 Expression Env:
 State:
 [minit → _minit
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit %0))) %0)))
-   %0)))]
+(m : (arrow int int)) → lambda __q0 : ($__unknown_type) :: if __q0 == 3 then 30 else (lambda __q1 : ($__unknown_type) :: if __q1 == 2 then 20 else (lambda __q2 : ($__unknown_type) :: if __q2 == 1 then 10 else _minit(__q2))(__q1))(__q0)]
 
 Evaluation Config:
 Eval Depth: 200
