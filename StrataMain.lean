@@ -838,16 +838,16 @@ def javaGenCommand : Command where
     | .error msg =>
       exitFailure s!"Error generating Java: {msg}"
 
-def laurelVerifyOptions : VerifyOptions := { VerifyOptions.default with solver := "z3" }
-
 def laurelAnalyzeBinaryCommand : Command where
   name := "laurelAnalyzeBinary"
   args := []
+  flags := laurelVerifyOptionsFlags
   help := "Verify Laurel Ion programs read from stdin and print diagnostics. Combines multiple input files."
-  callback := fun _ _ => do
+  callback := fun _ pflags => do
+    let options ← parseLaurelVerifyOptions pflags
     let stdinBytes ← (← IO.getStdin).readBinToEnd
     let combinedProgram ← Strata.readLaurelIonProgram stdinBytes
-    let diagnostics ← Strata.Laurel.analyzeToDiagnosticModels combinedProgram laurelVerifyOptions
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram options
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
@@ -925,10 +925,12 @@ def laurelParseCommand : Command where
 def laurelAnalyzeCommand : Command where
   name := "laurelAnalyze"
   args := [ "file" ]
+  flags := laurelVerifyOptionsFlags
   help := "Analyze a Laurel source file. Write diagnostics to stdout."
-  callback := fun v _ => do
+  callback := fun v pflags => do
+    let options ← parseLaurelVerifyOptions pflags
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (vcResultsOption, errors) ← Strata.Laurel.verifyProgram laurelProgram { VerifyOptions.default with solver := "z3" }
+    let (vcResultsOption, errors) ← Strata.Laurel.verifyToVcResults laurelProgram options
     if !errors.isEmpty then
       IO.println s!"==== ERRORS ===="
     for err in errors do
