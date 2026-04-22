@@ -518,11 +518,12 @@ def retry(func: Callable[..., Any], retries: int = 3) -> Any:
 def make_record(name: str) -> dict[str, Any]:
     return {\"name\": name}
 
-def make_records(names: list[str]) -> list[dict[str, Any]]:
-    return [{\"name\": n} for n in names]
+def get_names(names: list[str]) -> list[str]:
+    return names
 "
-  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  pure ()
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
 -- print() with multiple positional arguments exercises the opt parameter.
 #guard_msgs in
