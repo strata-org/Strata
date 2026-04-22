@@ -53,7 +53,7 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
   | E :: rest =>
     let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) E.deferred
     let mergedNames := rest.foldl (fun acc e =>
-      e.exprEnv.config.usedNames.fold (fun s n => s.insert n) acc) E.exprEnv.config.usedNames
+      acc.union e.exprEnv.config.usedNames) E.exprEnv.config.usedNames
     { E with
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
