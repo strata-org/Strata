@@ -31,7 +31,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure TestListLen() returns ()
+procedure TestListLen()
 spec {
   ensures true;
 }
@@ -118,7 +118,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure TestNilCase(xs : IntList) returns ()
+procedure TestNilCase(xs : IntList)
 spec {
   requires IntList..isNil(xs);
   ensures true;
@@ -127,7 +127,7 @@ spec {
   assert [nilCase]: listLen(xs) == 0;
 };
 
-procedure TestConsCase(xs : IntList) returns ()
+procedure TestConsCase(xs : IntList)
 spec {
   requires IntList..isCons(xs);
   ensures true;
@@ -232,7 +232,7 @@ rec function contains (key : int, @[cases] xs : IntList) : bool
   else contains(key, IntList..tl(xs))
 };
 
-procedure TestContains() returns ()
+procedure TestContains()
 spec {
   ensures true;
 }
@@ -293,7 +293,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure listLenImp(xs : IntList) returns (r : int)
+procedure listLenImp(xs : IntList, out r : int)
 spec {
   ensures [equiv]: r == listLen(xs);
 }
@@ -442,7 +442,7 @@ rec function nth (@[cases] xs : IntList, n : int) : int
   else nth(IntList..tl(xs), n - 1)
 };
 
-procedure TestNth() returns ()
+procedure TestNth()
 spec {
   ensures true;
 }

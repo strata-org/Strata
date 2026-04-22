@@ -13,7 +13,7 @@ def advQuantPgm :=
 #strata
 program Core;
 axiom [mapAllValues0]: forall m: (Map int int), k: int :: m[k] == 0;
-procedure Update(mArg: Map int int, kArg: int) returns (res: int)
+procedure Update(mArg: Map int int, kArg: int, out res: int)
 spec {
   ensures mArg[kArg] == 0;
 }

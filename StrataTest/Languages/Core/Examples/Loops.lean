@@ -23,7 +23,7 @@ def measureFailExamplePgm :=
 #strata
 program Core;
 
-procedure countUp(n : int) returns (i : int)
+procedure countUp(n : int, out i : int)
 spec {
   requires (n >= 0);
   ensures (i == n);
@@ -104,7 +104,7 @@ def gaussPgm :=
 #strata
 program Core;
 
-procedure sum(n : int) returns (s : int)
+procedure sum(n : int, out s : int)
 spec {
   requires (n >= 0);
   ensures (s == ((n * (n + 1)) / 2));
@@ -341,7 +341,7 @@ program Core;
 const top : int;
 axiom [top100]: top == 100;
 
-procedure nested(n : int) returns (s : int)
+procedure nested(n : int, out s : int)
 spec {
   requires [n_pos]: n > 0;
   requires [n_lt_top]: n < top;
@@ -488,7 +488,7 @@ def precondElimInMeasurePgm :=
 #strata
 program Core;
 
-procedure countdownByD(n : int, d : int) returns (i : int)
+procedure countdownByD(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   requires (d > 0);
@@ -548,7 +548,7 @@ Result: ✅ pass
 def precondElimInMeasureBadPgm :=
 #strata
 program Core;
-procedure countdownByDBad(n : int, d : int) returns (i : int)
+procedure countdownByDBad(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   // requires (d > 0); NEED THIS
@@ -616,7 +616,7 @@ def precondElimMeasureBodyMutatesPgm :=
 #strata
 program Core;
 
-procedure countdownMutateD(n : int, d : int) returns (i : int)
+procedure countdownMutateD(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   requires (d > 0);

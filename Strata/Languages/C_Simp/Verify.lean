@@ -168,8 +168,7 @@ def loop_elimination_function(f : C_Simp.Function) : Core.Procedure :=
   {header := {name := f.name.name, typeArgs := [],
               inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},
-              spec := {modifies := [],
-                       preconditions := core_preconditions,
+              spec := {preconditions := core_preconditions,
                        postconditions := core_postconditions},
                        body := f.body.map loop_elimination_statement}
 

@@ -21,11 +21,10 @@ public section
 /-!
 ## Differences between Boogie and Strata.Core
 
-1. Local variables can shadow globals in Boogie, but the typechecker disallows
-   that in Strata.Core.
+1. Strata.Core does not have global variables.
 
 2. Unlike Boogie, Strata.Core is sensitive to global declaration order. E.g.,
-   a global variable must be declared before it can be used in a procedure.
+   a function must be declared before it can be used in a procedure.
 
 3. Strata.Core does not (yet) support polymorphism.
 
@@ -80,13 +79,12 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     | .type (.data d) _ => some d
     | _ => none
   let σ ← (Lambda.LState.init).addFactory factory
-  let E := { Env.init with exprEnv := σ, program := program }
+  let E := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
   let E ← E.addDatatypes datatypes
 
   -- Collect declaration statistics
   let stats := program.decls.foldl (fun s d =>
     match d with
-    | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
     | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
     | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
     | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"

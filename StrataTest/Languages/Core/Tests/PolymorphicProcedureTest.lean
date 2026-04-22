@@ -20,18 +20,18 @@ def polyProcPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure Extract<a>(xs : List a) returns (h : a)
+procedure Extract<a>(xs : List a, out h : a)
 spec {
   requires List..isCons(xs);
 };
-procedure Test() returns () spec { ensures true; }
+procedure Test() spec { ensures true; }
 {
   var xs : List int;
   xs := Cons(1, Nil());
   havoc xs;
  //assume List..isCons(xs);
   var h : int;
-  call h := Extract(xs);
+  call Extract(xs, out h);
 };
 #end
 
@@ -75,14 +75,14 @@ def polyPostPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure MkCons<a>(x : a) returns (r : List a)
+procedure MkCons<a>(x : a, out r : List a)
 spec {
   free ensures List..isCons(r);
 };
-procedure Test() returns () spec { ensures true; }
+procedure Test() spec { ensures true; }
 {
   var r : List int;
-  call r := MkCons(1);
+  call MkCons(1, out r);
   assert List..isCons(r);
 };
 #end

@@ -12,12 +12,10 @@ namespace Strata
 def simpleProcPgm : Program :=
 #strata
 program Core;
-var g : bool;
-procedure Test(x : bool) returns (y : bool)
+procedure Test(x : bool, out y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
-  ensures (g == old g);
 }
 {
   y := x || x;
@@ -36,12 +34,10 @@ info: true
 /--
 info: program Core;
 
-var g : bool;
-procedure Test (x : bool) returns (y : bool)
+procedure Test (x : bool, out y : bool)
 spec {
   ensures [Test_ensures_0]: y == x;
   ensures [Test_ensures_1]: x == y;
-  ensures [Test_ensures_2]: g == old g;
   } {
   y := x || x;
 };
@@ -64,11 +60,6 @@ Property: assert
 Obligation:
 x@1 == (x@1 || x@1)
 
-Label: Test_ensures_2
-Property: assert
-Obligation:
-true
-
 ---
 info:
 Obligation: Test_ensures_0
@@ -76,10 +67,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: Test_ensures_1
-Property: assert
-Result: ✅ pass
-
-Obligation: Test_ensures_2
 Property: assert
 Result: ✅ pass
 -/

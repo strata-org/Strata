@@ -12,10 +12,8 @@ namespace Strata
 def freeReqEnsPgm : Program :=
 #strata
 program Core;
-var g : int;
-procedure Proc() returns ()
+procedure Proc(inout g : int)
 spec {
-  modifies g;
   free requires [g_eq_15]: g == 15;
   // `g_lt_10` is not checked by this procedure.
   free ensures [g_lt_10]: g < 10;
@@ -25,8 +23,8 @@ spec {
   g := g + 1;
 };
 
-procedure ProcCaller () returns (x : int) {
-  call := Proc();
+procedure ProcCaller (inout g : int, out x : int) {
+  call Proc(g, out g);
   // Fails; `g_eq_15` requires of Proc ignored here.
   assert [g_eq_15_internal]: (g == 15);
 };
@@ -54,9 +52,9 @@ true
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-callElimAssume_g_lt_10_0: g@3 < 10
+callElimAssume_g_lt_10_2: g@5 < 10
 Obligation:
-g@3 == 15
+g@5 == 15
 
 ---
 info:
@@ -72,7 +70,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-(g@3, 0)
+(g@5, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

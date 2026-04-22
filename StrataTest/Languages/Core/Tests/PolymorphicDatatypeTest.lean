@@ -49,7 +49,7 @@ program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
-procedure TestOptionInt() returns ()
+procedure TestOptionInt()
 spec {
   ensures true;
 }
@@ -72,7 +72,7 @@ datatype Option (a : Type) {
   None(),
   Some(value : a)
 };
-procedure TestOptionInt () returns ()
+procedure TestOptionInt ()
 spec {
   ensures [TestOptionInt_ensures_0]: true;
   } {
@@ -98,7 +98,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestListInt() returns ()
+procedure TestListInt()
 spec {
   ensures true;
 }
@@ -119,7 +119,7 @@ datatype List (a : Type) {
   Nil(),
   Cons(head : a, tail : List a)
 };
-procedure TestListInt () returns ()
+procedure TestListInt ()
 spec {
   ensures [TestListInt_ensures_0]: true;
   } {
@@ -143,7 +143,7 @@ program Core;
 
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
 
-procedure TestEither() returns ()
+procedure TestEither()
 spec {
   ensures true;
 }
@@ -167,7 +167,7 @@ datatype Either (a : Type, b : Type) {
   Left(l : a),
   Right(r : b)
 };
-procedure TestEither () returns ()
+procedure TestEither ()
 spec {
   ensures [TestEither_ensures_0]: true;
   } {
@@ -194,7 +194,7 @@ program Core;
 datatype Option (a : Type) { None(), Some(value: a) };
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestNestedPoly() returns ()
+procedure TestNestedPoly()
 spec {
   ensures true;
 }
@@ -217,7 +217,7 @@ datatype List (a : Type) {
   Nil(),
   Cons(head : a, tail : List a)
 };
-procedure TestNestedPoly () returns ()
+procedure TestNestedPoly ()
 spec {
   ensures [TestNestedPoly_ensures_0]: true;
   } {
@@ -239,7 +239,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestPolyListHavoc() returns ()
+procedure TestPolyListHavoc()
 spec {
   ensures true;
 }
@@ -292,7 +292,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure TestMultiInstSMT() returns ()
+procedure TestMultiInstSMT()
 spec {
   ensures true;
 }
@@ -342,7 +342,7 @@ program Core;
 
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
 
-procedure TestEitherHavoc() returns ()
+procedure TestEitherHavoc()
 spec {
   ensures true;
 }
@@ -401,7 +401,7 @@ program Core;
 
 datatype Option (a : Type) { None(), Some(value: a) };
 
-procedure TestOptionHavoc() returns ()
+procedure TestOptionHavoc()
 spec {
   ensures true;
 }
@@ -456,7 +456,7 @@ datatype Outer () {
   )
 };
 
-procedure TestPolyUserDatatype() returns ()
+procedure TestPolyUserDatatype()
 spec { ensures true; }
 {
   var x : Outer;
@@ -521,11 +521,10 @@ datatype Outer () {
   )
 };
 
-var v : Outer;
-
-procedure Test() returns ()
+procedure Test()
 spec { ensures true; }
 {
+  var v : Outer;
   assert [test]: Option..isSome(Outer..flag(v));
 };
 #end
@@ -603,7 +602,7 @@ const grouped: Sequence Stage;
 axiom Sequence.length(grouped) == 1;
 axiom Sequence.select(grouped, 0) == s;
 
-procedure Check() returns ()
+procedure Check()
 {
   assert [check]:
     forall i: int :: (0 <= i && i < Sequence.length(grouped)) ==>

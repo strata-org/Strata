@@ -26,7 +26,7 @@ open Core Lambda
 def intModelPgm : Program :=
 #strata
 program Core;
-procedure P() returns () {
+procedure P() {
   var x : int;
   havoc x;
   assert [must_be_42]: (x == 42);
@@ -66,7 +66,7 @@ info: failures=1 all_int=true
 def boolModelPgm : Program :=
 #strata
 program Core;
-procedure P() returns () {
+procedure P() {
   var b : bool;
   havoc b;
   assert [must_be_true]: b;
@@ -92,7 +92,7 @@ def datatypeModelPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure P() returns () {
+procedure P() {
   var xs : List int;
   havoc xs;
   assert [must_be_cons]: List..isCons(xs);
@@ -118,7 +118,7 @@ def datatypeModelPgm2 : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure P() returns () {
+procedure P() {
   var xs : List int;
   havoc xs;
   assert [must_be_cons]: List..isNil(xs);
@@ -144,7 +144,7 @@ def eitherModelPgm : Program :=
 #strata
 program Core;
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
-procedure P() returns () {
+procedure P() {
   var e : Either int bool;
   havoc e;
   assert [must_be_left]: Either..isLeft(e);
@@ -172,7 +172,7 @@ Model:
 def quantModelPgm : Program :=
 #strata
 program Core;
-procedure P(x : int) returns ()
+procedure P(x : int)
 spec {
   ensures [bad]: (forall q : int :: q < x);
 }

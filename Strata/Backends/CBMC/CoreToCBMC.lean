@@ -28,7 +28,7 @@ private def SimpleTestEnv :=
 #strata
 program Core;
 
-procedure simpleTest(x : int, y : int) returns (ret : int)
+procedure simpleTest(x : int, y : int, out ret : int)
 spec {
   requires [x_positive]:    (x > 0);
 }
@@ -89,7 +89,7 @@ def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)
 
 def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
   match e with
-  | .call _ _ _ _ => throw "cmdToJson: call not supported"
+  | .call _ _ _ => throw "cmdToJson: call not supported"
   | .cmd c =>
     match c with
     | .init name _ _ _ =>

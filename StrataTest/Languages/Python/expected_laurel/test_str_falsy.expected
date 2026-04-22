@@ -1,7 +1,5 @@
 test_str_falsy.py(2, 4): ✅ pass - assert(26)
 test_str_falsy.py(3, 4): ✅ pass - assert(42)
-test_str_falsy.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_str_falsy.py(6, 4): ✅ pass - assert_assert(81)_calls_Any_to_bool_0
 test_str_falsy.py(6, 4): ✅ pass - empty string is falsy
-DETAIL: 5 passed, 0 failed, 0 inconclusive
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
