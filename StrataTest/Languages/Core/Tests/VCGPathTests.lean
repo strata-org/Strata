@@ -343,6 +343,75 @@ info: merged=0 diverged=1 stmtMerged=1 obligations=1
   IO.println (statsLine stats numObs)
 
 ---------------------------------------------------------------------
+-- buggyPgm — negative soundness test
+---------------------------------------------------------------------
+
+-- The else branch sets `r := 0`, violating `ensures (r > 0)`.
+-- This must fail both without and with `--path-cap <n>`, confirming
+-- that merging paths does not weaken VCs.
+def buggyPgm :=
+#strata
+program Core;
+procedure buggy(c1 : bool) returns (r : int)
+spec { ensures [post]: (r > 0); }
+{
+  done: {
+    if (c1) { r := 1; exit done; }
+    r := 0;
+  }
+};
+#end
+
+/--
+info:
+Obligation: post
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval verify buggyPgm (options := .quiet)
+
+/-- info: merged=0 diverged=1 stmtMerged=0 obligations=2 -/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats buggyPgm (options := .quiet)
+  IO.println (statsLine stats numObs)
+
+/--
+info:
+Obligation: post
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval verify buggyPgm
+  (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+
+/-- info: merged=0 diverged=1 stmtMerged=1 obligations=1 -/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats buggyPgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
+  IO.println (statsLine stats numObs)
+
+/--
+info:
+Obligation: post
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval verify buggyPgm
+  (options := { Core.VerifyOptions.quiet with pathCap := some 5 })
+
+/-- info: merged=0 diverged=1 stmtMerged=0 obligations=2 -/
+#guard_msgs in
+#eval do
+  let (stats, numObs) ← getEvalStats buggyPgm
+    (options := { Core.VerifyOptions.quiet with pathCap := some 5 })
+  IO.println (statsLine stats numObs)
+
+---------------------------------------------------------------------
 -- Dead-branch obligation tests
 --
 -- When an ITE condition is a concrete `true` or `false`, one branch is
