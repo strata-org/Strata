@@ -464,7 +464,7 @@ private def runProc (pgm : Strata.Program) (procName : String)
   | .ok prog =>
     let result := Core.interpProcedure prog procName args fuel
     match result with
-    | .success E =>
+    | .ok E =>
       let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
       match proc with
       | none => IO.println "success (no proc)"
@@ -473,10 +473,7 @@ private def runProc (pgm : Strata.Program) (procName : String)
           let val := (E.exprEnv.state.find? name).map (·.snd)
           s!"{name} = {val.map (fun v => toString (format v))}"
         IO.println (String.intercalate ", " outputs)
-    | .assertionFailure label _ _ => IO.println s!"assertion failure: {label}"
     | .error msg => IO.println s!"error: {msg}"
-    | .fuelExhausted => IO.println "fuel exhausted"
-    | .stuck msg => IO.println s!"stuck: {msg}"
 
 -- Simple assignment
 private def simplePgm : Strata.Program :=

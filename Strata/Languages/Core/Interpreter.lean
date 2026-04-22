@@ -104,9 +104,12 @@ have reduced but didn't), returns an error.
 -/
 def interpExpr (E : Env) (e : Expression.Expr) : Except Env Expression.Expr :=
   let v := e.eval E.exprEnv.config.fuel E.exprEnv
-  match findStuckRedex E.factory v with
-  | some stuckExpr => .error (stuck E s!"expression contains stuck redex: {format stuckExpr}")
-  | none => .ok v
+  if LExpr.isCanonicalValue E.factory v then
+    .ok v
+  else
+    match findStuckRedex E.factory v with
+    | some stuckExpr => .error (stuck E s!"expression contains stuck redex: {format stuckExpr}")
+    | none => .ok v
 
 -- TODO: foldlM?
 def interpExprList (E : Env) (es : List Expression.Expr) : Except Env (List Expression.Expr) :=
