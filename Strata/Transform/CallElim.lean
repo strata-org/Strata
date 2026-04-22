@@ -39,9 +39,9 @@ def callElimCmd (cmd: Command)
       | .call lhs procName args md =>
         incrementStat s!"{Stats.visitedCalls}"
 
-        let some p := (← get).currentProgram | throw "program not available"
+        let some p := (← get).currentProgram | throw (Strata.DiagnosticModel.fromMessage "program not available")
 
-        let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
+        let some proc := Program.Procedure.find? p procName | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
 
         -- For each global in modifies, generate a fresh variable to hold its pre-call value,
         -- but only if "old g" is actually referenced in the postconditions.
@@ -124,7 +124,7 @@ def callElimCmd (cmd: Command)
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
         | .some cg, .some callerName =>
-          let cg' ← cg.decrementEdge callerName procName
+          let cg' ← (cg.decrementEdge callerName procName).mapError Strata.DiagnosticModel.fromMessage
           set { σ with
               cachedAnalyses := { σ.cachedAnalyses with
                 callGraph := .some cg'}}

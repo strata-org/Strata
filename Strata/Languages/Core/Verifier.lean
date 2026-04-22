@@ -827,15 +827,28 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
   -- set up at CoreTransformState.
   filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
-/-- The full pipeline phases for program-to-program transforms. Type checking,
-    symbolic evaluation, and ANF encoding run separately so that DiagnosticModel
-    errors (with source locations) propagate without being converted to strings. -/
-def corePipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
-  transformPipelinePhases procs
+/-- The full pipeline phases for program-to-program transforms, including
+    type checking, symbolic evaluation, and ANF encoding. -/
+def corePipelinePhases (procs : Option (List String) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+  let typeCheckPhase : PipelinePhase :=
+    modelPreservingPipelinePhase "typeCheck" fun prog => do
+      match Core.typeCheck options prog moreFns with
+      | .ok prog' => return (true, prog')
+      | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
+  let symbolicEvalPhase : PipelinePhase :=
+    modelPreservingPipelinePhase "symbolicEval" fun prog => do
+      let (prog', _stats) ← Transform.liftDiag (Core.symbolicEval options prog moreFns |>.mapError
+        fun err => { err with message := s!"❌ Type checking error.\n{err.message}" })
+      return (true, prog')
+  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
-def coreAbstractedPhases (procs : Option (List String) := none) : List AbstractedPhase :=
-  (transformPipelinePhases procs).map (·.phase)
+def coreAbstractedPhases (procs : Option (List String) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
+  (corePipelinePhases procs options moreFns).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -1026,6 +1039,9 @@ def verifySingleEnv (oblProgram : Program)
         | .error _ => result
       results := results.push result
       if result.isNotSuccess then
+        if options.verbose >= .debug then
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+          dbg_trace f!"\n\nResult: {result}\n{prog}"
         if options.stopOnFirstError then break
   if profile then
     let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
@@ -1052,9 +1068,9 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
+  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
   let phases := pipelinePhases.map (·.phase)
-  let (finalProgram, pipelineStats) ← profileStep profile "  Program transformations" do
+  let (oblProgram, pipelineStats) ← profileStep profile "  Program transformations" do
     if let some pfx := keepAllFilesPrefix then
       if let some parent := (System.FilePath.mk pfx).parent then
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
@@ -1076,17 +1092,9 @@ def verify (program : Program)
           IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
             (IO.FS.writeFile path (toString current ++ "\n"))
       | .error e =>
-        throw (DiagnosticModel.fromFormat f!"{e}")
+        throw e
     .ok (current, state.statistics)
-  -- Type check and symbolically evaluate (outside the pipeline loop so that
-  -- DiagnosticModel errors with source locations propagate directly).
-  let (oblProgram, evalStats) ← profileStep profile "  Type check and symbolic eval" do
-    match Core.typeCheckAndEval options finalProgram moreFns with
-    | .error err =>
-      .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok (oblProgram, stats) => .ok (oblProgram, stats)
-  let oblProgram := Core.ANFEncoder.anfEncodeProgram oblProgram
-  let allStats := pipelineStats.merge evalStats
+  let allStats := pipelineStats
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
