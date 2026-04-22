@@ -525,6 +525,20 @@ def get_names(names: list[str]) -> list[str]:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
+-- typing.Callable (qualified, without `from typing import Callable`)
+-- exercises the .Attribute normalization path.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"import typing
+
+def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.Any:
+    return func()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 -- print() with multiple positional arguments exercises the opt parameter.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do

@@ -1706,16 +1706,19 @@ def checkValidInputTypeList (ctx : TranslationContext) (tys: List String) : Exce
     throw (.unsupportedConstruct "Argument of union of class types is not supported" (toString tys))
   return tys
 
+private def normalizeTypingName (e : Python.expr SourceRange) : String :=
+  match e with
+  | .Attribute _ _ {val := s, ..} _ =>
+    if s ∈ ["Dict", "List", "Callable", "Optional", "Union"] then s
+    else pyExprToString e
+  | _ => pyExprToString e
+
 partial def getArgumentTypes (arg: Python.expr SourceRange) : Except TranslationError (List String) :=
   match arg with
   | .Name _ n _ => return [n.val]
   | .Subscript _ _ slice _ =>
     let subscriptList:= getNestedSubscripts arg
-    let subscriptRoot := match subscriptList[0]! with
-    | .Attribute _ _ {val:= "Dict", ..} _ => "Dict"
-    | .Attribute _ _ {val:= "List", ..} _ => "List"
-    | .Attribute _ _ {val:= "Callable", ..} _ => "Callable"
-    | _ => pyExprToString subscriptList[0]!
+    let subscriptRoot := normalizeTypingName subscriptList[0]!
     let sliceHead := subscriptList[1]!
     match subscriptRoot with
     | "Optional" => return (← getArgumentTypes slice) ++ ["None"]
