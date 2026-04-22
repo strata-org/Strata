@@ -35,4 +35,8 @@ name = "CheckImports"
 root = "Scripts.CheckImports"
 
 [[lean_exe]]
+name = "ImportStats"
+root = "Scripts.ImportStats"
+
+[[lean_exe]]
 name = "DiffTestCore"
