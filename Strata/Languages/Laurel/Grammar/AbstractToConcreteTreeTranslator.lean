@@ -79,6 +79,9 @@ private def operationName : Operation → String
 -- Internal-only: public because `partial` prevents `private` in this section
 partial def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
 where
+  variableToArg : Variable → Arg
+    | .Local name => laurelOp "identifier" #[ident name.text]
+    | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
   stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
@@ -89,7 +92,7 @@ where
     | .LiteralString s => laurelOp "string" #[.strlit sr s]
     | .Hole true _ => laurelOp "hole"
     | .Hole false _ => laurelOp "nondetHole"
-    | .Identifier name => laurelOp "identifier" #[ident name.text]
+    | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
     | .Block stmts label =>
       let stmtArgs := stmts.map stmtExprToArg |>.toArray
       match label with
@@ -102,10 +105,10 @@ where
     | .Assign targets value =>
       -- Grammar only supports single-target assign; use first target or placeholder
       let targetArg := match targets with
-        | t :: _ => stmtExprToArg t
+        | t :: _ => variableToArg t.val
         | [] => laurelOp "identifier" #[ident "_"]
       laurelOp "assign" #[targetArg, stmtExprToArg value]
-    | .FieldSelect target field =>
+    | .Var (.Field target field) =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]

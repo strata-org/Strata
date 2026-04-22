@@ -50,7 +50,7 @@ def ofStmt {tp} (s : StmtExpr) (md : Md) (source : Option FileRange := none) : T
 
 def identifier (v : String) (tp : HighType) (md : Md)
     (source : Option FileRange := none) : TypedStmtExpr tp :=
-  .ofStmt (.Identifier (mkId v)) md source
+  .ofStmt (.Var (.Local (mkId v))) md source
 
 def literalBool (v : Bool) (md : Md)
     (source : Option FileRange := none) : TypedStmtExpr .TBool :=

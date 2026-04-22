@@ -243,12 +243,24 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.LocalVariable name varType value) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
-      return mkStmtExprMd (.Identifier name) src
+      return mkStmtExprMd (.Var (.Local name)) src
     | q`Laurel.parenthesis, #[arg0] => translateStmtExpr arg0
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
+      let targetVar : VariableMd := match target.val with
+        | .Var v => ⟨v, target.source, target.md⟩
+        | _ => ⟨.Local "", target.source, target.md⟩
       let value ← translateStmtExpr arg1
-      return mkStmtExprMd (.Assign [target] value) src
+      return mkStmtExprMd (.Assign [targetVar] value) src
+    | q`Laurel.multiAssign, #[targetsSeq, arg1] =>
+      let targets ← match targetsSeq with
+        | .seq _ .comma args => args.toList.mapM fun arg => do
+          let name ← translateIdent arg
+          let argSrc ← getArgFileRange arg
+          pure (⟨.Local name, argSrc, .empty⟩ : VariableMd)
+        | _ => pure []
+      let value ← translateStmtExpr arg1
+      return mkStmtExprMd (.Assign targets value) src
     | q`Laurel.new, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkStmtExprMd (.New name) src
@@ -263,7 +275,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let calleeName := match callee.val with
-        | .Identifier name => name
+        | .Var (.Local name) => name
         | _ => ""
       let argsList ← match argsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
@@ -285,7 +297,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
       let fieldSrc ← getArgFileRange fieldArg
-      return mkStmtExprMd (.FieldSelect obj field) fieldSrc
+      return mkStmtExprMd (.Var (.Field obj field)) fieldSrc
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
       let invariants ← match invSeqArg with

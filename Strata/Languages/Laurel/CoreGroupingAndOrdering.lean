@@ -62,8 +62,9 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some eelse => collectStaticCallNames eelse
       | none => []
   | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s)
-  | .Assign targets v =>
-      targets.flatMap (fun t => collectStaticCallNames t) ++
+  | .Assign _targets v =>
+      -- Note: targets are Variables; only Field targets contain StmtExpr children
+      -- but we skip collecting from them since field targets don't contain static calls
       collectStaticCallNames v
   | .LocalVariable _ _ initOption =>
       match initOption with
@@ -90,7 +91,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some t => collectStaticCallNames t
       | none => []) ++
       collectStaticCallNames body
-  | .FieldSelect t _ => collectStaticCallNames t
+  | .Var (.Field t _) => collectStaticCallNames t
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
@@ -102,6 +103,11 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .Assigned v => collectStaticCallNames v
   | _ => []
 termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try term_by_mem)
+  all_goals omega
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC

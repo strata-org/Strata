@@ -38,6 +38,7 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
     else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
 
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, none, #[]⟩
+private def mkVarMd (v : Variable) : VariableMd := ⟨v, none, #[]⟩
 
 /--
 Generate Laurel constant definitions for the type hierarchy:
@@ -119,10 +120,10 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
-def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
+partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
-  | .FieldSelect target fieldName =>
+  | .Var (.Field target fieldName) =>
     let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
     let fieldError := match (computeExprType model target).val with
       | .UserDefined typeName =>
@@ -135,7 +136,19 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .Block stmts _ =>
     stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
   | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model t) []
+    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
+      match t.val with
+      | .Field target fieldName =>
+        let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
+        let fieldError := match (computeExprType model target).val with
+          | .UserDefined typeName =>
+            if isDiamondInheritedField model typeName fieldName then
+              let fileRange := t.source.getD FileRange.unknown
+              [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
+            else []
+          | _ => []
+        acc ++ innerErrors ++ fieldError
+      | .Local _ => acc) []
     targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
   | .IfThenElse c t e =>
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
@@ -157,8 +170,6 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
@@ -213,11 +224,11 @@ Lower `New name` to a block that:
 def lowerNew (name : Identifier) (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : THM StmtExprMd := do
   let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
-  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
+  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar))])
   let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, none, #[]⟩ (some getCounter))
-  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
-  let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
+  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Var (.Local heapVar))])
+  let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar)] newHeap)
+  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Var (.Local freshVar)), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
   return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, source, md ⟩
 
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/

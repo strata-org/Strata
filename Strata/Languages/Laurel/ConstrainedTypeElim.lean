@@ -55,7 +55,7 @@ def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
     (varName : Identifier) (md : Imperative.MetaData Core.Expression) (src : Option FileRange := none) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Identifier varName, src, md⟩], src, md⟩
+      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Var (.Local varName), src, md⟩], src, md⟩
     else none
   | _ => none
 
@@ -68,7 +68,7 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
       if ptMap.contains parent.text then
         let paramId := { ct.valueName with uniqueId := none }
         let paramRef : StmtExprMd :=
-          { val := .Identifier paramId, source := none }
+          { val := .Var (.Local paramId), source := none }
         let parentCall : StmtExprMd :=
           { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := none }
         { val := .PrimitiveOp .And [ct.constraint, parentCall], source := none }
@@ -138,7 +138,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
     pure ([⟨.LocalVariable name ty init', source, md⟩] ++ check)
 
   | .Assign [target] _ => match target.val with
-    | .Identifier name => do
+    | .Local name => do
       match (← get).get? name.text with
       | some ty =>
         let assert := (constraintCallFor ptMap ty name md (src := source)).toList.map

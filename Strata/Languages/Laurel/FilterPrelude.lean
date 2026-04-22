@@ -100,8 +100,12 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     dec.forM collectExprNames
     collectExprNames body
   | .Assign targets value =>
-    collectExprNames value; targets.forM collectExprNames
-  | .FieldSelect target _ => collectExprNames target
+    collectExprNames value
+    for ⟨t, _⟩ in targets.attach do
+      match t.val with
+      | .Field target _ => collectExprNames target
+      | .Local _ => pure ()
+  | .Var (.Field target _) => collectExprNames target
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
   | .PrimitiveOp _ args => args.forM collectExprNames
@@ -123,7 +127,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
   | .Hole _ ty => ty.forM collectHighTypeNames
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Identifier _ | .This | .Abstract | .All => pure ()
+  | .Var (.Local _) | .This | .Abstract | .All => pure ()
 
 /-- Collect names from a procedure body. -/
 private def collectBodyNames (body : Body) : CollectM Unit := do
@@ -180,7 +184,7 @@ private partial def collectInvokeOnTargets (expr : StmtExprMd)
   | .StaticCall callee args =>
     let rest ← args.flatMapM collectInvokeOnTargets
     return callee.text :: rest
-  | .Identifier _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ => return []
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"
