@@ -49,7 +49,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
 
-  dbg_trace s!"options.keepAllFilesPrefix: {options.keepAllFilesPrefix}"
   if let some pfx := options.keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
       IO.FS.createDirAll parent
