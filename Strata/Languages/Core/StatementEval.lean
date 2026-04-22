@@ -524,7 +524,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements) : List EnvWithNext × Statistics :=
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
-  let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
+  let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
   let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
   let path_conds_false := Ewn.env.pathConditions.push
                             [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]

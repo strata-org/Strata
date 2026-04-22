@@ -1366,7 +1366,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM ((List Core.Statement) × TransBindings) := do
   let args ← checkOpArg arg q`Core.block 1
-  let .seq _ .none stmts := args[0]!
+  let .seq _ .newline stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, bindings) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
       let (s, b) ← translateStmt p b s

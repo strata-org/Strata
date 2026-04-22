@@ -35,7 +35,7 @@ procedure S () returns ()
   x := 1;
   havoc x;
   assert [x_eq_1]: x == 1;
-  };
+};
 , #[])
 -/
 #guard_msgs in

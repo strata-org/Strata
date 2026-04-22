@@ -76,14 +76,14 @@ true
 Label: a6
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Gt x #0)>: $__x3 > 0
+<label_ite_cond_true: x > 0>: $__x3 > 0
 Obligation:
 $__x3 * 2 > $__x3
 
 Label: a7
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(~Int.Gt x #0)>: if $__x3 > 0 then false else true
+<label_ite_cond_false: !(x > 0)>: if $__x3 > 0 then false else true
 Obligation:
 $__x3 <= 0
 
@@ -119,10 +119,10 @@ info: Entry: l1
 l1:
   condGoto true block$l1$_2 block$l1$_2
 block$l1$_2:
-  assert [a1] x == x
+  assert [a1]: x == x;
   condGoto true l$_1 l$_1
 l$_1:
-  assert [a3] x == x
+  assert [a3]: x == x;
   condGoto true end$_0 end$_0
 end$_0:
   finish
@@ -144,18 +144,18 @@ l3_before:
 l1:
   condGoto true ite$_5 ite$_5
 ite$_5:
-  assert [a4] x == x
+  assert [a4]: x == x;
   condGoto x > 0 block$l5$_2 block$l5$_1
 l2:
   condGoto true l$_3 l$_3
 l$_3:
-  assert [a5] !(x == x)
+  assert [a5]: !(x == x);
   condGoto true block$l5$_2 block$l5$_2
 block$l5$_2:
-  assert [a6] x * 2 > x
+  assert [a6]: x * 2 > x;
   condGoto true end$_0 end$_0
 block$l5$_1:
-  assert [a7] x <= 0
+  assert [a7]: x <= 0;
   condGoto true end$_0 end$_0
 end$_0:
   finish
