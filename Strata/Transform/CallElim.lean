@@ -97,7 +97,7 @@ def callElimCmd (cmd: Command)
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
           (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
-        -- generate havoc for return variables (which now includes modified globals)
+        -- generate havoc for output variables
         let havocs := createHavocs lhs md
 
         -- construct substitutions for argument and return
