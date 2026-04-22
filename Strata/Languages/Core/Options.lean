@@ -176,6 +176,22 @@ structure VerifyOptions where
   checkLevel : CheckLevel
   /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
   overflowChecks : OverflowChecks := {}
+  /-- Maximum number of continuing symbolic-evaluation paths allowed
+      between statements. When the combined path count from all input
+      paths exceeds this cap after a statement, the evaluator merges
+      paths down to the cap using splitId matching on `splitConds`
+      and `Env.merge`.
+      `none` (default) means no cap — paths diverge freely.
+      `some 1` is eager merging; `some N` allows bounded exploration.
+
+      The evaluator processes statements in batch: all active paths
+      evaluate the current statement, the results are combined, merged
+      down to the cap, and then all proceed to the next statement
+      together. This bounds both the total path count and the
+      evaluation work. Paths with active exit labels are left
+      untouched — they skip remaining statements and accumulate at
+      most linearly. -/
+  pathCap : Option Nat := .none
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool
@@ -200,6 +216,7 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
+  pathCap := .none
 }
 
 instance : Inhabited VerifyOptions where
