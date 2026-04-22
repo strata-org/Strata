@@ -45,7 +45,9 @@ Model:
 #eval verify intModelPgm (options := .models)
 
 -- The model value is an intConst
-/-- info: failures=1 all_int=true -/
+/--
+info: failures=1 all_int=true
+-/
 #guard_msgs in
 #eval do
   let results ← verify intModelPgm (options := .models)

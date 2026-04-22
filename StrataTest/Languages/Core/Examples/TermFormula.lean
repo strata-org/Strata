@@ -151,7 +151,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram termFormulaPgm) |>.snd |>.isEmpty
 
