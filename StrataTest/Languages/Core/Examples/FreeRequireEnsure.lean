@@ -54,9 +54,9 @@ true
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-callElimAssume_g_lt_10_0: g@4 < 10
+callElimAssume_g_lt_10_0: g@3 < 10
 Obligation:
-g@4 == 15
+g@3 == 15
 
 ---
 info:
@@ -72,7 +72,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-(g@4, 0)
+(g@3, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

@@ -129,13 +129,13 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-(x@0, model_not_2)
+(x, 0)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-(x@0, model_not_2)
+(x, 0)
 
 Obligation: a6
 Property: assert

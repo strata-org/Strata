@@ -245,9 +245,8 @@ def Env.addToContext
 
 -- TODO: prove uniqueness
 def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × Lambda.EvalConfig CoreLParams :=
-  let new_idx := c.gen
-  let c := c.incGen
-  let new_var := Strata.Name.disambiguate x new_idx
+  let new_var := Strata.Name.findUnique x 1 c.usedNames.contains
+  let c := { c with usedNames := c.usedNames.insert new_var }
   (⟨new_var, ()⟩, c)
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :

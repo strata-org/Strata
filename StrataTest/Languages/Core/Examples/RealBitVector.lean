@@ -151,7 +151,7 @@ Assumptions:
 bv_x_ge_1: bv{8}(1) <= x
 bv_y_ge_2: bv{8}(2) <= y
 Obligation:
-x@0 + x@0 == x@0 - x@0
+x + x == x - x
 
 ---
 info:

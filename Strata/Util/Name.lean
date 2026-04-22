@@ -7,7 +7,8 @@ module
 
 /-! # Name disambiguation utilities
 
-Shared helpers for generating unique names with `@N` suffixes.
+Shared helpers for generating unique names. Bare names are preferred;
+`@N` suffixes are added only when disambiguation is needed.
 Used by the SMT encoder (for UF/bound-variable disambiguation) and
 the symbolic evaluator (for readable generated variable names).
 -/

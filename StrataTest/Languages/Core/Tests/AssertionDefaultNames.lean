@@ -49,9 +49,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-Test_requires_0: x@0 == 1
+Test_requires_0: x == 1
 Obligation:
-x@0 == 1
+x == 1
 
 ---
 info:

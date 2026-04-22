@@ -74,7 +74,7 @@ Label: new_g_value
 Property: assert
 Assumptions:
 counter_ge_zero: counter@1 >= 0
-a_positive: a@2 > 0
+a_positive: a > 0
 Obligation:
 true
 
@@ -82,52 +82,52 @@ Label: old_g_property
 Property: assert
 Assumptions:
 counter_ge_zero: counter@1 >= 0
-a_positive: a@2 > 0
+a_positive: a > 0
 Obligation:
-counter@1 + a@2 - a@2 == counter@1
+counter@1 + a - a == counter@1
 
 Label: callElimAssert_counter_ge_zero_10
 Property: assert
 Assumptions:
-counter_ge_zero: counter@4 >= 0
+counter_ge_zero: counter@2 >= 0
 Obligation:
-counter@4 >= 0
+counter@2 >= 0
 
 Label: callElimAssert_a_positive_11
 Property: assert
 Assumptions:
-counter_ge_zero: counter@4 >= 0
+counter_ge_zero: counter@2 >= 0
 Obligation:
 true
 
 Label: callElimAssert_counter_ge_zero_3
 Property: assert
 Assumptions:
-counter_ge_zero: counter@4 >= 0
-callElimAssume_new_g_value_12: counter@7 == counter@4 + 8
-callElimAssume_old_g_property_13: b@6 - 8 == counter@4
+counter_ge_zero: counter@2 >= 0
+callElimAssume_new_g_value_12: counter@3 == counter@2 + 8
+callElimAssume_old_g_property_13: b@1 - 8 == counter@2
 Obligation:
-counter@7 >= 0
+counter@3 >= 0
 
 Label: callElimAssert_a_positive_4
 Property: assert
 Assumptions:
-counter_ge_zero: counter@4 >= 0
-callElimAssume_new_g_value_12: counter@7 == counter@4 + 8
-callElimAssume_old_g_property_13: b@6 - 8 == counter@4
+counter_ge_zero: counter@2 >= 0
+callElimAssume_new_g_value_12: counter@3 == counter@2 + 8
+callElimAssume_old_g_property_13: b@1 - 8 == counter@2
 Obligation:
 true
 
 Label: return_value_lemma
 Property: assert
 Assumptions:
-counter_ge_zero: counter@4 >= 0
-callElimAssume_new_g_value_12: counter@7 == counter@4 + 8
-callElimAssume_old_g_property_13: b@6 - 8 == counter@4
-callElimAssume_new_g_value_5: counter@9 == counter@7 + 8
-callElimAssume_old_g_property_6: b@8 - 8 == counter@7
+counter_ge_zero: counter@2 >= 0
+callElimAssume_new_g_value_12: counter@3 == counter@2 + 8
+callElimAssume_old_g_property_13: b@1 - 8 == counter@2
+callElimAssume_new_g_value_5: counter@4 == counter@3 + 8
+callElimAssume_old_g_property_6: b@2 - 8 == counter@3
 Obligation:
-b@8 == counter@4 + 16
+b@2 == counter@2 + 16
 
 Label: assert_0
 Property: assert

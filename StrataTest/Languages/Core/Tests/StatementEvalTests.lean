@@ -353,7 +353,7 @@ State:
 Evaluation Config:
 Eval Depth: 200
 Variable Prefix: $__
-Variable gen count: 2
+Variable gen count: 0
 Factory Functions:
 
 
@@ -370,7 +370,7 @@ Label: x_eq_1
 Property: assert
 Assumptions:
 Proof Obligation:
-((x@0 : int) == #1)
+((x : int) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |> format
@@ -576,13 +576,13 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (if ($__nondet_cond_0@0 : bool) then #1 else #2)
-($__nondet_cond_0 : bool) → ($__nondet_cond_0@0 : bool)]
+[(x : int) → (if ($__nondet_cond_0 : bool) then #1 else #2)
+($__nondet_cond_0 : bool) → ($__nondet_cond_0 : bool)]
 
 Evaluation Config:
 Eval Depth: 200
 Variable Prefix: $__
-Variable gen count: 1
+Variable gen count: 0
 Factory Functions:
 
 
@@ -590,8 +590,8 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__nondet_cond_0@0 then $__nondet_cond_0@0 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__nondet_cond_0@0 : bool) then #false else #true) then (if ($__nondet_cond_0@0 : bool) then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__nondet_cond_0 then $__nondet_cond_0 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__nondet_cond_0 : bool) then #false else #true) then (if ($__nondet_cond_0 : bool) then #false else #true) else #true))
 
 
 Warnings:
@@ -600,10 +600,10 @@ Deferred Proof Obligations:
 Label: x_pos
 Property: assert
 Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__nondet_cond_0@0 then $__nondet_cond_0@0 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__nondet_cond_0@0 : bool) then #false else #true) then (if ($__nondet_cond_0@0 : bool) then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__nondet_cond_0 then $__nondet_cond_0 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__nondet_cond_0 : bool) then #false else #true) then (if ($__nondet_cond_0 : bool) then #false else #true) else #true))
 Proof Obligation:
-((if ($__nondet_cond_0@0 : bool) then #1 else #2) == #1)
+((if ($__nondet_cond_0 : bool) then #1 else #2) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

@@ -40,18 +40,18 @@ VCs:
 Label: after_double_internal
 Property: assert
 Assumptions:
-test: n@0 >= 2
-test_1: n@0 >= 0
+test: n >= 2
+test_1: n >= 0
 Obligation:
-n@0 + n@0 >= 4
+n + n >= 4
 
 Label: double_correct
 Property: assert
 Assumptions:
-test: n@0 >= 2
-test_1: n@0 >= 0
+test: n >= 2
+test_1: n >= 0
 Obligation:
-n@0 + n@0 == n@0 * 2
+n + n == n * 2
 
 ---
 info:

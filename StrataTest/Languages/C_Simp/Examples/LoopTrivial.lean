@@ -127,77 +127,77 @@ VCs:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n@0
-pre: n@0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
+pre: n >= 0
 Obligation:
-0 <= n@0
+0 <= n
 
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n@0
-pre: n@0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
+pre: n >= 0
 Obligation:
-n@0 - 0 >= 0
+n - 0 >= 0
 
 Label: measure_decreases
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n@0
-assume_guard: i@3 < n@0
-assume_invariant_0: i@3 <= n@0
-assume_measure_pos: n@0 - i@3 >= 0
-pre: n@0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
+assume_guard: i@1 < n
+assume_invariant_0: i@1 <= n
+assume_measure_pos: n - i@1 >= 0
+pre: n >= 0
 Obligation:
-n@0 - (i@3 + 1) < n@0 - i@3
+n - (i@1 + 1) < n - i@1
 
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n@0
-assume_guard: i@3 < n@0
-assume_invariant_0: i@3 <= n@0
-assume_measure_pos: n@0 - i@3 >= 0
-pre: n@0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
+assume_guard: i@1 < n
+assume_invariant_0: i@1 <= n
+assume_measure_pos: n - i@1 >= 0
+pre: n >= 0
 Obligation:
-if n@0 - (i@3 + 1) <= 0 then !(i@3 + 1 < n@0) else true
+if n - (i@1 + 1) <= 0 then !(i@1 + 1 < n) else true
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < n@0
-assume_guard: i@3 < n@0
-assume_invariant_0: i@3 <= n@0
-assume_measure_pos: n@0 - i@3 >= 0
-pre: n@0 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < n
+assume_guard: i@1 < n
+assume_invariant_0: i@1 <= n
+assume_measure_pos: n - i@1 >= 0
+pre: n >= 0
 Obligation:
-i@3 + 1 <= n@0
+i@1 + 1 <= n
 
 Label: i_eq_n
 Property: assert
 Assumptions:
-pre: n@0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n@0 then 0 < n@0 else true
-assume_guard: if 0 < n@0 then i@3 < n@0 else true
-assume_invariant_0: if 0 < n@0 then i@3 <= n@0 else true
-assume_measure_pos: if 0 < n@0 then n@0 - i@3 >= 0 else true
-not_guard: if 0 < n@0 then !(i@4 < n@0) else true
-invariant_0: if 0 < n@0 then i@4 <= n@0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n@0 then false else true then if 0 < n@0 then false else true else true
+pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n then 0 < n else true
+assume_guard: if 0 < n then i@1 < n else true
+assume_invariant_0: if 0 < n then i@1 <= n else true
+assume_measure_pos: if 0 < n then n - i@1 >= 0 else true
+not_guard: if 0 < n then !(i@2 < n) else true
+invariant_0: if 0 < n then i@2 <= n else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n then false else true then if 0 < n then false else true else true
 Obligation:
-if 0 < n@0 then i@4 else 0 == n@0
+if 0 < n then i@2 else 0 == n
 
 Label: post
 Property: assert
 Assumptions:
-pre: n@0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n@0 then 0 < n@0 else true
-assume_guard: if 0 < n@0 then i@3 < n@0 else true
-assume_invariant_0: if 0 < n@0 then i@3 <= n@0 else true
-assume_measure_pos: if 0 < n@0 then n@0 - i@3 >= 0 else true
-not_guard: if 0 < n@0 then !(i@4 < n@0) else true
-invariant_0: if 0 < n@0 then i@4 <= n@0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n@0 then false else true then if 0 < n@0 then false else true else true
+pre: n >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < n then 0 < n else true
+assume_guard: if 0 < n then i@1 < n else true
+assume_invariant_0: if 0 < n then i@1 <= n else true
+assume_measure_pos: if 0 < n then n - i@1 >= 0 else true
+not_guard: if 0 < n then !(i@2 < n) else true
+invariant_0: if 0 < n then i@2 <= n else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < n then false else true then if 0 < n then false else true else true
 Obligation:
 true
 

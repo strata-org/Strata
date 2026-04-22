@@ -126,9 +126,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-assume_0: v@2 == 0
+assume_0: v == 0
 Obligation:
-MapGetEq(d@0, k@1, v@2) == MapGetEq(d@0, k@1, 0)
+MapGetEq(d, k, v) == MapGetEq(d, k, 0)
 
 ---
 info:

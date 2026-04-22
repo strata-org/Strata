@@ -39,9 +39,9 @@ The differences across paths are:
   clears `deferred` on the false branch, so pre-split obligations appear only
   in the first (true) path; post-split obligations appear in each path under
   distinct path conditions.
-- `exprEnv.config.gen`: may diverge when branches execute different numbers of
-  `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
-  prevent fresh-variable name collisions in subsequent evaluation.
+- `exprEnv.config.usedNames`: may diverge when branches generate different
+  variables. We union the sets to prevent fresh-variable name collisions in
+  subsequent evaluation.
 
 The `fallback` Env is returned when `results` is empty (which should not occur
 in practice, since `Statement.eval` always produces at least one result).
@@ -52,24 +52,25 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
   | [E] => E
   | E :: rest =>
     let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) E.deferred
-    let maxGen      := rest.foldl (fun acc e => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
+    let mergedNames := rest.foldl (fun acc e =>
+      e.exprEnv.config.usedNames.fold (fun s n => s.insert n) acc) E.exprEnv.config.usedNames
     { E with
       deferred := allDeferred,
-      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } }
+      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
 
 /--
 Create `fvar` expressions with globally unique names for procedure parameters.
 Uses `genFVars` to ensure names cannot collide across procedures, which is
 necessary because expressions built during one procedure (e.g. modified globals)
 persist in the global state and may contain references to parameter fvars.
-Names use `@N` suffixes for readability (e.g. `x@6`).
+Bare names are reused when possible; `@N` suffixes are added only for disambiguation.
 -/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
-  -- Fresh names use `@N` suffixes (via `genSym`) to avoid collisions with the
-  -- mutable globals in the same scope.
+  -- Names are disambiguated with `@N` suffixes only when the bare name is
+  -- already in use.
   let modifies_tys :=
     p.spec.modifies.map
     (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)

@@ -24,9 +24,9 @@ variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq 
 ---------------------------------------------------------------------
 
 /-
-Configuration for symbolic execution, where we have `gen` for keeping track of
-fresh `fvar`'s numbering. We also have a `fuel` argument for the evaluation
-function, and support for factory functions.
+Configuration for symbolic execution, where we have `usedNames` for tracking
+which variable names have been generated. We also have a `fuel` argument for
+the evaluation function, and support for factory functions.
 
 We rely on the parser disallowing Lambda variables to begin with `$__`, which is
 reserved for internal use. Also see `TEnv.genExprVar` used during type inference
@@ -37,6 +37,7 @@ structure EvalConfig (T : LExprParams) where
   fuel : Nat := 200
   varPrefix : String := "$__"
   gen : Nat := 0
+  usedNames : Std.HashSet String := {}
 
 instance : ToFormat (EvalConfig T) where
   format c :=
@@ -49,15 +50,12 @@ instance : ToFormat (EvalConfig T) where
 def EvalConfig.init : EvalConfig T :=
   { factory := @Factory.default T,
     fuel := 200,
-    gen := 0 }
-
-def EvalConfig.incGen (c : EvalConfig T) : EvalConfig T :=
-    { c with gen := c.gen + 1 }
+    gen := 0,
+    usedNames := {} }
 
 def EvalConfig.genSym (x : String) (c : EvalConfig T) : String × EvalConfig T :=
-  let new_idx := c.gen
-  let c := c.incGen
-  let new_var := Strata.Name.disambiguate x new_idx
+  let new_var := Strata.Name.findUnique x 1 c.usedNames.contains
+  let c := { c with usedNames := c.usedNames.insert new_var }
   (new_var, c)
 
 ---------------------------------------------------------------------
@@ -123,7 +121,8 @@ def LState.knownVars (σ : LState T) : List T.Identifier :=
 
 /--
 Generate a fresh (internal) identifier with the base name
-`x`, using `@N` suffix disambiguation.
+`x`, reusing the bare name when possible and adding `@N` suffixes
+only when disambiguation is needed.
 -/
 def LState.genVar {IDMeta} [Inhabited IDMeta] [DecidableEq IDMeta] (x : String) (σ : LState ⟨Unit, IDMeta⟩) : String × LState ⟨Unit, IDMeta⟩ :=
   let (new_var, config) := σ.config.genSym x

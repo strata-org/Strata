@@ -55,12 +55,12 @@ VCs:
 Label: Test_ensures_0
 Property: assert
 Obligation:
-(x@1 || x@1) == x@1
+(x || x) == x
 
 Label: Test_ensures_1
 Property: assert
 Obligation:
-x@1 == (x@1 || x@1)
+x == (x || x)
 
 Label: Test_ensures_2
 Property: assert
