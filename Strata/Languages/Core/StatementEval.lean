@@ -670,13 +670,14 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
     | s :: rest =>
       let (continuing, exiting) :=
         good.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
-      let (results, stmtStats, nextSplitId) := continuing.foldl
+      let (resultsRev, stmtStats, nextSplitId) := continuing.foldl
         (fun (acc, statsAcc, nId) (ewn : EnvWithNext) =>
           let (res, stmtS, nId) := evalOneStmt old_var_subst ewn s nId
             (fun e ss nId => evalAuxGo steps' old_var_subst [e] ss nId)
             (fun e c c' t f nId => processIteBranches steps' old_var_subst e c c' t f nId)
-          (acc ++ res, statsAcc.merge stmtS, nId))
+          (res.reverse ++ acc, statsAcc.merge stmtS, nId))
         ([], noStats, nextSplitId)
+      let results := resultsRev.reverse
       let stmtStats := stmtStats.increment
         s!"{Evaluator.Stats.simulatedStmts}" continuing.length
       let (results, stmtStats) := enforcePathCap results stmtStats
