@@ -787,11 +787,14 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
         ⟨default, none⟩
     pure (.cover default rcAnn labelAnn exprCST)
   | .call lhs pname args _md => do
-    let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
     let pnameAnn : Ann String M := ⟨default, pname⟩
     let argsCST ← args.toArray.mapM (fun a => lexprToExpr a 0)
     let argsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, argsCST⟩
-    pure (.call_statement default lhsAnn pnameAnn argsAnn)
+    if lhs.isEmpty then
+      pure (.call_unit_statement default pnameAnn argsAnn)
+    else
+      let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
+      pure (.call_statement default lhsAnn pnameAnn argsAnn)
   | .block label stmts _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     let blockCST ← blockToCST stmts

@@ -440,12 +440,12 @@ spec {
   invariant i <= nums_len
   invariant forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i ==> max >=s nums[__q0]
   invariant exists __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < i && max == nums[__q0]
-  ({
+  {
     if (nums[i] >s max) {
       max := nums[i];
     }
     i := i + bv{64}(1);
-  })
+  }
   ret := max;
 };
 -/
@@ -570,9 +570,9 @@ procedure TestNondetWhile () returns ()
   var x : int := 0;
   while *
   invariant x >= 0
-  ({
+  {
     x := x + 1;
-  })
+  }
   assert [x_pos]: x >= 0;
 };
 -/

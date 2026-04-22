@@ -267,7 +267,7 @@ category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
 op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
-  "while " c:0 "\n" m:0 is body;
+  "while " c:0 "\n" m:0 is body:0;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " vs " := " f "(" expr ")" ";";

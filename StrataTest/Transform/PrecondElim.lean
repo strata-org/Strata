@@ -413,11 +413,11 @@ spec {
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
   assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);
   while (y / (y / g) > 0)
-  ({
+  {
     g := g - 1;
     assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
     assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
-  })
+  }
 };
 -/
 #guard_msgs in

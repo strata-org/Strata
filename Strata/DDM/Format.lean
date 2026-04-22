@@ -381,8 +381,8 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
                 -- args with call syntax.
                 let declArgCount := bindings.size
                 if rargs.size > declArgCount then
-                  let fnArgs := args.toList.take declArgCount |>.toArray
-                  let extraArgs := args.toList.drop declArgCount |>.toArray
+                  let fnArgs := args.take declArgCount
+                  let extraArgs := args.drop declArgCount
                   let .isTrue bsize' := decEq fnArgs.size bindings.size
                         | return panic! "Mismatch betweeen binding and arg size" -- nopanic:ok
                   let argResults ← do
