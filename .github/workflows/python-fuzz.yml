@@ -239,7 +239,8 @@ jobs:
       # gets tracked, but we do NOT fail the CI — the PR author shouldn't
       # be blocked by a pre-existing bug.
       - name: Create issue for pre-existing bug
-        if: steps.analyse.outputs.result == 'pre-existing'
+        if: steps.analyse.outputs.result == 'pre-existing' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |

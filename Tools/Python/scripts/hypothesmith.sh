@@ -239,7 +239,7 @@ run_semantic_tests() {
     # This is the "reference execution" (analogous to CSmith's GCC run
     # that computes the reference checksum). If CPython fails, the bug
     # is in our generator, not in Strata.
-    if ! timeout 10 python3 "$pyfile" 2>/dev/null; then
+    if ! timeout 10 "$PYTHON" "$pyfile" 2>/dev/null; then
       echo "  BUG (generator): $base fails under CPython!"
       cat "$pyfile"
       sem_failures=$((sem_failures + 1))
@@ -274,6 +274,26 @@ run_semantic_tests() {
     # - Translation failures → unsupported constructs, count as SKIP
     if [ $ec -ne 0 ]; then
       if echo "$output" | grep -qi "panic\|LEAK"; then
+        echo "  FAIL (internal error): $base"
+        echo "--- Source code ---"
+        cat "$pyfile"
+        echo "--- Output ---"
+        echo "$output" | head -20
+        echo "---"
+        sem_failures=$((sem_failures + 1))
+        continue
+      fi
+      if echo "$output" | grep -q "RESULT: Failures found"; then
+        echo "  FAIL (verification, exit $ec): $base"
+        echo "--- Source code ---"
+        cat "$pyfile"
+        echo "--- pyAnalyzeLaurel output ---"
+        echo "$output"
+        echo "---"
+        sem_failures=$((sem_failures + 1))
+        continue
+      fi
+      if echo "$output" | grep -q "RESULT: Internal error"; then
         echo "  FAIL (internal error): $base"
         echo "--- Source code ---"
         cat "$pyfile"

@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
 # Copyright Strata Contributors
-# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+#  SPDX-License-Identifier: Apache-2.0 OR MIT
 """
 Generate random Python programs for fuzz-testing Strata's Python front-end.
 

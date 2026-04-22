@@ -1,3 +1,6 @@
+# Copyright Strata Contributors
+#
+#  SPDX-License-Identifier: Apache-2.0 OR MIT
 """Unrestricted Python program generators for fuzz testing.
 
 This module contains ~60 generators that produce Python code blocks using
@@ -228,6 +231,7 @@ def gen_list_append():
 def gen_dict_create():
     keys = random.sample(["a", "b", "c", "d", "e"], random.randint(1, 4))
     d = {k: _rand_int() for k in keys}
+    # {len(d)} is evaluated at generation time, producing e.g. "assert len(d) == 3"
     return (
         f"    d: dict = {d}\n"
         f'    assert len(d) == {len(d)}, "dict len"\n'
@@ -557,7 +561,10 @@ def gen_walrus():
 
 def gen_fstring():
     a = random.randint(0, 50)
-    return f'    assert f"val={{{a}}}" == "val={a}", "fstring"\n'
+    return (
+        f"    a = {a}\n"
+        f'    assert f"val={{a}}" == "val={a}", "fstring"\n'
+    )
 
 # --- Star unpacking ---
 
