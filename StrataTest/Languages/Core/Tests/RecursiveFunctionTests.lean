@@ -56,7 +56,7 @@ VCs:
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil(xs)) ==> IntList..isCons(xs)
+!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
 
 Label: nilLen
 Property: assert
@@ -149,40 +149,40 @@ VCs:
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil(xs)) ==> IntList..isCons(xs)
+!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
 
 Label: nilCase
 Property: assert
 Assumptions:
-TestNilCase_requires_0: IntList..isNil(xs@1)
+TestNilCase_requires_0: IntList..isNil(xs@2)
 Obligation:
-listLen(xs@1) == 0
+listLen(xs@2) == 0
 
 Label: TestNilCase_ensures_1
 Property: assert
 Assumptions:
-TestNilCase_requires_0: IntList..isNil(xs@1)
+TestNilCase_requires_0: IntList..isNil(xs@2)
 Obligation:
 true
 
 Label: assert_consLen_calls_IntList..tl_0
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons(xs@2)
+TestConsCase_requires_0: IntList..isCons(xs@3)
 Obligation:
-IntList..isCons(xs@2)
+IntList..isCons(xs@3)
 
 Label: consLen
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons(xs@2)
+TestConsCase_requires_0: IntList..isCons(xs@3)
 Obligation:
-listLen(xs@2) == 1 + listLen(IntList..tl(xs@2))
+listLen(xs@3) == 1 + listLen(IntList..tl(xs@3))
 
 Label: TestConsCase_ensures_1
 Property: assert
 Assumptions:
-TestConsCase_requires_0: IntList..isCons(xs@2)
+TestConsCase_requires_0: IntList..isCons(xs@3)
 Obligation:
 true
 
@@ -325,12 +325,12 @@ VCs:
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil(xs)) ==> IntList..isCons(xs)
+!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
 
 Label: entry_invariant_0_0
 Property: assert
 Obligation:
-0 + listLen(xs@1) == listLen(xs@1)
+0 + listLen(xs@2) == listLen(xs@2)
 
 Label: entry_invariant_0_1
 Property: assert
@@ -340,50 +340,50 @@ true
 Label: set_cur_calls_IntList..tl_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@1))
+<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@2))
 assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@1)
+assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@2)
 assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@1) == listLen(xs@1)
+assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
 Obligation:
 IntList..isCons(cur@1)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@1))
+<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@2))
 assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@1)
+assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@2)
 assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@1) == listLen(xs@1)
+assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
 Obligation:
-acc@1 + 1 + listLen(IntList..tl(cur@1)) == listLen(xs@1)
+acc@1 + 1 + listLen(IntList..tl(cur@1)) == listLen(xs@2)
 
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@1))
+<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@2))
 assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@1)
+assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@2)
 assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@1) == listLen(xs@1)
+assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
 Obligation:
 acc@1 + 1 >= 0
 
 Label: equiv
 Property: assert
 Assumptions:
-assume_entry_invariant_0_0: 0 + listLen(xs@1) == listLen(xs@1)
-<label_ite_cond_true: !(IntList..isNil(cur))>: if !(IntList..isNil(xs@1)) then !(IntList..isNil(xs@1)) else true
-assume_guard_0: if !(IntList..isNil(xs@1)) then !(IntList..isNil(cur@1)) else true
-assume_invariant_0_0: if !(IntList..isNil(xs@1)) then acc@1 + listLen(cur@1) == listLen(xs@1) else true
-assume_invariant_0_1: if !(IntList..isNil(xs@1)) then acc@1 >= 0 else true
-not_guard_0: if !(IntList..isNil(xs@1)) then !(!(IntList..isNil(cur@2))) else true
-invariant_0_0: if !(IntList..isNil(xs@1)) then acc@2 + listLen(cur@2) == listLen(xs@1) else true
-invariant_0_1: if !(IntList..isNil(xs@1)) then acc@2 >= 0 else true
-<label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil(xs@1)) then false else true then if !(IntList..isNil(xs@1)) then false else true else true
+assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
+<label_ite_cond_true: !(IntList..isNil(cur))>: if !(IntList..isNil(xs@2)) then !(IntList..isNil(xs@2)) else true
+assume_guard_0: if !(IntList..isNil(xs@2)) then !(IntList..isNil(cur@1)) else true
+assume_invariant_0_0: if !(IntList..isNil(xs@2)) then acc@1 + listLen(cur@1) == listLen(xs@2) else true
+assume_invariant_0_1: if !(IntList..isNil(xs@2)) then acc@1 >= 0 else true
+not_guard_0: if !(IntList..isNil(xs@2)) then !(!(IntList..isNil(cur@2))) else true
+invariant_0_0: if !(IntList..isNil(xs@2)) then acc@2 + listLen(cur@2) == listLen(xs@2) else true
+invariant_0_1: if !(IntList..isNil(xs@2)) then acc@2 >= 0 else true
+<label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil(xs@2)) then false else true then if !(IntList..isNil(xs@2)) then false else true else true
 Obligation:
-if !(IntList..isNil(xs@1)) then acc@2 else 0 == listLen(xs@1)
+if !(IntList..isNil(xs@2)) then acc@2 else 0 == listLen(xs@2)
 
 ---
 info:

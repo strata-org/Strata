@@ -57,16 +57,16 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: x < 0>: x < 0
+<label_ite_cond_true: x < 0>: x@1 < 0
 Obligation:
-0 - x >= 0
+0 - x@1 >= 0
 
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(x < 0)>: if x < 0 then false else true
+<label_ite_cond_false: !(x < 0)>: if x@1 < 0 then false else true
 Obligation:
-x >= 0
+x@1 >= 0
 
 Label: a
 Property: assert
@@ -103,10 +103,10 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: x < 0>: if x < 0 then x < 0 else true
-<label_ite_cond_false: !(x < 0)>: if if x < 0 then false else true then if x < 0 then false else true else true
+<label_ite_cond_true: x < 0>: if x@1 < 0 then x@1 < 0 else true
+<label_ite_cond_false: !(x < 0)>: if if x@1 < 0 then false else true then if x@1 < 0 then false else true else true
 Obligation:
-if x < 0 then 0 - x else x >= 0
+if x@1 < 0 then 0 - x@1 else x@1 >= 0
 
 Label: a
 Property: assert

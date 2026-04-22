@@ -75,7 +75,7 @@ Result: ✅ pass
 
 Obligation: count_incremented
 Property: assert
-Result: ❌ fail
+Result: ✅ pass
 
 Obligation: value_for_id
 Property: assert

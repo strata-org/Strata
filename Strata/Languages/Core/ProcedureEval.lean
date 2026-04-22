@@ -67,7 +67,13 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
   -- Parameters go through genFVars for globally unique names.
+  -- Mark original parameter names as used so that fvar names always differ
+  -- from the scope keys. Without this, a bare fvar "x" would be captured
+  -- by the scope entry for "x" after reassignment, causing old(x) to
+  -- resolve to the post-assignment value instead of the initial value.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
+  let E := vars.foldl (fun E (v : CoreIdent) =>
+    { E with exprEnv.config.usedNames := E.exprEnv.config.usedNames.insert v.name }) E
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)
   let vars_typed := vars.zip var_tys

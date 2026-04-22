@@ -186,7 +186,7 @@ Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-(x, 0)
+(x@1, 0)
 -/
 #guard_msgs in
 #eval verify quantModelPgm (options := .models)

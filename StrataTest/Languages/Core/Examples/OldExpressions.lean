@@ -65,7 +65,7 @@ true
 Label: T1_y_eq_old_g2
 Property: assert
 Obligation:
-g2 == g
+true
 
 Label: T1_z_eq_y
 Property: assert
@@ -75,28 +75,28 @@ true
 Label: T2_g2_eq_g
 Property: assert
 Assumptions:
-callElimAssume_T1_g_unchanged_8: g@4 == true
-callElimAssume_T1_g2_eq_old_g_9: g2@4 == true
+callElimAssume_T1_g_unchanged_8: g@5 == true
+callElimAssume_T1_g2_eq_old_g_9: g2@5 == true
 callElimAssume_T1_y_eq_old_g2_10: a@1 == false
 callElimAssume_T1_z_eq_y_11: b@1 == false
 Obligation:
-g2@4 == g@4
+g2@5 == g@5
 
 Label: T2_g_true
 Property: assert
 Assumptions:
-callElimAssume_T1_g_unchanged_8: g@4 == true
-callElimAssume_T1_g2_eq_old_g_9: g2@4 == true
+callElimAssume_T1_g_unchanged_8: g@5 == true
+callElimAssume_T1_g2_eq_old_g_9: g2@5 == true
 callElimAssume_T1_y_eq_old_g2_10: a@1 == false
 callElimAssume_T1_z_eq_y_11: b@1 == false
 Obligation:
-g@4 == true
+g@5 == true
 
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g_unchanged_8: g@4 == true
-callElimAssume_T1_g2_eq_old_g_9: g2@4 == true
+callElimAssume_T1_g_unchanged_8: g@5 == true
+callElimAssume_T1_g2_eq_old_g_9: g2@5 == true
 callElimAssume_T1_y_eq_old_g2_10: a@1 == false
 callElimAssume_T1_z_eq_y_11: b@1 == false
 Obligation:
@@ -105,8 +105,8 @@ a@1 == false
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g_unchanged_8: g@4 == true
-callElimAssume_T1_g2_eq_old_g_9: g2@4 == true
+callElimAssume_T1_g_unchanged_8: g@5 == true
+callElimAssume_T1_g2_eq_old_g_9: g2@5 == true
 callElimAssume_T1_y_eq_old_g2_10: a@1 == false
 callElimAssume_T1_z_eq_y_11: b@1 == false
 Obligation:
@@ -128,9 +128,7 @@ Result: ✅ pass
 
 Obligation: T1_y_eq_old_g2
 Property: assert
-Result: ❌ fail
-Model:
-(g2, true) (g, false) 
+Result: ✅ pass
 
 Obligation: T1_z_eq_y
 Property: assert

@@ -29,9 +29,9 @@ VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_safeDiv_0: !(y == 0)
+precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y == 0)
+!(y@1 == 0)
 
 ---
 info:
@@ -162,17 +162,17 @@ VCs:
 Label: foo_precond_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_foo_0: y > 0
+precond_foo_0: y@1 > 0
 Obligation:
-!(y == 0)
+!(y@1 == 0)
 
 Label: foo_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_foo_0: y > 0
-precond_foo_1: x / y > 0
+precond_foo_0: y@1 > 0
+precond_foo_1: x@1 / y@1 > 0
 Obligation:
-!(y == 0)
+!(y@1 == 0)
 
 ---
 info:
@@ -209,18 +209,18 @@ VCs:
 Label: doubleDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_doubleDiv_0: !(y == 0)
-precond_doubleDiv_1: !(z == 0)
+precond_doubleDiv_0: !(y@1 == 0)
+precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!(y == 0)
+!(y@1 == 0)
 
 Label: doubleDiv_body_calls_Int.SafeDiv_1
 Property: division by zero check
 Assumptions:
-precond_doubleDiv_0: !(y == 0)
-precond_doubleDiv_1: !(z == 0)
+precond_doubleDiv_0: !(y@1 == 0)
+precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!(z == 0)
+!(z@1 == 0)
 
 ---
 info:
@@ -319,9 +319,9 @@ VCs:
 Label: set_z_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: a > 0>: a > 0
+<label_ite_cond_true: a > 0>: a@1 > 0
 Obligation:
-!(a == 0)
+!(a@1 == 0)
 
 ---
 info:
@@ -357,16 +357,16 @@ VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_safeDiv_0: !(y == 0)
+precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y == 0)
+!(y@1 == 0)
 
 Label: init_calls_safeDiv_0
 Property: assert
 Assumptions:
-assume_0: !(a == 0)
+assume_0: !(a@1 == 0)
 Obligation:
-!(a == 0)
+!(a@1 == 0)
 
 ---
 info:
@@ -406,14 +406,14 @@ VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_safeDiv_0: !(y == 0)
+precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y == 0)
+!(y@1 == 0)
 
 Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
 Assumptions:
-precond_allPositiveDiv_0: y@1 >= 0
+precond_allPositiveDiv_0: y@2 >= 0
 Obligation:
 forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 
@@ -503,34 +503,34 @@ VCs:
 Label: loop_guard_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-test_requires_0: !(n == 0)
+test_requires_0: !(n@1 == 0)
 Obligation:
-!(n == 0)
+!(n@1 == 0)
 
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-test_requires_0: !(n == 0)
+test_requires_0: !(n@1 == 0)
 Obligation:
 true
 
 Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: i / n < 10>: 0 / n < 10
-assume_guard_0: i@1 / n < 10
+<label_ite_cond_true: i / n < 10>: 0 / n@1 < 10
+assume_guard_0: i@1 / n@1 < 10
 assume_invariant_0_0: i@1 >= 0
-test_requires_0: !(n == 0)
+test_requires_0: !(n@1 == 0)
 Obligation:
-!(n == 0)
+!(n@1 == 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i / n < 10>: 0 / n < 10
-assume_guard_0: i@1 / n < 10
+<label_ite_cond_true: i / n < 10>: 0 / n@1 < 10
+assume_guard_0: i@1 / n@1 < 10
 assume_invariant_0_0: i@1 >= 0
-test_requires_0: !(n == 0)
+test_requires_0: !(n@1 == 0)
 Obligation:
 i@1 + 1 >= 0
 

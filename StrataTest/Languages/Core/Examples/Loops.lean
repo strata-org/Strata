@@ -162,126 +162,126 @@ VCs:
 Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: n >= 0
+sum_requires_0: n@1 >= 0
 Obligation:
 true
 
 Label: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: n@1 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
 true
 
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-sum_requires_0: n@1 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
 true
 
 Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-sum_requires_0: n@1 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
-0 <= n@1
+0 <= n@2
 
 Label: entry_invariant_0_2
 Property: assert
 Assumptions:
-sum_requires_0: n@1 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
 true
 
 Label: measure_lb_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@1
-assume_guard_0: i@1 < n@1
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
 assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@1
-assume_invariant_0_2: s@2 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@1 - i@1
-sum_requires_0: n@1 >= 0
-assume_entry_invariant_0_1: 0 <= n@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
 !($__loop_measure_0 < 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@1
-assume_guard_0: i@1 < n@1
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
 assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@1
-assume_invariant_0_2: s@2 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@1 - i@1
-sum_requires_0: n@1 >= 0
-assume_entry_invariant_0_1: 0 <= n@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
 0 <= i@1 + 1
 
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@1
-assume_guard_0: i@1 < n@1
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
 assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@1
-assume_invariant_0_2: s@2 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@1 - i@1
-sum_requires_0: n@1 >= 0
-assume_entry_invariant_0_1: 0 <= n@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-i@1 + 1 <= n@1
+i@1 + 1 <= n@2
 
 Label: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@1
-assume_guard_0: i@1 < n@1
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
 assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@1
-assume_invariant_0_2: s@2 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@1 - i@1
-sum_requires_0: n@1 >= 0
-assume_entry_invariant_0_1: 0 <= n@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-s@2 + (i@1 + 1) == (i@1 + 1) * (i@1 + 1 + 1) / 2
+s@3 + (i@1 + 1) == (i@1 + 1) * (i@1 + 1 + 1) / 2
 
 Label: measure_decrease_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@1
-assume_guard_0: i@1 < n@1
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
 assume_invariant_0_0: 0 <= i@1
-assume_invariant_0_1: i@1 <= n@1
-assume_invariant_0_2: s@2 == i@1 * (i@1 + 1) / 2
-assume_measure_0: $__loop_measure_0 == n@1 - i@1
-sum_requires_0: n@1 >= 0
-assume_entry_invariant_0_1: 0 <= n@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-n@1 - (i@1 + 1) < $__loop_measure_0
+n@2 - (i@1 + 1) < $__loop_measure_0
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-sum_requires_0: n@1 >= 0
-assume_entry_invariant_0_1: 0 <= n@1
-<label_ite_cond_true: i < n>: if 0 < n@1 then 0 < n@1 else true
-assume_guard_0: if 0 < n@1 then i@1 < n@1 else true
-assume_invariant_0_0: if 0 < n@1 then 0 <= i@1 else true
-assume_invariant_0_1: if 0 < n@1 then i@1 <= n@1 else true
-assume_invariant_0_2: if 0 < n@1 then s@2 == i@1 * (i@1 + 1) / 2 else true
-assume_measure_0: if 0 < n@1 then $__loop_measure_0 == n@1 - i@1 else true
-not_guard_0: if 0 < n@1 then !(i@2 < n@1) else true
-invariant_0_0: if 0 < n@1 then 0 <= i@2 else true
-invariant_0_1: if 0 < n@1 then i@2 <= n@1 else true
-invariant_0_2: if 0 < n@1 then s@3 == i@2 * (i@2 + 1) / 2 else true
-<label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
+<label_ite_cond_true: i < n>: if 0 < n@2 then 0 < n@2 else true
+assume_guard_0: if 0 < n@2 then i@1 < n@2 else true
+assume_invariant_0_0: if 0 < n@2 then 0 <= i@1 else true
+assume_invariant_0_1: if 0 < n@2 then i@1 <= n@2 else true
+assume_invariant_0_2: if 0 < n@2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+assume_measure_0: if 0 < n@2 then $__loop_measure_0 == n@2 - i@1 else true
+not_guard_0: if 0 < n@2 then !(i@2 < n@2) else true
+invariant_0_0: if 0 < n@2 then 0 <= i@2 else true
+invariant_0_1: if 0 < n@2 then i@2 <= n@2 else true
+invariant_0_2: if 0 < n@2 then s@4 == i@2 * (i@2 + 1) / 2 else true
+<label_ite_cond_false: !(i < n)>: if if 0 < n@2 then false else true then if 0 < n@2 then false else true else true
 Obligation:
-if 0 < n@1 then s@3 else 0 == n@1 * (n@1 + 1) / 2
+if 0 < n@2 then s@4 else 0 == n@2 * (n@2 + 1) / 2
 
 ---
 info:

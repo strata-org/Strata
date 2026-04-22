@@ -32,7 +32,7 @@ VCs:
 Label: min_ensures_0
 Property: assert
 Obligation:
-if n < m then n else m <= n && if n < m then n else m <= m
+if n@1 < m@1 then n@1 else m@1 <= n@1 && if n@1 < m@1 then n@1 else m@1 <= m@1
 
 ---
 info:

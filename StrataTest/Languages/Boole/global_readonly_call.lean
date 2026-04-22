@@ -144,34 +144,32 @@ VCs:
 Label: inc_ensures_1_2418
 Property: assert
 Assumptions:
-inc_requires_0_2400: z > 0
+inc_requires_0_2400: z@1 > 0
 Obligation:
-g + x + z == g + x + z + x + z
+true
 
 Label: callElimAssert_inc_requires_0_2400_6
 Property: assert
 Assumptions:
-main_caller_requires_2_2534: z@2 == 10
-main_caller_requires_3_2554: g@2 == 0
+main_caller_requires_2_2534: z@3 == 10
+main_caller_requires_3_2554: g@3 == 0
 Obligation:
-z@2 > 0
+z@3 > 0
 
 Label: main_caller_ensures_4_2573
 Property: assert
 Assumptions:
-main_caller_requires_2_2534: z@2 == 10
-main_caller_requires_3_2554: g@2 == 0
-callElimAssume_inc_ensures_1_2418_7: g@4 == g@2 + 5 + z@4
+main_caller_requires_2_2534: z@3 == 10
+main_caller_requires_3_2554: g@3 == 0
+callElimAssume_inc_ensures_1_2418_7: g@5 == g@3 + 5 + z@5
 Obligation:
-g@4 == 15
+g@5 == 15
 
 ---
 info:
 Obligation: inc_ensures_1_2418
 Property: assert
-Result: ❌ fail
-Model:
-(g, 0) (x, 0) (z, 1) 
+Result: ✅ pass
 
 Obligation: callElimAssert_inc_requires_0_2400_6
 Property: assert
@@ -181,7 +179,7 @@ Obligation: main_caller_ensures_4_2573
 Property: assert
 Result: ❓ unknown
 Model:
-(g@4, 5) (z@2, 10) (g@2, 0) (z@4, 0)
+(g@5, 5) (z@3, 10) (g@3, 0) (z@5, 0)
 -/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" callerPgm
