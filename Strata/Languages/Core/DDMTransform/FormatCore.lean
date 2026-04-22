@@ -690,18 +690,20 @@ def precondsToSpecElts {M} [Inhabited M]
     pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
   pure ⟨default, specElts⟩
 
+/-- Build a `TypeArgs` annotation from a list of type parameter names. -/
+def mkTypeArgsAnn {M} [Inhabited M] (typeArgs : List String) : Ann (Option (TypeArgs M)) M :=
+  if typeArgs.isEmpty then ⟨default, none⟩
+  else
+    let tvars := typeArgs.map fun tv =>
+      TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+    ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+
 /-- Convert a function declaration to a statement -/
 def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, decl.name.name⟩
-  let typeArgs : Ann (Option (TypeArgs M)) M :=
-    if decl.typeArgs.isEmpty then
-      ⟨default, none⟩
-    else
-      let tvars := decl.typeArgs.map fun tv =>
-        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
-      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let typeArgs := mkTypeArgsAnn decl.typeArgs
   let processInput (id : CoreLParams.Identifier) (ty : Lambda.LTy) :
           ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.name⟩
@@ -866,13 +868,7 @@ N.B.: We don't add the procedure name to the freeVars in the context.
 def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
-  let typeArgs : Ann (Option (TypeArgs M)) M :=
-    if proc.header.typeArgs.isEmpty then
-      ⟨default, none⟩
-    else
-      let tvars := proc.header.typeArgs.map fun tv =>
-        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
-      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let typeArgs := mkTypeArgsAnn proc.header.typeArgs
   let processInput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.toPretty⟩
     let paramType ← lmonoTyToCoreType ty
@@ -972,6 +968,7 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | .fvar _ id ty =>
       #[id.name] ++ (match ty with | some ty => extractFromType ty | none => #[])
     | .app _ f arg => extractFromExpr f ++ extractFromExpr arg
+    | .abs _ _ _ body => extractFromExpr body
     | .ite _ c t f => extractFromExpr c ++ extractFromExpr t ++ extractFromExpr f
     | .eq _ e1 e2 => extractFromExpr e1 ++ extractFromExpr e2
     | .quant _ _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body

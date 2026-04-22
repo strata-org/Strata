@@ -137,12 +137,7 @@ def recFnDeclToCST {M} [Inhabited M]
     (_md : Imperative.MetaData Expression) : ToCSTM M (RecFnDecl M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
-  let typeArgs : Ann (Option (TypeArgs M)) M :=
-    if func.typeArgs.isEmpty then ⟨default, none⟩
-    else
-      let tvars := func.typeArgs.map fun tv =>
-        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
-      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let typeArgs := mkTypeArgsAnn func.typeArgs
   let processInput (id : Core.CoreLParams.Identifier) (ty : Lambda.LMonoTy) (isCases : Bool) :
           ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.name⟩
@@ -175,13 +170,7 @@ def funcToCST {M} [Inhabited M]
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
-  let typeArgs : Ann (Option (TypeArgs M)) M :=
-    if func.typeArgs.isEmpty then
-      ⟨default, none⟩
-    else
-      let tvars := func.typeArgs.map fun tv =>
-        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
-      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let typeArgs := mkTypeArgsAnn func.typeArgs
   let processInput (id : Core.CoreLParams.Identifier) (ty : Lambda.LMonoTy) :
           ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.name⟩
