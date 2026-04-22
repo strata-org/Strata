@@ -195,11 +195,7 @@ structure Procedure.Header where
   noFilter : Bool := false
   deriving Repr, DecidableEq, Inhabited
 
-instance : ToFormat Procedure.Header where
-  format p :=
-    let typeArgs := if p.typeArgs.isEmpty then f!"" else f!"∀{Format.joinSep p.typeArgs " "}."
-    f!"procedure {p.name} : {typeArgs} ({Signature.format p.inputs}) → \
-      ({Signature.format p.outputs})"
+---------------------------------------------------------------------
 
 /--
 Attribute controlling whether a specification clause is checked or free.
@@ -219,12 +215,6 @@ inductive Procedure.CheckAttr where
   | Default
   deriving Repr, DecidableEq
 
-instance : Std.ToFormat Procedure.CheckAttr where
-  format a :=
-    match a with
-    | .Default => f!""
-    | _ => f!" (Attribute: {repr a})"
-
 /-- A single specification clause: a boolean expression with an optional `Free` attribute
 and optional metadata. -/
 structure Procedure.Check where
@@ -238,9 +228,6 @@ structure Procedure.Check where
 
 instance : Inhabited Procedure.Check where
   default := { expr := Inhabited.default }
-
-instance : ToFormat Procedure.Check where
-  format c := f!"{c.expr}{c.attr}"
 
 def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
   { c with expr := c.expr.eraseTypes }
@@ -264,12 +251,6 @@ structure Procedure.Spec where
   /-- Labeled postconditions (`ensures` clauses). -/
   postconditions : ListMap CoreLabel Procedure.Check
   deriving Inhabited, Repr
-
-instance : ToFormat Procedure.Spec where
-  format p :=
-    f!"modifies: {format p.modifies}\n\
-       preconditions: {format p.preconditions}\n\
-       postconditions: {format p.postconditions}"
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
   s.preconditions.keys
@@ -315,13 +296,6 @@ structure Procedure where
   /-- The procedure body. Empty for abstract (bodyless) procedures. -/
   body   : List Statement
   deriving Inhabited
-
-instance : ToFormat Procedure where
-  format p :=
-    f!"{p.header}\
-       {indentD <| format p.spec}{line}\
-       \{{indentD (format p.body)}{line}\
-       }"
 
 ---------------------------------------------------------------------
 

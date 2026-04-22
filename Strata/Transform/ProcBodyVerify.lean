@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Identifiers
-import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Identifiers
+public import Strata.Transform.CoreTransform
+
+public section
 
 /-! # Procedure Body Verification Transformation
 
@@ -51,19 +54,19 @@ namespace Core.ProcBodyVerify
 open Core Imperative Transform
 
 /-- Convert preconditions to assume statements -/
-def requiresToAssumes (preconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
+@[expose] def requiresToAssumes (preconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
   preconditions.toList.map fun (label, check) =>
     Statement.assume label check.expr check.md
 
 /-- Convert postconditions to assert statements -/
-def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
+@[expose] def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List Statement :=
   postconditions.toList.filterMap fun (label, check) =>
     match check.attr with
     | .Free => none
     | .Default => some (Statement.assert label check.expr check.md)
 
 /-- Main transformation: convert a procedure to a verification statement -/
-def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement := do
+@[expose] def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement := do
   let procName := proc.header.name.name
   let bodyLabel := s!"body_{procName}"
   let verifyLabel := s!"verify_{procName}"

@@ -367,7 +367,7 @@ def withOldBindings
     Core commands have type `Command = CmdExt Expression`, so an assert
     command appears as `.cmd (CmdExt.cmd (Cmd.assert l e md))`.
     Call commands (`.cmd (CmdExt.call ...)`) never trigger assert detection. -/
-def coreIsAtAssert : CoreConfig → Imperative.AssertId Expression → Prop
+@[expose] def coreIsAtAssert : CoreConfig → Imperative.AssertId Expression → Prop
   | .stmt (.cmd (.cmd (.assert label expr _))) _, aid =>
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>

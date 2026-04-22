@@ -41,6 +41,9 @@ inductive Stats where
   /-- ITE where branches could not be merged, causing path explosion.
       This is the primary source of exponential evaluation cost. -/
   | processIteBranches_diverged
+  /-- Between-statement merge: path cap was exceeded after a statement
+      produced multiple `.none`-exit paths, merged before continuing. -/
+  | betweenStmt_capMerged
   /-- Total number of statements stepped through by the partial evaluator. -/
   | simulatedStmts
   /-- Number of times the stmt evaluator ran out of fuel (step budget exhausted). -/

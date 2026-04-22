@@ -1,17 +1,13 @@
 test_fstrings.py(3, 4): ✅ pass - assert(100)
 test_fstrings.py(4, 4): ✅ pass - assert(124)
 test_fstrings.py(5, 4): ✅ pass - assert(144)
-test_fstrings.py(6, 4): ✅ pass - assert_assert(196)_calls_Any_to_bool_0
 test_fstrings.py(6, 4): ❓ unknown - f-string interpolation failed
 test_fstrings.py(9, 4): ✅ pass - assert(351)
 test_fstrings.py(10, 4): ✅ pass - assert(366)
 test_fstrings.py(11, 4): ✅ pass - assert(381)
 test_fstrings.py(12, 4): ✅ pass - assert(409)
-test_fstrings.py(13, 4): ✅ pass - assert_assert(430)_calls_Any_to_bool_0
 test_fstrings.py(13, 4): ✅ pass - empty f-string failed
 test_fstrings.py(14, 4): ✅ pass - assert(478)
-test_fstrings.py(15, 4): ✅ pass - assert_assert(511)_calls_Any_to_bool_0
 test_fstrings.py(15, 4): ✅ pass - f-string no interpolation failed
-test_fstrings.py(17, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 14 passed, 0 failed, 1 inconclusive
+DETAIL: 10 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

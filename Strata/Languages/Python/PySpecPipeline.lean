@@ -148,6 +148,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .Composite ct => ct.name.text
       | .Constrained ct => ct.name.text
       | .Datatype dt => dt.name.text
+      | .Alias ta => ta.name.text
     match seenTypes.get? name with
     | some prevFile =>
       throw s!"PySpec type name collision: '{name}' defined in both {prevFile} and {srcFile}"
@@ -361,8 +362,7 @@ public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, profile } combined
-      (keepAllFilesPrefix := keepAllFilesPrefix)
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, profile } combined
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full

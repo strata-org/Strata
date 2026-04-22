@@ -3,69 +3,130 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.ToCore
-import Strata.Languages.B3.Format
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.Languages.Core.CoreSMT
-import Strata.DL.SMT.Solver
+public import Strata.Languages.B3.Verifier.Expression
+public import Strata.Languages.B3.Verifier.Formatter
+public import Strata.Languages.B3.Verifier.State
+public import Strata.Languages.B3.Verifier.Program
+public import Strata.Languages.B3.Verifier.Diagnosis
+meta import Strata.Languages.B3.DDMTransform.ParseCST
+meta import Strata.Languages.B3.Verifier.Statements
+meta import Strata.Languages.B3.Verifier.Program
 
 open Strata
+open Strata.B3.Verifier
 open Strata.SMT
 
 /-!
 # B3 Verifier
 
-Converts B3 programs to Core and verifies them using the CoreSMT verifier.
+Converts B3 programs to SMT and verifies them using SMT solvers.
+
+## Architecture Overview
+
+```
+B3 Program (CST)
+      ↓
+   Parse (DDM)
+      ↓
+  B3 AST (de Bruijn indices)
+      ↓
+FunctionToAxiom Transform
+      ↓
+  B3 AST (declarations + axioms)
+      ↓
+expressionToSMT (Conversion)
+      ↓
+  SMT Terms
+      ↓
+formatTermDirect (Formatter)
+      ↓
+  SMT-LIB strings
+      ↓
+  SMT Solver (e.g., Z3/CVC5)
+      ↓
+  Results (proved/counterexample/unknown)
+      ↓
+Diagnosis (if failed)
+```
+
+## API Choice
+
+Use `programToSMT` for automatic diagnosis (recommended) - provides detailed error analysis.
+Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
+
+## Usage
 -/
 
-namespace Strata.B3.Verifier
+-- Example: Verify a simple B3 program (meta to avoid including in production)
+-- This is not a test, it only demonstrates the end-to-end API
+public meta def exampleVerification : IO Unit := do
+  -- Parse B3 program using DDM syntax
+  let ddmProgram : Strata.Program := #strata program B3CST;
+    function f(x : int) : int { x + 1 }
+    procedure test() {
+      check 8 == 8 && f(5) == 7
+    }
+  #end
 
-/-- Parse DDM program to B3 AST -/
-def programToB3AST (prog : Program) : Except String (B3AST.Program SourceRange) := do
-  let [op] ← pure prog.commands.toList
-    | .error "Expected single program command"
-  if op.name.name != "command_program" then
-    .error s!"Expected command_program, got {op.name.name}"
-  let [ArgF.op progOp] ← pure op.args.toList
-    | .error "Expected single program argument"
-  let cstProg ← B3CST.Program.ofAst progOp
-  let (ast, errors) := B3.programFromCST B3.FromCSTContext.empty cstProg
-  if !errors.isEmpty then
-    .error s!"CST to AST conversion errors: {errors}"
-  else
-    .ok ast
+  -- For parsing from files, use: parseStrataProgramFromDialect dialects "B3CST" "file.b3cst.st"
 
-/-- Create an interactive solver with appropriate flags for the given solver path. -/
-def createInteractiveSolver (solverPath : String := "cvc5") : IO Solver :=
-  let args := if solverPath.endsWith "cvc5" || solverPath == "cvc5"
-    then #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
-    else #["-smt2", "-in"]  -- Z3 flags
-  Solver.spawn solverPath args
+  let b3AST : B3AST.Program SourceRange ← match programToB3AST ddmProgram with
+    | .ok ast => pure ast
+    | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
 
-/-- Create a buffer-backed solver for capturing SMT output without running a solver -/
-def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
-  let buffer ← IO.mkRef {}
-  let solver ← Solver.bufferWriter buffer
-  return (solver, buffer)
+  -- Create solver and verify
+  let solver : Solver ← createInteractiveSolver "cvc5"
+  let reports : List ProcedureReport ← programToSMT b3AST solver
+  -- Don't call exit in tests - let solver terminate naturally
 
-/-- Convert B3 program to Core and verify via CoreSMT pipeline -/
-def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List Core.CoreSMT.CoreSMTResult) := do
-  let convResult := B3.ToCore.convertProgram prog
-  if !convResult.errors.isEmpty then
-    let msg := convResult.errors.map toString |> String.intercalate "\n"
-    throw (IO.userError s!"Conversion errors:\n{msg}")
-  let coreStmts := convResult.value
-  let _ ← (Solver.setLogic "ALL").run solver
-  let solverInterface ← mkSolverInterfaceFromSolver solver
-  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true, options := { Core.VerifyOptions.default with checkLevel := .full } }
-  let state := Core.CoreSMT.CoreSMTState.init solverInterface config
-  let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
-  return results
+  -- Destructure results to show types (self-documenting)
+  let [report] ← pure reports | throw (IO.userError "Expected one procedure")
+  let _procedureName : String := report.procedureName
+  let results : List (VerificationReport × Option DiagnosisResult) := report.results
 
-def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List Core.CoreSMT.CoreSMTResult) := do
-  programToSMT prog solver
+  let [(verificationReport, diagnosisOpt)] ← pure results | throw (IO.userError "Expected one result")
 
-end Strata.B3.Verifier
+  let analyseVerificationReport (verificationReport: VerificationReport) : IO Unit :=
+    do
+    let context : VerificationContext := verificationReport.context
+    let result : VerificationResult := verificationReport.result
+    let _model : Option String := verificationReport.model
 
+    let _decl : B3AST.Decl SourceRange := context.decl
+    let _stmt : B3AST.Statement SourceRange := context.stmt
+    let pathCondition : List (B3AST.Expression SourceRange) := context.pathCondition
+
+    -- Interpret verification result (merged error and success cases)
+    match result with
+    | .error .counterexample => IO.println "✗ Counterexample found (assertion may not hold)"
+    | .error .unknown => IO.println "✗ Unknown"
+    | .error .refuted => IO.println "✗ Refuted (proved false/unreachable)"
+    | .success .verified => IO.println "✓ Verified (proved)"
+    | .success .reachable => IO.println "✓ Reachable/Satisfiable"
+    | .success .reachabilityUnknown => IO.println "✓ Reachability unknown"
+
+    -- Print path condition if present
+    if !pathCondition.isEmpty then
+      IO.println "  Path condition:"
+      for expr in pathCondition do
+        IO.println s!"    {B3.Verifier.formatExpression ddmProgram expr B3.ToCSTContext.empty}"
+
+  IO.println s!"Statement: {B3.Verifier.formatStatement ddmProgram verificationReport.context.stmt B3.ToCSTContext.empty}"
+  analyseVerificationReport verificationReport
+
+  let (.some diagnosis) ← pure diagnosisOpt | throw (IO.userError "Expected a diagnosis")
+
+  -- Interpret diagnosis (if available)
+  let diagnosedFailures : List DiagnosedFailure := diagnosis.diagnosedFailures
+  IO.println s!"  Found {diagnosedFailures.length} diagnosed failures"
+
+  for failure in diagnosedFailures do
+    let expression : B3AST.Expression SourceRange := failure.expression
+    IO.println s!"Failing expression: {B3.Verifier.formatExpression ddmProgram expression B3.ToCSTContext.empty}"
+    analyseVerificationReport failure.report
+
+  pure ()
+
+-- See StrataTest/Languages/B3/Verifier/VerifierTests.lean for test of this example.

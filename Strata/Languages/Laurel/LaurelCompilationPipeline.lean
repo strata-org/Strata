@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
 import Strata.Util.Profile
 import Strata.Util.Statistics
@@ -31,6 +32,44 @@ to Strata Core. The pipeline is:
 open Core (VCResult VCResults VerifyOptions)
 
 namespace Strata.Laurel
+
+/-! ### Pipeline Monad
+
+`PipelineM` wraps `IO` with a `PipelineContext` that carries the step counter
+and file-prefix option so that `emit` can be called from any pipeline stage
+(Laurel-to-Laurel passes *and* the final translation to Core).
+-/
+
+/-- Context threaded through the compilation pipeline via `ReaderT`. -/
+private structure PipelineContext where
+  /-- When set, intermediate programs are written to `{prefix}.{n}.{name}.{ext}`. -/
+  keepAllFilesPrefix : Option String
+  /-- Monotonically increasing step counter shared across all pipeline stages. -/
+  stepRef : IO.Ref Nat
+
+/-- The pipeline monad: `IO` extended with a shared `PipelineContext`. -/
+abbrev PipelineM := ReaderT PipelineContext IO
+
+/-- Write the current program state to disk when `keepAllFilesPrefix` is set.
+    Each call increments the shared step counter so files are numbered in order
+    across both `runLaurelPasses` and `translateWithLaurel`. -/
+def emit {AstType : Type} [Std.ToFormat AstType] (name : String) (ext : String) (p : AstType) : PipelineM Unit := do
+  let ctx ← read
+  match ctx.keepAllFilesPrefix with
+  | some pfx => do
+    let n ← ctx.stepRef.modifyGet (fun n => (n, n + 1))
+    IO.FS.writeFile s!"{pfx}.{n}.{name}.{ext}"
+      ((Std.format p).pretty ++ "\n")
+  | none => pure ()
+
+/-- Create a `PipelineContext` and run a `PipelineM` action.
+    Ensures the parent directory for emitted files exists. -/
+def runPipelineM (keepAllFilesPrefix : Option String) (m : PipelineM α) : IO α := do
+  if let some pfx := keepAllFilesPrefix then
+    if let some parent := (System.FilePath.mk pfx).parent then
+      IO.FS.createDirAll parent
+  let stepRef ← IO.mkRef (0 : Nat)
+  m { keepAllFilesPrefix, stepRef }
 
 public section
 
@@ -101,37 +140,29 @@ private def laurelPipeline : Array LaurelPass := #[
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
 program, the semantic model, accumulated diagnostics, and merged statistics.
 
-When `keepAllFilesPrefix` is provided, the program state after each named
-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
+When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
+program state after each named Laurel pass is written to
+`{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses (options : LaurelTranslateOptions) (program : Program)
-    (keepAllFilesPrefix : Option String := none)
-    : IO (Program × SemanticModel × List DiagnosticModel × Statistics) := do
+    : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
 
-  if let some pfx := keepAllFilesPrefix then
-    if let some parent := (System.FilePath.mk pfx).parent then
-      IO.FS.createDirAll parent
-  let stepRef ← IO.mkRef (0 : Nat)
-  let emit (name : String) (p : Program) : IO Unit :=
-    match keepAllFilesPrefix with
-    | some pfx => do
-      let n ← stepRef.modifyGet (fun n => (n, n + 1))
-      IO.FS.writeFile s!"{pfx}.{n}.{name}.laurel.st"
-        ((formatProgram p).pretty ++ "\n")
-    | none => pure ()
-
   -- Step 0: the input program before any passes
-  emit "Initial" program
+  emit "Initial" "laurel.st" program
 
   -- Initial resolution
   let result := resolve program
   let resolutionErrors : List DiagnosticModel :=
     if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
-  emit "Resolve" program
+  emit "Resolve" "laurel.st" program
+
+  let program := typeAliasElim model program
+  emit "TypeAliasElim" "laurel.st" program
+
   let diamondErrors := validateDiamondFieldAccesses model program
 
   let mut program := program
@@ -150,7 +181,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
       let result := resolve program (some model)
       program := result.program
       model := result.model
-    emit pass.name program
+    emit pass.name "laurel.st" program
 
   return (program, model, allDiags, allStats)
 
@@ -161,17 +192,19 @@ When `keepAllFilesPrefix` is provided, the program state after each named
 Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 -/
 def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
-    (keepAllFilesPrefix : Option String := none)
-    : IO TranslateResultWithLaurel := do
-  let (program, model, passDiags, stats) ← runLaurelPasses options program keepAllFilesPrefix
-  let ordered := orderProgram program
-  let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
-  let (coreProgramOption, translateState) :=
-    runTranslateM initState (translateLaurelToCore options program ordered)
-  let allDiagnostics := passDiags ++ translateState.diagnostics
-  let coreProgramOption :=
-    if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  return (coreProgramOption, allDiagnostics, program, stats)
+    : IO TranslateResultWithLaurel :=
+  runPipelineM options.keepAllFilesPrefix do
+    let (program, model, passDiags, stats) ← runLaurelPasses options program
+    let ordered := orderProgram program
+    let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
+    let (coreProgramOption, translateState) :=
+      runTranslateM initState (translateLaurelToCore options program ordered)
+    if let some coreProgram := coreProgramOption then
+      emit "CoreProgram" "core.st" coreProgram
+    let allDiagnostics := passDiags ++ translateState.diagnostics
+    let coreProgramOption :=
+      if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
+    return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
 Translate Laurel Program to Core Program.
@@ -184,13 +217,13 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
 Verify a Laurel program using an SMT solver.
 -/
 def verifyToVcResults (program : Program)
-    (options : VerifyOptions := .default)
+    (options : LaurelVerifyOptions := default)
     : IO (Option VCResults × List DiagnosticModel) := do
-  let (coreProgramOption, translateDiags) ← translate {} program
+  let (coreProgramOption, translateDiags) ← translate options.translateOptions program
 
   match coreProgramOption with
   | some coreProgram =>
-    let options := { options with removeIrrelevantAxioms := .Precise }
+    let options := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
           (Core.verify coreProgram tempDir .none options)
@@ -205,13 +238,13 @@ Verify a Laurel program using an SMT solver, returning results with
 duplicated assertions merged at the VCOutcome level.
 -/
 def verifyToMergedResults (program : Program)
-    (options : VerifyOptions := .default)
+    (options : LaurelVerifyOptions := default)
     : IO (Option VCResults × List DiagnosticModel) := do
   let (vcOpt, diags) ← verifyToVcResults program options
   return (vcOpt.map (·.mergeByAssertion), diags)
 
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : VerifyOptions := .default) : IO (Array Diagnostic) := do
+    (options : LaurelVerifyOptions := default) : IO (Array Diagnostic) := do
   let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
@@ -220,7 +253,7 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
-def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default)
+def verifyToDiagnosticModels (program : Program) (options : LaurelVerifyOptions := default)
     : IO (Array DiagnosticModel) := do
   let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases

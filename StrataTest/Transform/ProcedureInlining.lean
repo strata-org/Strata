@@ -299,7 +299,9 @@ procedure h() returns () {
 
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test1) (translate Test1Ans)
 
@@ -355,7 +357,9 @@ procedure h() returns () {
 
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test2) (translate Test2Ans)
 
@@ -406,7 +410,9 @@ procedure g() returns () {
 };
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test3) (translate Test3Ans)
 

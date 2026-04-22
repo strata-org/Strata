@@ -1,8 +1,5 @@
 test_variable_in_nested_block.py(2, 3): ✅ pass - Check PGt exception
-test_variable_in_nested_block.py(2, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_variable_in_nested_block.py(3, 7): ✅ pass - Check PGt exception
-test_variable_in_nested_block.py(3, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_variable_in_nested_block.py(8, 0): ✅ pass - assert_assert(91)_calls_Any_to_bool_0
 test_variable_in_nested_block.py(8, 0): ✅ pass - assert(91)
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

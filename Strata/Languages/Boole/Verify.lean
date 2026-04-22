@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Boole.Boole
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Verifier
-import Strata.DL.Lambda.LExpr
+public import Strata.Languages.Boole.Boole
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Verifier
+public import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LExprWF
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.Stmt
+
+public section
 
 namespace Strata.Boole
 
