@@ -516,30 +516,48 @@ private theorem findCondPairs_length
     · have ih := ih (e_t :: unmatched_t) remaining_f paired
       simp only [List.length_cons] at ih ⊢; omega
 
+private theorem partition_length (l : List α) (p : α → Bool) :
+    (List.filter p l).length + (List.filter (not ∘ p) l).length = l.length := by
+  induction l with
+  | nil => simp
+  | cons h t ih => simp [List.filter]; split <;> simp_all <;> omega
+
 /--
 Merge paths by matching splitId pairs from `splitConds`.
-Each round merges at least one pair when `paired` is non-empty,
-reducing the path count, so fuel = initial path count suffices.
+Each round finds at least one pair (when `paired` is non-empty),
+strictly reducing the path count. Terminates by `ewns.length`.
 Stops when the path count is at or below `target`.
 -/
-private def mergeCondPairs (fuel : Nat) (ewns : List EnvWithNext)
-    (target : Nat := 1) : List EnvWithNext :=
-  match fuel, ewns with
-  | 0, ewns => ewns
-  | _, [] => []
-  | _, [e] => [e]
-  | fuel + 1, ewns =>
-    if ewns.length <= target then ewns
-    else
-    let (trues, falses) := ewns.partition (fun e =>
-      match e.splitConds.back? with
-      | some (_, _, b) => b
-      | none => true)
-    let r := findCondPairs trues [] falses []
-    if r.paired.isEmpty then
-      ewns
-    else
-      mergeCondPairs fuel (r.paired ++ r.unmatched_t ++ r.unmatched_f) target
+private def mergeCondPairs (ewns : List EnvWithNext)
+    (target : Nat) : List EnvWithNext :=
+  if ewns.length <= target then ewns
+  else
+  let p := (fun e : EnvWithNext =>
+    match e.splitConds.back? with
+    | some (_, _, b) => b
+    | none => true)
+  let trues := ewns.filter p
+  let falses := ewns.filter (not ∘ p)
+  let r := findCondPairs trues [] falses []
+  if h_nonempty : r.paired.isEmpty then
+    ewns
+  else
+    have h_part : trues.length + falses.length = ewns.length :=
+      partition_length ewns p
+    have h_fcpl : 2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
+        trues.length + falses.length := by
+      have := findCondPairs_length trues [] falses []
+      simp at this; exact this
+    have h_pos : r.paired.length ≥ 1 := by
+      cases h : r.paired
+      · simp [h, List.isEmpty] at h_nonempty
+      · simp
+    have : (r.paired ++ r.unmatched_t ++ r.unmatched_f).length < ewns.length := by
+      simp only [List.length_append]
+      omega
+    mergeCondPairs (r.paired ++ r.unmatched_t ++ r.unmatched_f) target
+  termination_by ewns.length
+  decreasing_by assumption
 
 /-- Apply the path cap between statements. Continuing paths (no active
     exit) are merged down to the cap via `mergeCondPairs`. Exiting paths
@@ -555,7 +573,7 @@ private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
       let (noExit, hasExit) :=
         ewns.partition (fun (e : EnvWithNext) => e.exitLabel.isNone)
       if noExit.length > cap then
-        let merged := mergeCondPairs noExit.length noExit cap
+        let merged := mergeCondPairs noExit cap
         (merged ++ hasExit,
          stats.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
       else (ewns, stats)
