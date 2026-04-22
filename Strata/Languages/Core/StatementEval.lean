@@ -419,27 +419,27 @@ private def collectDeadBranchDeferred
 private def noStats : Statistics := {}
 
 /--
-Extract the first element from `ts` whose most recent `splitConds`
-entry has the given `splitId`. Returns `(matched_element, remaining_list)`
+Extract the first element from `pool` whose most recent `splitConds`
+entry has the given `splitId`. Returns `(matched_element, remaining_pool)`
 or `none`.
 -/
 private def extractMatchingSplitId (splitId : Nat)
-    (ts acc : List EnvWithNext) :
+    (pool acc : List EnvWithNext) :
     Option (EnvWithNext × List EnvWithNext) :=
-  match ts with
+  match pool with
   | [] => none
-  | e_t :: rest =>
-    match e_t.splitConds.back? with
+  | e :: rest =>
+    match e.splitConds.back? with
     | some (sid, _, _) =>
-      if sid == splitId then some (e_t, acc.reverse ++ rest)
-      else extractMatchingSplitId splitId rest (e_t :: acc)
-    | none => extractMatchingSplitId splitId rest (e_t :: acc)
+      if sid == splitId then some (e, acc.reverse ++ rest)
+      else extractMatchingSplitId splitId rest (e :: acc)
+    | none => extractMatchingSplitId splitId rest (e :: acc)
 
 private theorem extractMatchingSplitId_length (splitId : Nat)
-    (ts acc : List EnvWithNext) (e : EnvWithNext) (rest : List EnvWithNext)
-    (h : extractMatchingSplitId splitId ts acc = some (e, rest)) :
-    rest.length + 1 = ts.length + acc.length := by
-  induction ts generalizing acc with
+    (pool acc : List EnvWithNext) (e : EnvWithNext) (rest : List EnvWithNext)
+    (h : extractMatchingSplitId splitId pool acc = some (e, rest)) :
+    rest.length + 1 = pool.length + acc.length := by
+  induction pool generalizing acc with
   | nil => simp [extractMatchingSplitId] at h
   | cons e_t ts' ih =>
     simp only [extractMatchingSplitId] at h
@@ -451,68 +451,69 @@ private theorem extractMatchingSplitId_length (splitId : Nat)
       · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
     · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
 
-/--
-Given false-branch paths and true-branch paths, find pairs with matching
-most-recent `splitConds` splitId (both paths from the same split).
-Returns `(merged_pairs, unmatched_trues, unmatched_falses)`.
-Accumulators are built via cons and reversed at the end.
+private structure CondPairsResult where
+  paired      : List EnvWithNext
+  unmatched_t : List EnvWithNext
+  unmatched_f : List EnvWithNext
 
-Invariant: every input path appears in exactly one of the three output
-lists (either merged into `paired`, left in `remaining_t`, or in
-`unmatched_f`).
+/--
+Find pairs of paths from opposite sides of the same split. Iterates
+over `ts` (true-branch paths), searching `remaining_f` for a
+false-branch path with a matching most-recent `splitId`. Matched pairs
+are merged via `Env.merge` and collected in `paired`.
+
+Invariant: every input path appears in exactly one output list.
 -/
-private def findCondPairs (fs unmatched_f remaining_t paired : List EnvWithNext) :
-    List EnvWithNext × List EnvWithNext × List EnvWithNext :=
-  match fs with
-  | [] => (paired.reverse, remaining_t, unmatched_f.reverse)
-  | e_f :: rest_fs =>
-    match e_f.splitConds.back? with
-    | some (splitId, cond_f, _) =>
-      match extractMatchingSplitId splitId remaining_t [] with
-      | some (e_t, remaining_t') =>
-        let merged_env := Env.merge cond_f e_t.env e_f.env
+private def findCondPairs
+    (ts unmatched_t remaining_f paired : List EnvWithNext) : CondPairsResult :=
+  match ts with
+  | [] => ⟨paired.reverse, unmatched_t.reverse, remaining_f⟩
+  | e_t :: rest_ts =>
+    match e_t.splitConds.back? with
+    | some (splitId, cond_t, _) =>
+      match extractMatchingSplitId splitId remaining_f [] with
+      | some (e_f, remaining_f') =>
         let merged : EnvWithNext := {
-          env := merged_env,
+          env := Env.merge cond_t e_t.env e_f.env,
           exitLabel := e_t.exitLabel,
           splitConds := e_t.splitConds.pop }
-        findCondPairs rest_fs unmatched_f remaining_t' (merged :: paired)
+        findCondPairs rest_ts unmatched_t remaining_f' (merged :: paired)
       | none =>
-        findCondPairs rest_fs (e_f :: unmatched_f) remaining_t paired
+        findCondPairs rest_ts (e_t :: unmatched_t) remaining_f paired
     | none =>
-      findCondPairs rest_fs (e_f :: unmatched_f) remaining_t paired
+      findCondPairs rest_ts (e_t :: unmatched_t) remaining_f paired
 
-/-- `findCondPairs` preserves the total element count minus the number
-    of matched pairs: each pair consumes one from `fs` and one from
-    `remaining_t`, producing one in `paired`. -/
+/-- Each match consumes one from `ts` and one from `remaining_f` but
+    adds only one to `paired` — a net loss of one element per match.
+    The `2 *` on `paired` counts each paired element twice: once as
+    itself in the output, and once for the input it consumed. With
+    empty accumulators (`findCondPairs ts [] fs []`), this simplifies
+    to `output_total + r.paired.length = ts.length + fs.length`,
+    i.e., `output_total = input_total - num_matches`. -/
 private theorem findCondPairs_length
-    (fs unmatched_f remaining_t paired : List EnvWithNext) :
-    let r := findCondPairs fs unmatched_f remaining_t paired
-    r.1.length + r.2.1.length + r.2.2.length =
-      fs.length + unmatched_f.length + remaining_t.length + paired.length := by
-  induction fs generalizing unmatched_f remaining_t paired with
+    (ts unmatched_t remaining_f paired : List EnvWithNext) :
+    let r := findCondPairs ts unmatched_t remaining_f paired
+    2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
+      ts.length + unmatched_t.length + remaining_f.length + 2 * paired.length := by
+  induction ts generalizing unmatched_t remaining_f paired with
   | nil => simp [findCondPairs, List.length_reverse]; omega
-  | cons e_f rest ih =>
+  | cons e_t rest ih =>
     unfold findCondPairs
     split
-    · rename_i splitId cond_f _ _
+    · rename_i splitId cond_t _ _
       split
-      · rename_i e_t remaining_t' heq
-        have hlen := extractMatchingSplitId_length splitId remaining_t [] e_t remaining_t' heq
+      · rename_i e_f remaining_f' heq
+        have hlen := extractMatchingSplitId_length splitId remaining_f [] e_f remaining_f' heq
         simp only [List.length_nil, Nat.add_zero] at hlen
-        let m : EnvWithNext :=
-          { env := Env.merge cond_f e_t.env e_f.env,
-            exitLabel := e_t.exitLabel,
-            splitConds := e_t.splitConds.pop }
-        show (findCondPairs rest unmatched_f remaining_t' (m :: paired)).1.length +
-             (findCondPairs rest unmatched_f remaining_t' (m :: paired)).2.1.length +
-             (findCondPairs rest unmatched_f remaining_t' (m :: paired)).2.2.length =
-             rest.length + 1 + unmatched_f.length + remaining_t.length + paired.length
-        have ih := ih unmatched_f remaining_t' (m :: paired)
-        simp only [List.length_cons] at ih
-        sorry
-      · have ih := ih (e_f :: unmatched_f) remaining_t paired
+        have ih := ih unmatched_t remaining_f' ({
+          env := Env.merge cond_t e_t.env e_f.env,
+          exitLabel := e_t.exitLabel,
+          splitConds := e_t.splitConds.pop } :: paired)
+        simp only [List.length_cons] at ih ⊢
+        omega
+      · have ih := ih (e_t :: unmatched_t) remaining_f paired
         simp only [List.length_cons] at ih ⊢; omega
-    · have ih := ih (e_f :: unmatched_f) remaining_t paired
+    · have ih := ih (e_t :: unmatched_t) remaining_f paired
       simp only [List.length_cons] at ih ⊢; omega
 
 /--
@@ -534,11 +535,31 @@ private def mergeCondPairs (fuel : Nat) (ewns : List EnvWithNext)
       match e.splitConds.back? with
       | some (_, _, b) => b
       | none => true)
-    let (paired, remaining_t, unmatched_f) := findCondPairs falses [] trues []
-    if paired.isEmpty then
+    let r := findCondPairs trues [] falses []
+    if r.paired.isEmpty then
       ewns
     else
-      mergeCondPairs fuel (paired ++ remaining_t ++ unmatched_f) target
+      mergeCondPairs fuel (r.paired ++ r.unmatched_t ++ r.unmatched_f) target
+
+/-- Apply the path cap between statements. Continuing paths (no active
+    exit) are merged down to the cap via `mergeCondPairs`. Exiting paths
+    are not merged — they skip remaining statements so they don't
+    contribute to exponential blowup. -/
+private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
+    List EnvWithNext × Statistics :=
+  match ewns with
+  | [] => ([], stats)
+  | ewn :: _ =>
+    match ewn.env.pathCap with
+    | .some cap =>
+      let (noExit, hasExit) :=
+        ewns.partition (fun (e : EnvWithNext) => e.exitLabel.isNone)
+      if noExit.length > cap then
+        let merged := mergeCondPairs noExit.length noExit cap
+        (merged ++ hasExit,
+         stats.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
+      else (ewns, stats)
+    | .none => (ewns, stats)
 
 private def evalOneStmt (old_var_subst : SubstMap)
     (Ewn : EnvWithNext) (s : Statement) (nextSplitId : Nat)
@@ -608,22 +629,6 @@ private def evalOneStmt (old_var_subst : SubstMap)
   | .typeDecl _ _ => ([Ewn], noStats, nextSplitId)
   | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats, nextSplitId)
 
-private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
-    List EnvWithNext × Statistics :=
-  match ewns with
-  | [] => ([], stats)
-  | ewn :: _ =>
-    match ewn.env.pathCap with
-    | .some cap =>
-      let (noExit, hasExit) :=
-        ewns.partition (fun (e : EnvWithNext) => e.exitLabel.isNone)
-      if noExit.length > cap then
-        let merged := mergeCondPairs noExit.length noExit cap
-        (merged ++ hasExit,
-         stats.increment s!"{Evaluator.Stats.betweenStmt_capMerged}")
-      else (ewns, stats)
-    | .none => (ewns, stats)
-
 mutual
 /-- Batch symbolic evaluator: evaluates a statement list for all input
     paths simultaneously. Between each statement, enforces the path cap
@@ -657,7 +662,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
       let stmtStats := stmtStats.increment
         s!"{Evaluator.Stats.simulatedStmts}" continuing.length
       let (results, stmtStats) := enforcePathCap results stmtStats
-      let allPaths := results ++ exiting ++ errors
+      -- Exiting paths first to preserve source order: they were set
+      -- to exit before this statement, so their obligations precede
+      -- obligations generated by continuing paths.
+      let allPaths := exiting ++ results ++ errors
       let (finalResults, restStats, nextSplitId) :=
         evalAuxGo steps' old_var_subst allPaths rest nextSplitId
       (finalResults, stmtStats.merge restStats, nextSplitId)
