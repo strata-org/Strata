@@ -5,7 +5,7 @@ spec {
   ensures [double_correct]: result == n * 2;
   } {
   result := n + n;
-  };
+};
 procedure TestProc (x : int) returns (output : int)
 spec {
   ensures [testProc_result]: output == x * 4;
@@ -18,4 +18,4 @@ spec {
   var tmp_output_1 : int := output;
   havoc output;
   assume [callElimAssume_double_correct_2]: output == tmp_arg_0 * 2;
-  };
+};

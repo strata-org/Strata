@@ -78,7 +78,7 @@ function fooVal () : Foo int bool;
 procedure P () returns ()
 {
   assert [test]: fooAliasVal == fooVal;
-  };
+};
 
 
 -/
@@ -163,7 +163,7 @@ procedure Test () returns ()
 {
   var m : (Map int bool);
   m := makePair(identity(42), identity(true));
-  };
+};
 -/
 #guard_msgs in
 #eval do
@@ -181,11 +181,6 @@ def intIdentityFnPgm : Program := { decls := [
           } .empty
 ]}
 
--- Overriding Core's formatter since Core's DDM doesn't support lambda
--- abstractions yet.
-instance : ToFormat Core.Program where
-  format p := f!"{p.decls}"
-
 /--
 info: [Strata.Core] Type checking succeeded.
 
@@ -193,7 +188,11 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 
 ---
-info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
+info: ok: program Core;
+
+function intID () : int -> int {
+  lambda __q0 : int :: __q0
+}
 -/
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm

@@ -205,17 +205,6 @@ where
     | .loop _ _ _ body _ => body.flatMap collectFuncDecls
     | _ => []
 
-instance instCoreProgramString : ToString (Program) where
-  toString p := toString (Core.formatProgram p)
-
-instance instCoreProgramFormat : Std.ToFormat Program where
-  format := Core.formatProgram
-
-/-- Format a single `Core.Expression.Expr` using the DDM pretty-printer.
-    This instance shadows the generic `ToFormat (LExpr T)` from `LExpr.lean`. -/
-instance instCoreExprFormat : Std.ToFormat Expression.Expr where
-  format e := Core.formatExprs [e]
-
 end -- public section
 
 end Core
