@@ -307,16 +307,15 @@ function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
   if (Any..isfrom_None(v)) then false else
   if (Any..isfrom_str(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  if (Any..isfrom_float(v)) then !(Any..as_float!(v) == 0.0) else
   if (Any..isfrom_DictStrAny(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
   if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil()) else
-  false
-  //WILL BE ADDED
+  <?>
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -623,18 +622,7 @@ function PBitNot (v: Any) : Any
 function PNot (v: Any) : Any
 {
   if Any..isexception(v) then v
-  else if Any..isfrom_bool(v) then
-    from_bool(!(Any..as_bool!(v)))
-  else if Any..isfrom_int(v) then
-    from_bool(!(Any..as_int!(v) == 0))
-  else if Any..isfrom_float(v) then
-    from_bool(!(Any..as_float!(v) == 0.0))
-  else if Any..isfrom_str(v) then
-    from_bool(!(Any..as_string!(v) == ""))
-  else if Any..isfrom_ListAny(v) then
-    from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
-  else
-    exception(UndefinedError ("Operand Type is not defined"))
+  else from_bool(!(Any_to_bool(v)))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -906,14 +894,12 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
   if ! Any_to_bool (v1) then v1 else v2
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
   if Any_to_bool (v1) then v1 else v2

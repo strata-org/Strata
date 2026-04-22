@@ -80,7 +80,7 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     | .type (.data d) _ => some d
     | _ => none
   let σ ← (Lambda.LState.init).addFactory factory
-  let E := { Env.init with exprEnv := σ, program := program }
+  let E := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
   let E ← E.addDatatypes datatypes
 
   -- Collect declaration statistics

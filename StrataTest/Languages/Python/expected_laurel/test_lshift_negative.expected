@@ -1,7 +1,6 @@
 test_lshift_negative.py(2, 4): ✅ pass - assert(16)
 test_lshift_negative.py(3, 13): ❓ unknown - Check PLShift exception
 test_lshift_negative.py(3, 4): ❓ unknown - assert(31)
-test_lshift_negative.py(4, 4): ✅ pass - assert_assert(52)_calls_Any_to_bool_0
 test_lshift_negative.py(4, 4): ❓ unknown - negative left shift
-DETAIL: 2 passed, 0 failed, 3 inconclusive
+DETAIL: 1 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

@@ -197,7 +197,10 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "mode" },
   { name := "overflow-checks",
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
-    takesArg := .arg "checks" }
+    takesArg := .arg "checks" },
+  { name := "path-cap",
+    help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
+    takesArg := .arg "N|none" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -230,6 +233,13 @@ def parseVerifyOptions (pflags : ParsedFlags)
         | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
         | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
         | _          => acc) { signedBV := false, unsignedBV := false, float64 := false }
+  let pathCap ← match pflags.getString "path-cap" with
+    | .none => pure base.pathCap
+    | .some "none" => pure .none
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--path-cap must be at least 1 or 'none'."
+                   else pure (.some n)
+      | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -250,7 +260,8 @@ def parseVerifyOptions (pflags : ParsedFlags)
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
-    vcDirectory
+    vcDirectory,
+    pathCap
   }
 
 /-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
