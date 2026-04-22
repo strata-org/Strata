@@ -461,11 +461,11 @@ private def findCondPairs
   | [] => ⟨paired.reverse, unmatched_t.reverse, remaining_f⟩
   | e_t :: rest_ts =>
     match e_t.splitConds.back? with
-    | some (splitId, cond_t, _) =>
+    | some (splitId, split_cond, _) =>
       match extractMatchingSplitId splitId remaining_f [] with
       | some (e_f, remaining_f') =>
         let merged : EnvWithNext := {
-          env := Env.merge cond_t e_t.env e_f.env,
+          env := Env.merge split_cond e_t.env e_f.env,
           exitLabel := .none,
           splitConds := e_t.splitConds.pop }
         findCondPairs rest_ts unmatched_t remaining_f' (merged :: paired)
@@ -491,13 +491,13 @@ private theorem findCondPairs_length
   | cons e_t rest ih =>
     unfold findCondPairs
     split
-    · rename_i splitId cond_t _ _
+    · rename_i splitId split_cond _ _
       split
       · rename_i e_f remaining_f' heq
         have hlen := extractMatchingSplitId_length splitId remaining_f [] e_f remaining_f' heq
         simp only [List.length_nil, Nat.add_zero] at hlen
         have ih := ih unmatched_t remaining_f' ({
-          env := Env.merge cond_t e_t.env e_f.env,
+          env := Env.merge split_cond e_t.env e_f.env,
           exitLabel := .none,
           splitConds := e_t.splitConds.pop } :: paired)
         simp only [List.length_cons] at ih ⊢
