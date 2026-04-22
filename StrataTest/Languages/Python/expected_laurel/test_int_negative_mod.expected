@@ -1,7 +1,6 @@
 test_int_negative_mod.py(2, 11): ✅ pass - assert_assert(40)_calls_PMod_0
 test_int_negative_mod.py(2, 11): ✅ pass - Check PMod exception
 test_int_negative_mod.py(2, 4): ✅ pass - assert_assert(33)_calls_PMod_0
-test_int_negative_mod.py(2, 4): ✅ pass - assert_assert(33)_calls_Any_to_bool_1
 test_int_negative_mod.py(2, 4): ✅ pass - python mod is always non-negative for positive divisor
-DETAIL: 5 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
