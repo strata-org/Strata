@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Lean.Data.Json
-import Strata.DL.Util.Map
+public import Lean.Data.Json
+public import Strata.DL.Util.Map
+
+public section
 
 -------------------------------------------------------------------------------
 
