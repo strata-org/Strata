@@ -30,6 +30,44 @@ open Core (VCResult VCResults VerifyOptions)
 
 namespace Strata.Laurel
 
+/-! ### Pipeline Monad
+
+`PipelineM` wraps `IO` with a `PipelineContext` that carries the step counter
+and file-prefix option so that `emit` can be called from any pipeline stage
+(Laurel-to-Laurel passes *and* the final translation to Core).
+-/
+
+/-- Context threaded through the compilation pipeline via `ReaderT`. -/
+structure PipelineContext where
+  /-- When set, intermediate programs are written to `{prefix}.{n}.{name}.laurel.st`. -/
+  keepAllFilesPrefix : Option String
+  /-- Monotonically increasing step counter shared across all pipeline stages. -/
+  stepRef : IO.Ref Nat
+
+/-- The pipeline monad: `IO` extended with a shared `PipelineContext`. -/
+abbrev PipelineM := ReaderT PipelineContext IO
+
+/-- Write the current program state to disk when `keepAllFilesPrefix` is set.
+    Each call increments the shared step counter so files are numbered in order
+    across both `runLaurelPasses` and `translateWithLaurel`. -/
+def emit {AstType : Type} [Std.ToFormat AstType] (name : String) (p : AstType) : PipelineM Unit := do
+  let ctx ← read
+  match ctx.keepAllFilesPrefix with
+  | some pfx => do
+    let n ← ctx.stepRef.modifyGet (fun n => (n, n + 1))
+    IO.FS.writeFile s!"{pfx}.{n}.{name}.laurel.st"
+      ((Std.format p).pretty ++ "\n")
+  | none => pure ()
+
+/-- Create a `PipelineContext` and run a `PipelineM` action.
+    Ensures the parent directory for emitted files exists. -/
+def runPipelineM (keepAllFilesPrefix : Option String) (m : PipelineM α) : IO α := do
+  if let some pfx := keepAllFilesPrefix then
+    if let some parent := (System.FilePath.mk pfx).parent then
+      IO.FS.createDirAll parent
+  let stepRef ← IO.mkRef (0 : Nat)
+  m { keepAllFilesPrefix, stepRef }
+
 public section
 
 /-- Like `translate` but also returns the lowered Laurel program (after all
@@ -40,26 +78,15 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
 program, the semantic model, and accumulated diagnostics.
 
-When `keepAllFilesPrefix` is provided, the program state after each named
-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
+When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
+program state after each named Laurel pass is written to
+`{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses (options : LaurelTranslateOptions) (program : Program)
-    : IO (Program × SemanticModel × List DiagnosticModel) := do
+    : PipelineM (Program × SemanticModel × List DiagnosticModel) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
-
-  if let some pfx := options.keepAllFilesPrefix then
-    if let some parent := (System.FilePath.mk pfx).parent then
-      IO.FS.createDirAll parent
-  let stepRef ← IO.mkRef (0 : Nat)
-  let emit (name : String) (p : Program) : IO Unit :=
-    match options.keepAllFilesPrefix with
-    | some pfx => do
-      let n ← stepRef.modifyGet (fun n => (n, n + 1))
-      IO.FS.writeFile s!"{pfx}.{n}.{name}.laurel.st"
-        ((formatProgram p).pretty ++ "\n")
-    | none => pure ()
 
   -- Step 0: the input program before any passes
   emit "Initial" program
@@ -120,16 +147,19 @@ When `keepAllFilesPrefix` is provided, the program state after each named
 Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 -/
 def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
-    : IO TranslateResultWithLaurel := do
-  let (program, model, passDiags) ← runLaurelPasses options program
-  let ordered := orderProgram program
-  let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
-  let (coreProgramOption, translateState) :=
-    runTranslateM initState (translateLaurelToCore options program ordered)
-  let allDiagnostics := passDiags ++ translateState.diagnostics
-  let coreProgramOption :=
-    if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  return (coreProgramOption, allDiagnostics, program)
+    : IO TranslateResultWithLaurel :=
+  runPipelineM options.keepAllFilesPrefix do
+    let (program, model, passDiags) ← runLaurelPasses options program
+    let ordered := orderProgram program
+    let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
+    let (coreProgramOption, translateState) :=
+      runTranslateM initState (translateLaurelToCore options program ordered)
+    if let some coreProgram := coreProgramOption then
+      emit "CoreProgram" coreProgram
+    let allDiagnostics := passDiags ++ translateState.diagnostics
+    let coreProgramOption :=
+      if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
+    return (coreProgramOption, allDiagnostics, program)
 
 /--
 Translate Laurel Program to Core Program.
