@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -- Executable with utilities for working with Strata files.
 import Strata.Backends.CBMC.CollectSymbols
@@ -25,6 +26,12 @@ import Strata.Util.IO
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
+import Strata.DDM.BuiltinDialects
+import Strata.DDM.Util.String
+import Strata.Languages.Python.PyFactory
+import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.DDM
+import Strata.Languages.Python.ReadPython
 
 open Strata
 
@@ -1371,6 +1378,7 @@ private def parseArgs (cmdName : String)
   | [] =>
     pure (acc, pflags)
 
+public
 def main (args : List String) : IO Unit := do
   try do
     match args with

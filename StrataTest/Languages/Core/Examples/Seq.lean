@@ -51,7 +51,7 @@ procedure P () returns ()
   assert [t_1]: Sequence.select(t, 1) == 20;
   assert [t_2]: Sequence.select(t, 2) == 30;
   assert [t_length_wrong]: Sequence.length(t) == 0;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram seqPgm) |>.fst

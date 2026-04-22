@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DL.Imperative.BasicBlock
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Util.Relations
+module
+
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Util.Relations
+
+public section
 
 ---------------------------------------------------------------------
 

@@ -148,6 +148,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .Composite ct => ct.name.text
       | .Constrained ct => ct.name.text
       | .Datatype dt => dt.name.text
+      | .Alias ta => ta.name.text
     match seenTypes.get? name with
     | some prevFile =>
       throw s!"PySpec type name collision: '{name}' defined in both {prevFile} and {srcFile}"

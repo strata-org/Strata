@@ -6,7 +6,7 @@
 
 -- This module serves as the root of the `Strata` library.
 -- In each category, imports are sorted by alphabetical order.
-
+module
 /- DDM -/
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion

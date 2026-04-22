@@ -1,0 +1,9 @@
+test_unmodeled_method_havoc.py(6, 4): ❓ unknown - ite_cond_calls_Any_to_bool_0
+test_unmodeled_method_havoc.py(7, 8): ❓ unknown - set_x_calls_Any_get_0
+test_unmodeled_method_havoc.py(7, 8): ❓ unknown - assert(211)
+test_unmodeled_method_havoc.py(13, 4): ❓ unknown - ite_cond_calls_Any_to_bool_0
+test_unmodeled_method_havoc.py(14, 8): ❓ unknown - set_v_calls_Any_get_0
+test_unmodeled_method_havoc.py(14, 8): ❓ unknown - assert(478)
+test_unmodeled_method_havoc.py(2, 14): ✔️ always true if reached - (main ensures) Return type constraint
+DETAIL: 1 passed, 0 failed, 6 inconclusive
+RESULT: Inconclusive

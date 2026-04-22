@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.StatementSemanticsProps
-import Strata.Transform.Specification
-import Strata.Languages.Core.WF
+module
+
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.StatementSemanticsProps
+public import Strata.Transform.Specification
+public import Strata.Languages.Core.WF
+
+public section
 
 /-! # Core-Level Specification
 
@@ -28,7 +32,7 @@ open Core Imperative
 /-! ## Core `Lang` bundle -/
 
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
-def Lang.core
+@[expose] def Lang.core
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Specification.Lang Expression :=
@@ -42,7 +46,7 @@ def Lang.core
     outputs are included because the body refers to the output variables without
     initialization.
     This does not include the old variables. -/
-def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
+@[expose] def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
   ListMap.keys proc.header.inputs ++
   ListMap.keys proc.header.outputs ++
   proc.spec.modifies
@@ -71,7 +75,7 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 
 /-- A specific assertion `a` in procedure `proc` is valid
     for initial program states satisfying the preconditions (`ProcEnvWF`). -/
-def AssertValidInProcedure
+@[expose] def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
   Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
