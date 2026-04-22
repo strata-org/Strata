@@ -20,3 +20,6 @@ public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.DL.Imperative.SemanticsProps
 
 public import Strata.DL.Imperative.SMTUtils
+
+import Strata.DL.Imperative.BasicBlock
+import Strata.DL.Imperative.CFGSemantics
