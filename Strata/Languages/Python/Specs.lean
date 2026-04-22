@@ -241,6 +241,7 @@ def preludeSig :=
     .mk .noneType (typeIdent .noneType),
 
     .mk .typingAny (typeIdent .typingAny),
+    .mk .typingBinaryIO (typeIdent .typingBinaryIO),
     .mk .typingDict (.metaType .typingDict),
     .mk .typingGenerator (.metaType .typingGenerator),
     .mk .typingList (.metaType .typingList),
@@ -402,7 +403,7 @@ structure TypeTranslator where
 
 def checkEq {α : Type} (loc : SourceRange) (name : String) (as : Array α) (n : Nat) :
     PySpecM (Option (PULift.{1, 0} (as.size = n))) :=
-  match inferInstanceAs (Decidable (as.size = n)) with
+  match decideProp (as.size = n) with
   | .isTrue p =>
     pure (some ⟨p⟩)
   | .isFalse _ => do
@@ -424,7 +425,9 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
       return tp
     | _ =>
       recordTypeRef loc val
-      return .ofAtom loc (.pyClass val #[])
+      let mod := toString (← read).currentModule
+      let pyIdent : PythonIdent := { pythonModule := mod, name := val }
+      return .ofAtom loc (.ident pyIdent #[])
   | _ =>
     specError loc s!"Expected type instead of {repr v}."
     return default
@@ -525,7 +528,7 @@ def translateCall (loc : SourceRange) (func : SpecValue)
     specError loc s!"Unknown call {repr func}."
     return default
 
-def translateConstant (value : constant SourceRange) : PySpecM SpecValue := do
+def translateConstant (loc : SourceRange) (value : constant SourceRange) : PySpecM SpecValue := do
   match value with
   | .ConFalse .. =>
     return .boolConst false
@@ -533,14 +536,14 @@ def translateConstant (value : constant SourceRange) : PySpecM SpecValue := do
     return .boolConst true
   | .ConNone _ =>
     return .noneConst
-  | .ConPos _ n =>
-    return .intConst n.ann (Int.ofNat n.val)
-  | .ConNeg _ n =>
-    return .intConst n.ann (Int.negOfNat n.val)
-  | .ConString _ name =>
-    return .stringConst name.ann name.val
+  | .ConPos _ ⟨_, n⟩ =>
+    return .intConst loc (Int.ofNat n)
+  | .ConNeg _ ⟨_, n⟩ =>
+    return .intConst loc (Int.negOfNat n)
+  | .ConString _ ⟨_, name⟩ =>
+    return .stringConst loc name
   | _ =>
-    specError value.ann s!"Could not interpret constant {value}"
+    specError loc s!"Could not interpret constant {value}"
     return default
 
 def translateSubscript (paramLoc : SourceRange) (paramType : String)
@@ -550,7 +553,7 @@ def translateSubscript (paramLoc : SourceRange) (paramType : String)
     specError paramLoc s!"Unknown parameterized type {paramType}."
     return default
   | some (.typeValue tpp) =>
-    let .isTrue tpp_sizep := inferInstanceAs (Decidable (tpp.atoms.size = 1))
+    let .isTrue tpp_sizep := decideProp (tpp.atoms.size = 1)
       | specError paramLoc s!"Expected type name"
         return default
     let tpa := tpp.atoms[0]
@@ -579,8 +582,8 @@ def translateDictKey (loc : SourceRange) (mk : opt_expr SourceRange) : PySpecM S
   let .some_expr _ k := mk
     | specError loc s!"Dict key missing"; return default
   match k with
-  | .Constant _ (.ConString _ key) _ =>
-    pure key.val
+  | .Constant _ (.ConString _ ⟨_, key⟩) _ =>
+    pure key
   | _ =>
     specError loc s!"Dict key value mismatch"
     return default
@@ -589,9 +592,9 @@ mutual
 
 def pyKeywordValue (k : keyword SourceRange) : PySpecM (Option String × SpecValue) := do
   let arg : Option String :=
-        match k.arg.val with
-        | none => none
-        | some e => e.val
+        match k.arg with
+        | ⟨_, none⟩ => none
+        | ⟨_, some ⟨_, e⟩⟩ => some e
   pure (arg, ← pySpecValue k.value)
 termination_by 2 * sizeOf k
 decreasing_by
@@ -617,20 +620,20 @@ def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
       translateCall loc func args kwargs
     else
       return default
-  | .Constant _ value kind =>
-    assert! kind.val.isNone
-    translateConstant value
+  | .Constant constLoc value ⟨_, kind⟩ =>
+    assert! kind.isNone
+    translateConstant constLoc value
   | .Dict loc ⟨_, keys⟩ ⟨_, values⟩ =>
-    let .isTrue size_eq := inferInstanceAs (Decidable (keys.size = values.size))
+    let .isTrue size_eq := decideProp (keys.size = values.size)
       | specError loc s!"Dict key value mismatch"; return default
     let  m : Array (String × SpecValue) ← Array.ofFnM fun (⟨i, _⟩ : Fin keys.size) => do
       let key ← translateDictKey loc keys[i]
       let v ← pySpecValue values[i]
       pure ⟨key, v⟩
     return .dictValue m
-  | .Name _ ident (.Load _) =>
-    let some v := ←getNameValue? ident.val
-      | specError expr.ann s!"Unknown identifier {ident.val}."; return default
+  | .Name _ ⟨_, ident⟩ (.Load _) =>
+    let some v := ←getNameValue? ident
+      | specError expr.ann s!"Unknown identifier {ident}."; return default
     pure v
   | .Attribute _ (.Name _ ⟨_, modName⟩ (.Load _)) ⟨_, attrName⟩ (.Load _) =>
     let qualName := s!"{modName}.{attrName}"
@@ -686,9 +689,9 @@ def pySpecArg (usedNames : Std.HashSet String)
               (selfType : Option String)
               (arg : Strata.Python.arg Strata.SourceRange)
               (de : Option (expr SourceRange)) : PySpecM Arg := do
-  let .mk_arg loc name ⟨_typeLoc, type⟩ comment := arg
-  if name.val ∈ usedNames then
-    specError name.ann s!"Argument {name.val} already declared."
+  let .mk_arg loc ⟨_, name⟩ ⟨_typeLoc, type⟩ ⟨_, comment⟩ := arg
+  if name ∈ usedNames then
+    specError loc s!"Argument {name} already declared."
   assert! !loc.isNone
   assert! _typeLoc.isNone
   let tp ←
@@ -696,14 +699,15 @@ def pySpecArg (usedNames : Std.HashSet String)
     | none =>
       match type with
       | none =>
-        specError loc s!"Missing argument to {name.val}"
+        specError loc s!"Missing argument to {name}"
         pure default
       | some tp => pySpecType tp
     | some cl =>
       if type.isSome then
-        specError loc s!"Unexpected argument to {name.val}"
-      pure <| .pyClass loc cl #[]
-  assert! comment.val.isNone
+        specError loc s!"Unexpected argument to {name}"
+      let mod := toString (← read).currentModule
+      pure <| .ident loc { pythonModule := mod, name := cl } #[]
+  assert! comment.isNone
   let argDefault ←
     match de with
     | none => pure none
@@ -711,7 +715,7 @@ def pySpecArg (usedNames : Std.HashSet String)
       pyDefaultValue d tp
       pure (some .none)
   return {
-    name := name.val
+    name := name
     type := tp
     default := argDefault
   }
@@ -753,11 +757,11 @@ instance : PySpecMClass SpecAssertionM where
 def extractKwargsField (e : expr SourceRange)
     : SpecAssertionM (Option (String × String)) := do
   match e with
-  | .Subscript _ (.Name _ paramName (.Load _))
-      (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+  | .Subscript _ (.Name _ ⟨_, paramName⟩ (.Load _))
+      (.Constant _ (.ConString _ ⟨_, fieldName⟩) _) (.Load _) =>
     match (←read).kwargsParamName with
     | some kn =>
-      if paramName.val == kn then return some (kn, fieldName.val)
+      if paramName == kn then return some (kn, fieldName)
       else return none
     | none => return none
   | _ => return none
@@ -776,9 +780,9 @@ partial def extractSubject (e : expr SourceRange)
     pure ()
   match e with
   | .Name _ ⟨_, name⟩ (.Load _) => return some (.var name (loc := e.ann))
-  | .Subscript _ inner (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+  | .Subscript _ inner (.Constant _ (.ConString _ ⟨_, fieldName⟩) _) (.Load _) =>
     match ← extractSubject inner with
-    | some subj => return some (.getIndex subj fieldName.val (loc := e.ann))
+    | some subj => return some (.getIndex subj fieldName (loc := e.ann))
     | none => return none
   | _ => return none
 
@@ -786,13 +790,13 @@ partial def extractSubject (e : expr SourceRange)
     Currently recognizes `"key" in container` patterns. -/
 def transCondition (e : expr SourceRange) : SpecAssertionM (Option SpecExpr) := do
   match e with
-  | .Compare _ (.Constant _ (.ConString _ key) _) ops comparators =>
-    if h₁ : ops.val.size = 1 then
-      if h₂ : comparators.val.size = 1 then
-        match ops.val[0] with
+  | .Compare _ (.Constant _ (.ConString _ ⟨_, key⟩) _) ⟨_, ops⟩ ⟨_, comparators⟩ =>
+    if h₁ : ops.size = 1 then
+      if h₂ : comparators.size = 1 then
+        match ops[0] with
         | .In _ =>
-          match ← extractSubject comparators.val[0] with
-          | some subj => return some (.containsKey subj key.val (loc := e.ann))
+          match ← extractSubject comparators[0] with
+          | some subj => return some (.containsKey subj key (loc := e.ann))
           | none => pure ()
         | _ => pure ()
     pure ()
@@ -825,9 +829,9 @@ def transMessageExpr (e : expr SourceRange)
   | some subj => return subj
   | none => pure ()
   match e with
-  | .Call _ (.Name _ funcName (.Load _)) args _ =>
-    if funcName.val == "len" && args.val.size == 1 then
-      match ← extractSubject args.val[0]! with
+  | .Call _ (.Name _ ⟨_, funcName⟩ (.Load _)) ⟨_, args⟩ _ =>
+    if funcName == "len" && args.size == 1 then
+      match ← extractSubject args[0]! with
       | some subj => return .len subj (loc := e.ann)
       | none => return .placeholder (loc := e.ann)
     else return .placeholder (loc := e.ann)
@@ -849,19 +853,19 @@ partial def inferExprType (e : expr SourceRange) : SpecAssertionM (Option SpecTy
   match e with
   | .Name _ ⟨_, name⟩ (.Load _) =>
     return (←read).localTypes[name]?
-  | .Subscript _ (.Name _ paramName (.Load _))
-      (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+  | .Subscript _ (.Name _ ⟨_, paramName⟩ (.Load _))
+      (.Constant _ (.ConString _ ⟨_, fieldName⟩) _) (.Load _) =>
     match (←read).kwargsParamName with
     | some kn =>
-      if paramName.val == kn then
+      if paramName == kn then
         match (←read).kwargsType with
-        | some kwTp => return lookupTypedDictField kwTp fieldName.val
+        | some kwTp => return lookupTypedDictField kwTp fieldName
         | none => return none
       else return none
     | none => return none
-  | .Subscript _ inner (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+  | .Subscript _ inner (.Constant _ (.ConString _ ⟨_, fieldName⟩) _) (.Load _) =>
     match ← inferExprType inner with
-    | some innerTp => return lookupTypedDictField innerTp fieldName.val
+    | some innerTp => return lookupTypedDictField innerTp fieldName
     | none => return none
   | _ => return none
 
@@ -893,9 +897,9 @@ def extractDictKeyValueTypes (tp : SpecType) : Option (SpecType × SpecType) := 
 partial def collectEnumValues (e : expr SourceRange)
     : SpecAssertionM (Option (SpecExpr × Array String)) := do
   match e with
-  | .BoolOp _ (.Or _) values =>
+  | .BoolOp _ (.Or _) ⟨_, values⟩ =>
     let mut result : Option (SpecExpr × Array String) := none
-    for val in values.val do
+    for val in values do
       match ← collectEnumValues val with
       | some (subj, vals) =>
         match result with
@@ -905,18 +909,18 @@ partial def collectEnumValues (e : expr SourceRange)
           result := some (subj, acc ++ vals)
       | none => return none
     return result
-  | .Compare _ lhs ops comparators =>
-    let .isTrue _ := decideProp (ops.val.size = 1)
+  | .Compare _ lhs ⟨_, ops⟩ ⟨_, comparators⟩ =>
+    let .isTrue _ := decideProp (ops.size = 1)
       | return none
-    match ops.val[0] with
+    match ops[0] with
     | .Eq _ =>
-      let .isTrue _ := decideProp (comparators.val.size = 1)
+      let .isTrue _ := decideProp (comparators.size = 1)
         | return none
       match ← extractSubject lhs with
       | some subj =>
-        match comparators.val[0] with
-        | .Constant _ (.ConString _ strVal) _ =>
-          return some (subj, #[strVal.val])
+        match comparators[0] with
+        | .Constant _ (.ConString _ ⟨_, strVal⟩) _ =>
+          return some (subj, #[strVal])
         | _ => return none
       | none => return none
     | _ => return none
@@ -927,10 +931,10 @@ partial def collectEnumValues (e : expr SourceRange)
     and `UnaryOp(USub, Constant(ConPos n))` (i.e., `-n`). -/
 def extractIntBound (e : expr SourceRange) : Option Int :=
   match e with
-  | .Constant _ (.ConPos _ n) _ => some (Int.ofNat n.val)
-  | .Constant _ (.ConNeg _ n) _ => some (Int.negOfNat n.val)
-  | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ n) _) =>
-    some (Int.negOfNat n.val)
+  | .Constant _ (.ConPos _ ⟨_, n⟩) _ => some (Int.ofNat n)
+  | .Constant _ (.ConNeg _ ⟨_, n⟩) _ => some (Int.negOfNat n)
+  | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ ⟨_, n⟩) _) =>
+    some (Int.negOfNat n)
   | _ => none
 
 /-- Extract a float literal string from a Python expression.
@@ -975,51 +979,51 @@ def transAssertExpr (e : expr SourceRange)
   let loc := e.ann
   -- isinstance(subject, T)
   match e with
-  | .Call _ (.Name _ funcName (.Load _)) args _ =>
-    if funcName.val == "isinstance" then
-      if h : args.val.size = 2 then
-        match ← extractSubject args.val[0] with
+  | .Call _ (.Name _ ⟨_, funcName⟩ (.Load _)) ⟨_, args⟩ _ =>
+    if funcName == "isinstance" then
+      if h : args.size = 2 then
+        match ← extractSubject args[0] with
         | some subj =>
-          match args.val[1] with
-          | .Name _ typeName (.Load _) =>
-            return .isInstanceOf subj typeName.val (loc := loc)
+          match args[1] with
+          | .Name _ ⟨_, typeName⟩ (.Load _) =>
+            return .isInstanceOf subj typeName (loc := loc)
           | _ =>
             specWarning e.ann s!"isinstance: unsupported type argument"
             return .placeholder (loc := loc)
         | none => pure () -- fall through
-    if funcName.val == "len" && args.val.size == 1 then
+    if funcName == "len" && args.size == 1 then
       -- This is just len(x), not a comparison; fall through
       pure ()
   | _ => pure ()
   -- len(subject) >= N / len(subject) <= N
   match e with
-  | .Compare _ (.Call _ (.Name _ funcName (.Load _)) callArgs _)
-      ops comparators =>
-    if funcName.val == "len" then
-      if h₁ : callArgs.val.size = 1 then
-        if h₂ : ops.val.size = 1 then
-          if h₃ : comparators.val.size = 1 then
-            match ← extractSubject callArgs.val[0] with
+  | .Compare _ (.Call _ (.Name _ ⟨_, funcName⟩ (.Load _)) ⟨_, callArgs⟩ _)
+      ⟨_, ops⟩ ⟨_, comparators⟩ =>
+    if funcName == "len" then
+      if h₁ : callArgs.size = 1 then
+        if h₂ : ops.size = 1 then
+          if h₃ : comparators.size = 1 then
+            match ← extractSubject callArgs[0] with
             | some subj =>
-              match ops.val[0], extractIntBound comparators.val[0] with
-              | .GtE _, some n => return .intGe (.len subj (loc := loc)) (.intLit n (loc := comparators.val[0].ann)) (loc := loc)
-              | .LtE _, some n => return .intLe (.len subj (loc := loc)) (.intLit n (loc := comparators.val[0].ann)) (loc := loc)
+              match ops[0], extractIntBound comparators[0] with
+              | .GtE _, some n => return .intGe (.len subj (loc := loc)) (.intLit n (loc := comparators[0].ann)) (loc := loc)
+              | .LtE _, some n => return .intLe (.len subj (loc := loc)) (.intLit n (loc := comparators[0].ann)) (loc := loc)
               | _, _ => pure ()
             | none => pure ()
   | _ => pure ()
   -- subject >= N / subject <= N (type-checked: int or float)
   match e with
-  | .Compare _ lhs ops comparators =>
-    if h₁ : ops.val.size = 1 then
-      if h₂ : comparators.val.size = 1 then
+  | .Compare _ lhs ⟨_, ops⟩ ⟨_, comparators⟩ =>
+    if h₁ : ops.size = 1 then
+      if h₂ : comparators.size = 1 then
         match ← extractSubject lhs with
         | some subj =>
           let subjType ← inferExprType lhs
           let isFloat := subjType.any isFloatType
           let isInt := subjType.any isIntType
-          let cmp ← match ops.val[0] with
-          | .GtE _ => makeComparison (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) isFloat isInt subj comparators.val[0]
-          | .LtE _ => makeComparison (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) isFloat isInt subj comparators.val[0]
+          let cmp ← match ops[0] with
+          | .GtE _ => makeComparison (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) isFloat isInt subj comparators[0]
+          | .LtE _ => makeComparison (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) isFloat isInt subj comparators[0]
           | _ => pure none
           match cmp with
           | some expr => return expr
@@ -1034,21 +1038,21 @@ def transAssertExpr (e : expr SourceRange)
   -- compile("pattern").search(subject) is not None
   match e with
   | .Compare _
-      (.Call _ (.Attribute _ (.Call _ (.Name _ compileName (.Load _)) compileArgs _)
-        searchAttr (.Load _)) searchArgs _)
-      ops comparators =>
-    if compileName.val == "compile" && searchAttr.val == "search" then
-      if h₁ : compileArgs.val.size = 1 then
-        if h₂ : searchArgs.val.size = 1 then
-          if h₃ : ops.val.size = 1 then
-            if h₄ : comparators.val.size = 1 then
-              match compileArgs.val[0] with
-              | .Constant _ (.ConString _ pattern) _ =>
-                match ← extractSubject searchArgs.val[0] with
+      (.Call _ (.Attribute _ (.Call _ (.Name _ ⟨_, compileName⟩ (.Load _)) ⟨_, compileArgs⟩ _)
+        ⟨_, searchAttr⟩ (.Load _)) ⟨_, searchArgs⟩ _)
+      ⟨_, ops⟩ ⟨_, comparators⟩ =>
+    if compileName == "compile" && searchAttr == "search" then
+      if h₁ : compileArgs.size = 1 then
+        if h₂ : searchArgs.size = 1 then
+          if h₃ : ops.size = 1 then
+            if h₄ : comparators.size = 1 then
+              match compileArgs[0] with
+              | .Constant _ (.ConString _ ⟨_, pattern⟩) _ =>
+                match ← extractSubject searchArgs[0] with
                 | some subj =>
-                  match ops.val[0], comparators.val[0] with
+                  match ops[0], comparators[0] with
                   | .IsNot _, .Constant _ (.ConNone _) _ =>
-                    return .regexMatch subj pattern.val (loc := loc)
+                    return .regexMatch subj pattern (loc := loc)
                   | _, _ => pure ()
                 | none => pure ()
               | _ => pure ()
@@ -1071,19 +1075,19 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     specWarning s.ann "skipped Expr in function body"
   | .Assert _ test msg =>
     let formula ← transAssertExpr test
-    let message ← match msg.val with
-      | some (.Constant _ (.ConString _ str) _) => pure #[MessagePart.str str.val]
-      | some (.JoinedStr _ values) =>
-        values.val.attach.mapM fun ⟨v, _⟩ =>
+    let message ← match msg with
+      | ⟨_, some (.Constant _ (.ConString _ ⟨_, str⟩) _)⟩ => pure #[MessagePart.str str]
+      | ⟨_, some (.JoinedStr _ ⟨_, values⟩)⟩ =>
+        values.attach.mapM fun ⟨v, _⟩ =>
           match v with
-          | .Constant _ (.ConString _ str) _ => pure (MessagePart.str str.val)
+          | .Constant _ (.ConString _ ⟨_, str⟩) _ => pure (MessagePart.str str)
           | .FormattedValue _ value _ _ =>
             MessagePart.expr <$> transMessageExpr value
           | other => do
             specWarning other.ann "unsupported f-string part"
             pure (MessagePart.str "")
-      | none => pure #[]
-      | some e =>
+      | ⟨_, none⟩ => pure #[]
+      | ⟨_, some e⟩ =>
         specWarning e.ann "assert message is not a string literal"
         pure #[]
     modify fun s => { s with
@@ -1095,10 +1099,10 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     specWarning s.ann "skipped Raise in function body"
   | .ClassDef .. =>
     specError s.ann s!"Inner classes are not supported."
-  | .For _ target iter body orelse type_comment =>
-    if type_comment.val.isSome then
+  | .For _ target iter ⟨_, body⟩ ⟨_, orelse⟩ ⟨_, type_comment⟩ =>
+    if type_comment.isSome then
       specWarning s.ann "For: type_comment not supported"
-    if orelse.val.size > 0 then
+    if orelse.size > 0 then
       specWarning s.ann "For: else clause not supported"
     match target, iter with
     -- for varName in iterable:
@@ -1114,7 +1118,7 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
         withReader (fun ctx => match elemTp with
           | some tp => { ctx with localTypes := ctx.localTypes.insert varName tp }
           | none => ctx) <|
-          blockStmts body.val
+          blockStmts body
         let bodyAssertions := (←get).assertions
         let wrapped := bodyAssertions.map fun a =>
           { a with formula := .forallList listExpr varName a.formula s.ann }
@@ -1122,14 +1126,14 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
       | none =>
         specWarning s.ann s!"For: cannot extract iterable expression"
     -- for keyVar, valVar in dictExpr.items():
-    | .Tuple _ elts (.Store _),
-      .Call _ (.Attribute _ dictExpr ⟨_, "items"⟩ (.Load _)) args _ =>
-      if elts.val.size != 2 then
+    | .Tuple _ ⟨_, elts⟩ (.Store _),
+      .Call _ (.Attribute _ dictExpr ⟨_, "items"⟩ (.Load _)) ⟨_, args⟩ _ =>
+      if elts.size != 2 then
         specWarning s.ann "For: dict unpacking requires exactly 2 variables"
-      else if args.val.size != 0 then
+      else if args.size != 0 then
         specWarning s.ann "For: .items() call should have no arguments"
       else
-        match elts.val[0]!, elts.val[1]! with
+        match elts[0]!, elts[1]! with
         | .Name _ ⟨_, keyVar⟩ (.Store _), .Name _ ⟨_, valVar⟩ (.Store _) =>
           match ← extractSubject dictExpr with
           | some dictSubj =>
@@ -1155,7 +1159,7 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
                     |>.insert keyVar kTp
                     |>.insert valVar vTp }
               | none => ctx) <|
-              blockStmts body.val
+              blockStmts body
             let bodyAssertions := (←get).assertions
             let wrapped := bodyAssertions.map fun a =>
               { a with formula := .forallDict dictSubj keyVar valVar a.formula s.ann }
@@ -1166,13 +1170,13 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
           specWarning s.ann "For: dict unpacking requires Name targets"
     | _, _ =>
       specWarning s.ann "For: unsupported target pattern"
-  | .If _ pred t f =>
+  | .If _ pred ⟨_, t⟩ ⟨_, f⟩ =>
     let cond ← transCondition pred
     if cond.isNone then
       specWarning pred.ann s!"if: unrecognized condition pattern: {eformat pred.toAst}"
-    assumeCondition cond pred.ann <| blockStmts t.val
-    if f.val.size > 0 then
-      assumeCondition (cond.map (.not · pred.ann)) pred.ann <| blockStmts f.val
+    assumeCondition cond pred.ann <| blockStmts t
+    if f.size > 0 then
+      assumeCondition (cond.map (.not · pred.ann)) pred.ann <| blockStmts f
   | .Pass _ =>
     pure ()
   | _ => specError s.ann s!"Unsupported statement: {eformat s.toAst}"
@@ -1223,20 +1227,20 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
       | _ =>
         specError pyd.ann s!"Decorator {repr d} not supported."
 
-  let .mk_arguments _ posonly ⟨_, posArgs⟩ vararg kwonly kw_defaults kwarg defaults := arguments
-  assert! posonly.val.size = 0
+  let .mk_arguments _ ⟨_, posonly⟩ ⟨_, posArgs⟩ ⟨_, vararg⟩ ⟨_, kwonly⟩ ⟨_, kw_defaults⟩ ⟨_, kwarg⟩ ⟨_, defaults⟩ := arguments
+  assert! posonly.size = 0
   let argc := posArgs.size
 
   let .up defaults_bnd ←
-    if h : defaults.val.size ≤ posArgs.size then
+    if h : defaults.size ≤ posArgs.size then
       pure <| PULift.up.{1, 0} h
     else
       specError fnLoc s!"internal: bad index"; return default
 
-  let .isTrue kw_bnd := inferInstanceAs (Decidable (kwonly.val.size = kw_defaults.val.size))
+  let .isTrue kw_bnd := decideProp (kwonly.size = kw_defaults.size)
     | specError fnLoc s!"Keyword only arguments must have defaults."; return default
-  assert! vararg.val.isNone
-  let min_default := argc - defaults.val.size
+  assert! vararg.isNone
+  let min_default := argc - defaults.size
   let isMethod := className.isSome
   if isMethod ∧ argc = 0 then
     specError fnLoc "Method expecting self argument"
@@ -1247,7 +1251,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     -- Arguments with defaults occur at end
     let d : Option _ :=
       if p : i ≥ min_default then
-        some defaults.val[i - min_default]
+        some defaults[i - min_default]
       else
         none
     let self_type :=
@@ -1257,12 +1261,12 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     let ba ← pySpecArg usedNames self_type a d
     usedNames := usedNames.insert ba.name
     specArgs := specArgs.push ba
-  let mut kwSpecArgs : Array Arg := .emptyWithCapacity kwonly.val.size
-  for ⟨i, ib⟩ in Fin.range kwonly.val.size do
-    let a := kwonly.val[i]
+  let mut kwSpecArgs : Array Arg := .emptyWithCapacity kwonly.size
+  for ⟨i, ib⟩ in Fin.range kwonly.size do
+    let a := kwonly[i]
     -- Arguments with defaults occur at end
     let d : Option _ :=
-        match kw_defaults.val[i] with
+        match kw_defaults[i] with
         | .some_expr _ v => some v
         | .missing_expr _ => none
     let ba ← pySpecArg usedNames none a d
@@ -1270,14 +1274,14 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     kwSpecArgs := kwSpecArgs.push ba
   -- Handle **kwargs: store parameter name and type
   let mut kwargsOpt : Option (String × SpecType) := none
-  match kwarg.val with
+  match kwarg with
   | none => pure ()
   | some kwargArg =>
-    let .mk_arg kwargLoc kwargParamName ⟨_, kwargType⟩ _ := kwargArg
+    let .mk_arg kwargLoc ⟨_, kwargParamName⟩ ⟨_, kwargType⟩ _ := kwargArg
     match kwargType with
     | some typeExpr =>
       let tp ← pySpecType typeExpr
-      kwargsOpt := some (kwargParamName.val, tp)
+      kwargsOpt := some (kwargParamName, tp)
     | none => specError kwargLoc s!"**kwargs requires type annotation"
   let argDecls : ArgDecls := { args := specArgs, kwonly := kwSpecArgs, kwargs := kwargsOpt }
   let returnType : SpecType ←
@@ -1319,9 +1323,6 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
           match tp.asSingleton with
           | some (.ident pyIdent _) =>
             result := result.push pyIdent
-          | some (.pyClass clsName _) =>
-            let mod := toString (← read).currentModule
-            result := result.push { pythonModule := mod, name := clsName }
           | _ =>
             specError base.ann s!"Unknown base class '{name}'"
         | _ =>
@@ -1347,11 +1348,11 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
         let fieldType ← pySpecType annotation
         fields := fields.push { name := fieldName, type := fieldType }
       | _ => specError stmt.ann s!"Unsupported field target"
-    | .ClassDef innerLoc ⟨_, innerClassName⟩ innerBases _keywords innerStmts
+    | .ClassDef innerLoc ⟨_, innerClassName⟩ ⟨_, innerBases⟩ _keywords ⟨_, innerStmts⟩
                 _decorators _typeParams =>
-      let innerBaseIdents ← resolveBaseClasses innerBases.val
+      let innerBaseIdents ← resolveBaseClasses innerBases
       let innerDef ← pySpecClassBody innerLoc innerClassName
-        innerBaseIdents innerStmts.val
+        innerBaseIdents innerStmts
       subclasses := subclasses.push innerDef
     | .Assign _ ⟨_, targets⟩ value _typeAnn =>
       if h : targets.size = 1 then
@@ -1380,9 +1381,11 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
                 match value with
                 | .Call _ (.Attribute _ (.Name _ ⟨_, "self"⟩ (.Load _))
                     ⟨_, innerClsName⟩ (.Load _)) _ _ =>
+                  let mod := toString (← read).currentModule
+                  let pyIdent : PythonIdent := { pythonModule := mod, name := innerClsName }
                   let f : ClassField := {
                     name := fieldName,
-                    type := SpecType.pyClass loc innerClsName #[],
+                    type := .ident loc pyIdent #[],
                     constValue := some s!"{innerClsName}()" }
                   fields := fields.push f
                 | _ =>
@@ -1660,7 +1663,7 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       let (success, v) ← runChecked <| pySpecValue value
       if not success then
         continue
-      let .isTrue eq := inferInstanceAs (Decidable (targets.size = 1))
+      let .isTrue eq := decideProp (targets.size = 1)
         | specError loc s!"Only single target expected."; continue
       let .Name nameLoc ⟨_, name⟩ _ := targets[0]
         | specError loc s!"Unsupported target {targets[0]}"; continue
@@ -1701,27 +1704,28 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       assert! typeParams.size = 0
       let d ← pySpecFunctionArgs (className := none) loc funName args body decorators returns
       pushSignature (.functionDecl d)
-    | .Import loc names =>
-      translateImport loc names.val
+    | .Import loc ⟨_, names⟩ =>
+      translateImport loc names
     | .ImportFrom loc ⟨_, pyModule⟩ ⟨_, names⟩ ⟨_, level⟩ =>
       translateImportFromStmt loc pyModule names level
-    | .ClassDef loc ⟨_classNameLoc, className⟩ bases keywords stmts decorators typeParams =>
+    | .ClassDef loc ⟨_classNameLoc, className⟩ ⟨_, bases⟩ ⟨_, keywords⟩ ⟨_, stmts⟩ ⟨_, decorators⟩ ⟨_, typeParams⟩ =>
       if ←shouldSkip className then
         logEvent "skip" s!"Skipping class {className}"
         continue
       assert! _classNameLoc.isNone
-      assert! keywords.val.size = 0
-      let isExhaustive := decorators.val.any fun d =>
+      assert! keywords.size = 0
+      let isExhaustive := decorators.any fun d =>
         match d with
         | .Name _ ⟨_, "exhaustive"⟩ _ => true
         | _ => false
-      assert! decorators.val.size = 0 || (decorators.val.size = 1 && isExhaustive)
-      assert! typeParams.val.size = 0
-      let baseIdents ← resolveBaseClasses bases.val
+      assert! decorators.size = 0 || (decorators.size = 1 && isExhaustive)
+      assert! typeParams.size = 0
+      let baseIdents ← resolveBaseClasses bases
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
-      setNameValue className (.typeValue (.pyClass loc className #[]))
-      let d ← pySpecClassBody loc className baseIdents stmts.val
+      let mod := toString (← read).currentModule
+      setNameValue className (.typeValue (.ident loc { pythonModule := mod, name := className } #[]))
+      let d ← pySpecClassBody loc className baseIdents stmts
       let d := { d with exhaustive := isExhaustive }
       if success then
         pushSignature (.classDef d)

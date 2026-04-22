@@ -462,8 +462,16 @@ def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Paramet
 def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
   s!"{dt.name.text}..{field.name.text}!"
 
+/-- A type alias, mapping a name to an existing type. Eliminated by the
+    `TypeAliasElim` pass after the first resolution. -/
+structure TypeAlias where
+  name : Identifier
+  target : HighTypeMd
+  deriving Repr
+
 /--
-A user-defined type, either a composite type, a constrained type, or an algebraic datatype.
+A user-defined type, either a composite type, a constrained type, an algebraic datatype,
+or a type alias.
 
 Algebriac datatypes can also be encoded uses composite and constrained types. Here are two examples:
 
@@ -482,12 +490,15 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  /-- A type alias (e.g. `MyInt = int`). Eliminated before Core translation. -/
+  | Alias (ty : TypeAlias)
   deriving Inhabited
 
 def TypeDefinition.name : TypeDefinition → Identifier
   | .Composite ty => ty.name
   | .Constrained ty => ty.name
   | .Datatype ty => ty.name
+  | .Alias ty => ty.name
 
 structure Constant where
   name : Identifier
