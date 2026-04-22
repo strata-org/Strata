@@ -121,8 +121,28 @@ def parseDecision (line : String) : Except String Decision :=
   | "unknown" => .ok .unknown
   | other => .error s!"unrecognized solver output: {other}"
 
+/-- Format datatype constructors as SMT-LIB strings. -/
+private def formatConstrs (constrs : List (String × List (String × TermType)))
+    : IncrementalSolverM (Except String (List String)) := do
+  let mut result := []
+  for (cname, fields) in constrs.reverse do
+    if fields.isEmpty then
+      result := s!"({cname})" :: result
+    else do
+      let mut fieldStrs := []
+      for (fname, fty) in fields.reverse do
+        match ← typeToStr fty with
+        | .ok tyStr => fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
+        | .error msg => return .error msg
+      result := s!"({cname} {String.intercalate " " fieldStrs})" :: result
+  return .ok result
+
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
 def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
+  setLogic logic := emitln s!"(set-logic {logic})"
+  setOption name value := emitln s!"(set-option :{name} {value})"
+  comment c := emitln s!"; {c.replace "\n" " "}"
+
   boolSort := return .bool
   intSort := return .int
   realSort := return .real
@@ -214,23 +234,36 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
     return .ok ()
 
   declareDatatype name params constrs := do
-    let mut cStrs := []
-    for (cname, fields) in constrs.reverse do
-      if fields.isEmpty then
-        cStrs := s!"({cname})" :: cStrs
-      else do
-        let mut fieldStrs := []
-        for (fname, fty) in fields.reverse do
-          match ← typeToStr fty with
-          | .ok tyStr => fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
-          | .error msg => return .error msg
-        cStrs := s!"({cname} {String.intercalate " " fieldStrs})" :: cStrs
-    let cInline := "\n  " ++ String.intercalate "\n  " cStrs
-    if params.isEmpty then
-      emitln s!"(declare-datatype {name} ({cInline}))"
-    else
-      let pInline := String.intercalate " " params
-      emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
+    let cStrs ← formatConstrs constrs
+    match cStrs with
+    | .error msg => return .error msg
+    | .ok strs =>
+      let cInline := "\n  " ++ String.intercalate "\n  " strs
+      if params.isEmpty then
+        emitln s!"(declare-datatype {name} ({cInline}))"
+      else
+        let pInline := String.intercalate " " params
+        emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
+      return .ok ()
+
+  declareDatatypes dts := do
+    if dts.isEmpty then return .ok ()
+    let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
+    let sortDeclStr := String.intercalate " " sortDecls
+    let mut bodies := []
+    for (_, params, constrs) in dts.reverse do
+      let cStrs ← formatConstrs constrs
+      match cStrs with
+      | .error msg => return .error msg
+      | .ok strs =>
+        let cInline := String.intercalate " " strs
+        if params.isEmpty then
+          bodies := s!"({cInline})" :: bodies
+        else
+          let pInline := String.intercalate " " params
+          bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
+    let bodyStr := String.intercalate "\n  " bodies
+    emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
     return .ok ()
 
   mkForall bindings callback := do

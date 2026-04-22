@@ -41,6 +41,11 @@ All term constructors are fallible. Solvers might not accept certain constructs
 (e.g., wrong sorts, unsupported combinations) and we need to surface the issue
 precisely via `Except String`. -/
 structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
+  -- Configuration
+  setLogic : String → m Unit
+  setOption : String → String → m Unit
+  comment : String → m Unit
+
   -- Sort constructors
   boolSort : m σ
   intSort : m σ
@@ -102,6 +107,10 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   /-- Declare an algebraic datatype.
       Parameters: name, type parameters, constructors (name × fields). -/
   declareDatatype : String → List String → List (String × List (String × σ)) → m (Except String Unit)
+
+  /-- Declare mutually recursive algebraic datatypes.
+      Each element is (name, type parameters, constructors (name × fields)). -/
+  declareDatatypes : List (String × List String × List (String × List (String × σ))) → m (Except String Unit)
 
   /-- Construct a universally quantified term.
       Takes name-sort pairs for bound variables and a callback that receives

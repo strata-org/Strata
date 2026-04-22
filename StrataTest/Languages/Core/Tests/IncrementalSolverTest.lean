@@ -51,7 +51,7 @@ private def getVerdict (results : Array Core.VCResult) : String := Id.run do
 def passingPgm : Program :=
 #strata
 program Core;
-procedure P() returns () {
+procedure P() {
   var x : int;
   x := 1;
   assert [x_is_one]: (x == 1);
@@ -71,7 +71,7 @@ procedure P() returns () {
 def failingPgm : Program :=
 #strata
 program Core;
-procedure P() returns () {
+procedure P() {
   var x : int;
   havoc x;
   assert [always_one]: (x == 1);
