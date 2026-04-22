@@ -270,6 +270,8 @@ private def oldifyExpr (inoutNames : List String) : Core.Expression.Expr → Cor
   | .app m f a => .app m (oldifyExpr inoutNames f) (oldifyExpr inoutNames a)
   | .eq m a b => .eq m (oldifyExpr inoutNames a) (oldifyExpr inoutNames b)
   | .ite m c t f => .ite m (oldifyExpr inoutNames c) (oldifyExpr inoutNames t) (oldifyExpr inoutNames f)
+  | .quant m k n ty trig body => .quant m k n ty (oldifyExpr inoutNames trig) (oldifyExpr inoutNames body)
+  | .abs m n ty body => .abs m n ty (oldifyExpr inoutNames body)
   | e => e
 
 mutual
