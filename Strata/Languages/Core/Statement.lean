@@ -83,6 +83,20 @@ where
   | .inArg e :: rest, [] => .inArg e :: go rest []
   | a :: rest, es => a :: go rest es
 
+theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
+    (replaceInArgs args newExprs).length = args.length := by
+  simp [replaceInArgs]
+  suffices ∀ es, (replaceInArgs.go args es).length = args.length from this newExprs
+  induction args with
+  | nil => simp [replaceInArgs.go]
+  | cons a rest ih =>
+    intro es
+    match a, es with
+    | .inArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inArg _, [] => simp [replaceInArgs.go, ih]
+    | .inoutArg _, es => simp [replaceInArgs.go, ih]
+    | .outArg _, es => simp [replaceInArgs.go, ih]
+
 def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
   args.filterMap fun
     | .inArg e => some e

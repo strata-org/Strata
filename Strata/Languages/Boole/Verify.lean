@@ -720,22 +720,24 @@ private def initFVarIsOp (p : Boole.Program) : Array Bool :=
     (cmds.map registerCommandSymbols).toList.flatten.toArray
 
 private def collectModifiesFromSpec
+    (fileName : String)
     (pname : String)
     (spec? : Option (BooleDDM.Spec SourceRange))
     (varTypes : Std.HashMap String Lambda.LMonoTy)
-    : List (Core.Expression.Ident × Lambda.LMonoTy) :=
+    : Except DiagnosticModel (List (Core.Expression.Ident × Lambda.LMonoTy)) := do
   match spec? with
-  | none => []
-  | some (.spec_mk _ ⟨_, elts⟩) => Id.run do
+  | none => return []
+  | some (.spec_mk _ ⟨_, elts⟩) =>
     let mut mods : List (Core.Expression.Ident × Lambda.LMonoTy) := []
     for e in elts.toList do
       match e with
-      | .modifies_spec _ ⟨_, names⟩ =>
+      | .modifies_spec m ⟨_, names⟩ =>
         for ⟨_, vname⟩ in names.toList do
           match varTypes.get? vname with
           | some ty => mods := (mkIdent vname, ty) :: mods
           | none =>
-            dbg_trace f!"[Boole→Core] warning: modifies variable '{vname}' in procedure '{pname}' not found in global variable declarations; ignoring"
+            throw (.withRange ⟨⟨fileName⟩, m⟩
+              f!"modifies variable '{vname}' in procedure '{pname}' not found in global variable declarations")
       | _ => pure ()
     return mods.reverse
 
@@ -869,10 +871,10 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : S
           | .ok mty => varTypes := varTypes.insert n mty
           | .error _ => pure ()
       | .boole_procedure _ nameAnn _ _ _ specAnn _ =>
-        let mods := collectModifiesFromSpec nameAnn.val specAnn.val varTypes
+        let mods ← collectModifiesFromSpec fileName nameAnn.val specAnn.val varTypes
         if !mods.isEmpty then modMap := modMap.insert nameAnn.val mods
       | .command_procedure _ nameAnn _ _ specAnn _ =>
-        let mods := collectModifiesFromSpec nameAnn.val specAnn.val varTypes
+        let mods ← collectModifiesFromSpec fileName nameAnn.val specAnn.val varTypes
         if !mods.isEmpty then modMap := modMap.insert nameAnn.val mods
       | _ => pure ()
     let init : TranslateState := {
