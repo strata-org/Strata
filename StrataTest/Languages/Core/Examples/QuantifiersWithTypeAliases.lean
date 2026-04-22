@@ -69,7 +69,7 @@ axiom_1: forall __q0 : (Map Field int) :: forall __q1 : Field :: forall __q2 : i
 axiom_2: forall __q0 : (Map Ref (Map Field int)) :: forall __q1 : Ref :: forall __q2 : Ref :: forall __q3 : (Map Field int) :: !(__q1 == __q2) ==> __q0[__q1] == (__q0[__q2:=__q3])[__q1]
 axiom_3: forall __q0 : (Map Ref (Map Field int)) :: forall __q1 : Ref :: forall __q2 : (Map Field int) :: (__q0[__q1:=__q2])[__q1] == __q2
 Obligation:
-((h[ref:=(h[ref])[field:=(h[ref])[field] + 1]])[ref])[field] == (h[ref])[field] + 1
+((h@1[ref@1:=(h@1[ref@1])[field@1:=(h@1[ref@1])[field@1] + 1]])[ref@1])[field@1] == (h@1[ref@1])[field@1] + 1
 
 ---
 info:

@@ -39,26 +39,26 @@ VCs:
 Label: n_gt_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < n then 100 < n else true
-<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < n then false else true then if 100 < n then false else true else true
-callElimAssume_n_gt_100_postcond_6: if if 100 < n then false else true then 100 < n + 11 ==> r@1 == n + 11 - 10 else true
-callElimAssume_n_le_100_postcond_7: if if 100 < n then false else true then n + 11 <= 100 ==> r@1 == 91 else true
-callElimAssume_n_gt_100_postcond_2: if if 100 < n then false else true then 100 < r@1 ==> r@2 == r@1 - 10 else true
-callElimAssume_n_le_100_postcond_3: if if 100 < n then false else true then r@1 <= 100 ==> r@2 == 91 else true
+<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < n@1 then 100 < n@1 else true
+<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
+callElimAssume_n_gt_100_postcond_6: if if 100 < n@1 then false else true then 100 < n@1 + 11 ==> r@2 == n@1 + 11 - 10 else true
+callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@1 + 11 <= 100 ==> r@2 == 91 else true
+callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
+callElimAssume_n_le_100_postcond_3: if if 100 < n@1 then false else true then r@2 <= 100 ==> r@3 == 91 else true
 Obligation:
-100 < n ==> if 100 < n then n - 10 else r@2 == n - 10
+100 < n@1 ==> if 100 < n@1 then n@1 - 10 else r@3 == n@1 - 10
 
 Label: n_le_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < n then 100 < n else true
-<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < n then false else true then if 100 < n then false else true else true
-callElimAssume_n_gt_100_postcond_6: if if 100 < n then false else true then 100 < n + 11 ==> r@1 == n + 11 - 10 else true
-callElimAssume_n_le_100_postcond_7: if if 100 < n then false else true then n + 11 <= 100 ==> r@1 == 91 else true
-callElimAssume_n_gt_100_postcond_2: if if 100 < n then false else true then 100 < r@1 ==> r@2 == r@1 - 10 else true
-callElimAssume_n_le_100_postcond_3: if if 100 < n then false else true then r@1 <= 100 ==> r@2 == 91 else true
+<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < n@1 then 100 < n@1 else true
+<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
+callElimAssume_n_gt_100_postcond_6: if if 100 < n@1 then false else true then 100 < n@1 + 11 ==> r@2 == n@1 + 11 - 10 else true
+callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@1 + 11 <= 100 ==> r@2 == 91 else true
+callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
+callElimAssume_n_le_100_postcond_3: if if 100 < n@1 then false else true then r@2 <= 100 ==> r@3 == 91 else true
 Obligation:
-n <= 100 ==> if 100 < n then n - 10 else r@2 == 91
+n@1 <= 100 ==> if 100 < n@1 then n@1 - 10 else r@3 == 91
 
 ---
 info:
