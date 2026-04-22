@@ -617,6 +617,12 @@ theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : Lis
       | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
       | tail _ hb => exact ih hnd.2 ha hb
 
+theorem partition_length (l : List α) (p : α → Bool) :
+    (l.filter p).length + (l.filter (not ∘ p)).length = l.length := by
+  induction l with
+  | nil => simp
+  | cons h t ih => simp [List.filter]; split <;> simp_all <;> omega
+
 end List
 
 /-! ### List.Forall₂ -/

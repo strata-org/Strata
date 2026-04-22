@@ -513,11 +513,6 @@ private theorem findCondPairs_length
     · have ih := ih (e_t :: unmatched_t) remaining_f paired
       simp only [List.length_cons] at ih ⊢; omega
 
-private theorem partition_length (l : List α) (p : α → Bool) :
-    (List.filter p l).length + (List.filter (not ∘ p) l).length = l.length := by
-  induction l with
-  | nil => simp
-  | cons h t ih => simp [List.filter]; split <;> simp_all <;> omega
 
 /--
 Merge paths by matching splitId pairs from `splitConds`.
@@ -544,7 +539,7 @@ private def mergeCondPairs (ewns : List EnvWithNext)
     ewns
   else
     have h_part : trues.length + falses.length = ewns.length :=
-      partition_length ewns p
+      List.partition_length ewns p
     have h_fcpl : 2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
         trues.length + falses.length := by
       have := findCondPairs_length trues [] falses []
