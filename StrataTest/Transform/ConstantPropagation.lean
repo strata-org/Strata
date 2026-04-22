@@ -16,6 +16,9 @@ open Strata
 
 section ConstantPropagationTests
 
+private def hasSubstr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
 def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
@@ -35,12 +38,13 @@ procedure test() returns ()
 
 #end
 
--- Check that propagation produces a program (no crash)
 #guard_msgs in
 #eval do
   let pgm := translate constPropPgm
   let pgm' := propagateConstantsInProgram pgm
-  -- The transformed program should have at least as many decls
+  let fmt := toString (Core.formatProgram pgm')
+  -- x should be replaced by 42 in the assert
+  assert! hasSubstr fmt "42 > 0"
   assert! pgm'.decls.length == pgm.decls.length
 
 /-! ### Test: havoc kills propagated value -/
@@ -62,7 +66,9 @@ procedure test() returns ()
 #eval do
   let pgm := translate havocKillsPgm
   let pgm' := propagateConstantsInProgram pgm
-  assert! pgm'.decls.length == pgm.decls.length
+  let fmt := toString (Core.formatProgram pgm')
+  -- After havoc, x should NOT be replaced — assert should not contain "42 > 0"
+  assert! !hasSubstr fmt "42 > 0"
 
 /-! ### Test: propagation through branch -/
 
@@ -86,6 +92,35 @@ procedure test(b : bool) returns ()
 #eval do
   let pgm := translate branchPgm
   let pgm' := propagateConstantsInProgram pgm
-  assert! pgm'.decls.length == pgm.decls.length
+  let fmt := toString (Core.formatProgram pgm')
+  -- x should be propagated into both branches
+  assert! hasSubstr fmt "42 > 0"
+
+/-! ### Test: assignment in one branch kills propagation after ite -/
+
+def branchKillsPgm :=
+#strata
+program Core;
+
+procedure test(b : bool) returns ()
+{
+  var x : int := 42;
+  if (b) {
+    x := 99;
+  } else {
+  }
+  assert x > 0;
+};
+
+#end
+
+#guard_msgs in
+#eval do
+  let pgm := translate branchKillsPgm
+  let pgm' := propagateConstantsInProgram pgm
+  let fmt := toString (Core.formatProgram pgm')
+  -- After ite where one branch reassigns x, x should NOT be propagated
+  assert! !hasSubstr fmt "42 > 0"
+  assert! !hasSubstr fmt "99 > 0"
 
 end ConstantPropagationTests
