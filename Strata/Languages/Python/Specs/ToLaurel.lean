@@ -158,11 +158,6 @@ def atomTypeToString (a : SpecAtomType) : String :=
     else
       let argStrs := args.map specTypeToString
       s!"{nm}[{String.intercalate ", " argStrs.toList}]"
-  | .pyClass name args =>
-    if args.isEmpty then name
-    else
-      let argStrs := args.map specTypeToString
-      s!"{name}[{String.intercalate ", " argStrs.toList}]"
   | .intLiteral v => s!"Literal[{v}]"
   | .stringLiteral v => s!"Literal[\"{v}\"]"
   | .typedDict _ _ _ => "TypedDict"
@@ -255,25 +250,24 @@ def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
     return none
 
 /-- Known PythonIdent → Laurel type mappings for single-atom ident types.
-    - `bytes`/`bytearray` → TString (closest string-like approximation)
-    - `complex` → TReal (no complex type in SMT; real is the closest numeric type)
-    - `Exception` → UserDefined "Error" (matches CorePrelude's Error datatype)
-    - `typing.Any` → UserDefined "Any" (datatype in Laurel prelude) -/
+    Matches PythonToLaurel's type mapping: only int, str, bool, float get
+    concrete Laurel types; everything else maps to Any. -/
 private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
   .ofList [
     (.builtinsBool,      tyBool),
-    (.builtinsBytearray, tyString),
-    (.builtinsBytes,     tyString),
-    (.builtinsComplex,   tyReal),
-    (.builtinsDict,      tyDictStrAny),
-    (.builtinsException, tyError),
+    (.builtinsBytearray, tyAny),
+    (.builtinsBytes,     tyAny),
+    (.builtinsComplex,   tyAny),
+    (.builtinsDict,      tyAny),
+    (.builtinsException, tyAny),
     (.builtinsFloat,     tyReal),
     (.builtinsInt,       tyInt),
     (.builtinsStr,       tyString),
     (.noneType,          tyVoid),
     (.typingAny,         tyAny),
-    (.typingDict,        tyDictStrAny),
-    (.typingList,        tyListStr),
+    (.typingBinaryIO,    tyAny),
+    (.typingDict,        tyAny),
+    (.typingList,        tyAny),
   ]
 
 /-- Convert a SpecType to a Laurel HighTypeMd. -/
@@ -306,20 +300,9 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     -- Single atom type
     match ty.atoms[0]! with
     | .ident nm _args =>
-      -- Warn for lossy known-type approximations
-      if nm == .builtinsBytes || nm == .builtinsBytearray then
-        reportError .bytesToString default s!"'{nm}' mapped to TString (bytes have different semantics)"
-      if nm == .builtinsComplex then
-        reportError .complexToReal default s!"'{nm}' mapped to TReal (complex loses imaginary component)"
       if let some ty := knownIdentTypes[nm]? then
         return ty
-      reportError .unknownType default s!"Unknown type '{nm}' mapped to TString"
-      return tyString
-    | .pyClass name args =>
-      if args.size > 0 then
-        reportError .unsupportedGenericClass default
-          s!"Generic class '{name}' with type args unsupported"
-      let prefixed ← prefixName name
+      let prefixed ← prefixName nm.name
       return mkTy (.UserDefined { text := prefixed, md := .empty })
     | .intLiteral _ => return tyInt
     | .stringLiteral _ => return tyString
@@ -671,9 +654,8 @@ def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
   })
 
 /-- Extract an overload dispatch entry from an `@overload` function declaration.
-    Looks for a `stringLiteral` in the first argument's type and a class
-    return type (either `.pyClass` for locally-defined classes or `.ident`
-    for externally imported classes), and records them in the dispatch table. -/
+    Looks for a `stringLiteral` in the first argument's type and an `.ident`
+    return type, and records them in the dispatch table. -/
 def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
   let args := func.args.args
   let .isTrue _ := decideProp (args.size > 0)
@@ -703,10 +685,6 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
       return
   let retType ←
         match func.returnType.atoms[0] with
-        | .pyClass name _ => do
-          let ctx ← read
-          let prefixed ← prefixName name
-          pure (PythonIdent.mk ctx.modulePrefix prefixed)
         | .ident nm _ => pure nm
         | _ =>
           reportError .overloadReturnNotClass func.loc
