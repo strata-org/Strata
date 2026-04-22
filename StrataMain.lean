@@ -36,6 +36,7 @@ import Strata.Languages.Python.ReadPython
 open Strata
 
 open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
+open Laurel (LaurelVerifyOptions LaurelTranslateOptions)
 
 /-! ## Exit codes
 
@@ -263,6 +264,30 @@ def parseVerifyOptions (pflags : ParsedFlags)
     vcDirectory,
     pathCap
   }
+
+/-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already
+    covered by `verifyOptionsFlags`. -/
+def laurelTranslateFlags : List Flag := [
+  { name := "keep-all-files",
+    help := "Store intermediate Laurel and Core programs in <dir>.",
+    takesArg := .arg "dir" }
+]
+
+/-- All CLI flags accepted by Laurel verify commands. -/
+def laurelVerifyOptionsFlags : List Flag := verifyOptionsFlags ++ laurelTranslateFlags
+
+/-- Build a `LaurelVerifyOptions` from parsed CLI flags. -/
+def parseLaurelVerifyOptions (pflags : ParsedFlags)
+    (base : LaurelVerifyOptions := default) : IO LaurelVerifyOptions := do
+  let verifyOptions ← parseVerifyOptions pflags base.verifyOptions
+  let keepAllFilesPrefix := (pflags.getString "keep-all-files").orElse
+    (fun _ => base.translateOptions.keepAllFilesPrefix)
+  let translateOptions : LaurelTranslateOptions :=
+    { base.translateOptions with
+      keepAllFilesPrefix
+      overflowChecks := verifyOptions.overflowChecks
+      profile := verifyOptions.profile }
+  return { translateOptions, verifyOptions }
 
 /-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
     dialects. Returns the parsed program and the input context (for source
@@ -824,16 +849,16 @@ def javaGenCommand : Command where
     | .error msg =>
       exitFailure s!"Error generating Java: {msg}"
 
-def laurelVerifyOptions : VerifyOptions := { VerifyOptions.default with solver := "z3" }
-
 def laurelAnalyzeBinaryCommand : Command where
   name := "laurelAnalyzeBinary"
   args := []
+  flags := laurelVerifyOptionsFlags
   help := "Verify Laurel Ion programs read from stdin and print diagnostics. Combines multiple input files."
-  callback := fun _ _ => do
+  callback := fun _ pflags => do
+    let options ← parseLaurelVerifyOptions pflags
     let stdinBytes ← (← IO.getStdin).readBinToEnd
     let combinedProgram ← Strata.readLaurelIonProgram stdinBytes
-    let diagnostics ← Strata.Laurel.analyzeToDiagnosticModels combinedProgram laurelVerifyOptions
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram options
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
@@ -911,10 +936,12 @@ def laurelParseCommand : Command where
 def laurelAnalyzeCommand : Command where
   name := "laurelAnalyze"
   args := [ "file" ]
+  flags := laurelVerifyOptionsFlags
   help := "Analyze a Laurel source file. Write diagnostics to stdout."
-  callback := fun v _ => do
+  callback := fun v pflags => do
+    let options ← parseLaurelVerifyOptions pflags
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (vcResultsOption, errors) ← Strata.Laurel.verifyProgram laurelProgram { VerifyOptions.default with solver := "z3" }
+    let (vcResultsOption, errors) ← Strata.Laurel.verifyToVcResults laurelProgram options
     if !errors.isEmpty then
       IO.println s!"==== ERRORS ===="
     for err in errors do
