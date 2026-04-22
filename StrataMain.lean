@@ -36,6 +36,7 @@ import Strata.Languages.Python.ReadPython
 open Strata
 
 open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
+open Laurel (LaurelVerifyOptions LaurelTranslateOptions)
 
 /-! ## Exit codes
 
@@ -252,6 +253,30 @@ def parseVerifyOptions (pflags : ParsedFlags)
     overflowChecks,
     vcDirectory
   }
+
+/-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already
+    covered by `verifyOptionsFlags`. -/
+def laurelTranslateFlags : List Flag := [
+  { name := "keep-all-files",
+    help := "Store intermediate Laurel and Core programs in <dir>.",
+    takesArg := .arg "dir" }
+]
+
+/-- All CLI flags accepted by Laurel verify commands. -/
+def laurelVerifyOptionsFlags : List Flag := verifyOptionsFlags ++ laurelTranslateFlags
+
+/-- Build a `LaurelVerifyOptions` from parsed CLI flags. -/
+def parseLaurelVerifyOptions (pflags : ParsedFlags)
+    (base : LaurelVerifyOptions := default) : IO LaurelVerifyOptions := do
+  let verifyOptions ← parseVerifyOptions pflags base.verifyOptions
+  let keepAllFilesPrefix := (pflags.getString "keep-all-files").orElse
+    (fun _ => base.translateOptions.keepAllFilesPrefix)
+  let translateOptions : LaurelTranslateOptions :=
+    { base.translateOptions with
+      keepAllFilesPrefix
+      overflowChecks := verifyOptions.overflowChecks
+      profile := verifyOptions.profile }
+  return { translateOptions, verifyOptions }
 
 /-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
     dialects. Returns the parsed program and the input context (for source
