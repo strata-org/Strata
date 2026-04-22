@@ -538,4 +538,31 @@ def test() -> None:
       if arg.name.startsWith "$in_" then
         throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
 
+-- Regression test for issue #1002: procedure call inside `if not` condition
+-- in a function body should not trigger "local variables in functions must
+-- have initializers". The exception-check assertion generated for PNot(...)
+-- contained a heap-parameterized procedure call block that was not lifted.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Session:
+    pass
+
+def check_credentials() -> bool:
+    session: Any = Session()
+    return True
+
+def create_client(service: Any) -> Any:
+    if not check_credentials():
+        return None
+    return None
+
+if __name__ == '__main__':
+    if check_credentials():
+        c: Any = create_client('foo')
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest
