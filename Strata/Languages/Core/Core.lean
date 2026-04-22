@@ -72,15 +72,17 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
 
 /-- Build an evaluation environment from a type-checked program.
     Loads the factory, datatypes, and processes all declarations. -/
-def buildEvalEnv (program : Program)
+def buildEvalEnv (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Env × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let σ ← (Lambda.LState.init).addFactory factory
   let datatypes := program.decls.filterMap fun decl =>
     match decl with | .type (.data d) _ => some d | _ => none
-  let mut E : Env := { Env.init with exprEnv := σ, program := program }
-  E ← E.addDatatypes datatypes
+  let E := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
+  let E ← E.addDatatypes datatypes
+
+  -- Collect declaration statistics
   let stats := program.decls.foldl (fun s d =>
     match d with
     | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
@@ -99,7 +101,7 @@ def buildEvalEnv (program : Program)
 def symbolicEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
-  let (E, declStats) ← buildEvalEnv program moreFns
+  let (E, declStats) ← buildEvalEnv options program moreFns
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
   -- Program.eval does not modify the program. The Program field is
