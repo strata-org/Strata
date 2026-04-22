@@ -1196,8 +1196,10 @@ private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg)
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
-  let .seq _ .none args := arg
+  let .seq _ sep args := arg
     | TransM.error s!"translateFnPreconds expected seq {repr arg}"
+  if sep != .none && sep != .spacePrefix then
+    TransM.error s!"translateFnPreconds unexpected separator {repr sep}"
   let preconds ← args.foldlM (init := ([], 0)) fun (acc, count) specElt => do
     let .op op := specElt
       | TransM.error s!"translateFnPreconds expected op {repr specElt}"

@@ -101,7 +101,7 @@ def List.replaceAll [BEq α] : List α → α → α → List α
 /-- `Disjoint l₁ l₂` means that `l₁` and `l₂` have no elements in common.
 Taken from https://github.com/leanprover-community/batteries/blob/3613427d66262c4e25e19b40a6a49242e94ba072/Batteries/Data/List/Basic.lean#L512-L514
 -/
-def List.Disjoint (l₁ l₂ : List α) : Prop :=
+@[expose] def List.Disjoint (l₁ l₂ : List α) : Prop :=
   ∀ ⦃a⦄, a ∈ l₁ → a ∈ l₂ → False
 
 end -- public section

@@ -82,6 +82,7 @@ private def fmtTypeDef : TypeDefinition → String
   | .Composite ty => s!"type {ty.name}"
   | .Constrained ty => s!"constrained {ty.name}"
   | .Datatype ty => s!"datatype {ty.name}"
+  | .Alias ty => s!"alias {ty.name}"
 
 /-- Run signaturesToLaurel and print formatted output. Asserts no errors. -/
 private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
