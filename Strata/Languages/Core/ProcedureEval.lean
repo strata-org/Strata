@@ -59,11 +59,9 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
 
 /--
-Create `fvar` expressions with globally unique names for procedure parameters.
-Uses `genFVars` to ensure names cannot collide across procedures, which is
-necessary because expressions built during one procedure (e.g. modified globals)
-persist in the global state and may contain references to parameter fvars.
-Bare names are reused when possible; `@N` suffixes are added only for disambiguation.
+Evaluate a single procedure: generate fresh variables for modifies-clause
+globals and parameters, execute the body, check postconditions, and collect
+proof obligations.
 -/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
