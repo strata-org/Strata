@@ -383,11 +383,11 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
                   let fnArgs := rargs.reverse.toList.take declArgCount |>.toArray
                   let extraArgs := rargs.reverse.toList.drop declArgCount |>.toArray
                   let .isTrue bsize' := decEq fnArgs.size bindings.size
-                        | return panic! "Mismatch betweeen binding and arg size"
+                        | return panic! "Mismatch betweeen binding and arg size" -- nopanic:ok
                   let argResults ← do
                         match formatArguments (← read) (← get) bindings ⟨fnArgs, bsize'⟩ with
                         | .ok r => pure r
-                        | .error e => return panic! e
+                        | .error e => return panic! e -- nopanic:ok
                   let fnFmt := ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
                   let extraFmts := (← extraArgs.mapM (·.mformatM)) |>.map (·.format)
                   let extraFmts := Format.joinSep extraFmts.toList f!", "
