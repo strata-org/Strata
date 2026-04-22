@@ -581,4 +581,61 @@ procedure TestNondetWhile () returns ()
 
 -------------------------------------------------------------------------------
 
+-- Lambda formatting tests: construct Core.Program values with lambda
+-- expressions and verify the DDM formatter output.
+
+open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+
+private def formatCore (p : Core.Program) : IO Unit :=
+  IO.println f!"{Core.formatProgram p}"
+
+private def lambdaIdentityPgm : Core.Program := { decls := [
+  .func { name := "intID", typeArgs := [], inputs := [],
+          output := .arrow .int .int,
+          body := some (.abs () "" (.some .int) (.bvar () 0)) } .empty
+]}
+
+/--
+info: program Core;
+
+function intID () : int -> int {
+  lambda __q0 : int :: __q0
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaIdentityPgm
+
+private def lambdaNestedPgm : Core.Program := { decls := [
+  .func { name := "constFn", typeArgs := [], inputs := [],
+          output := .arrow .int (.arrow .int .int),
+          body := some (.abs () "" (.some .int)
+            (.abs () "" (.some .int) (.bvar () 1))) } .empty
+]}
+
+/--
+info: program Core;
+
+function constFn () : int -> int -> int {
+  lambda __q0 : int :: lambda __q1 : int :: __q0
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaNestedPgm
+
+private def lambdaNamedPgm : Core.Program := { decls := [
+  .func { name := "namedLam", typeArgs := [], inputs := [],
+          output := .arrow .int .int,
+          body := some (.abs () "x" (.some .int) (.bvar () 0)) } .empty
+]}
+
+/--
+info: program Core;
+
+function namedLam () : int -> int {
+  lambda x : int :: x
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaNamedPgm
+
 end Strata.Test

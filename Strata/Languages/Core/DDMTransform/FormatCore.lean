@@ -551,7 +551,7 @@ partial def lexprToExpr {M} [Inhabited M]
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
-  | .abs _ _ ty body => labsToExpr ty body (qLevel + 1)
+  | .abs _ prettyName ty body => labsToExpr prettyName ty body (qLevel + 1)
   | .quant _ qkind _ ty trigger body =>
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
@@ -587,18 +587,24 @@ partial def extractTriggerPatterns {M} [Inhabited M]
     let expr ← lexprToExpr trigger qLevel
     pure #[expr]
 
-/-- Convert a lambda abstraction to a CoreDDM expression.
-    Formats the lambda using the LExpr formatter and embeds it as a free variable,
-    since the DDM formatter's argument collection conflicts with lambda application. -/
+/-- Convert a lambda abstraction to a CoreDDM `lambda` expression, reusing the
+    prettyName stored in the `abs` constructor as the bound variable name. -/
 partial def labsToExpr {M} [Inhabited M]
-    (ty : Option Lambda.LMonoTy) (body : Lambda.LExpr CoreLParams.mono)
-    (_qLevel : Nat)
+    (prettyName : String) (ty : Option Lambda.LMonoTy)
+    (body : Lambda.LExpr CoreLParams.mono) (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
-  let absExpr := Lambda.LExpr.abs () "" ty body
-  let fmtStr := toString (Std.format absExpr)
-  modify (·.addGlobalFreeVars #[fmtStr])
-  let ctx ← get
-  pure (.fvar default (ctx.allFreeVars.size - 1))
+  let varName := if prettyName.isEmpty then mkQuantVarName (qLevel - 1) else prettyName
+  let name : Ann String M := ⟨default, varName⟩
+  modify ToCSTContext.pushScope
+  modify (·.addScopedBoundVars #[name.val])
+  let tyExpr ← match ty with
+    | some t => lmonoTyToCoreType t
+    | none => pure (CoreType.tvar default unknownTypeVar)
+  let bind := Bind.bind_mk default name ⟨default, none⟩ tyExpr
+  let dl := DeclList.declAtom default bind
+  let bodyExpr ← lexprToExpr body qLevel
+  modify ToCSTContext.popScope
+  pure (.lambda default tyExpr dl bodyExpr)
 
 partial def lquantToExpr {M} [Inhabited M]
     (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
@@ -667,7 +673,7 @@ partial def lappToExpr {M} [Inhabited M]
     let e1Expr ← lexprToExpr e1 qLevel
     pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
   | _ => do
-    -- Non-application: convert directly (should not normally be reached)
+    -- Non-application head (e.g. lambda applied to arguments)
     let eCST ← lexprToExpr e qLevel
     pure <| acc.foldl (fun fnAcc arg => .app default fnAcc arg) eCST
 end

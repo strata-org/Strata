@@ -207,7 +207,7 @@ op triggersAtom (group : TriggerGroup) : Triggers =>
 op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
   triggers group;
 
-// Lambda abstraction (used for parsing; formatting uses the LExpr formatter)
+// Lambda abstraction
 fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : tp =>
   "lambda " d " :: " body:3;
 
