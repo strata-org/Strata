@@ -579,6 +579,9 @@ private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
       else (ewns, stats)
     | .none => (ewns, stats)
 
+/-- Evaluate a single statement. `evalSub` and `processBranches` are
+    the recursive calls from `evalAuxGo` and `processIteBranches`,
+    threaded as parameters to break the mutual recursion. -/
 private def evalOneStmt (old_var_subst : SubstMap)
     (Ewn : EnvWithNext) (s : Statement) (nextSplitId : Nat)
     (evalSub : EnvWithNext → Statements → Nat → List EnvWithNext × Statistics × Nat)
