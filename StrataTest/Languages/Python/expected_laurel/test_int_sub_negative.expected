@@ -3,7 +3,6 @@ test_int_sub_negative.py(3, 4): ✅ pass - assert(48)
 test_int_sub_negative.py(4, 13): ✅ pass - Check PSub exception
 test_int_sub_negative.py(4, 4): ✅ pass - assert(64)
 test_int_sub_negative.py(5, 16): ✅ pass - Check PNeg exception
-test_int_sub_negative.py(5, 4): ✅ pass - assert_assert(83)_calls_Any_to_bool_0
 test_int_sub_negative.py(5, 4): ✅ pass - subtraction yielding negative
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

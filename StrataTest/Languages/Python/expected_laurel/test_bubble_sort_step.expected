@@ -9,7 +9,6 @@ test_bubble_sort_step.py(3, 7): ✅ pass - assert_assert(55)_calls_Any_get_1
 test_bubble_sort_step.py(3, 7): ✅ pass - Check PGt exception
 test_bubble_sort_step.py(3, 4): ✅ pass - ite_cond_calls_Any_get_0
 test_bubble_sort_step.py(3, 4): ✅ pass - ite_cond_calls_Any_get_1
-test_bubble_sort_step.py(3, 4): ✅ pass - ite_cond_calls_Any_to_bool_2
 test_bubble_sort_step.py(4, 8): ✅ pass - set_t_calls_Any_get_0
 test_bubble_sort_step.py(4, 8): ✅ pass - assert(78)
 test_bubble_sort_step.py(5, 8): ✅ pass - assert_assert(101)_calls_Any_get_0
@@ -21,7 +20,6 @@ test_bubble_sort_step.py(7, 7): ✅ pass - assert_assert(140)_calls_Any_get_1
 test_bubble_sort_step.py(7, 7): ✅ pass - Check PGt exception
 test_bubble_sort_step.py(7, 4): ✅ pass - ite_cond_calls_Any_get_0
 test_bubble_sort_step.py(7, 4): ✅ pass - ite_cond_calls_Any_get_1
-test_bubble_sort_step.py(7, 4): ✅ pass - ite_cond_calls_Any_to_bool_2
 test_bubble_sort_step.py(8, 8): ✅ pass - set_t2_calls_Any_get_0
 test_bubble_sort_step.py(8, 8): ✅ pass - assert(163)
 test_bubble_sort_step.py(9, 8): ✅ pass - assert_assert(187)_calls_Any_get_0
@@ -33,15 +31,11 @@ test_bubble_sort_step.py(11, 7): ✅ pass - assert_assert(227)_calls_Any_get_1
 test_bubble_sort_step.py(11, 7): ✅ pass - Check PGt exception
 test_bubble_sort_step.py(11, 4): ✅ pass - ite_cond_calls_Any_get_0
 test_bubble_sort_step.py(11, 4): ✅ pass - ite_cond_calls_Any_get_1
-test_bubble_sort_step.py(11, 4): ✅ pass - ite_cond_calls_Any_to_bool_2
 test_bubble_sort_step.py(15, 4): ✅ pass - assert_assert(311)_calls_Any_get_0
-test_bubble_sort_step.py(15, 4): ✅ pass - assert_assert(311)_calls_Any_to_bool_1
 test_bubble_sort_step.py(15, 4): ✅ pass - sorted first
 test_bubble_sort_step.py(16, 4): ✅ pass - assert_assert(349)_calls_Any_get_0
-test_bubble_sort_step.py(16, 4): ✅ pass - assert_assert(349)_calls_Any_to_bool_1
 test_bubble_sort_step.py(16, 4): ✅ pass - sorted second
 test_bubble_sort_step.py(17, 4): ✅ pass - assert_assert(388)_calls_Any_get_0
-test_bubble_sort_step.py(17, 4): ✅ pass - assert_assert(388)_calls_Any_to_bool_1
 test_bubble_sort_step.py(17, 4): ✅ pass - sorted third
-DETAIL: 45 passed, 0 failed, 0 inconclusive
+DETAIL: 39 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
