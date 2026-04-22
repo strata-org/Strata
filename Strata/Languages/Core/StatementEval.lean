@@ -388,18 +388,6 @@ structure EnvWithNext where
   splitConds : Array (Nat × Expression.Expr × Bool) := #[]
 
 /--
-Process an exit statement. When `exitLabel` is active, skip remaining
-statements. The exit propagates up through blocks until a matching block
-is found.
-
-- `exit` (no label): exits the nearest enclosing block
-- `exit l`: exits the nearest enclosing block labeled `l`
--/
-def processExit : Statements → Option (Option String) → (Statements × Option (Option String))
-| rest, .none => (rest, .none)
-| _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
-
-/--
 Collect proof obligations for an unreachable (dead) branch.
 All covers in the dead branch fail (unreachable), and all asserts pass
 (unsatisfiable path conditions).
@@ -463,6 +451,9 @@ false-branch path with a matching most-recent `splitId`. Matched pairs
 are merged via `Env.merge` and collected in `paired`.
 
 Invariant: every input path appears in exactly one output list.
+Called only from `mergeCondPairs` on continuing paths (all have
+`exitLabel = .none`), so the merged result inherits `e_t.exitLabel`
+without loss.
 -/
 private def findCondPairs
     (ts unmatched_t remaining_f paired : List EnvWithNext) : CondPairsResult :=
@@ -475,7 +466,7 @@ private def findCondPairs
       | some (e_f, remaining_f') =>
         let merged : EnvWithNext := {
           env := Env.merge cond_t e_t.env e_f.env,
-          exitLabel := e_t.exitLabel,
+          exitLabel := .none,
           splitConds := e_t.splitConds.pop }
         findCondPairs rest_ts unmatched_t remaining_f' (merged :: paired)
       | none =>
@@ -507,7 +498,7 @@ private theorem findCondPairs_length
         simp only [List.length_nil, Nat.add_zero] at hlen
         have ih := ih unmatched_t remaining_f' ({
           env := Env.merge cond_t e_t.env e_f.env,
-          exitLabel := e_t.exitLabel,
+          exitLabel := .none,
           splitConds := e_t.splitConds.pop } :: paired)
         simp only [List.length_cons] at ih ⊢
         omega
@@ -562,7 +553,9 @@ private def mergeCondPairs (ewns : List EnvWithNext)
 /-- Apply the path cap between statements. Continuing paths (no active
     exit) are merged down to the cap via `mergeCondPairs`. Exiting paths
     are not merged — they skip remaining statements so they don't
-    contribute to exponential blowup. -/
+    contribute to exponential blowup.
+    `pathCap` is read from the first path's `Env`, where it is set once
+    at initialization and never modified during evaluation. -/
 private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
     List EnvWithNext × Statistics :=
   match ewns with

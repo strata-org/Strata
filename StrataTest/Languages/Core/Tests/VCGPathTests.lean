@@ -27,9 +27,6 @@ private def statsLine (stats : Statistics) (numObs : Nat) : String :=
 
 ---------------------------------------------------------------------
 -- issue419TestPgm
---
--- `second`'s obligation is checked once. `first`'s `post` is checked
--- on two paths but mergeByAssertion deduplicates the results.
 ---------------------------------------------------------------------
 
 def issue419TestPgm :=
@@ -49,6 +46,9 @@ procedure second() returns () { assert [a]: true; };
 #end
 
 -- No cap: two separate `post` VCs, one per path.
+-- `second`'s obligation is checked once. `first`'s `post` is checked
+-- on two paths but mergeByAssertion deduplicates the results.
+
 /--
 info: [Strata.Core] Type checking succeeded.
 
@@ -147,7 +147,7 @@ info: merged=0 diverged=1 stmtMerged=0 obligations=3
   IO.println (statsLine stats numObs)
 
 ---------------------------------------------------------------------
--- sequentialExitPgm
+-- sequentialExitItePgm
 ---------------------------------------------------------------------
 
 -- Each ITE has one branch that exits the enclosing block, so
@@ -208,7 +208,7 @@ info: merged=0 diverged=4 stmtMerged=1 obligations=1
 -- exponentialItePgm
 ---------------------------------------------------------------------
 
--- Each ITE has both branches continuing (exit from from the inner block), so
+-- Each ITE has both branches continuing (exit from the inner block), so
 -- paths double at each ITE: 2^4 = 16 without cap.
 def exponentialItePgm :=
 #strata
