@@ -567,6 +567,9 @@ private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
   | ewn :: _ =>
     match ewn.env.pathCap with
     | .some cap =>
+      -- CLI rejects 0, but clamp defensively: cap 0 would needlessly
+      -- attempt to merge a single remaining path below the target.
+      let cap := max cap 1
       let (noExit, hasExit) :=
         ewns.partition (fun (e : EnvWithNext) => e.exitLabel.isNone)
       if noExit.length > cap then
