@@ -26,6 +26,10 @@ This document tracks the selected Boole feature-request seeds kept under
 - **Early return** (#871)
   - Every procedure body is wrapped in a Core labeled block named after the procedure.
   - `exit functionName;` exits that block, acting as an early return; no grammar changes needed.
+- **Bitwise operators on `bvN` types** (#970)
+  - `&`, `|`, `^`, `>>`, `<<`, `~` now lower from Boole to `Bv{N}.And/Or/Xor/Shl/UShr/SShr/Not` Core ops.
+  - `bvWidth` helper extracts the bit-width from the Boole type and dispatches to the right-sized op.
+  - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
 
 ## Semantic preservation requests
 
@@ -64,8 +68,7 @@ This document tracks the selected Boole feature-request seeds kept under
 
 ## Bitvector requests
 
-24. **Bitwise operators on `bvN` types**: Add `&`, `|`, `^`, `>>`, `<<` to the Boole grammar for `bv8`/`bv32`/`bv64` expressions. Confirmed in dalek (`byte >> n & 1`, `v & 0x7f`) and Vest (`v2 << 7 | v`).
-25. **`by (bit_vector)` proof mode**: Route pure bitvector sub-goals to a bitvector decision procedure automatically. Confirmed in Vest LEB128 (`assert(...) by (bit_vector)`).
+24. **`by (bit_vector)` proof mode**: Route pure bitvector sub-goals to a bitvector decision procedure automatically. Confirmed in Vest LEB128 (`assert(...) by (bit_vector)`).
 
 ## Boole seed examples
 
@@ -88,7 +91,7 @@ These are the curated one-gap Boole seeds.
 | [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) | Mutual recursion / forward references | Verus `guide/recursion`; VLIR `mutual_recursion`, `recursion` | Active |
 | [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation | Verus `proposal-rw2022`, `rw2022_script`, `recursion`; VLIR `LoopSimpleWithSpec` | Loop-level supported; function/procedure-level still active |
 | [`horner_poly_eval.lean`](../StrataTest/Languages/Boole/FeatureRequests/horner_poly_eval.lean) | Reusable math spec support | CLRS Horner's rule, Exercise 2.3 | Type-checks; full math spec still open |
-| [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) | Bitwise operators on `bvN` types | dalek-lite `scalar_specs.rs` | Active |
+| [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) | Bitwise operators on `bvN` types | dalek-lite `scalar_specs.rs` | Implemented |
 | [`bitvector_proof_mode.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_proof_mode.lean) | `by (bit_vector)` proof mode | VeruSAGE-Bench Vest `leb128` | Active |
 | [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) | Sequence slicing (`subrange`, `skip`, `take`, `drop_first`) | dalek-lite `scalar_specs.rs`, `core_specs.rs`; Vest `leb128`, `repetition` | Active |
 | [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) | Struct/record types with named field access | dalek-lite `field_specs.rs`, `edwards_specs.rs` | Active |

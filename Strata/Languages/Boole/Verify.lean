@@ -229,6 +229,15 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
   let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
+private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
+  match ty with
+  | .bv1 _  => return 1
+  | .bv8 _  => return 8
+  | .bv16 _ => return 16
+  | .bv32 _ => return 32
+  | .bv64 _ => return 64
+  | _ => throwAt m s!"Expected bitvector type, got: {repr ty}"
+
 private def toCoreExtensionalEq
     (m : SourceRange)
     (ty : Boole.Type)
@@ -333,6 +342,27 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .mul_expr m ty a b => toCoreTypedBin m ty "Mul" (← toCoreExpr a) (← toCoreExpr b)
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvnot m ty a =>
+      let n ← bvWidth m ty
+      return .app () (.op () ⟨s!"Bv{n}.Not", ()⟩ none) (← toCoreExpr a)
+  | .bvand m ty a b =>
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () ⟨s!"Bv{n}.And", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
+  | .bvor m ty a b =>
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () ⟨s!"Bv{n}.Or", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
+  | .bvxor m ty a b =>
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () ⟨s!"Bv{n}.Xor", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
+  | .bvshl m ty a b =>
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () ⟨s!"Bv{n}.Shl", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
+  | .bvushr m ty a b =>
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () ⟨s!"Bv{n}.UShr", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
+  | .bvsshr m ty a b =>
+      let n ← bvWidth m ty
+      return mkCoreApp (.op () ⟨s!"Bv{n}.SShr", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
   | .old _ _ a =>
       return oldifyExpr (← toCoreExpr a)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
