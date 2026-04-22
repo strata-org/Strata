@@ -186,18 +186,18 @@ true
 Label: StackEmpty_ensures_3_1205
 Property: assert
 Assumptions:
-<label_ite_cond_true: (top == #0)>: if $__top7 == 0 then $__top7 == 0 else true
-<label_ite_cond_false: !(top == #0)>: if if $__top7 == 0 then false else true then if $__top7 == 0 then false else true else true
+<label_ite_cond_true: (top == #0)>: if $__top8 == 0 then $__top8 == 0 else true
+<label_ite_cond_false: !(top == #0)>: if if $__top8 == 0 then false else true then if $__top8 == 0 then false else true else true
 Obligation:
-if $__top7 == 0 then true else false ==> $__top7 == 0
+if $__top8 == 0 then true else false ==> $__top8 == 0
 
 Label: StackEmpty_ensures_4_1233
 Property: assert
 Assumptions:
-<label_ite_cond_true: (top == #0)>: if $__top7 == 0 then $__top7 == 0 else true
-<label_ite_cond_false: !(top == #0)>: if if $__top7 == 0 then false else true then if $__top7 == 0 then false else true else true
+<label_ite_cond_true: (top == #0)>: if $__top8 == 0 then $__top8 == 0 else true
+<label_ite_cond_false: !(top == #0)>: if if $__top8 == 0 then false else true then if $__top8 == 0 then false else true else true
 Obligation:
-$__top7 == 0 ==> if $__top7 == 0 then true else false
+$__top8 == 0 ==> if $__top8 == 0 then true else false
 
 Label: Push_ensures_6_1494
 Property: assert

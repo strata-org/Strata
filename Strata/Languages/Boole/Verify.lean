@@ -411,17 +411,29 @@ def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Stateme
   termination_by SizeOf.sizeOf b
   decreasing_by simp_all; term_by_mem
 
-/-- Look up the callee's modifies variables and return extra arguments and LHS
-    entries to prepend at the call site. Since Core no longer has global variables,
-    each modified global becomes an inout parameter: it must be passed as an
-    extra argument (pre-call value) and received back as an extra LHS (post-call value). -/
-private def getModifiesExtras (n : String) : TranslateM (List Core.Expression.Expr × List Core.Expression.Ident) := do
-  let modifiesTyped := (← get).modifiesMap.getD n []
-  -- Extra args: pass current value of each modified global to the callee.
-  let extraArgs := modifiesTyped.map fun (id, _) => (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
-  -- Extra LHS: receive updated value of each modified global back from the callee.
-  let extraLhs := modifiesTyped.map fun (id, _) => id
-  return (extraArgs, extraLhs)
+/-- Compute the sorted typed-parameter prefix that both procedure headers and
+    call sites must agree on.  Returns `(modifiesTyped, readOnlyGlobals)`, each
+    sorted by name for deterministic ordering across HashMap iterations. -/
+private def getGlobalParamPrefix (n : String)
+    : TranslateM (ListMap Core.CoreIdent Lambda.LMonoTy × ListMap Core.CoreIdent Lambda.LMonoTy) := do
+  let modifiesTyped : ListMap Core.CoreIdent Lambda.LMonoTy :=
+    ((← get).modifiesMap.getD n []).mergeSort (·.1.name < ·.1.name)
+  let modifiesNames := modifiesTyped.map (·.fst.name)
+  let readOnlyGlobals : ListMap Core.CoreIdent Lambda.LMonoTy :=
+    ((← get).globalVarTypes.toList.filterMap fun (name, ty) =>
+      if modifiesNames.contains name then none
+      else some (mkIdent name, ty)).mergeSort (·.1.name < ·.1.name)
+  return (modifiesTyped, readOnlyGlobals)
+
+/-- Build `CallArg` prefix for a call site from `getGlobalParamPrefix`.
+    Modified globals become `inoutArg`; read-only globals become `inArg`. -/
+private def constructProcArgsPrefix (n : String)
+    : TranslateM (List (Core.CallArg Core.Expression)) := do
+  let (modifiesTyped, readOnlyGlobals) ← getGlobalParamPrefix n
+  let modifiesArgs := modifiesTyped.map fun (id, _) => Core.CallArg.inoutArg id
+  let readOnlyArgs := readOnlyGlobals.map
+    fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
+  return modifiesArgs ++ readOnlyArgs
 
 def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
   match s with
@@ -474,10 +486,10 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .condNondet _ => pure .nondet
     return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .boole_call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
-    let (extraArgs, extraLhs) ← getModifiesExtras n
-    let inArgs := (extraArgs ++ (← args.toList.mapM toCoreExpr)).map Core.CallArg.inArg
-    let outArgs := (extraLhs ++ lhs.toList.map (mkIdent ·.val)).map Core.CallArg.outArg
-    return Core.Statement.call n (inArgs ++ outArgs) (← toCoreMetaData m)
+    let globalsPrefix ← constructProcArgsPrefix n
+    let userIn := (← args.toList.mapM toCoreExpr).map Core.CallArg.inArg
+    let userOut := (lhs.toList.map (mkIdent ·.val)).map Core.CallArg.outArg
+    return Core.Statement.call n (globalsPrefix ++ userIn ++ userOut) (← toCoreMetaData m)
   | .call_statement m ⟨_, n⟩ ⟨_, callArgs⟩ => do
     -- Reject Core-only out/inout call argument syntax in Boole.
     -- Boole uses `call lhs := f(args)` for calls with outputs.
@@ -488,14 +500,12 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .callArgInout _ ⟨_, v⟩ =>
         throwAt m s!"'inout' argument '{v}' in call to '{n}' is not supported in Boole. Use 'modifies' clauses for mutable globals instead."
       | _ => pure ()
-    let (extraArgs, extraLhs) ← getModifiesExtras n
-    let args ← callArgs.toList.filterMapM fun ca =>
+    let globalsPrefix ← constructProcArgsPrefix n
+    let userIn ← callArgs.toList.filterMapM fun ca =>
       match ca with
-      | .callArgExpr _ e => return some (← toCoreExpr e)
+      | .callArgExpr _ e => return some (Core.CallArg.inArg (← toCoreExpr e))
       | _ => return none  -- unreachable: out/inout rejected above
-    let inArgs := (extraArgs ++ args).map Core.CallArg.inArg
-    let outArgs := extraLhs.map Core.CallArg.outArg
-    return Core.Statement.call n (inArgs ++ outArgs) (← toCoreMetaData m)
+    return Core.Statement.call n (globalsPrefix ++ userIn) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
@@ -736,16 +746,7 @@ private def translateProcedureDecl
     (spec? : Option (BooleDDM.Spec SourceRange))
     (body? : Option (BooleDDM.Block SourceRange))
     : TranslateM (List Core.Decl) := do
-  -- Modifies globals become inout parameters (both input and output).
-  let modifiesTyped : ListMap Core.CoreIdent Lambda.LMonoTy :=
-    (← get).modifiesMap.getD n []
-  let modifiesNames := modifiesTyped.map (·.fst.name)
-  -- Non-modified globals become input-only parameters so the body can read them.
-  let readOnlyGlobals : ListMap Core.CoreIdent Lambda.LMonoTy :=
-    (← get).globalVarTypes.toList.filterMap fun (name, ty) =>
-      if modifiesNames.contains name then none
-      else some (mkIdent name, ty)
-  -- Core header: modifies first, then read-only globals, then user-declared params.
+  let (modifiesTyped, readOnlyGlobals) ← getGlobalParamPrefix n
   let allInputs := modifiesTyped ++ readOnlyGlobals ++ inputs
   let allOutputs := modifiesTyped ++ outputs
   -- Only user-declared names need bvar scoping; globals are resolved as fvars.
