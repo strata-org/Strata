@@ -662,13 +662,7 @@ partial def lappToExpr {M} [Inhabited M]
   | .app _ (.op _ fn _) e1 => do
     let e1Expr ← lexprToExpr e1 qLevel
     lopToExpr fn.name (e1Expr :: acc)
-  | .app _ (.fvar m fn tp) e1 => do
-    -- Free-variable application: format as fn(args)
-    let fnCST ← lexprToExpr (.fvar m fn tp) qLevel
-    let e1Expr ← lexprToExpr e1 qLevel
-    pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
   | .app _ fn e1 => do
-    -- General application (e.g., lambda applied to argument)
     let fnCST ← lexprToExpr fn qLevel
     let e1Expr ← lexprToExpr e1 qLevel
     pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
