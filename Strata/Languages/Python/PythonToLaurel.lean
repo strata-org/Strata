@@ -867,9 +867,13 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
               | some (ImportedSymbol.compositeType laurelName) => laurelName
               | _ => ty
             let unprefixedTy := ctx.compositeTypeReverse[ty]?
+            -- Try three name-mangling strategies for the method:
             let candidates := [
+              -- 1. Raw dispatch name from overload table (e.g., "s3_S3Client@method")
               manglePythonMethod ty callname,
+              -- 2. Laurel-resolved name with module prefix (e.g., "boto3_s3_S3Client@method")
               manglePythonMethod resolvedTy callname] ++
+              -- 3. Python-visible short name (e.g., "S3Client@method" from `from mod import S3Client`)
               (match unprefixedTy with | some u => [manglePythonMethod u callname] | none => [])
             let funcName := candidates.find? (ctx.importedSymbols.contains ·)
               |>.getD (manglePythonMethod resolvedTy callname)
@@ -2412,7 +2416,6 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
 def pythonToLaurel' (info : PreludeInfo)
     (body : Array (stmt SourceRange))
-    (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
@@ -2506,10 +2509,7 @@ def pythonToLaurel' (info : PreludeInfo)
     | .compositeType laurelName => if laurelName != k then m.insert laurelName k else m
     | _ => m
 
-  let mut ctx : TranslationContext := match prev_ctx with
-  | some prev_ctx => {prev_ctx with functionSignatures:= prev_ctx.functionSignatures ++ allClassFuncDecls}
-  | _ =>
-  {
+  let mut ctx : TranslationContext := {
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
@@ -2595,12 +2595,11 @@ def pythonToLaurel' (info : PreludeInfo)
     see prelude names. -/
 def pythonToLaurel (prelude: Core.Program)
     (pyCommands : Array (stmt SourceRange))
-    (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
-  pythonToLaurel' info pyCommands prev_ctx filePath overloadTable
+  pythonToLaurel' info pyCommands filePath overloadTable
 
 end -- public section
 end Strata.Python
