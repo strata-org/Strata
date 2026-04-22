@@ -740,6 +740,8 @@ Each result is `some r` if evaluator can determine it, `none` if the solver is n
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    (axiomNames : List String := [])
+    (axiomProgram : Option Program := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
   -- Evaluator can determine satisfiability if the obligation is literally false (unsat)
   let peSatResult : Option SMT.Result :=
@@ -778,8 +780,6 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
             -- are excluded because including them would seed the relevant-function
             -- set with every function they mention, causing those axioms to be
             -- found trivially relevant and never removed.
-            let axiomNames : List String := p.decls.filterMap (fun decl =>
-              match decl with | .ax a _ => some a.name | _ => none)
             let antecedentFns :=
               (obligation.assumptions.flatten : List (String × Expression.Expr)).flatMap
                 (fun (label, e) =>
@@ -788,7 +788,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
-          IrrelevantAxioms.getIrrelevantAxioms p cache relevantFns
+          IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache relevantFns
         let newAssumptions :=
           Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
         pure { obligation with assumptions := newAssumptions }
@@ -945,6 +945,8 @@ def verifySingleEnv (oblProgram : Program)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    (axiomNames : List String := [])
+    (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel (VCResults × Statistics) := do
@@ -977,7 +979,7 @@ def verifySingleEnv (oblProgram : Program)
           if obligation.property.passWhenUnreachable then (false, true) else (true, false)
         | .bugFinding, _ => (true, false)
     let t0 ← IO.monoNanosNow
-    let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
+    let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
     let t1 ← IO.monoNanosNow
     preprocessNs := preprocessNs + (t1 - t0)
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
@@ -1097,17 +1099,22 @@ def verify (program : Program)
         throw e
     .ok (current, state.statistics)
   let allStats := pipelineStats
-  -- Build the axiom relevance cache once (post-transform, so declarations are
-  -- stable). The cache is reused across all verification environments and goals.
+  -- Extract axiom names from the original program. The oblProgram (output of
+  -- symbolicEval) inlines axioms as assume statements but does not preserve
+  -- axiom declarations, so we use the pre-transform program for axiom identity.
+  let axiomNames := program.decls.filterMap fun decl =>
+    match decl with | .ax a _ => some a.name | _ => none
+  -- Build the axiom relevance cache from the original program (which has
+  -- axiom declarations). The cache is reused across all obligations.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
-          else .some (IrrelevantAxioms.Cache.build oblProgram))
+          else .some (IrrelevantAxioms.Cache.build program))
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure []
     else
-      pure [← verifySingleEnv oblProgram moreFns options counter tempDir axiomCache? externalPhases phases]
+      pure [← verifySingleEnv oblProgram moreFns options counter tempDir axiomCache? axiomNames (axiomProgram := program) externalPhases phases]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)

@@ -112,13 +112,9 @@ def symbolicEval (options : VerifyOptions) (program : Program)
   -- but each procedure's body is replaced with the obligations tree
   -- (assume/assert blocks combined with if *). Axioms are inlined
   -- into each procedure's obligations (from E.deferred path conditions).
-  -- Type/datatype and axiom declarations come from the original program.
-  -- Axiom declarations are preserved so that downstream phases (e.g.
-  -- irrelevant axiom removal) can identify axiom assumptions by name.
+  -- Type/datatype declarations come from the original program.
   let typeDecls := program.decls.filter fun d =>
     match d with | .type _ _ => true | _ => false
-  let axiomDecls := program.decls.filter fun d =>
-    match d with | .ax _ _ => true | _ => false
   let procNames := program.decls.filterMap fun d =>
     match d with | .proc p _ => some p.header.name | _ => none
   let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
@@ -152,7 +148,7 @@ def symbolicEval (options : VerifyOptions) (program : Program)
   let funcDecls := evalFuncs.map fun func => Decl.func func .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
-  let oblProgram : Program := { decls := typeDecls ++ axiomDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
+  let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
