@@ -48,6 +48,15 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 // Assignment
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
 
+// Multi-target assignment: var x: int, y, var z: int := call()
+// Uses a dedicated category so the parser can distinguish targets from expressions.
+category MultiAssignTarget;
+op multiAssignTargetDecl (name: Ident, targetType: LaurelType): MultiAssignTarget => "var " name ": " targetType;
+op multiAssignTargetVar (name: Ident): MultiAssignTarget => name;
+
+op multiAssign (firstName: Ident, firstType: LaurelType, rest: CommaSepBy MultiAssignTarget, value: StmtExpr): StmtExpr
+  => @[prec(0)] "var " firstName ": " firstType ", " rest " := " value:0;
+
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
 op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " - " rhs;

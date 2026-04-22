@@ -436,16 +436,28 @@ def translateStmt (stmt : StmtExprMd)
           match value.val with
           | .StaticCall callee args =>
               let coreArgs ← args.mapM (fun a => translateExpr a)
-              let lhsIdents := targets.filterMap fun t =>
+              -- Emit init statements for Declare targets
+              let mut inits : List Core.Statement := []
+              let mut lhsIdents : List Core.CoreIdent := []
+              for t in targets do
                 match t.val with
-                | .Local name => some (⟨name.text, ()⟩)
-                | _ => none
-              return [Core.Statement.call lhsIdents callee.text coreArgs (astNodeToCoreMd value)]
+                | .Declare param =>
+                  let coreMonoType ← translateType param.type
+                  let coreType := LTy.forAll [] coreMonoType
+                  let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+                  let defaultExpr ← defaultExprForType param.type
+                  inits := inits ++ [Core.Statement.init ident coreType (.det defaultExpr) md]
+                  lhsIdents := lhsIdents ++ [ident]
+                | .Local name =>
+                  lhsIdents := lhsIdents ++ [⟨name.text, ()⟩]
+                | _ => pure ()
+              return inits ++ [Core.Statement.call lhsIdents callee.text coreArgs (astNodeToCoreMd value)]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
                 match t.val with
                 | .Local name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
+                | .Declare param => some (Core.Statement.havoc ⟨param.name.text, ()⟩ md)
                 | _ => none
               return (havocStmts)
           | _ =>

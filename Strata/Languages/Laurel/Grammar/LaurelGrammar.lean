@@ -9,7 +9,7 @@ module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: removed multiAssign rule (parsing ambiguity)
+-- Last grammar change: added multiAssign rule for multi-target assignment
 public import Strata.DDM.Integration.Lean
 public meta import Strata.DDM.Integration.Lean
 

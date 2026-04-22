@@ -108,11 +108,25 @@ where
       let initOpt := optionArg (some (laurelOp "initializer" #[stmtExprToArg value]))
       laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
     | .Assign targets value =>
-      -- Grammar only supports single-target assign; use first target or placeholder
-      let targetArg := match targets with
-        | t :: _ => variableToArg t.val
-        | [] => laurelOp "identifier" #[ident "_"]
-      laurelOp "assign" #[targetArg, stmtExprToArg value]
+      if targets.length > 1 then
+        match targets with
+        | ⟨.Declare firstParam, _, _⟩ :: rest =>
+          let restArgs := rest.map fun t =>
+            match t.val with
+            | .Declare param => laurelOp "multiAssignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
+            | .Local name => laurelOp "multiAssignTargetVar" #[ident name.text]
+            | .Field _ _ => laurelOp "multiAssignTargetVar" #[ident "_"]
+          laurelOp "multiAssign" #[ident firstParam.name.text, highTypeToArg firstParam.type, commaSep restArgs.toArray, stmtExprToArg value]
+        | _ =>
+          let targetArg := match targets with
+            | t :: _ => variableToArg t.val
+            | [] => laurelOp "identifier" #[ident "_"]
+          laurelOp "assign" #[targetArg, stmtExprToArg value]
+      else
+        let targetArg := match targets with
+          | t :: _ => variableToArg t.val
+          | [] => laurelOp "identifier" #[ident "_"]
+        laurelOp "assign" #[targetArg, stmtExprToArg value]
     | .Var (.Field target field) =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     | .StaticCall callee args =>
