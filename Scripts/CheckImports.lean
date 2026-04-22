@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata
-import Lean
+import Lean.Environment
+import Lean.Util.Path
 
 open Lean System
 
