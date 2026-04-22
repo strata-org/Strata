@@ -279,7 +279,7 @@ not_guard_0: if 0 < $__n2 then !($__i8 < $__n2) else true
 invariant_0_0: if 0 < $__n2 then 0 <= $__i8 else true
 invariant_0_1: if 0 < $__n2 then $__i8 <= $__n2 else true
 invariant_0_2: if 0 < $__n2 then $__s9 == $__i8 * ($__i8 + 1) / 2 else true
-<label_ite_cond_false: !i < n>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
+<label_ite_cond_false: !(i < n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
 if 0 < $__n2 then $__s9 else 0 == $__n2 * ($__n2 + 1) / 2
 

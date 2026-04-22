@@ -193,7 +193,7 @@ assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 
 assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
 not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
 invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
-<label_ite_cond_false: !i < n>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+<label_ite_cond_false: !(i < n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 $__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum6 else 0
 
@@ -207,7 +207,7 @@ assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 
 assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
 not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
 invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
-<label_ite_cond_false: !i < n>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+<label_ite_cond_false: !(i < n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
 true
 

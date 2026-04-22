@@ -133,9 +133,10 @@ Subst Map:
 Expression Env:
 State:
 [(minit : (arrow int int)) → _minit
-(m : (arrow int int)) → true
--- Errors: Unsupported construct in lexprToExpr: lambda not supported in CoreDDM: 
-Context: Global scope:
+(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int))
+         %0)))
+      %0)))
+   %0)))
 (m0 : int) → _minit(0)]
 
 Evaluation Config:
@@ -195,9 +196,8 @@ Subst Map:
 Expression Env:
 State:
 [minit → _minit
-(m : (arrow int int)) → true
--- Errors: Unsupported construct in lexprToExpr: lambda not supported in CoreDDM: 
-Context: Global scope:]
+(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit %0))) %0)))
+   %0)))]
 
 Evaluation Config:
 Eval Depth: 200
@@ -296,7 +296,7 @@ Datatypes:
 
 Path Conditions:
 (z_false, zinit == false)
-(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !z == false>, if if zinit == false then false else true then if zinit == false then false else true else true)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 
 
 Warnings:
@@ -305,7 +305,7 @@ Deferred Proof Obligations:
 Label: trivial
 Property: assert
 Assumptions:
-(<label_ite_cond_false: !z == false>, if zinit == false then false else true)
+(<label_ite_cond_false: !(z == false)>, if zinit == false then false else true)
 (z_false, zinit == false)
 Proof Obligation:
 true
@@ -314,7 +314,7 @@ Label: x_eq_y_label_0
 Property: assert
 Assumptions:
 (z_false, zinit == false)
-(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !z == false>, if if zinit == false then false else true then if zinit == false then false else true else true)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 Proof Obligation:
 if zinit == false then 6 else 0 == 6
 
@@ -322,7 +322,7 @@ Label: x_eq_y
 Property: assert
 Assumptions:
 (z_false, zinit == false)
-(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !z == false>, if if zinit == false then false else true then if zinit == false then false else true else true)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 Proof Obligation:
 if zinit == false then 6 else 0 == 6
 -/
@@ -589,7 +589,7 @@ Datatypes:
 
 Path Conditions:
 (<label_ite_cond_true: $__nondet_cond_0>, if $__$__nondet_cond_00 then $__$__nondet_cond_00 else true)
-(<label_ite_cond_false: !$__nondet_cond_0>, if if $__$__nondet_cond_00 then false else true then if $__$__nondet_cond_00 then false else true else true)
+(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__$__nondet_cond_00 then false else true then if $__$__nondet_cond_00 then false else true else true)
 
 
 Warnings:
@@ -599,7 +599,7 @@ Label: x_pos
 Property: assert
 Assumptions:
 (<label_ite_cond_true: $__nondet_cond_0>, if $__$__nondet_cond_00 then $__$__nondet_cond_00 else true)
-(<label_ite_cond_false: !$__nondet_cond_0>, if if $__$__nondet_cond_00 then false else true then if $__$__nondet_cond_00 then false else true else true)
+(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__$__nondet_cond_00 then false else true then if $__$__nondet_cond_00 then false else true else true)
 Proof Obligation:
 if $__$__nondet_cond_00 then 1 else 2 == 1
 -/

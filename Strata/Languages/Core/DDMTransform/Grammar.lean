@@ -207,6 +207,10 @@ op triggersAtom (group : TriggerGroup) : Triggers =>
 op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
   triggers group;
 
+// Lambda abstraction
+fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : tp =>
+  "lambda " d " :: " body:3;
+
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>
   "forall " d " :: " b:3;

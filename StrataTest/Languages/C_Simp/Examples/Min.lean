@@ -70,7 +70,7 @@ Label: post
 Property: assert
 Assumptions:
 <label_ite_cond_true: a < b>: if $__a0 < $__b1 then $__a0 < $__b1 else true
-<label_ite_cond_false: !a < b>: if if $__a0 < $__b1 then false else true then if $__a0 < $__b1 then false else true else true
+<label_ite_cond_false: !(a < b)>: if if $__a0 < $__b1 then false else true then if $__a0 < $__b1 then false else true else true
 Obligation:
 true
 

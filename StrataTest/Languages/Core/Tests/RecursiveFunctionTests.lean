@@ -387,7 +387,7 @@ assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
 not_guard_0: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
 invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
 invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true
-<label_ite_cond_false: !!(IntList..isNil(cur))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
+<label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
 Obligation:
 if !(IntList..isNil($__xs1)) then $__acc7 else 0 == listLen($__xs1)
 

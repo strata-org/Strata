@@ -574,10 +574,7 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 
 ---
-info: ok: [func intID :  () → (arrow int int) :=
-   (true
-   -- Errors: Unsupported construct in lexprToExpr: lambda not supported in CoreDDM: ⏎
-   Context: Global scope:)]
+info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
 -/
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm

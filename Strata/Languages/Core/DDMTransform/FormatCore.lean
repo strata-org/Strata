@@ -551,9 +551,7 @@ partial def lexprToExpr {M} [Inhabited M]
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
-  | .abs _ _ _ _ => do
-    ToCSTM.logError "lexprToExpr" "lambda not supported in CoreDDM" ""
-    pure (.btrue default)  -- Default to true literal
+  | .abs _ _ ty body => labsToExpr ty body (qLevel + 1)
   | .quant _ qkind _ ty trigger body =>
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
@@ -588,6 +586,19 @@ partial def extractTriggerPatterns {M} [Inhabited M]
     -- Single trigger expression
     let expr ← lexprToExpr trigger qLevel
     pure #[expr]
+
+/-- Convert a lambda abstraction to a CoreDDM expression.
+    Formats the lambda using the LExpr formatter and embeds it as a free variable,
+    since the DDM formatter's argument collection conflicts with lambda application. -/
+partial def labsToExpr {M} [Inhabited M]
+    (ty : Option Lambda.LMonoTy) (body : Lambda.LExpr CoreLParams.mono)
+    (_qLevel : Nat)
+    : ToCSTM M (CoreDDM.Expr M) := do
+  let absExpr := Lambda.LExpr.abs () "" ty body
+  let fmtStr := toString (Std.format absExpr)
+  modify (·.addGlobalFreeVars #[fmtStr])
+  let ctx ← get
+  pure (.fvar default (ctx.allFreeVars.size - 1))
 
 partial def lquantToExpr {M} [Inhabited M]
     (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
@@ -656,9 +667,15 @@ partial def lappToExpr {M} [Inhabited M]
     let fnCST ← lexprToExpr (.fvar m fn tp) qLevel
     let e1Expr ← lexprToExpr e1 qLevel
     pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
+  | .app _ fn e1 => do
+    -- General application (e.g., lambda applied to argument)
+    let fnCST ← lexprToExpr fn qLevel
+    let e1Expr ← lexprToExpr e1 qLevel
+    pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
   | _ => do
-    ToCSTM.logError "lappToExpr" "unsupported application" (toString e)
-    pure (.btrue default)  -- Default to true literal
+    -- Non-application: convert directly (should not normally be reached)
+    let eCST ← lexprToExpr e qLevel
+    pure <| acc.foldl (fun fnAcc arg => .app default fnAcc arg) eCST
 end
 
 /-- Convert preconditions to CST spec elements -/
