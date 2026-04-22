@@ -32,7 +32,7 @@ private def parseLaurel (input : String) : IO Program := do
 
 private def laurelToText (prog : Program) : String :=
   -- Trim trailing whitespace per line to avoid whitespace-sensitive test issues
-  let text := (formatProgram prog).pretty
+  let text := Strata.renderFormat (formatProgram prog)
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
 

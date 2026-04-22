@@ -9,6 +9,7 @@ public import Strata.DL.SMT.DDMTransform.Parse
 public import Strata.DL.SMT.Term
 public import Strata.Util.Tactics
 import Strata.DDM.Elab.LoadedDialects
+import Strata.DDM.Util.Format
 
 namespace Strata
 
@@ -307,7 +308,7 @@ private def smtFormatState : Strata.FormatState where
 
 /-- Render a DDM `Arg` to a string using the SMTResponse dialect formatting. -/
 def formatArg (arg : Strata.Arg) : String :=
-  (Strata.mformat arg smtFormatContext smtFormatState).format.pretty
+  Strata.renderFormat (Strata.mformat arg smtFormatContext smtFormatState).format
 
 /--
 Convert an `SMTResponseDDM.Term` (parsed from solver output) into a
