@@ -38,7 +38,7 @@ procedure test () returns ()
   var x : int := 1;
   function addX (y : int) : int { y + x }
   var z : int := addX(5);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck .default (translate simpleFuncDeclPgm).stripMetaData)))
