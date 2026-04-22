@@ -37,7 +37,7 @@ private def statsLine (stats : Statistics) (numObs : Nat) : String :=
 def issue419TestPgm :=
 #strata
 program Core;
-procedure first(x : int) returns (r : int)
+procedure first(x : int, out r : int)
 spec { ensures [post]: (r >= 0); }
 {
   body: {
@@ -47,7 +47,7 @@ spec { ensures [post]: (r >= 0); }
   }
 };
 
-procedure second() returns () { assert [a]: true; };
+procedure second() { assert [a]: true; };
 #end
 
 -- No cap: two separate `post` VCs, one per path.
@@ -160,7 +160,9 @@ info: merged=0 diverged=1 stmtMerged=0 obligations=3
 def sequentialExitItePgm :=
 #strata
 program Core;
-procedure p(c1 : bool, c2 : bool, c3 : bool, c4 : bool) returns (r : int)
+
+
+procedure p(c1 : bool, c2 : bool, c3 : bool, c4 : bool, out r : int)
 spec { ensures [post]: (r >= 0); }
 {
   done: {
@@ -218,7 +220,7 @@ info: merged=0 diverged=4 stmtMerged=1 obligations=1
 def exponentialItePgm :=
 #strata
 program Core;
-procedure p(c1 : bool, c2 : bool, c3 : bool, c4 : bool) returns (r : int)
+procedure p(c1 : bool, c2 : bool, c3 : bool, c4 : bool, out r : int)
 spec { ensures [post]: (r >= 0); }
 {
   b1: { if (c1) { r := 1; exit b1; } r := 2; }
@@ -266,7 +268,7 @@ info: merged=0 diverged=7 stmtMerged=3 obligations=2
 def nestedItePgm :=
 #strata
 program Core;
-procedure p(c1 : bool, c2 : bool, x : bool, y : bool) returns (r : int)
+procedure p(c1 : bool, c2 : bool, x : bool, y : bool, out r : int)
 spec { ensures [post]: (r >= 0); }
 {
   b1: {
@@ -312,7 +314,7 @@ info: merged=2 diverged=4 stmtMerged=4 obligations=1
 def sameExitCapPgm :=
 #strata
 program Core;
-procedure p(c1 : bool) returns (r : int)
+procedure p(c1 : bool, out r : int)
 spec { ensures [post]: (r >= 0); }
 {
   done: {
@@ -357,7 +359,7 @@ info: merged=0 diverged=1 stmtMerged=1 obligations=1
 def buggyPgm :=
 #strata
 program Core;
-procedure buggy(c1 : bool) returns (r : int)
+procedure buggy(c1 : bool, out r : int)
 spec { ensures [post]: (r > 0); }
 {
   done: {
@@ -428,7 +430,7 @@ Result: ❌ fail
 def concreteTrueDeadElse :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (true) {
     assert [live_then]: true;
   } else {
@@ -453,7 +455,7 @@ Result: ✅ pass
 def concreteFalseDeadThen :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (false) {
     assert [dead_then]: true;
   } else {
@@ -478,7 +480,7 @@ Result: ✅ pass
 def concreteFalseDeadThenCover :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (false) {
     cover [dead_cover]: true;
   } else {
@@ -503,7 +505,7 @@ Result: ✅ pass
 def programOrderConcreteFalse :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   assert [pre]: true;
   if (false) {
     assert [dead_then]: true;
@@ -542,7 +544,7 @@ Result: ✅ pass
 def deadBranchAnnotations :=
 #strata
 program Core;
-procedure p() returns () {
+procedure p() {
   if (true) {
   } else {
     assert [dead_assert]: true;
@@ -577,7 +579,7 @@ Result: ✅ pass (❗path unreachable)
 def noDupConcreteTrue :=
 #strata
 program Core;
-procedure p(x : bool) returns () {
+procedure p(x : bool) {
   assert [pre]: true;
   if (true) {
     done: {
@@ -623,7 +625,7 @@ Result: ✅ pass
 def noDupConcreteFalse :=
 #strata
 program Core;
-procedure q(x : bool) returns () {
+procedure q(x : bool) {
   assert [pre]: true;
   if (false) {
     assert [dead_then]: true;

@@ -12,7 +12,7 @@ namespace Strata
 def assertionNames :=
 #strata
 program Core;
-procedure Test(x : int) returns ()
+procedure Test(x : int)
 spec {
   requires x == 1;
 }
@@ -33,7 +33,7 @@ info: true
 /--
 info: program Core;
 
-procedure Test (x : int) returns ()
+procedure Test (x : int)
 spec {
   requires [Test_requires_0]: x == 1;
   } {

@@ -12,12 +12,9 @@ namespace Strata
 def oldExprPgm : Program :=
 #strata
 program Core;
-var g : bool;
-var g2 : bool;
 
-procedure T1() returns (y : bool, z : bool)
+procedure T1(inout g : bool, inout g2 : bool, out y : bool, out z : bool)
 spec {
-  modifies g2;
   ensures  [T1_g_unchanged]: (g == old g);
   ensures  [T1_g2_eq_old_g]: (g2 == old g);
   ensures  [T1_y_eq_old_g2]: (y == old g2);
@@ -30,16 +27,14 @@ spec {
   assert [T1_z_eq_g2]: (z == old g2);
 };
 
-procedure T2 () returns ()
+procedure T2 (inout g : bool, inout g2 : bool)
 spec {
-  modifies g;
-  modifies g2;
 }
 {
   var a : bool, b : bool;
   g := true;
   g2 := false;
-  call a, b := T1();
+  call T1(g, g2, out g, out g2, out a, out b);
   assert [T2_g2_eq_g]:     (g2 == g);
   assert [T2_g_true]:      (g == true);
   assert [T2_a_eq_false]:  (a == false);
@@ -80,38 +75,42 @@ true
 Label: T2_g2_eq_g
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
-callElimAssume_T1_z_eq_y_6: $__b10 == false
+callElimAssume_T1_g_unchanged_8: $__g12 == true
+callElimAssume_T1_g2_eq_old_g_9: $__g213 == true
+callElimAssume_T1_y_eq_old_g2_10: $__a14 == false
+callElimAssume_T1_z_eq_y_11: $__b15 == false
 Obligation:
-$__g211 == true
+$__g213 == $__g12
 
 Label: T2_g_true
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
-callElimAssume_T1_z_eq_y_6: $__b10 == false
+callElimAssume_T1_g_unchanged_8: $__g12 == true
+callElimAssume_T1_g2_eq_old_g_9: $__g213 == true
+callElimAssume_T1_y_eq_old_g2_10: $__a14 == false
+callElimAssume_T1_z_eq_y_11: $__b15 == false
 Obligation:
-true
+$__g12 == true
 
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
-callElimAssume_T1_z_eq_y_6: $__b10 == false
+callElimAssume_T1_g_unchanged_8: $__g12 == true
+callElimAssume_T1_g2_eq_old_g_9: $__g213 == true
+callElimAssume_T1_y_eq_old_g2_10: $__a14 == false
+callElimAssume_T1_z_eq_y_11: $__b15 == false
 Obligation:
-$__a9 == false
+$__a14 == false
 
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
-callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
-callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
-callElimAssume_T1_z_eq_y_6: $__b10 == false
+callElimAssume_T1_g_unchanged_8: $__g12 == true
+callElimAssume_T1_g2_eq_old_g_9: $__g213 == true
+callElimAssume_T1_y_eq_old_g2_10: $__a14 == false
+callElimAssume_T1_z_eq_y_11: $__b15 == false
 Obligation:
-$__b10 == false
+$__b15 == false
 
 ---
 info:

@@ -31,7 +31,7 @@ private def evalAndPrint (p : Strata.Program) : IO Unit := do
 private def simpleProg :=
 #strata
 program Core;
-procedure test(x : int) returns ()
+procedure test(x : int)
 spec { requires [pre]: x >= 0; }
 {
   assert [a]: x >= 0;
@@ -41,7 +41,7 @@ spec { requires [pre]: x >= 0; }
 /--
 info: program Core;
 
-procedure test () returns ()
+procedure test ()
 {
   assume [pre]: $__x0 >= 0;
   assert [a]: $__x0 >= 0;
@@ -55,7 +55,7 @@ procedure test () returns ()
 private def detIfProg :=
 #strata
 program Core;
-procedure detIfTest(x : int) returns ()
+procedure detIfTest(x : int)
 spec { requires [pre]: x >= 0; }
 {
   if (x > 5) {
@@ -69,7 +69,7 @@ spec { requires [pre]: x >= 0; }
 /--
 info: program Core;
 
-procedure detIfTest () returns ()
+procedure detIfTest ()
 {
   if * {
     assume [|<label_ite_cond_true: x > 5>|]: $__x0 > 5;
@@ -90,7 +90,7 @@ procedure detIfTest () returns ()
 private def nondetIfProg :=
 #strata
 program Core;
-procedure nondetIfTest(x : int) returns (r : int)
+procedure nondetIfTest(x : int, out r : int)
 spec {
   requires [pre]: x >= 0;
   ensures [post]: r >= 0;
@@ -107,7 +107,7 @@ spec {
 /--
 info: program Core;
 
-procedure nondetIfTest () returns ()
+procedure nondetIfTest ()
 {
   assume [pre]: $__x0 >= 0;
   assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__$__nondet_cond_22 then $__$__nondet_cond_22 else true;
@@ -123,7 +123,7 @@ procedure nondetIfTest () returns ()
 private def blockExitProg :=
 #strata
 program Core;
-procedure blockExitTest(x : int) returns ()
+procedure blockExitTest(x : int)
 spec { requires [pre]: x >= 0; }
 {
   outer: {
@@ -139,7 +139,7 @@ spec { requires [pre]: x >= 0; }
 /--
 info: program Core;
 
-procedure blockExitTest () returns ()
+procedure blockExitTest ()
 {
   if * {
     assume [|<label_ite_cond_true: x > 10>|]: $__x0 > 10;
@@ -160,7 +160,7 @@ procedure blockExitTest () returns ()
 private def blockExitIfProg :=
 #strata
 program Core;
-procedure blockTest(x : int, y : int) returns (r : int)
+procedure blockTest(x : int, y : int, out r : int)
 spec {
   requires [pre_x]: x >= 0;
   requires [pre_y]: y >= 0;
@@ -189,7 +189,7 @@ spec {
 /--
 info: program Core;
 
-procedure blockTest () returns ()
+procedure blockTest ()
 {
   if * {
     if * {

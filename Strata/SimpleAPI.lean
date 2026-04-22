@@ -349,7 +349,7 @@ def Laurel.verifyProgram
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Option Core.VCResults × List DiagnosticModel) :=
-  Strata.Laurel.verifyToVcResults program options
+  Strata.Laurel.verifyToVcResults program { verifyOptions := options }
 
 /--
 Analyze a Laurel program and return structured diagnostic models
@@ -359,7 +359,7 @@ def Laurel.analyzeToDiagnosticModels
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Array DiagnosticModel) :=
-  Strata.Laurel.verifyToDiagnosticModels program options
+  Strata.Laurel.verifyToDiagnosticModels program { verifyOptions := options }
 
 /-! ### Python direct-to-Core pipeline -/
 

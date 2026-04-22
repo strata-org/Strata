@@ -19,7 +19,7 @@ private def translateCore (p : Strata.Program) : Core.Program :=
 private def iteDupProg :=
 #strata
 program Core;
-procedure test(x : int, y : int) returns () {
+procedure test(x : int, y : int) {
   if (x + y > 0) {
     assert (x + y >= 1);
   } else {
@@ -31,7 +31,7 @@ procedure test(x : int, y : int) returns () {
 /--
 info: program Core;
 
-procedure test (x : int, y : int) returns ()
+procedure test (x : int, y : int)
 {
   var $__anf.0 : int := x + y;
   if ($__anf.0 > 0) {
@@ -49,7 +49,7 @@ procedure test (x : int, y : int) returns ()
 private def noDupProg :=
 #strata
 program Core;
-procedure test(x : int, y : int) returns () {
+procedure test(x : int, y : int) {
   assume (x >= 5);
   assert (y <= 10);
 };
@@ -58,7 +58,7 @@ procedure test(x : int, y : int) returns () {
 /--
 info: program Core;
 
-procedure test (x : int, y : int) returns ()
+procedure test (x : int, y : int)
 {
   assume [assume_0]: x >= 5;
   assert [assert_0]: y <= 10;

@@ -1,7 +1,7 @@
 program Core;
 
 // Simple test program for SARIF output
-procedure AddPositive(x : int, y : int) returns (z : int)
+procedure AddPositive(x : int, y : int, out z : int)
 spec {
   requires [x_positive]: (x > 0);
   requires [y_positive]: (y > 0);

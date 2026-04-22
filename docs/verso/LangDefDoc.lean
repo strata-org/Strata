@@ -338,9 +338,8 @@ and an optional implementation body.
 The concrete syntax of a procedure declaration is:
 
 ```
-procedure Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) returns (y₁ : U₁, ..., yₘ : Uₘ)
+procedure Name<TypeArgs>([out/inout] x₁ : T₁, ..., [out/inout] xₙ : Tₙ)
 spec {
-  modifies g₁, g₂, ...;
   [free] requires [label]: P;
   [free] ensures  [label]: Q;
 }
@@ -354,20 +353,24 @@ name, type parameters, and input/output signatures.
 
 ## Parameters
 
-Each procedure has two groups of parameters: input parameters, which are passed
-by value from the caller to the callee and are immutable within the body, and
-output parameters, which are mutable within the body and whose final values are
-returned to the caller. Input and output parameter names must be disjoint from
-each other and from the `modifies` clause.
+Each procedure has three groups of parameters: (1) input parameters, which are passed
+by value from the caller to the callee and any update to the variable within the
+procedure body is not visible to the caller,
+(2) inout parameters, which are mutable within the body, whose initial values
+are passed from the caller and final values are returned to the caller, and
+(3) out parameters, which are equal to the inout parameters except that
+their initial values are not accessible by the `old` syntax, if overriden.
+The ensures clauses cannot reason about the initial value of an out variable,
+but requires clauses can.
+
+Parameter names must be disjoint from each other.
 
 ## Specification
 
 A procedure's specification ({name Procedure.Spec}`Procedure.Spec`) consists of
-three parts: a `modifies` clause listing global variables the procedure may
-modify (any global not listed is guaranteed unchanged by the *frame condition*),
-preconditions (`requires`) that must hold before invocation, and postconditions
-(`ensures`) that must hold on return. Postconditions may reference `old(expr)`
-for pre-state values.
+two parts: preconditions (`requires`) that must hold before invocation, and
+postconditions (`ensures`) that must hold on return. Postconditions may reference
+`old v` for pre-state values of inout variables.
 
 {docstring Core.Procedure.Spec}
 
@@ -387,23 +390,26 @@ calls but not checked on exit from implementations.
 
 Postconditions and procedure bodies are *two-state contexts*: they can refer to
 both the pre-state (on entry) and the post-state (on exit) of a procedure
-invocation. The pre-state value of an expression is denoted by `old(expr)`.
-Only global variables are affected by `old`; it distributes to the leaves of
-expressions and is idempotent. `old` is not allowed in preconditions.
+invocation. The pre-state value of an inout parameter `v` is denoted by `old v`.
+`old` is not allowed in preconditions.
 
 ## Procedure calls
 
 A procedure is invoked via the `call` statement:
 
 ```
-call y₁, ..., yₘ := ProcName(e₁, ..., eₙ);
+call ProcName(e₁, ..., eₙ);
 ```
 
-The semantics of a call are: (1) evaluate argument expressions, (2) assert each
-non-free precondition with actuals substituted for formals, (3) havoc the output
-and `modifies` variables, (4) assume each postcondition with actuals substituted
-for formals and `old(g)` bound to the pre-call value of `g`, and (5) update the
-caller's state. This enables *modular verification*: each procedure is verified
+When Strata in the deductive verification mode sees this `call` statement,
+it eliminates the `call` and instead simulates the following sequence of statements,
+rather than jumping into the procedure body of the callee.
+(1) evaluate argument expressions,
+(2) assert each non-free precondition with actuals substituted for formals,
+(3) assume each postcondition with actuals substituted for formals and `old v`
+bound to the pre-call value of `v`, and
+(4) update the caller's state.
+This enables *modular verification*: each procedure is verified
 against its contract independently, and callers reason only about the contract.
 
 ## Body and verification

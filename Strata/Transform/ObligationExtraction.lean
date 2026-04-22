@@ -234,7 +234,7 @@ where
 
     | .cmd (.cmd (.init _ _ _ _)) => .ok { obligations := acc, pathConditions := pc }
     | .cmd (.cmd (.set _ _ _)) => .ok { obligations := acc, pathConditions := pc }
-    | .cmd (.call _ _ _ _) => .ok { obligations := acc, pathConditions := pc }
+    | .cmd (.call _ _ _) => .ok { obligations := acc, pathConditions := pc }
     | .funcDecl _ _ => .ok { obligations := acc, pathConditions := pc }
     | .typeDecl _ _ => .ok { obligations := acc, pathConditions := pc }
     | .exit l _ => .ok { obligations := acc, pathConditions := pc, exitLabel := .some l }
