@@ -842,7 +842,7 @@ def corePipelinePhases (procs : Option (List String) := none)
   let symbolicEvalPhase : PipelinePhase :=
     modelPreservingPipelinePhase "symbolicEval" fun prog => do
       let (prog', _stats) ← Transform.liftDiag (Core.symbolicEval options prog moreFns |>.mapError
-        fun err => { err with message := s!"❌ Type checking error.\n{err.message}" })
+        fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       return (true, prog')
   transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
 

@@ -158,7 +158,6 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
 def defineTerm (_inBinder : Bool) (_ty : TermType) (body : Term) : EncoderM Term :=
   return body
 
-def defineTermBound := defineTerm True
 def defineTermUnbound := defineTerm False
 
 def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do

@@ -102,9 +102,7 @@ def symbolicEval (options : VerifyOptions) (program : Program)
   let (E, declStats) ← buildEvalEnv program moreFns
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
-  -- Note: all .program fields in pEs will have identical values, because
   -- Program.eval does not modify the program. The Program field is
-  -- kept for convenience.
   -- kept for convenience.
   let stats := declStats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
