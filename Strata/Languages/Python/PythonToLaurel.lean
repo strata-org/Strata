@@ -1505,7 +1505,26 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, exceptionCheck ++ [expr])
     -- Unmodeled call: skip exception checks (no model to check against),
     -- but havoc maybe_except since the call could throw.
-    | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
+    -- Also havoc any value-typed locals referenced in the call (receiver
+    -- and arguments), since the unmodeled call may mutate them and they
+    -- are not reachable via heap havoc.
+    | .Hole =>
+      let knownLocals := ctx.variableTypes.unzip.1
+      let havocLocal (e : Python.expr SourceRange) : List StmtExprMd :=
+        match e with
+        | .Name _ n _ =>
+          if n.val ∈ knownLocals then
+            let target := mkStmtExprMd (StmtExpr.Identifier n.val)
+            [mkStmtExprMdWithLoc (StmtExpr.Assign [target] (mkStmtExprMd .Hole)) md]
+          else []
+        | _ => []
+      let localHavocs := match value with
+        | .Call _ (.Attribute _ receiver _ _) args _ =>
+          havocLocal receiver ++ args.val.toList.flatMap havocLocal
+        | .Call _ _ args _ =>
+          args.val.toList.flatMap havocLocal
+        | _ => []
+      return (ctx, [expr] ++ localHavocs ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
