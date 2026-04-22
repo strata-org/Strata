@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+
+
 import Strata.Languages.Core.Statement
 
 /-!
@@ -39,7 +41,7 @@ def collectCmdUsedVarNames : Core.Command → List String
   | .cmd (.init _ _ .nondet _) => []
   | .cmd (.set _ (.det e) _) => collectExprVarNames e
   | .cmd (.set _ .nondet _) => []
-  | .call _ _ args _ => args.flatMap collectExprVarNames
+  | .call _ args _ => args.flatMap (fun a => match a with | .inArg e => collectExprVarNames e | _ => [])
 
 mutual
 /-- Collect all variable names referenced in a statement. -/

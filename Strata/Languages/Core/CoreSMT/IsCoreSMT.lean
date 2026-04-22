@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+
+
 import Strata.Languages.Core.Statement
 
 /-!
@@ -69,7 +71,7 @@ def checkCoreSMTCmd : Core.Command → Except String Unit
       | .nondet => .ok ()
   | .cmd (.set _ .nondet _)    => .ok ()  -- havoc (nondet set) is ok
   | .cmd (.set _ (.det _) _)   => .error "assignment (set) is not in the CoreSMT subset"
-  | .call _ _ _ _              => .error "procedure call is not in the CoreSMT subset"
+  | .call _ _ _              => .error "procedure call is not in the CoreSMT subset"
 
 /-- Boolean version for backward compatibility -/
 def isCoreSMTCmd (c : Core.Command) : Bool :=

@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
+
 
 -- Executable with utilities for working with Strata files.
 import Strata.Backends.CBMC.CollectSymbols
@@ -13,6 +13,8 @@ import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
+import Strata.Languages.Boole.Boole
+import Strata.Languages.Boole.Verify
 import Strata.Languages.Core.CoreSMT.Verifier
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
