@@ -130,7 +130,7 @@ spec {
   } {
   n := cap;
   top := 0;
-  };
+};
  procedure StackEmpty () returns (b : bool)
 spec {
   ensures b ==> top == 0;
@@ -138,10 +138,10 @@ spec {
   } {
   if (top == 0) {
     b := true;
-    } else {
+  } else {
     b := false;
-    }
-  };
+  }
+};
  procedure Push (x : int) returns ()
 spec {
   requires top < n;
@@ -153,7 +153,7 @@ spec {
   } {
   top := top + 1;
   S := S[top:=x];
-  };
+};
  procedure Pop () returns (x : int)
 spec {
   requires top > 0;
@@ -163,7 +163,7 @@ spec {
   } {
   x := S[top];
   top := top - 1;
-  };
+};
 
 [Strata.Core] Type checking succeeded.
 

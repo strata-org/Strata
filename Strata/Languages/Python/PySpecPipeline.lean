@@ -7,12 +7,14 @@ module
 
 import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+public import Strata.Util.Statistics
 public import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
+public import Strata.Languages.Python.Specs.Error
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Util.DecideProp
@@ -40,6 +42,8 @@ public structure PySpecLaurelResult where
   typeAliases : Std.HashMap String String := {}
   /-- Classes whose spec is considered exhaustive (lists all methods). -/
   exhaustiveClasses : Std.HashSet String := {}
+  /-- Warnings collected during PySpec translation. -/
+  pyspecWarnings : Array Python.Specs.SpecError := #[]
 
 /-! ### Private Helpers -/
 
@@ -110,13 +114,14 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
 public def buildPySpecLaurel (pyspecEntries : Array (String × String))
-    (overloads : OverloadTable) (quiet : Bool := false) : EIO String PySpecLaurelResult := do
+    (overloads : OverloadTable) : EIO String PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
   let mut funcSigs : List Python.PythonFunctionDecl := []
   let mut allTypeAliases : Std.HashMap String String := {}
   let mut allExhaustiveClasses : Std.HashSet String := {}
+  let mut allWarnings : Array Python.Specs.SpecError := #[]
   for (modulePrefix, ionPath) in pyspecEntries do
     let ionFile : System.FilePath := ionPath
     let sigs ←
@@ -125,11 +130,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
-    if errors.size > 0 && !quiet then
-      let _ ← IO.eprintln
-        s!"{errors.size} PySpec translation warning(s) for {ionPath}:" |>.toBaseIO
-      for err in errors do
-        let _ ← IO.eprintln s!"  {err.file}: {err.message}" |>.toBaseIO
+    allWarnings := allWarnings ++ errors
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     allExhaustiveClasses := exhaustiveClasses.fold (init := allExhaustiveClasses) fun s name => s.insert name
@@ -147,6 +148,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .Composite ct => ct.name.text
       | .Constrained ct => ct.name.text
       | .Datatype dt => dt.name.text
+      | .Alias ta => ta.name.text
     match seenTypes.get? name with
     | some prevFile =>
       throw s!"PySpec type name collision: '{name}' defined in both {prevFile} and {srcFile}"
@@ -168,14 +170,15 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
            functionSignatures := funcSigs, typeAliases := allTypeAliases
-           exhaustiveClasses := allExhaustiveClasses }
+           exhaustiveClasses := allExhaustiveClasses
+           pyspecWarnings := allWarnings }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
     (dispatchPaths : Array String)
-    (quiet : Bool := false)
-    : EIO String OverloadTable := do
+    : EIO String (OverloadTable × Array Python.Specs.SpecError) := do
   let mut tbl : OverloadTable := {}
+  let mut allWarnings : Array Python.Specs.SpecError := #[]
   for dispatchPath in dispatchPaths do
     let ionFile : System.FilePath := dispatchPath
     let sigs ←
@@ -184,17 +187,13 @@ public def readDispatchOverloads
       | .error msg => throw s!"Could not read dispatch file {ionFile}: {msg}"
     let (overloads, errors) :=
       Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
-    if errors.size > 0 && !quiet then
-      let _ ← IO.eprintln
-        s!"{errors.size} dispatch warning(s) for {ionFile}:" |>.toBaseIO
-      for err in errors do
-        let _ ← IO.eprintln s!"  {err.file}: {err.message}" |>.toBaseIO
+    allWarnings := allWarnings ++ errors
     for (funcName, fnOverloads) in overloads do
       let existing := tbl.getD funcName {}
       tbl := tbl.insert funcName
         (fnOverloads.fold (init := existing)
           fun acc k v => acc.insert k v)
-  return tbl
+  return (tbl, allWarnings)
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` if the pyspec file is not found. -/
@@ -235,7 +234,7 @@ public def resolveAndBuildLaurelPrelude
     match ← resolveModuleEntry modName specDir (quiet := quiet) with
     | some (_, path) => dispatchPaths := dispatchPaths.push path
     | none => throw s!"Dispatch module '{modName}' not found in {specDir}"
-  let dispatchOverloads ← readDispatchOverloads dispatchPaths (quiet := quiet)
+  let (dispatchOverloads, dispatchWarnings) ← readDispatchOverloads dispatchPaths
   let resolveState :=
     Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
   if !quiet then
@@ -259,7 +258,8 @@ public def resolveAndBuildLaurelPrelude
     | some entry => explicitEntries := explicitEntries.push entry
     | none => throw s!"PySpec module '{modName}' not found in {specDir}"
   let allSpecEntries := autoSpecEntries ++ explicitEntries
-  buildPySpecLaurel allSpecEntries dispatchOverloads (quiet := quiet)
+  let result ← buildPySpecLaurel allSpecEntries dispatchOverloads
+  return { result with pyspecWarnings := dispatchWarnings ++ result.pyspecWarnings }
 
 /-! ### Pipeline Steps -/
 
@@ -359,17 +359,19 @@ public def splitProcNames (prog : Core.Program)
     Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`. -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
-    : IO (Option Core.Program × List DiagnosticModel × Laurel.Program) := do
-  let (coreOption, errors, lowered) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+    (profile : Bool := false)
+    : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
+  let (coreOption, errors, lowered, stats) ←
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, profile } combined
       (keepAllFilesPrefix := keepAllFilesPrefix)
-  return (coreOption.map appendCorePartOfRuntime, errors, lowered)
+  return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
+    (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel) := do
-  let (coreOption, errors, _) ← translateCombinedLaurelWithLowered combined
+  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined (profile := profile)
   return (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
@@ -390,15 +392,18 @@ public instance : ToString PipelineError where
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
     translate Python to Laurel, and combine with PySpec Laurel.
-    Returns the combined Laurel program ready for
-    `translateCombinedLaurel`.
 
     `dispatchModules` and `pyspecModules` are dotted module names
     resolved against `specDir`.
 
     The optional `sourcePath` overrides the file path embedded in
     Laurel metadata (useful when the Ion file was generated from a
-    `.py` source and you want line numbers to refer to the original). -/
+    `.py` source and you want line numbers to refer to the original).
+
+    When `warningSummaryFile` is provided, writes a JSON summary of
+    PySpec translation warnings to that path. The summary is written
+    after pyspec resolution, before Python-to-Laurel translation, so
+    it is produced even when later pipeline stages fail. -/
 public def pythonAndSpecToLaurel
     (pythonIonPath : String)
     (dispatchModules : Array String := #[])
@@ -407,6 +412,7 @@ public def pythonAndSpecToLaurel
     (specDir : System.FilePath := ".")
     (profile : Bool := false)
     (quiet : Bool := false)
+    (warningSummaryFile : Option String := none)
     : EIO PipelineError Laurel.Program := do
   let stmts ← profileStep profile "Read Python Ion" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
@@ -417,6 +423,33 @@ public def pythonAndSpecToLaurel
     match ← resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir (quiet := quiet) |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal msg)
+
+  -- Print and write PySpec warnings before later stages can fail
+  let pyspecWarnings := result.pyspecWarnings
+  if pyspecWarnings.size > 0 && !quiet then
+    let _ ← IO.eprintln
+      s!"{pyspecWarnings.size} PySpec translation warning(s):" |>.toBaseIO
+    for err in pyspecWarnings do
+      let _ ← IO.eprintln s!"  {err.file}: {err.kind.phase}.{err.kind.category}: {err.message}" |>.toBaseIO
+  if let some warnFile := warningSummaryFile then
+    let counts : Std.HashMap _ Nat := pyspecWarnings.foldl (init := {})
+      fun acc err => acc.alter err.kind fun mv => some (mv.getD 0 + 1)
+    let entries := counts.toArray.qsort fun ⟨a, _⟩ ⟨b, _⟩ => a < b
+    let jsonEntries : Array Lean.Json := entries.map fun (kind, count) =>
+      Lean.Json.mkObj [
+        ("phase", .str kind.phase),
+        ("category", .str kind.category),
+        ("count", .num count)
+      ]
+    let json := Lean.Json.mkObj [
+      ("pyspecWarningSummary", .arr jsonEntries),
+      ("totalWarnings", .num pyspecWarnings.size)
+    ]
+    match ← IO.FS.writeFile warnFile (json.compress ++ "\n") |>.toBaseIO with
+    | .ok () => pure ()
+    | .error e =>
+      let _ ← IO.eprintln s!"warning: failed to write warning summary to {warnFile}: {e}" |>.toBaseIO
+
   let preludeInfo := buildPreludeInfo result
 
   let metadataPath := sourcePath.getD pythonIonPath

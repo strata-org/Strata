@@ -50,7 +50,7 @@ inductive Stats where
   | wfProceduresGenerated
   | numFuncsRemovedAfterPrecondStripped
 
-derive_prefixed_toString Stats "PrecondElim"
+#derive_prefixed_toString Stats "PrecondElim"
 
 /-! ## Naming conventions -/
 
@@ -80,8 +80,12 @@ private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : O
 /--
 Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
-The metadata from the original statement is attached to the generated assertions,
-with property type classification added when applicable.
+
+Ideally, each generated assertion would use the call site expression's own
+metadata (`ob.callSiteMetadata`), but `CoreExprMetadata` is currently `Unit`,
+so expression-level metadata carries no source location. We therefore inherit
+the enclosing statement's `md` (with `propertySummary` stripped to prevent
+user-facing messages from leaking into generated checks).
 -/
 def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression)

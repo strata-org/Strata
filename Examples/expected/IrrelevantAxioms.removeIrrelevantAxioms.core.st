@@ -11,4 +11,4 @@ spec {
   ensures [result_positive]: result > 0;
   } {
   result := f(x);
-  };
+};
