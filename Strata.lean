@@ -90,6 +90,7 @@ import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.MetaData
 import Strata.DL.Lambda.Reflect
+import Strata.DL.Lambda.Rewriting
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.DL.Util.HList
