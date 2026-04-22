@@ -518,8 +518,8 @@ Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / n < 10
-assume_guard_0: i / n < 10
-assume_invariant_0_0: i >= 0
+assume_guard_0: i@1 / n < 10
+assume_invariant_0_0: i@1 >= 0
 test_requires_0: !(n == 0)
 Obligation:
 !(n == 0)
@@ -528,11 +528,11 @@ Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / n < 10
-assume_guard_0: i / n < 10
-assume_invariant_0_0: i >= 0
+assume_guard_0: i@1 / n < 10
+assume_invariant_0_0: i@1 >= 0
 test_requires_0: !(n == 0)
 Obligation:
-i + 1 >= 0
+i@1 + 1 >= 0
 
 ---
 info:

@@ -250,7 +250,13 @@ def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × L
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
-  let (new_var, config) := Env.genSym x σ.config
+  -- If `x` is already bound in the state, mark it used so that findUnique
+  -- skips the bare name and avoids self-referential substitutions
+  -- (e.g. havoc x generating fvar "x" when x is in scope).
+  let config := if σ.state.find? (⟨x, ()⟩ : CoreIdent) |>.isSome
+    then { σ.config with usedNames := σ.config.usedNames.insert x }
+    else σ.config
+  let (new_var, config) := Env.genSym x config
   let σ : Lambda.LState CoreLParams := { σ with config := config }
   (new_var, σ)
 

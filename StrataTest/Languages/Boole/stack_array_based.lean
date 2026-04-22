@@ -196,37 +196,37 @@ true
 Label: Push_ensures_6_1494
 Property: assert
 Assumptions:
-Push_requires_5_1443: top@1 < cap
+Push_requires_5_1443: top@2 < cap
 Obligation:
 true
 
 Label: Push_ensures_7_1525
 Property: assert
 Assumptions:
-Push_requires_5_1443: top@1 < cap
+Push_requires_5_1443: top@2 < cap
 Obligation:
-(S[top@1 + 1:=x])[top@1 + 1] == x
+(S@1[top@2 + 1:=x])[top@2 + 1] == x
 
 Label: Push_ensures_8_1583
 Property: assert
 Assumptions:
-Push_requires_5_1443: top@1 < cap
+Push_requires_5_1443: top@2 < cap
 Obligation:
-forall __q0 : int :: 1 <= __q0 && __q0 <= top@1 ==> (S[top@1 + 1:=x])[__q0] == (S[top@1 + 1:=x])[__q0]
+forall __q0 : int :: 1 <= __q0 && __q0 <= top@2 ==> (S@1[top@2 + 1:=x])[__q0] == S@1[__q0]
 
 Label: Pop_ensures_10_1840
 Property: assert
 Assumptions:
-Pop_requires_9_1803: top@2 > 0
+Pop_requires_9_1803: top@3 > 0
 Obligation:
 true
 
 Label: Pop_ensures_11_1871
 Property: assert
 Assumptions:
-Pop_requires_9_1803: top@2 > 0
+Pop_requires_9_1803: top@3 > 0
 Obligation:
-(S[top@1 + 1:=x])[top@2] == ((S[top@1 + 1:=x])[top@1 + 1:=(S[top@1 + 1:=x])[top@2]])[top@2]
+(S@1[top@2 + 1:=x])[top@3] == (S@1[top@2 + 1:=(S@1[top@2 + 1:=x])[top@3]])[top@3]
 
 ---
 info:
