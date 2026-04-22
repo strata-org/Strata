@@ -39,8 +39,8 @@ VCs:
 Label: n_gt_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < n@1 then 100 < n@1 else true
-<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
+<label_ite_cond_true: 100 < n>: if 100 < n@1 then 100 < n@1 else true
+<label_ite_cond_false: !(100 < n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
 callElimAssume_n_gt_100_postcond_6: if if 100 < n@1 then false else true then 100 < n@1 + 11 ==> r@2 == n@1 + 11 - 10 else true
 callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@1 + 11 <= 100 ==> r@2 == 91 else true
 callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
@@ -51,8 +51,8 @@ Obligation:
 Label: n_le_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < n@1 then 100 < n@1 else true
-<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
+<label_ite_cond_true: 100 < n>: if 100 < n@1 then 100 < n@1 else true
+<label_ite_cond_false: !(100 < n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
 callElimAssume_n_gt_100_postcond_6: if if 100 < n@1 then false else true then 100 < n@1 + 11 ==> r@2 == n@1 + 11 - 10 else true
 callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@1 + 11 <= 100 ==> r@2 == 91 else true
 callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true

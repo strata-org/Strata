@@ -35,7 +35,7 @@ VCs:
 Label: x_eq_y_internal
 Property: assert
 Assumptions:
-<label_ite_cond_true: (z == #false)>: z == false
+<label_ite_cond_true: z == false>: z == false
 z_false: z == false
 Obligation:
 true
@@ -43,7 +43,7 @@ true
 Label: unreachable
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(z == #false)>: if z == false then false else true
+<label_ite_cond_false: !(z == false)>: if z == false then false else true
 z_false: z == false
 Obligation:
 false
@@ -52,8 +52,8 @@ Label: x_eq_y
 Property: assert
 Assumptions:
 z_false: z == false
-<label_ite_cond_true: (z == #false)>: if z == false then z == false else true
-<label_ite_cond_false: !(z == #false)>: if if z == false then false else true then if z == false then false else true else true
+<label_ite_cond_true: z == false>: if z == false then z == false else true
+<label_ite_cond_false: !(z == false)>: if if z == false then false else true then if z == false then false else true else true
 Obligation:
 x == if z == false then x else y
 

@@ -123,7 +123,9 @@ assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 };
 #end
 
-/-- info: [] -/
+/--
+info: []
+-/
 #guard_msgs in
 #eval let (program, _) := Core.getProgram axiomPgm2
       let cache := Core.IrrelevantAxioms.Cache.build program

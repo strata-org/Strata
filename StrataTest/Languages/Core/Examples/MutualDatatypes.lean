@@ -46,7 +46,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram roseTreeTesterPgm) |>.snd |>.isEmpty
 
@@ -120,7 +122,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram roseTreeDestructorPgm) |>.snd |>.isEmpty
 
@@ -209,7 +213,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram roseTreeEqualityPgm) |>.snd |>.isEmpty
 
@@ -266,7 +272,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram polyRoseTreeHavocPgm) |>.snd |>.isEmpty
 
@@ -348,7 +356,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram stmtListHavocPgm) |>.snd |>.isEmpty
 

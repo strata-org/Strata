@@ -774,7 +774,7 @@ private def translatePrecond (preconditions : Array Assertion)
       postconditions := #[] }] ""
   let body := getBody result |>.getD ""
   assertEq result.errors.size 0
-  assertEq body "{ assert !Any..isfrom_None(key) }"
+  assertEq body "{ assert !Any..isfrom_None(key) summary \"precondition 0\" }"
 
 -- containsKey on a non-kwargs dict: DictStrAny_contains in an assert
 -- (would have been silently dropped before fix #2)

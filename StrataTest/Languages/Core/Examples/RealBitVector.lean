@@ -42,7 +42,7 @@ procedure P () returns ()
 {
   assert [real_add_ge_good]: x + y >= 3.0;
   assert [real_add_ge_bad]: x + y >= 4.0;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.fst
@@ -121,13 +121,13 @@ axiom [bv_y_ge_2]: bv{8}(2) <= y;
 procedure P () returns ()
 {
   assert [bv_add_ge]: x + y == y + x;
-  };
+};
 procedure Q (x : bv1) returns (r : bv1)
 spec {
   ensures [Q_ensures_0]: r == x - x;
   } {
   r := x + x;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.fst

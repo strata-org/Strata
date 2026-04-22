@@ -24,7 +24,9 @@ procedure P () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt1) |>.snd
 
@@ -66,7 +68,9 @@ procedure P2 () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt2) |>.snd
 
@@ -86,7 +90,9 @@ procedure P () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt3) |>.snd
 
@@ -125,7 +131,9 @@ procedure P () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt4) |>.snd
 
