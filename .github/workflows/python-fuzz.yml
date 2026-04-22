@@ -145,6 +145,7 @@ jobs:
         with:
           use-github-cache: false
           build-args: 'strata:exe strata'
+          test: false
 
       - uses: actions/setup-python@v6
         with:
