@@ -528,9 +528,8 @@ private def mergeCondPairs (ewns : List EnvWithNext)
     match e.splitConds.back? with
     | some (_, _, b) => b
     | none => true)
-  let trues := ewns.filter p
-  let falses := ewns.filter (not ∘ p)
-  let r := findCondPairs trues [] falses []
+  let parts := ewns.partition p
+  let r := findCondPairs parts.1 [] parts.2 []
   -- processIteBranches always tags both sides of a split with the same
   -- splitId, so findCondPairs always finds at least one pair when paths
   -- from opposite sides exist. This guard prevents an infinite loop if
@@ -538,11 +537,11 @@ private def mergeCondPairs (ewns : List EnvWithNext)
   if h_nonempty : r.paired.isEmpty then
     ewns
   else
-    have h_part : trues.length + falses.length = ewns.length :=
+    have h_part : parts.1.length + parts.2.length = ewns.length :=
       List.partition_length ewns p
     have h_fcpl : 2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
-        trues.length + falses.length := by
-      have := findCondPairs_length trues [] falses []
+        parts.1.length + parts.2.length := by
+      have := findCondPairs_length parts.1 [] parts.2 []
       simp at this; exact this
     have h_pos : r.paired.length ≥ 1 := by
       cases h : r.paired
