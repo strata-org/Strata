@@ -384,7 +384,13 @@ structure EnvWithNext where
       `splitId`), `cond` is the branch condition expression, and
       `side` distinguishes the branches (`true` = then, `false` = else
       for ITE splits). Last element is the most recent (innermost)
-      unmerged split. -/
+      unmerged split.
+
+      Key invariant: both sides of a split always share the same
+      `splitId` and `cond`; only `side` differs. Entries are only
+      pushed in `processIteBranches` when `pathCap` is active.
+      `mergeCondPairs` relies on this to correctly pair and merge
+      paths. -/
   splitConds : Array (Nat × Expression.Expr × Bool) := #[]
 
 /--
