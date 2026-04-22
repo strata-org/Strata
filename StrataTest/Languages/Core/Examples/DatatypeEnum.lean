@@ -48,7 +48,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram enumPgm) |>.snd |>.isEmpty
 
@@ -105,7 +107,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram enumHavocPgm) |>.snd |>.isEmpty
 
@@ -152,7 +156,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram enumExhaustivePgm) |>.snd |>.isEmpty
 

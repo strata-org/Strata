@@ -58,7 +58,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeTesterPgm) |>.snd |>.isEmpty
 
@@ -116,7 +118,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeHavocPgm) |>.snd |>.isEmpty
 
@@ -159,7 +163,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeExhaustivePgm) |>.snd |>.isEmpty
 
@@ -205,7 +211,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeMutualExclusionPgm) |>.snd |>.isEmpty
 
@@ -256,7 +264,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeEqualityPgm) |>.snd |>.isEmpty
 
@@ -304,7 +314,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeInequalityPgm) |>.snd |>.isEmpty
 
@@ -369,7 +381,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeDestructorPgm) |>.snd |>.isEmpty
 
@@ -463,7 +477,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeNestedPgm) |>.snd |>.isEmpty
 
@@ -529,7 +545,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeDestructorHavocPgm) |>.snd |>.isEmpty
 
@@ -584,7 +602,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeDifferentValuesPgm) |>.snd |>.isEmpty
 

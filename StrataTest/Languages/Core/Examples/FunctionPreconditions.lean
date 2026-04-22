@@ -317,12 +317,13 @@ VCs:
 Label: set_z_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: (~Int.Gt a #0)>: $__a0 > 0
+<label_ite_cond_true: a > 0>: $__a0 > 0
 Obligation:
 !($__a0 == 0)
 
 ---
-info: Obligation: set_z_calls_Int.SafeDiv_0
+info:
+Obligation: set_z_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 -/
@@ -512,7 +513,7 @@ true
 Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
+<label_ite_cond_true: i / n < 10>: 0 / $__n0 < 10
 assume_guard_0: $__i1 / $__n0 < 10
 assume_invariant_0_0: $__i1 >= 0
 test_requires_0: !($__n0 == 0)
@@ -522,7 +523,7 @@ Obligation:
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
+<label_ite_cond_true: i / n < 10>: 0 / $__n0 < 10
 assume_guard_0: $__i1 / $__n0 < 10
 assume_invariant_0_0: $__i1 >= 0
 test_requires_0: !($__n0 == 0)

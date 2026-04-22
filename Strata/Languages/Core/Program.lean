@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.TypeDecl
 public import Strata.Languages.Core.Axiom
+public import Strata.Languages.Core.DDMTransform.FormatCore
 
 ---------------------------------------------------------------------
 

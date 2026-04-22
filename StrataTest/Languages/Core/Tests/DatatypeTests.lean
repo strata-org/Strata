@@ -46,7 +46,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram nestedPolyDestructorPgm) |>.snd |>.isEmpty
 
@@ -110,7 +112,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram hiddenTypeRecursionPgm) |>.snd |>.isEmpty
 

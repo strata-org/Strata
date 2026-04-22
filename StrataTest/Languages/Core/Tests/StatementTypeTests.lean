@@ -18,9 +18,9 @@ open Imperative (PureFunc)
 
 /--
 info: ok: {
-  init (x : int) := (xinit : int)
-  x := (xinit : int)
-  init (y : int) := (xinit : int)
+  var x : int := xinit;
+  x := xinit;
+  var y : int := xinit;
 }
 -/
 #guard_msgs in
@@ -126,8 +126,8 @@ subst: [($__ty0, int)]
 
 /--
 info: ok: {
-  init (x : int) := #1
-  x := #2
+  var x : int := 1;
+  x := 2;
 }
 -/
 #guard_msgs in
@@ -193,8 +193,12 @@ def testFuncDeclTypeCheck : List Statement :=
 /--
 info: ok: {
   funcDecl <function>
-  init (y : int) := ((~identity : (arrow int int)) #5)
-  assert [y_eq_5] ((y : int) == #5)
+  var y : int := identity(5);
+  ⏎
+  -- Errors encountered during conversion:
+  Unsupported construct in handleUnaryOps: unknown operation, rendering as generic call: identity
+  Context: Global scope:
+  assert [y_eq_5]: y == 5;
 }
 -/
 #guard_msgs in

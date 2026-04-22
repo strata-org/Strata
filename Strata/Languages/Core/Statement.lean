@@ -104,19 +104,6 @@ def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
     | .outArg _ => none
 
 end CallArg
-
-instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
-    [ToFormat (List P.Ident)] [ToFormat P.Expr] :
-    ToFormat (CmdExt P) where
-  format c := match c with
-    | .cmd c => format c
-    | .call pname args _md =>
-      let inArgs := CallArg.getInArgs args
-      let lhs := CallArg.getLhs args
-      let fmtArgs := Format.joinSep inArgs ("," ++ .line)
-      let fmtOut := if lhs.isEmpty then f!"" else f!", out {lhs}"
-      f!"call {pname}({fmtArgs}{fmtOut})"
-
 ---------------------------------------------------------------------
 
 @[expose]

@@ -24,7 +24,9 @@ spec {
 
 -- Translation from DDM AST to Strata Core AST
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.snd |>.isEmpty
@@ -38,7 +40,7 @@ spec {
   ensures [Test_ensures_1]: x == y;
   } {
   y := x || x;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.fst

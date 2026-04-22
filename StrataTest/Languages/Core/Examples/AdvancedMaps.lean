@@ -41,7 +41,9 @@ spec {
 #end
 
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
@@ -68,7 +70,7 @@ spec {
   b := b[true:=-1];
   assert [bTrueEqTrue]: b[true] == -1;
   assert [mix]: a[1] == -(b[true]);
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst
