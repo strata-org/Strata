@@ -370,7 +370,7 @@ Label: x_eq_1
 Property: assert
 Assumptions:
 Proof Obligation:
-((x@1 : int) == #1)
+((x : int) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |> format

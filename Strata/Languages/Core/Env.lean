@@ -250,13 +250,7 @@ def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × L
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
-  -- Merge scope variable names into usedNames so that findUnique skips
-  -- names already bound in the state.  This prevents self-referential
-  -- substitutions (e.g. havoc x generating fvar "x" when x is in scope).
-  let scopeNames := σ.state.foldl (fun acc scope =>
-    scope.keys.foldl (fun s k => s.insert k.name) acc) σ.config.usedNames
-  let config := { σ.config with usedNames := scopeNames }
-  let (new_var, config) := Env.genSym x config
+  let (new_var, config) := Env.genSym x σ.config
   let σ : Lambda.LState CoreLParams := { σ with config := config }
   (new_var, σ)
 
