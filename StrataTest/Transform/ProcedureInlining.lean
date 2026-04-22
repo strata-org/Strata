@@ -171,7 +171,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
-    | .call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _ =>
+    | .call procName1 callArgs1 _, .call procName2 callArgs2 _ =>
+      let lhs1 := Core.CallArg.getLhs callArgs1
+      let lhs2 := Core.CallArg.getLhs callArgs2
+      let args1 := Core.CallArg.getInArgs callArgs1
+      let args2 := Core.CallArg.getInArgs callArgs2
       if procName1 ≠ procName2 then
         .error "Procedure name does not match"
       else if lhs1.length ≠ lhs2.length then
@@ -268,25 +272,25 @@ def checkInlining (prog : Core.Program) (progAns : Core.Program)
 def Test1 :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   y := !x;
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
-  call b_out := f(b_in);
+  call f(b_in, out b_out);
 };
 #end
 
 def Test1Ans :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   y := !x;
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
   inlined: {
@@ -308,7 +312,7 @@ info: ok: true
 def Test2 :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   body: {
     if (x) {
       exit body;
@@ -317,10 +321,10 @@ procedure f(x : bool) returns (y : bool) {
   }
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
-  call b_out := f(b_in);
+  call f(b_in, out b_out);
   _exit: {}
 };
 #end
@@ -328,7 +332,7 @@ procedure h() returns () {
 def Test2Ans :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   body: {
     if (x) {
       exit body;
@@ -337,7 +341,7 @@ procedure f(x : bool) returns (y : bool) {
   }
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
   inlined: {
@@ -369,16 +373,16 @@ info: ok: true
 def Test3 :=
 #strata
 program Core;
-procedure f(x : int) returns (y : int) {
+procedure f(x : int, out y : int) {
   y := x;
 };
 
-procedure g() returns () {
+procedure g() {
   var f_out : int;
   if (true) {
-    call f_out := f(1);
+    call f(1, out f_out);
   } else {
-    call f_out := f(2);
+    call f(2, out f_out);
   }
 };
 #end
@@ -386,11 +390,11 @@ procedure g() returns () {
 def Test3Ans :=
 #strata
 program Core;
-procedure f(x : int) returns (y : int) {
+procedure f(x : int, out y : int) {
   y := x;
 };
 
-procedure g() returns () {
+procedure g() {
   var f_out : int;
   if (true) {
     inlined1: {
@@ -420,12 +424,12 @@ info: ok: true
 def TestRecursiveCall :=
 #strata
 program Core;
-procedure a1() returns () {
+procedure a1() {
 };
-procedure a2() returns () {
+procedure a2() {
 };
 
-procedure f() returns () {
+procedure f() {
   call a1();
   call a2();
   call f();
@@ -464,14 +468,14 @@ info: true, some CallGraph(callees: [("a1", []),
 def TestThreeChain :=
 #strata
 program Core;
-procedure leaf(x : int) returns (y : int) {
+procedure leaf(x : int, out y : int) {
   y := x + 1;
 };
-procedure mid(a : int) returns (b : int) {
-  call b := leaf(a);
+procedure mid(a : int, out b : int) {
+  call leaf(a, out b);
 };
-procedure top(n : int) returns (r : int) {
-  call r := mid(n);
+procedure top(n : int, out r : int) {
+  call mid(n, out r);
 };
 #end
 

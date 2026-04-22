@@ -12,7 +12,7 @@ namespace Strata
 def coverDiagnosticsPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -38,7 +38,7 @@ info: #["cover property is not satisfiable", "assertion does not hold"]
 def passingPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
   assume (x >= 0);
@@ -64,7 +64,7 @@ info: #[]
 def coverPassAssertFailPgm :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var x : int;
 

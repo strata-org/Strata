@@ -13,7 +13,7 @@ def procIfPgm : Program :=
 #strata
 program Core;
 
-procedure F(n : int) returns (r : int)
+procedure F(n : int, out r : int)
 spec {
   ensures [n_gt_100_postcond]: 100 < n ==> r == n - 10;
   ensures [n_le_100_postcond]: n <= 100 ==> r == 91;
@@ -25,8 +25,8 @@ spec {
    }
    else
    {
-       call r := F(n + 11);
-       call r := F(r);
+       call F(n + 11, out r);
+       call F(r, out r);
    }
 };
 #end

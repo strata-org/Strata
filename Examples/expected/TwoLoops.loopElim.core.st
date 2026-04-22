@@ -2,7 +2,7 @@ program Core;
 
 function N () : int;
 axiom [ax_N]: 0 <= N;
-procedure TwoLoops () returns ()
+procedure TwoLoops ()
 {
   var i : int;
   var j : int;

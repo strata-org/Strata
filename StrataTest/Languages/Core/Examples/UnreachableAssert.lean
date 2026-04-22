@@ -12,7 +12,7 @@ namespace Strata
 def unreachableAssertPgm :=
 #strata
 program Core;
-procedure R() returns ()
+procedure R()
 {
   var x : int, y : int;
   var z : bool;

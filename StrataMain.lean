@@ -135,6 +135,7 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
     |>.addDialect! Strata.Python.Python
     |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
     |>.addDialect! Strata.Core
+    |>.addDialect! Strata.Boole
     |>.addDialect! Strata.Laurel.Laurel
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
@@ -302,6 +303,7 @@ private def readStrataProgram (file : String)
   let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
   let dctx := Elab.LoadedDialects.builtin
   let dctx := dctx.addDialect! Core
+  let dctx := dctx.addDialect! Boole
   let dctx := dctx.addDialect! C_Simp
   let dctx := dctx.addDialect! B3CST
   let leanEnv ← Lean.mkEmptyEnvironment 0
@@ -820,7 +822,7 @@ def pyAnalyzeToGotoCommand : Command where
       let distincts := tcPgm.decls.filterMap fun d => match d with
         | .distinct name es _ => some (name, es) | _ => none
       match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
-            (varTypes := tcPgm.getVarTy?) with
+            with
       | .error e => exitInternalError s!"{e}"
       | .ok (ctx, liftedFuncs) =>
         let extraSyms ← match collectExtraSymbols tcPgm with
@@ -1056,7 +1058,7 @@ def laurelAnalyzeToGotoCommand : Command where
         for p in procs do
           let procName := Core.CoreIdent.toPretty p.header.name
           match procedureToGotoCtx Env p (sourceText := sourceText) (axioms := axioms) (distincts := distincts)
-                (varTypes := tcPgm.getVarTy?) with
+                with
           | .error e => exitInternalError s!"{e}"
           | .ok (ctx, liftedFuncs) =>
             allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
@@ -1304,6 +1306,8 @@ def verifyCommand : Command where
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
+                   else if pgm.dialect == "Boole" then
+                     Boole.typeCheck pgm opts
                    else
                      typeCheck inputCtx pgm opts
         match ans with

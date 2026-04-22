@@ -47,7 +47,7 @@ rec function toList (@[cases] t : IntTree) : IntList
 };
 
 // listLen distributes over append.
-procedure LenAppend(xs : IntList, ys : IntList) returns ()
+procedure LenAppend(xs : IntList, ys : IntList)
 spec {
   ensures [len_append]: listLen(append(xs, ys)) == listLen(xs) + listLen(ys);
 }
@@ -59,7 +59,7 @@ spec {
 };
 
 // Main theorem: size(t) == listLen(toList(t))
-procedure SizeIsLen(t : IntTree) returns ()
+procedure SizeIsLen(t : IntTree)
 spec {
   ensures [size_is_len]: size(t) == listLen(toList(t));
 }
