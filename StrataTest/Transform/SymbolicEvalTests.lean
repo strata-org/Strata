@@ -50,6 +50,113 @@ procedure test () returns ()
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint simpleProg
 
+/-! Deterministic if: condition becomes an assume on each branch -/
+
+private def detIfProg :=
+#strata
+program Core;
+procedure detIfTest(x : int) returns ()
+spec { requires [pre]: x >= 0; }
+{
+  if (x > 5) {
+    assert [big]: x > 5;
+  } else {
+    assert [small]: x <= 5;
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure detIfTest () returns ()
+{
+  if * {
+    assume [|<label_ite_cond_true: (~Int.Gt x #5)>|]: $__x0 > 5;
+    assume [pre]: $__x0 >= 0;
+    assert [big]: $__x0 > 5;
+    } else {
+    assume [|<label_ite_cond_false: !(~Int.Gt x #5)>|]: if $__x0 > 5 then false else true;
+    assume [pre]: $__x0 >= 0;
+    assert [small]: $__x0 <= 5;
+    }
+  };
+-/
+#guard_msgs (whitespace := lax) in
+#eval evalAndPrint detIfProg
+
+/-! Nondeterministic if: each branch gets its own obligation path -/
+
+private def nondetIfProg :=
+#strata
+program Core;
+procedure nondetIfTest(x : int) returns (r : int)
+spec {
+  requires [pre]: x >= 0;
+  ensures [post]: r >= 0;
+}
+{
+  if * {
+    r := x;
+  } else {
+    r := x + 1;
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure nondetIfTest () returns ()
+{
+  assume [pre]: $__x0 >= 0;
+  assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__$__nondet_cond_22 then $__$__nondet_cond_22 else true;
+  assume [|<label_ite_cond_false: !$__nondet_cond_2>|]: if if $__$__nondet_cond_22 then false else true then if $__$__nondet_cond_22 then false else true else true;
+  assert [post]: if $__$__nondet_cond_22 then $__x0 else $__x0 + 1 >= 0;
+  };
+-/
+#guard_msgs (whitespace := lax) in
+#eval evalAndPrint nondetIfProg
+
+/-! Block exit: exit jumps to the end of the named block -/
+
+private def blockExitProg :=
+#strata
+program Core;
+procedure blockExitTest(x : int) returns ()
+spec { requires [pre]: x >= 0; }
+{
+  outer: {
+    if (x > 10) {
+      assert [big]: x > 10;
+      exit outer;
+    }
+    assert [small]: x <= 10;
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure blockExitTest () returns ()
+{
+  if * {
+    assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
+    assume [pre]: $__x0 >= 0;
+    assert [big]: $__x0 > 10;
+    } else {
+    assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
+    assume [pre]: $__x0 >= 0;
+    assert [small]: $__x0 <= 10;
+    }
+  };
+-/
+#guard_msgs (whitespace := lax) in
+#eval evalAndPrint blockExitProg
+
+/-! Combined: block exit + if + nondet (comprehensive) -/
+
 private def blockExitIfProg :=
 #strata
 program Core;

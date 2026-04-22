@@ -138,9 +138,9 @@ def symbolicEval (options : VerifyOptions) (program : Program)
     }
     Decl.proc proc .empty
 
-  -- Also include function declarations and distinct constraints from the
-  -- evaluation environment, so the SMT encoder can build its context
-  -- from the program without needing a separate Program.eval call.
+  -- Include function declarations and distinct constraints from the
+  -- evaluation environment so the obligations program is self-contained
+  -- for downstream phases (ANF encoding, SMT encoding).
   let postEvalEnv := pEs.head?.getD E
   -- Get functions added during evaluation (not in the initial factory)
   let initialFactorySize := E.exprEnv.config.factory.toArray.size

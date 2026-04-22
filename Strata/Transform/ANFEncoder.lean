@@ -7,42 +7,25 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 
-/-! # Expression ANFEncoder
+/-! # ANF Encoder
 
-A Core-to-Core transformation that extracts common subexpressions into fresh
-variable definitions. This reduces duplication that arises from partial
-evaluation inlining variable assignments.
+Core-to-Core transformation that extracts common subexpressions into fresh
+`var` declarations, reducing duplication from partial evaluation.
 
-## Overview
-
-After partial evaluation, expressions may contain repeated subexpressions.
 For example:
 ```
 assume F(2+z) >= 5
 assert F(2+z)+F(2+z) == 2*F(2+z)
 ```
-
-This pass normalizes such programs by hoisting common subexpressions into
-`var` declarations:
+becomes:
 ```
 var $__anf.0 := F(2+z)
 assume $__anf.0 >= 5
 assert $__anf.0+$__anf.0 == 2*$__anf.0
 ```
 
-This is the second phase described in issue #749: after partial evaluation
-produces a Core program with inlined expressions, ANF encoding normalizes
-the result by factoring out common subexpressions.
-
-## Design
-
-The pass operates at the program level: `anfEncodeProgram` walks procedure
-bodies and extracts common subexpressions into `var` declarations prepended
-to the body.
-
-After ANF encoding, proof obligation extraction (issue #475) becomes a simple
-tree traversal that collects individual goals from `if * { } else { }` trees
-— no further SMT-to-SMT optimization is needed.
+The pass walks procedure bodies via `anfEncodeProgram`, hoisting duplicated
+subexpressions into `var` declarations prepended to the body.
 -/
 
 public section
@@ -51,27 +34,20 @@ namespace Core.ANFEncoder
 
 open Lambda Imperative
 
+/-- Prefix used for ANF-generated variable names. Shared between the encoder
+    and the verifier's model filter. -/
+def anfVarPrefix : String := "$__anf."
+
 ---------------------------------------------------------------------
 -- Expression analysis utilities
 ---------------------------------------------------------------------
 
-/-- Check if an expression is a leaf node that should not be anfEncoded. -/
-private def isTrivial (e : Expression.Expr) : Bool :=
-  match e with
-  | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => true
-  | _ => false
+/-- Check if an expression is a leaf node that should not be ANF-encoded. -/
+private def isTrivial (e : Expression.Expr) : Bool := e.isLeaf
 
 /-- Check if an expression contains bound variables, which would make
     ANF encoding unsound across different binding contexts. -/
-private def hasBVar (e : Expression.Expr) : Bool :=
-  match e with
-  | .bvar _ _ => true
-  | .const _ _ | .fvar _ _ _ | .op _ _ _ => false
-  | .app _ fn arg => hasBVar fn || hasBVar arg
-  | .ite _ c t f => hasBVar c || hasBVar t || hasBVar f
-  | .eq _ e1 e2 => hasBVar e1 || hasBVar e2
-  | .abs _ _ _ body => hasBVar body
-  | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
+private def hasBVar (e : Expression.Expr) : Bool := e.hasBVar
 
 /-- Collect non-trivial subexpressions from an expression, suitable for
     ANF encoding. For function applications, collects the full (curried)
@@ -170,26 +146,10 @@ where
                          (replaceExprs replacements body)
 
 /-- Get the type annotation from an expression, if available. -/
-private def getExprType? : Expression.Expr → Option LMonoTy
-  | .fvar _ _ ty => ty
-  | .op _ _ ty => ty
-  | .const _ c => some c.ty
-  | .eq _ _ _ => some .bool
-  | .ite _ _ t _ => getExprType? t
-  | .app _ fn _ =>
-    match getExprType? fn with
-    | some (.tcons "arrow" [_, ret]) => some ret
-    | _ => none
-  | _ => none
+private def getExprType? (e : Expression.Expr) : Option LMonoTy := Core.getExprType? e
 
 /-- Compute the size of an expression (number of nodes). -/
-private def exprSize : Expression.Expr → Nat
-  | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => 1
-  | .app _ fn arg => 1 + exprSize fn + exprSize arg
-  | .ite _ c t f => 1 + exprSize c + exprSize t + exprSize f
-  | .eq _ e1 e2 => 1 + exprSize e1 + exprSize e2
-  | .abs _ _ _ body => 1 + exprSize body
-  | .quant _ _ _ _ tr body => 1 + exprSize tr + exprSize body
+private def exprSize (e : Expression.Expr) : Nat := LExpr.size _ e
 
 /-- Collect all subexpression hashes from an expression,
     excluding the expression itself. -/
@@ -231,54 +191,14 @@ private def findANFEncoderTargets (exprs : List Expression.Expr) :
 ---------------------------------------------------------------------
 
 /-- Apply a function to all user-facing expressions in a list of statements. -/
-private partial def mapExprsInStatements (f : Expression.Expr → Expression.Expr) :
-    Statements → Statements
-  | [] => []
-  | s :: rest => mapExprsInStatement f s :: mapExprsInStatements f rest
-where
-  mapExprsInStatement (f : Expression.Expr → Expression.Expr) : Statement → Statement
-  | .cmd (.cmd (.assert l e md)) => .cmd (.cmd (.assert l (f e) md))
-  | .cmd (.cmd (.assume l e md)) => .cmd (.cmd (.assume l (f e) md))
-  | .cmd (.cmd (.cover l e md)) => .cmd (.cmd (.cover l (f e) md))
-  | .cmd (.cmd (.init n ty (.det e) md)) => .cmd (.cmd (.init n ty (.det (f e)) md))
-  | .cmd (.cmd (.set n (.det e) md)) => .cmd (.cmd (.set n (.det (f e)) md))
-  | .cmd (.call lhs pname args md) => .cmd (.call lhs pname (args.map f) md)
-  | .block l ss md => .block l (mapExprsInStatements f ss) md
-  | .ite (.det c) tss ess md =>
-    .ite (.det (f c)) (mapExprsInStatements f tss) (mapExprsInStatements f ess) md
-  | .ite .nondet tss ess md =>
-    .ite .nondet (mapExprsInStatements f tss) (mapExprsInStatements f ess) md
-  | .loop (.det g) measure inv body md =>
-    .loop (.det (f g)) (measure.map f) (inv.map f) (mapExprsInStatements f body) md
-  | .loop .nondet measure inv body md =>
-    .loop .nondet (measure.map f) (inv.map f) (mapExprsInStatements f body) md
-  | other => other
+private partial def mapExprsInStatements (f : Expression.Expr → Expression.Expr)
+    (ss : Statements) : Statements :=
+  Statements.mapExprs f ss
 
 /-- Collect all user-facing expressions from a list of statements. -/
-private partial def collectExprsFromStatements : Statements → List Expression.Expr
-  | [] => []
-  | s :: rest => collectExprsFromStatement s ++ collectExprsFromStatements rest
-where
-  collectExprsFromStatement : Statement → List Expression.Expr
-  | .cmd (.cmd (.assert _ e _)) => collectSubexprs e
-  | .cmd (.cmd (.assume _ e _)) => collectSubexprs e
-  | .cmd (.cmd (.cover _ e _)) => collectSubexprs e
-  | .cmd (.cmd (.init _ _ (.det e) _)) => collectSubexprs e
-  | .cmd (.cmd (.set _ (.det e) _)) => collectSubexprs e
-  | .cmd (.call _ _ args _) => args.flatMap collectSubexprs
-  | .block _ ss _ => collectExprsFromStatements ss
-  | .ite (.det c) tss ess _ =>
-    collectSubexprs c ++ collectExprsFromStatements tss ++
-    collectExprsFromStatements ess
-  | .ite .nondet tss ess _ =>
-    collectExprsFromStatements tss ++ collectExprsFromStatements ess
-  | .loop (.det g) measure inv body _ =>
-    collectSubexprs g ++ measure.toList.flatMap collectSubexprs ++
-    inv.flatMap collectSubexprs ++ collectExprsFromStatements body
-  | .loop .nondet measure inv body _ =>
-    measure.toList.flatMap collectSubexprs ++
-    inv.flatMap collectSubexprs ++ collectExprsFromStatements body
-  | _ => []
+private partial def collectExprsFromStatements (ss : Statements) :
+    List Expression.Expr :=
+  Statements.collectExprs collectSubexprs ss
 
 ---------------------------------------------------------------------
 -- Program level ANF encoding
@@ -291,7 +211,7 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let targets := findANFEncoderTargets (collectExprsFromStatements body)
   -- Build all var declarations and the replacement map
   let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
-    let freshName : CoreIdent := ⟨s!"$__anf.{idx}", ()⟩
+    let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
     let ty : Expression.Ty := match freshTy with

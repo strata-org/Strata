@@ -350,6 +350,22 @@ def isOp (e : LExpr T) : Bool :=
   | .op _ _ _ => true
   | _ => false
 
+/-- Check if an expression is a leaf node (const, bvar, fvar, or op). -/
+def isLeaf {T : LExprParamsT} (e : LExpr T) : Bool :=
+  match e with
+  | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => true
+  | _ => false
+
+/-- Check if an expression contains bound variables. -/
+def hasBVar {T : LExprParamsT} : LExpr T → Bool
+  | .bvar _ _ => true
+  | .const _ _ | .fvar _ _ _ | .op _ _ _ => false
+  | .app _ fn arg => hasBVar fn || hasBVar arg
+  | .ite _ c t f => hasBVar c || hasBVar t || hasBVar f
+  | .eq _ e1 e2 => hasBVar e1 || hasBVar e2
+  | .abs _ _ _ body => hasBVar body
+  | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
+
 @[expose, match_pattern]
 protected def true {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .boolConst m true
 

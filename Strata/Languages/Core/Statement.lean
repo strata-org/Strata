@@ -404,6 +404,60 @@ end
 
 ---------------------------------------------------------------------
 
+/-- Apply a function to all user-facing expressions in a list of statements. -/
+partial def Statements.mapExprs (f : Expression.Expr → Expression.Expr) :
+    Statements → Statements
+  | [] => []
+  | s :: rest => mapExprsStmt f s :: Statements.mapExprs f rest
+where
+  mapExprsStmt (f : Expression.Expr → Expression.Expr) : Statement → Statement
+  | .cmd (.cmd (.assert l e md)) => .cmd (.cmd (.assert l (f e) md))
+  | .cmd (.cmd (.assume l e md)) => .cmd (.cmd (.assume l (f e) md))
+  | .cmd (.cmd (.cover l e md)) => .cmd (.cmd (.cover l (f e) md))
+  | .cmd (.cmd (.init n ty (.det e) md)) => .cmd (.cmd (.init n ty (.det (f e)) md))
+  | .cmd (.cmd (.set n (.det e) md)) => .cmd (.cmd (.set n (.det (f e)) md))
+  | .cmd (.call lhs pname args md) => .cmd (.call lhs pname (args.map f) md)
+  | .block l ss md => .block l (Statements.mapExprs f ss) md
+  | .ite (.det c) tss ess md =>
+    .ite (.det (f c)) (Statements.mapExprs f tss) (Statements.mapExprs f ess) md
+  | .ite .nondet tss ess md =>
+    .ite .nondet (Statements.mapExprs f tss) (Statements.mapExprs f ess) md
+  | .loop (.det g) measure inv body md =>
+    .loop (.det (f g)) (measure.map f) (inv.map f) (Statements.mapExprs f body) md
+  | .loop .nondet measure inv body md =>
+    .loop .nondet (measure.map f) (inv.map f) (Statements.mapExprs f body) md
+  | other => other
+
+/-- Collect all user-facing expressions from a list of statements. -/
+partial def Statements.collectExprs (collect : Expression.Expr → List Expression.Expr) :
+    Statements → List Expression.Expr
+  | [] => []
+  | s :: rest => collectExprsStmt collect s ++ Statements.collectExprs collect rest
+where
+  collectExprsStmt (collect : Expression.Expr → List Expression.Expr) :
+      Statement → List Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) => collect e
+  | .cmd (.cmd (.assume _ e _)) => collect e
+  | .cmd (.cmd (.cover _ e _)) => collect e
+  | .cmd (.cmd (.init _ _ (.det e) _)) => collect e
+  | .cmd (.cmd (.set _ (.det e) _)) => collect e
+  | .cmd (.call _ _ args _) => args.flatMap collect
+  | .block _ ss _ => Statements.collectExprs collect ss
+  | .ite (.det c) tss ess _ =>
+    collect c ++ Statements.collectExprs collect tss ++
+    Statements.collectExprs collect ess
+  | .ite .nondet tss ess _ =>
+    Statements.collectExprs collect tss ++ Statements.collectExprs collect ess
+  | .loop (.det g) measure inv body _ =>
+    collect g ++ measure.toList.flatMap collect ++
+    inv.flatMap collect ++ Statements.collectExprs collect body
+  | .loop .nondet measure inv body _ =>
+    measure.toList.flatMap collect ++
+    inv.flatMap collect ++ Statements.collectExprs collect body
+  | _ => []
+
+---------------------------------------------------------------------
+
 
 end
 end Core
