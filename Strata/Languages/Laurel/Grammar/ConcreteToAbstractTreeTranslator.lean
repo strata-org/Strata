@@ -252,15 +252,6 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => ⟨.Local "", target.source, target.md⟩
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [targetVar] value) src
-    | q`Laurel.multiAssign, #[targetsSeq, arg1] =>
-      let targets ← match targetsSeq with
-        | .seq _ .comma args => args.toList.mapM fun arg => do
-          let name ← translateIdent arg
-          let argSrc ← getArgFileRange arg
-          pure (⟨.Local name, argSrc, .empty⟩ : VariableMd)
-        | _ => pure []
-      let value ← translateStmtExpr arg1
-      return mkStmtExprMd (.Assign targets value) src
     | q`Laurel.new, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkStmtExprMd (.New name) src

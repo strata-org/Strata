@@ -47,7 +47,6 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
-op multiAssign (targets: CommaSepBy Ident, value: StmtExpr): StmtExpr => @[prec(10)] targets " := " value;
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
