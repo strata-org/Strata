@@ -24,3 +24,8 @@ a : MyClass = MyClass(2)
 a.val = 1
 some_unmodeled_call_6(a)
 assert a.val == 1, "expected unknown because heap should be havocked" 
+
+d: dict[str, int] = {"a": 1}
+other: dict[str, int] = {}
+d.update(other)
+assert other == {}, "expected unknown because argument locals should be havocked"
