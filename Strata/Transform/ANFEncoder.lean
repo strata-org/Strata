@@ -148,9 +148,6 @@ where
 /-- Get the type annotation from an expression, if available. -/
 private def getExprType? (e : Expression.Expr) : Option LMonoTy := Core.getExprType? e
 
-/-- Compute the size of an expression (number of nodes). -/
-private def exprSize (e : Expression.Expr) : Nat := LExpr.size _ e
-
 /-- Collect all subexpression hashes from an expression,
     excluding the expression itself. -/
 private def collectSubexprHashes (e : Expression.Expr) : Std.HashSet UInt64 :=
@@ -184,19 +181,19 @@ private def findANFEncoderTargets (exprs : List Expression.Expr) :
   let candidates := exprs.filter (fun e => !isTrivial e && !hasBVar e)
   let duplicates := findDuplicates candidates
   let duplicates := removeSubsumed duplicates
-  duplicates.mergeSort (fun a b => exprSize a > exprSize b)
+  duplicates.mergeSort (fun a b => LExpr.size _ a > LExpr.size _ b)
 
 ---------------------------------------------------------------------
 -- Statement-level expression mapping
 ---------------------------------------------------------------------
 
 /-- Apply a function to all user-facing expressions in a list of statements. -/
-private partial def mapExprsInStatements (f : Expression.Expr → Expression.Expr)
+private def mapExprsInStatements (f : Expression.Expr → Expression.Expr)
     (ss : Statements) : Statements :=
   Statements.mapExprs f ss
 
 /-- Collect all user-facing expressions from a list of statements. -/
-private partial def collectExprsFromStatements (ss : Statements) :
+private def collectExprsFromStatements (ss : Statements) :
     List Expression.Expr :=
   Statements.collectExprs collectSubexprs ss
 

@@ -72,15 +72,15 @@ info: program Core;
 procedure detIfTest () returns ()
 {
   if * {
-    assume [|<label_ite_cond_true: (~Int.Gt x #5)>|]: $__x0 > 5;
+    assume [|<label_ite_cond_true: x > 5>|]: $__x0 > 5;
     assume [pre]: $__x0 >= 0;
     assert [big]: $__x0 > 5;
-    } else {
-    assume [|<label_ite_cond_false: !(~Int.Gt x #5)>|]: if $__x0 > 5 then false else true;
+  } else {
+    assume [|<label_ite_cond_false: !(x > 5)>|]: if $__x0 > 5 then false else true;
     assume [pre]: $__x0 >= 0;
     assert [small]: $__x0 <= 5;
-    }
-  };
+  }
+};
 -/
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint detIfProg
@@ -111,9 +111,9 @@ procedure nondetIfTest () returns ()
 {
   assume [pre]: $__x0 >= 0;
   assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__$__nondet_cond_22 then $__$__nondet_cond_22 else true;
-  assume [|<label_ite_cond_false: !$__nondet_cond_2>|]: if if $__$__nondet_cond_22 then false else true then if $__$__nondet_cond_22 then false else true else true;
+  assume [|<label_ite_cond_false: !($__nondet_cond_2)>|]: if if $__$__nondet_cond_22 then false else true then if $__$__nondet_cond_22 then false else true else true;
   assert [post]: if $__$__nondet_cond_22 then $__x0 else $__x0 + 1 >= 0;
-  };
+};
 -/
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint nondetIfProg
@@ -142,15 +142,15 @@ info: program Core;
 procedure blockExitTest () returns ()
 {
   if * {
-    assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
+    assume [|<label_ite_cond_true: x > 10>|]: $__x0 > 10;
     assume [pre]: $__x0 >= 0;
     assert [big]: $__x0 > 10;
-    } else {
-    assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
+  } else {
+    assume [|<label_ite_cond_false: !(x > 10)>|]: if $__x0 > 10 then false else true;
     assume [pre]: $__x0 >= 0;
     assert [small]: $__x0 <= 10;
-    }
-  };
+  }
+};
 -/
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint blockExitProg
@@ -196,47 +196,47 @@ procedure blockTest () returns ()
       if * {
         if * {
           if * {
-            assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
+            assume [|<label_ite_cond_true: x > 10>|]: $__x0 > 10;
             assume [pre_x]: $__x0 >= 0;
             assume [pre_y]: $__y1 >= 0;
             assert [big_x]: $__x0 > 10;
-            } else {
-            assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
+          } else {
+            assume [|<label_ite_cond_true: x > 10>|]: $__x0 > 10;
             assume [pre_x]: $__x0 >= 0;
             assume [pre_y]: $__y1 >= 0;
             assert [final]: $__x0 >= 0;
-            }
-          } else {
-          assume [|<label_ite_cond_true: (~Int.Gt x #10)>|]: $__x0 > 10;
+          }
+        } else {
+          assume [|<label_ite_cond_true: x > 10>|]: $__x0 > 10;
           assume [pre_x]: $__x0 >= 0;
           assume [pre_y]: $__y1 >= 0;
           assert [post]: $__x0 >= 0;
-          }
-        } else {
-        assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
+        }
+      } else {
+        assume [|<label_ite_cond_false: !(x > 10)>|]: if $__x0 > 10 then false else true;
         assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_33 then $__$__nondet_cond_33 else true;
-        assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
+        assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
         assume [pre_x]: $__x0 >= 0;
         assume [pre_y]: $__y1 >= 0;
         assert [after_inner]: if $__$__nondet_cond_33 then $__y1 else $__x0 + $__y1 >= 0;
-        }
-      } else {
-      assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
+      }
+    } else {
+      assume [|<label_ite_cond_false: !(x > 10)>|]: if $__x0 > 10 then false else true;
       assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_33 then $__$__nondet_cond_33 else true;
-      assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
+      assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
       assume [pre_x]: $__x0 >= 0;
       assume [pre_y]: $__y1 >= 0;
       assert [final]: if $__$__nondet_cond_33 then $__y1 else $__x0 + $__y1 >= 0;
-      }
-    } else {
-    assume [|<label_ite_cond_false: !(~Int.Gt x #10)>|]: if $__x0 > 10 then false else true;
+    }
+  } else {
+    assume [|<label_ite_cond_false: !(x > 10)>|]: if $__x0 > 10 then false else true;
     assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__$__nondet_cond_33 then $__$__nondet_cond_33 else true;
-    assume [|<label_ite_cond_false: !$__nondet_cond_3>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
+    assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__$__nondet_cond_33 then false else true then if $__$__nondet_cond_33 then false else true else true;
     assume [pre_x]: $__x0 >= 0;
     assume [pre_y]: $__y1 >= 0;
     assert [post]: if $__$__nondet_cond_33 then $__y1 else $__x0 + $__y1 >= 0;
-    }
-  };
+  }
+};
 -/
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint blockExitIfProg

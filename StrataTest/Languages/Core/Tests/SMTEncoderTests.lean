@@ -14,7 +14,7 @@ open Lambda
 open Strata.SMT
 
 /--
-info: ""
+info: "(assert (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -23,7 +23,7 @@ info: ""
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 /--
-info: "; x\n(declare-const x Int)\n"
+info: "; x\n(declare-const x Int)\n(assert (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -31,7 +31,7 @@ info: "; x\n(declare-const x Int)\n"
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -40,7 +40,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n"
 
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -54,7 +54,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n"
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n"
+info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -70,7 +70,7 @@ info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\
    }})
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -88,7 +88,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n"
 
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (= (f n m) x)))\n"
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
@@ -110,7 +110,7 @@ section ArrayTheory
 
 -- Test map select with Array theory enabled
 /--
-info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n(assert (select m i))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -127,7 +127,7 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n"
 
 -- Test map update with Array theory enabled
 /--
-info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n(assert (store m i v))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -145,7 +145,7 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
 
 -- Test nested map operations with Array theory
 /--
-info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n; j\n(declare-const j Int)\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n; j\n(declare-const j Int)\n(assert (select (store m i v) j))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -165,7 +165,7 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
 
 -- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
 /--
-info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n"
+info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(assert (getFirst m))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -183,7 +183,7 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
    }})
 
 -- Test that all bound variables get globally unique generated names
-/-- info: "" -/
+/-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "" (.some .int) (LExpr.noTrigger ())
@@ -192,7 +192,7 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
 
 -- Test nested quantifiers with same user name get disambiguated human-readable names
 /--
-info: ""
+info: "(assert (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -202,7 +202,7 @@ info: ""
 
 -- Test triply nested quantifiers all get distinct disambiguated human-readable names
 /--
-info: ""
+info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -213,7 +213,7 @@ info: ""
 
 
 /--
-info: "; x\n(declare-const x Int)\n"
+info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -242,7 +242,7 @@ info: "; x\n(declare-const x Int)\n"
 -- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
 -- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
 /--
-info: "; x\n(declare-const x String)\n"
+info: "; x\n(declare-const x String)\n(assert (= x \"{\"\"key\"\":\"\"val\"\"}\"))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -255,7 +255,7 @@ info: "; x\n(declare-const x String)\n"
 
 -- Test that Real.Div encodes to `/` (real division) not `div` (integer division).
 /--
-info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n"
+info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x y))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString

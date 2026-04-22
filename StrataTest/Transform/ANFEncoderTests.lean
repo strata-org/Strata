@@ -36,10 +36,10 @@ procedure test (x : int, y : int) returns ()
   var $__anf.0 : int := x + y;
   if ($__anf.0 > 0) {
     assert [assert_0]: $__anf.0 >= 1;
-    } else {
+  } else {
     assert [assert_1]: $__anf.0 <= 0;
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval IO.println (toString (anfEncodeProgram (translateCore iteDupProg)))
@@ -62,7 +62,7 @@ procedure test (x : int, y : int) returns ()
 {
   assume [assume_0]: x >= 5;
   assert [assert_0]: y <= 10;
-  };
+};
 -/
 #guard_msgs in
 #eval IO.println (toString (anfEncodeProgram (translateCore noDupProg)))
