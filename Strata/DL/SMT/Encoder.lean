@@ -28,17 +28,17 @@ The encoding pipeline has two layers:
    and caches `Term → SMT-LIB string` and `TermType → SMT-LIB string`
    conversions. All string formatting lives in the Solver layer.
 
-2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages
-   A-normal form decomposition purely in the `Term` domain:
-   - **Term → abbreviated Term cache** (`terms`): Maps each `Term` to its
-     abbreviated `Term.var` reference (e.g., a variable named `$__t.0`, `$__t.1`).
-     Large terms are broken into small `define-fun` definitions with short
-     names, and the Solver handles all `Term → String` conversion.
+2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and translates
+   `Term` values to SMT-LIB commands:
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
      their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
 
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
+
+Deduplication of common subexpressions is handled by the Core-level ANF
+encoder (`ANFEncoder.lean`), which runs as a pipeline phase before SMT
+encoding. This keeps the SMT encoder simple and close to a 1-1 translation.
 
  We will use the following type representations for primitive types:
  * `TermType.bool`:     builtin SMT `Bool` type
@@ -58,11 +58,7 @@ string conversion and caching when emitting commands.
  Terms are mapped to their SMT encoding that conforms to the SMTLib syntax. We
  keep track of these mappings to ensure that each Term construct is translated
  to its SMT encoding exactly once.  This translation invariant is necessary for
- correctness in the case of UF names and variable
- names; and it is neccessary for compactness in the case of terms. In
- particular, the resulting SMT encoding will be in A-normal form (ANF): the body
- of every s-expression in the encoding consists of atomic subterms (identifiers
- or literals).
+ correctness in the case of UF names and variable names.
 -/
 
 namespace Strata.SMT
@@ -72,14 +68,10 @@ open Solver
 public section
 
 structure EncoderState where
-  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `$__t.0`).
-      This is a cache after converting terms to A-Normal Form. -/
-  terms : Std.HashMap Term Term
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
   ufs   : Std.HashMap UF String
 
 def EncoderState.init : EncoderState where
-  terms := {}
   ufs := {}
 
 @[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
@@ -152,10 +144,8 @@ def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → 
     identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
     The `.` after `t`/`f` prevents collision with Lambda-generated names
     like `$__t0` (variable `t`, index 0). -/
-def termId (n : Nat)                    : String := s!"$__t.{n}"
 def ufId (n : Nat)                      : String := s!"$__f.{n}"
 
-def termNum : EncoderM Nat := do return (← get).terms.size
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
 
 def declareType (id : String) (mks : List String) : EncoderM String := do
@@ -163,16 +153,10 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
   declareDatatype id [] constrs
   return id
 
-/-- Emit a `define-fun` for a term in ANF. When not in a binder, emits a
-    `define-fun` with the given body `Term` and returns a `Term.var` reference
-    to the abbreviated name. When in a binder, just returns the body term. -/
-def defineTerm (inBinder : Bool) (ty : TermType) (body : Term) : EncoderM Term := do
-  if inBinder
-  then return body
-  else do
-    let id := termId (← termNum)
-    Solver.defineFunTerm id [] ty body
-    return .var ⟨id, ty⟩
+/-- Return the term directly. Deduplication is handled by the Core-level
+    ANF encoder before SMT encoding. -/
+def defineTerm (_inBinder : Bool) (_ty : TermType) (body : Term) : EncoderM Term :=
+  return body
 
 def defineTermBound := defineTerm True
 def defineTermUnbound := defineTerm False
@@ -266,7 +250,6 @@ def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   xs.attach.mapM f
 
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
-  if let (.some enc) := (← get).terms.get? t then return enc
   let ty := t.typeOf
   let enc ←
     match t with
@@ -297,9 +280,7 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
       | .all, _ => defineMultiAll inBinder qargs trEncs bodyEnc
       | .exist, [⟨x, xty⟩] => defineExist inBinder x xty trEncs bodyEnc
       | .exist, _ => defineMultiExist inBinder qargs trEncs bodyEnc
-  if inBinder
-  then pure enc
-  else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
+  pure enc
 termination_by sizeOf t
 decreasing_by
   all_goals first

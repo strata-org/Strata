@@ -828,7 +828,9 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
   filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and ANF encoding. -/
+    type checking, symbolic evaluation, and ANF encoding.
+    ANF encoding runs after symbolic evaluation to extract common
+    subexpressions introduced by partial evaluation inlining. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
@@ -842,7 +844,7 @@ def corePipelinePhases (procs : Option (List String) := none)
       let (prog', _stats) ← Transform.liftDiag (Core.symbolicEval options prog moreFns |>.mapError
         fun err => { err with message := s!"❌ Type checking error.\n{err.message}" })
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase]
+  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
