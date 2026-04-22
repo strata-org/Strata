@@ -438,7 +438,7 @@ private theorem extractMatchingSplitId_length (splitId : Nat)
   | cons e_t ts' ih =>
     simp only [extractMatchingSplitId] at h
     split at h
-    · rename_i sid _ _
+    · next sid _ _ =>
       split at h
       · simp at h; obtain ⟨_, rfl⟩ := h
         simp [List.length_reverse, List.length_append]; omega
@@ -497,9 +497,9 @@ private theorem findCondPairs_length
   | cons e_t rest ih =>
     unfold findCondPairs
     split
-    · rename_i splitId split_cond _ _
+    · next splitId split_cond _ _ =>
       split
-      · rename_i e_f remaining_f' heq
+      · next e_f remaining_f' heq =>
         have hlen := extractMatchingSplitId_length splitId remaining_f [] e_f remaining_f' heq
         simp only [List.length_nil, Nat.add_zero] at hlen
         have ih := ih unmatched_t remaining_f' ({
