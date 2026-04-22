@@ -26,8 +26,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -63,8 +61,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -102,8 +98,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -141,8 +135,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -203,8 +195,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -288,8 +278,6 @@ zinit → zinit]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -352,8 +340,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -407,8 +393,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 func double :  ((x : int)) → int :=
   ((~Int.Add x x))
@@ -467,8 +451,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 func addN :  ((x : int)) → int :=
   ((~Int.Add x #10))
@@ -537,8 +519,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 @[inline]
 func choose : ∀[a]. ((cond : bool) (x : a) (y : a)) → a :=
@@ -581,8 +561,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 

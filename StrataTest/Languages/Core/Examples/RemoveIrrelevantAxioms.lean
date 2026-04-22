@@ -88,8 +88,8 @@ procedure Q3(x : int) returns ()
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    -- Match model lines like (x@N, val)
-    if line.startsWith "(x@" && line.contains ", " then
+    -- Match model lines like (x, val) or (x@N, val)
+    if (line.startsWith "(x," || line.startsWith "(x@") && line.contains ", " then
       match line.splitOn ", " with
       | [var, rest] =>
         -- Remove trailing ")" and strip LExpr integer prefix "#"
@@ -129,13 +129,13 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-(x, 0)
+(x, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-(x, 0)
+(x, model_not_2)
 
 Obligation: a6
 Property: assert

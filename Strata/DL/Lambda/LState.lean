@@ -27,30 +27,21 @@ variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq 
 Configuration for symbolic execution, where we have `usedNames` for tracking
 which variable names have been generated. We also have a `fuel` argument for
 the evaluation function, and support for factory functions.
-
-We rely on the parser disallowing Lambda variables to begin with `$__`, which is
-reserved for internal use. Also see `TEnv.genExprVar` used during type inference
-and `LState.genVar` used during evaluation.
 -/
 structure EvalConfig (T : LExprParams) where
   factory : @Factory T
   fuel : Nat := 200
-  varPrefix : String := "$__"
-  gen : Nat := 0
   usedNames : Std.HashSet String := {}
 
 instance : ToFormat (EvalConfig T) where
   format c :=
     f!"Eval Depth: {(repr c.fuel)}" ++ Format.line ++
-    f!"Variable Prefix: {c.varPrefix}" ++ Format.line ++
-    f!"Variable gen count: {c.gen}" ++ Format.line ++
     f!"Factory Functions:" ++ Format.line ++
     Std.Format.joinSep c.factory.toArray.toList f!"{Format.line}"
 
 def EvalConfig.init : EvalConfig T :=
   { factory := @Factory.default T,
     fuel := 200,
-    gen := 0,
     usedNames := {} }
 
 def EvalConfig.genSym (x : String) (c : EvalConfig T) : String × EvalConfig T :=
@@ -151,7 +142,6 @@ def LState.genVars (xs : List String) (σ : (LState ⟨Unit, Unit⟩)) : (List S
 instance : ToFormat (T.Identifier × LState T) where
   format im :=
     f!"New Variable: {im.fst}{Format.line}\
-       Gen in EvalConfig: {im.snd.config.gen}{Format.line}\
        {im.snd}"
 
 ---------------------------------------------------------------------

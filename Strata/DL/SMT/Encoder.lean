@@ -133,9 +133,8 @@ abbrev findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String â
   Strata.Name.findUnique baseName startSuffix isUsed limit
 
 /-- The `$__` prefix is reserved for internal use and cannot appear in user
-    identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
-    The `.` after `t`/`f` prevents collision with evaluation-generated names
-    (which use `@N` suffixes). -/
+    identifiers. The `.` after `t`/`f` prevents collision with
+    evaluation-generated names (which use `@N` suffixes). -/
 def termId (n : Nat)                    : String := s!"$__t.{n}"
 def ufId (n : Nat)                      : String := s!"$__f.{n}"
 
