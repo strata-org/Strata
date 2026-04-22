@@ -1,5 +1,4 @@
 test_class_decl.py(9, 4): ✅ pass - callElimAssert_requires_15
 test_class_decl.py(8, 0): ✅ pass - postcondition
-test_class_decl.py(13, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

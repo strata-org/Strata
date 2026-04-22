@@ -173,14 +173,14 @@ instance : ToFormat Env where
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
-Create a substitution map from all non-global variables to their values.
+Create a substitution map from all variables to their values.
 -/
 def oldLocalVarSubst (E : Env) : SubstMap :=
   let m := (E.exprEnv.state.dropOldest).toSingleMap
   m.map (fun (i, _, e) => (i, e))
 
 /--
-Append `subst` map to a non-global substitution map.
+Append `subst` map to a substitution map.
 -/
 def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E

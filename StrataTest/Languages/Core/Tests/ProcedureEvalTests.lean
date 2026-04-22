@@ -401,7 +401,6 @@ Proof Obligation:
                            inputs := [("x", mty[int])],
                            outputs := [("y", mty[int])] },
                 spec := {
-                    modifies := [],
                     preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                     postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                 body := [
