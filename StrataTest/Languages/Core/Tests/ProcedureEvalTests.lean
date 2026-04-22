@@ -387,9 +387,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, 0 < x@1)
+(0_lt_x, 0 < x)
 Proof Obligation:
--x@1 < 0
+-x < 0
 -/
 #guard_msgs in
 #eval do let E := Env.init

@@ -69,8 +69,8 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: a < b>: if a@1 < b@1 then a@1 < b@1 else true
-<label_ite_cond_false: !(a < b)>: if if a@1 < b@1 then false else true then if a@1 < b@1 then false else true else true
+<label_ite_cond_true: a < b>: if a < b then a < b else true
+<label_ite_cond_false: !(a < b)>: if if a < b then false else true then if a < b then false else true else true
 Obligation:
 true
 

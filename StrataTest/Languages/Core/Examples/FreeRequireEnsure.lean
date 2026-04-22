@@ -38,23 +38,23 @@ VCs:
 Label: g_gt_10_internal
 Property: assert
 Assumptions:
-g_eq_15: g@1 == 15
+g_eq_15: g == 15
 Obligation:
-g@1 > 10
+g > 10
 
 Label: g_lt_10
 Property: assert
 Assumptions:
-g_eq_15: g@1 == 15
+g_eq_15: g == 15
 Obligation:
 true
 
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-callElimAssume_g_lt_10_2: g@5 < 10
+callElimAssume_g_lt_10_2: g@4 < 10
 Obligation:
-g@5 == 15
+g@4 == 15
 
 ---
 info:
@@ -70,7 +70,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-(g@5, 0)
+(g@4, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

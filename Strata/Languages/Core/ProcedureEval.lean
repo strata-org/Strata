@@ -59,22 +59,15 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
 
 /--
-Evaluate a single procedure: generate fresh variables for modifies-clause
-globals and parameters, execute the body, check postconditions, and collect
-proof obligations.
+Evaluate a single procedure: generate fresh variables for parameters,
+execute the body, check postconditions, and collect proof obligations.
 -/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
   -- Parameters go through genFVars for globally unique names.
-  -- Mark original parameter names as used so that fvar names always differ
-  -- from the scope keys. Without this, a bare fvar "x" from procedure A
-  -- would be captured by procedure B's scope entry for "x", causing
-  -- incorrect substitution of cross-procedure expressions.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
-  let E := vars.foldl (fun E (v : CoreIdent) =>
-    { E with exprEnv.config.usedNames := E.exprEnv.config.usedNames.insert v.name }) E
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)
   let vars_typed := vars.zip var_tys
