@@ -66,10 +66,6 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       -- Note: targets are Variables; only Field targets contain StmtExpr children
       -- but we skip collecting from them since field targets don't contain static calls
       collectStaticCallNames v
-  | .LocalVariable _ _ initOption =>
-      match initOption with
-      | some init => collectStaticCallNames init
-      | none => []
   | .Return v =>
       match v with
       | some x => collectStaticCallNames x

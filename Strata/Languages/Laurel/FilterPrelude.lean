@@ -92,9 +92,6 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames cond; collectExprNames thenB
     elseB.forM collectExprNames
   | .Block stmts _ => stmts.forM collectExprNames
-  | .LocalVariable _ ty init =>
-    collectHighTypeNames ty
-    init.forM collectExprNames
   | .While cond invs dec body =>
     collectExprNames cond; invs.forM collectExprNames
     dec.forM collectExprNames
@@ -105,7 +102,9 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
       match t.val with
       | .Field target _ => collectExprNames target
       | .Local _ => pure ()
+      | .Declare param => collectHighTypeNames param.type
   | .Var (.Field target _) => collectExprNames target
+  | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
   | .PrimitiveOp _ args => args.forM collectExprNames

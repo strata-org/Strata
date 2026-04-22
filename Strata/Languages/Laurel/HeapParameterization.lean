@@ -63,7 +63,6 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
-  | .LocalVariable _ _ i => if let some x := i then collectExprMd x
   | .While c invs d b => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
@@ -72,7 +71,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
         match assignTarget.val with
         | .Field _ _ =>
             modify fun s => { s with writesHeapDirectly := true }
-        | .Local _ => pure ()
+        | .Local _ | .Declare _ => pure ()
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args => for a in args do collectExprMd a
@@ -277,7 +276,7 @@ where
         if calleeWritesHeap then
           if valueUsed then
             let freshVar ← freshVarName
-            let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
+            let varDecl := mkMd (.Var (.Declare ⟨freshVar, computeExprType model exprMd⟩))
             let callWithHeap := ⟨ .Assign
               [mkVarMd (.Local heapVar), mkVarMd (.Local freshVar)]
               (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
@@ -308,9 +307,6 @@ where
           termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
         return ⟨ .Block stmts' label, source, md ⟩
-    | .LocalVariable n ty i =>
-        let i' ← match i with | some x => some <$> recurse x | none => pure none
-        return ⟨ .LocalVariable n ty i', source, md ⟩
     | .While c invs d b =>
         let invs' ← invs.mapM (recurse ·)
         return ⟨ .While (← recurse c) invs' d (← recurse b false), source, md ⟩
@@ -336,8 +332,9 @@ where
               return heapAssign
         | [fieldSelectMd] =>
           let tgt' : VariableMd := match fieldSelectMd.val with
-            | .Field _ _ => fieldSelectMd  -- Field targets are handled by heap parameterization above
+            | .Field _ _ => fieldSelectMd
             | .Local _ => fieldSelectMd
+            | .Declare _ => fieldSelectMd
           return ⟨ .Assign [tgt'] (← recurse v), source, md ⟩
         | [] =>
             return ⟨ .Assign [] (← recurse v), source, md ⟩

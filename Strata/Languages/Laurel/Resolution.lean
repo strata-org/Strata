@@ -33,7 +33,7 @@ happens after Phase 1, the `ResolvedNode` values in the map contain the fully
 resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 
 ### Definition nodes (introduce a name into scope)
-- `StmtExpr.LocalVariable` — local variable declaration
+- `Variable.Declare` — local variable declaration (in `Assign` targets or `Var`)
 - `StmtExpr.Forall` / `StmtExpr.Exists` — quantifier-bound variable
 - `Parameter` — procedure parameter
 - `Procedure` — procedure definition
@@ -309,11 +309,6 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     withScope do
       let stmts' ← stmts.mapM resolveStmtExpr
       pure (.Block stmts' label)
-  | .LocalVariable name ty init =>
-    let ty' ← resolveHighType ty
-    let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let name' ← defineNameCheckDup name (.var name ty')
-    pure (.LocalVariable name' ty' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
     let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
@@ -331,6 +326,10 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .Var (.Local ref) =>
     let ref' ← resolveRef ref coreMd
     pure (.Var (.Local ref'))
+  | .Var (.Declare param) =>
+    let ty' ← resolveHighType param.type
+    let name' ← defineNameCheckDup param.name (.var param.name ty')
+    pure (.Var (.Declare ⟨name', ty'⟩))
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
       let ⟨vv, vs, vm⟩ := v
@@ -343,6 +342,10 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         let target' ← resolveStmtExpr target
         let fieldName' ← resolveFieldRef target' fieldName coreMd
         pure (⟨.Field target' fieldName', vs, vm⟩ : VariableMd)
+      | .Declare param =>
+        let ty' ← resolveHighType param.type
+        let name' ← defineNameCheckDup param.name (.var param.name ty')
+        pure (⟨.Declare ⟨name', ty'⟩, vs, vm⟩ : VariableMd)
     let value' ← resolveStmtExpr value
     pure (.Assign targets' value')
   | .Var (.Field target fieldName) =>
@@ -595,12 +598,6 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .LocalVariable name ty init =>
-    let map := register map name (.var name ty)
-    let map := collectHighType map ty
-    match init with
-    | some i => collectStmtExpr map i
-    | none => map
   | .While cond invs dec body =>
     let map := collectStmtExpr map cond
     let map := invs.foldl collectStmtExpr map
@@ -608,7 +605,16 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     collectStmtExpr map body
   | .Return val => match val with | some v => collectStmtExpr map v | none => map
   | .Var (.Local _) => map
-  | .Assign _targets value =>
+  | .Var (.Declare param) =>
+    let map := register map param.name (.var param.name param.type)
+    collectHighType map param.type
+  | .Assign targets value =>
+    let map := targets.foldl (fun map t =>
+      match t.val with
+      | .Declare param =>
+        let map := register map param.name (.var param.name param.type)
+        collectHighType map param.type
+      | _ => map) map
     collectStmtExpr map value
   | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>

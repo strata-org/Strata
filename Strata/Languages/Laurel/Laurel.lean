@@ -233,6 +233,8 @@ inductive Variable : Type where
   | Local (name : Identifier)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
   | Field (target : AstNode StmtExpr) (fieldName : Identifier)
+  /-- A local variable declaration with a name and type. -/
+  | Declare (parameter : Parameter)
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -247,8 +249,6 @@ inductive StmtExpr : Type where
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
-  /-- A local variable declaration with a type and optional initializer. The initializer must be set if this `StmtExpr` is pure. -/
-  | LocalVariable (name : Identifier) (type : AstNode HighType) (initializer : Option (AstNode StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))

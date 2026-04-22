@@ -86,14 +86,21 @@ private def wrap (stmts : List StmtExprMd) (src : Option FileRange) (md : Impera
     : StmtExprMd :=
   match stmts with | [s] => s | ss => ⟨.Block ss none, src, md⟩
 
+def resolveVariable (ptMap : ConstrainedTypeMap) (v : VariableMd) : VariableMd :=
+  match v.val with
+  | .Declare param => ⟨.Declare { param with type := resolveType ptMap param.type }, v.source, v.md⟩
+  | _ => v
+
 /-- Resolve constrained types in type positions and inject constraint calls into quantifier bodies.
     Recursion into StmtExprMd children is handled by `mapStmtExpr`. -/
 def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprMd :=
   let source := expr.source
   let md := expr.md
   match expr.val with
-  | .LocalVariable n ty init =>
-    ⟨.LocalVariable n (resolveType ptMap ty) init, source, md⟩
+  | .Assign targets value =>
+    ⟨.Assign (targets.map (resolveVariable ptMap)) value, source, md⟩
+  | .Var (.Declare param) =>
+    ⟨.Var (.Declare { param with type := resolveType ptMap param.type }), source, md⟩
   | .Forall param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
@@ -127,25 +134,31 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   let source := stmt.source
   let md := stmt.md
   match _h : stmt.val with
-  | .LocalVariable name ty init =>
-    let callOpt := constraintCallFor ptMap ty.val name md (src := source)
-    if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
-    let (init', check) : Option StmtExprMd × List StmtExprMd := match init with
-      | none => match callOpt with
-        | some c => (none, [⟨.Assume c, source, md⟩])
-        | none => (none, [])
-      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert c, source, md⟩)
-    pure ([⟨.LocalVariable name ty init', source, md⟩] ++ check)
+  | .Var (.Declare param) =>
+    let callOpt := constraintCallFor ptMap param.type.val param.name md (src := source)
+    if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
+    let check := match callOpt with
+      | some c => [⟨.Assume c, source, md⟩]
+      | none => []
+    pure ([stmt] ++ check)
 
-  | .Assign [target] _ => match target.val with
-    | .Local name => do
-      match (← get).get? name.text with
-      | some ty =>
-        let assert := (constraintCallFor ptMap ty name md (src := source)).toList.map
-          fun c => ⟨.Assert c, source, md⟩
-        pure ([stmt] ++ assert)
-      | none => pure [stmt]
-    | _ => pure [stmt]
+  | .Assign targets _value =>
+    -- Handle Declare targets for constrained type elimination
+    let declareChecks ← targets.foldlM (init := ([] : List StmtExprMd)) fun acc target =>
+      match target.val with
+      | .Declare param => do
+        let callOpt := constraintCallFor ptMap param.type.val param.name md (src := source)
+        if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
+        pure (acc ++ callOpt.toList.map fun c => ⟨.Assert c, source, md⟩)
+      | .Local name => do
+        match (← get).get? name.text with
+        | some ty =>
+          let assert := (constraintCallFor ptMap ty name md (src := source)).toList.map
+            fun c => ⟨.Assert c, source, md⟩
+          pure (acc ++ assert)
+        | none => pure acc
+      | _ => pure acc
+    pure ([stmt] ++ declareChecks)
 
   | .Block stmts sep =>
     let stmtss ← inScope (stmts.mapM (elimStmt ptMap))
@@ -209,7 +222,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let md := ct.witness.md
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src, md⟩
+    ⟨.Assign [⟨.Declare ⟨witnessId, resolveType ptMap ct.base⟩, src, md⟩] ct.witness, src, md⟩
   let assert : StmtExprMd :=
     ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md (src := src)).get!, src, md⟩
   { name := mkId s!"$witness_{ct.name.text}"

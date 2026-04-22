@@ -174,6 +174,8 @@ def translateExpr (expr : StmtExprMd)
             return .op () ⟨f.name.text, ()⟩ none
         | astNode =>
             return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
+  | .Var (.Declare _) =>
+      throwExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -277,15 +279,12 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
-  | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
-      let valueExpr ← translateExpr  initializer boundVars isPureContext
-      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
-      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
-      -- This doesn't work because of a limitation in Core.
-      -- let coreMonoType := translateType ty
-      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
-  | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
-    disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
+  | .Block (⟨ .Assign [⟨ .Declare _, _, _⟩] _initializer, innerSrc, innerMd⟩ :: rest) label => do
+      _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
+      translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
+  | .Block (⟨ .Var (.Declare _), innerSrc, innerMd⟩ :: rest) label => do
+    _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
+    translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "if-then-else only supported as the last statement in a block"
 
@@ -298,8 +297,6 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ md.toDiagnostic s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
-  | .LocalVariable _ _ _ =>
-      throwExprDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
   | .Return _ => disallowed md "return expression should be lowered in a separate pass"
 
   | .AsType target _ => throwExprDiagnostic $ md.toDiagnostic "AsType expression translation" DiagnosticType.NotYetImplemented
@@ -370,39 +367,36 @@ def translateStmt (stmt : StmtExprMd)
       match label with
       | some l => return [Imperative.Stmt.block l innerStmts md]
       | none   => return innerStmts
-  | .LocalVariable id ty initializer =>
-      let coreMonoType ← translateType ty
+  | .Var (.Declare param) =>
+      let coreMonoType ← translateType param.type
       let coreType := LTy.forAll [] coreMonoType
-      let ident := ⟨id.text, ()⟩
-      match initializer with
-      | some (⟨ .StaticCall callee args, callSrc, callMd⟩) =>
-          -- Check if this is a function or a procedure call
-          if model.isFunction callee then
-            -- Translate as expression (function application)
-            let coreExpr ← translateExpr { val := .StaticCall callee args, source := callSrc, md := callMd }
-            return [Core.Statement.init ident coreType (.det coreExpr) md]
-          else
-            -- Translate as: var name; call name := callee(args)
-            let coreArgs ← args.mapM (fun a => translateExpr a)
-            let defaultExpr ← defaultExprForType ty
-            let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-            return [initStmt, callStmt]
-      | some (⟨ .InstanceCall .., _, _⟩) =>
-          -- Instance method call as initializer: var name := target.method(args)
-          -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType .nondet md
-          return [initStmt]
-      | some (⟨ .Hole _ _, _, _⟩) =>
-          -- Hole initializer: treat as havoc (init without value)
-          return [Core.Statement.init ident coreType .nondet md]
-      | some initExpr =>
-          let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (.det coreExpr) md]
-      | none =>
-          return [Core.Statement.init ident coreType .nondet md]
+      let ident := ⟨param.name.text, ()⟩
+      return [Core.Statement.init ident coreType .nondet md]
   | .Assign targets value =>
       match targets with
+      | [⟨ .Declare param, _, _ ⟩] =>
+          let coreMonoType ← translateType param.type
+          let coreType := LTy.forAll [] coreMonoType
+          let ident := ⟨param.name.text, ()⟩
+          match value.val with
+          | .StaticCall callee args =>
+              if model.isFunction callee then
+                let coreExpr ← translateExpr { val := .StaticCall callee args, source := value.source, md := value.md }
+                return [Core.Statement.init ident coreType (.det coreExpr) md]
+              else
+                let coreArgs ← args.mapM (fun a => translateExpr a)
+                let defaultExpr ← defaultExprForType param.type
+                let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
+                let callStmt := Core.Statement.call [ident] callee.text coreArgs md
+                return [initStmt, callStmt]
+          | .InstanceCall .. =>
+              let initStmt := Core.Statement.init ident coreType .nondet md
+              return [initStmt]
+          | .Hole _ _ =>
+              return [Core.Statement.init ident coreType .nondet md]
+          | _ =>
+              let coreExpr ← translateExpr value
+              return [Core.Statement.init ident coreType (.det coreExpr) md]
       | [⟨ .Local targetId, _, _ ⟩] =>
           let ident := ⟨targetId.text, ()⟩
           -- Check if RHS is a procedure call (not a function)

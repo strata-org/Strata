@@ -37,6 +37,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralDecimal _ => ⟨ .TReal, source, md ⟩
   -- Variables
   | .Var (.Local id) => (model.get id).getType
+  | .Var (.Declare _) => ⟨ .TVoid, source, md ⟩
   -- Field access
   | .Var (.Field _ fieldName) => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
@@ -75,7 +76,6 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         computeExprType model last
     | none => ⟨ .TVoid, source, md ⟩
   -- Statements
-  | .LocalVariable _ _ _ => ⟨ .TVoid, source, md ⟩
   | .While _ _ _ _ => ⟨ .TVoid, source, md ⟩
   | .Exit _ => ⟨ .TVoid, source, md ⟩
   | .Return _ => ⟨ .TVoid, source, md ⟩

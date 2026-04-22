@@ -148,7 +148,7 @@ partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
             else []
           | _ => []
         acc ++ innerErrors ++ fieldError
-      | .Local _ => acc) []
+      | .Local _ | .Declare _ => acc) []
     targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
   | .IfThenElse c t e =>
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
@@ -156,8 +156,6 @@ partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     match e with
     | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
     | none => errs
-  | .LocalVariable _ _ (some init) =>
-    validateDiamondFieldAccessesForStmtExpr model init
   | .While c invs _ b =>
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
@@ -225,7 +223,7 @@ def lowerNew (name : Identifier) (source : Option FileRange) (md : Imperative.Me
   let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar))])
-  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, none, #[]⟩ (some getCounter))
+  let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, ⟨.TInt, none, #[]⟩⟩)] getCounter)
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Var (.Local heapVar))])
   let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar)] newHeap)
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Var (.Local freshVar)), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])

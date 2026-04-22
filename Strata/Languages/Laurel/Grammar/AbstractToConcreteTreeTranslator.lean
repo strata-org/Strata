@@ -82,6 +82,7 @@ where
   variableToArg : Variable → Arg
     | .Local name => laurelOp "identifier" #[ident name.text]
     | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
+    | .Declare param => laurelOp "identifier" #[ident param.name.text]
   stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
@@ -98,10 +99,14 @@ where
       match label with
       | none => laurelOp "block" #[semicolonSep stmtArgs]
       | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
-    | .LocalVariable name ty init =>
-      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg ty]))
-      let initOpt := optionArg (init.map fun e => laurelOp "initializer" #[stmtExprToArg e])
-      laurelOp "varDecl" #[ident name.text, typeOpt, initOpt]
+    | .Var (.Declare param) =>
+      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
+      let initOpt := optionArg none
+      laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
+    | .Assign [⟨.Declare param, _, _⟩] value =>
+      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
+      let initOpt := optionArg (some (laurelOp "initializer" #[stmtExprToArg value]))
+      laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
     | .Assign targets value =>
       -- Grammar only supports single-target assign; use first target or placeholder
       let targetArg := match targets with
