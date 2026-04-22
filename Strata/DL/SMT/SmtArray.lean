@@ -3,8 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-public section
+module
 
 /-!
 # A Lean Model of SMT-LIB Arrays
@@ -31,9 +30,13 @@ This model is intended as a semantic reference and a source of rewrite lemmas
 for reasoning about SMT array operations inside Lean.
 -/
 
+public section
+
 /-- An SMT-LIB array from indices of type `α` to values of type `β`,
 modeled as the total function `α → β`. -/
-def SmtArray (α : Type u) (β : Type v) := α → β
+structure SmtArray (α : Type u) (β : Type v) where
+  private mk ::
+  private toFun : α → β
 
 namespace SmtArray
 
@@ -41,16 +44,16 @@ variable {α : Type u} {β : Type v}
 
 /-- The constant array that maps every index to `v`. -/
 def const (v : β) : SmtArray α β :=
-  fun _ => v
+  { toFun := fun _ => v }
 
 /-- Read the value stored at index `i` in array `a`. -/
 def select (a : SmtArray α β) (i : α) : β :=
-  a i
+  a.toFun i
 
 /-- Return a new array that agrees with `a` everywhere except at index `i`,
 where it stores value `v`. -/
 def store [DecidableEq α] (a : SmtArray α β) (i : α) (v : β) : SmtArray α β :=
-  fun j => if j = i then v else a j
+  { toFun := fun j => if j = i then v else a.toFun j }
 
 /-- Selecting any index from a constant array yields the constant value. -/
 @[grind =]
@@ -74,7 +77,10 @@ theorem select_store_of_ne [DecidableEq α] (a : SmtArray α β) (i j : α) (v :
 /-- Extensionality: two arrays that agree on every index are equal. -/
 @[ext, grind ext]
 theorem ext (a b : SmtArray α β) (h : ∀ i, a.select i = b.select i) : a = b := by
+  obtain ⟨a⟩ := a
+  obtain ⟨b⟩ := b
+  congr
   funext i
-  apply h
+  exact h i
 
 end SmtArray
