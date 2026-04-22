@@ -139,6 +139,7 @@ structure Env where
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
+  pathCap : Option Nat := .none
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -151,7 +152,8 @@ def Env.init (empty_factory:=false): Env :=
     distinct := [],
     pathConditions := [],
     warnings := []
-    deferred := ∅ }
+    deferred := ∅
+    pathCap := .none }
 
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
@@ -161,7 +163,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\

@@ -2,6 +2,5 @@ test_function_def_calls.py(6, 4): ❓ unknown - (Origin_test_helper_procedure_Re
 test_function_def_calls.py(6, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_function_def_calls.py(6, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
 test_function_def_calls.py(9, 4): ✅ pass - (my_f requires) Type constraint of s
-test_function_def_calls.py(11, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 4 passed, 0 failed, 1 inconclusive
+DETAIL: 3 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

@@ -46,10 +46,10 @@ info: ok: verify_Test: {
   body_Test: {
     y := x;
     g := g + 1;
-    }
+  }
   assert [Test_ensures_2]: y > 0;
   assert [Test_ensures_3]: g == old g + 1;
-  }
+}
 -/
 #guard_msgs in
 #eval! showTransformed
@@ -80,9 +80,9 @@ info: ok: verify_Simple: {
   assume [Simple_requires_0]: x;
   body_Simple: {
     y := x;
-    }
-  assert [Simple_ensures_1]: y;
   }
+  assert [Simple_ensures_1]: y;
+}
 -/
 #guard_msgs in
 #eval! showTransformed
@@ -110,9 +110,9 @@ info: ok: verify_WithFree: {
   assume [WithFree_requires_1]: x > 0;
   body_WithFree: {
     y := x;
-    }
-  assert [WithFree_ensures_3]: y == x;
   }
+  assert [WithFree_ensures_3]: y == x;
+}
 -/
 #guard_msgs in
 #eval! showTransformed
@@ -147,11 +147,11 @@ info: ok: verify_MultipleModifies: {
     y := x;
     g1 := g1 + 1;
     g2 := true;
-    }
+  }
   assert [MultipleModifies_ensures_2]: y == x;
   assert [MultipleModifies_ensures_3]: g1 == old g1 + 1;
   assert [MultipleModifies_ensures_4]: g2;
-  }
+}
 -/
 #guard_msgs in
 #eval! showTransformed
