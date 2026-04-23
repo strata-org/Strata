@@ -2,7 +2,6 @@ test_int_negative_floordiv.py(2, 11): ✅ pass - assert_assert(45)_calls_PFloorD
 test_int_negative_floordiv.py(2, 11): ✅ pass - Check PFloorDiv exception
 test_int_negative_floordiv.py(2, 24): ✅ pass - Check PNeg exception
 test_int_negative_floordiv.py(2, 4): ✅ pass - assert_assert(38)_calls_PFloorDiv_0
-test_int_negative_floordiv.py(2, 4): ✅ pass - assert_assert(38)_calls_Any_to_bool_1
 test_int_negative_floordiv.py(2, 4): ✅ pass - floor division rounds toward negative infinity
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

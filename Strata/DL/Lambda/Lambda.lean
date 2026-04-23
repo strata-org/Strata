@@ -13,6 +13,9 @@ public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.DL.Lambda.Reflect
 
+import Strata.DL.Lambda.PlausibleHelpers
+import Strata.DL.Lambda.TestGen
+
 namespace Lambda
 open Strata
 open Std (ToFormat Format format)

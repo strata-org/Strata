@@ -4,7 +4,6 @@ test_int_mod.py(4, 13): ✅ pass - assert_assert(64)_calls_PMod_0
 test_int_mod.py(4, 13): ✅ pass - Check PMod exception
 test_int_mod.py(4, 4): ✅ pass - set_c_calls_PMod_0
 test_int_mod.py(4, 4): ✅ pass - assert(55)
-test_int_mod.py(5, 4): ✅ pass - assert_assert(74)_calls_Any_to_bool_0
 test_int_mod.py(5, 4): ✅ pass - int modulo
-DETAIL: 8 passed, 0 failed, 0 inconclusive
+DETAIL: 7 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
