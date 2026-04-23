@@ -15,12 +15,16 @@ Near-upstream anchors:
   bitwise `&` and `|` on `u8` bytes:
     bytes[0] & 0b1111_1000
     (bytes[31] & 0b0111_1111) | 0b0100_0000
+- Source: dalek-lite scalar multiplication — bit extraction uses `>>` to read
+  individual scalar bits; conditional swap uses `^` and `~` for constant-time
+  branching; nibble reconstruction uses `<<` and `|`.
 - Implemented: bitwise operators (`&`, `|`, `^`, `>>`, `<<`, `~`) on `bvN` types
   are now supported in the Boole grammar and lower to the corresponding
   `Bv{N}.And`, `Bv{N}.Or`, `Bv{N}.Xor`, `Bv{N}.Shl`, `Bv{N}.UShr`, `Bv{N}.SShr`,
   `Bv{N}.Not` Core operations.
 -/
 
+-- Exercises & and | (X25519 scalar clamping).
 private def bitvectorOpsSeed : Strata.Program :=
 #strata
 program Boole;
@@ -43,5 +47,40 @@ spec {
 #eval Strata.Boole.verify "cvc5" bitvectorOpsSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect bitvectorOpsSeed := by
+  gen_smt_vcs
+  all_goals (first | grind | decide)
+
+-- Exercises ~, ^, >>, << (bit extraction, conditional swap, nibble ops).
+private def bitvectorShiftXorSeed : Strata.Program :=
+#strata
+program Boole;
+
+procedure bv_shift_xor(b: bv8, k: bv8) returns (r_not: bv8, r_xor: bv8, r_hi: bv8, r_lo: bv8)
+spec {
+  ensures r_not == ~b;
+  ensures r_xor == b ^ k;
+  ensures r_hi  == b >> bv{8}(4);
+  ensures r_lo  == b << bv{8}(4);
+  // b AND its complement is always zero
+  ensures b & ~b == bv{8}(0);
+  // b XOR itself is always zero
+  ensures b ^ b == bv{8}(0);
+  // logical right shift fills upper bits with 0
+  ensures (b >> bv{8}(4)) & bv{8}(0b11110000) == bv{8}(0);
+  // left shift clears lower bits
+  ensures (b << bv{8}(4)) & bv{8}(0b00001111) == bv{8}(0);
+}
+{
+  r_not := ~b;
+  r_xor := b ^ k;
+  r_hi  := b >> bv{8}(4);
+  r_lo  := b << bv{8}(4);
+};
+#end
+
+#guard_msgs (drop info) in
+#eval Strata.Boole.verify "cvc5" bitvectorShiftXorSeed (options := .quiet)
+
+example : Strata.smtVCsCorrect bitvectorShiftXorSeed := by
   gen_smt_vcs
   all_goals (first | grind | decide)

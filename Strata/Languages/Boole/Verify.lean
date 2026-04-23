@@ -241,6 +241,14 @@ private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
   | .bv64 _ => return 64
   | _ => throwAt m s!"Expected bitvector type, got: {repr ty}"
 
+private def toCoreBvUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+  let n ← bvWidth m ty
+  return .app () (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) a
+
+private def toCoreBvBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+  let n ← bvWidth m ty
+  return mkCoreApp (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) [a, b]
+
 private def toCoreExtensionalEq
     (m : SourceRange)
     (ty : Boole.Type)
@@ -345,27 +353,13 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .mul_expr m ty a b => toCoreTypedBin m ty "Mul" (← toCoreExpr a) (← toCoreExpr b)
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
-  | .bvnot m ty a =>
-      let n ← bvWidth m ty
-      return .app () (.op () ⟨s!"Bv{n}.Not", ()⟩ none) (← toCoreExpr a)
-  | .bvand m ty a b =>
-      let n ← bvWidth m ty
-      return mkCoreApp (.op () ⟨s!"Bv{n}.And", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
-  | .bvor m ty a b =>
-      let n ← bvWidth m ty
-      return mkCoreApp (.op () ⟨s!"Bv{n}.Or", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
-  | .bvxor m ty a b =>
-      let n ← bvWidth m ty
-      return mkCoreApp (.op () ⟨s!"Bv{n}.Xor", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
-  | .bvshl m ty a b =>
-      let n ← bvWidth m ty
-      return mkCoreApp (.op () ⟨s!"Bv{n}.Shl", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
-  | .bvushr m ty a b =>
-      let n ← bvWidth m ty
-      return mkCoreApp (.op () ⟨s!"Bv{n}.UShr", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
-  | .bvsshr m ty a b =>
-      let n ← bvWidth m ty
-      return mkCoreApp (.op () ⟨s!"Bv{n}.SShr", ()⟩ none) [← toCoreExpr a, ← toCoreExpr b]
+  | .bvnot  m ty a   => toCoreBvUn  m ty "Not"  (← toCoreExpr a)
+  | .bvand  m ty a b => toCoreBvBin m ty "And"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvor   m ty a b => toCoreBvBin m ty "Or"   (← toCoreExpr a) (← toCoreExpr b)
+  | .bvxor  m ty a b => toCoreBvBin m ty "Xor"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvshl  m ty a b => toCoreBvBin m ty "Shl"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvushr m ty a b => toCoreBvBin m ty "UShr" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsshr m ty a b => toCoreBvBin m ty "SShr" (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
       return oldifyExpr (← toCoreExpr a)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
@@ -650,9 +644,19 @@ private def lowerPureFuncDef
     let bsList := bindingsToList bs
     let inputs ← bsList.mapM toCoreBinding
     let inputNames := bsList.map bindingName
+    -- Propagate @[cases] to FuncAttr.inlineIfConstr so the Core verifier
+    -- accepts the structural recursion argument for rec functions.
+    let casesIdx := bsList.findIdx? fun
+      | .casesBinding _ _ _ => true
+      | _ => false
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
     let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
     let body ← withBVars inputNames (toCoreExpr body)
+    let attr :=
+      if inline then #[.inline]
+      else match casesIdx with
+        | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
+        | none   => #[]
     return {
       name := mkIdent n
       typeArgs := tys
@@ -660,7 +664,7 @@ private def lowerPureFuncDef
       output := ← toCoreMonoType ret
       body := some body
       concreteEval := none
-      attr := if inline then #[.inline] else #[]
+      attr := attr
       axioms := []
       preconditions := pres
     }
@@ -750,11 +754,24 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome) .empty]
   | .command_recfndefs _ ⟨_, funcs⟩ =>
-    let fs ← funcs.toList.mapM fun
+    -- Collect names first so we can build sibling bvar expressions.
+    -- The DDM elaborator's @[declareFn] accumulates bvars across siblings:
+    -- the i-th function's body sees the i preceding siblings as bvars.
+    -- We mirror that here by wrapping each body translation with
+    -- withBVarExprs for the preceding sibling op expressions.
+    let funcList := funcs.toList
+    let funcNames : List String := funcList.filterMap fun
+      | .recfn_decl _ ⟨_, n⟩ _ _ _ _ _ => some n
+    let (fs, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
+      match func with
       | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-        let f ← lowerPureFuncDef m n tys bs ret pres body false
-        return { f with isRecursive := true }
+        let siblingBvars := prevNames.map fun sn =>
+          (.op () (mkIdent sn) none : Core.Expression.Expr)
+        let f ← withBVarExprs siblingBvars.toArray
+          (lowerPureFuncDef m n tys bs ret pres body false)
+        return (acc ++ [{ f with isRecursive := true }], prevNames ++ [n])
+    discard (pure funcNames)
     return [.recFuncBlock fs .empty]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
