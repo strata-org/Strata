@@ -276,29 +276,20 @@ where
         if calleeWritesHeap then
           if valueUsed then
             let freshVar ← freshVarName
-            let varDecl := mkMd (.Var (.Declare ⟨freshVar, computeExprType model exprMd⟩))
             let callWithHeap := ⟨ .Assign
-              [mkVarMd (.Local heapVar), mkVarMd (.Local freshVar)]
+              [mkVarMd (.Local heapVar), mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩)]
               (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
-            return ⟨ .Block [varDecl, callWithHeap, mkMd (.Var (.Local freshVar))] none, source, md ⟩
+            return ⟨ .Block [callWithHeap, mkMd (.Var (.Local freshVar))] none, source, md ⟩
           else
             -- Generate throwaway targets for any non-heap outputs
             let procOutputs := match model.get callee with
               | .staticProcedure proc => proc.outputs
               | .instanceProcedure _ proc => proc.outputs
               | _ => []
-            let mut extraTargets : List (AstNode Variable) := []
-            let mut extraDecls : List StmtExprMd := []
-            for out in procOutputs do
-              let freshVar ← freshVarName
-              extraDecls := extraDecls ++ [mkMd (.Var (.Declare ⟨freshVar, out.type⟩))]
-              extraTargets := extraTargets ++ [mkVarMd (.Local freshVar)]
+            let extraTargets ← procOutputs.mapM fun out => do
+              pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩))
             let allTargets := mkVarMd (.Local heapVar) :: extraTargets
-            let assignStmt : StmtExprMd := ⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
-            if extraDecls.isEmpty then
-              return assignStmt
-            else
-              return ⟨ .Block (extraDecls ++ [assignStmt]) none, source, md ⟩
+            return ⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
         else if calleeReadsHeap then
           return ⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩
         else
