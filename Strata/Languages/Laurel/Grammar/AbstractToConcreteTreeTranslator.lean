@@ -78,10 +78,9 @@ private def operationName : Operation → String
 
 -- Internal-only: public because `partial` prevents `private` in this section
 partial def stmtExprToArg (s : StmtExprMd) : Arg :=
-  let errSummary := s.errorSummary
-  stmtExprValToArg errSummary s.val
+  stmtExprValToArg s.val
 where
-  stmtExprValToArg (errSummary : Option String) : StmtExpr → Arg
+  stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
       match n with
@@ -131,9 +130,9 @@ where
     | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
     | .Exit label => laurelOp "exit" #[ident label]
     | .Assert cond =>
-      let errOpt := optionArg (errSummary.map fun msg =>
+      let errOpt := optionArg (cond.summary.map fun msg =>
         laurelOp "errorSummary" #[.strlit sr msg])
-      laurelOp "assert" #[stmtExprToArg cond, errOpt]
+      laurelOp "assert" #[stmtExprToArg cond.condition, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
@@ -161,8 +160,8 @@ where
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
     | .Old value => laurelOp "call" #[laurelOp "identifier" #[ident "old"], commaSep #[stmtExprToArg value]]
     | .Fresh value => laurelOp "call" #[laurelOp "identifier" #[ident "fresh"], commaSep #[stmtExprToArg value]]
-    | .ProveBy value _proof => stmtExprValToArg value.errorSummary value.val
-    | .ContractOf _type fn => stmtExprValToArg fn.errorSummary fn.val
+    | .ProveBy value _proof => stmtExprValToArg value.val
+    | .ContractOf _type fn => stmtExprValToArg fn.val
     | .Abstract => laurelOp "identifier" #[ident "abstract"]
     | .All => laurelOp "identifier" #[ident "all"]
     | .PureFieldUpdate target field value =>
@@ -181,15 +180,15 @@ private def fieldToArg (f : Field) : Arg :=
   else
     laurelOp "immutableField" #[ident f.name.text, highTypeToArg f.type]
 
-private def requiresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.errorSummary.map fun msg =>
+private def requiresClauseToArg (c : Condition) : Arg :=
+  let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "requiresClause" #[stmtExprToArg e, errOpt]
+  laurelOp "requiresClause" #[stmtExprToArg c.condition, errOpt]
 
-private def ensuresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.errorSummary.map fun msg =>
+private def ensuresClauseToArg (c : Condition) : Arg :=
+  let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "ensuresClause" #[stmtExprToArg e, errOpt]
+  laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
 private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
   let refs := modifies.map stmtExprToArg |>.toArray

@@ -39,7 +39,7 @@ int procedure loopNoMeasure (n: int)
 /--
 info: program Core;
 
-procedure loopNoMeasure (n : int) returns (return : int)
+procedure loopNoMeasure (n : int, out return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;
@@ -49,27 +49,27 @@ spec {
   if (i < n) {
     first_iter_asserts: {
       assert [entry_invariant_0]: i <= n;
-      }
+    }
     |arbitrary iter facts|: {
       |loop havoc|: {
         havoc i;
-        }
+      }
       arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant_0]: i <= n;
-        }
+      }
       i := i + 1;
       assert [arbitrary_iter_maintain_invariant_0]: i <= n;
-      }
+    }
     |loop havoc|: {
       havoc i;
-      }
+    }
     assume [not_guard]: !(i < n);
     assume [invariant_0]: i <= n;
-    }
+  }
   assert [i_le_n]: i <= n;
   return := i;
-  };
+};
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program LoopNoMeasurePgm)
@@ -112,7 +112,7 @@ private def nondetLoopProgram : C_Simp.Program :=
 /--
 info: program Core;
 
-procedure nondetLoop (n : int) returns (return : int)
+procedure nondetLoop (n : int, out return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;
@@ -122,26 +122,26 @@ spec {
     first_iter_asserts: {
       assert [entry_invariant_0]: i <= n;
       assume [assume_entry_invariant_0]: i <= n;
-      }
+    }
     if * {
       |arbitrary iter facts|: {
         |loop havoc|: {
           havoc i;
-          }
+        }
         arbitrary_iter_assumes: {
           assume [assume_invariant_0]: i <= n;
-          }
+        }
         i := i + 1;
         assert [arbitrary_iter_maintain_invariant_0]: i <= n;
-        }
+      }
       |loop havoc|: {
         havoc i;
-        }
-      assume [invariant_0]: i <= n;
       }
+      assume [invariant_0]: i <= n;
     }
+  }
   exit return;
-  };
+};
 -/
 #guard_msgs in
 #eval Strata.to_core nondetLoopProgram

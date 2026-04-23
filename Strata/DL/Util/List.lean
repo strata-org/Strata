@@ -617,6 +617,18 @@ theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : Lis
       | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
       | tail _ hb => exact ih hnd.2 ha hb
 
+/-- Filtering a list by `p` and its complement preserves total length. -/
+theorem filter_compl_length (l : List α) (p : α → Bool) :
+    (l.filter p).length + (l.filter (not ∘ p)).length = l.length := by
+  induction l with
+  | nil => simp
+  | cons h t ih => simp [List.filter]; split <;> simp_all <;> omega
+
+/-- `List.partition` preserves total length. -/
+theorem partition_length (l : List α) (p : α → Bool) :
+    (l.partition p).1.length + (l.partition p).2.length = l.length := by
+  simp [partition_eq_filter_filter, filter_compl_length]
+
 end List
 
 /-! ### List.Forall₂ -/

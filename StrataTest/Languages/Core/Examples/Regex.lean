@@ -30,7 +30,7 @@ function ok_chars_regex () : regex {
         1, 10)
 }
 
-procedure main() returns () {
+procedure main() {
 
     assert [hello_dot_ends_with_period]:    (!(str.in.re("hello.", cannot_end_with_period())));
     assert [dot_ends_with_period]:          (!(str.in.re(".",      cannot_end_with_period())));
@@ -148,7 +148,7 @@ function bad_re_loop (n : int) : regex {
     re.loop(re.range("a", "z"), 1, n)
 }
 
-procedure main(n : int) returns () {
+procedure main(n : int) {
 
     var n1 : int;
     n1 := 1;
@@ -203,7 +203,7 @@ def regexPgm3 :=
 #strata
 program Core;
 
-procedure main(n : int) returns () {
+procedure main(n : int) {
 
     var s : string;
     assert (!(str.in.re(s, re.none())));
