@@ -67,14 +67,14 @@ def resolveAliasInProc (amap : AliasMap) (proc : Procedure) : Procedure :=
   let resolve := mapStmtExpr (resolveAliasExprNode amap)
   let resolveBody : Body → Body := fun body => match body with
     | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map resolve) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map resolve)
+    | .Opaque ps impl modif => .Opaque (ps.map (·.mapCondition resolve)) (impl.map resolve) (modif.map resolve)
+    | .Abstract ps => .Abstract (ps.map (·.mapCondition resolve))
     | .External => .External
   { proc with
     body := resolveBody proc.body
     inputs := proc.inputs.map fun p => { p with type := resolveAliasType amap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveAliasType amap p.type }
-    preconditions := proc.preconditions.map resolve
+    preconditions := proc.preconditions.map (·.mapCondition resolve)
     decreases := proc.decreases.map resolve
     invokeOn := proc.invokeOn.map resolve }
 

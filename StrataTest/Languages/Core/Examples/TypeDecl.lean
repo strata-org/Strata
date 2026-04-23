@@ -16,14 +16,16 @@ type Foo (a : Type, b : Type);
 
 const fooConst : Foo int bool;
 
-procedure P () returns () {
+procedure P () {
   var f : Foo int bool;
   f := fooConst;
   assert [f_test]: (f == fooConst);
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclPgm1) |>.snd
 
@@ -58,7 +60,7 @@ program Core;
 
 type Foo (a : Type, b : Type);
 
-procedure P () returns () {
+procedure P () {
   var f1 : Foo bool bool;
   var f2 : Foo int bool;
   assert [f_test]: (f1 == f2);
@@ -76,14 +78,16 @@ const fooVal : Foo int bool;
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
-procedure P () returns () {
+procedure P () {
   assume [fooConst1_value]: (fooConst1 == fooVal);
   assume [fooConst2_value]: (fooConst2 == fooVal);
   assert [fooAssertion]: (fooConst1 == fooConst2);
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclPgm3) |>.snd
 

@@ -30,7 +30,7 @@ axiom [ax_l11c1]: (forall x: int :: ((x >= 0) ==> f(x)));
 
 // Uninterpreted procedures
 // Implementations
-procedure P() returns ()
+procedure P()
 
 {
   anon0: {
@@ -42,7 +42,7 @@ procedure P() returns ()
   _exit : {}
 };
 
-procedure Q0(x : int) returns ()
+procedure Q0(x : int)
 
 {
   anon0: {
@@ -52,7 +52,7 @@ procedure Q0(x : int) returns ()
   _exit : {}
 };
 
-procedure Q1(x : int) returns ()
+procedure Q1(x : int)
 
 {
   anon0: {
@@ -62,7 +62,7 @@ procedure Q1(x : int) returns ()
   _exit : {}
 };
 
-procedure Q2(x : int) returns ()
+procedure Q2(x : int)
 
 {
   anon0: {
@@ -72,7 +72,7 @@ procedure Q2(x : int) returns ()
   _exit : {}
 };
 
-procedure Q3(x : int) returns ()
+procedure Q3(x : int)
 
 {
   anon0: {

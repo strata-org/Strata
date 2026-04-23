@@ -128,7 +128,10 @@ where
     | .Return (some value) => laurelOp "return" #[stmtExprToArg value]
     | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
     | .Exit label => laurelOp "exit" #[ident label]
-    | .Assert cond => laurelOp "assert" #[stmtExprToArg cond, optionArg none]
+    | .Assert cond =>
+      let errOpt := optionArg (cond.summary.map fun msg =>
+        laurelOp "errorSummary" #[.strlit sr msg])
+      laurelOp "assert" #[stmtExprToArg cond.condition, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
@@ -176,15 +179,15 @@ private def fieldToArg (f : Field) : Arg :=
   else
     laurelOp "immutableField" #[ident f.name.text, highTypeToArg f.type]
 
-private def requiresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.md.getPropertySummary.map fun msg =>
+private def requiresClauseToArg (c : Condition) : Arg :=
+  let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "requiresClause" #[stmtExprToArg e, errOpt]
+  laurelOp "requiresClause" #[stmtExprToArg c.condition, errOpt]
 
-private def ensuresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.md.getPropertySummary.map fun msg =>
+private def ensuresClauseToArg (c : Condition) : Arg :=
+  let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "ensuresClause" #[stmtExprToArg e, errOpt]
+  laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
 private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
   let refs := modifies.map stmtExprToArg |>.toArray

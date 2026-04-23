@@ -194,14 +194,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   | .op op => match op.name, op.args with
     | q`Laurel.assert, #[arg0, errMsgArg] =>
       let cond ← translateStmtExpr arg0
-      let md' ← match errMsgArg with
+      let summary ← match errMsgArg with
         | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
           | q`Laurel.errorSummary, #[strArg] => do
             let msg ← translateString strArg
-            pure (Imperative.MetaData.empty.withPropertySummary msg)
-          | _, _ => pure Imperative.MetaData.empty
-        | _ => pure Imperative.MetaData.empty
-      return { val := .Assert cond, source := src, md := md' }
+            pure (some msg)
+          | _, _ => pure none
+        | _ => pure none
+      return mkStmtExprMd (.Assert { condition := cond, summary }) src
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) src
@@ -383,45 +383,45 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
     pure allModifies
   | _ => pure []
 
-def translateRequiresClauses (arg : Arg) : TransM (List StmtExprMd) := do
+def translateRequiresClauses (arg : Arg) : TransM (List Condition) := do
   match arg with
   | .seq _ _ args => do
-    let mut allRequires : List StmtExprMd := []
+    let mut allRequires : List Condition := []
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
         | q`Laurel.requiresClause, #[exprArg, errMsgArg] =>
           let expr ← translateStmtExpr exprArg
-          let expr' ← match errMsgArg with
+          let summary ← match errMsgArg with
             | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
               | q`Laurel.errorSummary, #[strArg] => do
                 let msg ← translateString strArg
-                pure { expr with md := expr.md.withPropertySummary msg }
-              | _, _ => pure expr
-            | _ => pure expr
-          allRequires := allRequires ++ [expr']
+                pure (some msg)
+              | _, _ => pure none
+            | _ => pure none
+          allRequires := allRequires ++ [{ condition := expr, summary }]
         | _, _ => TransM.error s!"Expected requiresClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected requiresClause operation in requires sequence"
     pure allRequires
   | _ => pure []
 
-def translateEnsuresClauses (arg : Arg) : TransM (List StmtExprMd) := do
+def translateEnsuresClauses (arg : Arg) : TransM (List Condition) := do
   match arg with
   | .seq _ _ args => do
-    let mut allEnsures : List StmtExprMd := []
+    let mut allEnsures : List Condition := []
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
         | q`Laurel.ensuresClause, #[exprArg, errMsgArg] =>
           let expr ← translateStmtExpr exprArg
-          let expr' ← match errMsgArg with
+          let summary ← match errMsgArg with
             | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
               | q`Laurel.errorSummary, #[strArg] => do
                 let msg ← translateString strArg
-                pure { expr with md := expr.md.withPropertySummary msg }
-              | _, _ => pure expr
-            | _ => pure expr
-          allEnsures := allEnsures ++ [expr']
+                pure (some msg)
+              | _, _ => pure none
+            | _ => pure none
+          allEnsures := allEnsures ++ [{ condition := expr, summary }]
         | _, _ => TransM.error s!"Expected ensuresClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected ensuresClause operation in ensures sequence"
     pure allEnsures

@@ -1,0 +1,8 @@
+test_tuple_swap.py(2, 4): ✅ pass - assert(27)
+test_tuple_swap.py(3, 4): ✅ pass - assert(42)
+test_tuple_swap.py(4, 4): ✅ pass - set_a_calls_Any_get_0
+test_tuple_swap.py(4, 4): ✅ pass - set_b_calls_Any_get_0
+test_tuple_swap.py(5, 11): ✅ pass - Check PAnd exception
+test_tuple_swap.py(5, 4): ✅ pass - tuple swap
+DETAIL: 6 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

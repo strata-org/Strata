@@ -1,9 +1,4 @@
-test_multi_assign_triple.py(3, 11): ✅ pass - assert_assert(41)_calls_PAnd_0
-test_multi_assign_triple.py(3, 11): ✅ pass - assert_assert(41)_calls_PAnd_1
 test_multi_assign_triple.py(3, 11): ✅ pass - Check PAnd exception
-test_multi_assign_triple.py(3, 4): ✅ pass - assert_assert(34)_calls_PAnd_0
-test_multi_assign_triple.py(3, 4): ✅ pass - assert_assert(34)_calls_PAnd_1
-test_multi_assign_triple.py(3, 4): ✅ pass - assert_assert(34)_calls_Any_to_bool_2
 test_multi_assign_triple.py(3, 4): ✅ pass - triple assign
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

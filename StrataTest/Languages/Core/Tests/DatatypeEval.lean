@@ -18,7 +18,7 @@ datatype Any () {
   from_bool (as_bool : bool)
 };
 
-procedure test () returns ()
+procedure test ()
 {
   var b: bool;
   assert [constr_tester_cancel]: Any..isfrom_bool(from_bool(b));
@@ -55,7 +55,7 @@ datatype Any () {
   from_bool (as_bool : bool)
 };
 
-procedure test () returns ()
+procedure test ()
 {
   var b: bool;
   assume (b == true);

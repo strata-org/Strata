@@ -149,7 +149,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond
+  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
@@ -158,7 +158,12 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
   termination_by sizeOf expr
-  decreasing_by all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try have := AstNode.sizeOf_val_lt expr)
+    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+    all_goals (try term_by_mem)
+    all_goals omega
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
@@ -169,12 +174,12 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
     let bodyErrors := match proc.body with
       | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
       | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc) []
+        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
         let implErrors := match impl with
           | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
           | none => []
         postErrors ++ implErrors
-      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
+      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
       | .External => []
     acc ++ bodyErrors) []
   errors

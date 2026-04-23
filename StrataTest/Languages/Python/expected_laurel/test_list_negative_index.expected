@@ -1,5 +1,4 @@
 test_list_negative_index.py(3, 4): ✅ pass - assert_assert(58)_calls_Any_get_0
-test_list_negative_index.py(3, 4): ✅ pass - assert_assert(58)_calls_Any_to_bool_1
 test_list_negative_index.py(3, 4): ✅ pass - negative index
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

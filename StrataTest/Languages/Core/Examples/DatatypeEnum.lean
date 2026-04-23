@@ -29,7 +29,7 @@ program Core;
 // Define an enum-style datatype with no fields
 datatype Color () { Red(), Green(), Blue() };
 
-procedure TestEnumTesters() returns ()
+procedure TestEnumTesters()
 spec {
   ensures true;
 }
@@ -48,7 +48,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram enumPgm) |>.snd |>.isEmpty
 
@@ -83,7 +85,7 @@ program Core;
 
 datatype Color () { Red(), Green(), Blue() };
 
-procedure TestEnumHavoc() returns ()
+procedure TestEnumHavoc()
 spec {
   ensures true;
 }
@@ -105,7 +107,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram enumHavocPgm) |>.snd |>.isEmpty
 
@@ -136,7 +140,7 @@ program Core;
 
 datatype Color () { Red(), Green(), Blue() };
 
-procedure TestEnumExhaustive() returns ()
+procedure TestEnumExhaustive()
 spec {
   ensures true;
 }
@@ -152,7 +156,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram enumExhaustivePgm) |>.snd |>.isEmpty
 

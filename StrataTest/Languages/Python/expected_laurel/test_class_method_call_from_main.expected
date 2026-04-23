@@ -1,8 +1,6 @@
-test_class_method_call_from_main.py(10, 8): ✅ pass - assert_assert(275)_calls_Any_to_bool_0
 test_class_method_call_from_main.py(10, 8): ❓ unknown - name must not be empty
-test_class_method_call_from_main.py(13, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_class_method_call_from_main.py(14, 4): ✅ pass - callElimAssert_requires_9
 test_class_method_call_from_main.py(15, 4): ✅ pass - callElimAssert_requires_3
 test_class_method_call_from_main.py(15, 4): ❓ unknown - assert(415)
-DETAIL: 4 passed, 0 failed, 2 inconclusive
+DETAIL: 2 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

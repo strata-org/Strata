@@ -134,7 +134,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
       | none => match callOpt with
         | some c => (none, [⟨.Assume c, source, md⟩])
         | none => (none, [])
-      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert c, source, md⟩)
+      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert { condition := c }, source, md⟩)
     pure ([⟨.LocalVariable name ty init', source, md⟩] ++ check)
 
   | .Assign [target] _ => match target.val with
@@ -142,7 +142,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
       match (← get).get? name.text with
       | some ty =>
         let assert := (constraintCallFor ptMap ty name md (src := source)).toList.map
-          fun c => ⟨.Assert c, source, md⟩
+          fun c => ⟨.Assert { condition := c }, source, md⟩
         pure ([stmt] ++ assert)
       | none => pure [stmt]
     | _ => pure [stmt]
@@ -172,11 +172,12 @@ decreasing_by
   all_goals omega
 
 def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
-  let inputRequires := proc.inputs.filterMap fun p =>
-    constraintCallFor ptMap p.type.val p.name p.type.md (src := p.type.source)
-  let outputEnsures := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
+  let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name p.type.md (src := p.type.source)).map
-      fun c => ⟨c.val, p.type.source, p.type.md⟩
+      fun c => { condition := c }
+  let outputEnsures : List Condition := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
+    (constraintCallFor ptMap p.type.val p.name p.type.md (src := p.type.source)).map
+      fun c => { condition := ⟨c.val, p.type.source, p.type.md⟩ }
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
@@ -195,14 +196,14 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let resolve := mapStmtExpr (resolveExprNode ptMap)
   let resolveBody : Body → Body := fun body => match body with
     | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map resolve) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map resolve)
+    | .Opaque ps impl modif => .Opaque (ps.map (·.mapCondition resolve)) (impl.map resolve) (modif.map resolve)
+    | .Abstract ps => .Abstract (ps.map (·.mapCondition resolve))
     | .External => .External
   { proc with
     body := resolveBody body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
-    preconditions := (proc.preconditions ++ inputRequires).map resolve }
+    preconditions := (proc.preconditions ++ inputRequires).map (·.mapCondition resolve) }
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source
@@ -211,7 +212,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let witnessInit : StmtExprMd :=
     ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src, md⟩
   let assert : StmtExprMd :=
-    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md (src := src)).get!, src, md⟩
+    ⟨.Assert { condition := (constraintCallFor ptMap (.UserDefined ct.name) witnessId md (src := src)).get! }, src, md⟩
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
