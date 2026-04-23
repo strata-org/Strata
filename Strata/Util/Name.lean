@@ -45,15 +45,20 @@ def findUniqueFast (baseName : String) (candidate : String) (suffix : Nat)
     | fuel + 1 =>
       findUniqueFast baseName (disambiguate baseName suffix) (suffix + 1) usedNames fuel
 
-/-- Provably-terminating fallback via list erasure (pigeonhole principle).
-    Each collision removes a name from `remaining`, guaranteeing termination. -/
+/-- Provably-terminating fallback via list erasure.
+    Checks membership against `usedNames` (constant) and uses `remaining`
+    (a copy of `usedNames` that shrinks via erasure) for termination.
+    Returns `none` only if `remaining` is exhausted before finding a
+    candidate outside `usedNames` — unreachable when `remaining = usedNames`
+    and candidates are distinct. -/
 def findUniqueSlow (baseName : String) (candidate : String) (suffix : Nat)
-    (remaining : List String) : String :=
-  if h : remaining.contains candidate then
+    (usedNames remaining : List String) : Option String :=
+  if !usedNames.contains candidate then some candidate
+  else if h : remaining.contains candidate then
     have : (remaining.erase candidate).length < remaining.length := by grind
     findUniqueSlow baseName (disambiguate baseName suffix) (suffix + 1)
-                   (remaining.erase candidate)
-  else candidate
+                   usedNames (remaining.erase candidate)
+  else none
 termination_by remaining.length
 
 /-- Find a unique name by trying candidates with increasing `@N` suffixes.
@@ -67,8 +72,11 @@ def findUnique (baseName : String) (startSuffix : Nat)
   match findUniqueFast baseName firstCandidate startSuffix usedNames 1000000 with
   | some name => name
   | none =>
-    findUniqueSlow baseName (disambiguate baseName (startSuffix + 1000000))
-                   (startSuffix + 1000001) usedNames
+    let slowSuffix := startSuffix + 1000000
+    match findUniqueSlow baseName (disambiguate baseName slowSuffix)
+                         (slowSuffix + 1) usedNames usedNames with
+    | some name => name
+    | none => disambiguate baseName (slowSuffix + usedNames.length + 1)
 
 end Strata.Name
 
