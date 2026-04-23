@@ -572,4 +572,185 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
       if arg.name.startsWith "$in_" then
         throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
 
+/-! ## Tests: Python `global` statement -/
+
+-- Simple global write: function increments a module-level variable.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"counter: int = 0
+
+def increment() -> None:
+    global counter
+    counter = counter + 1
+
+def main() -> None:
+    increment()
+    assert counter == 1
+"
+  let (laurel, _) ← toLaurel pythonCmd program
+  -- staticFields should be present before the pipeline pass
+  -- After full pipeline, the pass eliminates them, but at Laurel level they exist
+  let hasIncrement := laurel.staticProcedures.any (fun p => p.name.text == "increment")
+  unless hasIncrement do
+    throw <| .userError "increment procedure not found in Laurel output"
+
+-- Global read-only: function reads but does not write a global.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"value: int = 42
+
+def get_value() -> int:
+    global value
+    return value
+
+def main() -> None:
+    result: int = get_value()
+    assert result == 42
+"
+  let (laurel, _) ← toLaurel pythonCmd program
+  let hasGetValue := laurel.staticProcedures.any (fun p => p.name.text == "get_value")
+  unless hasGetValue do
+    throw <| .userError "get_value procedure not found in Laurel output"
+
+-- Multiple globals in one function.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"x: int = 0
+y: int = 0
+
+def set_both() -> None:
+    global x, y
+    x = 10
+    y = 20
+
+def main() -> None:
+    set_both()
+    assert x == 10
+    assert y == 20
+"
+  let (_, output) ← toLaurel pythonCmd program
+  -- Verify $sf_ identifiers appear in the Laurel output
+  unless containsSubstr output "$sf_x" do
+    throw <| .userError "Expected $sf_x in Laurel output"
+  unless containsSubstr output "$sf_y" do
+    throw <| .userError "Expected $sf_y in Laurel output"
+
+-- Transitive propagation: caller doesn't use `global` but calls a function that does.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"counter: int = 0
+
+def step() -> None:
+    global counter
+    counter = counter + 1
+
+def double_step() -> None:
+    step()
+    step()
+
+def main() -> None:
+    double_step()
+    assert counter == 2
+"
+  let (laurel, _) ← toLaurel pythonCmd program
+  let hasDoubleStep := laurel.staticProcedures.any (fun p => p.name.text == "double_step")
+  unless hasDoubleStep do
+    throw <| .userError "double_step procedure not found in Laurel output"
+
+-- Aliasing: two functions write different globals, called in sequence.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"a: int = 0
+b: int = 0
+
+def write_a() -> None:
+    global a
+    a = 1
+
+def write_b() -> None:
+    global b
+    b = 2
+
+def main() -> None:
+    write_a()
+    write_b()
+    assert a == 1
+    assert b == 2
+"
+  let (_, output) ← toLaurel pythonCmd program
+  unless containsSubstr output "$sf_a" do
+    throw <| .userError "Expected $sf_a in Laurel output"
+  unless containsSubstr output "$sf_b" do
+    throw <| .userError "Expected $sf_b in Laurel output"
+
+-- Cross-field: function reads one global and writes another.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"src: int = 100
+dst: int = 0
+
+def copy_src_to_dst() -> None:
+    global src, dst
+    dst = src
+
+def main() -> None:
+    copy_src_to_dst()
+    assert dst == 100
+    assert src == 100
+"
+  let (_, output) ← toLaurel pythonCmd program
+  unless containsSubstr output "$sf_src" do
+    throw <| .userError "Expected $sf_src in Laurel output"
+  unless containsSubstr output "$sf_dst" do
+    throw <| .userError "Expected $sf_dst in Laurel output"
+
+-- Global with conditional write.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"flag: int = 0
+
+def maybe_set(cond: bool) -> None:
+    global flag
+    if cond:
+        flag = 1
+    else:
+        flag = 0
+
+def main() -> None:
+    maybe_set(True)
+    assert flag == 1
+"
+  let (_, output) ← toLaurel pythonCmd program
+  unless containsSubstr output "$sf_flag" do
+    throw <| .userError "Expected $sf_flag in Laurel output"
+
+-- Global with function parameter: global and param coexist.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"total: int = 0
+
+def add_to_total(n: int) -> None:
+    global total
+    total = total + n
+
+def main() -> None:
+    add_to_total(5)
+    add_to_total(3)
+    assert total == 8
+"
+  let (_, output) ← toLaurel pythonCmd program
+  unless containsSubstr output "$sf_total" do
+    throw <| .userError "Expected $sf_total in Laurel output"
+  -- Verify the function still has its regular parameter (prefixed with $in_)
+  unless containsSubstr output "$in_n" do
+    throw <| .userError "Expected $in_n parameter in Laurel output for add_to_total"
+
 end Strata.Python.VerifyPythonTest

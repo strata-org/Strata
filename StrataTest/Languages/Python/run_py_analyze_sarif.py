@@ -29,6 +29,14 @@ BOTH_SKIP = {
     "test_is_non_none", # No SARIF output because does not run SMT analysis
     "test_is_not_non_none", # No SARIF output because does not run SMT analysis
     "test_list", # Module-level asserts cause "asserts not supported in functions" error
+    "test_global_aliasing", # Global statement support — no SARIF output yet
+    "test_global_conditional", # Global statement support — no SARIF output yet
+    "test_global_cross_field", # Global statement support — no SARIF output yet
+    "test_global_multiple", # Global statement support — no SARIF output yet
+    "test_global_read_only", # Global statement support — no SARIF output yet
+    "test_global_simple_write", # Global statement support — no SARIF output yet
+    "test_global_transitive", # Global statement support — no SARIF output yet
+    "test_global_with_params", # Global statement support — no SARIF output yet
 }
 SKIP_TESTS = BOTH_SKIP | {
     "test_augmented_assign",

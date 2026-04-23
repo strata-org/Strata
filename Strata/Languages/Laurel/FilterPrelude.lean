@@ -271,8 +271,8 @@ public def filterPrelude (prelude user : Laurel.Program)
     throw "FilterPrelude: prelude contains static fields, which are not yet supported"
   unless prelude.constants.isEmpty do
     throw "FilterPrelude: prelude contains constants, which are not yet supported"
-  unless user.staticFields.isEmpty do
-    throw "FilterPrelude: user program contains static fields, which are not yet supported"
+  -- User static fields are allowed: the StaticFieldParameterization pass
+  -- eliminates them before Core translation.
   unless user.constants.isEmpty do
     throw "FilterPrelude: user program contains constants, which are not yet supported"
   let refs := collectProgramRefs user
