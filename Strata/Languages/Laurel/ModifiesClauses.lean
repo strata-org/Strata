@@ -137,8 +137,17 @@ def hasHeapOut (proc : Procedure) : Bool :=
   proc.outputs.any (fun p => p.name.text == "$heap")
 
 /--
+Check whether a modifies list contains the wildcard (`*`).
+-/
+def hasModifiesWildcard (modifiesExprs : List StmtExprMd) : Bool :=
+  modifiesExprs.any (fun m => match m.val with | .All => true | _ => false)
+
+/--
 Transform a single procedure: if it has modifies clauses, generate the frame
 condition and conjoin it with the postcondition, then clear the modifies list.
+
+If the procedure has `modifies *`, no frame condition is generated (the procedure
+may modify anything on the heap), and the modifies list is simply cleared.
 
 If the procedure has a `$heap` but no modifies clause, adds a postcondition
 that all allocated objects are preserved between heaps:
@@ -149,7 +158,10 @@ def transformModifiesClauses (model: SemanticModel)
   match proc.body with
   | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
-      if hasHeapOut proc then
+      if hasModifiesWildcard modifiesExprs then
+        -- modifies * means the procedure can modify anything; no frame condition
+        .ok { proc with body := .Opaque postconds impl [] }
+      else if hasHeapOut proc then
         let heapInName : Identifier := "$heap_in"
         let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
@@ -172,10 +184,13 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
   match body with
   | .Opaque posts impl mods =>
     let (kept, diags) := mods.foldl (fun (acc, ds) e =>
-      let ty := (computeExprType model e).val
-      if isHeapRelevantType ty then (acc ++ [e], ds)
-      else
-        (acc, ds ++ [(fileRangeToCoreMd e.source e.md).toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+      match e.val with
+      | .All => (acc ++ [e], ds)  -- wildcard is always kept
+      | _ =>
+        let ty := (computeExprType model e).val
+        if isHeapRelevantType ty then (acc ++ [e], ds)
+        else
+          (acc, ds ++ [(fileRangeToCoreMd e.source e.md).toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
     ) ([], [])
     (.Opaque posts impl kept, diags)
   | other => (other, [])

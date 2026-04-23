@@ -104,6 +104,27 @@ procedure newObjectDoNotCountForModifies()
   var c: Container := new Container;
   c#value := 1
 };
+
+procedure modifiesWildcardBodiless(c: Container, d: Container)
+  modifies *
+;
+
+procedure modifiesWildcardBodilessCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardBodiless(c, d);
+  assert x == d#value // this should fail because modifies * means anything can change
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure modifiesWildcardWithBody(c: Container, d: Container)
+  ensures true
+  modifies *
+{
+  c#value := 2;
+  d#value := 3
+};
 "
 
 #guard_msgs (drop info, error) in
