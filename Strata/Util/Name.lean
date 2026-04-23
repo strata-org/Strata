@@ -44,7 +44,7 @@ def findUnique (baseName : String) (startSuffix : Nat)
   let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
     if !isUsed candidate then candidate
     else if h : remaining == 0 then
-      panic! s!"findUnique: exhausted {limit} candidates for base name '{baseName}'"
+      panic! s!"findUnique: exhausted {limit} candidates for base name '{baseName}'" -- nopanic:ok
     else
       loop (disambiguate baseName suffix) (suffix + 1) (remaining - 1)
   termination_by remaining
