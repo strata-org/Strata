@@ -19,10 +19,6 @@ namespace Laurel
 
 public section
 
-abbrev MetaData := Imperative.MetaData Core.Expression
--- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr MetaData := inferInstance
-
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
     Carries a mandatory unique ID assigned by the resolution pass. -/
 structure Identifier where
@@ -30,8 +26,8 @@ structure Identifier where
   text : String
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
-  /-- Source-level metadata (locations, annotations). -/
-  md : MetaData
+  /-- Source location for this identifier. -/
+  source : Option FileRange := none
   deriving Repr
 
 -- Temporary hack because the Python through Laurel pipeline doesn't resolve
@@ -39,15 +35,15 @@ instance : BEq Identifier where
   beq a b := a.text == b.text
 
 instance : Inhabited Identifier where
- default := { text := "defaultIdentifier", md := .empty }
+ default := { text := "defaultIdentifier" }
 
 instance : ToString Identifier where
   toString id := id.text
 
 instance : Coe String Identifier where
-  coe s := { text := s, md := .empty }
+  coe s := { text := s }
 
-def mkId (name: String): Identifier := { text := name, md := .empty }
+def mkId (name: String): Identifier := { text := name }
 
 /--
 Primitive operations available in Laurel expressions.
@@ -115,8 +111,8 @@ structure AstNode (t : Type) : Type where
   val : t
   /-- Source location for this AST node. -/
   source : Option FileRange
-  /-- Source-level metadata (locations, annotations). -/
-  md : MetaData := .empty
+  /-- Optional error summary for requires/ensures clauses. -/
+  errorSummary : Option String := none
   deriving Repr
 
 /--
@@ -320,15 +316,28 @@ end
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 
-/-- Build Core metadata from an optional source location and Laurel metadata. -/
-def fileRangeToCoreMd (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : Imperative.MetaData Core.Expression :=
+/-- Build Core metadata from an optional source location. -/
+def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
   match source with
-  | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+  | some fr => Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+  | none => Imperative.MetaData.empty
+
+/-- Build Core metadata from an AstNode's source location. -/
+def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
+  let md := fileRangeToCoreMd node.source
+  match node.errorSummary with
+  | some msg => md.withPropertySummary msg
   | none => md
 
-/-- Build Core metadata from an AstNode's source location and any extra metadata. -/
-def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
-  fileRangeToCoreMd node.source node.md
+/-- Build Core metadata from an Identifier's source location. -/
+def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=
+  fileRangeToCoreMd id.source
+
+/-- Create a DiagnosticModel from an optional source location and a message. -/
+def diagnosticFromSource (source : Option FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
+  match source with
+  | some fr => DiagnosticModel.withRange fr msg type
+  | none => DiagnosticModel.fromMessage msg type
 
 instance : Inhabited StmtExpr where
   default := .Hole

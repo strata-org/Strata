@@ -25,8 +25,6 @@ namespace Strata.Python.Laurel
 
 open Strata.Laurel (HighType HighTypeMd StmtExpr StmtExprMd mkId)
 
-abbrev Md := Imperative.MetaData Core.Expression
-
 abbrev tyAny : HighType := .UserDefined "Any"
 
 /--
@@ -45,102 +43,102 @@ structure TypedStmtExpr (tp : HighType) where
 
 namespace TypedStmtExpr
 
-def ofStmt {tp} (s : StmtExpr) (md : Md) (source : Option FileRange := none) : TypedStmtExpr tp :=
-  { stmt := { val := s, source := source, md := md } }
+def ofStmt {tp} (s : StmtExpr) (source : Option FileRange := none) : TypedStmtExpr tp :=
+  { stmt := { val := s, source := source } }
 
-def identifier (v : String) (tp : HighType) (md : Md)
+def identifier (v : String) (tp : HighType)
     (source : Option FileRange := none) : TypedStmtExpr tp :=
-  .ofStmt (.Identifier (mkId v)) md source
+  .ofStmt (.Identifier (mkId v)) source
 
-def literalBool (v : Bool) (md : Md)
+def literalBool (v : Bool)
     (source : Option FileRange := none) : TypedStmtExpr .TBool :=
-  .ofStmt (.LiteralBool v) md source
+  .ofStmt (.LiteralBool v) source
 
-def literalInt (v : Int) (md : Md)
+def literalInt (v : Int)
     (source : Option FileRange := none) : TypedStmtExpr .TInt :=
-  .ofStmt (.LiteralInt v) md source
+  .ofStmt (.LiteralInt v) source
 
-def literalString (v : String) (md : Md)
+def literalString (v : String)
     (source : Option FileRange := none) : TypedStmtExpr .TString :=
-  .ofStmt (.LiteralString v) md source
+  .ofStmt (.LiteralString v) source
 
 def stringEq (x y : TypedStmtExpr .TString)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Eq [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Eq [x.stmt, y.stmt]) source
 
 def intGeq (x y : TypedStmtExpr .TInt)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) source
 
 def intLeq (x y : TypedStmtExpr .TInt)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) source
 
 def realGeq (x y : TypedStmtExpr .TReal)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) source
 
 def realLeq (x y : TypedStmtExpr .TReal)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) source
 
 def not (x : TypedStmtExpr .TBool)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Not [x.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Not [x.stmt]) source
 
 def implies (x y : TypedStmtExpr .TBool)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Implies [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Implies [x.stmt, y.stmt]) source
 
 def or (x y : TypedStmtExpr .TBool)
-    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.PrimitiveOp .Or [x.stmt, y.stmt]) md source
+    (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Or [x.stmt, y.stmt]) source
 
 abbrev tyDictStrAny : HighType := .UserDefined "DictStrAny"
 
 def anyIsfromNone (v : TypedStmtExpr tyAny)
-    (md : Md := v.stmt.md) (source : Option FileRange := v.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.StaticCall (mkId "Any..isfrom_None") [v.stmt]) md source
+    (source : Option FileRange := v.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.StaticCall (mkId "Any..isfrom_None") [v.stmt]) source
 
 def fromInt (v : TypedStmtExpr .TInt)
-    (md : Md := v.stmt.md) (source : Option FileRange := v.stmt.source) : TypedStmtExpr tyAny :=
-  .ofStmt (.StaticCall (mkId "from_int") [v.stmt]) md source
+    (source : Option FileRange := v.stmt.source) : TypedStmtExpr tyAny :=
+  .ofStmt (.StaticCall (mkId "from_int") [v.stmt]) source
 
 def anyAsInt (a : TypedStmtExpr tyAny)
-    (md : Md := a.stmt.md) (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TInt :=
-  .ofStmt (.StaticCall (mkId "Any..as_int!") [a.stmt]) md source
+    (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.StaticCall (mkId "Any..as_int!") [a.stmt]) source
 
-def fromStr (v : TypedStmtExpr .TString) (md : Md)
+def fromStr (v : TypedStmtExpr .TString)
     (source : Option FileRange := none) : TypedStmtExpr tyAny :=
-  .ofStmt (.StaticCall (mkId "from_str") [v.stmt]) md source
+  .ofStmt (.StaticCall (mkId "from_str") [v.stmt]) source
 
 def anyAsString (a : TypedStmtExpr tyAny)
-    (md : Md := a.stmt.md) (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TString :=
-  .ofStmt (.StaticCall (mkId "Any..as_string!") [a.stmt]) md source
+    (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TString :=
+  .ofStmt (.StaticCall (mkId "Any..as_string!") [a.stmt]) source
 
 def anyAsFloat (a : TypedStmtExpr tyAny)
-    (md : Md := a.stmt.md) (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TReal :=
-  .ofStmt (.StaticCall (mkId "Any..as_float!") [a.stmt]) md source
+    (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TReal :=
+  .ofStmt (.StaticCall (mkId "Any..as_float!") [a.stmt]) source
 
 def anyAsDict (a : TypedStmtExpr tyAny)
-    (md : Md := a.stmt.md) (source : Option FileRange := a.stmt.source) : TypedStmtExpr tyDictStrAny :=
-  .ofStmt (.StaticCall (mkId "Any..as_Dict!") [a.stmt]) md source
+    (source : Option FileRange := a.stmt.source) : TypedStmtExpr tyDictStrAny :=
+  .ofStmt (.StaticCall (mkId "Any..as_Dict!") [a.stmt]) source
 
 def dictStrAnyContains (d : TypedStmtExpr tyDictStrAny) (k : TypedStmtExpr .TString)
-    (md : Md := d.stmt.md) (source : Option FileRange := d.stmt.source) : TypedStmtExpr .TBool :=
-  .ofStmt (.StaticCall (mkId "DictStrAny_contains") [d.stmt, k.stmt]) md source
+    (source : Option FileRange := d.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.StaticCall (mkId "DictStrAny_contains") [d.stmt, k.stmt]) source
 
-def anyGet (a i : TypedStmtExpr tyAny) (md : Md)
+def anyGet (a i : TypedStmtExpr tyAny)
     (source : Option FileRange := none) : TypedStmtExpr tyAny :=
-  .ofStmt (.StaticCall (mkId "Any_get") [a.stmt, i.stmt]) md source
+  .ofStmt (.StaticCall (mkId "Any_get") [a.stmt, i.stmt]) source
 
 def strLength (a : TypedStmtExpr .TString)
-    (md : Md := a.stmt.md) (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TInt :=
-  .ofStmt (.StaticCall (mkId "Str.Length") [a.stmt]) md source
+    (source : Option FileRange := a.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.StaticCall (mkId "Str.Length") [a.stmt]) source
 
-def reSearchBool (pattern s : TypedStmtExpr .TString) (md : Md)
+def reSearchBool (pattern s : TypedStmtExpr .TString)
     (source : Option FileRange := none) : TypedStmtExpr .TBool :=
-  .ofStmt (.StaticCall (mkId "re_search_bool") [pattern.stmt, s.stmt]) md source
+  .ofStmt (.StaticCall (mkId "re_search_bool") [pattern.stmt, s.stmt]) source
 
 end TypedStmtExpr
 

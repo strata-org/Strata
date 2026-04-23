@@ -51,17 +51,17 @@ expression. Each `if-then` (no else) guard wraps as
 `if cond then lastStmtToExpr(body) else acc`; other statements produce
 `Block [stmt, acc]`.
 -/
-def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd) (blockMd : MetaData)
+def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd) (blockErrSummary : Option String)
     : StmtExprMd :=
   match stmts with
   | [] => acc
   | s :: rest =>
-    let acc' := stmtsToExpr rest acc blockMd
+    let acc' := stmtsToExpr rest acc blockErrSummary
     match s with
-    | ⟨.IfThenElse cond thenBr none, ssrc, smd⟩ =>
-      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), ssrc, smd⟩
+    | ⟨.IfThenElse cond thenBr none, ssrc, sErrSummary⟩ =>
+      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), ssrc, sErrSummary⟩
     | _ =>
-      ⟨.Block [s, acc'] none, none, blockMd⟩
+      ⟨.Block [s, acc'] none, none, blockErrSummary⟩
   termination_by (sizeOf stmts, 1)
 
 /--
@@ -74,7 +74,7 @@ Convert the last statement of a block into an expression.
 def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
   match stmt with
   | ⟨.Return (some val), _, _⟩ => val
-  | ⟨.Block stmts _, source, md⟩ =>
+  | ⟨.Block stmts _, source, errSummary⟩ =>
     match h_last : stmts.getLast? with
     | some last =>
       have := List.mem_of_getLast? h_last
@@ -82,10 +82,10 @@ def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
       let dropped := stmts.dropLast
       have h : sizeOf stmts.dropLast < sizeOf stmts :=
         List.sizeOf_dropLast_lt (by intro h; simp [h] at h_last)
-      stmtsToExpr dropped lastExpr md
+      stmtsToExpr dropped lastExpr errSummary
     | none => stmt
-  | ⟨.IfThenElse cond thenBr (some elseBr), source, md⟩ =>
-    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), source, md⟩
+  | ⟨.IfThenElse cond thenBr (some elseBr), source, errSummary⟩ =>
+    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), source, errSummary⟩
   | _ => stmt
   termination_by (sizeOf stmt, 0)
   decreasing_by

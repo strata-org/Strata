@@ -64,8 +64,8 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  let md ← getArgMetaData arg
-  return { text := id, md := md }
+  let source ← getArgFileRange arg
+  return { text := id, source := source }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -154,7 +154,7 @@ instance : Inhabited Procedure where
     decreases := none
     isFunctional := false
     invokeOn := none
-    body := .Transparent ⟨.LiteralBool true, none, #[]⟩
+    body := .Transparent { val := .LiteralBool true, source := none }
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -194,14 +194,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   | .op op => match op.name, op.args with
     | q`Laurel.assert, #[arg0, errMsgArg] =>
       let cond ← translateStmtExpr arg0
-      let md' ← match errMsgArg with
+      let errSummary ← match errMsgArg with
         | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
           | q`Laurel.errorSummary, #[strArg] => do
             let msg ← translateString strArg
-            pure (Imperative.MetaData.empty.withPropertySummary msg)
-          | _, _ => pure Imperative.MetaData.empty
-        | _ => pure Imperative.MetaData.empty
-      return { val := .Assert cond, source := src, md := md' }
+            pure (some msg)
+          | _, _ => pure none
+        | _ => pure none
+      return { val := .Assert cond, source := src, errorSummary := errSummary }
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) src
@@ -396,7 +396,7 @@ def translateRequiresClauses (arg : Arg) : TransM (List StmtExprMd) := do
             | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
               | q`Laurel.errorSummary, #[strArg] => do
                 let msg ← translateString strArg
-                pure { expr with md := expr.md.withPropertySummary msg }
+                pure { expr with errorSummary := some msg }
               | _, _ => pure expr
             | _ => pure expr
           allRequires := allRequires ++ [expr']
@@ -418,7 +418,7 @@ def translateEnsuresClauses (arg : Arg) : TransM (List StmtExprMd) := do
             | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
               | q`Laurel.errorSummary, #[strArg] => do
                 let msg ← translateString strArg
-                pure { expr with md := expr.md.withPropertySummary msg }
+                pure { expr with errorSummary := some msg }
               | _, _ => pure expr
             | _ => pure expr
           allEnsures := allEnsures ++ [expr']

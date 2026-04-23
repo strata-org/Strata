@@ -77,9 +77,11 @@ private def operationName : Operation → String
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
 -- Internal-only: public because `partial` prevents `private` in this section
-partial def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
+partial def stmtExprToArg (s : StmtExprMd) : Arg :=
+  let errSummary := s.errorSummary
+  stmtExprValToArg errSummary s.val
 where
-  stmtExprValToArg : StmtExpr → Arg
+  stmtExprValToArg (errSummary : Option String) : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
       match n with
@@ -128,7 +130,10 @@ where
     | .Return (some value) => laurelOp "return" #[stmtExprToArg value]
     | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
     | .Exit label => laurelOp "exit" #[ident label]
-    | .Assert cond => laurelOp "assert" #[stmtExprToArg cond, optionArg none]
+    | .Assert cond =>
+      let errOpt := optionArg (errSummary.map fun msg =>
+        laurelOp "errorSummary" #[.strlit sr msg])
+      laurelOp "assert" #[stmtExprToArg cond, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
@@ -156,8 +161,8 @@ where
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
     | .Old value => laurelOp "call" #[laurelOp "identifier" #[ident "old"], commaSep #[stmtExprToArg value]]
     | .Fresh value => laurelOp "call" #[laurelOp "identifier" #[ident "fresh"], commaSep #[stmtExprToArg value]]
-    | .ProveBy value _proof => stmtExprValToArg value.val
-    | .ContractOf _type fn => stmtExprValToArg fn.val
+    | .ProveBy value _proof => stmtExprValToArg value.errorSummary value.val
+    | .ContractOf _type fn => stmtExprValToArg fn.errorSummary fn.val
     | .Abstract => laurelOp "identifier" #[ident "abstract"]
     | .All => laurelOp "identifier" #[ident "all"]
     | .PureFieldUpdate target field value =>
@@ -177,12 +182,12 @@ private def fieldToArg (f : Field) : Arg :=
     laurelOp "immutableField" #[ident f.name.text, highTypeToArg f.type]
 
 private def requiresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.md.getPropertySummary.map fun msg =>
+  let errOpt := optionArg (e.errorSummary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
   laurelOp "requiresClause" #[stmtExprToArg e, errOpt]
 
 private def ensuresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.md.getPropertySummary.map fun msg =>
+  let errOpt := optionArg (e.errorSummary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
   laurelOp "ensuresClause" #[stmtExprToArg e, errOpt]
 
@@ -339,7 +344,7 @@ private def formatOp (o : Strata.Operation) : Format :=
 def formatHighType (t : HighTypeMd) : Format := formatArg (highTypeToArg t)
 def formatHighTypeVal (t : HighType) : Format := formatArg (highTypeValToArg t)
 def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
-def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg ⟨s, none, {}⟩)
+def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg { val := s, source := none })
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)

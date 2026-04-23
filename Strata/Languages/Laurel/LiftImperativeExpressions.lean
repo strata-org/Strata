@@ -204,7 +204,7 @@ and updates substitutions. The value should already be transformed by the caller
 private def liftAssignExpr (targets : List StmtExprMd) (seqValue : StmtExprMd)
     (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : LiftM Unit := do
   -- Prepend the assignment itself
-  prepend (⟨.Assign targets seqValue, source, md⟩)
+  prepend (⟨.Assign targets seqValue, source, errSummary, none⟩)
   -- Create a before-snapshot for each target and update substitutions
   for target in targets do
     match target.val with
@@ -212,7 +212,7 @@ private def liftAssignExpr (targets : List StmtExprMd) (seqValue : StmtExprMd)
         let snapshotName ← freshTempFor varName
         let varType ← computeType target
         -- Snapshot goes before the assignment (cons pushes to front)
-        prepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, source, md⟩)), source, md⟩)
+        prepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, source, errSummary, none⟩)), source, errSummary⟩)
         setSubst varName snapshotName
     | _ => pure ()
 
@@ -223,10 +223,10 @@ Assignments are lifted to prependedStmts and replaced with snapshot variable ref
 -/
 def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   match expr with
-  | AstNode.mk val source md =>
+  | AstNode.mk val source errSummary =>
   match val with
   | .Identifier name =>
-      return ⟨.Identifier (← getSubst name), source, md⟩
+      return ⟨.Identifier (← getSubst name), source, errSummary⟩
 
   | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ => return expr
 
@@ -244,7 +244,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         | _ => return expr
 
       let resultExpr ← match firstTarget.val with
-        | .Identifier varName => pure (⟨.Identifier (← getSubst varName), source, md⟩)
+        | .Identifier varName => pure (⟨.Identifier (← getSubst varName), source, errSummary⟩)
         | _ =>
           dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
           return expr
@@ -258,12 +258,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .PrimitiveOp op args =>
       -- Process arguments right to left
       let seqArgs ← args.reverse.mapM transformExpr
-      return ⟨.PrimitiveOp op seqArgs.reverse, source, md⟩
+      return ⟨.PrimitiveOp op seqArgs.reverse, source, errSummary, none⟩
 
   | .StaticCall callee args =>
     let model := (← get).model
     let seqArgs ← args.reverse.mapM transformExpr
-    let seqCall := ⟨.StaticCall callee seqArgs.reverse, source, md⟩
+    let seqCall := ⟨.StaticCall callee seqArgs.reverse, source, errSummary, none⟩
     if model.isFunction callee then
       return seqCall
     else
@@ -272,7 +272,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let callResultType ← computeType expr
       let liftedCall := [
         ⟨ (.LocalVariable callResultVar callResultType none), source, md ⟩,
-        ⟨.Assign [bare (.Identifier callResultVar)] seqCall, source, md⟩
+        ⟨.Assign [bare (.Identifier callResultVar)] seqCall, source, errSummary, none⟩
       ]
       modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
       return bare (.Identifier callResultVar)
@@ -294,14 +294,14 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqThen ← transformExpr thenBranch
         let thenPrepends ← takePrepends
-        let thenBlock := bare (.Block (thenPrepends ++ [⟨.Assign [bare (.Identifier condVar)] seqThen, source, md⟩]) none)
+        let thenBlock := bare (.Block (thenPrepends ++ [⟨.Assign [bare (.Identifier condVar)] seqThen, source, errSummary, none⟩]) none)
         -- Process else-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqElse ← match elseBranch with
           | some e => do
               let se ← transformExpr e
               let elsePrepends ← takePrepends
-              pure (some (bare (.Block (elsePrepends ++ [⟨.Assign [bare (.Identifier condVar)] se, source, md⟩]) none)))
+              pure (some (bare (.Block (elsePrepends ++ [⟨.Assign [bare (.Identifier condVar)] se, source, errSummary, none⟩]) none)))
           | none => pure none
         -- Restore outer state
         modify fun s => { s with subst := savedSubst, prependedStmts := savedPrepends }
@@ -311,7 +311,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         let condType ← computeType thenBranch
         -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
         -- Output order: declaration, then if-then-else
-        prepend (⟨.IfThenElse seqCond thenBlock seqElse, source, md⟩)
+        prepend (⟨.IfThenElse seqCond thenBlock seqElse, source, errSummary, none⟩)
         prepend (bare (.LocalVariable condVar condType none))
         return bare (.Identifier condVar)
       else
@@ -321,7 +321,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         let seqElse ← match elseBranch with
           | some e => pure (some (← transformExpr e))
           | none => pure none
-        return ⟨.IfThenElse seqCond seqThen seqElse, source, md⟩
+        return ⟨.IfThenElse seqCond seqThen seqElse, source, errSummary, none⟩
 
   | .Block stmts labelOption =>
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
@@ -336,10 +336,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         match initializer with
         | some initExpr =>
             let seqInit ← transformExpr initExpr
-            prepend (⟨.LocalVariable name ty (some seqInit), expr.source, expr.md⟩)
+            prepend (⟨.LocalVariable name ty (some seqInit), expr.source, expr.errorSummary, none⟩)
         | none =>
-            prepend (⟨.LocalVariable name ty none, expr.source, expr.md⟩)
-        return ⟨.Identifier (← getSubst name), expr.source, expr.md⟩
+            prepend (⟨.LocalVariable name ty none, expr.source, expr.errorSummary, none⟩)
+        return ⟨.Identifier (← getSubst name), expr.source, expr.errorSummary⟩
       else
         return expr
 
@@ -354,7 +354,7 @@ Returns a list of statements (the original may expand into multiple).
 -/
 def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
-  | AstNode.mk val source md =>
+  | AstNode.mk val source errSummary =>
   match val with
   | .Assert cond =>
       -- Do not transform assert conditions with assignments — they must be rejected.
@@ -363,7 +363,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assert seqCond, source, md⟩]
+        return prepends ++ [⟨.Assert seqCond, source, errSummary, none⟩]
       else
         return [stmt]
 
@@ -372,7 +372,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assume seqCond, source, md⟩]
+        return prepends ++ [⟨.Assume seqCond, source, errSummary, none⟩]
       else
         return [stmt]
 
@@ -394,18 +394,18 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
                 let seqInit ← transformExpr initExprMd
                 let prepends ← takePrepends
                 modify fun s => { s with subst := [] }
-                return prepends ++ [⟨.LocalVariable name ty (some seqInit), source, md⟩]
+                return prepends ++ [⟨.LocalVariable name ty (some seqInit), source, errSummary, none⟩]
               else
                 -- Pass through as-is; translateStmt will emit init + call
                 let seqArgs ← args.mapM transformExpr
                 let argPrepends ← takePrepends
                 modify fun s => { s with subst := [] }
-                return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExprMd.source, initExprMd.md⟩), source, md⟩]
+                return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExprMd.source, none⟩), source, errSummary⟩]
           | _ =>
               let seqInit ← transformExpr initExprMd
               let prepends ← takePrepends
               modify fun s => { s with subst := [] }
-              return prepends ++ [⟨.LocalVariable name ty (some seqInit), source, md⟩]
+              return prepends ++ [⟨.LocalVariable name ty (some seqInit), source, errSummary, none⟩]
       | none =>
           return [stmt]
 
@@ -421,17 +421,17 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
             let seqValue ← transformExpr valueMd
             let prepends ← takePrepends
             modify fun s => { s with subst := [] }
-            return prepends ++ [⟨.Assign targets seqValue, source, md⟩]
+            return prepends ++ [⟨.Assign targets seqValue, source, errSummary, none⟩]
           else
             let seqArgs ← args.mapM transformExpr
             let argPrepends ← takePrepends
             modify fun s => { s with subst := [] }
-            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, source, md⟩, source, md⟩]
+            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs, source, errSummary, none⟩, source, errSummary⟩]
       | _ =>
           let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
           modify fun s => { s with subst := [] }
-          return prepends ++ [⟨.Assign targets seqValue, source, md⟩]
+          return prepends ++ [⟨.Assign targets seqValue, source, errSummary, none⟩]
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
@@ -444,7 +444,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
             let se ← transformStmt e
             pure (some (bare (.Block se none)))
         | none => pure none
-      return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, source, md⟩]
+      return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, source, errSummary, none⟩]
 
   | .While cond invs dec body =>
       let seqCond ← transformExpr cond
@@ -460,18 +460,18 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         let stmts ← transformStmt body
         pure (bare (.Block stmts none))
       return condPrepends ++ invPrepends ++ decPrepends ++
-        [⟨.While seqCond seqInvs seqDec seqBody, source, md⟩]
+        [⟨.While seqCond seqInvs seqDec seqBody, source, errSummary, none⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
       let prepends ← takePrepends
-      return prepends ++ [⟨.StaticCall name seqArgs, source, md⟩]
+      return prepends ++ [⟨.StaticCall name seqArgs, source, errSummary, none⟩]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
       let prepends ← takePrepends
       modify fun s => { s with subst := [] }
-      return prepends ++ [⟨.Return (some seqRet), source, md⟩]
+      return prepends ++ [⟨.Return (some seqRet), source, errSummary, none⟩]
 
   | _ =>
       return [stmt]

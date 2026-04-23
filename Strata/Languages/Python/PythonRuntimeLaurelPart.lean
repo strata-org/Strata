@@ -1088,12 +1088,7 @@ def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBit
 
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
-  | .ok p =>
-    let addExceptionMd := p.staticProcedures.map (λ f =>
-      if f.name.text ∈ AnyMaybeExceptionList then
-        {f with name := {f.name with md := f.name.md.withPropertySummary "AnyMaybeExcept" }}
-      else f)
-    {p with staticProcedures := addExceptionMd}
+  | .ok p => p
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
 end Python
