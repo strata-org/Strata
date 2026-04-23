@@ -373,96 +373,82 @@ def translateStmt (stmt : StmtExprMd)
       let ident := ⟨param.name.text, ()⟩
       return [Core.Statement.init ident coreType .nondet md]
   | .Assign targets value =>
-      match targets with
-      | [⟨ .Declare param, _, _ ⟩] =>
-          let coreMonoType ← translateType param.type
-          let coreType := LTy.forAll [] coreMonoType
-          let ident := ⟨param.name.text, ()⟩
-          match value.val with
-          | .StaticCall callee args =>
-              if model.isFunction callee then
-                let coreExpr ← translateExpr { val := .StaticCall callee args, source := value.source, md := value.md }
-                return [Core.Statement.init ident coreType (.det coreExpr) md]
-              else
-                let coreArgs ← args.mapM (fun a => translateExpr a)
-                let defaultExpr ← defaultExprForType param.type
-                let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
-                let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-                return [initStmt, callStmt]
-          | .InstanceCall .. =>
-              let initStmt := Core.Statement.init ident coreType .nondet md
-              return [initStmt]
-          | .Hole _ _ =>
-              return [Core.Statement.init ident coreType .nondet md]
-          | _ =>
-              let coreExpr ← translateExpr value
-              return [Core.Statement.init ident coreType (.det coreExpr) md]
-      | [⟨ .Local targetId, _, _ ⟩] =>
-          let ident := ⟨targetId.text, ()⟩
-          -- Check if RHS is a procedure call (not a function)
-          match value.val with
-          | .StaticCall callee args =>
-              if model.isFunction callee then
-                -- Functions are translated as expressions
-                let coreExpr ← translateExpr value
-                return [Core.Statement.set ident coreExpr md]
-              else
-                -- Procedure calls need to be translated as call statements
-                let coreArgs ← args.mapM (fun a => translateExpr a)
-                -- Synthesize throwaway LHS variables for any outputs beyond the
-                -- assigned target (e.g. void-returns-Any adds an extra output).
-                let outputs := match model.get callee with
-                  | .staticProcedure proc => proc.outputs
-                  | .instanceProcedure _ proc => proc.outputs
-                  | _ => []
-                let mut inits : List Core.Statement := []
-                let mut lhs : List Core.CoreIdent := [ident]
-                for out in outputs.drop 1 do
-                  let id ← freshId
-                  let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
-                  let coreType := LTy.forAll [] (← translateType out.type)
-                  inits := inits ++ [Core.Statement.init unusedIdent coreType .nondet md]
-                  lhs := lhs ++ [unusedIdent]
-                return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
-          | .InstanceCall .. =>
-              -- Instance method call: havoc the target variable
-              return [Core.Statement.havoc ident md]
-          | _ =>
-              let coreExpr ← translateExpr value
-              return [Core.Statement.set ident coreExpr md]
+      -- Check if any target is a Field — these should have been lowered already
+      let hasField := targets.any fun t => match t.val with | .Field _ _ => true | _ => false
+      if hasField then
+        emitDiagnostic $ md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" DiagnosticType.StrataBug
+        modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+        return []
+      else
+      -- Match on the value to decide how to translate
+      match _hv : value.val with
+      | .StaticCall callee args =>
+        if model.isFunction callee then
+          -- Function call: translate as a normal expression assignment
+          let coreExpr ← translateExpr value
+          let mut result : List Core.Statement := []
+          for target in targets do
+            match target.val with
+            | .Declare param =>
+              let coreType := LTy.forAll [] (← translateType param.type)
+              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+              result := result ++ [Core.Statement.init ident coreType (.det coreExpr) md]
+            | .Local name =>
+              let ident : Core.CoreIdent := ⟨name.text, ()⟩
+              result := result ++ [Core.Statement.set ident coreExpr md]
+            | .Field _ _ => pure () -- already handled above
+          return result
+        else
+          -- Procedure call: init Declare targets with nondet, then emit call
+          let coreArgs ← args.mapM (fun a => translateExpr a)
+          let mut inits : List Core.Statement := []
+          let mut lhs : List Core.CoreIdent := []
+          for target in targets do
+            match target.val with
+            | .Declare param =>
+              let coreType := LTy.forAll [] (← translateType param.type)
+              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+              inits := inits ++ [Core.Statement.init ident coreType .nondet md]
+              lhs := lhs ++ [ident]
+            | .Local name =>
+              let ident : Core.CoreIdent := ⟨name.text, ()⟩
+              lhs := lhs ++ [ident]
+            | .Field _ _ => pure () -- already handled above
+          return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
+      | .InstanceCall _target callee args =>
+          -- Instance call: init Declare targets with nondet, then emit call
+          let coreArgs ← args.mapM (fun a => translateExpr a)
+          let mut inits : List Core.Statement := []
+          let mut lhs : List Core.CoreIdent := []
+          for target in targets do
+            match target.val with
+            | .Declare param =>
+              let coreType := LTy.forAll [] (← translateType param.type)
+              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+              inits := inits ++ [Core.Statement.init ident coreType .nondet md]
+              lhs := lhs ++ [ident]
+            | .Local name =>
+              let ident : Core.CoreIdent := ⟨name.text, ()⟩
+              lhs := lhs ++ [ident]
+            | .Field _ _ => pure () -- already handled above
+          return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
       | _ =>
-          -- Parallel assignment: (var1, var2, ...) := expr
-          -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
-          match value.val with
-          | .StaticCall callee args =>
-              let coreArgs ← args.mapM (fun a => translateExpr a)
-              -- Emit init statements for Declare targets
-              let mut inits : List Core.Statement := []
-              let mut lhsIdents : List Core.CoreIdent := []
-              for t in targets do
-                match t.val with
-                | .Declare param =>
-                  let coreMonoType ← translateType param.type
-                  let coreType := LTy.forAll [] coreMonoType
-                  let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
-                  let defaultExpr ← defaultExprForType param.type
-                  inits := inits ++ [Core.Statement.init ident coreType (.det defaultExpr) md]
-                  lhsIdents := lhsIdents ++ [ident]
-                | .Local name =>
-                  lhsIdents := lhsIdents ++ [⟨name.text, ()⟩]
-                | _ => pure ()
-              return inits ++ [Core.Statement.call lhsIdents callee.text coreArgs (astNodeToCoreMd value)]
-          | .InstanceCall .. =>
-              -- Instance method call: havoc all target variables
-              let havocStmts := targets.filterMap fun t =>
-                match t.val with
-                | .Local name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
-                | .Declare param => some (Core.Statement.havoc ⟨param.name.text, ()⟩ md)
-                | _ => none
-              return (havocStmts)
-          | _ =>
-              emitDiagnostic $ md.toDiagnostic s!"Assignments with multiple target but without a RHS call should not be constructed. Targets: {Std.format targets}"
-              returnNone
+        match targets with
+        | [target] =>
+          let coreExpr ← translateExpr value
+          match target.val with
+            | .Declare param =>
+              let coreType := LTy.forAll [] (← translateType param.type)
+              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+              return [Core.Statement.init ident coreType (.det coreExpr) md]
+            | .Local name =>
+              let ident : Core.CoreIdent := ⟨name.text, ()⟩
+              return [Core.Statement.set ident coreExpr md]
+            | .Field _ _ => pure [] -- already handled above
+        | _ =>
+          emitDiagnostic $ md.toDiagnostic "Multi-target assignment need a call as a RHS" DiagnosticType.StrataBug
+          modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+          return []
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt thenBranch
