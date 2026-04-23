@@ -117,21 +117,6 @@ def smtReservedKeywords : List String :=
    -- Array theory symbols
    "select", "store"]
 
-/-- Generate a disambiguated name by appending @suffix -/
-abbrev disambiguateName (baseName : String) (suffix : Nat) : String :=
-  Strata.Name.disambiguate baseName suffix
-
-/-- Break a potentially disambiguated name into its base name and next suffix.
-    If the name has an `@N` suffix, returns `(base, N + 1)`.
-    Otherwise returns `(name, 1)`. -/
-abbrev breakDisambiguatedName (name : String) : String × Nat :=
-  Strata.Name.breakDisambiguated name
-
-/-- Find a unique name by trying candidates with increasing suffixes.
-    The `isUsed` predicate checks if a candidate name is already taken. -/
-abbrev findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
-  Strata.Name.findUnique baseName startSuffix isUsed limit
-
 /-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
     reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
     names with `$` to make them valid simple symbols. -/
@@ -184,7 +169,7 @@ def encodeUF (uf : UF) : EncoderM String := do
   let baseName := sanitizeSmtName uf.id
   let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
   let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
-  let id := findUniqueName baseName 1 isUsed (existingNames.size + smtReservedKeywords.length)
+  let id := Strata.Name.findUnique baseName 1 isUsed (existingNames.size + smtReservedKeywords.length)
   comment uf.id
   let argTys := uf.args.map (fun vt => vt.ty)
   Solver.declareFun id argTys uf.out

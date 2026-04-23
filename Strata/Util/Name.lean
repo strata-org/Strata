@@ -37,15 +37,16 @@ def breakDisambiguated (name : String) : String × Nat :=
   | _, _ => (name, 1)
 
 /-- Find a unique name by trying candidates with increasing `@N` suffixes.
-    The `isUsed` predicate checks if a candidate name is already taken. -/
+    The `isUsed` predicate checks if a candidate name is already taken.
+    Panics if no unique name is found within `limit` attempts. -/
 def findUnique (baseName : String) (startSuffix : Nat)
     (isUsed : String → Bool) (limit : Nat := 1000) : String :=
   let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
-    if h : remaining == 0 then candidate
-    else if isUsed candidate then
-      loop (disambiguate baseName suffix) (suffix + 1) (remaining - 1)
+    if !isUsed candidate then candidate
+    else if h : remaining == 0 then
+      panic! s!"findUnique: exhausted {limit} candidates for base name '{baseName}'"
     else
-      candidate
+      loop (disambiguate baseName suffix) (suffix + 1) (remaining - 1)
   termination_by remaining
   decreasing_by
     have : remaining ≠ 0 := by intro h'; simp [h'] at h

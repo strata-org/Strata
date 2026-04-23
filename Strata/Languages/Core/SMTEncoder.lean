@@ -282,7 +282,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       if ctx.uniqueBoundNames || name.isEmpty then
         (s!"$__bv{ctx.bvCounter}", 1)
       else
-        let (b, s) := Encoder.breakDisambiguatedName name
+        let (b, s) := Strata.Name.breakDisambiguated name
         (Encoder.sanitizeSmtName b, s)
     let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
@@ -291,7 +291,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       ctx.ufs.any (fun uf => uf.id == candidate) ||
       fvarNames.contains candidate
     let limit := bvs.length + ctx.ufs.size + fvarNames.size
-    let x := Encoder.findUniqueName baseName startSuffix isUsed limit
+    let x := Strata.Name.findUnique baseName startSuffix isUsed limit
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
