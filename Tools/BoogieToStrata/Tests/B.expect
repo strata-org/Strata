@@ -1,6 +1,6 @@
 Successfully parsed.
-B.core.st(40, 4) [assert_0]: ✅ pass
-B.core.st(69, 4) [assert_1]: ✅ pass
-B.core.st(98, 4) [assert_2]: ✅ pass
-B.core.st(128, 4) [assert_3]: ✅ pass
+B.core.st(37, 4) [assert_0]: ✅ pass
+B.core.st(66, 4) [assert_1]: ✅ pass
+B.core.st(93, 4) [assert_2]: ✅ pass
+B.core.st(121, 4) [assert_3]: ✅ pass
 All 4 goals passed.

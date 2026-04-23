@@ -1,6 +1,4 @@
-test_try_except.py(7, 4): ✅ pass - assert_assert(129)_calls_Any_to_bool_0
 test_try_except.py(7, 4): ✅ pass - body should have executed
-test_try_except.py(17, 4): ✅ pass - assert_assert(358)_calls_Any_to_bool_0
 test_try_except.py(17, 4): ❓ unknown - handler should have executed
-DETAIL: 3 passed, 0 failed, 1 inconclusive
+DETAIL: 1 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

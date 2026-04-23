@@ -32,7 +32,7 @@ program Core;
 // Note: This is a recursive datatype - tail has type List
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListTesters() returns ()
+procedure TestListTesters()
 spec {
   ensures true;
 }
@@ -101,7 +101,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListHavoc() returns ()
+procedure TestListHavoc()
 spec {
   ensures true;
 }
@@ -149,7 +149,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListExhaustive() returns ()
+procedure TestListExhaustive()
 spec {
   ensures true;
 }
@@ -194,7 +194,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListMutualExclusion() returns ()
+procedure TestListMutualExclusion()
 spec {
   ensures true;
 }
@@ -242,7 +242,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListEquality() returns ()
+procedure TestListEquality()
 spec {
   ensures true;
 }
@@ -299,7 +299,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListInequality() returns ()
+procedure TestListInequality()
 spec {
   ensures true;
 }
@@ -345,7 +345,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListDestructor() returns ()
+procedure TestListDestructor()
 spec {
   ensures true;
 }
@@ -420,7 +420,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListNested() returns ()
+procedure TestListNested()
 spec {
   ensures true;
 }
@@ -476,7 +476,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListDestructorHavoc() returns ()
+procedure TestListDestructorHavoc()
 spec {
   ensures true;
 }
@@ -532,7 +532,7 @@ program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
-procedure TestListDifferentValues() returns ()
+procedure TestListDifferentValues()
 spec {
   ensures true;
 }
