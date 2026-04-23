@@ -1871,11 +1871,12 @@ def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   | [expr] => expr
   | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
 
-def getUnionTypeConstraint (var: String) (_source: Option FileRange) (tys: List String) (funcname: String)
+def getUnionTypeConstraint (var: String) (source: Option FileRange) (tys: List String) (funcname: String)
     (displayName : String := var): Option Condition :=
   let type_constraints := tys.filterMap (getSingleTypeConstraint var)
   if type_constraints.isEmpty then none else
-    some { condition := createBoolOrExpr type_constraints,
+    let cond := createBoolOrExpr type_constraints
+    some { condition := { cond with source := source },
            summary := some $ "(" ++ funcname ++ " requires) Type constraint of " ++ displayName }
 
 def getReturnTypeEnsure (source: Option FileRange) (tys: List String) (funcname: String): Option Condition :=
