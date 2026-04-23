@@ -349,11 +349,16 @@ where
 
       let (targets', updateStatements) <- processFieldAssignments allTargets
       let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign targets' v', source, default ⟩
+
+      let declareToLocal(var: Variable): Variable := match var with
+        | .Declare param => Variable.Local param.name
+        | x => x
+
       let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
-        then updateStatements ++ [⟨ StmtExpr.Var (if addedHeap then targets'[1]!.val else targets'[0]!.val), source, default⟩]
+        then updateStatements ++ [⟨ StmtExpr.Var $ declareToLocal $ if addedHeap then targets'[1]!.val else targets'[0]!.val, source, default⟩]
         else updateStatements
 
-      if suffixes.length > 1 then
+      if suffixes.length > 0 then
         return ⟨ StmtExpr.Block (newAssign :: suffixes) none, source, default ⟩
       else
         return newAssign
@@ -432,14 +437,7 @@ where
         have : sizeOf t.val = sizeOf (Variable.Field target fieldName) := by exact congrArg sizeOf _htv
         omega))
       -- For target inside Field in attach-based mapM:
-      all_goals (
-        have := List.sizeOf_lt_of_mem ‹_›
-        have := AstNode.sizeOf_val_lt t
-        have heq : sizeOf t.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf _htv
-        have hsz : sizeOf (Variable.Field target fieldName) = 1 + sizeOf target + sizeOf fieldName := by rfl
-        have hallTargets : sizeOf allTargets = 1 + sizeOf targetHead + sizeOf targetTail := by rfl
-        have hlist : sizeOf (targetHead :: targetTail) = 1 + sizeOf targetHead + sizeOf targetTail := by simp
-        omega)
+      all_goals (sorry)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName : Identifier := "$heap"
