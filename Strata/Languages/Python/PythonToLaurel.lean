@@ -1163,18 +1163,13 @@ partial def translateAssign  (ctx : TranslationContext)
   {
     let exceptHavoc :=
       if rhsIsCall then
-        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [stmtExprToVar maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
       else []
     match lhs with
     | .Name _ n _ =>
       if n.val ∈ ctx.variableTypes.unzip.1 then
-<<<<<<< HEAD
         let targetExpr := mkStmtExprMd (StmtExpr.Var (.Local n.val))
-        return (ctx, [mkStmtExprMd (StmtExpr.Assign [stmtExprToVar targetExpr] rhs_trans)] ++ havocStmts, true)
-=======
-        let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc, true)
->>>>>>> parent of 71f840ad (Fix Python->Laurel: Havoc callee or Heap after unmodeled InstanceCall (#978))
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [stmtExprToVar targetExpr] rhs_trans)] ++ exceptHavoc, true)
       else
         -- Use type annotation if it matches a known composite type
         let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
@@ -1522,16 +1517,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- When a call has no model (translates to Hole), also havoc maybe_except
     -- since an unmodeled call is a black box that could throw any exception.
-<<<<<<< HEAD
-    let havocStmts := mkHavocStmtsForUnmodeledCall ctx value md
-
-
-=======
     let holeExceptHavoc :=
       if let .Call _ _ _ _ := value then
-        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [stmtExprToVar maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
       else []
->>>>>>> parent of 71f840ad (Fix Python->Laurel: Havoc callee or Heap after unmodeled InstanceCall (#978))
     match expr.val with
     | .StaticCall fnname _ =>
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
