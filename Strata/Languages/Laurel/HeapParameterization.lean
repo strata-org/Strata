@@ -315,10 +315,10 @@ where
         return ⟨ .Return v', source, md ⟩
     | .Assign targets v =>
 
-      let processFieldAssignments(targets : List (AstNode Variable)):
+      let processFieldAssignments :
         TransformM (List (AstNode Variable) × List (AstNode StmtExpr)) :=
-        targets.foldlM (init := ([], [])) fun (accTargets, accStmts) t =>
-          match t.val with
+        targets.attach.foldlM (init := ([], [])) fun (accTargets, accStmts) ⟨t, _⟩ =>
+          match _htv : t.val with
           | .Field target fieldName => do
               let some qualifiedName := resolveQualifiedFieldName model fieldName
                 | return (accTargets ++ [t], accStmts)
@@ -332,30 +332,29 @@ where
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
-      let (allTargets, v', addedHeap) <- match v.val with
-        | .StaticCall callee args => do
-          let args' <- args.mapM recurse
-          let v' := StmtExpr.StaticCall callee args'
-          let allTargets: List (AstNode Variable) := ⟨ Variable.Local heapVar, v.source, default ⟩ :: targets
-          pure (allTargets, v, true)
-        | .InstanceCall callTarget callee args => do
-          let callTarget' ← recurse callTarget
-          let args' <- args.mapM recurse
-          let v' := StmtExpr.InstanceCall callTarget' callee args'
-          let allTargets: List (AstNode Variable) := ⟨ Variable.Local heapVar, v.source, default ⟩ :: targets
-          pure (allTargets, v, true)
+      let (v', addedHeap) <- match _hv : v.val with
+        | .StaticCall _callee args => do
+          let _args' <- args.mapM recurse
+          pure (v, true)
+        | .InstanceCall callTarget _callee args => do
+          let _callTarget' ← recurse callTarget
+          let _args' <- args.mapM recurse
+          pure (v, true)
         | _ =>
-          pure (targets, <- recurse v, false)
+          pure (<- recurse v, false)
 
-      let (targets', updateStatements) <- processFieldAssignments allTargets
-      let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign targets' v', source, default ⟩
+      let (processedTargets, updateStatements) <- processFieldAssignments
+      let allTargets := if addedHeap
+        then ⟨ Variable.Local heapVar, v.source, default ⟩ :: processedTargets
+        else processedTargets
+      let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source, default ⟩
 
       let declareToLocal(var: Variable): Variable := match var with
         | .Declare param => Variable.Local param.name
         | x => x
 
       let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
-        then updateStatements ++ [⟨ StmtExpr.Var $ declareToLocal $ if addedHeap then targets'[1]!.val else targets'[0]!.val, source, default⟩]
+        then updateStatements ++ [⟨ StmtExpr.Var $ declareToLocal $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source, default⟩]
         else updateStatements
 
       if suffixes.length > 0 then
@@ -436,8 +435,29 @@ where
         have := AstNode.sizeOf_val_lt t
         have : sizeOf t.val = sizeOf (Variable.Field target fieldName) := by exact congrArg sizeOf _htv
         omega))
-      -- For target inside Field in attach-based mapM:
-      all_goals (sorry)
+      -- For field inner expressions in attach-based foldlM:
+      all_goals (try (
+        have := List.sizeOf_lt_of_mem ‹_›
+        have := AstNode.sizeOf_val_lt t
+        have : sizeOf t.val = sizeOf (Variable.Field target fieldName) := by exact congrArg sizeOf _htv
+        simp_all
+        omega))
+      -- For callTarget/args inside InstanceCall/StaticCall in value:
+      all_goals (try (
+        have : sizeOf callTarget < sizeOf v := by
+          have h1 := AstNode.sizeOf_val_lt v
+          rw [_hv] at h1; simp at h1; omega
+        omega))
+      all_goals (try (
+        have : sizeOf args < sizeOf v := by
+          have h1 := AstNode.sizeOf_val_lt v
+          rw [_hv] at h1; simp at h1; omega
+        term_by_mem))
+      -- Remaining goals
+      all_goals (
+        cases exprMd with | mk val src mmd =>
+        simp_all
+        omega)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName : Identifier := "$heap"
