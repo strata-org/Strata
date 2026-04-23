@@ -47,47 +47,17 @@ spec {
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mutualRecPgm) |>.snd |>.isEmpty
 
-/-- info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: isEven_body_calls_MyNat..pred_0
+/--
+info:
+Obligation: isEven_terminates_0
 Property: assert
-Obligation:
-!(MyNat..isZero($__n0)) ==> MyNat..isSucc($__n0)
+Result: ✅ pass
 
-Label: isOdd_body_calls_MyNat..pred_0
+Obligation: isOdd_terminates_0
 Property: assert
-Obligation:
-!(MyNat..isZero($__n1)) ==> MyNat..isSucc($__n1)
+Result: ✅ pass
 
-Label: zeroEven
-Property: assert
-Obligation:
-true
-
-Label: zeroNotOdd
-Property: assert
-Obligation:
-true
-
-Label: oneOdd
-Property: assert
-Obligation:
-true
-
-Label: oneNotEven
-Property: assert
-Obligation:
-true
-
-Label: TestMutual_ensures_0
-Property: assert
-Obligation:
-true
-
----
-info: Obligation: isEven_body_calls_MyNat..pred_0
+Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
@@ -113,9 +83,9 @@ Result: ✅ pass
 
 Obligation: TestMutual_ensures_0
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualRecPgm (options := .default)
+#eval verify mutualRecPgm (options := .quiet)
 
 end Strata.MutualRecursiveFunctionTest
 
@@ -176,7 +146,20 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram roseTreePgm) |>.snd |>.isEmpty
 
 /--
-info: Obligation: treeSize_body_calls_RoseTree..children_0
+info:
+Obligation: treeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_body_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
 
@@ -285,6 +268,14 @@ spec {
 
 /--
 info:
+Obligation: isEven_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
@@ -292,6 +283,14 @@ Result: ✅ pass
 Obligation: isOdd_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
+
+Obligation: evenHalf_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddHalf_terminates_0
+Property: assert
+Result: ❓ unknown
 
 Obligation: evenHalf_body_calls_MyNat..pred_0
 Property: assert

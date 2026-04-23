@@ -17,6 +17,7 @@ public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
+import Strata.Transform.TermCheck
 import Strata.Transform.LoopElim
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
@@ -818,12 +819,12 @@ def corePipelinePhases (procs : Option (List String) := none) : List PipelinePha
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
-      let targets := ps ++ ps.map PrecondElim.wfProcName
+      let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ [termCheckPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none) : List AbstractedPhase :=

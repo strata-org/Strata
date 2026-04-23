@@ -79,7 +79,15 @@ spec {
 
 /--
 info:
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: append_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -91,11 +99,27 @@ Obligation: append_body_calls_IntList..tl_1
 Property: assert
 Result: ✅ pass
 
+Obligation: size_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: size_terminates_1
+Property: assert
+Result: ✅ pass
+
 Obligation: size_body_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
 Obligation: size_body_calls_IntTree..right_1
+Property: assert
+Result: ✅ pass
+
+Obligation: toList_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: toList_terminates_1
 Property: assert
 Result: ✅ pass
 
