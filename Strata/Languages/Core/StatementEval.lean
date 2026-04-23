@@ -757,13 +757,8 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
 mutual
 
 /-- Interpret a single command. -/
-def Command.runCall
-    (lhs : List Expression.Ident)
-    (procName : String)
-    (args : List Expression.Expr := [])
-    (fuel : Nat)
-    (E : Env)
-    : Env :=
+def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr := [])
+    (fuel : Nat) (E : Env) : Env :=
     match fuel with
     | 0 => { E with error := some .OutOfFuel }
     | fuel' + 1 =>

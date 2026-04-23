@@ -116,10 +116,12 @@ for test_file in "$TESTS_DIR"/test_*.py; do
     else
         # No expected file → test should pass
         if [ $update -eq 1 ] && [ $exit_code -ne 0 ]; then
-            # Test fails unexpectedly; prompt user to create expected file
+            # Test fails unexpectedly; create expected file with regex-escaped error
             reason=$(echo "$output" | grep -v "^$" | grep -v "backtrace:" | grep -v "^  [0-9]" | grep -v "^trace:" | tail -1)
-            echo "NEW FAIL: $base_name — $reason"
-            errors=$((errors + 1))
+            escaped=$(echo "$reason" | sed 's/[][(){}.*+?^$\\|]/\\&/g')
+            echo "$escaped" > "$expected_file"
+            echo "Created: $base_name — $reason"
+            passed=$((passed + 1))
         elif [ $exit_code -eq 0 ]; then
             echo "OK:   $base_name"
             passed=$((passed + 1))

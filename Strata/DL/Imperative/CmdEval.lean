@@ -164,7 +164,7 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
       | some true =>
         σ
       | some false =>
-        EC.updateError σ (.Misc f!"assert ({label}) condition is false")
+        EC.updateError σ (.AssertFail label e)
       | none =>
         EC.updateError σ (.Misc f!"assert ({label}) condition did not reduce to bool")
 

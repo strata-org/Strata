@@ -418,10 +418,6 @@ end Tests
 section ConcreteInterpretation
 
 /-! ## Concrete Interpretation Tests
-
-These tests exercise `interpProcedure` with `initConcreteEnv`, which runs
-the partial evaluator in `EvalMode.concrete` (loops iterate, calls execute
-bodies).
 -/
 
 open Lambda Strata
