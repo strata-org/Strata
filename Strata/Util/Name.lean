@@ -37,23 +37,19 @@ def breakDisambiguated (name : String) : String × Nat :=
   | _, _ => (name, 1)
 
 /-- Find a unique name by trying candidates with increasing `@N` suffixes.
-    The `isUsed` predicate checks if a candidate name is already taken.
-    Panics if no unique name is found within `limit` attempts. -/
+    Termination is guaranteed: each collision removes a name from `usedNames`,
+    so the search space shrinks on every iteration (pigeonhole principle). -/
 def findUnique (baseName : String) (startSuffix : Nat)
-    (isUsed : String → Bool) (limit : Nat := 100000) : String :=
-  let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
-    if !isUsed candidate then candidate
-    else if h : remaining == 0 then
-      panic! s!"findUnique: exhausted {limit} candidates for base name '{baseName}'" -- nopanic:ok
-    else
-      loop (disambiguate baseName suffix) (suffix + 1) (remaining - 1)
-  termination_by remaining
-  decreasing_by
-    have : remaining ≠ 0 := by intro h'; simp [h'] at h
-    omega
+    (usedNames : List String) : String :=
+  let rec loop (candidate : String) (suffix : Nat) (remaining : List String) : String :=
+    if h : remaining.contains candidate then
+      have : (remaining.erase candidate).length < remaining.length := by grind
+      loop (disambiguate baseName suffix) (suffix + 1) (remaining.erase candidate)
+    else candidate
+  termination_by remaining.length
   loop (if startSuffix == 1 then baseName
         else disambiguate baseName (startSuffix - 1))
-       startSuffix limit
+       startSuffix usedNames
 
 end Strata.Name
 
