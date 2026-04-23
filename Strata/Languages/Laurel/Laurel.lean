@@ -395,6 +395,10 @@ def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
 
+/-- Check whether a modifies list contains the wildcard (`*`). -/
+def hasModifiesWildcard (modifiesExprs : List StmtExprMd) : Bool :=
+  modifiesExprs.any (fun m => match m.val with | .All => true | _ => false)
+
 def Body.isExternal : Body → Bool
   | .External => true
   | _ => false

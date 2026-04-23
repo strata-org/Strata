@@ -137,12 +137,6 @@ def hasHeapOut (proc : Procedure) : Bool :=
   proc.outputs.any (fun p => p.name.text == "$heap")
 
 /--
-Check whether a modifies list contains the wildcard (`*`).
--/
-def hasModifiesWildcard (modifiesExprs : List StmtExprMd) : Bool :=
-  modifiesExprs.any (fun m => match m.val with | .All => true | _ => false)
-
-/--
 Transform a single procedure: if it has modifies clauses, generate the frame
 condition and conjoin it with the postcondition, then clear the modifies list.
 

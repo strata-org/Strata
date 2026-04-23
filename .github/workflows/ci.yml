@@ -208,8 +208,6 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
       - name: Build API documentation package
         uses: leanprover/lean-action@v1
         with:
