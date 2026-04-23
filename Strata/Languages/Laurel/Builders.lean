@@ -103,5 +103,11 @@ def primOp (op : Operation) (args : List StmtExprMd) (source : Option FileRange 
     (md : MetaData := defaultMd) : StmtExprMd :=
   mkNode (.PrimitiveOp op args) source md
 
+/-- While loop. -/
+def while_ (cond : StmtExprMd) (invs : List StmtExprMd := [])
+    (dec : Option StmtExprMd := none) (body : StmtExprMd)
+    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.While cond invs dec body) source md
+
 end -- public section
 end Strata.Laurel
