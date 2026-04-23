@@ -14,6 +14,7 @@ public import Strata.Languages.Core.Statistics
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Imperative.StmtEval
+public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.CmdEval
 
@@ -604,16 +605,20 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
 mutual
 
 /-- Interpret a single command. -/
-def Command.runCall (prog : Program)
+def Command.runCall
     (lhs : List Expression.Ident)
     (procName : String)
     (args : List Expression.Expr := [])
+    (fuel : Nat)
     (E : Env)
     : Env :=
+    match fuel with
+    | 0 => { E with error := some .OutOfFuel }
+    | fuel' + 1 =>
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
     | none => Env.stuck E s!"procedure '{procName}' not found"
     | some proc =>
-      if proc.body.isEmpty then Env.stuck E  E s!"procedure '{pname}' has no body"
+      if proc.body.isEmpty then Env.stuck E s!"procedure '{procName}' has no body"
       else
         match LExpr.runList E.exprEnv args with
         | .error s => Env.stuck E s
@@ -630,7 +635,7 @@ def Command.runCall (prog : Program)
           let ops : Imperative.RunOps Expression Command Env := {
             evalExpr := fun E e =>
               some (e.eval E.exprEnv.config.fuel E.exprEnv)
-            evalCmd := Command.run
+            evalCmd := Command.run fuel'
             extendEval := fun E decl =>
               match E.addFactoryFunc {
                 name := decl.name
@@ -648,20 +653,25 @@ def Command.runCall (prog : Program)
           }
           let config : Imperative.RunConfig Expression Command Env :=
             .stmts proc.body callEnv
-          let configAfter := Imperative.runStmt ops fuel config
+          let configAfter := Imperative.runStmt ops fuel' config
           match configAfter with
           | .terminal callEnv' =>
             let outputVals := proc.header.outputs.keys.map fun name =>
               (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            lhs.zip outputVals |>.foldl (fun env (name, val) => CmdEval.update env name val) callEnv'
+            let modifiedVals := proc.spec.modifies.map fun name =>
+              (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+            let E' := lhs.zip outputVals |>.foldl (fun env (name, val) =>
+              env.insertInContext (name, none) val) E
+            proc.spec.modifies.zip modifiedVals |>.foldl (fun env (name, val) =>
+              env.insertInContext (name, none) val) E'
           | _ => Env.stuck E "failed to terminate"
 
-def Command.run (E : Env) (c : Command) : Env :=
+def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with
   | .cmd c =>
     Imperative.Cmd.run E c
-  | .call lhs pname args md =>
-    Command.runCall E.program lhs pname args E
+  | .call lhs pname args _md =>
+    Command.runCall lhs pname args fuel E
 
 end
 

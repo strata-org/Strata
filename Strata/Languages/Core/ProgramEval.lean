@@ -7,6 +7,12 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.ProcedureEval
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.StatementEval
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Imperative.StmtEval
+public import Strata.DL.Imperative.CmdEval
 
 ---------------------------------------------------------------------
 
@@ -15,6 +21,7 @@ namespace Core
 open Std (ToFormat Format format)
 
 namespace Program
+open Lambda LExpr
 open Lambda.LTy Lambda.LExpr Statement Procedure Program
 
 public section
@@ -72,6 +79,41 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
 
 --------------------------------------------------------------------
+
+/-- Set up the interpreter environment from a type-checked program. -/
+def run (prog : Program) : Except DiagnosticModel Env := do
+  let factory ← Core.Factory.addFactory Lambda.Factory.default
+  let datatypes := prog.decls.filterMap fun decl =>
+    match decl with
+    | .type (.data d) _ => some d
+    | _ => none
+  let σ ← Lambda.LState.init.addFactory factory
+  let E: Env := { Env.init with exprEnv := σ, program := prog }
+  let E <- E.addDatatypes datatypes
+  return prog.decls.foldl (fun E decl =>
+    match E.error with
+    | some _ => E
+    | none =>
+    match decl with
+    | .var name ty (.det e) _md =>
+      match LExpr.run E.exprEnv e with
+      | .error sr => Env.stuck E sr
+      | .ok v => CmdEval.update E name ty v
+    | .var name ty .nondet _md =>
+      Env.stuck E "nondet global variables not yet supported"
+    | .func f _md =>
+      match E.addFactoryFunc f with
+      | .ok E' => E'
+      | .error _ => E
+    | .recFuncBlock fs _md =>
+      fs.foldl (fun E f =>
+        match E.addFactoryFunc f with
+        | .ok E' => E'
+        | .error _ => E) E
+    | .ax a _md =>
+      { E with pathConditions := E.pathConditions.addInNewest [(toString a.name, a.e)] }
+    | _ => E
+  ) E
 
 end -- public section
 

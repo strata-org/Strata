@@ -125,29 +125,26 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
 ---------------------------------------------------------------------
 
 /-- Set up the interpreter environment from a type-checked program. -/
-def initInterpreterEnv (prog : Program) : Except DiagnosticModel Env := do
+def run (prog : Program) : Except DiagnosticModel Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
   let datatypes := prog.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
   let σ ← Lambda.LState.init.addFactory factory
-  let E := { Env.init with exprEnv := σ, program := prog }
-  E.addDatatypes datatypes
-
-/-- Process top-level declarations (globals, functions, axioms). -/
-def processDecls (E : Env) : Env :=
-  E.program.decls.foldl (fun E decl =>
+  let E: Env := { Env.init with exprEnv := σ, program := prog }
+  let E <- E.addDatatypes datatypes
+  return prog.decls.foldl (fun E decl =>
     match E.error with
     | some _ => E
     | none =>
     match decl with
     | .var name ty (.det e) _md =>
       match LExpr.run E.exprEnv e with
-      | .error sr => stuck E sr
+      | .error sr => Env.stuck E sr
       | .ok v => CmdEval.update E name ty v
     | .var name ty .nondet _md =>
-      stuck E "nondet global variables not yet supported"
+      Env.stuck E "nondet global variables not yet supported"
     | .func f _md =>
       match E.addFactoryFunc f with
       | .ok E' => E'
@@ -173,10 +170,9 @@ def diagModel (message : String) : Except DiagnosticModel Env :=
 def interpProcedure (prog : Program) (procName : String)
     (args : List Expression.Expr := [])
     (fuel : Nat := defaultFuel) : Except DiagnosticModel Env :=
-  match initInterpreterEnv prog with
+  match run prog with
   | .error e => .error e
   | .ok E =>
-    let E := processDecls E
     match Program.Procedure.find? prog ⟨procName, ()⟩ with
     | none => .ok (Env.stuck E s!"procedure '{procName}' not found")
     | some proc =>
@@ -184,7 +180,7 @@ def interpProcedure (prog : Program) (procName : String)
         .ok (Env.stuck E s!"procedure '{procName}' has no body")
       else
         match LExpr.runList E.exprEnv args with
-        | .error s => .ok (stuck E s)
+        | .error s => .ok (Env.stuck E s)
         | .ok argVals =>
           let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
             proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
@@ -198,7 +194,7 @@ def interpProcedure (prog : Program) (procName : String)
           let ops : Imperative.RunOps Expression Command Env := {
             evalExpr := fun E e =>
               some (e.eval E.exprEnv.config.fuel E.exprEnv)
-            evalCmd := Command.run
+            evalCmd := Statement.Command.run fuel
             extendEval := fun E decl =>
               match E.addFactoryFunc {
                 name := decl.name
