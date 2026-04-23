@@ -124,9 +124,6 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
 
 ---------------------------------------------------------------------
 
-def stuck (E : Env) (message : String) : Env :=
-  { E with error := some (Imperative.EvalError.Misc message) }
-
 /-- Set up the interpreter environment from a type-checked program. -/
 def initInterpreterEnv (prog : Program) : Except DiagnosticModel Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
@@ -181,10 +178,10 @@ def interpProcedure (prog : Program) (procName : String)
   | .ok E =>
     let E := processDecls E
     match Program.Procedure.find? prog ⟨procName, ()⟩ with
-    | none => .ok (stuck E s!"procedure '{procName}' not found")
+    | none => .ok (Env.stuck E s!"procedure '{procName}' not found")
     | some proc =>
       if proc.body.isEmpty then
-        .ok (stuck E s!"procedure '{procName}' has no body")
+        .ok (Env.stuck E s!"procedure '{procName}' has no body")
       else
         match LExpr.runList E.exprEnv args with
         | .error s => .ok (stuck E s)
@@ -195,16 +192,34 @@ def interpProcedure (prog : Program) (procName : String)
           let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
             proc.header.outputs.keys.zip proc.header.outputs.values
             |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-          let E: Env := { E with
+          let E : Env := { E with
             exprEnv := { E.exprEnv with
               state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
-          let stmtEnv: Imperative.Env Expression := 5
-          let config: CoreConfig := .stmts proc.body stmtEnv
-          let extendEval: ExtendEval := 4
-          let configAfter: CoreConfig := Imperative.runStmt Imperative.Cmd.run E fuel config
+          let ops : Imperative.RunOps Expression Command Env := {
+            evalExpr := fun E e =>
+              some (e.eval E.exprEnv.config.fuel E.exprEnv)
+            evalCmd := Command.run
+            extendEval := fun E decl =>
+              match E.addFactoryFunc {
+                name := decl.name
+                typeArgs := decl.typeArgs
+                isConstr := decl.isConstr
+                inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
+                output := Lambda.LTy.toMonoTypeUnsafe decl.output
+                body := decl.body
+                attr := decl.attr
+                concreteEval := decl.concreteEval
+                axioms := decl.axioms
+              } with
+              | .ok E' => E'
+              | .error _ => E
+          }
+          let config : Imperative.RunConfig Expression Command Env :=
+            .stmts proc.body E
+          let configAfter := Imperative.runStmt ops fuel config
           match configAfter with
           | .terminal E' => .ok E'
-          | _ => diagModel "Aw crap"
+          | _ => diagModel "procedure did not terminate within fuel budget"
 
 
 ---------------------------------------------------------------------

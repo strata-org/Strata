@@ -13,7 +13,9 @@ public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprT
+public import Strata.DL.Imperative.StmtEval
 import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.CmdEval
 
 ---------------------------------------------------------------------
 
@@ -596,6 +598,72 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match (eval E old_var_subst ss).fst with
   | [E'] => E'
   | _ => ({ E with error := some (.Misc "More than one result environment") })
+
+---------------------------------------------------------------------
+
+mutual
+
+/-- Interpret a single command. -/
+def Command.runCall (prog : Program)
+    (lhs : List Expression.Ident)
+    (procName : String)
+    (args : List Expression.Expr := [])
+    (E : Env)
+    : Env :=
+    match Program.Procedure.find? E.program ⟨procName, ()⟩ with
+    | none => Env.stuck E s!"procedure '{procName}' not found"
+    | some proc =>
+      if proc.body.isEmpty then Env.stuck E  E s!"procedure '{pname}' has no body"
+      else
+        match LExpr.runList E.exprEnv args with
+        | .error s => Env.stuck E s
+        | .ok argVals =>
+          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
+            |>.map fun ((name, ty), val) => (name, (some ty, val))
+          let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.outputs.keys.zip proc.header.outputs.values
+            |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+          let callEnv : Env := { E with
+            exprEnv := { E.exprEnv with
+              state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
+          let ops : Imperative.RunOps Expression Command Env := {
+            evalExpr := fun E e =>
+              some (e.eval E.exprEnv.config.fuel E.exprEnv)
+            evalCmd := Command.run
+            extendEval := fun E decl =>
+              match E.addFactoryFunc {
+                name := decl.name
+                typeArgs := decl.typeArgs
+                isConstr := decl.isConstr
+                inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
+                output := Lambda.LTy.toMonoTypeUnsafe decl.output
+                body := decl.body
+                attr := decl.attr
+                concreteEval := decl.concreteEval
+                axioms := decl.axioms
+              } with
+              | .ok E' => E'
+              | .error _ => E
+          }
+          let config : Imperative.RunConfig Expression Command Env :=
+            .stmts proc.body callEnv
+          let configAfter := Imperative.runStmt ops fuel config
+          match configAfter with
+          | .terminal callEnv' =>
+            let outputVals := proc.header.outputs.keys.map fun name =>
+              (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+            lhs.zip outputVals |>.foldl (fun env (name, val) => CmdEval.update env name val) callEnv'
+          | _ => Env.stuck E "failed to terminate"
+
+def Command.run (E : Env) (c : Command) : Env :=
+  match c with
+  | .cmd c =>
+    Imperative.Cmd.run E c
+  | .call lhs pname args md =>
+    Command.runCall E.program lhs pname args E
+
+end
 
 end Statement
 end Core

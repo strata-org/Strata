@@ -11,88 +11,97 @@ namespace Imperative
 
 public section
 
+/-! ## Generic small-step evaluator
+
+`RunConfig` mirrors `Config` but is parameterized by a generic state type `S`
+instead of `Env P`, so that concrete interpreters (e.g. Core) can thread their
+own rich environment through the stepper.
+-/
+
+/-- Configuration for the generic stepper, parameterized by state `S`. -/
+inductive RunConfig (P : PureExpr) (CmdT : Type) (S : Type) where
+  | stmt   : Stmt P CmdT → S → RunConfig P CmdT S
+  | stmts  : List (Stmt P CmdT) → S → RunConfig P CmdT S
+  | terminal : S → RunConfig P CmdT S
+  | exiting  : Option String → S → RunConfig P CmdT S
+  | block  : String → RunConfig P CmdT S → RunConfig P CmdT S
+  | seq    : RunConfig P CmdT S → List (Stmt P CmdT) → RunConfig P CmdT S
+
+/-- Operations the stepper needs from the state. -/
+structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
+  /-- Evaluate a expression to a value. -/
+  evalExpr : S → P.Expr → Option P.Expr
+  /-- Execute a command, producing a new state. -/
+  evalCmd : S → CmdT → S
+  /-- Extend the evaluator with a function declaration. -/
+  extendEval : S → PureFunc P → S
+
 def runStep [BEq P.Expr] [HasBool P]
-  (evalCmd : Env P → CmdT → Env P)
-  (extendEval : ExtendEval P)
-  (c: Config P CmdT) : Config P CmdT :=
+    (ops : RunOps P CmdT S)
+    (c : RunConfig P CmdT S) : RunConfig P CmdT S :=
   match c with
   | .terminal _ => c
   | .exiting _ _ => c
 
-  -- step_cmd
-  | .stmt (.cmd cmd) ρ => .terminal (evalCmd ρ cmd)
+  | .stmt (.cmd cmd) ρ => .terminal (ops.evalCmd ρ cmd)
 
-  -- step_block
   | .stmt (.block label ss _) ρ => .block label (.stmts ss ρ)
 
-  -- step_ite_true / step_ite_false / step_ite_nondet (default to true)
   | .stmt (.ite cond tss ess _) ρ =>
     match cond with
-    -- Arbitrarily pick the then branch. This could be configured with extra parameters.
     | .nondet => .stmts tss ρ
     | .det e =>
-      match ρ.eval ρ.store e with
+      match ops.evalExpr ρ e with
       | some v =>
         if v == HasBool.tt then .stmts tss ρ
         else .stmts ess ρ
-      | none => c  -- stuck: guard didn't evaluate
+      | none => c
 
-  -- step_loop_enter / step_loop_exit / step_loop_nondet (default to exit)
   | .stmt s@(.loop guard _ _ body _) ρ =>
     match guard with
-    | .nondet =>
-      -- Arbitrarily execute the loop 0 times. This could be configured with extra parameters.
-      .terminal ρ
+    | .nondet => .terminal ρ
     | .det g =>
-      match ρ.eval ρ.store g with
+      match ops.evalExpr ρ g with
       | some v =>
         if v == HasBool.tt then .stmts (body ++ [s]) ρ
         else .terminal ρ
-      | none => c  -- stuck: guard didn't evaluate
+      | none => c
 
-  -- step_exit
   | .stmt (.exit label _) ρ => .exiting label ρ
 
-  -- step_funcDecl
-  | .stmt (.funcDecl decl _) ρ =>
-    .terminal { ρ with eval := extendEval ρ.eval ρ.store decl }
+  | .stmt (.funcDecl decl _) ρ => .terminal (ops.extendEval ρ decl)
 
-  -- step_typeDecl
   | .stmt (.typeDecl _ _) ρ => .terminal ρ
 
-  -- step_stmts_nil
   | .stmts [] ρ => .terminal ρ
 
-  -- step_stmts_cons
   | .stmts (s :: ss) ρ => .seq (.stmt s ρ) ss
 
-  -- step_seq: step inner, or handle terminal/exiting
   | .seq inner ss =>
     match inner with
-    | .terminal ρ' => .stmts ss ρ'          -- step_seq_done
-    | .exiting label ρ' => .exiting label ρ' -- step_seq_exit
-    | _ => .seq (runStep evalCmd extendEval inner) ss  -- step_seq_inner
+    | .terminal ρ' => .stmts ss ρ'
+    | .exiting label ρ' => .exiting label ρ'
+    | _ => .seq (runStep ops inner) ss
 
-  -- step_block_body / step_block_done / step_block_exit_*
   | .block label inner =>
     match inner with
-    | .terminal ρ' => .terminal ρ'           -- step_block_done
-    | .exiting .none ρ' => .terminal ρ'      -- step_block_exit_none
+    | .terminal ρ' => .terminal ρ'
+    | .exiting .none ρ' => .terminal ρ'
     | .exiting (.some l) ρ' =>
-      if l == label then .terminal ρ'        -- step_block_exit_match
-      else .exiting (.some l) ρ'             -- step_block_exit_mismatch
-    | _ => .block label (runStep evalCmd extendEval inner)  -- step_block_body
+      if l == label then .terminal ρ'
+      else .exiting (.some l) ρ'
+    | _ => .block label (runStep ops inner)
 
--- No explicit signal for running out of fuel,
--- but that should be the only way this produces something other than .terminal
 def runStmt [BEq P.Expr] [HasBool P]
-  (evalCmd :  Env P → CmdT → Env P)
-  (extendEval : ExtendEval P)
-  (fuel: Nat)
-  (c: Config P CmdT) : Config P CmdT :=
+    (ops : RunOps P CmdT S)
+    (fuel : Nat)
+    (c : RunConfig P CmdT S) : RunConfig P CmdT S :=
   match c with
   | .terminal _ => c
   | _ =>
     match fuel with
     | 0 => c
-    | fuel + 1 => runStmt evalCmd extendEval fuel (runStep evalCmd extendEval c)
+    | fuel + 1 => runStmt ops fuel (runStep ops c)
+
+end -- public section
+end Imperative

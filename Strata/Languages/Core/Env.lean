@@ -353,6 +353,9 @@ def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except 
 def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except DiagnosticModel Env :=
   blocks.foldlM Env.addMutualDatatype E
 
+def Env.stuck (E : Env) (message: String) : Env :=
+  { E with error := some (Imperative.EvalError.Misc message) }
+
 end Core
 
 end -- public section

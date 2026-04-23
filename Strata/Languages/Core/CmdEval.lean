@@ -148,8 +148,6 @@ instance : ToFormat (Cmds Expression × Env) where
     format f!"Commands:{Format.line}{fcs}{Format.line}\
               State:{Format.line}{fσ}{Format.line}"
 
----------------------------------------------------------------------
-
 end CmdEval
 ---------------------------------------------------------------------
 
