@@ -781,9 +781,12 @@ def Command.runCall
           let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
             proc.header.outputs.keys.zip proc.header.outputs.values
             |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+          -- Create an isolated environment for the callee: only globals + formals/outputs.
+          -- This prevents the caller's local variables from leaking into the callee.
+          let globals := E.exprEnv.state.oldest
           let callEnv : Env := { E with
             exprEnv := { E.exprEnv with
-              state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
+              state := [globals, formalBindings ++ outputBindings] } }
           let ops : Imperative.RunOps Expression Command Env := {
             evalExpr := fun E e =>
               some (e.eval E.exprEnv.config.fuel E.exprEnv)
@@ -803,6 +806,8 @@ def Command.runCall
               | .ok E' => E'
               | .error _ => E
             hasError := fun E => E.error.isSome
+            pushScope := fun E => E.pushEmptyScope
+            popScope := fun E => E.popScope
           }
           let config : Imperative.RunConfig Expression Command Env :=
             .stmts proc.body callEnv

@@ -72,7 +72,10 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
 --------------------------------------------------------------------
 
-/-- Set up the interpreter environment from a type-checked program. -/
+/--
+Initialize an environment and evaluate all of the declarations
+from a type-checked program.
+-/
 def run (prog : Program) : Except DiagnosticModel Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
   let datatypes := prog.decls.filterMap fun decl =>

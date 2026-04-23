@@ -37,6 +37,10 @@ structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   extendEval : S → PureFunc P → S
   /-- Check if the state has an error (to short-circuit execution). -/
   hasError : S → Bool := fun _ => false
+  /-- Push a new variable scope (for blocks). -/
+  pushScope : S → S := id
+  /-- Pop a variable scope (for blocks). -/
+  popScope : S → S := id
 
 def runStep [BEq P.Expr] [HasBool P]
     (ops : RunOps P CmdT S)
@@ -47,7 +51,7 @@ def runStep [BEq P.Expr] [HasBool P]
 
   | .stmt (.cmd cmd) ρ => .terminal (ops.evalCmd ρ cmd)
 
-  | .stmt (.block label ss _) ρ => .block label (.stmts ss ρ)
+  | .stmt (.block label ss _) ρ => .block label (.stmts ss (ops.pushScope ρ))
 
   | .stmt (.ite cond tss ess _) ρ =>
     match cond with
@@ -89,11 +93,11 @@ def runStep [BEq P.Expr] [HasBool P]
 
   | .block label inner =>
     match inner with
-    | .terminal ρ' => .terminal ρ'
-    | .exiting .none ρ' => .terminal ρ'
+    | .terminal ρ' => .terminal (ops.popScope ρ')
+    | .exiting .none ρ' => .terminal (ops.popScope ρ')
     | .exiting (.some l) ρ' =>
-      if l == label then .terminal ρ'
-      else .exiting (.some l) ρ'
+      if l == label then .terminal (ops.popScope ρ')
+      else .exiting (.some l) (ops.popScope ρ')
     | _ => .block label (runStep ops inner)
 
 def runStmt [BEq P.Expr] [HasBool P]

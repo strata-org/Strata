@@ -185,7 +185,7 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
       EC.updateError σ (.Misc s!"cover is not yet supported")
 
 /--
-Symbolic simulation for Imperative's Commands.
+Concrete execution for Imperative's Commands.
 -/
 def Cmds.run [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : S :=
   match cs with
