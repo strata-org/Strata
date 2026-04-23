@@ -1062,11 +1062,11 @@ partial def translateCall (ctx : TranslationContext)
     for arg in remainingParams do
       let argType := match arg.tys with | [ty] => ty | _ => "Any"
       if let some testerName := typeTester? argType then
-        let keyPresent := call "DictStrAny_contains"
-          [dictExpr, litStr arg.name]
+        let keyPresent := Laurel.Typed.call "DictStrAny_contains"
+          [dictExpr, litStr arg.name] .TBool
         let val := DictStrAny_get_param trans_dict arg.name true
         let isCorrectType := Laurel.Typed.call testerName [val] .TBool
-        let cond := Laurel.Typed.implies ⟨keyPresent⟩ isCorrectType
+        let cond := Laurel.Typed.implies keyPresent isCorrectType
         typeAsserts := assert_ cond :: typeAsserts
     let typeAssertsOrdered := typeAsserts.reverse
     let call ← emitCall (allArgs ++ kwargsArg)
@@ -1429,7 +1429,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           match typeTester? annStr with
           | some testerName =>
             let varExpr := ident n.val
-            let cond := call testerName [varExpr]
+            let cond := Laurel.Typed.call testerName [varExpr] .TBool
             [assert_ cond (md := md)]
           | none => []
         | _ => []
@@ -1563,8 +1563,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
-      let isException := call "isError"
-        [ident "maybe_except"]
+      let isException := Laurel.Typed.call "isError"
+        [ident "maybe_except"] .TBool
       let exitToHandler := ifThenElse isException
         (exit_ catchersLabel) none
       [stmt, exitToHandler]
@@ -1683,13 +1683,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             let assumeInStmt := assume_ (Any_to_bool targetInIter) (md := md)
             pure [assumeInStmt]
       | _ => pure []
-    let counterLtLen := match iterExpr.val with
+    let counterLtLen : Laurel.TypedExpr .TBool := match iterExpr.val with
       | .StaticCall "range" (boundExpr::_) =>
-          primOp .Lt [counterVar,
-                          call "Any..as_int!" [boundExpr]]
+          ⟨primOp .Lt [counterVar, call "Any..as_int!" [boundExpr]]⟩
       | _ =>
-          primOp .Lt [counterVar,
-                          call "Any_len" [iterExpr]]
+          ⟨primOp .Lt [counterVar, call "Any_len" [iterExpr]]⟩
     let bodyStmts := targetDecls ++ assumeStmts ++ bodyStmts ++ [counterIncrease]
     let innerBlock := block bodyStmts (some continueLabel)
     let loopStmt := while_ counterLtLen (body := innerBlock) (md := md)
@@ -1863,7 +1861,7 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
 def paramInputPrefix : String := "$in_"
 
 def getSingleTypeConstraint (var: String) (ty: String): Option StmtExprMd :=
-  if isOfAnyType ty && ty ≠ "Any" then call ("Any..isfrom_" ++ ty) [freeVar var] else none
+  if isOfAnyType ty && ty ≠ "Any" then Laurel.Typed.call ("Any..isfrom_" ++ ty) [freeVar var] .TBool else none
 
 def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   match exprs with
