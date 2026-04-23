@@ -25,9 +25,15 @@ def test_bool_dict():
     assert bool({}) == False
     assert bool({"a": 1}) == True
 
+def test_bool_float():
+    assert bool(0.0) == False
+    assert bool(1.5) == True
+    assert bool(-0.0) == False
+
 test_bool_none()
 test_bool_bool()
 test_bool_int()
+test_bool_float()
 test_bool_str()
 test_bool_list()
 test_bool_dict()

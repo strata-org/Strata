@@ -11,5 +11,9 @@ test_truthiness_bool_eq.py(21, 4): ✅ pass - assert(475)
 test_truthiness_bool_eq.py(22, 4): ✅ pass - assert(504)
 test_truthiness_bool_eq.py(25, 4): ✅ pass - assert(556)
 test_truthiness_bool_eq.py(26, 4): ✅ pass - assert(585)
-DETAIL: 13 passed, 0 failed, 0 inconclusive
+test_truthiness_bool_eq.py(29, 4): ✅ pass - assert(643)
+test_truthiness_bool_eq.py(30, 4): ✅ pass - assert(673)
+test_truthiness_bool_eq.py(31, 16): ✅ pass - Check PNeg exception
+test_truthiness_bool_eq.py(31, 4): ✅ pass - assert(702)
+DETAIL: 17 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
