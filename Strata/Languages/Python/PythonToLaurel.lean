@@ -175,15 +175,6 @@ def mkHighTypeMdWithLoc (ty : HighType) (md : Imperative.MetaData Core.Expressio
 def mkCoreType (s: String): HighTypeMd :=
   {val := .TCore s, source := none }
 
-/-- Create a StmtExprMd with default metadata -/
-def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
-  { val := expr, source := none }
-
-/-- Create a StmtExprMd with source location metadata.
-    NOTE: stores location in `md` (legacy); a follow-up should migrate to `source`. -/
-def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
-  { val := expr, source := Imperative.getFileRange md, md := md }
-
 /-- Mangle a class name and method name into a flat procedure name: `ClassName@methodName`. -/
 def manglePythonMethod (className : String) (methodName : String) : String :=
   className ++ "@" ++ methodName
