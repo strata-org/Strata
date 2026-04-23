@@ -213,11 +213,6 @@ private def SpecAtomType.toDDM (d : SpecAtomType)
       .typeIdentNoArgs loc nm.toDDM
     else
       .typeIdent loc nm.toDDM ⟨.none, args.map (·.toDDM)⟩
-  | .pyClass name args =>
-    if args.isEmpty then
-      .typeClassNoArgs loc ⟨.none, name⟩
-    else
-      .typeClass loc ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
   | .intLiteral i => .typeIntLiteral loc (toDDMInt .none i)
   | .stringLiteral v => .typeStringLiteral loc ⟨.none, v⟩
   | .typedDict fields types fieldRequired =>
@@ -343,10 +338,10 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
 private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
   | .typeClassNoArgs loc ⟨_, cl⟩ =>
-    .ofAtom loc <| .pyClass cl #[]
+    .ident loc { pythonModule := "", name := cl } #[]
   | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
-    .ofAtom loc <| .pyClass cl a
+    .ident loc { pythonModule := "", name := cl } a
   | .typeIdentNoArgs loc ⟨_, ident⟩ =>
     if let some pyIdent := PythonIdent.ofString ident then
       .ident loc pyIdent #[]
@@ -393,7 +388,7 @@ private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
     default := default.map (·.fromDDM)
   }
 
-private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
+protected def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
   | .placeholderExpr loc => .placeholder loc
   | .varExpr loc ⟨_, name⟩ => .var name loc

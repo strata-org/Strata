@@ -37,22 +37,6 @@ Property: assert
 Obligation:
 false
 
-
-
-Result: Obligation: bitvec64_test
-Property: assert
-Result: ❌ fail
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-procedure bitVecParseTest () returns ()
-{
-  assert [bitvec32_test]: true;
-  assert [bitvec64_test]: false;
-  };
-
 ---
 info:
 Obligation: bitvec32_test

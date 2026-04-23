@@ -39,7 +39,7 @@ def mkNonemptyPred {n : Nat} (us : mkTypeFunType n) : Prop :=
   | 0     => Nonempty us
   | _ + 1 => ∀ (α : Type), mkNonemptyPred (applyTypeArg us α)
 
-def applyNonemptyPred {n : Nat} {fα : mkTypeFunType n} (hfα : mkNonemptyPred fα) (αs : List Type) (h : αs.length = n) :
+@[reducible] def applyNonemptyPred {n : Nat} {fα : mkTypeFunType n} (hfα : mkNonemptyPred fα) (αs : List Type) (h : αs.length = n) :
     Nonempty (applyTypeArgs fα αs h) :=
   match n, αs with
   | 0, []          => hfα

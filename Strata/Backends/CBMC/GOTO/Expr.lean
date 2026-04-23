@@ -57,6 +57,8 @@ inductive Unary where
   | ArrayOf
   /-- `typecast_exprt` -/
   | Typecast
+  /-- `unary_minus_overflow_exprt` -/
+  | UnaryMinusOverflow
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Unary where
@@ -68,6 +70,7 @@ instance : ToFormat Unary where
     | .Old => "old"
     | .ArrayOf => "array_of"
     | .Typecast => "typecast"
+    | .UnaryMinusOverflow => "overflow-unary-"
 
 /--
 Representation of identifiers specific to binary expressions,
@@ -88,6 +91,10 @@ inductive Binary where
   | Lshr
   /-- `plus_overflow_exprt` -/
   | PlusOverflow
+  /-- `minus_overflow_exprt` -/
+  | MinusOverflow
+  /-- `mult_overflow_exprt` -/
+  | MultOverflow
   /-- `implies_exprt` -/
   | Implies
   /-- `index_exprt` (map/array select) -/
@@ -118,6 +125,8 @@ instance : ToFormat Binary where
     | .Ashr => "ashr"
     | .Lshr => "lshr"
     | .PlusOverflow => "overflow-+"
+    | .MinusOverflow => "overflow--"
+    | .MultOverflow => "overflow-*"
     | .Implies => "=>"
     | .Index => "index"
     | .Forall => "forall"
@@ -301,6 +310,18 @@ def not (operand : Expr) : Expr :=
 /-- Overflow-+ -/
 def plus_overflow (left right : Expr) : Expr :=
   { id := .binary .PlusOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Overflow-- -/
+def minus_overflow (left right : Expr) : Expr :=
+  { id := .binary .MinusOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Overflow-* -/
+def mult_overflow (left right : Expr) : Expr :=
+  { id := .binary .MultOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Overflow-unary- -/
+def unary_minus_overflow (operand : Expr) : Expr :=
+  { id := .unary .UnaryMinusOverflow, type := Ty.Boolean, operands := [operand] }
 
 /-- Typecast expression -/
 def typecast (operand : Expr) (targetType : Ty) : Expr :=

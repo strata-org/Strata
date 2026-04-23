@@ -128,7 +128,7 @@ main purposes:
 
 * For higher-level tests, e.g., in the `StrataTest` directory, which
   does not contain an end-to-end Strata application but tests for core
-  components (e.g., just the DDM, just the partial evaluator of a
+  components (e.g., just the DDM, just the evaluator of a
   specific dialect, etc.). These tests serve as guides to understand
   how to set up, use, and compose these core components.
   `StrataTest/Languages/[Core|C_Simp]/Examples` showcases

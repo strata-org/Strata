@@ -61,7 +61,7 @@ private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
   | .some x => x == to
 
 
-private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: Bool) :=
+private def substExpr (e1:Expression.Expr) (map:Map String String) :=
   map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
@@ -74,8 +74,8 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
 
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst) false).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd) true).eraseTypes == e1.eraseTypes
+  (substExpr e1 (map.vars.fst)).eraseTypes == e2.eraseTypes &&
+  (substExpr e2 (map.vars.snd)).eraseTypes == e1.eraseTypes
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=
@@ -181,8 +181,8 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     | .cmd (.set n1 (.det e1) _), .cmd (.set n2 (.det e2) _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
-        \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
-        \n(subst of e2: {repr (substExpr e2 map.vars.snd true)})\n(e1: {repr e1})"
+        \n(subst of e1: {repr (substExpr e1 map.vars.fst)})\n(e2: {repr e2})
+        \n(subst of e2: {repr (substExpr e2 map.vars.snd)})\n(e1: {repr e1})"
       else if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of sets do not match"
       else
@@ -421,17 +421,17 @@ def test := do
   let p := translate TestRecursiveCall
   let _ ← setCallGraph p
   let (changed, _p) ← runProgram (targetProcList := .some ["f"])
-    (inlineCallCmd (doInline := fun name _ => name = "f")) p
+    (inlineCallCmd (doInline := fun _caller callee _ => callee = "f")) p
   let cg := (← get).cachedAnalyses.callGraph
   return (changed, cg)
 
 /--
-info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1), ("a1", 2), ("a2", 2)]),
-              ("a1", Std.HashMap.ofList []),
-              ("a2", Std.HashMap.ofList [])],
-  callers := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1)]),
-              ("a1", Std.HashMap.ofList [("f", 2)]),
-              ("a2", Std.HashMap.ofList [("f", 2)])] }
+info: true, some CallGraph(callees: [("a1", []),
+("a2", []),
+("f", [("a1", 2), ("a2", 2), ("f", 1)])],
+         callers: [("a1", [("f", 2)]),
+("a2", [("f", 2)]),
+("f", [("f", 1)])])
 -/
 #guard_msgs in
 #eval ((match test .emp with
@@ -439,5 +439,37 @@ info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f"
   | ⟨.error m, _⟩ => panic! s!"{m}"))
 
 
+
+/- Check CallGraph cache of CoreTransformState -/
+
+def TestThreeChain :=
+#strata
+program Core;
+procedure leaf(x : int) returns (y : int) {
+  y := x + 1;
+};
+procedure mid(a : int) returns (b : int) {
+  call b := leaf(a);
+};
+procedure top(n : int) returns (r : int) {
+  call r := mid(n);
+};
+#end
+
+/-- After fully inlining the 3-procedure chain, the cached call graph must
+    equal the call graph freshly computed from the output program. -/
+def testThreeChainCG := do
+  let p := translate TestThreeChain
+  let _ ← setCallGraph p
+  let (_, p') ← runProgramUntil (inlineCallCmd) p
+  let cachedCG := (← get).cachedAnalyses.callGraph
+  let freshCG := p'.toProcedureCG
+  return (cachedCG.map (· == freshCG))
+
+/-- info: some true -/
+#guard_msgs in
+#eval ((match testThreeChainCG .emp with
+  | ⟨.ok result, _⟩ => f!"{repr result}"
+  | ⟨.error m, _⟩ => s!"ERROR: {m}"))
 
 end ProcedureInliningExamples

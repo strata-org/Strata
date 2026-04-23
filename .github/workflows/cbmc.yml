@@ -74,21 +74,20 @@ jobs:
           ccache -s
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
       - name: Restore lake cache
+        # The cache is safe to use here because we just saved it for this exact SHA
+        # in the build_and_test_lean job from ci.yml
+        # https://github.com/strata-org/Strata/issues/952
         uses: actions/cache/restore@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+          fail-on-cache-miss: true
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:
+          auto-config: false
+          build: true
           use-github-cache: false
-      - name: Save lake cache
-        uses: actions/cache/save@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
