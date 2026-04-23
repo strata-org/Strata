@@ -355,7 +355,7 @@ private def runFullTest (sigs : Array Signature) (modulePrefix : String := "") :
   let overloadEntries := result.overloads.toArray.qsort (·.1 < ·.1)
   for (funcName, fnOverloads) in overloadEntries do
     IO.println s!"dispatch {funcName}:"
-    let sorted := fnOverloads.toArray.qsort (·.1 < ·.1)
+    let sorted := fnOverloads.entries.toArray.qsort (·.1 < ·.1)
     for (litVal, retType) in sorted do
       IO.println s!"  \"{litVal}\" -> {retType}"
 
@@ -369,7 +369,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
   let entries := overloads.toArray.qsort (·.1 < ·.1)
   for (funcName, fnOverloads) in entries do
     IO.println s!"dispatch {funcName}:"
-    let sorted := fnOverloads.toArray.qsort (·.1 < ·.1)
+    let sorted := fnOverloads.entries.toArray.qsort (·.1 < ·.1)
     for (litVal, retType) in sorted do
       IO.println s!"  \"{litVal}\" -> {retType}"
 
@@ -774,7 +774,7 @@ private def translatePrecond (preconditions : Array Assertion)
       postconditions := #[] }] ""
   let body := getBody result |>.getD ""
   assertEq result.errors.size 0
-  assertEq body "{ assert !Any..isfrom_None(key) }"
+  assertEq body "{ assert !Any..isfrom_None(key) summary \"precondition 0\" }"
 
 -- containsKey on a non-kwargs dict: DictStrAny_contains in an assert
 -- (would have been silently dropped before fix #2)

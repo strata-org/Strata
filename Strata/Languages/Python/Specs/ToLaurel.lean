@@ -97,12 +97,19 @@ def pushType (td : TypeDefinition) : ToLaurelM Unit :=
   modify fun s => { s with types := s.types.push td }
 
 /-- Add an overload dispatch entry for a function. -/
-def pushOverloadEntry (funcName : String) (literalValue : String)
-    (returnType : PythonIdent) : ToLaurelM Unit :=
+def pushOverloadEntry (funcName : String) (paramName : String)
+    (literalValue : String) (returnType : PythonIdent) : ToLaurelM Unit :=
   modify fun s =>
     let existing := s.overloads.getD funcName {}
-    let updated := existing.insert literalValue returnType
-    { s with overloads := s.overloads.insert funcName updated }
+    let updated : FunctionOverloads := { existing with
+      paramName := existing.paramName <|> some paramName
+      entries := existing.entries.insert literalValue returnType }
+    if existing.paramName.any (· != paramName) then
+      dbg_trace s!"Warning: overload entries for '{funcName}' disagree on \
+        dispatch parameter name: existing '{existing.paramName.get!}', new '{paramName}'"
+      { s with overloads := s.overloads.insert funcName updated }
+    else
+      { s with overloads := s.overloads.insert funcName updated }
 
 /-- Prepend the module prefix to a name. Returns the name unchanged
     if the prefix is empty. -/
@@ -319,21 +326,19 @@ private def mkFileMd : ToLaurelM (Imperative.MetaData Core.Expression) := do
   return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
 
 /-- Create metadata with a file range from the current pyspec file. -/
-private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
+private def mkMdWithFileRange (loc : SourceRange)
     : ToLaurelM (Imperative.MetaData Core.Expression) := do
   let ctx ← read
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-  let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
-  if !msg.isEmpty then
-    md := md.withPropertySummary msg
+  let md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   return md
 
-/-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
-private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
+/-- Wrap a StmtExpr with metadata containing a file range. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange)
     : ToLaurelM StmtExprMd := do
   let ctx ← read
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-  let md ← mkMdWithFileRange loc msg
+  let md ← mkMdWithFileRange loc
   return { val := e, source := some fr, md := md }
 
 /--
@@ -518,7 +523,7 @@ def buildSpecBody (preconditions : Array Assertion)
   for param in requiredParams do
     let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier param Laurel.tyAny md))
     let msg := SpecAssertMsg.requiredParam param |>.render
-    let assertStmt ← mkStmtWithLoc (.Assert cond.stmt) default msg
+    let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
     stmts := stmts.push assertStmt
     idx := idx + 1
   for assertion in preconditions do
@@ -529,7 +534,7 @@ def buildSpecBody (preconditions : Array Assertion)
     let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel assertion.formula md ctx
     if success then
       if let .TBool := condType then
-        let assertStmt ← mkStmtWithLoc (.Assert condExpr.stmt) default msg
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := condExpr.stmt, summary := some msg }) default
         stmts := stmts.push assertStmt
       else
         reportError .typeError default
@@ -692,7 +697,8 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
               '{specTypeToString func.returnType}' is not a \
               class type"
           return
-  pushOverloadEntry func.name literalValue retType
+  -- args[0].name is the formal parameter name from the PySpec (not a call-site argument)
+  pushOverloadEntry func.name args[0].name literalValue retType
 
 /-- Convert a single PySpec signature to Laurel declarations. -/
 def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=

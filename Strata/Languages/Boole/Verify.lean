@@ -34,6 +34,15 @@ structure TranslateState where
   bvars : Array Core.Expression.Expr := #[]
   labelCounter : Nat := 0
   globalVarCounter : Nat := 0
+  /-- Maps procedure names to their modifies variables with types,
+      collected in a pre-pass so call sites can add extra args/lhs. -/
+  modifiesMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
+  /-- Names of in-out parameters for the current procedure being translated.
+      `old x` is only applied to these variables; for others `old x = x`. -/
+  currentInoutNames : List String := []
+  /-- Types of global variables, collected in a pre-pass.
+      Used to add globals as input parameters to procedures. -/
+  globalVarTypes : Std.HashMap String Lambda.LMonoTy := {}
 
 abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 
@@ -199,18 +208,22 @@ def toCoreType (t : Boole.Type) : TranslateM Core.Expression.Ty := do
 
 private def toCoreBinding (b : BooleDDM.Binding SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
   match b with
-  | .mkBinding _ ⟨_, n⟩ tp =>
-    match tp with
-    | .expr ty => return (mkIdent n, ← toCoreMonoType ty)
-    | .type m => throwAt m "Unexpected Type parameter in term binding"
-  | .casesBinding _ ⟨_, n⟩ tp =>
+  | .mkBinding _ ⟨_, n⟩ tp | .outBinding _ ⟨_, n⟩ tp
+  | .inoutBinding _ ⟨_, n⟩ tp | .casesBinding _ ⟨_, n⟩ tp =>
     match tp with
     | .expr ty => return (mkIdent n, ← toCoreMonoType ty)
     | .type m => throwAt m "Unexpected Type parameter in term binding"
 
 private def bindingName : BooleDDM.Binding SourceRange → String
-  | .mkBinding _ ⟨_, n⟩ _ => n
-  | .casesBinding _ ⟨_, n⟩ _ => n
+  | .mkBinding _ ⟨_, n⟩ _ | .outBinding _ ⟨_, n⟩ _
+  | .inoutBinding _ ⟨_, n⟩ _ | .casesBinding _ ⟨_, n⟩ _ => n
+
+private def hasOutOrInoutBinding (bs : BooleDDM.Bindings SourceRange) : Option (String × String) :=
+  (bindingsToList bs).findSome? fun b =>
+    match b with
+    | .outBinding _ ⟨_, n⟩ _ => some (n, "out")
+    | .inoutBinding _ ⟨_, n⟩ _ => some (n, "inout")
+    | _ => none
 
 private def toCoreBind (b : BooleDDM.Bind SourceRange) : TranslateM (Core.Expression.Ident × Core.Expression.Ty) := do
   match b with
@@ -249,13 +262,16 @@ private def toCoreExtensionalEq
   | _ =>
       throwAt m s!"Extensional equality is currently only supported for Map types, got: {repr ty}"
 
-private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
+private def oldifyExpr (inoutNames : List String) : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m ident ty =>
-      let ident' := if Core.CoreIdent.isOldIdent ident then ident else Core.CoreIdent.mkOld ident.name
-      .fvar m ident' ty
-  | .app m f a => .app m (oldifyExpr f) (oldifyExpr a)
-  | .eq m a b => .eq m (oldifyExpr a) (oldifyExpr b)
-  | .ite m c t f => .ite m (oldifyExpr c) (oldifyExpr t) (oldifyExpr f)
+      if Core.CoreIdent.isOldIdent ident then .fvar m ident ty
+      else if inoutNames.contains ident.name then .fvar m (Core.CoreIdent.mkOld ident.name) ty
+      else .fvar m ident ty
+  | .app m f a => .app m (oldifyExpr inoutNames f) (oldifyExpr inoutNames a)
+  | .eq m a b => .eq m (oldifyExpr inoutNames a) (oldifyExpr inoutNames b)
+  | .ite m c t f => .ite m (oldifyExpr inoutNames c) (oldifyExpr inoutNames t) (oldifyExpr inoutNames f)
+  | .quant m k n ty trig body => .quant m k n ty (oldifyExpr inoutNames trig) (oldifyExpr inoutNames body)
+  | .abs m n ty body => .abs m n ty (oldifyExpr inoutNames body)
   | e => e
 
 mutual
@@ -337,7 +353,7 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
-      return oldifyExpr (← toCoreExpr a)
+      return oldifyExpr (← get).currentInoutNames (← toCoreExpr a)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
@@ -397,6 +413,30 @@ def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Stateme
   termination_by SizeOf.sizeOf b
   decreasing_by simp_all; term_by_mem
 
+/-- Compute the sorted typed-parameter prefix that both procedure headers and
+    call sites must agree on.  Returns `(modifiesTyped, readOnlyGlobals)`, each
+    sorted by name for deterministic ordering across HashMap iterations. -/
+private def getGlobalParamPrefix (n : String)
+    : TranslateM (ListMap Core.CoreIdent Lambda.LMonoTy × ListMap Core.CoreIdent Lambda.LMonoTy) := do
+  let modifiesTyped : ListMap Core.CoreIdent Lambda.LMonoTy :=
+    ((← get).modifiesMap.getD n []).mergeSort (·.1.name < ·.1.name)
+  let modifiesNames := modifiesTyped.map (·.fst.name)
+  let readOnlyGlobals : ListMap Core.CoreIdent Lambda.LMonoTy :=
+    ((← get).globalVarTypes.toList.filterMap fun (name, ty) =>
+      if modifiesNames.contains name then none
+      else some (mkIdent name, ty)).mergeSort (·.1.name < ·.1.name)
+  return (modifiesTyped, readOnlyGlobals)
+
+/-- Build `CallArg` prefix for a call site from `getGlobalParamPrefix`.
+    Modified globals become `inoutArg`; read-only globals become `inArg`. -/
+private def constructProcArgsPrefix (n : String)
+    : TranslateM (List (Core.CallArg Core.Expression)) := do
+  let (modifiesTyped, readOnlyGlobals) ← getGlobalParamPrefix n
+  let modifiesArgs := modifiesTyped.map fun (id, _) => Core.CallArg.inoutArg id
+  let readOnlyArgs := readOnlyGlobals.map
+    fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
+  return modifiesArgs ++ readOnlyArgs
+
 def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
   match s with
   | .varStatement m ds =>
@@ -447,10 +487,27 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .condDet _ expr => pure (.det (← toCoreExpr expr))
       | .condNondet _ => pure .nondet
     return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
-  | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ =>
-    return Core.Statement.call (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
-  | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ =>
-    return Core.Statement.call [] n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
+  | .boole_call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
+    let globalsPrefix ← constructProcArgsPrefix n
+    let userIn := (← args.toList.mapM toCoreExpr).map Core.CallArg.inArg
+    let userOut := (lhs.toList.map (mkIdent ·.val)).map Core.CallArg.outArg
+    return Core.Statement.call n (globalsPrefix ++ userIn ++ userOut) (← toCoreMetaData m)
+  | .call_statement m ⟨_, n⟩ ⟨_, callArgs⟩ => do
+    -- Reject Core-only out/inout call argument syntax in Boole.
+    -- Boole uses `call lhs := f(args)` for calls with outputs.
+    for ca in callArgs.toList do
+      match ca with
+      | .callArgOut _ ⟨_, v⟩ =>
+        throwAt m s!"'out' argument '{v}' in call to '{n}' is not supported in Boole. Use 'call {v} := {n}(...)' syntax instead."
+      | .callArgInout _ ⟨_, v⟩ =>
+        throwAt m s!"'inout' argument '{v}' in call to '{n}' is not supported in Boole. Use 'modifies' clauses for mutable globals instead."
+      | _ => pure ()
+    let globalsPrefix ← constructProcArgsPrefix n
+    let userIn ← callArgs.toList.filterMapM fun ca =>
+      match ca with
+      | .callArgExpr _ e => return some (Core.CallArg.inArg (← toCoreExpr e))
+      | _ => return none  -- unreachable: out/inout rejected above
+    return Core.Statement.call n (globalsPrefix ++ userIn) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
@@ -588,22 +645,22 @@ private def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : Tran
       toCoreDatatype m dtypeName typeParams ctors
 
 private def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (BooleDDM.SpecElt SourceRange)) : TranslateM Core.Procedure.Spec := do
-  let mut modifies : List (List Core.Expression.Ident) := []
   let mut reqs : List (Core.CoreLabel × Core.Procedure.Check) := []
   let mut enss : List (Core.CoreLabel × Core.Procedure.Check) := []
   for e in elts.toList do
     match e with
-    | .modifies_spec _ ⟨_, ns⟩ =>
-      modifies := ns.toList.map (mkIdent ∘ Ann.val) :: modifies
+    | .modifies_spec _ _ => pure ()
     | .requires_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
-      reqs := (← defaultLabel em s!"{pname}_requires" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: reqs
+      let md ← toCoreMetaData em
+      reqs := (← defaultLabel em s!"{pname}_requires" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free?, md := md }) :: reqs
     | .ensures_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
-      enss := (← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: enss
-  return { modifies := modifies.reverse.flatten, preconditions := reqs.reverse, postconditions := enss.reverse }
+      let md ← toCoreMetaData em
+      enss := (← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free?, md := md }) :: enss
+  return { preconditions := reqs.reverse, postconditions := enss.reverse }
 
 private def toCoreSpec (m : SourceRange) (pname : String) (spec? : Option (BooleDDM.Spec SourceRange)) : TranslateM Core.Procedure.Spec := do
   match spec? with
-  | none => return { modifies := [], preconditions := [], postconditions := [] }
+  | none => return { preconditions := [], postconditions := [] }
   | some (.spec_mk _ ⟨_, elts⟩) =>
     toCoreSpecElts m pname elts
 
@@ -650,7 +707,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
-  | .command_procedure _ _ _ _ _ _ _ => []
+  | .boole_procedure _ _ _ _ _ _ _ | .command_procedure _ _ _ _ _ _ => []
   | .command_datatypes _ ⟨_, decls⟩ => decls.toList.map (fun _ => false)
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
@@ -664,37 +721,79 @@ private def initFVarIsOp (p : Boole.Program) : Array Bool :=
   | .prog _ ⟨_, cmds⟩ =>
     (cmds.map registerCommandSymbols).toList.flatten.toArray
 
+private def collectModifiesFromSpec
+    (fileName : String)
+    (pname : String)
+    (spec? : Option (BooleDDM.Spec SourceRange))
+    (varTypes : Std.HashMap String Lambda.LMonoTy)
+    : Except DiagnosticModel (List (Core.Expression.Ident × Lambda.LMonoTy)) := do
+  match spec? with
+  | none => return []
+  | some (.spec_mk _ ⟨_, elts⟩) =>
+    let mut mods : List (Core.Expression.Ident × Lambda.LMonoTy) := []
+    for e in elts.toList do
+      match e with
+      | .modifies_spec m ⟨_, names⟩ =>
+        for ⟨_, vname⟩ in names.toList do
+          match varTypes.get? vname with
+          | some ty => mods := (mkIdent vname, ty) :: mods
+          | none =>
+            throw (.withRange ⟨⟨fileName⟩, m⟩
+              f!"modifies variable '{vname}' in procedure '{pname}' not found in global variable declarations")
+      | _ => pure ()
+    return mods.reverse
+
+private def translateProcedureDecl
+    (m : SourceRange) (n : String) (tys : List String)
+    (inputs : ListMap Core.CoreIdent Lambda.LMonoTy)
+    (outputs : ListMap Core.CoreIdent Lambda.LMonoTy)
+    (spec? : Option (BooleDDM.Spec SourceRange))
+    (body? : Option (BooleDDM.Block SourceRange))
+    : TranslateM (List Core.Decl) := do
+  let (modifiesTyped, readOnlyGlobals) ← getGlobalParamPrefix n
+  let allInputs := modifiesTyped ++ readOnlyGlobals ++ inputs
+  let allOutputs := modifiesTyped ++ outputs
+  -- Only user-declared names need bvar scoping; globals are resolved as fvars.
+  let inputNames := inputs.map (·.fst.name)
+  let outputNames := outputs.map (·.fst.name)
+  -- Set inout names so `old` is only applied to modifies-converted parameters.
+  let inoutNames := modifiesTyped.map (·.fst.name)
+  let savedInoutNames := (← get).currentInoutNames
+  modify fun s => { s with currentInoutNames := inoutNames }
+  let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
+  -- Wrap body in a labeled block so `exit procName;` implements early return.
+  let bodyStmts ← match body? with
+    | none => pure []
+    | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
+  modify fun s => { s with currentInoutNames := savedInoutNames }
+  let body : List Core.Statement := match bodyStmts with
+    | [] => []
+    | stmts => [.block n stmts .empty]
+  return [.proc {
+    header := { name := mkIdent n, typeArgs := tys, inputs := allInputs, outputs := allOutputs }
+    spec := spec
+    body := body
+  } .empty]
+
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
-  | .command_procedure m nameAnn targsAnn ins outsAnn specAnn bodyAnn =>
+  | .boole_procedure m nameAnn targsAnn ins outsAnn specAnn bodyAnn =>
     let n := nameAnn.val
-    let targs? := targsAnn.val
-    let outs? := outsAnn.val
-    let spec? := specAnn.val
-    let body? := bodyAnn.val
-    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+    let tys := match targsAnn.val with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
       let inputs ← (bindingsToList ins).mapM toCoreBinding
-      let outputs ← match outs? with
+      let outputs ← match outsAnn.val with
         | none => pure []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
-      let inputNames := inputs.map (·.fst.name)
-      let outputNames := outputs.map (·.fst.name)
-      let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
-      -- Wrap the body in a labeled block named after the procedure so that
-      -- `exit functionName;` inside the body exits the whole procedure,
-      -- implementing early return without a synthetic label.
-      let bodyStmts ← match body? with
-        | none => pure []
-        | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
-      let body : List Core.Statement := match bodyStmts with
-        | [] => []
-        | stmts => [.block n stmts .empty]
-      return [.proc {
-        header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
-        spec := spec
-        body := body
-      } .empty]
+      translateProcedureDecl m n tys inputs outputs specAnn.val bodyAnn.val
+  | .command_procedure m nameAnn targsAnn ins specAnn bodyAnn =>
+    let n := nameAnn.val
+    if let some (param, kind) := hasOutOrInoutBinding ins then
+      throwAt m s!"Boole procedure '{n}': '{kind}' modifier on parameter '{param}' is not supported. Use 'returns' syntax instead, e.g. 'procedure {n}(...) returns ({param} : T)'."
+    let tys := match targsAnn.val with | none => [] | some ts => typeArgsToList ts
+    withTypeBVars tys do
+      let inputs ← (bindingsToList ins).mapM toCoreBinding
+      translateProcedureDecl m n tys inputs [] specAnn.val bodyAnn.val
   | .command_typedecl _ ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []
@@ -726,11 +825,8 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
         let f ← lowerPureFuncDef m n tys bs ret pres body false
         return { f with isRecursive := true }
     return [.recFuncBlock fs .empty]
-  | .command_var _ b =>
-    let (id, ty) ← toCoreBind b
-    let i := (← get).globalVarCounter
-    modify fun s => { s with globalVarCounter := i + 1 }
-    return [.var id ty (.det (.fvar () (mkIdent s!"init_{id.name}_{i}") none)) .empty]
+  | .command_var _m _b =>
+    return []
   | .command_axiom m ⟨_, l?⟩ e =>
     return [.ax { name := ← defaultLabel m "axiom" l?, e := ← toCoreExpr e } .empty]
   | .command_distinct m ⟨_, l?⟩ ⟨_, es⟩ =>
@@ -740,7 +836,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     -- command-level block is wrapped as a synthetic procedure declaration.
     return [.proc {
       header := { name := mkIdent topLevelBlockProcedureName, typeArgs := [], inputs := [], outputs := [] }
-      spec := { modifies := [], preconditions := [], postconditions := [] }
+      spec := { preconditions := [], postconditions := [] }
       body := ← toCoreBlock b
     } .empty]
   | .command_datatypes _ ⟨_, decls⟩ =>
@@ -761,13 +857,34 @@ def formatProgram (prog : Boole.Program) (gctx : GlobalContext) (dialects : Dial
   }
   (mformat (ArgF.op prog.toAst) ctx state).format
 
-def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
+def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : String := "") : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
     let fvarIsOp := initFVarIsOp p
+    -- Pre-pass: collect global variable types and modifies info per procedure.
+    let mut varTypes : Std.HashMap String Lambda.LMonoTy := {}
+    let mut modMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
+    for cmd in cmds do
+      match cmd with
+      | .command_var _ b =>
+        match b with
+        | .bind_mk _ ⟨_, n⟩ _ ty =>
+          match (toCoreMonoType ty).run' { gctx := gctx, fvarIsOp := fvarIsOp } with
+          | .ok mty => varTypes := varTypes.insert n mty
+          | .error _ => pure ()
+      | .boole_procedure _ nameAnn _ _ _ specAnn _ =>
+        let mods ← collectModifiesFromSpec fileName nameAnn.val specAnn.val varTypes
+        if !mods.isEmpty then modMap := modMap.insert nameAnn.val mods
+      | .command_procedure _ nameAnn _ _ specAnn _ =>
+        let mods ← collectModifiesFromSpec fileName nameAnn.val specAnn.val varTypes
+        if !mods.isEmpty then modMap := modMap.insert nameAnn.val mods
+      | _ => pure ()
     let init : TranslateState := {
+      fileName := fileName
       gctx := gctx
       fvarIsOp := fvarIsOp
+      modifiesMap := modMap
+      globalVarTypes := varTypes
     }
     let act : TranslateM Core.Program := do
       let decls := (← cmds.mapM toCoreDecls).toList.flatten
@@ -807,7 +924,7 @@ def verify
   | .ok prog =>
     if options.verbose >= .normal then
       dbg_trace f!"\n\n[DEBUG] Boole program:\n{Boole.formatProgram prog env.globalContext env.dialects}"
-    match toCoreProgram prog env.globalContext with
+    match toCoreProgram prog env.globalContext ictx.fileName with
     | .error e =>
       throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
     | .ok cp =>
