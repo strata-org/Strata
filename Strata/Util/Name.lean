@@ -40,7 +40,7 @@ def breakDisambiguated (name : String) : String × Nat :=
     The `isUsed` predicate checks if a candidate name is already taken.
     Panics if no unique name is found within `limit` attempts. -/
 def findUnique (baseName : String) (startSuffix : Nat)
-    (isUsed : String → Bool) (limit : Nat := 1000) : String :=
+    (isUsed : String → Bool) (limit : Nat := 100000) : String :=
   let rec loop (candidate : String) (suffix : Nat) (remaining : Nat) : String :=
     if !isUsed candidate then candidate
     else if h : remaining == 0 then
