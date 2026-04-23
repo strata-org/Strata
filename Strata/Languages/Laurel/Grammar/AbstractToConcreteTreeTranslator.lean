@@ -113,7 +113,10 @@ where
           match t.val with
           | .Declare param => laurelOp "assignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
           | .Local name => laurelOp "assignTargetVar" #[ident name.text]
-          | .Field _ _ => laurelOp "assignTargetVar" #[ident "_"]
+          | .Field target _ =>
+            match target.val with
+            | .Var (.Local name) => laurelOp "assignTargetField" #[ident name.text, ident (match t.val with | .Field _ f => f.text | _ => "_")]
+            | _ => laurelOp "assignTargetVar" #[ident "_"]
         laurelOp "multiAssign" #[commaSep targetArgs.toArray, stmtExprToArg value]
       else
         let targetArg := match targets with

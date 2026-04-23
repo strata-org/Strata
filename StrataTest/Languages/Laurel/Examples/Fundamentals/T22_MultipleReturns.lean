@@ -33,6 +33,12 @@ procedure caller() {
   var n: int;
   n := 4
 };
+
+procedure repeatedAssignTarget() {
+  var x: int;
+  assign x, x, x := multipleReturns();
+  assert x == 3
+};
 "
 
 #guard_msgs (drop info, error) in

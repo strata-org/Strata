@@ -151,6 +151,15 @@ procedure heapModifyingMultipleReturnCaller() {
   assert y == 2;
   assert z == 3
 };
+
+procedure fieldAssignsFromHeapModifyingMultipleReturnCaller() {
+  var c: Container := new Container;
+  var y: int;
+  assign c#intValue, y, var z: int := modifyHeapAndReturnMultiple(c);
+  assert c#intValue == 1;
+  assert y == 2;
+  assert z == 3
+};
 "#
 
 #guard_msgs(drop info, error) in

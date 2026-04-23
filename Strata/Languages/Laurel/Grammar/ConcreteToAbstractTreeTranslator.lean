@@ -268,6 +268,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | q`Laurel.assignTargetVar, #[nameArg] =>
             let name ← translateIdent nameArg
             pure (⟨.Local name, tSrc, #[]⟩ : VariableMd)
+          | q`Laurel.assignTargetField, #[objArg, fieldArg] =>
+            let obj ← translateIdent objArg
+            let field ← translateIdent fieldArg
+            pure (⟨.Field ⟨.Var (.Local obj), tSrc, #[]⟩ field, tSrc, #[]⟩ : VariableMd)
           | _, _ => TransM.error s!"multiAssign: unexpected target {repr top.name}"
         | _ => pure []
       let value ← translateStmtExpr valueArg
