@@ -9,5 +9,6 @@ def double_step() -> None:
     step()
 
 def main() -> None:
+    global counter
     double_step()
     assert counter == 2

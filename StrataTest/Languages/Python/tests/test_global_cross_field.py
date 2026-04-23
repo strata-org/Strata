@@ -6,6 +6,7 @@ def copy_src_to_dst() -> None:
     dst = src
 
 def main() -> None:
+    global src, dst
     copy_src_to_dst()
     assert dst == 100
     assert src == 100

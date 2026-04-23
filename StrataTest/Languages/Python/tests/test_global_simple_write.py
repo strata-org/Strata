@@ -5,5 +5,6 @@ def increment() -> None:
     counter = counter + 1
 
 def main() -> None:
+    global counter
     increment()
     assert counter == 1

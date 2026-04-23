@@ -10,6 +10,7 @@ def write_b() -> None:
     b = 2
 
 def main() -> None:
+    global a, b
     write_a()
     write_b()
     assert a == 1

@@ -8,6 +8,7 @@ def maybe_set(cond: bool) -> None:
         flag = 0
 
 def main() -> None:
+    global flag
     maybe_set(True)
     assert flag == 1
     maybe_set(False)
