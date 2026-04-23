@@ -617,8 +617,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     else
       let parts ← values.val.toList.mapM (translateExpr ctx ·)
       let unwrap (e : StmtExprMd) := call "Any..as_string!" [e]
-      let concat := parts.foldl (fun acc part =>
-        primOp .StrConcat [acc, unwrap part])
+      let concat : StmtExprMd := parts.foldl (fun acc part =>
+        (Laurel.Typed.strConcat acc (unwrap part) : StmtExprMd))
         (litStr "")
       return call "from_str" [concat]
 
@@ -668,7 +668,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
                 let lenExpr := call "List_len" [listExpr]
                 let nLit := litInt n
                 call "from_int"
-                  [primOp .Sub [lenExpr, nLit]]
+                  [Laurel.Typed.sub lenExpr nLit]
             | none => index
           return call "Any_get" [dictOrList, index] (md := md)
 
@@ -1651,7 +1651,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let counterName := s!"@for_loop_counter_{s.toAst.ann.start.byteIdx}"
     let counterVar := freeVar counterName
     let counterDecl := localVar counterName (mkHighTypeMd $ .TInt) (litInt 0)
-    let counterIncrease := assign [counterVar] (primOp .Add [counterVar, litInt 1])
+    let counterIncrease := assign [counterVar] (Laurel.Typed.add counterVar (litInt 1))
     let indexRhs := expr.Call sr (.Name sr {val:= "Any_iter_index", ann:= sr} default)
                         {val:= #[iter, .Name sr {val:= counterName, ann:= sr} default], ann:= sr} {val:= #[], ann:= sr}
     -- Any_iter_index is defined in PythonRuntimeLaurelPart, so indexRhs would be translated into .StaticCall "Any_iter_index" ..., hot .Hole

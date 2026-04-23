@@ -149,6 +149,15 @@ def geq (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData :=
 /-- Greater than. -/
 def gt (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
   ⟨mkNode (.PrimitiveOp .Gt [x, y]) source md⟩
+/-- Integer addition. -/
+def add (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TInt :=
+  ⟨mkNode (.PrimitiveOp .Add [x, y]) source md⟩
+/-- Integer subtraction. -/
+def sub (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TInt :=
+  ⟨mkNode (.PrimitiveOp .Sub [x, y]) source md⟩
+/-- String concatenation. -/
+def strConcat (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TString :=
+  ⟨mkNode (.PrimitiveOp .StrConcat [x, y]) source md⟩
 /-- If-then-else (expression, returns typed value). -/
 def ite (cond : TypedExpr .TBool) (t e : TypedExpr tp) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr tp :=
   ⟨mkNode (.IfThenElse cond.expr t.expr (some e.expr)) source md⟩
