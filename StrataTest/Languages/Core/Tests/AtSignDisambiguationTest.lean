@@ -10,7 +10,8 @@ import Strata.Languages.Core.Verifier
 
 Strata identifiers can contain `@`, so a parameter named `g@1` could collide
 with the `@N` disambiguation suffix of another variable `g`. This test verifies
-that the symbolic evaluator and SMT encoder produce distinct names for both.
+that `genSym` decomposes `@N` suffixes and increments them rather than appending
+a second `@`, producing `g@2` and `g@3` instead of `g@2` and `g@1@1`.
 -/
 
 namespace Strata
@@ -35,7 +36,7 @@ VCs:
 Label: Test_ensures_0
 Property: assert
 Obligation:
-g@2 == g@1@1
+g@2 == g@3
 
 ---
 info:
@@ -43,7 +44,7 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ❌ fail
 Model:
-(g@2, -(1)) (g@1@1, 0)
+(g@2, -(1)) (g@3, 0)
 -/
 #guard_msgs in
 #eval verify atSignDisambiguation
