@@ -132,6 +132,15 @@ abbrev breakDisambiguatedName (name : String) : String × Nat :=
 abbrev findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → Bool) (limit : Nat := 1000) : String :=
   Strata.Name.findUnique baseName startSuffix isUsed limit
 
+/-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
+    reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
+    names with `$` to make them valid simple symbols. -/
+def sanitizeSmtName (name : String) : String :=
+  if name.isEmpty then name
+  else
+    let first := name.front
+    if first == '@' || first == '.' then "$" ++ name else name
+
 /-- The `$__` prefix is reserved for internal use and cannot appear in user
     identifiers. The `.` after `t`/`f` prevents collision with
     evaluation-generated names (which use `@N` suffixes). -/
@@ -172,7 +181,7 @@ def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
   -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
-  let baseName := uf.id
+  let baseName := sanitizeSmtName uf.id
   let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
   let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
   let id := findUniqueName baseName 1 isUsed (existingNames.size + smtReservedKeywords.length)
