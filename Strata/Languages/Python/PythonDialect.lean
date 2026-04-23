@@ -55,6 +55,10 @@ def keyword.arg {α} : keyword α → Ann (Option (Ann String α)) α
 def keyword.value {α} : keyword α → expr α
 | .mk_keyword _ _ value => value
 
+/-- Extract the keyword name (if present) and value as a pair. -/
+def keyword.nameAndValue {α} : keyword α → (Option String × expr α)
+| .mk_keyword _ arg value => (arg.val.map (·.val), value)
+
 namespace int
 
 def value {α} (i : int α) : Int :=
@@ -136,7 +140,7 @@ end stmt
 instance {α} [Inhabited α] : ToString (Strata.Python.expr α) where
   toString s := toString (eformat s.toAst)
 
-def stmt.format {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
+@[reducible] def stmt.format {α} [Inhabited α] : ToString (Strata.Python.stmt α) where
   toString s := toString (mformat s.toAst (.ofDialects Python_map) .empty |>.format)
 
 instance {α} [Inhabited α] : ToString (Strata.Python.stmt α) where

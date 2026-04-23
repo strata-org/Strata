@@ -11,116 +11,97 @@ public import Strata.Languages.Laurel.Laurel
 
 Concise helpers for constructing `StmtExprMd` values, reducing boilerplate
 in the Python-to-Laurel translator and other Laurel code generators.
+
+Each builder takes optional `source` and `md` parameters so callers can
+attach source locations when available.
 -/
 
 namespace Strata.Laurel
 
 public section
 
-private def defaultMd : MetaData :=
+/-- Default metadata with unknown file range. -/
+def defaultMd : MetaData :=
   #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
-/-! ## Core constructors -/
-
-/-- Create a `StmtExprMd` with default metadata (unknown file range). -/
-def withDefaultMd (e : StmtExpr) : StmtExprMd := ⟨e, defaultMd⟩
-
+/-- Build a StmtExprMd from a StmtExpr with optional source and metadata. -/
+@[inline] def mkNode (e : StmtExpr) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  { val := e, source := source, md := md }
 
 /-! ## Literals -/
 
-def litInt (n : Int) : StmtExprMd := withDefaultMd (.LiteralInt n)
-def litIntMd (n : Int) (md : MetaData) : StmtExprMd := ⟨.LiteralInt n, md⟩
-def litStr (s : String) : StmtExprMd := withDefaultMd (.LiteralString s)
-def litStrMd (s : String) (md : MetaData) : StmtExprMd := ⟨.LiteralString s, md⟩
-def litBool (b : Bool) : StmtExprMd := withDefaultMd (.LiteralBool b)
-def litBoolMd (b : Bool) (md : MetaData) : StmtExprMd := ⟨.LiteralBool b, md⟩
+def litInt (n : Int) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.LiteralInt n) source md
+def litStr (s : String) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.LiteralString s) source md
+def litBool (b : Bool) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.LiteralBool b) source md
 
 /-! ## Identifiers and field access -/
 
-def ident (name : String) : StmtExprMd := withDefaultMd (.Identifier name)
-def identMd (name : String) (md : MetaData) : StmtExprMd := ⟨.Identifier name, md⟩
-def fieldSelect (obj : StmtExprMd) (field : String) : StmtExprMd :=
-  withDefaultMd (.FieldSelect obj field)
-def fieldSelectMd (obj : StmtExprMd) (field : String) (md : MetaData) : StmtExprMd :=
-  ⟨.FieldSelect obj field, md⟩
+def ident (name : String) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Identifier name) source md
+def fieldSelect (obj : StmtExprMd) (field : String) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.FieldSelect obj field) source md
 
 /-! ## Calls -/
 
-/-- Static function call: `name(args...)` -/
-def call (name : String) (args : List StmtExprMd) : StmtExprMd :=
-  withDefaultMd (.StaticCall name args)
-
-/-- Static function call with metadata. -/
-def callMd (name : String) (args : List StmtExprMd) (md : MetaData) : StmtExprMd :=
-  ⟨.StaticCall name args, md⟩
+def call (name : String) (args : List StmtExprMd) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.StaticCall name args) source md
 
 /-! ## Statements -/
 
-/-- Variable declaration: `var name : type := init` -/
-def localVar (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none) : StmtExprMd :=
-  withDefaultMd (.LocalVariable name ty init)
+def localVar (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none)
+    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.LocalVariable name ty init) source md
 
-/-- Variable declaration with metadata. -/
-def localVarMd (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none)
-    (md : MetaData) : StmtExprMd :=
-  ⟨.LocalVariable name ty init, md⟩
+def assign (targets : List StmtExprMd) (value : StmtExprMd)
+    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Assign targets value) source md
 
-/-- Assignment: `targets := value` -/
-def assign (targets : List StmtExprMd) (value : StmtExprMd) : StmtExprMd :=
-  withDefaultMd (.Assign targets value)
+def assert_ (cond : StmtExprMd) (summary : Option String := none)
+    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Assert { condition := cond, summary }) source md
 
-/-- Assignment with metadata. -/
-def assignMd (targets : List StmtExprMd) (value : StmtExprMd)
-    (md : MetaData) : StmtExprMd :=
-  ⟨.Assign targets value, md⟩
+def assume_ (cond : StmtExprMd) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Assume cond) source md
 
-/-- Assert statement. -/
-def assert_ (cond : StmtExprMd) : StmtExprMd := withDefaultMd (.Assert cond)
+def block (stmts : List StmtExprMd) (label : Option String := none)
+    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Block stmts label) source md
 
-/-- Assert with metadata. -/
-def assertMd (cond : StmtExprMd) (md : MetaData) : StmtExprMd :=
-  ⟨.Assert cond, md⟩
+def ifThenElse (cond thenBranch : StmtExprMd) (elseBranch : Option StmtExprMd := none)
+    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.IfThenElse cond thenBranch elseBranch) source md
 
-/-- Assume statement. -/
-def assume_ (cond : StmtExprMd) : StmtExprMd := withDefaultMd (.Assume cond)
+def exit_ (label : String) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Exit label) source md
 
-/-- Assume with metadata. -/
-def assumeMd (cond : StmtExprMd) (md : MetaData) : StmtExprMd :=
-  ⟨.Assume cond, md⟩
+def return_ (value : Option StmtExprMd := none) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Return value) source md
 
-/-- Block of statements. -/
-def block (stmts : List StmtExprMd) (label : Option String := none) : StmtExprMd :=
-  withDefaultMd (.Block stmts label)
+def new_ (className : Identifier) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.New className) source md
 
-/-- Block with metadata. -/
-def blockMd (stmts : List StmtExprMd) (label : Option String)
-    (md : MetaData) : StmtExprMd :=
-  ⟨.Block stmts label, md⟩
+def hole (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode .Hole source md
 
-/-- If-then-else expression. -/
-def ifThenElse (cond thenBranch : StmtExprMd)
-    (elseBranch : Option StmtExprMd := none) : StmtExprMd :=
-  withDefaultMd (.IfThenElse cond thenBranch elseBranch)
-
-/-- If-then-else with metadata. -/
-def ifThenElseMd (cond thenBranch : StmtExprMd)
-    (elseBranch : Option StmtExprMd := none)
-    (md : MetaData) : StmtExprMd :=
-  ⟨.IfThenElse cond thenBranch elseBranch, md⟩
-
-/-- Exit/return statement. -/
-def exit_ (label : String) : StmtExprMd := withDefaultMd (.Exit label)
-
-/-- New (constructor) expression. -/
-def new_ (className : Identifier) : StmtExprMd := withDefaultMd (.New className)
-
-/-- Hole (unknown/unsupported expression). -/
-def hole : StmtExprMd := withDefaultMd .Hole
+def nondetHole (ty : Option HighTypeMd := none) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.Hole false ty) source md
 
 /-! ## Primitive operations -/
 
-def primOp (op : Operation) (args : List StmtExprMd) : StmtExprMd :=
-  withDefaultMd (.PrimitiveOp op args)
+def primOp (op : Operation) (args : List StmtExprMd) (source : Option FileRange := none)
+    (md : MetaData := defaultMd) : StmtExprMd :=
+  mkNode (.PrimitiveOp op args) source md
 
 end -- public section
 end Strata.Laurel

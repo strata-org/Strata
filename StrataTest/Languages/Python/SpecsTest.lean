@@ -79,7 +79,7 @@ class "MainClass" {
   exhaustive: false
   function "main_method"{
     args: [
-      self : class(MainClass) [default: ]
+      self : ident("main.MainClass") [default: ]
       x : ident("basetypes.BaseClass") [default: ]
     ]
     kwonly: [
@@ -94,7 +94,7 @@ class "MainClass" {
 }
 function "main_function"{
   args: [
-    x : class(MainClass) [default: ]
+    x : ident("main.MainClass") [default: ]
   ]
   kwonly: [
   ]
@@ -186,7 +186,7 @@ class "InnerHelper" {
 class "ClassWithInit" {
   bases: []
   fields: [
-    helper : class(_InnerHelper) "_InnerHelper()"
+    helper : ident("main._InnerHelper") "_InnerHelper()"
   ]
   classVars: []
   subclasses: [
@@ -198,7 +198,7 @@ class "ClassWithInit" {
       exhaustive: false
       function "do_work"{
         args: [
-          self : class(_InnerHelper) [default: ]
+          self : ident("main._InnerHelper") [default: ]
         ]
         kwonly: [
         ]

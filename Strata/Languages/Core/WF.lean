@@ -50,20 +50,18 @@ structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
 
 structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
 
-structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) : Prop where
+structure WFcallProp (p : Program) (procName : String) (callArgs : List (CallArg Expression)) : Prop where
   defined : (Program.Procedure.find? p procName).isSome
   arglen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.inputs.length = args.length
+          proc.header.inputs.length = (CallArg.getInputExprs callArgs).length
   outlen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.outputs.length = lhs.length
-  lhsDisj : (Program.Procedure.find? p procName = some proc) →
-          lhs.Disjoint (proc.spec.modifies ++ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
-  lhsWF : lhs.Nodup
-  wfargs : Forall (WFargProp p) args
+          proc.header.outputs.length = (CallArg.getLhs callArgs).length
+  lhsWF : (CallArg.getLhs callArgs).Nodup
+  wfargs : Forall (WFargProp p) (CallArg.getInputExprs callArgs)
 
 @[expose] def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
-  | .call (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) _ => WFcallProp p lhs procName args
+  | .call procName callArgs _ => WFcallProp p procName callArgs
 
 structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : Prop where
 
@@ -116,9 +114,9 @@ structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.C
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
-
-structure WFModProp (p : Program) (d : Procedure) (mod : Expression.Ident) : Prop where
-  defined : (Program.find? p .var mod).isSome
+  oldOnlyInout : ∀ id ∈ Imperative.HasVarsPure.getVars (P := Expression) pp.2.expr,
+    CoreIdent.isOldIdent id → id ∈ ListMap.keys (d.header.getInoutParams.map
+      (fun (x, ty) => (CoreIdent.mkOld x.name, ty)))
 
 @[simp]
 abbrev WFPresProp (p : Program) (d : Procedure) := Forall (WFPreProp p d)
@@ -126,17 +124,11 @@ abbrev WFPresProp (p : Program) (d : Procedure) := Forall (WFPreProp p d)
 @[simp]
 abbrev WFPostsProp (p : Program) (d : Procedure) := Forall (WFPostProp p d)
 
-@[simp]
-abbrev WFModsProp (p : Program) (d : Procedure) := Forall (WFModProp p d)
-
 structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop where
   wfpre : WFPresProp p d spec.preconditions
   wfpost : WFPostsProp p d spec.postconditions
-  wfmod : WFModsProp p d spec.modifies
 
 /- Procedure Wellformedness -/
-
-structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Expression) : Prop where
 
 structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
@@ -147,22 +139,13 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
   wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
-  ioDisjoint : (ListMap.keys d.header.inputs).Disjoint (ListMap.keys d.header.outputs)
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
-  modNodup : d.spec.modifies.Nodup
+  ioNotOld : ∀ id ∈ ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs,
+      ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
   -- There is no exit statement that cannot be caught by any block in the procedure.
   bodyExitsCovered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] d.body
-  -- Input/output identifiers are disjoint from modified globals.
-  ioModDisjoint : (ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs).Disjoint
-    d.spec.modifies
-  -- The `old_g` snapshot identifiers are disjoint from all other init'd identifiers.
-  modOldDisjoint : (ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs ++
-    d.spec.modifies).Disjoint
-    (d.spec.modifies.map (fun g => CoreIdent.mkOld g.name))
-  -- The `old_g` snapshot identifiers have no duplicates.
-  modOldNodup : (d.spec.modifies.map (fun g => CoreIdent.mkOld g.name)).Nodup
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
@@ -173,7 +156,6 @@ structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
 
 @[simp, expose, grind]
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
-  | .var name ty e _ => WFVarProp p name ty e
   | .type t _ => WFTypeDeclarationProp p t
   | .ax a _ => WFAxiomDeclarationProp p a
   | .distinct l es _ => WFDistinctDeclarationProp p l es

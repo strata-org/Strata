@@ -190,6 +190,10 @@ private meta def testCases : List (String × Expected) := [
     .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
   -- Type alias resolution tests (TDD for resolveTypeName refactoring)
   .mk "test_method_dispatch.py" .success,
+  .mk "test_keyword_dispatch.py" .success,
+  .mk "test_keyword_dispatch_variable.py" .success,
+  .mk "test_wrong_keyword_dispatch.py" $
+    .failPrefix "Python to Laurel translation failed: Type error: Dispatched function 'connect' called with wrong keyword argument, expected 'service_name' but got 'wrong_param'",
   .mk "test_annotation_dispatch.py" .success,
   .mk "test_constructor_dispatch.py" .success,
   .mk "test_reassign_dispatch.py" .success,
@@ -273,8 +277,8 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
 
 Verifies that calling `put_item(Bucket="INVALID!", ...)` produces a `✖️ always false`
 result for the regex assertion through the full verification pipeline.
-Runs twice: once with the hardcoded `__main__` path and once with the
-`--entry-point roots` (CLI default) path, which should give the same result.
+Uses `--entry-point roots` to discover the user-defined function as the entry point,
+since the test script defines a function but does not call it from the top level.
 
 Expected output (when Python + z3 available):
   servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
@@ -288,21 +292,23 @@ Expected output (when Python + z3 available):
 #eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
-    for (useRoots, label) in [(false, "main"), (true, "roots")] do
-      let result ← runAnalyzeAndVerify pythonCmd tmpDir
-        "test_precondition_violation.py" (useRoots := useRoots)
-      match result with
-      | .error msg => throw <| IO.userError s!"Pipeline failed ({label}): {msg}"
-      | .ok vcResults =>
-        let mut foundAlwaysFalse := false
-        for r in vcResults do
-          if r.obligation.label.startsWith "servicelib_Storage_" then
-            let line := r.formatOutcome
-            if (line.splitOn "✖️").length != 1 then
-              foundAlwaysFalse := true
-        if !foundAlwaysFalse then
-          throw <| IO.userError
-            s!"Expected ✖️ always false for regex violation ({label} path)"
+    -- These test scripts define functions but do not call them from the
+    -- top level, so __main__ has no assertions.  Use `useRoots` to
+    -- discover the user-defined function as the entry point.
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
+      "test_precondition_violation.py" (useRoots := true)
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      let mut foundAlwaysFalse := false
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          let line := r.formatOutcome
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
+      if !foundAlwaysFalse then
+        throw <| IO.userError
+          "Expected ✖️ always false for regex violation"
 
 /-! ## Precondition with alias test
 
@@ -315,7 +321,7 @@ assertion. This exercises the full pipeline with type alias resolution.
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_precondition_with_alias.py"
+      "test_precondition_with_alias.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
@@ -338,7 +344,7 @@ Without the attribute, the regex VC would be ❓ unknown. -/
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_regex_eval_if_canonical.py"
+      "test_regex_eval_if_canonical.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>

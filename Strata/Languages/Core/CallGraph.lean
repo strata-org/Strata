@@ -19,7 +19,27 @@ structure CallGraph where
   callees : Std.HashMap String (Std.HashMap String Nat)
   -- A map from callee to a list of (caller, # of calls)
   callers : Std.HashMap String (Std.HashMap String Nat)
-deriving Repr
+deriving Inhabited, BEq
+
+namespace CallGraph
+
+def sortedEntries (m : Std.HashMap String α) : List (String × α) :=
+  m.toList.mergeSort (·.1 < ·.1)
+
+def reprMap (m : Std.HashMap String (Std.HashMap String Nat)) : Std.Format :=
+  let fmtInner (vs : List (String × Nat)) : Std.Format :=
+    Std.Format.joinSep (vs.map fun p => f!"(\"{p.1}\", {p.2})") ", "
+  let entries := sortedEntries m
+  let parts := entries.map fun p => f!"(\"{p.1}\", [{fmtInner (sortedEntries p.2)}])"
+  Std.Format.joinSep parts ("," ++ Std.Format.line)
+
+instance : Repr CallGraph where
+  reprPrec cg _ :=
+    f!"CallGraph(callees: [{reprMap cg.callees}],"
+    ++ Std.Format.line
+    ++ f!"         callers: [{reprMap cg.callers}])"
+
+end CallGraph
 
 def CallGraph.empty : CallGraph :=
   { callees := Std.HashMap.emptyWithCapacity,
@@ -171,13 +191,15 @@ def buildCallGraph (items : List (String × List String)) : CallGraph :=
     acc.insert name (Std.HashMap.ofList calls.occurrences))
     Std.HashMap.emptyWithCapacity
 
+  let emptyCallerMap := items.foldl (fun acc (name, _) =>
+    acc.insert name ([] : List String)) Std.HashMap.emptyWithCapacity
   let callerMapNodedup :=
     items.foldl (fun acc ⟨caller,callees⟩ =>
       callees.foldl (fun acc' callee =>
         let existingCallers := Option.getD (acc'.get? callee) []
         acc'.insert callee (caller :: existingCallers))
       acc)
-      Std.HashMap.emptyWithCapacity
+      emptyCallerMap
   let callerMap := callerMapNodedup.map
     (fun _ v => Std.HashMap.ofList v.occurrences)
 
@@ -210,7 +232,7 @@ mutual
 /-- Extract procedure calls from a single statement -/
 def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
-  | .cmd (.call _ procName _ _) => [procName]
+  | .cmd (.call procName _ _) => [procName]
   | .cmd _ => []
   | .block _ body _ => extractCallsFromStatements body
   | .ite _ thenBody elseBody _ =>

@@ -80,7 +80,7 @@ This function replaces some bound variables in `e` by an arbitrary expression
 `substK k s e` keeps track of the number `k` of abstractions that have passed
 by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
-def substK {T:LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T)
+@[expose] def substK {T:LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T)
     (e : LExpr T) : LExpr T :=
   match e with
   | .const m c => .const m c
@@ -114,7 +114,7 @@ to avoid such issues:
 
 `(λλ 1 0) (λ b) --β--> (λ (λ b) 0)`
 -/
-def subst {T:LExprParamsT} (s : T.base.Metadata → LExpr T) (e : LExpr T) : LExpr T :=
+@[expose] def subst {T:LExprParamsT} (s : T.base.Metadata → LExpr T) (e : LExpr T) : LExpr T :=
   substK 0 s e
 
 /--
@@ -306,6 +306,21 @@ def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) (cutoff : Nat := 0) : LEx
   | .ite m c t e' => .ite m (liftBVars n c cutoff) (liftBVars n t cutoff) (liftBVars n e' cutoff)
   | .eq m e1 e2 => .eq m (liftBVars n e1 cutoff) (liftBVars n e2 cutoff)
 
+omit [DecidableEq T.IDMeta] in
+/-- `liftBVars` is the identity on expressions with no dangling bvars at or above `cutoff`. -/
+theorem liftBVars_eq_of_lcAt
+    {e : LExpr T.mono} {cutoff : Nat}
+    (h : lcAt cutoff e = true) (n : Nat)
+    : liftBVars n e cutoff = e := by
+  induction e generalizing cutoff with
+  | const | op | fvar => rfl
+  | bvar => simp [liftBVars, lcAt] at h ⊢; omega
+  | abs _ _ _ _ ih => simp [liftBVars, lcAt] at h ⊢; exact ih h
+  | quant _ _ _ _ _ _ ih_tr ih_body => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih_tr h.1, ih_body h.2⟩
+  | app _ _ _ ih1 ih2 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
+  | ite _ _ _ _ ih1 ih2 ih3 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1.1, ih2 h.1.2, ih3 h.2⟩
+  | eq _ _ _ ih1 ih2 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
+
 /--
 Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `to`
 when going under binders - safe when `to` contains no bvars (e.g., substituting
@@ -388,6 +403,44 @@ where
     | .app m fn e' => .app m (go fn depth) (go e' depth)
     | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
     | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)
+
+private theorem substFvarsAux_eq_go_of_lcAt
+    (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) (depth : Nat)
+    (h : ∀ (k : T.Identifier) (v : LExpr T.mono), Map.find? sm k = some v → lcAt 0 v = true)
+    : substFvars.substFvarsAux e sm = substFvarsLifting.go sm e depth := by
+  induction e generalizing depth with
+  | const | op | bvar => simp [substFvars.substFvarsAux, substFvarsLifting.go]
+  | fvar _ name _ =>
+    simp only [substFvars.substFvarsAux, substFvarsLifting.go]
+    split
+    · rename_i to hfind
+      rw [liftBVars_eq_of_lcAt (h name to hfind)]
+    · rfl
+  | abs _ _ _ _ ih =>
+    simp only [substFvars.substFvarsAux, substFvarsLifting.go]
+    exact congrArg _ (ih (depth + 1))
+  | quant _ _ _ _ _ _ ih_tr ih_body =>
+    simp only [substFvars.substFvarsAux, substFvarsLifting.go]
+    rw [ih_tr (depth + 1), ih_body (depth + 1)]
+  | app _ _ _ ih1 ih2 =>
+    simp only [substFvars.substFvarsAux, substFvarsLifting.go]
+    rw [ih1 depth, ih2 depth]
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [substFvars.substFvarsAux, substFvarsLifting.go]
+    rw [ih1 depth, ih2 depth, ih3 depth]
+  | eq _ _ _ ih1 ih2 =>
+    simp only [substFvars.substFvarsAux, substFvarsLifting.go]
+    rw [ih1 depth, ih2 depth]
+
+/-- `substFvars` and `substFvarsLifting` coincide when all replacement values are locally closed. -/
+theorem substFvars_eq_substFvarsLifting_of_lcAt
+    {e : LExpr T.mono} {sm : Map T.Identifier (LExpr T.mono)}
+    (h : ∀ (k : T.Identifier) (v : LExpr T.mono), Map.find? sm k = some v → lcAt 0 v = true)
+    : substFvars e sm = substFvarsLifting e sm := by
+  simp only [substFvars, substFvarsLifting]
+  split
+  · rfl
+  · exact substFvarsAux_eq_go_of_lcAt e sm 0 h
 
 ---------------------------------------------------------------------
 
@@ -615,6 +668,13 @@ theorem substFvars_unfold
       cases sm.find? name <;> rfl
     | _ => simp [LExpr.substFvars.substFvarsAux]
 
+/-- `substFvars` depends only on `Map.find?`, so maps with the same `find?` give the same result. -/
+theorem substFvars_congr_find
+    (e : LExpr T.mono) (m₁ m₂ : Map T.Identifier (LExpr T.mono))
+    (h : ∀ k, Map.find? m₁ k = Map.find? m₂ k)
+    : LExpr.substFvars e m₁ = LExpr.substFvars e m₂ := by
+  induction e <;> rw [substFvars_unfold, substFvars_unfold] <;> grind
+
 -- The following are corollaries of `substFvars_unfold`, kept for backward compatibility.
 @[simp] theorem substFvars_const' (m : T.Metadata) (c : LConst) (sm : Map T.Identifier (LExpr T.mono)) :
     LExpr.substFvars (LExpr.const m c) sm = LExpr.const m c := by rw [substFvars_unfold]
@@ -779,7 +839,7 @@ theorem varOpen_eraseMetadata_congr
 /--
 Replace all user-provided type annotations in an `LExpr` using `f`.
 -/
-def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
+@[expose] def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
   match e with
   | .const m c => .const m c
   | .op m o uty => .op m o (uty.map f)

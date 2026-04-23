@@ -29,15 +29,15 @@ open Lambda (LMonoTy LExpr)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
-  | ⟨.UserDefined name, _⟩ => [name.text]
-  | ⟨.TSet elem, _⟩ => collectTypeRefs elem
-  | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
-  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
-  | ⟨.Applied base args, _⟩ =>
+  | ⟨.UserDefined name, _, _⟩ => [name.text]
+  | ⟨.TSet elem, _, _⟩ => collectTypeRefs elem
+  | ⟨.TMap k v, _, _⟩ => collectTypeRefs k ++ collectTypeRefs v
+  | ⟨.TTypedField vt, _, _⟩ => collectTypeRefs vt
+  | ⟨.Applied base args, _, _⟩ =>
       collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _⟩ => collectTypeRefs base
-  | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
-  | ⟨.TCore name, _⟩ => [name]
+  | ⟨.Pure base, _, _⟩ => collectTypeRefs base
+  | ⟨.Intersection ts, _, _⟩ => ts.flatMap collectTypeRefs
+  | ⟨.TCore name, _, _⟩ => [name]
   | _ => []
 
 /-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
@@ -50,7 +50,7 @@ Used to build the call graph for SCC-based procedure ordering.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match expr with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .StaticCall callee args =>
       callee.text :: args.flatMap (fun a => collectStaticCallNames a)
@@ -94,7 +94,8 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
-  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v
+  | .Old v | .Fresh v | .Assume v => collectStaticCallNames v
+  | .Assert ⟨cond, _summary⟩ => collectStaticCallNames cond
   | .ProveBy v p => collectStaticCallNames v ++ collectStaticCallNames p
   | .ReferenceEquals l r => collectStaticCallNames l ++ collectStaticCallNames r
   | .AsType t _ | .IsType t _ => collectStaticCallNames t
@@ -102,6 +103,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .Assigned v => collectStaticCallNames v
   | _ => []
 termination_by sizeOf expr
+decreasing_by all_goals (have := AstNode.sizeOf_val_lt ‹_›; term_by_mem)
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
@@ -135,11 +137,11 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
   let procCallees (proc : Procedure) : List String :=
     let bodyExprs : List StmtExprMd := match proc.body with
       | .Transparent b => [b]
-      | .Opaque postconds (some impl) _ => postconds ++ [impl]
-      | .Opaque postconds none _ => postconds
+      | .Opaque postconds (some impl) _ => postconds.map (·.condition) ++ [impl]
+      | .Opaque postconds none _ => postconds.map (·.condition)
       | _ => []
     let contractExprs : List StmtExprMd :=
-      proc.preconditions ++
+      proc.preconditions.map (·.condition) ++
       proc.invokeOn.toList
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 

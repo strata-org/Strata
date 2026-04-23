@@ -21,11 +21,10 @@ public section
 /-!
 ## Differences between Boogie and Strata.Core
 
-1. Local variables can shadow globals in Boogie, but the typechecker disallows
-   that in Strata.Core.
+1. Strata.Core does not have global variables.
 
 2. Unlike Boogie, Strata.Core is sensitive to global declaration order. E.g.,
-   a global variable must be declared before it can be used in a procedure.
+   a function must be declared before it can be used in a procedure.
 
 3. Strata.Core does not (yet) support polymorphism.
 
@@ -70,9 +69,9 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (List (Program × Env) × Statistics) := do
+    Except DiagnosticModel ((List Env) × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
@@ -80,13 +79,12 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     | .type (.data d) _ => some d
     | _ => none
   let σ ← (Lambda.LState.init).addFactory factory
-  let E := { Env.init with exprEnv := σ, program := program }
+  let E := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
   let E ← E.addDatatypes datatypes
 
   -- Collect declaration statistics
   let stats := program.decls.foldl (fun s d =>
     match d with
-    | .var _ _ _ _       => s.increment s!"{Evaluator.Stats.globalVars}"
     | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
     | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
     | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
@@ -96,27 +94,20 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     ({} : Statistics)
 
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
-
-  let (pEs, evalStats) := Program.eval E
+  let (pEs, evalStats) ← Program.eval E
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Program.eval does not modify the program. The Program field is
+  -- kept for convenience.
+  -- kept for convenience.
   let stats := stats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    for (_p, E) in pEs do
+    for E in pEs do
       dbg_trace f!"{formatProofObligations E.deferred}"
   return (pEs, stats)
-
-instance instCoreProgramString : ToString (Program) where
-  toString p := toString (Core.formatProgram p)
-
-instance instCoreProgramFormat : Std.ToFormat Program where
-  format := Core.formatProgram
-
-/-- Format a single `Core.Expression.Expr` using the DDM pretty-printer.
-    This instance shadows the generic `ToFormat (LExpr T)` from `LExpr.lean`. -/
-instance instCoreExprFormat : Std.ToFormat Expression.Expr where
-  format e := Core.formatExprs [e]
 
 end -- public section
 

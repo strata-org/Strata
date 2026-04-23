@@ -30,7 +30,7 @@ program Core;
 // Define Tree datatype with Leaf(val: int) and Node(left: Tree, right: Tree) constructors
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeTesters() returns ()
+procedure TestTreeTesters()
 spec {
   ensures true;
 }
@@ -58,7 +58,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeTesterPgm) |>.snd |>.isEmpty
 
@@ -97,7 +99,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeHavoc() returns ()
+procedure TestTreeHavoc()
 spec {
   ensures true;
 }
@@ -116,7 +118,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeHavocPgm) |>.snd |>.isEmpty
 
@@ -143,7 +147,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeExhaustive() returns ()
+procedure TestTreeExhaustive()
 spec {
   ensures true;
 }
@@ -159,7 +163,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeExhaustivePgm) |>.snd |>.isEmpty
 
@@ -186,7 +192,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeMutualExclusion() returns ()
+procedure TestTreeMutualExclusion()
 spec {
   ensures true;
 }
@@ -205,7 +211,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeMutualExclusionPgm) |>.snd |>.isEmpty
 
@@ -232,7 +240,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeEquality() returns ()
+procedure TestTreeEquality()
 spec {
   ensures true;
 }
@@ -256,7 +264,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeEqualityPgm) |>.snd |>.isEmpty
 
@@ -287,7 +297,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeInequality() returns ()
+procedure TestTreeInequality()
 spec {
   ensures true;
 }
@@ -304,7 +314,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeInequalityPgm) |>.snd |>.isEmpty
 
@@ -331,7 +343,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeDestructor() returns ()
+procedure TestTreeDestructor()
 spec {
   ensures true;
 }
@@ -369,7 +381,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeDestructorPgm) |>.snd |>.isEmpty
 
@@ -432,7 +446,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeNested() returns ()
+procedure TestTreeNested()
 spec {
   ensures true;
 }
@@ -463,7 +477,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeNestedPgm) |>.snd |>.isEmpty
 
@@ -506,7 +522,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeDestructorHavoc() returns ()
+procedure TestTreeDestructorHavoc()
 spec {
   ensures true;
 }
@@ -529,7 +545,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeDestructorHavocPgm) |>.snd |>.isEmpty
 
@@ -560,7 +578,7 @@ program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
-procedure TestTreeDifferentValues() returns ()
+procedure TestTreeDifferentValues()
 spec {
   ensures true;
 }
@@ -584,7 +602,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram treeDifferentValuesPgm) |>.snd |>.isEmpty
 
