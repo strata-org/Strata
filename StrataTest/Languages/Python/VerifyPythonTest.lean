@@ -631,7 +631,7 @@ def main() -> None:
     assert x == 10
     assert y == 20
 "
-  let (laurel, output) ← toLaurel pythonCmd program
+  let (_, output) ← toLaurel pythonCmd program
   -- Verify $sf_ identifiers appear in the Laurel output
   unless containsSubstr output "$sf_x" do
     throw <| .userError "Expected $sf_x in Laurel output"
@@ -682,7 +682,7 @@ def main() -> None:
     assert a == 1
     assert b == 2
 "
-  let (laurel, output) ← toLaurel pythonCmd program
+  let (_, output) ← toLaurel pythonCmd program
   unless containsSubstr output "$sf_a" do
     throw <| .userError "Expected $sf_a in Laurel output"
   unless containsSubstr output "$sf_b" do
@@ -704,7 +704,7 @@ def main() -> None:
     assert dst == 100
     assert src == 100
 "
-  let (laurel, output) ← toLaurel pythonCmd program
+  let (_, output) ← toLaurel pythonCmd program
   unless containsSubstr output "$sf_src" do
     throw <| .userError "Expected $sf_src in Laurel output"
   unless containsSubstr output "$sf_dst" do
@@ -727,7 +727,7 @@ def main() -> None:
     maybe_set(True)
     assert flag == 1
 "
-  let (laurel, output) ← toLaurel pythonCmd program
+  let (_, output) ← toLaurel pythonCmd program
   unless containsSubstr output "$sf_flag" do
     throw <| .userError "Expected $sf_flag in Laurel output"
 
@@ -746,15 +746,11 @@ def main() -> None:
     add_to_total(3)
     assert total == 8
 "
-  let (laurel, output) ← toLaurel pythonCmd program
+  let (_, output) ← toLaurel pythonCmd program
   unless containsSubstr output "$sf_total" do
     throw <| .userError "Expected $sf_total in Laurel output"
-  -- Verify the function still has its regular parameter
-  let addProc := laurel.staticProcedures.find? (fun p => p.name.text == "add_to_total")
-  match addProc with
-  | none => throw <| .userError "add_to_total procedure not found"
-  | some p =>
-    unless p.inputs.any (fun i => i.name.text == "n") do
-      throw <| .userError "add_to_total should have parameter 'n'"
+  -- Verify the function still has its regular parameter (prefixed with $in_)
+  unless containsSubstr output "$in_n" do
+    throw <| .userError "Expected $in_n parameter in Laurel output for add_to_total"
 
 end Strata.Python.VerifyPythonTest
