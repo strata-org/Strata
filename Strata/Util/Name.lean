@@ -36,20 +36,39 @@ def breakDisambiguated (name : String) : String × Nat :=
   | '@' :: _, _ :: _ => (String.ofList rest.dropLast, digitsToNat digitSuffix + 1)
   | _, _ => (name, 1)
 
+/-- Fast candidate search with a fuel counter. Returns `none` if fuel is exhausted. -/
+def findUniqueFast (baseName : String) (candidate : String) (suffix : Nat)
+    (usedNames : List String) (fuel : Nat) : Option String :=
+  if !usedNames.contains candidate then some candidate
+  else match fuel with
+    | 0 => none
+    | fuel + 1 =>
+      findUniqueFast baseName (disambiguate baseName suffix) (suffix + 1) usedNames fuel
+
+/-- Provably-terminating fallback via list erasure (pigeonhole principle).
+    Each collision removes a name from `remaining`, guaranteeing termination. -/
+def findUniqueSlow (baseName : String) (candidate : String) (suffix : Nat)
+    (remaining : List String) : String :=
+  if h : remaining.contains candidate then
+    have : (remaining.erase candidate).length < remaining.length := by grind
+    findUniqueSlow baseName (disambiguate baseName suffix) (suffix + 1)
+                   (remaining.erase candidate)
+  else candidate
+termination_by remaining.length
+
 /-- Find a unique name by trying candidates with increasing `@N` suffixes.
-    Termination is guaranteed: each collision removes a name from `usedNames`,
-    so the search space shrinks on every iteration (pigeonhole principle). -/
+    Uses a fast counter-based loop, falling back to a provably-terminating
+    list-erasure search if the counter is exhausted (so we never panic). -/
 def findUnique (baseName : String) (startSuffix : Nat)
     (usedNames : List String) : String :=
-  let rec loop (candidate : String) (suffix : Nat) (remaining : List String) : String :=
-    if h : remaining.contains candidate then
-      have : (remaining.erase candidate).length < remaining.length := by grind
-      loop (disambiguate baseName suffix) (suffix + 1) (remaining.erase candidate)
-    else candidate
-  termination_by remaining.length
-  loop (if startSuffix == 1 then baseName
-        else disambiguate baseName (startSuffix - 1))
-       startSuffix usedNames
+  let firstCandidate :=
+    if startSuffix == 1 then baseName
+    else disambiguate baseName (startSuffix - 1)
+  match findUniqueFast baseName firstCandidate startSuffix usedNames 1000000 with
+  | some name => name
+  | none =>
+    findUniqueSlow baseName (disambiguate baseName (startSuffix + 1000000))
+                   (startSuffix + 1000001) usedNames
 
 end Strata.Name
 
