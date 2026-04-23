@@ -1,5 +1,4 @@
 test_param_reassign_cross_module.py(4, 4): ❓ unknown - assert(59)
-test_param_reassign_cross_module.py(5, 4): ✅ pass - assert_assert(119)_calls_Any_to_bool_0
 test_param_reassign_cross_module.py(5, 4): ❓ unknown - cross-module keyword call
-DETAIL: 1 passed, 0 failed, 2 inconclusive
+DETAIL: 0 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

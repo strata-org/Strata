@@ -17,13 +17,8 @@ program Core;
 type MapII := Map int int;
 type MapIMapII := Map int MapII;
 
-var a : MapII;
-var b : Map bool int;
-var c : Map int MapII;
-
-procedure P() returns ()
+procedure P(inout a : MapII, inout b : Map bool int, inout c : Map int MapII)
 spec {
-  modifies a, b, c;
   requires a[0] == 0;
   requires c[0] == a;
 }
@@ -46,7 +41,9 @@ spec {
 #end
 
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
@@ -56,14 +53,10 @@ info: program Core;
 
 type MapII := Map int int;
 type MapIMapII := Map int MapII;
-var a : MapII;
-var b : (Map bool int);
-var c : (Map int MapII);
-procedure P () returns ()
+procedure P (inout a : MapII, inout b : Map bool int, inout c : Map int MapII)
 spec {
-  modifies a, b, c;
-  requires [P_requires_1]: a[0] == 0;
-  requires [P_requires_2]: c[0] == a;
+  requires [P_requires_0]: a[0] == 0;
+  requires [P_requires_1]: c[0] == a;
   } {
   assert [c_0_eq_a]: c[0] == a;
   c := c[1:=a];
@@ -77,7 +70,7 @@ spec {
   b := b[true:=-1];
   assert [bTrueEqTrue]: b[true] == -1;
   assert [mix]: a[1] == -(b[true]);
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst
@@ -90,66 +83,66 @@ VCs:
 Label: c_0_eq_a
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-$__c5[0] == $__a3
+$__c2[0] == $__a0
 
 Label: c_1_eq_a
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-($__c5[1:=$__a3])[1] == $__a3
+($__c2[1:=$__a0])[1] == $__a0
 
 Label: a0eq0
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-$__a3[0] == 0
+$__a0[0] == 0
 
 Label: a1eq1
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-($__a3[1:=1])[1] == 1
+($__a0[1:=1])[1] == 1
 
 Label: a0eq1
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-(($__a3[1:=1])[0:=1])[0] == 1
+(($__a0[1:=1])[0:=1])[0] == 1
 
 Label: a0neq2
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-!((($__a3[1:=1])[0:=1])[0] == 2)
+!((($__a0[1:=1])[0:=1])[0] == 2)
 
 Label: bTrueEqTrue
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-($__b4[true:=-1])[true] == -1
+($__b1[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-(($__a3[1:=1])[0:=1])[1] == -(($__b4[true:=-1])[true])
+(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-1])[true])
 
 ---
 info:
@@ -196,66 +189,66 @@ VCs:
 Label: c_0_eq_a
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-$__c5[0] == $__a3
+$__c2[0] == $__a0
 
 Label: c_1_eq_a
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-($__c5[1:=$__a3])[1] == $__a3
+($__c2[1:=$__a0])[1] == $__a0
 
 Label: a0eq0
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-$__a3[0] == 0
+$__a0[0] == 0
 
 Label: a1eq1
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-($__a3[1:=1])[1] == 1
+($__a0[1:=1])[1] == 1
 
 Label: a0eq1
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-(($__a3[1:=1])[0:=1])[0] == 1
+(($__a0[1:=1])[0:=1])[0] == 1
 
 Label: a0neq2
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-!((($__a3[1:=1])[0:=1])[0] == 2)
+!((($__a0[1:=1])[0:=1])[0] == 2)
 
 Label: bTrueEqTrue
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-($__b4[true:=-1])[true] == -1
+($__b1[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
 Assumptions:
-P_requires_1: $__a3[0] == 0
-P_requires_2: $__c5[0] == $__a3
+P_requires_0: $__a0[0] == 0
+P_requires_1: $__c2[0] == $__a0
 Obligation:
-(($__a3[1:=1])[0:=1])[1] == -(($__b4[true:=-1])[true])
+(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-1])[true])
 
 ---
 info:

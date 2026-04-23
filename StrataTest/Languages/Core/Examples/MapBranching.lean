@@ -17,7 +17,7 @@ datatype Any () {
   from_MapInt (as_MapInt : Map int int)
 };
 
-procedure testmap () returns ()
+procedure testmap ()
 {
   var m : Map int int, v: Any;
   var k : Map int int;

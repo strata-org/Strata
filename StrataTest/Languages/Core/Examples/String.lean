@@ -18,7 +18,7 @@ def strPgm :=
 #strata
 program Core;
 
-procedure main() returns () {
+procedure main() {
 
     var s1 : string, s2 : string, s3 : string;
 

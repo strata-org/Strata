@@ -13,7 +13,7 @@ private def pgm : Program :=
 #strata
 program Core;
 
-procedure bitVecParseTest() returns () {
+procedure bitVecParseTest() {
 
   assert [bitvec32_test]: (bv{32}(0xF_FFFF_ABCD) == bv{32}(0xFFFF_ABCD));
   assert [bitvec64_test]: (bv{64}(0xF_FFFF_ABCD) == bv{64}(0xFFFF_ABCD));
