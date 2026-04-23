@@ -2323,7 +2323,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
         -- Use "Any" for all parameter types to match the Python→Laurel
         -- pipeline's Any-wrapping convention at call sites.
         let ins := p.inputs.map fun _ => "Any"
-        let outs := p.outputs.map fun _ => "Any"
+        let outs := p.outputs.map fun param => getHighTypeName param.type.val
         m.insert p.name.text { inputs := ins, outputs := outs }
   functionSignatures :=
     prog.staticProcedures.filterMap fun p =>

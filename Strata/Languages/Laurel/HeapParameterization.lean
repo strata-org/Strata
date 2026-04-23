@@ -282,7 +282,23 @@ where
               (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
             return ⟨ .Block [varDecl, callWithHeap, mkMd (.Var (.Local freshVar))] none, source, md ⟩
           else
-            return ⟨ .Assign [mkVarMd (.Local heapVar)] (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
+            -- Generate throwaway targets for any non-heap outputs
+            let procOutputs := match model.get callee with
+              | .staticProcedure proc => proc.outputs
+              | .instanceProcedure _ proc => proc.outputs
+              | _ => []
+            let mut extraTargets : List (AstNode Variable) := []
+            let mut extraDecls : List StmtExprMd := []
+            for out in procOutputs do
+              let freshVar ← freshVarName
+              extraDecls := extraDecls ++ [mkMd (.Var (.Declare ⟨freshVar, out.type⟩))]
+              extraTargets := extraTargets ++ [mkVarMd (.Local freshVar)]
+            let allTargets := mkVarMd (.Local heapVar) :: extraTargets
+            let assignStmt : StmtExprMd := ⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩), source, md ⟩
+            if extraDecls.isEmpty then
+              return assignStmt
+            else
+              return ⟨ .Block (extraDecls ++ [assignStmt]) none, source, md ⟩
         else if calleeReadsHeap then
           return ⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩
         else
