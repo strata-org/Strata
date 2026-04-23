@@ -22,6 +22,7 @@ structure SourceLocation where
   comment : String
 deriving Repr, DecidableEq, Inhabited, Lean.ToJson, Lean.FromJson
 
+@[expose]
 def SourceLocation.nil : SourceLocation :=
   { file := "", line := 0, column := 0, function := "", workingDir := "", comment := "" }
 

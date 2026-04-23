@@ -22,7 +22,7 @@ inductive Stats where
   | visitedProcedures
   | erasedProcedures
 
-derive_prefixed_toString Stats "FilterProcedures"
+#derive_prefixed_toString Stats "FilterProcedures"
 
 /--
 Filter program to keep only target procedures, applying the specified transform

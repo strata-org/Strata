@@ -21,7 +21,7 @@ def falseInvariantNeverExecuted :=
 #strata
 program Core;
 
-procedure zeroIter() returns (s : int)
+procedure zeroIter(out s : int)
 {
   var n : int;
   n := 0;
@@ -40,7 +40,7 @@ VCs:
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<dead_branch: (~Int.Gt n #0)>: false
+<dead_branch: n > 0>: false
 assume_entry_invariant_0_0: false
 Obligation:
 true

@@ -139,6 +139,7 @@ structure Env where
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
+  pathCap : Option Nat := .none
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -151,7 +152,8 @@ def Env.init (empty_factory:=false): Env :=
     distinct := [],
     pathConditions := [],
     warnings := []
-    deferred := ∅ }
+    deferred := ∅
+    pathCap := .none }
 
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
@@ -161,7 +163,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
@@ -171,14 +173,14 @@ instance : ToFormat Env where
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
-Create a substitution map from all non-global variables to their values.
+Create a substitution map from all variables to their values.
 -/
 def oldLocalVarSubst (E : Env) : SubstMap :=
   let m := (E.exprEnv.state.dropOldest).toSingleMap
   m.map (fun (i, _, e) => (i, e))
 
 /--
-Append `subst` map to a non-global substitution map.
+Append `subst` map to a substitution map.
 -/
 def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E
