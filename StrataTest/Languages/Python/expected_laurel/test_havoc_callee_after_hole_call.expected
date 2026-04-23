@@ -1,8 +1,0 @@
-test_havoc_callee_after_hole_call.py(7, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(12, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(17, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(21, 0): ✅ pass - expected pass nothing should be havocked
-test_havoc_callee_after_hole_call.py(23, 0): ✅ pass - callElimAssert_requires_5
-test_havoc_callee_after_hole_call.py(26, 0): ❓ unknown - expected unknown because heap should be havocked
-DETAIL: 2 passed, 0 failed, 4 inconclusive
-RESULT: Inconclusive
