@@ -87,12 +87,6 @@ def run (prog : Program) : Except DiagnosticModel Env := do
     | some _ => E
     | none =>
     match decl with
-    | .var name ty (.det e) _md =>
-      match LExpr.run E.exprEnv e with
-      | .error sr => Env.stuck E sr
-      | .ok v => CmdEval.update E name ty v
-    | .var name ty .nondet _md =>
-      Env.stuck E "nondet global variables not yet supported"
     | .func f _md =>
       match E.addFactoryFunc f with
       | .ok E' => E'
