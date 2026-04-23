@@ -55,10 +55,8 @@ def resolveAliasExprNode (amap : AliasMap) (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
   | .LocalVariable n ty init =>
     ⟨.LocalVariable n (resolveAliasType amap ty) init, expr.source, expr.md⟩
-  | .Forall param trigger body =>
-    ⟨.Forall { param with type := resolveAliasType amap param.type } trigger body, expr.source, expr.md⟩
-  | .Exists param trigger body =>
-    ⟨.Exists { param with type := resolveAliasType amap param.type } trigger body, expr.source, expr.md⟩
+  | .Quantifier mode param trigger body =>
+    ⟨.Quantifier mode { param with type := resolveAliasType amap param.type } trigger body, expr.source, expr.md⟩
   | .AsType t ty => ⟨.AsType t (resolveAliasType amap ty), expr.source, expr.md⟩
   | .IsType t ty => ⟨.IsType t (resolveAliasType amap ty), expr.source, expr.md⟩
   | _ => expr

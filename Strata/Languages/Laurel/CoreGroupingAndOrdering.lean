@@ -80,12 +80,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some d => collectStaticCallNames d
       | none => []) ++
       collectStaticCallNames body
-  | .Forall _ trig body =>
-      (match trig with
-      | some t => collectStaticCallNames t
-      | none => []) ++
-      collectStaticCallNames body
-  | .Exists _ trig body =>
+  | .Quantifier _ _ trig body =>
       (match trig with
       | some t => collectStaticCallNames t
       | none => []) ++
