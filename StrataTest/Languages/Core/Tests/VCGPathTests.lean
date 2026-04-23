@@ -14,7 +14,7 @@ private def getEvalStats (program : Strata.Program)
     (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
   let coreProgram ← IO.ofExcept (Core.typeCheck options coreProgram)
-  match Core.buildEvalEnv options coreProgram with
+  match Core.buildEnv options coreProgram with
   | .error _ => return ({}, 0)
   | .ok (E, declStats) =>
     match Core.Program.eval E with

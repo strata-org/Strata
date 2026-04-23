@@ -69,17 +69,36 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-/-- Build an evaluation environment from a type-checked program.
-    Loads the factory, datatypes, and processes all declarations. -/
-def buildEvalEnv (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+/-- Build an evaluation environment from a program.
+    Loads the factory, datatypes, and processes all declarations.
+    When `registerCustomFunctions` is true, also loads function declarations,
+    distinct constraints, and local function declarations from procedure
+    bodies into the factory (needed for SMT encoding). -/
+def buildEnv (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (registerCustomFunctions : Bool := false) :
     Except DiagnosticModel (Env × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let σ ← (Lambda.LState.init).addFactory factory
   let datatypes := program.decls.filterMap fun decl =>
     match decl with | .type (.data d) _ => some d | _ => none
-  let E := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
-  let E ← E.addDatatypes datatypes
+  let mut E : Env := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
+  E ← E.addDatatypes datatypes
+
+  if registerCustomFunctions then
+    for decl in program.decls do
+      match decl with
+      | .func func _ => E ← E.addFactoryFunc func
+      | .recFuncBlock funcs _ =>
+        validateCasesTypes funcs E.datatypes
+        for func in funcs do E ← E.addFactoryFunc func
+      | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
+      | .proc proc _ =>
+        for stmt in proc.body.flatMap collectFuncDecls do
+          match E.exprEnv.addFactoryFunc stmt with
+          | .ok σ' => E := { E with exprEnv := σ' }
+          | .error _ => pure ()
+      | _ => pure ()
 
   -- Collect declaration statistics
   let stats := program.decls.foldl (fun s d =>
@@ -93,13 +112,26 @@ def buildEvalEnv (options : VerifyOptions) (program : Program)
     ({} : Statistics)
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
   return (E, stats)
+where
+  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
+    | .funcDecl decl _ => [{
+        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+        body := decl.body, attr := decl.attr,
+        concreteEval := decl.concreteEval, axioms := decl.axioms }]
+    | .block _ ss _ => ss.flatMap collectFuncDecls
+    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
+    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
+    | _ => []
 
-/-- Symbolic evaluation phase: Program → Program.
-    Runs symbolic execution and converts obligations to a program. -/
-def symbolicEval (options : VerifyOptions) (program : Program)
+/-- Proof obligation program construction: Program → Program.
+    Runs symbolic execution and converts obligations to a program
+    suitable for downstream phases (ANF encoding, SMT encoding). -/
+def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
-  let (E, declStats) ← buildEvalEnv options program moreFns
+  let (E, declStats) ← buildEnv options program moreFns
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
   -- Program.eval does not modify the program. The Program field is
@@ -162,48 +194,7 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
   let program ← typeCheck options program moreFns
-  symbolicEval options program moreFns
-
-/-- Build an Env suitable for SMT encoding from a program.
-    Loads factory functions, datatypes, and distinct constraints
-    without running procedure evaluation. -/
-def buildSMTEnv (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel Env := do
-  let factory ← Core.Factory.addFactory moreFns
-  let σ ← (Lambda.LState.init).addFactory factory
-  let datatypes := program.decls.filterMap fun decl =>
-    match decl with | .type (.data d) _ => some d | _ => none
-  let mut E : Env := { Env.init with exprEnv := σ, program := program }
-  E ← E.addDatatypes datatypes
-  -- Load function declarations into the factory
-  for decl in program.decls do
-    match decl with
-    | .func func _ => E ← E.addFactoryFunc func
-    | .recFuncBlock funcs _ =>
-      validateCasesTypes funcs E.datatypes
-      for func in funcs do E ← E.addFactoryFunc func
-    | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
-    | .proc proc _ =>
-      -- Load local function declarations from procedure bodies
-      for stmt in proc.body.flatMap collectFuncDecls do
-        match E.exprEnv.addFactoryFunc stmt with
-        | .ok σ' => E := { E with exprEnv := σ' }
-        | .error _ => pure ()
-    | _ => pure ()
-  return E
-where
-  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
-    | .funcDecl decl _ => [{
-        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-        body := decl.body, attr := decl.attr,
-        concreteEval := decl.concreteEval, axioms := decl.axioms }]
-    | .block _ ss _ => ss.flatMap collectFuncDecls
-    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
-    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
-    | _ => []
+  toCoreProofObligationProgram options program moreFns
 
 end -- public section
 

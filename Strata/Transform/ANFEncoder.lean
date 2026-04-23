@@ -195,7 +195,7 @@ private def mapExprsInStatements (f : Expression.Expr → Expression.Expr)
 /-- Collect all user-facing expressions from a list of statements. -/
 private def collectExprsFromStatements (ss : Statements) :
     List Expression.Expr :=
-  Statements.collectExprs collectSubexprs ss
+  (Statements.collectExprs ss).flatMap collectSubexprs
 
 ---------------------------------------------------------------------
 -- Program level ANF encoding

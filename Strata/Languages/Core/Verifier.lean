@@ -60,15 +60,15 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   ctx.emitDatatypes
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
+  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
   for id in _axms do
     Solver.assert id
   -- Assert assumption terms
-  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
+  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm) |>.run estate
   for id in assumptionIds do
     Solver.assert id
   -- Encode the obligation term Q (not negated)
-  let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
+  let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty then some id else none
@@ -103,7 +103,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
-      Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
+      Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
   -- Emit the property summary (or label) as the final message in the SMT-LIB output.
@@ -740,7 +740,11 @@ Each result is `some r` if evaluator can determine it, `none` if the solver is n
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    -- Names of axiom assumptions, used to exclude axioms from the
+    -- relevant-function seed set during irrelevant axiom removal.
     (axiomNames : List String := [])
+    -- A program whose declarations consist of axioms only, used by
+    -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
   -- Evaluator can determine satisfiability if the obligation is literally false (unsat)
@@ -841,8 +845,9 @@ def corePipelinePhases (procs : Option (List String) := none)
       | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
   let symbolicEvalPhase : PipelinePhase :=
     modelPreservingPipelinePhase "symbolicEval" fun prog => do
-      let (prog', _stats) ← Transform.liftDiag (Core.symbolicEval options prog moreFns |>.mapError
+      let (prog', stats) ← Transform.liftDiag (Core.toCoreProofObligationProgram options prog moreFns |>.mapError
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
+      modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
   transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
 
@@ -945,13 +950,17 @@ def verifySingleEnv (oblProgram : Program)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    -- Names of axiom assumptions, used to exclude axioms from the
+    -- relevant-function seed set during irrelevant axiom removal.
     (axiomNames : List String := [])
+    -- A program whose declarations consist of axioms only, used by
+    -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel (VCResults × Statistics) := do
   -- Build SMT encoding context from the obligations program itself
-  let E ← EIO.ofExcept (Core.buildSMTEnv oblProgram moreFns)
+  let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
   let p := E.program
   let profile := options.profile
     -- Extract obligations from the obligations program via ObligationExtraction
@@ -1100,8 +1109,9 @@ def verify (program : Program)
     .ok (current, state.statistics)
   let allStats := pipelineStats
   -- Extract axiom names from the original program. The oblProgram (output of
-  -- symbolicEval) inlines axioms as assume statements but does not preserve
-  -- axiom declarations, so we use the pre-transform program for axiom identity.
+  -- toCoreProofObligationProgram) inlines axioms as assume statements but does
+  -- not preserve axiom declarations, so we use the pre-transform program for
+  -- axiom identity.
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
   -- Build the axiom relevance cache from the original program (which has

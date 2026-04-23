@@ -87,7 +87,7 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
         -- First emit datatypes
         ctx.emitDatatypes
         -- Then encode the term
-        let _ ← (Strata.SMT.Encoder.encodeTerm false smt).run Strata.SMT.EncoderState.init
+        let _ ← (Strata.SMT.Encoder.encodeTerm smt).run Strata.SMT.EncoderState.init
         pure ()
       ).run solver).toBaseIO) with
       | .error e => return s!"Error: {e}"
@@ -481,10 +481,10 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
         match (← ((do
           ctx.emitDatatypes
           let (_, estate) ← ctx.ufs.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
-          let (axmIds, estate) ← ctx.axms.mapM (Strata.SMT.Encoder.encodeTerm false ·) |>.run estate
+          let (axmIds, estate) ← ctx.axms.mapM (Strata.SMT.Encoder.encodeTerm ·) |>.run estate
           for id in axmIds do
             Strata.SMT.Solver.assert id
-          let _ ← (Strata.SMT.Encoder.encodeTerm false smt).run estate
+          let _ ← (Strata.SMT.Encoder.encodeTerm smt).run estate
         ).run solver).toBaseIO) with
         | .error e => return s!"Error: {e}"
         | .ok _ =>

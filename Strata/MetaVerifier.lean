@@ -59,13 +59,13 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
   match Core.typeCheck options program with
   | .error _ => none
   | .ok tcProgram =>
-    match Core.symbolicEval options tcProgram with
+    match Core.toCoreProofObligationProgram options tcProgram with
     | .error _ => none
     | .ok (oblProgram, _stats) =>
       match Core.ObligationExtraction.extractObligations oblProgram with
       | .error _ => none
       | .ok obligations =>
-        let E := match Core.buildEvalEnv options tcProgram with
+        let E := match Core.buildEnv options tcProgram with
           | .ok (initE, _) =>
             match Program.eval initE with
             | .ok (pEs, _) => pEs.head?.getD initE

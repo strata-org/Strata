@@ -73,7 +73,7 @@ def ProofObligation.toSMTTerms (E : Env) (d : Imperative.ProofObligation Arith.P
 def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   let estate := EncoderState.init
-  let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm False) |>.run estate
+  let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm) |>.run estate
   for t in termEncs do
     Solver.assert t
   let ids := estate.ufs.values

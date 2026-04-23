@@ -487,29 +487,29 @@ def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
   ss.map (Statement.mapExprs f)
 
 /-- Collect all user-facing expressions from a statement. -/
-def Statement.collectExprs (collect : Expression.Expr → List Expression.Expr) :
+def Statement.collectExprs :
     Statement → List Expression.Expr
-  | .cmd (.cmd (.assert _ e _)) => collect e
-  | .cmd (.cmd (.assume _ e _)) => collect e
-  | .cmd (.cmd (.cover _ e _)) => collect e
-  | .cmd (.cmd (.init _ _ (.det e) _)) => collect e
-  | .cmd (.cmd (.set _ (.det e) _)) => collect e
-  | .cmd (.call _ args _) => args.flatMap fun
-      | .inArg e => collect e
-      | _ => []
-  | .block _ ss _ => ss.flatMap (Statement.collectExprs collect)
+  | .cmd (.cmd (.assert _ e _)) => [e]
+  | .cmd (.cmd (.assume _ e _)) => [e]
+  | .cmd (.cmd (.cover _ e _)) => [e]
+  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
+  | .cmd (.cmd (.set _ (.det e) _)) => [e]
+  | .cmd (.call _ args _) => args.filterMap fun
+      | .inArg e => some e
+      | _ => none
+  | .block _ ss _ => ss.flatMap Statement.collectExprs
   | .ite (.det c) tss ess _ =>
-    collect c ++ tss.flatMap (Statement.collectExprs collect) ++
-    ess.flatMap (Statement.collectExprs collect)
+    [c] ++ tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
   | .ite .nondet tss ess _ =>
-    tss.flatMap (Statement.collectExprs collect) ++
-    ess.flatMap (Statement.collectExprs collect)
+    tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
   | .loop (.det g) measure inv body _ =>
-    collect g ++ measure.toList.flatMap collect ++
-    inv.flatMap collect ++ body.flatMap (Statement.collectExprs collect)
+    [g] ++ measure.toList ++
+    inv ++ body.flatMap Statement.collectExprs
   | .loop .nondet measure inv body _ =>
-    measure.toList.flatMap collect ++
-    inv.flatMap collect ++ body.flatMap (Statement.collectExprs collect)
+    measure.toList ++
+    inv ++ body.flatMap Statement.collectExprs
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []
   | .exit _ _ => []
@@ -517,9 +517,9 @@ def Statement.collectExprs (collect : Expression.Expr → List Expression.Expr) 
   | .typeDecl _ _ => []
 
 /-- Collect all user-facing expressions from a list of statements. -/
-def Statements.collectExprs (collect : Expression.Expr → List Expression.Expr)
+def Statements.collectExprs
     (ss : Statements) : List Expression.Expr :=
-  ss.flatMap (Statement.collectExprs collect)
+  ss.flatMap Statement.collectExprs
 
 ---------------------------------------------------------------------
 

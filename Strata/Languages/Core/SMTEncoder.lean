@@ -671,7 +671,7 @@ def ProofObligation.toSMTTerms (E : Env)
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing.
     Outputs variable declarations followed by the assertion of the encoded term. -/
-def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
+def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false)
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx useArrayTheory
@@ -680,7 +680,7 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   | .ok (smt, _) =>
     let b ← IO.mkRef { : IO.FS.Stream.Buffer }
     let solver ← Solver.bufferWriter b
-    let ((enc, _), _) ← ((Encoder.encodeTerm False smt).run EncoderState.init).run solver
+    let ((enc, _), _) ← ((Encoder.encodeTerm smt).run EncoderState.init).run solver
     let _ ← (Solver.assert enc).run solver
     let contents ← b.get
     if h: contents.data.IsValidUTF8
