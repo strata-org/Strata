@@ -99,13 +99,13 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, none, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", none, default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none, default ⟩
+    ⟨ .UserDefined "dummyName", none ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none ⟩
 
 /-! ## Resolution result -/
 
@@ -266,7 +266,7 @@ def withScope (action : ResolveM α) : ResolveM α := do
 
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
-  | AstNode.mk val _ _ =>
+  | AstNode.mk val _ =>
   let val' ← match val with
   | .UserDefined ref =>
     let ref' ← resolveRef ref ty.source
@@ -292,11 +292,11 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
   | other => pure other
-  return { val := val', source := ty.source, errorSummary := ty.errorSummary }
+  return { val := val', source := ty.source }
 
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
-  | AstNode.mk expr source errorSummary =>
+  | AstNode.mk expr source =>
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond
@@ -413,7 +413,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let ty' ← resolveHighType ty
       pure (.Hole det ty')
     | none => pure (.Hole det none)
-  return { val := val', source := source, errorSummary := errorSummary }
+  return { val := val', source := source }
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 
@@ -557,7 +557,7 @@ private def register (map : Std.HashMap Nat ResolvedNode) (iden : Identifier) (n
 private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeMd)
     : Std.HashMap Nat ResolvedNode :=
   match ty with
-  | AstNode.mk val _ _ =>
+  | AstNode.mk val _ =>
   match val with
   | .TTypedField vt => collectHighType map vt
   | .TSet et => collectHighType map et
@@ -574,7 +574,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
     : Std.HashMap Nat ResolvedNode :=
   match expr with
-  | AstNode.mk val _ _ =>
+  | AstNode.mk val _ =>
   match val with
   | .IfThenElse cond thenBr elseBr =>
     let map := collectStmtExpr map cond

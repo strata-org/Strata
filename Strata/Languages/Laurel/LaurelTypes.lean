@@ -28,13 +28,13 @@ and variable declarations.
 -/
 def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   match _: expr with
-  | AstNode.mk val source errorSummary =>
+  | AstNode.mk val source =>
   match _: val with
   -- Literals
-  | .LiteralInt _ => ⟨ .TInt, source, errorSummary ⟩
-  | .LiteralBool _ => ⟨ .TBool, source, errorSummary ⟩
-  | .LiteralString _ => ⟨ .TString, source, errorSummary ⟩
-  | .LiteralDecimal _ => ⟨ .TReal, source, errorSummary ⟩
+  | .LiteralInt _ => ⟨ .TInt, source ⟩
+  | .LiteralBool _ => ⟨ .TBool, source ⟩
+  | .LiteralString _ => ⟨ .TString, source ⟩
+  | .LiteralDecimal _ => ⟨ .TReal, source ⟩
   -- Variables
   | .Identifier id => (model.get id).getType
   -- Field access
@@ -43,7 +43,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
   | .StaticCall callee _ => match model.get callee with
-    | .datatypeConstructor t _ => ⟨ .UserDefined t, source, errorSummary ⟩
+    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
@@ -58,49 +58,49 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
       match args with
       | head :: tail =>
         match op with
-        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, source, errorSummary ⟩
+        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, source ⟩
         | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
           match (computeExprType model head).val with
-            | .TFloat64  => ⟨ .TFloat64, source, errorSummary ⟩
-            | .TReal => ⟨ .TReal, source, errorSummary ⟩
-            | .TInt => ⟨ .TInt, source, errorSummary ⟩
-            | _ => ⟨ .TCore "unknown", source, errorSummary ⟩
-        | .StrConcat => ⟨ .TString, source, errorSummary ⟩
-      | _ => ⟨ .TCore "unknown", source, errorSummary ⟩
+            | .TFloat64  => ⟨ .TFloat64, source ⟩
+            | .TReal => ⟨ .TReal, source ⟩
+            | .TInt => ⟨ .TInt, source ⟩
+            | _ => ⟨ .TCore "unknown", source ⟩
+        | .StrConcat => ⟨ .TString, source ⟩
+      | _ => ⟨ .TCore "unknown", source ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
         computeExprType model last
-    | none => ⟨ .TVoid, source, errorSummary ⟩
+    | none => ⟨ .TVoid, source ⟩
   -- Statements
-  | .LocalVariable _ _ _ => ⟨ .TVoid, source, errorSummary ⟩
-  | .While _ _ _ _ => ⟨ .TVoid, source, errorSummary ⟩
-  | .Exit _ => ⟨ .TVoid, source, errorSummary ⟩
-  | .Return _ => ⟨ .TVoid, source, errorSummary ⟩
+  | .LocalVariable _ _ _ => ⟨ .TVoid, source ⟩
+  | .While _ _ _ _ => ⟨ .TVoid, source ⟩
+  | .Exit _ => ⟨ .TVoid, source ⟩
+  | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
-  | .Assert _ => ⟨ .TVoid, source, errorSummary ⟩
-  | .Assume _ => ⟨ .TVoid, source, errorSummary ⟩
+  | .Assert _ => ⟨ .TVoid, source ⟩
+  | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related
-  | .New name => ⟨ .UserDefined name, source, errorSummary ⟩
+  | .New name => ⟨ .UserDefined name, source ⟩
   | .This => default -- TODO: implement
-  | .ReferenceEquals _ _ => ⟨ .TBool, source, errorSummary ⟩
+  | .ReferenceEquals _ _ => ⟨ .TBool, source ⟩
   | .AsType _ ty => ty
-  | .IsType _ _ => ⟨ .TBool, source, errorSummary ⟩
+  | .IsType _ _ => ⟨ .TBool, source ⟩
   -- Verification specific
-  | .Forall _ _ _ => ⟨ .TBool, source, errorSummary ⟩
-  | .Exists _ _ _ => ⟨ .TBool, source, errorSummary ⟩
-  | .Assigned _ => ⟨ .TBool, source, errorSummary ⟩
+  | .Forall _ _ _ => ⟨ .TBool, source ⟩
+  | .Exists _ _ _ => ⟨ .TBool, source ⟩
+  | .Assigned _ => ⟨ .TBool, source ⟩
   | .Old v => computeExprType model v
-  | .Fresh _ => ⟨ .TBool, source, errorSummary ⟩
+  | .Fresh _ => ⟨ .TBool, source ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
   | .ContractOf _ _ => default -- TODO: implement
   -- Special
   | .Abstract =>default -- TODO: implement
   | .All => default -- TODO: implement
-  | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, source, errorSummary ⟩
+  | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, source ⟩
 
 /-- Classification of a heap-relevant modifies type. -/
 inductive ModifiesTypeKind where

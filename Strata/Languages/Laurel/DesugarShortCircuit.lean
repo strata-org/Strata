@@ -23,7 +23,7 @@ namespace Strata.Laurel
 
 public section
 
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none, none⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
 
 /-- Local rewrite of a single short-circuit node. Recursion is handled by `mapStmtExpr`. -/
 private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
@@ -37,11 +37,11 @@ private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) 
     | .AndThen, [a, b] | .Implies, [a, b] =>
       if containsAssignmentOrImperativeCall model b then
         let elseVal := match op with | .AndThen => false | _ => true
-        ⟨.IfThenElse a b (some (bare (.LiteralBool elseVal))), source, none⟩
+        ⟨.IfThenElse a b (some (bare (.LiteralBool elseVal))), source⟩
       else expr
     | .OrElse, [a, b] =>
       if containsAssignmentOrImperativeCall model b then
-        ⟨.IfThenElse a (bare (.LiteralBool true)) (some b), source, none⟩
+        ⟨.IfThenElse a (bare (.LiteralBool true)) (some b), source⟩
       else expr
     | _, _ => expr
   | _ => expr

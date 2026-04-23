@@ -111,8 +111,6 @@ structure AstNode (t : Type) : Type where
   val : t
   /-- Source location for this AST node. -/
   source : Option FileRange
-  /-- Optional error summary for requires/ensures clauses. -/
-  errorSummary : Option String := none
   deriving Repr
 
 /--
@@ -344,10 +342,7 @@ def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Exp
 
 /-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
-  let md := fileRangeToCoreMd node.source
-  match node.errorSummary with
-  | some msg => md.withPropertySummary msg
-  | none => md
+  fileRangeToCoreMd node.source
 
 /-- Build Core metadata from an Identifier's source location. -/
 def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=

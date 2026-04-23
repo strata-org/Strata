@@ -30,63 +30,62 @@ children first, then applies `f` to the rebuilt node.
 -/
 def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
   let source := expr.source
-  let errSummary := expr.errorSummary
   -- `.attach` wraps each element with a proof of membership, which the
   -- termination checker uses to show the recursive call is on a smaller value.
   let rebuilt ← match _h : expr.val with
   | .IfThenElse cond th el =>
     pure ⟨.IfThenElse (← mapStmtExprM f cond) (← mapStmtExprM f th)
-      (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, errSummary⟩
+      (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Block stmts label =>
-    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) label, source, errSummary⟩
+    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) label, source⟩
   | .LocalVariable name ty init =>
-    pure ⟨.LocalVariable name ty (← init.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, errSummary⟩
+    pure ⟨.LocalVariable name ty (← init.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .While cond invs dec body =>
     pure ⟨.While (← mapStmtExprM f cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
       (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source, errSummary⟩
+      (← mapStmtExprM f body), source⟩
   | .Return v =>
-    pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, errSummary⟩
+    pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Assign targets value =>
-    pure ⟨.Assign (← targets.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) (← mapStmtExprM f value), source, errSummary⟩
+    pure ⟨.Assign (← targets.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) (← mapStmtExprM f value), source⟩
   | .FieldSelect target fieldName =>
-    pure ⟨.FieldSelect (← mapStmtExprM f target) fieldName, source, errSummary⟩
+    pure ⟨.FieldSelect (← mapStmtExprM f target) fieldName, source⟩
   | .PureFieldUpdate target fieldName newValue =>
-    pure ⟨.PureFieldUpdate (← mapStmtExprM f target) fieldName (← mapStmtExprM f newValue), source, errSummary⟩
+    pure ⟨.PureFieldUpdate (← mapStmtExprM f target) fieldName (← mapStmtExprM f newValue), source⟩
   | .StaticCall callee args =>
-    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, errSummary⟩
+    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .PrimitiveOp op args =>
-    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, errSummary⟩
+    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .ReferenceEquals lhs rhs =>
-    pure ⟨.ReferenceEquals (← mapStmtExprM f lhs) (← mapStmtExprM f rhs), source, errSummary⟩
+    pure ⟨.ReferenceEquals (← mapStmtExprM f lhs) (← mapStmtExprM f rhs), source⟩
   | .AsType target ty =>
-    pure ⟨.AsType (← mapStmtExprM f target) ty, source, errSummary⟩
+    pure ⟨.AsType (← mapStmtExprM f target) ty, source⟩
   | .IsType target ty =>
-    pure ⟨.IsType (← mapStmtExprM f target) ty, source, errSummary⟩
+    pure ⟨.IsType (← mapStmtExprM f target) ty, source⟩
   | .InstanceCall target callee args =>
     pure ⟨.InstanceCall (← mapStmtExprM f target) callee
-      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, errSummary⟩
+      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Forall param trigger body =>
     pure ⟨.Forall param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source, errSummary⟩
+      (← mapStmtExprM f body), source⟩
   | .Exists param trigger body =>
     pure ⟨.Exists param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source, errSummary⟩
+      (← mapStmtExprM f body), source⟩
   | .Assigned name =>
-    pure ⟨.Assigned (← mapStmtExprM f name), source, errSummary⟩
+    pure ⟨.Assigned (← mapStmtExprM f name), source⟩
   | .Old value =>
-    pure ⟨.Old (← mapStmtExprM f value), source, errSummary⟩
+    pure ⟨.Old (← mapStmtExprM f value), source⟩
   | .Fresh value =>
-    pure ⟨.Fresh (← mapStmtExprM f value), source, errSummary⟩
+    pure ⟨.Fresh (← mapStmtExprM f value), source⟩
   | .Assert cond =>
-    pure ⟨.Assert { cond with condition := ← mapStmtExprM f cond.condition }, source, errSummary⟩
+    pure ⟨.Assert { cond with condition := ← mapStmtExprM f cond.condition }, source⟩
   | .Assume cond =>
-    pure ⟨.Assume (← mapStmtExprM f cond), source, errSummary⟩
+    pure ⟨.Assume (← mapStmtExprM f cond), source⟩
   | .ProveBy value proof =>
-    pure ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), source, errSummary⟩
+    pure ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), source⟩
   | .ContractOf ty func =>
-    pure ⟨.ContractOf ty (← mapStmtExprM f func), source, errSummary⟩
+    pure ⟨.ContractOf ty (← mapStmtExprM f func), source⟩
   -- Leaves: no StmtExprMd children.
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
