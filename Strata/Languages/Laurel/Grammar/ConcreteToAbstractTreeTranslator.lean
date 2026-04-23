@@ -254,27 +254,24 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => ⟨.Local "", target.source, target.md⟩
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [targetVar] value) src
-    | q`Laurel.multiAssign, #[firstNameArg, firstTypeArg, restSeq, valueArg] =>
-      let firstName ← translateIdent firstNameArg
-      let firstType ← translateHighType firstTypeArg
-      let firstTarget : VariableMd := ⟨.Declare ⟨firstName, firstType⟩, src, #[]⟩
-      let restTargets ← match restSeq with
+    | q`Laurel.multiAssign, #[targetsSeq, valueArg] =>
+      let targets ← match targetsSeq with
         | .seq _ .comma args => args.toList.mapM fun targ => do
           let tSrc ← getArgFileRange targ
           let .op top := targ
             | TransM.error s!"multiAssign target expects operation"
           match top.name, top.args with
-          | q`Laurel.multiAssignTargetDecl, #[nameArg, typeArg] =>
+          | q`Laurel.assignTargetDecl, #[nameArg, typeArg] =>
             let name ← translateIdent nameArg
             let ty ← translateHighType typeArg
             pure (⟨.Declare ⟨name, ty⟩, tSrc, #[]⟩ : VariableMd)
-          | q`Laurel.multiAssignTargetVar, #[nameArg] =>
+          | q`Laurel.assignTargetVar, #[nameArg] =>
             let name ← translateIdent nameArg
             pure (⟨.Local name, tSrc, #[]⟩ : VariableMd)
           | _, _ => TransM.error s!"multiAssign: unexpected target {repr top.name}"
         | _ => pure []
       let value ← translateStmtExpr valueArg
-      return mkStmtExprMd (.Assign (firstTarget :: restTargets) value) src
+      return mkStmtExprMd (.Assign targets value) src
     | q`Laurel.new, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkStmtExprMd (.New name) src

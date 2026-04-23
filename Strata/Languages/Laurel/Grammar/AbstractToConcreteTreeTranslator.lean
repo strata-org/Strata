@@ -109,19 +109,12 @@ where
       laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
     | .Assign targets value =>
       if targets.length > 1 then
-        match targets with
-        | ⟨.Declare firstParam, _, _⟩ :: rest =>
-          let restArgs := rest.map fun t =>
-            match t.val with
-            | .Declare param => laurelOp "multiAssignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
-            | .Local name => laurelOp "multiAssignTargetVar" #[ident name.text]
-            | .Field _ _ => laurelOp "multiAssignTargetVar" #[ident "_"]
-          laurelOp "multiAssign" #[ident firstParam.name.text, highTypeToArg firstParam.type, commaSep restArgs.toArray, stmtExprToArg value]
-        | _ =>
-          let targetArg := match targets with
-            | t :: _ => variableToArg t.val
-            | [] => laurelOp "identifier" #[ident "_"]
-          laurelOp "assign" #[targetArg, stmtExprToArg value]
+        let targetArgs := targets.map fun t =>
+          match t.val with
+          | .Declare param => laurelOp "assignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
+          | .Local name => laurelOp "assignTargetVar" #[ident name.text]
+          | .Field _ _ => laurelOp "assignTargetVar" #[ident "_"]
+        laurelOp "multiAssign" #[commaSep targetArgs.toArray, stmtExprToArg value]
       else
         let targetArg := match targets with
           | t :: _ => variableToArg t.val
