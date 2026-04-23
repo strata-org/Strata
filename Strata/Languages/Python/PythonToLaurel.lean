@@ -1373,7 +1373,7 @@ partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) :
   let maybeExceptExprs := getMaybeExceptionExprs ctx e
   maybeExceptExprs.map fun mbe =>
     let funcName := match mbe.val with | .StaticCall f _ => f.text | _ => "expression"
-    let condExpr := primOp .Not [call "Any..isexception" [mbe]]
+    let condExpr := Laurel.Typed.not (Laurel.Typed.call "Any..isexception" [mbe] .TBool)
     assert_ condExpr (summary := some s!"Check {funcName} exception") (md := mbe.md)
 
 def withExceptionChecks (ctx : TranslationContext)
