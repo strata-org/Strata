@@ -94,7 +94,8 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
-  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v
+  | .Old v | .Fresh v | .Assume v => collectStaticCallNames v
+  | .Assert ⟨cond, _summary⟩ => collectStaticCallNames cond
   | .ProveBy v p => collectStaticCallNames v ++ collectStaticCallNames p
   | .ReferenceEquals l r => collectStaticCallNames l ++ collectStaticCallNames r
   | .AsType t _ | .IsType t _ => collectStaticCallNames t
@@ -102,6 +103,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .Assigned v => collectStaticCallNames v
   | _ => []
 termination_by sizeOf expr
+decreasing_by all_goals (have := AstNode.sizeOf_val_lt ‹_›; term_by_mem)
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
@@ -135,11 +137,11 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
   let procCallees (proc : Procedure) : List String :=
     let bodyExprs : List StmtExprMd := match proc.body with
       | .Transparent b => [b]
-      | .Opaque postconds (some impl) _ => postconds ++ [impl]
-      | .Opaque postconds none _ => postconds
+      | .Opaque postconds (some impl) _ => postconds.map (·.condition) ++ [impl]
+      | .Opaque postconds none _ => postconds.map (·.condition)
       | _ => []
     let contractExprs : List StmtExprMd :=
-      proc.preconditions ++
+      proc.preconditions.map (·.condition) ++
       proc.invokeOn.toList
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 

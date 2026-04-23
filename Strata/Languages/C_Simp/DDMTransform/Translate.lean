@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.C_Simp.DDMTransform.Parse
-import Strata.Languages.C_Simp.C_Simp
+public import Strata.Languages.C_Simp.DDMTransform.Parse
+public import Strata.Languages.C_Simp.C_Simp
 import Strata.DDM.AST
-import Strata.Languages.Core.CoreOp
+public import Strata.Languages.Core.CoreOp
+
+public section
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -31,7 +34,7 @@ structure TransState where
   inputCtx : InputContext
   errors : Array String
 
-def TransM := StateM TransState
+@[expose] def TransM := StateM TransState
   deriving Monad
 
 def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=

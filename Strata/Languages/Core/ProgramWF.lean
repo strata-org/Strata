@@ -23,30 +23,13 @@ import all Strata.Languages.Core.StatementType
  checker should be updated to check all WF conditions defined in `WF.lean`, and
  the admitted goals should be discharged by their corresponding proofs. Here is
  a list of the properties admitted, and they are also documented in the proof
- next to the admit/sorry tactic. As proofs for the list items are completed, the
- number can be replaced with a '+' for documentation purposes. If a
- well-formedness condition is not needed, it is denoted by '-'.
+ next to the admit/sorry tactic.
 
- 1. All `modifies` variables in a procedure are declared in the program.
- 2. All declared global variables are `CoreIdent.glob`.
- -  All local variable declarations in a procedure are `CoreIdent.locl`.
- 4. All local variable declarations in a procedure have no duplicates.
- 5. All variables in post-conditions and pre-conditions are either `CoreIdent.locl` or `CoreIdent.glob`.
- 6. Postconditions in a procedure are all `ValidExpression`s (c.f., `OldExpressions.lean`),
-    that is, the old predicates do not occur on the right hand side of an `.app`.
- 7. The `lhs` of a call statement contain no duplicates and are `CoreIdent.locl`.
-    This is to avoid overlapping with global variables that occurs in pre/post conditions, because call elimination directly substitutes `lhs` into the
-    pre/post conditions, they must not already exist in the pre/post conditions.
-    If a `lhs` needs to be global, a separate transformation can be implemented to create/substitute temporary variables before the call statement, and insert an assignment statement to
- +  The `outputs` list of a procedure contains no duplicates
- 9. All variables mentioned in `args` of a call statement are either `CoreIdent.locl` or `CoreIdent.glob`.
- +  The `inputs` list of a procedure contains no duplicates
- 11. All `modifies` variables have no duplicates.
- 12. The `inputs` list of a procedure is disjoint from the `outputs` list of the procedure
- 13. The `lhs` of a call statement is disjoint from `modifies`, `outputs`, and `inputs` of the procedure
- 14. The `inputs` list of a procedure are all `CoreIdent.locl`
- 15. The `outputs` list of a procedure are all `CoreIdent.locl`
- 16. All variables in pre/post conditions that are `.locl` must be in `outputs` or `inputs` of the procedure
+ 1. All local variable declarations in a procedure have no duplicates.
+ 2. The `lhs` of a call statement contain no duplicates.
+ 3. The `outputs` list of a procedure contains no duplicates
+ 4. The `inputs` list of a procedure contains no duplicates
+ 5. All variables in pre/post conditions must be in `outputs` or `inputs` of the procedure
 
  In order to fully prove the type checker's properties, it might be necessary to
  establish a connection (currently not implemented) between the `TyEnv` instance
@@ -241,7 +224,6 @@ private theorem Program.typeCheck.go_elim_acc:
   split; intros; contradiction
   any_goals (split <;> try contradiction)
   any_goals (split <;> try (intros; contradiction))
-  any_goals (split <;> try (intros; contradiction))
   any_goals (rw [← List.cons_append]; intro; apply ind (by assumption))
 
 @[grind →]
@@ -276,11 +258,6 @@ private theorem Except_bind_is_ok_rhs {E α β}
   (m : Except E α) (h : α → Except E β) (r : β) :
   ((m >>= h) = .ok r) → ∃(a : α), m = .ok a ∧ h a = .ok r :=
   Except_bind_is_ok m h r |>.mp
-
-@[local grind .]
-private theorem WFVarProp_trivial (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Expression) :
-  WFVarProp p name ty e := by
-  constructor
 
 @[local grind .]
 private theorem WFTypeDeclarationProp_trivial (p : Program) (f : TypeDecl) :
@@ -324,9 +301,6 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
     let ⟨idents, ⟨ident_eq, q⟩⟩ := tcok
     clear tcok
     match h with
-    | Decl.var x ty val md =>
-      simp only [Except_bind_is_ok] at q
-      grind
     | Decl.type td md =>
       grind
     | .ax a _ =>
@@ -443,17 +417,6 @@ private theorem Program.typeCheckFunctionDisjoint :
       intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
       rw[List.mem_flatMap]; exists a
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty <;> intros x hx)
-    | var v =>
-      split_contra tcok
-      specialize (IH tcok)
-      match hx with
-      | Or.inl hx =>
-        have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
-        simp [Decl.names, Decl.name] at *; subst_vars
-        grind
-      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
-        have Hcontains := Identifiers.addListWithErrorContains Hid x
-        grind
     | ax a =>
       specialize (IH tcok)
       match hx with
@@ -569,15 +532,6 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
     split <;> try (intros;contradiction)
     rename_i x v Hid
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty)
-    | var v =>
-      split_contra tcok
-      specialize (IH tcok)
-      apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
-      intros a a_in; simp[Decl.names] at a_in; subst_vars
-      intros x x_in;
-      have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
-      have x_contains := (Identifiers.addListWithErrorContains Hid x)
-      simp_all; grind
     | ax a =>
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH

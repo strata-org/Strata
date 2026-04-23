@@ -468,6 +468,30 @@ def main() -> None:
   let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   pure ()
 
+-- Multi-assignment with side-effecting RHS: the RHS should be evaluated
+-- exactly once. a = b = c.next() must call next() once, so both a and b
+-- get the same value and the counter increments by 1.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Counter:
+    def __init__(self) -> None:
+        self.count: int = 0
+
+    def next(self) -> int:
+        self.count = self.count + 1
+        return self.count
+
+def test() -> None:
+    c: Counter = Counter()
+    a = b = c.next()
+    assert a == 1
+    assert b == 1
+    assert c.count == 1
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
 -- print() with keyword arguments (sep, end, flush) should not produce errors.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
@@ -480,5 +504,72 @@ def main() -> None:
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- Callable[..., Any], dict[str, Any], and list[str] type annotations
+-- should not crash the pipeline (issue #960).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from typing import Any, Callable
+
+def retry(func: Callable[..., Any], retries: int = 3) -> Any:
+    return func()
+
+def make_record(name: str) -> dict[str, Any]:
+    return {\"name\": name}
+
+def get_names(names: list[str]) -> list[str]:
+    return names
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- typing.Callable (qualified, without `from typing import Callable`)
+-- exercises the .Attribute normalization path.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"import typing
+
+def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.Any:
+    return func()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- print() with multiple positional arguments exercises the opt parameter.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    print()
+    print(\"a\")
+    print(\"a\", \"b\")
+    print(\"a\", \"b\", \"c\")
+    print(\"a\", \"b\", sep=\",\", end=\"\\n\", flush=True)
+    print(\"x\", \"y\", \"z\", sep=\" \")
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- PreludeInfo.ofLaurelProgram should strip the $in_ prefix from parameter
+-- names so that cross-module keyword argument calls use the original names.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def add(x: int, y: int) -> int:
+    return x + y
+"
+  let laurel ← processPythonToLaurel pythonCmd (stringInputContext "test.py" program)
+  let prelude := Python.PreludeInfo.ofLaurelProgram laurel
+  match prelude.functionSignatures.find? (fun f => f.name == "add") with
+  | none => throw <| .userError "add not found in functionSignatures"
+  | some sig =>
+    for arg in sig.args do
+      if arg.name.startsWith "$in_" then
+        throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
 
 end Strata.Python.VerifyPythonTest

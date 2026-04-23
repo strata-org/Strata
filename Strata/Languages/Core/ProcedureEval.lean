@@ -43,31 +43,21 @@ The differences across paths are:
   `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
   prevent fresh-variable name collisions in subsequent evaluation.
 
-The `fallback` pair is returned when `results` is empty (which should not occur
+The `fallback` Env is returned when `results` is empty (which should not occur
 in practice, since `Statement.eval` always produces at least one result).
 -/
-private def mergeResults (fallback : Procedure × Env) (results : List (Procedure × Env)) :
-    Procedure × Env :=
+private def mergeResults (fallback : Env) (results : List Env) : Env :=
   match results with
   | [] => fallback
-  | [(p, E)] => (p, E)
-  | (p, E) :: rest =>
-    let allDeferred := rest.foldl (fun acc (_, e) => acc ++ e.deferred) E.deferred
-    let maxGen      := rest.foldl (fun acc (_, e) => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
-    (p, { E with
+  | [E] => E
+  | E :: rest =>
+    let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) E.deferred
+    let maxGen      := rest.foldl (fun acc e => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
+    { E with
       deferred := allDeferred,
-      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
+      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } }
 
-def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
-  -- Generate fresh variables for the globals in the modifies clause, and _update_
-  -- the context. These reflect the pre-state values of the globals.
-  let modifies_tys :=
-    p.spec.modifies.map
-    (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-  let modifies_typed := p.spec.modifies.zip modifies_tys
-  let (globals_fvars, E) := E.genFVars modifies_typed
-  let global_init_subst := List.zip modifies_typed globals_fvars
-  let E := E.addToContext global_init_subst
+def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
@@ -77,19 +67,13 @@ def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap
   let E := { E with pathConditions := E.pathConditions.push [] }
-  -- Note that the type checker has already done some transformations to ensure
-  -- that we only have `old` expressions left for variables.
-  -- With `old_var_subst`, we substitute `old <var>` expressions for globals
-  -- with the current value of `<var>` in the post-conditions and body.
-  -- `Statement.eval` will substitute `old <var>` where `<var>` is a local
-  -- variable with the value of `<var>` at each given statement.
-  let old_var_subst := E.exprEnv.state.oldest.map (fun (i, _, e) => (i, e))
-  -- Build "old g" → pre-state value substitutions for all declared globals.
-  -- These are passed as substMap so preprocess can substitute them in postcondition asserts.
-  let globalNames : List String := E.program.decls.filterMap fun d =>
-    match d with | .var name _ _ _ => some name.name | _ => none
-  let old_g_subst := old_var_subst.filterMap fun (id, e) =>
-    if globalNames.contains id.name then some (CoreIdent.mkOld id.name, e) else none
+  -- For input parameters that also appear as outputs, old(param) should use
+  -- the input parameter's initial value.
+  let outputNames := p.header.outputs.keys
+  let inputParamSubst := E.exprEnv.state.newest.filterMap fun (id, _, e) =>
+    if p.header.inputs.keys.contains id && outputNames.contains id
+    then some (CoreIdent.mkOld id.name, e) else none
+  let old_g_subst := inputParamSubst
   let postcond_asserts :=
     List.map (fun (label, check) =>
                 match check.attr with
@@ -116,7 +100,7 @@ def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
       (.assume label check.expr check.md))
       p.spec.preconditions
   let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ p.body ++ postcond_asserts)
-  (mergeResults (p, E) (ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))), evalStats)
+  (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
 
 ---------------------------------------------------------------------
 

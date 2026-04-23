@@ -1,0 +1,9 @@
+test_var_shadow_func.py(2, 8): ✅ pass - Check PAdd exception
+test_var_shadow_func.py(1, 17): ✅ pass - (f ensures) Return type constraint
+test_var_shadow_func.py(6, 4): ✅ pass - assert(83)
+test_var_shadow_func.py(7, 4): ✅ pass - (f requires) Type constraint of x
+test_var_shadow_func.py(7, 4): ✅ pass - assert(98)
+test_var_shadow_func.py(8, 4): ❓ unknown - param modified inside
+test_var_shadow_func.py(9, 4): ✅ pass - original unchanged
+DETAIL: 6 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

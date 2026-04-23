@@ -154,7 +154,7 @@ def transformModifiesClauses (model: SemanticModel)
         let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
-          | some frame => postconds ++ [frame]
+          | some frame => postconds ++ [{ condition := frame : Condition }]
           | none => postconds
         .ok { proc with body := .Opaque postconds' impl [] }
       else

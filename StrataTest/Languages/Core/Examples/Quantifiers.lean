@@ -12,7 +12,7 @@ namespace Strata
 def quantPgm :=
 #strata
 program Core;
-procedure Test(x : int) returns (r : int)
+procedure Test(x : int, out r : int)
 spec {
   ensures [good]: (forall y : int :: exists z : int :: r + (z + y) == y + (z + r));
   ensures [bad]: (forall q : int :: q < x);
@@ -35,7 +35,7 @@ axiom [g_neg]: forall x : int, y : int :: { g(x, y) } x > 0 ==> g(x, y) < 0;
 axiom [f_and_g]: forall x : int, y : int :: { g(x, y) } { f(x) } g(x, y) < f(x);
 axiom [f_and_g2]: forall x : int, y : int :: { g(x, y), f(x) } g(x, y) < f(x);
 
-procedure TestTriggers(x : int) returns (r : int)
+procedure TestTriggers(x : int, out r : int)
 spec {
   ensures [f_and_g]: r < 0;
 }
@@ -65,29 +65,6 @@ Label: bad
 Property: assert
 Obligation:
 forall __q0 : int :: __q0 < $__x0
-
-
-
-Result: Obligation: bad
-Property: assert
-Result: ❌ fail
-Model:
-($__x0, 0)
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-procedure Test (x : int) returns (r : int)
-spec {
-  ensures [good]: forall __q0 : int :: exists __q1 : int :: r + (__q1 + __q0) == __q0 + (__q1 + r);
-  ensures [bad]: forall __q0 : int :: __q0 < x;
-  } {
-  assert [good_assert]: forall __q0 : ($__unknown_type) :: !(__q0 == __q0 + 1);
-  r := $__x0 + 1;
-  assert [good]: forall __q0 : ($__unknown_type) :: exists __q1 : ($__unknown_type) :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1));
-  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < $__x0;
-  };
 
 ---
 info:

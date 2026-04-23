@@ -359,11 +359,11 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .Assert cond =>
       -- Do not transform assert conditions with assignments — they must be rejected.
       -- But nondeterministic holes need to be lifted.
-      if containsNondetHole cond && !containsAssignmentOrImperativeCall (← get).model cond then
-        let seqCond ← transformExpr cond
+      if containsNondetHole cond.condition && !containsAssignmentOrImperativeCall (← get).model cond.condition then
+        let seqCond ← transformExpr cond.condition
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assert seqCond, source, md⟩]
+        return prepends ++ [⟨.Assert { cond with condition := seqCond }, source, md⟩]
       else
         return [stmt]
 
