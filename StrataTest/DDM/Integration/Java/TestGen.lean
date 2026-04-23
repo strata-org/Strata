@@ -287,7 +287,7 @@ elab "#testCoreError" : command => do
 elab "#testCompile" : command => do
   let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
   if javacCheck.exitCode != 0 then
-    Lean.logError "Test 12 failed: javac not found"
+    Lean.logWarning "Test 12 skipped: javac not found"
     return
 
   let env ← Lean.getEnv
@@ -302,7 +302,7 @@ elab "#testCompile" : command => do
   -- ion-java is required for compilation (Node.java imports IonSexp)
   let jarPath := "StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
-    Lean.logError s!"Test 12 failed: ion-java jar not found at {jarPath}"
+    Lean.logWarning s!"Test 12 skipped: ion-java jar not found at {jarPath}"
     IO.FS.removeDirAll dir
     return
 
