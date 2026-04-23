@@ -137,6 +137,18 @@ def implies (x y : TypedExpr .TBool) (source : Option FileRange := none) (md : M
 /-- Equality. -/
 def eq (x y : TypedExpr tp) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
   ⟨mkNode (.PrimitiveOp .Eq [x.expr, y.expr]) source md⟩
+/-- Less than. -/
+def lt (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Lt [x, y]) source md⟩
+/-- Less than or equal. -/
+def leq (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Leq [x, y]) source md⟩
+/-- Greater than or equal. -/
+def geq (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Geq [x, y]) source md⟩
+/-- Greater than. -/
+def gt (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Gt [x, y]) source md⟩
 /-- If-then-else (expression, returns typed value). -/
 def ite (cond : TypedExpr .TBool) (t e : TypedExpr tp) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr tp :=
   ⟨mkNode (.IfThenElse cond.expr t.expr (some e.expr)) source md⟩

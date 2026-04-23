@@ -1674,8 +1674,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             let assumeTypeInt := assume_ (Laurel.Typed.call "Any..isfrom_int" [targetVar] .TBool) (md := md)
             let asIntTarget := call "Any..as_int!" [targetVar]
             let inRangeExpr := Laurel.Typed.and
-                  ⟨primOp .Geq [asIntTarget, litInt 0]⟩
-                  ⟨primOp .Lt [asIntTarget, asIntStart]⟩
+                  (Laurel.Typed.geq asIntTarget (litInt 0))
+                  (Laurel.Typed.lt asIntTarget asIntStart)
             let assumeInRange := assume_ inRangeExpr (md := md)
             pure [assumeTypeInt, assumeInRange]
           | _ =>
@@ -1685,9 +1685,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => pure []
     let counterLtLen : Laurel.TypedExpr .TBool := match iterExpr.val with
       | .StaticCall "range" (boundExpr::_) =>
-          ⟨primOp .Lt [counterVar, call "Any..as_int!" [boundExpr]]⟩
+          Laurel.Typed.lt counterVar (call "Any..as_int!" [boundExpr])
       | _ =>
-          ⟨primOp .Lt [counterVar, call "Any_len" [iterExpr]]⟩
+          Laurel.Typed.lt counterVar (call "Any_len" [iterExpr])
     let bodyStmts := targetDecls ++ assumeStmts ++ bodyStmts ++ [counterIncrease]
     let innerBlock := block bodyStmts (some continueLabel)
     let loopStmt := while_ counterLtLen (body := innerBlock) (md := md)
