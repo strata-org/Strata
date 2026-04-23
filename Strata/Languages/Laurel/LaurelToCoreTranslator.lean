@@ -461,7 +461,7 @@ def translateStmt (stmt : StmtExprMd)
                 | _ => none
               return (havocStmts)
           | _ =>
-              emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
+              emitDiagnostic $ md.toDiagnostic s!"Assignments with multiple target but without a RHS call should not be constructed. Targets: {Std.format targets}"
               returnNone
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond

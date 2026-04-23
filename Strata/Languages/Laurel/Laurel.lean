@@ -341,11 +341,23 @@ def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
 instance : Inhabited StmtExpr where
   default := .Hole
 
+instance : Inhabited (AstNode Variable) where
+  default := { val := .Local default, source := none }
+
 instance : Inhabited HighTypeMd where
   default := { val := HighType.Unknown, source := none }
 
 instance : Inhabited StmtExprMd where
   default := { val := default, source := none }
+
+instance : Std.ToFormat Variable where
+  format
+    | .Local name => Std.format name.text
+    | .Field _target fieldName => f!"<expr>.{fieldName.text}"
+    | .Declare param => f!"var {param.name.text}"
+
+instance : Std.ToFormat (AstNode Variable) where
+  format v := Std.format v.val
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true

@@ -313,40 +313,15 @@ where
     | .Return v =>
         let v' ← match v with | some x => some <$> recurse x | none => pure none
         return ⟨ .Return v', source, md ⟩
-    | .Assign [⟨.Field target fieldName, _, _fieldSelectMd⟩] v =>
-        -- Single field-write target (not a call): original field write handling
-        let some qualifiedName := resolveQualifiedFieldName model fieldName
-          | return ⟨ .Hole, source, md ⟩
-        let valTy := (model.get fieldName).getType
-        let target' ← recurse target
-        let v' ← recurse v
-        recordBoxConstructor model valTy.val
-        let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
-        let heapAssign := ⟨ .Assign [mkVarMd (.Local heapVar)]
-          (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source, md ⟩
-        if valueUsed then
-          return ⟨ .Block [heapAssign, v'] none, source, md ⟩
-        else
-          return heapAssign
-    | .Assign (targetHead :: targetTail) v =>
-        -- Dedicated handler for calls: add heap parameter to args and heap target to front
-        let allTargets := targetHead :: targetTail
-        match _hv : v.val with
-        | .StaticCall callee args => do
-          let args' ← args.mapM (recurse ·)
-          let calleeWritesHeap ← writesHeap callee
-          let calleeReadsHeap ← readsHeap callee
-          let v' :=
-            if calleeWritesHeap || calleeReadsHeap then
-              ⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩
-            else
-              ⟨ .StaticCall callee args', source, md ⟩
-          -- Process field assignments: replace Field targets with fresh locals + suffix heap updates
-          let processedTargets ← allTargets.attach.mapM fun ⟨t, _⟩ => do
-            match _htv : t.val with
-            | .Field target fieldName => do
+    | .Assign targets v =>
+
+      let processFieldAssignments(targets : List (AstNode Variable)):
+        TransformM (List (AstNode Variable) × List (AstNode StmtExpr)) :=
+        targets.foldlM (init := ([], [])) fun (accTargets, accStmts) t =>
+          match t.val with
+          | .Field target fieldName => do
               let some qualifiedName := resolveQualifiedFieldName model fieldName
-                | return (t, none)
+                | return (accTargets ++ [t], accStmts)
               let valTy := (model.get fieldName).getType
               recordBoxConstructor model valTy.val
               let freshVar ← freshVarName
@@ -354,57 +329,35 @@ where
               let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar))]
               let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar)]
                 (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source, md ⟩
-              return (mkVarMd (.Declare ⟨freshVar, valTy⟩), some updateStmt)
-            | _ => return (t, none)
-          let newTargets := processedTargets.map (·.1)
-          let updateStmts := processedTargets.filterMap (·.2)
-          -- Add heap target if callee writes heap
-          let allNewTargets :=
-            if calleeWritesHeap then mkVarMd (.Local heapVar) :: newTargets
-            else newTargets
-          let newAssign := ⟨ .Assign allNewTargets v', source, md ⟩
-          let suffixes := if valueUsed && allTargets.length == 1 then
-              let idx := if calleeWritesHeap then 1 else 0
-              match allNewTargets.drop idx with
-              | resultTarget :: _ =>
-                let name := match resultTarget.val with | .Local n => n | .Declare p => p.name | _ => ""
-                updateStmts ++ [mkMd (.Var (.Local name))]
-              | [] => updateStmts
-            else updateStmts
-          if suffixes.length > 0 then
-            return ⟨ .Block (newAssign :: suffixes) none, source, md ⟩
-          else
-            return newAssign
+              return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
+          | _ => return (accTargets ++ [t], accStmts)
+
+      let (allTargets, v', addedHeap) <- match v.val with
+        | .StaticCall callee args => do
+          let args' <- args.mapM recurse
+          let v' := StmtExpr.StaticCall callee args'
+          let allTargets: List (AstNode Variable) := ⟨ Variable.Local heapVar, v.source, default ⟩ :: targets
+          pure (allTargets, v, true)
         | .InstanceCall callTarget callee args => do
-          let t ← recurse callTarget
-          let args' ← args.mapM (recurse ·)
-          let v' := ⟨ .InstanceCall t callee args', source, md ⟩
-          let targets' ← allTargets.attach.mapM fun ⟨t, _⟩ => do
-            match _htv : t.val with
-            | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, t.source, t.md⟩
-            | .Local _ => pure t
-            | .Declare _ => pure t
-          return ⟨ .Assign targets' v', source, md ⟩
+          let callTarget' ← recurse callTarget
+          let args' <- args.mapM recurse
+          let v' := StmtExpr.InstanceCall callTarget' callee args'
+          let allTargets: List (AstNode Variable) := ⟨ Variable.Local heapVar, v.source, default ⟩ :: targets
+          pure (allTargets, v, true)
         | _ =>
-          -- Non-call value: use original single/multi-target handling
-          match targetHead :: targetTail with
-          | [fieldSelectMd] =>
-            let tgt' : VariableMd := match fieldSelectMd.val with
-              | .Field _ _ => fieldSelectMd
-              | .Local _ => fieldSelectMd
-              | .Declare _ => fieldSelectMd
-            return ⟨ .Assign [tgt'] (← recurse v), source, md ⟩
-          | _ =>
-              let v' ← recurse v
-              let targets' ← (targetHead :: targetTail).attach.mapM fun ⟨t, _⟩ => do
-                match _htv : t.val with
-                | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, t.source, t.md⟩
-                | .Local _ => pure t
-                | .Declare _ => pure t
-              return ⟨ .Assign targets' v', source, md ⟩
-    | .Assign targets v =>
-        let v' ← recurse v
-        return ⟨ .Assign targets v', source, md ⟩
+          pure (targets, <- recurse v, false)
+
+      let (targets', updateStatements) <- processFieldAssignments allTargets
+      let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign targets' v', source, default ⟩
+      let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
+        then updateStatements ++ [⟨ StmtExpr.Var (if addedHeap then targets'[1]!.val else targets'[0]!.val), source, default⟩]
+        else updateStatements
+
+      if suffixes.length > 1 then
+        return ⟨ StmtExpr.Block (newAssign :: suffixes) none, source, default ⟩
+      else
+        return newAssign
+
     | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source, md ⟩
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)

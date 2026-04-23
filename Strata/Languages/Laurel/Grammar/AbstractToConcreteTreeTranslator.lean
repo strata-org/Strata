@@ -372,6 +372,12 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Datatype ty => formatDatatypeDefinition ty
   | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
 
+def formatVariable (v : Variable) : Format :=
+  formatArg (stmtExprToArg ⟨.Var v, none, {}⟩)
+
+def formatVariableMd (v : VariableMd) : Format :=
+  formatArg (stmtExprToArg ⟨.Var v.val, v.source, v.md⟩)
+
 def formatConstant (c : Constant) : Format :=
   "const " ++ format c.name ++ ": " ++ formatHighType c.type ++
   match c.initializer with
@@ -389,6 +395,8 @@ instance : Std.ToFormat CompositeType where format := formatCompositeType
 instance : Std.ToFormat ConstrainedType where format := formatConstrainedType
 instance : Std.ToFormat DatatypeConstructor where format := formatDatatypeConstructor
 instance : Std.ToFormat DatatypeDefinition where format := formatDatatypeDefinition
+instance : Std.ToFormat Variable where format := formatVariable
+instance : Std.ToFormat VariableMd where format := formatVariableMd
 instance : Std.ToFormat Constant where format := formatConstant
 instance : Std.ToFormat TypeDefinition where format := formatTypeDefinition
 instance : Std.ToFormat Program where format := formatProgram
