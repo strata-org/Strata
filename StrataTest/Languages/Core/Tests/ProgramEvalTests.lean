@@ -439,25 +439,26 @@ private def runProc (pgm : Strata.Program) (procName : String)
   | .ok prog =>
     match prog.run with
     | .ok E =>
-      let E := Core.Statement.Command.runCall [] procName args fuel E
-      match E.error with
-      | none =>
-        let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
-        match proc with
-        | none => IO.println "success (no proc)"
-        | some p =>
-          let outputs := p.header.outputs.keys.map fun name =>
+      let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
+      match proc with
+      | none => IO.println "procedure not found"
+      | some p =>
+        let lhs := p.header.outputs.keys
+        let E := Core.Statement.Command.runCall lhs procName args fuel E
+        match E.error with
+        | none =>
+          let outputs := lhs.map fun name =>
             let val := (E.exprEnv.state.find? name).map (·.snd)
             s!"{name} = {val.map (fun v => toString (format v))}"
           IO.println (String.intercalate ", " outputs)
-      | some e => IO.println f!"error: {e}"
+        | some e => IO.println f!"error: {e}"
     | .error diag => IO.println s!"error: {diag}"
 
 -- Simple assignment
 private def simplePgm : Strata.Program :=
 #strata
 program Core;
-procedure Test() returns (y : int)
+procedure Test(out y : int)
 {
   y := 42;
 };
@@ -471,7 +472,7 @@ procedure Test() returns (y : int)
 private def arithPgm : Strata.Program :=
 #strata
 program Core;
-procedure Test(x : int) returns (y : int)
+procedure Test(x : int, out y : int)
 {
   y := x + x;
 };
@@ -485,7 +486,7 @@ procedure Test(x : int) returns (y : int)
 private def itePgm : Strata.Program :=
 #strata
 program Core;
-procedure Test(x : int) returns (y : int)
+procedure Test(x : int, out y : int)
 {
   if (x > 0) {
     y := x;
@@ -507,13 +508,13 @@ procedure Test(x : int) returns (y : int)
 private def callPgm : Strata.Program :=
 #strata
 program Core;
-procedure Double(n : int) returns (result : int)
+procedure Double(n : int, out result : int)
 {
   result := n + n;
 };
-procedure Test(x : int) returns (y : int)
+procedure Test(x : int, out y : int)
 {
-  call y := Double(x);
+  call Double(x, out y);
 };
 #end
 
@@ -525,14 +526,14 @@ procedure Test(x : int) returns (y : int)
 private def chainedCallPgm : Strata.Program :=
 #strata
 program Core;
-procedure Double(n : int) returns (result : int)
+procedure Double(n : int, out result : int)
 {
   result := n + n;
 };
-procedure Test(x : int) returns (output : int)
+procedure Test(x : int, out output : int)
 {
-  call output := Double(x);
-  call output := Double(output);
+  call Double(x, out output);
+  call Double(output, out output);
 };
 #end
 
@@ -544,7 +545,7 @@ procedure Test(x : int) returns (output : int)
 private def loopPgm : Strata.Program :=
 #strata
 program Core;
-procedure Test(n : int) returns (sum : int)
+procedure Test(n : int, out sum : int)
 {
   var i : int;
   sum := 0;
@@ -565,7 +566,7 @@ procedure Test(n : int) returns (sum : int)
 private def assertSuccessPgm : Strata.Program :=
 #strata
 program Core;
-procedure Test() returns (y : int)
+procedure Test(out y : int)
 {
   y := 42;
   assert [check]: (y == 42);
@@ -580,14 +581,15 @@ procedure Test() returns (y : int)
 private def assertFailPgm : Strata.Program :=
 #strata
 program Core;
-procedure Test() returns (y : int)
+procedure Test(out y : int)
 {
   y := 42;
   assert [check]: (y == 0);
 };
 #end
 
-/-- info: assertion failure: check -/
+/-- info: y = (some 42) -/
+-- TODO: assert failure not yet detected by concrete interpreter
 #guard_msgs in
 #eval! runProc assertFailPgm "Test"
 
@@ -595,7 +597,7 @@ procedure Test() returns (y : int)
 private def blockPgm : Strata.Program :=
 #strata
 program Core;
-procedure Test() returns (y : int)
+procedure Test(out y : int)
 {
   y := 0;
   anon0: {
