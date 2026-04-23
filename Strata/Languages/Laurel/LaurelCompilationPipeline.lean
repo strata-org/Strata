@@ -155,8 +155,14 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
 
   -- Initial resolution
   let result := resolve program
+  -- Filter out $heap/$heap_in resolution errors: these synthetic variables
+  -- are introduced by HeapParameterization which runs after initial resolution.
   let resolutionErrors : List DiagnosticModel :=
-    if options.emitResolutionErrors then result.errors.toList else []
+    if options.emitResolutionErrors then
+      result.errors.toList.filter fun d =>
+        !(d.message.startsWith "Resolution failed: '$heap' " ||
+          d.message.startsWith "Resolution failed: '$heap_in' ")
+    else []
   let (program, model) := (result.program, result.model)
   emit "Resolve" "laurel.st" program
 
