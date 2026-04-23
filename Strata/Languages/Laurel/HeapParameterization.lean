@@ -201,18 +201,18 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
   match ty with
-  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, none, #[]⟩ }] }
-  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, none, #[]⟩ }] }
-  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, none, #[]⟩ }] }
-  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, none, #[]⟩ }] }
-  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, none, #[]⟩ }] }
+  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, none, none⟩ }] }
+  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, none, none⟩ }] }
+  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, none, none⟩ }] }
+  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, none, none⟩ }] }
+  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, none, none⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
-        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none, #[]⟩ }] }
+        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none, none⟩ }] }
       else
-        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none, #[]⟩ }] }
+        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none, none⟩ }] }
   | .TCore name =>
-        some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none, #[]⟩ }] }
+        some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -398,8 +398,8 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   if writesHeap then
     -- This procedure writes the heap - add $heap_in as input and $heap as output
     -- At the start, assign $heap_in to $heap, then use $heap throughout
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none, #[]⟩ }
-    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none, #[]⟩ }
+    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none, none⟩ }
+    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none, none⟩ }
 
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
@@ -438,7 +438,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
 
   else if readsHeap then
     -- This procedure only reads the heap - add $heap as input only
-    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none, #[]⟩ }
+    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none, none⟩ }
     let inputs' := heapParam :: proc.inputs
 
     let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName model)

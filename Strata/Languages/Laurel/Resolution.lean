@@ -292,11 +292,11 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
   | other => pure other
-  return { val := val', source := ty.source }
+  return { val := val', source := ty.source, errorSummary := ty.errorSummary }
 
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
-  | AstNode.mk expr source _ =>
+  | AstNode.mk expr source errorSummary =>
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond
@@ -413,7 +413,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let ty' ← resolveHighType ty
       pure (.Hole det ty')
     | none => pure (.Hole det none)
-  return { val := val', source := source }
+  return { val := val', source := source, errorSummary := errorSummary }
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 

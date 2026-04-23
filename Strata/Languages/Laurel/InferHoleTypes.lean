@@ -29,7 +29,7 @@ namespace Laurel
 
 public section
 
-private def bareType (v : HighType) : HighTypeMd := ⟨v, none, (#[] : Imperative.MetaData Core.Expression)⟩
+private def bareType (v : HighType) : HighTypeMd := ⟨v, none, none⟩
 private def voidType : HighTypeMd := bareType .TVoid
 private def defaultHoleType : HighTypeMd := bareType .Unknown
 
@@ -55,7 +55,7 @@ inductive InferHoleTypesStats where
 
 structure InferHoleState where
   model : SemanticModel
-  currentOutputType : HighTypeMd := ⟨.Unknown, none, #[]⟩
+  currentOutputType : HighTypeMd := ⟨.Unknown, none, none⟩
   statistics : Statistics := {}
 
 private abbrev InferHoleM := StateM InferHoleState
@@ -86,7 +86,7 @@ private def inferBlockStmts (stmts : List StmtExprMd) (expectedType : HighTypeMd
 private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHoleM StmtExprMd := do
   let model := (← get).model
   match expr with
-  | AstNode.mk val source md =>
+  | AstNode.mk val source errorSummary =>
   match val with
   | .Hole det _ =>
       if expectedType.val == .Unknown then
@@ -94,7 +94,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         return expr
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
-        return ⟨.Hole det (some expectedType), source, md⟩
+        return ⟨.Hole det (some expectedType), source, errorSummary⟩
   | .PrimitiveOp op args =>
       let argType := match op with
         | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args
@@ -107,56 +107,56 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           match computed.val with
           | .TCore _ | .Unknown => expectedType
           | _ => computed
-      return ⟨.PrimitiveOp op (← inferArgs args argType), source, md⟩
+      return ⟨.PrimitiveOp op (← inferArgs args argType), source, errorSummary⟩
   | .StaticCall callee args =>
       let args' ← match calleeParamTypes model callee with
         | some paramTypes => inferArgsTyped args paramTypes
         | none => inferArgs args defaultHoleType
-      return ⟨.StaticCall callee args', source, md⟩
+      return ⟨.StaticCall callee args', source, errorSummary⟩
   | .InstanceCall target callee args =>
-      return ⟨.InstanceCall (← inferExpr target defaultHoleType) callee (← inferArgs args defaultHoleType), source, md⟩
+      return ⟨.InstanceCall (← inferExpr target defaultHoleType) callee (← inferArgs args defaultHoleType), source, errorSummary⟩
   | .ReferenceEquals lhs rhs =>
-      return ⟨.ReferenceEquals (← inferExpr lhs defaultHoleType) (← inferExpr rhs defaultHoleType), source, md⟩
+      return ⟨.ReferenceEquals (← inferExpr lhs defaultHoleType) (← inferExpr rhs defaultHoleType), source, errorSummary⟩
   | .IfThenElse cond th el =>
       let el' ← match el with
         | some e => pure (some (← inferExpr e expectedType))
         | none => pure none
-      return ⟨.IfThenElse (← inferExpr cond (bareType .TBool)) (← inferExpr th expectedType) el', source, md⟩
+      return ⟨.IfThenElse (← inferExpr cond (bareType .TBool)) (← inferExpr th expectedType) el', source, errorSummary⟩
   | .Block stmts label =>
-      return ⟨.Block (← inferBlockStmts stmts expectedType) label, source, md⟩
+      return ⟨.Block (← inferBlockStmts stmts expectedType) label, source, errorSummary⟩
   | .Assign targets value =>
       let targetType := match targets with
         | target :: _ => computeExprType model target
         | _ => defaultHoleType
-      return ⟨.Assign targets (← inferExpr value targetType), source, md⟩
+      return ⟨.Assign targets (← inferExpr value targetType), source, errorSummary⟩
   | .LocalVariable name ty init =>
       match init with
-      | some initExpr => return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), source, md⟩
+      | some initExpr => return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), source, errorSummary⟩
       | none => return expr
   | .While cond invs dec body =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (bareType .TInt)))
         | none => pure none
-      return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), source, md⟩
-  | .Assert cond => return ⟨.Assert (← inferExpr cond (bareType .TBool)), source, md⟩
-  | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), source, md⟩
+      return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), source, errorSummary⟩
+  | .Assert cond => return ⟨.Assert (← inferExpr cond (bareType .TBool)), source, errorSummary⟩
+  | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), source, errorSummary⟩
   | .Return (some retExpr) =>
-      return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source, md⟩
-  | .Old v => return ⟨.Old (← inferExpr v expectedType), source, md⟩
-  | .Fresh v => return ⟨.Fresh (← inferExpr v defaultHoleType), source, md⟩
-  | .Assigned n => return ⟨.Assigned (← inferExpr n defaultHoleType), source, md⟩
-  | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p defaultHoleType), source, md⟩
-  | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f defaultHoleType), source, md⟩
+      return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source, errorSummary⟩
+  | .Old v => return ⟨.Old (← inferExpr v expectedType), source, errorSummary⟩
+  | .Fresh v => return ⟨.Fresh (← inferExpr v defaultHoleType), source, errorSummary⟩
+  | .Assigned n => return ⟨.Assigned (← inferExpr n defaultHoleType), source, errorSummary⟩
+  | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p defaultHoleType), source, errorSummary⟩
+  | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f defaultHoleType), source, errorSummary⟩
   | .Forall p trigger b =>
       let trigger' ← match trigger with
         | some t => pure (some (← inferExpr t defaultHoleType))
         | none => pure none
-      return ⟨.Forall p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
+      return ⟨.Forall p trigger' (← inferExpr b (bareType .TBool)), source, errorSummary⟩
   | .Exists p trigger b =>
       let trigger' ← match trigger with
         | some t => pure (some (← inferExpr t defaultHoleType))
         | none => pure none
-      return ⟨.Exists p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
+      return ⟨.Exists p trigger' (← inferExpr b (bareType .TBool)), source, errorSummary⟩
   | _ => return expr
 end
 

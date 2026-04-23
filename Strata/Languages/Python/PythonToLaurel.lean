@@ -1801,7 +1801,7 @@ def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   | [expr] => expr
   | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
 
-def getUnionTypeConstraint (var: String) (source: Option FileRange) (tys: List String) (funcname: String)
+def getUnionTypeConstraint (var: String) (_source: Option FileRange) (tys: List String) (funcname: String)
     (displayName : String := var): Option StmtExprMd :=
   let type_constraints := tys.filterMap (getSingleTypeConstraint var)
   if type_constraints.isEmpty then none else

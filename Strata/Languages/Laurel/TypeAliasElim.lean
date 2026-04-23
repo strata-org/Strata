@@ -43,8 +43,9 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
   | .TMap kt vt =>
     { val := .TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), source := ty.source }
   | .Applied base args =>
-    { val := .Applied (resolveAliasType amap base visited)
-      (args.map (resolveAliasType amap · visited)), source := ty.source }
+    let base' := resolveAliasType amap base visited
+    let args' := args.map (resolveAliasType amap · visited)
+    { val := .Applied base' args', source := ty.source }
   | .Pure base => { val := .Pure (resolveAliasType amap base visited), source := ty.source }
   | .Intersection tys =>
     { val := .Intersection (tys.map (resolveAliasType amap · visited)), source := ty.source }

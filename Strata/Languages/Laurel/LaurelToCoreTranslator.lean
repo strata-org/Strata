@@ -596,7 +596,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
   let quantified ← buildQuants proc.inputs bodyExpr triggerExpr
-  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } identifierToCoreMd proc.name)
+  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } (identifierToCoreMd proc.name))
 where
   /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
   buildQuants (params : List Parameter)
@@ -666,7 +666,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     isRecursive := isRecursive
     attr := attr
   }
-  return .func f identifierToCoreMd proc.name
+  return .func f (identifierToCoreMd proc.name)
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -722,7 +722,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
             | some trigger => do
               let axDecl? ← translateInvokeOnAxiom proc trigger
               pure axDecl?.toList
-          return [Core.Decl.proc procDecl identifierToCoreMd proc.name] ++ axiomDecls
+          return [Core.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ axiomDecls
         return procDecls
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition

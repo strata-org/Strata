@@ -23,7 +23,7 @@ namespace Strata.Laurel
 
 public section
 
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none, none⟩
 
 /-- Local rewrite of a single short-circuit node. Recursion is handled by `mapStmtExpr`. -/
 private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
