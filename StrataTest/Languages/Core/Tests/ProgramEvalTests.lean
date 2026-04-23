@@ -588,8 +588,7 @@ procedure Test(out y : int)
 };
 #end
 
-/-- info: y = (some 42) -/
--- TODO: assert failure not yet detected by concrete interpreter
+/-- info: error: [ERROR] assert (check) condition is false -/
 #guard_msgs in
 #eval! runProc assertFailPgm "Test"
 
