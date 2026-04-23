@@ -36,6 +36,9 @@ open Laurel
 
 public section
 
+/-- Prefix for static field parameter names used by the global statement support. -/
+def sfPrefix : String := "$sf_"
+
 /-! ## Translation Context
 
 The translation context tracks information needed during translation:
@@ -115,6 +118,9 @@ structure TranslationContext where
   classesInHierarchy : Std.HashSet String := {}
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
+  /-- Names declared `global` in the current function scope.
+      Reads/writes of these names target static fields instead of locals. -/
+  globalNames : Std.HashSet String := {}
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -509,7 +515,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Variable references
   | .Name _ name _ =>
-    return mkStmtExprMd (StmtExpr.Identifier name.val)
+    if ctx.globalNames.contains name.val then
+      return mkStmtExprMd (StmtExpr.Identifier (sfPrefix ++ name.val))
+    else
+      return mkStmtExprMd (StmtExpr.Identifier name.val)
 
   -- Binary operations
   | .BinOp _ left op right => do
@@ -1149,7 +1158,10 @@ partial def translateAssign  (ctx : TranslationContext)
       else []
     match lhs with
     | .Name _ n _ =>
-      if n.val ∈ ctx.variableTypes.unzip.1 then
+      if ctx.globalNames.contains n.val then
+        let targetExpr := mkStmtExprMd (StmtExpr.Identifier (sfPrefix ++ n.val))
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc, true)
+      else if n.val ∈ ctx.variableTypes.unzip.1 then
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
         return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc, true)
       else
@@ -1169,6 +1181,10 @@ partial def translateAssign  (ctx : TranslationContext)
   let mut newctx := ctx
   match lhs with
     | .Name _ n _ =>
+        if ctx.globalNames.contains n.val then
+          let targetExpr := mkStmtExprMd (StmtExpr.Identifier (sfPrefix ++ n.val))
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md
+          return (ctx, [assignStmt], true)
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
         let assignStmts := match rhs_trans.val with
         | .StaticCall fnname args =>
@@ -1281,18 +1297,29 @@ def inferClassTypeFromLaurelExpr (ctx : TranslationContext) (value : Python.expr
       if isCompositeType ctx funcname.text then funcname.text else none
   | _ => none
 
+/-- Collect names declared `global` in a list of statements (non-recursive, top-level only). -/
+def collectGlobalNames (stmts : List (Python.stmt SourceRange)) : Std.HashSet String :=
+  stmts.foldl (fun acc s =>
+    match s with
+    | .Global _ names => names.val.toList.foldl (fun acc' n => acc'.insert n.val) acc
+    | _ => acc) {}
+
 partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : List (Python.stmt SourceRange)) : List (String × String) :=
+  let globalNames := ctx.globalNames
   let rec go (s : Python.stmt SourceRange) : List (String × String) :=
     match s with
     | .Assign _ lhs value _ =>
       let ty := (inferClassTypeFromLaurelExpr ctx value).getD PyLauType.Any
       let names := (lhs.val.toList.filter (λ e => match e with |.Name _ _ _ => true | _=> false)).map pyExprToString
-      names.map (λ n => (n, ty))
+      names.filter (fun n => !globalNames.contains n) |>.map (λ n => (n, ty))
     | .AnnAssign _ lhs annoTy value _ =>
-      let ty := match value.val with
-        | some value => (inferClassTypeFromLaurelExpr ctx value).getD $ pyExprToString annoTy
-        | _ => pyExprToString annoTy
-      [(pyExprToString lhs, ty)]
+      let n := pyExprToString lhs
+      if globalNames.contains n then []
+      else
+        let ty := match value.val with
+          | some value => (inferClassTypeFromLaurelExpr ctx value).getD $ pyExprToString annoTy
+          | _ => pyExprToString annoTy
+        [(n, ty)]
     | .If _ _ body elsebody => body.val.toList.flatMap go ++ elsebody.val.toList.flatMap go
     | .For _ targetIter _ body _ _
     | .AsyncFor _ targetIter _ body _ _ => getForLoopVars targetIter ++ (body.val.toList.flatMap go)
@@ -1402,7 +1429,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           let annStr := pyExprToString annotation
           match typeTester? annStr with
           | some testerName =>
-            let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+            let varName := if ctx.globalNames.contains n.val then sfPrefix ++ n.val else n.val
+            let varExpr := mkStmtExprMd (StmtExpr.Identifier varName)
             let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
             [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := cond }) md]
           | none => []
@@ -1519,7 +1547,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
-  | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
+  | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ | .Global _ _ => return (ctx, [])
 
   -- Try/except - wrap body with exception checks and handlers
   | .Try _ body handlers _ _ => do
@@ -1866,11 +1894,19 @@ def getReturnTypeEnsure (md: MetaData) (tys: List String) (funcname: String): Op
     to the top, and translate the remaining statements. --/
 def translateFunctionBody (ctx : TranslationContext) (inputTypes : List (String × String)) (body: List (Python.stmt SourceRange))
   : Except TranslationError (StmtExprMd × TranslationContext) := do
-    let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes}
+    let gnames := collectGlobalNames body
+    let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes,
+                         globalNames := ctx.globalNames.union gnames}
+    -- Declare $sf_ variables for global names so they are in scope
+    let allGlobals := ctx.globalNames.union gnames
+    let sfDecls := allGlobals.toList.map fun name =>
+      mkStmtExprMd (StmtExpr.LocalVariable (mkId (sfPrefix ++ name)) AnyTy (some (mkStmtExprMd .Hole)))
+    let sfVarTypes := allGlobals.toList.map fun name => (sfPrefix ++ name, PyLauType.Any)
+    let ctx := {ctx with variableTypes := sfVarTypes ++ ctx.variableTypes}
     let newDecls := collectDeclaredNamesAndTypes ctx body
     let (varDecls, ctx) ←  createVarDeclStmtsAndCtx ctx newDecls
     let (newctx, bodyStmts) ← translateStmtList ctx body
-    let bodyStmts := prependExceptHandlingHelper (varDecls ++ bodyStmts)
+    let bodyStmts := prependExceptHandlingHelper (sfDecls ++ varDecls ++ bodyStmts)
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
     return (mkStmtExprMd (StmtExpr.Block bodyStmts none), newctx)
 
@@ -2449,6 +2485,14 @@ def pythonToLaurel' (info : PreludeInfo)
     filePath := filePath
   }
 
+  -- Collect all names declared `global` across all function bodies
+  let mut allGlobalNames : Std.HashSet String := {}
+  for stmt in body do
+    match stmt with
+    | .FunctionDef _ _ _ fbody _ _ _ _ =>
+      allGlobalNames := allGlobalNames.union (collectGlobalNames fbody.val.toList)
+    | _ => pure ()
+
   -- Separate functions from other statements
   let mut otherStmts : Array (Python.stmt SourceRange) := #[]
 
@@ -2490,7 +2534,9 @@ def pythonToLaurel' (info : PreludeInfo)
                               (.Name default {val:= "str", ann:= default} default)
                               {val:= some $ .Constant default (.ConString default {val:= "__main__", ann:= default}) default , ann:= default}
                               default
-  let (bodyBlock, _) ← translateFunctionBody ctx [] (nameDecl::otherStmts.toList)
+  -- __main__ needs globalNames so module-level assignments to globals write to $globals fields
+  let mainCtx := {ctx with globalNames := allGlobalNames}
+  let (bodyBlock, _) ← translateFunctionBody mainCtx [] (nameDecl::otherStmts.toList)
 
   let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
   let mainProc : Procedure := {
@@ -2529,9 +2575,13 @@ def pythonToLaurel' (info : PreludeInfo)
         body := .Opaque [] none []
         isFunctional := false }
 
+  -- Emit static fields for global variables
+  let staticFields : List Laurel.Field := allGlobalNames.toList.map fun name =>
+    { name := mkId name, isMutable := true, type := AnyTy }
+
   let program : Laurel.Program := {
     staticProcedures := (procedures.push mainProc).toList
-    staticFields := []
+    staticFields := staticFields
     types := compositeTypes.toList
     constants := []
   }
