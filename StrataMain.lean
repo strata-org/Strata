@@ -1344,7 +1344,7 @@ def pyInterpretCommand : Command where
           IO.println s!"{Std.format E}"
           IO.println "Execution completed successfully."
       | some e =>
-          IO.println f!"{e}"
+          IO.println s!"{Std.format e}"
           IO.Process.exit ExitCode.failuresFound
     | .error diag =>
       IO.eprintln s!"Error: {diag}"

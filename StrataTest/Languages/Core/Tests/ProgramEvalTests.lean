@@ -584,7 +584,7 @@ procedure Test(out y : int)
 };
 #end
 
-/-- info: error: [ERROR] assert (check) condition is false -/
+/-- info: error: [ASSERT ERROR] Assertion check failed! -/
 #guard_msgs in
 #eval! runProc assertFailPgm "Test"
 

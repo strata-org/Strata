@@ -359,7 +359,7 @@ def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBas
     .ok v
   else
     match findStuckRedex σ.config.factory v with
-    | some stuckExpr => .error "expression contains stuck redex"
+    | some _ => .error "expression contains stuck redex"
     | none => .ok v
 
 -- TODO: foldlM?
