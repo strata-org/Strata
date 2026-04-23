@@ -823,6 +823,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.re_all, [] =>
     let fn ← translateFn .none q`Core.re_all
     return fn
+  -- Sequence.empty (0-ary polymorphic, takes only a type argument)
+  | .fn _ q`Core.seq_empty, [_atp] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Empty)
+         (.some (Core.seqTy ety))
+     return fn
   -- Unary function applications
   | .fn _ fni, [xa] =>
     match fni with
@@ -888,7 +895,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      return .mkApp () fn [m, i, x]
   -- Seq operations
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | .fn _ q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=

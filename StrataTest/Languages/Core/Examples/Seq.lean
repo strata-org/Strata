@@ -305,3 +305,86 @@ Result: ✅ pass
 #eval verify seqOpsPgm
 
 ---------------------------------------------------------------------
+
+----------------------------------------------------------------------
+-- Tests for Sequence.empty<T>() syntax (issue #1027)
+----------------------------------------------------------------------
+
+private def seqEmptyPgm :=
+#strata
+program Core;
+
+procedure SeqEmpty()
+{
+  var s : Sequence int;
+
+  // Create an empty sequence using the new syntax
+  s := Sequence.empty<int>();
+  assert [empty_length]: Sequence.length(s) == 0;
+
+  // Build on top of an empty sequence
+  s := Sequence.build(Sequence.empty<int>(), 42);
+  assert [build_on_empty_length]: Sequence.length(s) == 1;
+  assert [build_on_empty_elem]: Sequence.select(s, 0) == 42;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run Inhabited.default (translateProgram seqEmptyPgm) |>.snd |>.isEmpty
+
+/--
+info: program Core;
+
+procedure SeqEmpty ()
+{
+  var s : (Sequence int);
+  s := Sequence.empty<int>();
+  assert [empty_length]: Sequence.length(s) == 0;
+  s := Sequence.build(Sequence.empty<int>(), 42);
+  assert [build_on_empty_length]: Sequence.length(s) == 1;
+  assert [build_on_empty_elem]: Sequence.select(s, 0) == 42;
+};
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram seqEmptyPgm) |>.fst
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: empty_length
+Property: assert
+Obligation:
+Sequence.length(Sequence.empty<int>()) == 0
+
+Label: build_on_empty_length
+Property: assert
+Obligation:
+Sequence.length(Sequence.build(Sequence.empty<int>(), 42)) == 1
+
+Label: build_on_empty_elem
+Property: assert
+Obligation:
+Sequence.select(Sequence.build(Sequence.empty<int>(), 42), 0) == 42
+
+---
+info:
+Obligation: empty_length
+Property: assert
+Result: ✅ pass
+
+Obligation: build_on_empty_length
+Property: assert
+Result: ✅ pass
+
+Obligation: build_on_empty_elem
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify seqEmptyPgm
+
+----------------------------------------------------------------------
