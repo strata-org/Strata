@@ -30,7 +30,7 @@ program Core;
 // Define Option datatype with None() and Some(val: int) constructors
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionTesters() returns ()
+procedure TestOptionTesters()
 spec {
   ensures true;
 }
@@ -58,7 +58,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionTesterPgm) |>.snd |>.isEmpty
 
@@ -97,7 +99,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionHavoc() returns ()
+procedure TestOptionHavoc()
 spec {
   ensures true;
 }
@@ -116,7 +118,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionHavocPgm) |>.snd |>.isEmpty
 
@@ -143,7 +147,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionExhaustive() returns ()
+procedure TestOptionExhaustive()
 spec {
   ensures true;
 }
@@ -159,7 +163,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionExhaustivePgm) |>.snd |>.isEmpty
 
@@ -186,7 +192,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionMutualExclusion() returns ()
+procedure TestOptionMutualExclusion()
 spec {
   ensures true;
 }
@@ -205,7 +211,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionMutualExclusionPgm) |>.snd |>.isEmpty
 
@@ -232,7 +240,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionEquality() returns ()
+procedure TestOptionEquality()
 spec {
   ensures true;
 }
@@ -256,7 +264,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionEqualityPgm) |>.snd |>.isEmpty
 
@@ -287,7 +297,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionInequality() returns ()
+procedure TestOptionInequality()
 spec {
   ensures true;
 }
@@ -304,7 +314,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionInequalityPgm) |>.snd |>.isEmpty
 
@@ -331,7 +343,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionDestructor() returns ()
+procedure TestOptionDestructor()
 spec {
   ensures true;
 }
@@ -355,7 +367,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram optionDestructorPgm) |>.snd |>.isEmpty
 

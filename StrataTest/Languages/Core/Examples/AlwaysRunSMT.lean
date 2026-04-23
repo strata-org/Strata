@@ -13,7 +13,7 @@ namespace Strata
 def alwaysGenerateSMTPgm :=
 #strata
 program Core;
-procedure Test(x : int) returns (y : int)
+procedure Test(x : int, out y : int)
 spec {
   ensures (y == x);
 }

@@ -15,7 +15,6 @@ lives in `.github/workflows/python-fuzz.yml`.
 -/
 
 open Strata.Python in
-#guard_msgs in
 #eval withPython (warnOnSkip := true) fun pythonCmd => do
   -- Check that hypothesmith is installed
   unless ← pythonCheckModule pythonCmd "hypothesmith" do

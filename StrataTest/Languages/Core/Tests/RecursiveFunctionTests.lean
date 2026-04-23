@@ -31,7 +31,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure TestListLen() returns ()
+procedure TestListLen()
 spec {
   ensures true;
 }
@@ -42,7 +42,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram listLenPgm) |>.snd |>.isEmpty
 
@@ -117,7 +119,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure TestNilCase(xs : IntList) returns ()
+procedure TestNilCase(xs : IntList)
 spec {
   requires IntList..isNil(xs);
   ensures true;
@@ -126,7 +128,7 @@ spec {
   assert [nilCase]: listLen(xs) == 0;
 };
 
-procedure TestConsCase(xs : IntList) returns ()
+procedure TestConsCase(xs : IntList)
 spec {
   requires IntList..isCons(xs);
   ensures true;
@@ -136,7 +138,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram listLenAxiomPgm) |>.snd |>.isEmpty
 
@@ -230,7 +234,7 @@ rec function contains (key : int, @[cases] xs : IntList) : bool
   else contains(key, IntList..tl(xs))
 };
 
-procedure TestContains() returns ()
+procedure TestContains()
 spec {
   ensures true;
 }
@@ -241,7 +245,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram lookupPgm) |>.snd |>.isEmpty
 
@@ -291,7 +297,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure listLenImp(xs : IntList) returns (r : int)
+procedure listLenImp(xs : IntList, out r : int)
 spec {
   ensures [equiv]: r == listLen(xs);
 }
@@ -311,7 +317,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram impEquivPgm) |>.snd |>.isEmpty
 
@@ -338,7 +346,7 @@ true
 Label: set_cur_calls_IntList..tl_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
+<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil($__xs1))
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
@@ -349,7 +357,7 @@ IntList..isCons($__cur6)
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
+<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil($__xs1))
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
@@ -360,7 +368,7 @@ $__acc5 + 1 + listLen(IntList..tl($__cur6)) == listLen($__xs1)
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
+<label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil($__xs1))
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
@@ -372,14 +380,14 @@ Label: equiv
 Property: assert
 Assumptions:
 assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__xs1)) else true
+<label_ite_cond_true: !(IntList..isNil(cur))>: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__xs1)) else true
 assume_guard_0: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
 assume_invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
 assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
 not_guard_0: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
 invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
 invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true
-<label_ite_cond_false: !(~Bool.Not (~IntList..isNil cur))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
+<label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
 Obligation:
 if !(IntList..isNil($__xs1)) then $__acc7 else 0 == listLen($__xs1)
 
@@ -440,7 +448,7 @@ rec function nth (@[cases] xs : IntList, n : int) : int
   else nth(IntList..tl(xs), n - 1)
 };
 
-procedure TestNth() returns ()
+procedure TestNth()
 spec {
   ensures true;
 }
@@ -450,7 +458,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram recPrecondPgm) |>.snd |>.isEmpty
 

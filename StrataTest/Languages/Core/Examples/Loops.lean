@@ -23,7 +23,7 @@ def measureFailExamplePgm :=
 #strata
 program Core;
 
-procedure countUp(n : int) returns (i : int)
+procedure countUp(n : int, out i : int)
 spec {
   requires (n >= 0);
   ensures (i == n);
@@ -44,20 +44,20 @@ spec {
 info: Entry: before_loop$_7
 
 before_loop$_7:
-  i := 0
+  i := 0;
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_5] 0 <= i
-  assert [inv$_6] i <= n
-  init (loop_measure$_2 : int)
-  assume [assume_loop_measure$_2] loop_measure$_2 == n
-  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  assert [inv$_5]: 0 <= i;
+  assert [inv$_6]: i <= n;
+  var loop_measure$_2 : int;
+  assume [assume_loop_measure$_2]: loop_measure$_2 == n;
+  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
   condGoto i < n l$_4 end$_0
 l$_4:
-  i := i + 1
+  i := i + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2] n < loop_measure$_2
+  assert [measure_decrease_loop_measure$_2]: n < loop_measure$_2;
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -104,7 +104,7 @@ def gaussPgm :=
 #strata
 program Core;
 
-procedure sum(n : int) returns (s : int)
+procedure sum(n : int, out s : int)
 spec {
   requires (n >= 0);
   ensures (s == ((n * (n + 1)) / 2));
@@ -129,24 +129,24 @@ spec {
 info: Entry: before_loop$_8
 
 before_loop$_8:
-  init (i : int)
-  i := 0
-  s := 0
+  var i : int;
+  i := 0;
+  s := 0;
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_5] 0 <= i
-  assert [inv$_6] i <= n
-  assert [inv$_7] s == i * (i + 1) / 2
-  init (loop_measure$_2 : int)
-  assume [assume_loop_measure$_2] loop_measure$_2 == n - i
-  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  assert [inv$_5]: 0 <= i;
+  assert [inv$_6]: i <= n;
+  assert [inv$_7]: s == i * (i + 1) / 2;
+  var loop_measure$_2 : int;
+  assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
+  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
   condGoto i < n l$_4 end$_0
 l$_4:
-  i := i + 1
-  s := s + i
+  i := i + 1;
+  s := s + i;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2] n - i < loop_measure$_2
+  assert [measure_decrease_loop_measure$_2]: n - i < loop_measure$_2;
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -197,7 +197,7 @@ true
 Label: measure_lb_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+<label_ite_cond_true: i < n>: 0 < $__n2
 assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
@@ -211,7 +211,7 @@ Obligation:
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+<label_ite_cond_true: i < n>: 0 < $__n2
 assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
@@ -225,7 +225,7 @@ Obligation:
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+<label_ite_cond_true: i < n>: 0 < $__n2
 assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
@@ -239,7 +239,7 @@ $__i5 + 1 <= $__n2
 Label: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+<label_ite_cond_true: i < n>: 0 < $__n2
 assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
@@ -253,7 +253,7 @@ $__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
 Label: measure_decrease_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+<label_ite_cond_true: i < n>: 0 < $__n2
 assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
@@ -269,7 +269,7 @@ Property: assert
 Assumptions:
 sum_requires_0: $__n2 >= 0
 assume_entry_invariant_0_1: 0 <= $__n2
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then 0 < $__n2 else true
+<label_ite_cond_true: i < n>: if 0 < $__n2 then 0 < $__n2 else true
 assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
 assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
 assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
@@ -279,7 +279,7 @@ not_guard_0: if 0 < $__n2 then !($__i8 < $__n2) else true
 invariant_0_0: if 0 < $__n2 then 0 <= $__i8 else true
 invariant_0_1: if 0 < $__n2 then $__i8 <= $__n2 else true
 invariant_0_2: if 0 < $__n2 then $__s9 == $__i8 * ($__i8 + 1) / 2 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
+<label_ite_cond_false: !(i < n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
 if 0 < $__n2 then $__s9 else 0 == $__n2 * ($__n2 + 1) / 2
 
@@ -341,7 +341,7 @@ program Core;
 const top : int;
 axiom [top100]: top == 100;
 
-procedure nested(n : int) returns (s : int)
+procedure nested(n : int, out s : int)
 spec {
   requires [n_pos]: n > 0;
   requires [n_lt_top]: n < top;
@@ -372,39 +372,43 @@ spec {
 info: Entry: before_loop$_15
 
 before_loop$_15:
-  init (x : int)
-  init (y : int)
-  x := 0
+  var x : int;
+  var y : int;
+  x := 0;
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_12] x >= 0
-  assert [inv$_13] x <= n
-  assert [inv$_14] n < top
-  init (loop_measure$_2 : int)
-  assume [assume_loop_measure$_2] loop_measure$_2 == n - x
-  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  assert [inv$_12]: x >= 0;
+  assert [inv$_13]: x <= n;
+  assert [inv$_14]: n < re.none();
+
+-- Errors encountered during conversion:
+Unsupported construct in lopToExpr: 0-ary op not found: top
+Context: Global scope:
+  var loop_measure$_2 : int;
+  assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
+  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
   condGoto x < n before_loop$_11 end$_0
 before_loop$_11:
-  y := 0
+  y := 0;
   condGoto true loop_entry$_5 loop_entry$_5
 loop_entry$_5:
-  assert [inv$_9] y >= 0
-  assert [inv$_10] y <= x
-  init (loop_measure$_6 : int)
-  assume [assume_loop_measure$_6] loop_measure$_6 == x - y
-  assert [measure_lb_loop_measure$_6] !(loop_measure$_6 < 0)
+  assert [inv$_9]: y >= 0;
+  assert [inv$_10]: y <= x;
+  var loop_measure$_6 : int;
+  assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
+  assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
   condGoto y < x l$_8 l$_4
 l$_8:
-  y := y + 1
+  y := y + 1;
   condGoto true measure_decrease$_7 measure_decrease$_7
 measure_decrease$_7:
-  assert [measure_decrease_loop_measure$_6] x - y < loop_measure$_6
+  assert [measure_decrease_loop_measure$_6]: x - y < loop_measure$_6;
   condGoto true loop_entry$_5 loop_entry$_5
 l$_4:
-  x := x + 1
+  x := x + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2] n - x < loop_measure$_2
+  assert [measure_decrease_loop_measure$_2]: n - x < loop_measure$_2;
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -484,7 +488,7 @@ def precondElimInMeasurePgm :=
 #strata
 program Core;
 
-procedure countdownByD(n : int, d : int) returns (i : int)
+procedure countdownByD(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   requires (d > 0);
@@ -544,7 +548,7 @@ Result: ✅ pass
 def precondElimInMeasureBadPgm :=
 #strata
 program Core;
-procedure countdownByDBad(n : int, d : int) returns (i : int)
+procedure countdownByDBad(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   // requires (d > 0); NEED THIS
@@ -612,7 +616,7 @@ def precondElimMeasureBodyMutatesPgm :=
 #strata
 program Core;
 
-procedure countdownMutateD(n : int, d : int) returns (i : int)
+procedure countdownMutateD(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   requires (d > 0);

@@ -5,14 +5,10 @@ test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)days_pos
 test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_pos
 test_datetime.py(15, 19): ✅ pass - Check PSub exception
 test_datetime.py(21, 7): ✅ pass - Check PLe exception
-test_datetime.py(21, 0): ✅ pass - assert_assert(554)_calls_Any_to_bool_0
 test_datetime.py(21, 0): ✅ pass - assert(554)
-test_datetime.py(25, 0): ✅ pass - assert_assert(673)_calls_Any_to_bool_0
 test_datetime.py(25, 0): ✅ pass - assert(673)
-test_datetime.py(27, 0): ✅ pass - assert_assert(758)_calls_Any_to_bool_0
 test_datetime.py(27, 0): ✅ pass - assert(758)
 test_datetime.py(30, 7): ✅ pass - Check PLe exception
-test_datetime.py(30, 0): ✅ pass - assert_assert(859)_calls_Any_to_bool_0
 test_datetime.py(30, 0): ✅ pass - assert(859)
-DETAIL: 16 passed, 0 failed, 0 inconclusive
+DETAIL: 12 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
