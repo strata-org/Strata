@@ -153,9 +153,9 @@ private inductive Expected where
 private meta def testCases : List (String × Expected) := [
   -- Positive tests
   .mk "test_single_service.py" .success,
-  .mk "test_multi_service.py" (.failPrefix "Laurel to Core translation failed: [Resolution failed: '$heap' is not defined]"),
+  .mk "test_multi_service.py" .success,
   .mk "test_annotation_fallback.py" .success,
-  .mk "test_required_with_optional.py" (.failPrefix "Laurel to Core translation failed: [Resolution failed: '$heap' is not defined]"),
+  .mk "test_required_with_optional.py" .success,
   .mk "test_heap_return.py" .success,
   .mk "test_list_str.py" .success,
   .mk "test_nested_try.py" .success,
