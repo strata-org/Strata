@@ -9,10 +9,6 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementEval
 public import Strata.Languages.Core.StatementSemantics
-public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Imperative.StmtEval
-public import Strata.DL.Imperative.CmdEval
-
 public section
 
 ---------------------------------------------------------------------
@@ -23,7 +19,6 @@ namespace Procedure
 open Std
 
 open Statement Lambda LExpr
-open Strata (DiagnosticModel DiagnosticType FileRange)
 
 def fixupError (E : Env) : Env :=
   match E.error with

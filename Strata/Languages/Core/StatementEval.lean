@@ -810,12 +810,8 @@ def Command.runCall
           | .terminal callEnv' =>
             let outputVals := proc.header.outputs.keys.map fun name =>
               (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            let modifiedVals := proc.spec.modifies.map fun name =>
-              (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            let E' := lhs.zip outputVals |>.foldl (fun env (name, val) =>
+            lhs.zip outputVals |>.foldl (fun env (name, val) =>
               env.insertInContext (name, none) val) E
-            proc.spec.modifies.zip modifiedVals |>.foldl (fun env (name, val) =>
-              env.insertInContext (name, none) val) E'
           | _ => Env.stuck E "failed to terminate"
 
 def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
