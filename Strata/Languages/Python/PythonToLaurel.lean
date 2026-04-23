@@ -1103,37 +1103,6 @@ def freeVar (name: String) := mkStmtExprMd (.Identifier name)
 def maybeExceptVar := freeVar "maybe_except"
 def nullcall_var := freeVar "nullcall_ret"
 
--- Invariant: if `callExpr` is not `.Call`, returns `[]`.
--- Otherwise the returned block always havocs `maybe_except`;
--- additionally havocs callee (if non-composite instance call)
--- and `$heap` (if any argument — or the implicit receiver — is composite).
-private def mkHavocStmtsForUnmodeledCall (ctx : TranslationContext)
-    (callExpr : Python.expr SourceRange)
-    (source : Option FileRange) : List StmtExprMd :=
-  if let .Call _ funccall args kwords := callExpr then
-    let holeExceptHavoc := [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) source]
-    let (calleeHavoc, calleeIsComposite) :=
-      if let (.Attribute _ callee _ _) := funccall then
-        let (base, _) := getListAttributes callee
-        if let .Name _ n _ := base then
-          match ctx.variableTypes.find? (λ v => Prod.fst v == n.val) with
-          | some (varName, ty) =>
-            if isCompositeType ctx ty then ([], true)
-            else
-              ([mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar varName] (mkStmtExprMd (.Hole false none))) source], false)
-          | _ => ([], false)
-        else ([], false)
-      else ([], false)
-    let inputExprs:= args.val.toList ++ kwords.val.toList.map (λ kw => match kw with
-            | keyword.mk_keyword _ _ expr => expr)
-    let involveHeap := calleeIsComposite || (inputExprs.any fun inputExpr =>
-        match inferExprType ctx inputExpr with
-        | .ok ty => isCompositeType ctx ty
-        | _ => false)
-    let heapHavoc := if !involveHeap then [] else
-        [mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar "$heap"] (mkStmtExprMd (.Hole false none))) source]
-    [mkStmtExprMd $ .Block (holeExceptHavoc ++ calleeHavoc ++ heapHavoc) none]
-  else []
 
 partial def translateAssign  (ctx : TranslationContext)
                              (lhs: Python.expr SourceRange)
@@ -1169,12 +1138,15 @@ partial def translateAssign  (ctx : TranslationContext)
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
   if let .Hole := rhs_trans.val then
   {
-    let havocStmts := mkHavocStmtsForUnmodeledCall ctx rhs source
+    let exceptHavoc :=
+      if rhsIsCall then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) source]
+      else []
     match lhs with
     | .Name _ n _ =>
       if n.val ∈ ctx.variableTypes.unzip.1 then
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ havocStmts, true)
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc, true)
       else
         -- Use type annotation if it matches a known composite type
         let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
@@ -1186,8 +1158,8 @@ partial def translateAssign  (ctx : TranslationContext)
           | _ => pure (AnyTy, "Any")
         let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
         let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
-        return (newctx, [initStmt] ++ havocStmts, true)
-    | _ => return (ctx, [mkStmtExprMd .Hole] ++ havocStmts, false)
+        return (newctx, [initStmt] ++ exceptHavoc, true)
+    | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc, false)
   }
   let mut newctx := ctx
   match lhs with
@@ -1522,8 +1494,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- When a call has no model (translates to Hole), also havoc maybe_except
     -- since an unmodeled call is a black box that could throw any exception.
-    let havocStmts := mkHavocStmtsForUnmodeledCall ctx value md
-
+    let holeExceptHavoc :=
+      if let .Call _ _ _ _ := value then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match expr.val with
     | .StaticCall fnname _ =>
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
@@ -1537,7 +1511,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, exceptionCheck ++ [expr])
     -- Unmodeled call: skip exception checks (no model to check against),
     -- but havoc maybe_except since the call could throw.
-    | .Hole => return (ctx, [expr] ++ havocStmts)
+    | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
