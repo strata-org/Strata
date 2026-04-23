@@ -32,21 +32,23 @@ open Strata
 public section
 
 /-- Encoder monad over an abstract solver backend. Uses the same `EncoderState`
-    as the batch encoder but routes all solver commands through `AbstractSolver`. -/
-abbrev AbstractEncoderM := StateT EncoderState IncrementalSolverM
+    as the batch encoder but routes all solver commands through `AbstractSolver`.
+    Parameterized by the underlying monad `m` so the encoder is not tied to any
+    particular solver backend. -/
+abbrev AbstractEncoderM (m : Type → Type) := StateT EncoderState m
 
 namespace AbstractEncoder
 
-private def solver := IncrementalSolver.mkAbstractSolver
+variable {m : Type → Type} [Monad m] [MonadExceptOf IO.Error m]
 
-private def defineTerm (inBinder : Bool) (ty : TermType) (body : Term) : AbstractEncoderM Term := do
+private def defineTerm (solver : AbstractSolver Term TermType m) (inBinder : Bool) (ty : TermType) (body : Term) : AbstractEncoderM m Term := do
   if inBinder then return body
   let id := termId (← get).terms.size
   match ← liftM (solver.defineFun id [] ty body) with
   | .ok _ => return .var ⟨id, ty⟩
   | .error msg => throw (IO.userError s!"defineFun failed: {msg}")
 
-private def encodeUF (uf : UF) : AbstractEncoderM String := do
+private def encodeUF (solver : AbstractSolver Term TermType m) (uf : UF) : AbstractEncoderM m String := do
   if let .some enc := (← get).ufs.get? uf then return enc
   let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
   let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
@@ -58,49 +60,49 @@ private def encodeUF (uf : UF) : AbstractEncoderM String := do
   | .error msg => throw (IO.userError s!"declareFun failed: {msg}")
   modifyGet fun state => (id, { state with ufs := state.ufs.insert uf id })
 
-private def defineApp (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List Term) : AbstractEncoderM Term := do
+private def defineApp (solver : AbstractSolver Term TermType m) (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List Term) : AbstractEncoderM m Term := do
   match op with
   | .uf f =>
-    let ufName ← encodeUF f
+    let ufName ← encodeUF solver f
     let ufRef : UF := { id := ufName, args := f.args, out := f.out }
-    defineTerm inBinder ty (.app (.uf ufRef) tEncs ty)
+    defineTerm solver inBinder ty (.app (.uf ufRef) tEncs ty)
   | _ =>
-    defineTerm inBinder ty (.app op tEncs ty)
+    defineTerm solver inBinder ty (.app op tEncs ty)
 
-private def defineQuantifierHelper (inBinder : Bool) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List Term)) (bodyEnc : Term) : AbstractEncoderM Term := do
+private def defineQuantifierHelper (solver : AbstractSolver Term TermType m) (inBinder : Bool) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List Term)) (bodyEnc : Term) : AbstractEncoderM m Term := do
   let tr : Term := match trEncs with
     | [] => .app .triggers [] .trigger
     | groups =>
       let triggerTerms := groups.map fun group => .app .triggers group .trigger
       .app .triggers triggerTerms .trigger
-  defineTerm inBinder .bool (.quant qk args tr bodyEnc)
+  defineTerm solver inBinder .bool (.quant qk args tr bodyEnc)
 
-def encodeTerm (inBinder : Bool) (t : Term) : AbstractEncoderM Term := do
+def encodeTerm (solver : AbstractSolver Term TermType m) (inBinder : Bool) (t : Term) : AbstractEncoderM m Term := do
   if let .some enc := (← get).terms.get? t then return enc
   let ty := t.typeOf
   let enc ← match t with
     | .var _ => return t
     | .prim _ => return t
-    | .none _ => defineTerm inBinder ty t
+    | .none _ => defineTerm solver inBinder ty t
     | .some t₁ =>
-      let t₁Enc ← encodeTerm inBinder t₁
-      defineTerm inBinder ty (.some t₁Enc)
+      let t₁Enc ← encodeTerm solver inBinder t₁
+      defineTerm solver inBinder ty (.some t₁Enc)
     | .app .re_allchar [] .regex => return t
     | .app .re_all     [] .regex => return t
     | .app .re_none    [] .regex => return t
     | .app .bvnego [inner] .bool =>
       match inner.typeOf with
       | .bitvec n =>
-        let innerEnc ← encodeTerm inBinder inner
+        let innerEnc ← encodeTerm solver inBinder inner
         let minVal : Term := .prim (.bitvec (BitVec.intMin n))
-        defineApp inBinder ty .eq [innerEnc, minVal]
+        defineApp solver inBinder ty .eq [innerEnc, minVal]
       | _ => return Term.bool false
-    | .app op ts _ => defineApp inBinder ty op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
+    | .app op ts _ => defineApp solver inBinder ty op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver inBinder tᵢ))
     | .quant qk qargs tr body =>
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
-      let bodyEnc ← encodeTerm True body
-      defineQuantifierHelper inBinder qk qargs trEncs bodyEnc
+      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver True ti))
+      let bodyEnc ← encodeTerm solver True body
+      defineQuantifierHelper solver inBinder qk qargs trEncs bodyEnc
   if inBinder then pure enc
   else modifyGet fun state => (enc, { state with terms := state.terms.insert t enc })
 termination_by sizeOf t
@@ -114,12 +116,12 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-private def encodeFunction (uf : UF) (body : Term) : AbstractEncoderM String := do
+private def encodeFunction (solver : AbstractSolver Term TermType m) (uf : UF) (body : Term) : AbstractEncoderM m String := do
   if let .some enc := (← get).ufs.get? uf then return enc
   let id := ufId (← get).ufs.size
   liftM (solver.comment uf.id)
   let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
-  let bodyEnc ← encodeTerm true body
+  let bodyEnc ← encodeTerm solver true body
   match ← liftM (solver.defineFun id argPairs uf.out bodyEnc) with
   | .ok _ => pure ()
   | .error msg => throw (IO.userError s!"defineFun failed: {msg}")
@@ -132,7 +134,7 @@ end AbstractEncoder
     `m (Except String _)` to signal failures. After `←` we get the
     `Except`; this helper converts `.error` into an `IO.userError`
     exception so callers can use a simple `unwrap "label" (← …)` pattern. -/
-private def unwrap (label : String) (r : Except String α) : IncrementalSolverM α :=
+private def unwrap [MonadExceptOf IO.Error m] [Monad m] (label : String) (r : Except String α) : m α :=
   match r with
   | .ok a => return a
   | .error msg => throw (IO.userError s!"{label}: {msg}")
@@ -146,8 +148,8 @@ private def datatypeToAbstractConstrs (d : Lambda.LDatatype Core.CoreLParams.IDM
     (c.name.name, fields)
 
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
-private def emitDatatypesAbstract (ctx : Core.SMT.Context) : IncrementalSolverM Unit := do
-  let solver := IncrementalSolver.mkAbstractSolver
+private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
+    (solver : AbstractSolver Term TermType m) (ctx : Core.SMT.Context) : m Unit := do
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
@@ -162,31 +164,33 @@ private def emitDatatypesAbstract (ctx : Core.SMT.Context) : IncrementalSolverM 
     Replaces `encodeDeclarations` for the incremental path — all commands
     go through `AbstractSolver` methods instead of `SolverM`.
 
+    Parameterized by the solver backend monad `m` so any implementation of
+    `AbstractSolver Term TermType m` can be used (e.g. incremental SMT-LIB,
+    cvc5 FFI).
+
     `prelude` is a deferred monadic action (e.g. solver option settings)
     executed after `setLogic` but before declarations. The caller constructs
     it inside the solver session and passes it in as a callback. -/
-def encodeDeclarationsAbstract (ctx : Core.SMT.Context)
-    (prelude : IncrementalSolverM Unit)
+def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
+    (solver : AbstractSolver Term TermType m)
+    (ctx : Core.SMT.Context)
+    (prelude : m Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
-    : IncrementalSolverM (Term × List String × EncoderState) := do
-  -- NOTE: The concrete solver is hardcoded here because `AbstractEncoder`
-  -- is also tied to `IncrementalSolverM`. Parameterizing both over the
-  -- solver backend is tracked as a follow-up.
-  let solver := IncrementalSolver.mkAbstractSolver
+    : m (Term × List String × EncoderState) := do
   solver.setLogic "ALL"
   prelude
   for s in ctx.sorts do
     unwrap "declareSort" (← solver.declareSort s.name s.arity)
-  emitDatatypesAbstract ctx
-  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF uf) |>.run EncoderState.init
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm False ax) |>.run estate
+  emitDatatypesAbstract solver ctx
+  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run EncoderState.init
+  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
+  let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver False ax) |>.run estate
   for id in _axms do
     unwrap "assert" (← solver.assert id)
-  let (assumptionIds, estate) ← assumptionTerms.mapM (AbstractEncoder.encodeTerm False) |>.run estate
+  let (assumptionIds, estate) ← assumptionTerms.mapM (AbstractEncoder.encodeTerm solver False) |>.run estate
   for id in assumptionIds do
     unwrap "assert" (← solver.assert id)
-  let (obligationId, estate) ← (AbstractEncoder.encodeTerm False obligationTerm) |>.run estate
+  let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver False obligationTerm) |>.run estate
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty then some id else none
   return (obligationId, ids, estate)
@@ -393,7 +397,7 @@ def dischargeObligationIncremental
       | _ => pure ()
     -- Encode all declarations and assertions through the AbstractSolver API.
     let (obligationId, ids, estate) ←
-      _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract ctx prelude
+      _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract solver ctx prelude
         assumptionTerms obligationTerm
     -- Variable terms for getValue
     let varIds := ids.map fun id => Term.var ⟨id, .bool⟩
