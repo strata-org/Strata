@@ -25,7 +25,7 @@ const fooVal : FooAlias (Foo int int);
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
-procedure P () returns () {
+procedure P () {
   assume [fooConst1_value]: (fooConst1 == fooVal);
   assume [fooConst2_value]: (fooConst2 == fooVal);
   assert [fooAssertion]: (fooConst1 == fooConst2);
@@ -45,14 +45,16 @@ const fooVal : FooAlias2 (Foo int int);
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
-procedure P () returns () {
+procedure P () {
   assume [fooConst1_value]: (fooConst1 == fooVal);
   assume [fooConst2_value]: (fooConst2 == fooVal);
   assert [fooAssertion]: (fooConst1 == fooConst2);
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.snd
 
@@ -65,12 +67,12 @@ type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
 function fooVal () : FooAlias2 (Foo int int);
 function fooConst1 () : Foo int bool;
 function fooConst2 () : Foo int bool;
-procedure P () returns ()
+procedure P ()
 {
   assume [fooConst1_value]: fooConst1 == fooVal;
   assume [fooConst2_value]: fooConst2 == fooVal;
   assert [fooAssertion]: fooConst1 == fooConst2;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.fst
@@ -110,7 +112,7 @@ function MapGetEq (d: MapInt, k: int, v : int) : bool {
   MapInt_get (d, k) == v
 }
 
-procedure test () returns () {
+procedure test () {
   var d : MapInt, k : int, v : int, b : bool;
   b := MapGetEq(d, k, v);
   assume (v == 0);

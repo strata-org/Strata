@@ -2,7 +2,6 @@ test_int_large.py(2, 4): ✅ pass - assert(26)
 test_int_large.py(3, 4): ✅ pass - assert(47)
 test_int_large.py(4, 13): ✅ pass - Check PMul exception
 test_int_large.py(4, 4): ✅ pass - assert(68)
-test_int_large.py(5, 4): ✅ pass - assert_assert(87)_calls_Any_to_bool_0
 test_int_large.py(5, 4): ✅ pass - large int
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

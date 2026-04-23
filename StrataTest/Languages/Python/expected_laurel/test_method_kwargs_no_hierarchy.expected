@@ -4,9 +4,8 @@ unknown location: ✅ pass - assert(0)
 test_method_kwargs_no_hierarchy.py(11, 18): ✅ pass - init_calls_Any_get_or_none_0
 test_method_kwargs_no_hierarchy.py(11, 18): ✅ pass - callElimAssert_requires_5
 test_method_kwargs_no_hierarchy.py(11, 4): ❓ unknown - assert(254)
-test_method_kwargs_no_hierarchy.py(12, 4): ✅ pass - assert_assert(286)_calls_Any_to_bool_0
 test_method_kwargs_no_hierarchy.py(12, 4): ❓ unknown - assert(286)
 test_method_kwargs_no_hierarchy.py(8, 14): ✅ pass - (main ensures) Return type constraint
 test_method_kwargs_no_hierarchy.py(8, 0): ❓ unknown - postcondition_1
-DETAIL: 7 passed, 0 failed, 3 inconclusive
+DETAIL: 6 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

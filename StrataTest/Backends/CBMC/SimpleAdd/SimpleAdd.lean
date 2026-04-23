@@ -14,7 +14,7 @@ namespace Strata
 protected def simpleAdd : Program :=
 #strata
 program Core;
-procedure simpleAdd (x : bv32, y : bv32) returns () {
+procedure simpleAdd (x : bv32, y : bv32) {
 
   assume (x < bv{32}(0xFFFF0000));
   assume (y < bv{32}(0x00001111));
