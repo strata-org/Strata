@@ -186,16 +186,12 @@ def mkVariableMd (v : Variable) : VariableMd :=
 def stmtExprToVar (e : StmtExprMd) : VariableMd :=
   match e.val with
   | .Var v => { val := v, source := e.source, md := e.md }
-  | _ => { val := .Local "", source := e.source, md := e.md }
+  | _ => { val := .Local "$BUG_invalid_var", source := e.source, md := e.md }
 
 /-- Create a StmtExprMd with source location metadata.
     NOTE: stores location in `md` (legacy); a follow-up should migrate to `source`. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   { val := expr, source := Imperative.getFileRange md, md := md }
-
-/-- Create a local variable declaration statement (no initializer). -/
-def mkVarDecl (name : Identifier) (ty : AstNode HighType) : StmtExprMd :=
-  mkStmtExprMd (.Var (.Declare ⟨name, ty⟩))
 
 /-- Create a local variable declaration with initializer. -/
 def mkVarDeclInit (name : Identifier) (ty : AstNode HighType) (init : StmtExprMd) : StmtExprMd :=
