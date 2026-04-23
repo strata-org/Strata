@@ -1326,6 +1326,9 @@ def pyInterpretCommand : Command where
       match <- pyTranslateLaurel filePath #[] #[] (specDir := ".") |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
+    if verbose then
+      IO.println "\n==== Core Program ===="
+      IO.println f!"{core}"
     let core ← match Core.typeCheck Core.VerifyOptions.quiet core
         (moreFns := Strata.Python.ReFactory) with
       | .ok prog => pure prog
