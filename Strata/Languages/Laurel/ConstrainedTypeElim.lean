@@ -90,6 +90,7 @@ private def wrap (stmts : List StmtExprMd) (src : Option FileRange)
     Recursion into StmtExprMd children is handled by `mapStmtExpr`. -/
 def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprMd :=
   let source := expr.source
+
   match expr.val with
   | .LocalVariable n ty init =>
     ⟨.LocalVariable n (resolveType ptMap ty) init, source, none⟩
@@ -124,6 +125,7 @@ private def inScope (action : ElimM α) : ElimM α := do
 def elimStmt (ptMap : ConstrainedTypeMap)
     (stmt : StmtExprMd) : ElimM (List StmtExprMd) := do
   let source := stmt.source
+
   match _h : stmt.val with
   | .LocalVariable name ty init =>
     let callOpt := constraintCallFor ptMap ty.val name (src := source)
@@ -204,6 +206,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source
+
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
     ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src, none⟩

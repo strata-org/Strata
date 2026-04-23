@@ -318,9 +318,8 @@ theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.v
 
 /-- Build Core metadata from an optional source location. -/
 def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
-  match source with
-  | some fr => Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-  | none => Imperative.MetaData.empty
+  let fr := source.getD FileRange.unknown
+  Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
 
 /-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
