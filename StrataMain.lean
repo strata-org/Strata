@@ -10,6 +10,8 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.ProgramEval
+import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
@@ -23,8 +25,6 @@ import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
 import Strata.SimpleAPI
--- import Strata.Languages.Python.PyInterpret
-import Strata.Languages.Core.Interpreter
 import Strata.Util.Profile
 import Strata.Util.Json
 
@@ -1264,7 +1264,7 @@ def pyInterpretCommand : Command where
     let verbose := pflags.getBool "verbose"
     let fuel := match pflags.getString "fuel" with
       | some s => s.toNat!
-      | none => Core.defaultFuel
+      | none => 10000
 
     let (core, _diags) ←
       match <- pyTranslateLaurel filePath #[] #[] (specDir := ".") |>.toBaseIO with
@@ -1276,8 +1276,9 @@ def pyInterpretCommand : Command where
       | .error e =>
         println!  s!"Core type checking failed: {e.message}"
         IO.Process.exit ExitCode.userError
-    match Core.interpProcedure core "__main__" [] fuel with
+    match core.run with
     | .ok E =>
+      let E := Core.Statement.Command.runCall [] "__main__" [] fuel E
       match E.error with
       | none =>
         if verbose then

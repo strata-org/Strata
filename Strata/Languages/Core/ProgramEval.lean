@@ -23,6 +23,7 @@ open Std (ToFormat Format format)
 namespace Program
 open Lambda LExpr
 open Lambda.LTy Lambda.LExpr Statement Procedure Program
+open Strata (DiagnosticModel DiagnosticType FileRange)
 
 public section
 
