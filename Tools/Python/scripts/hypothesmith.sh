@@ -102,7 +102,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 TOOLS_PY="$REPO_ROOT/Tools/Python"
-PYTHON="$TOOLS_PY/.venv/bin/python3"
+PYTHON="${PYTHON:-$TOOLS_PY/.venv/bin/python3}"
 STRATA="$REPO_ROOT/.lake/build/bin/strata"
 DIALECT="$TOOLS_PY/dialects/Python.dialect.st.ion"
 
