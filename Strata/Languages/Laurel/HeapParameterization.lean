@@ -465,27 +465,27 @@ where
         term_by_mem))
       -- For target inside Field in single-target case and multi-target Field recursion:
       all_goals (try (
-        have h1 := AstNode.sizeOf_val_lt targetHead
-        have h2 : sizeOf target < sizeOf targetHead.val := by
+        have := AstNode.sizeOf_val_lt targetHead
+        have : sizeOf target < sizeOf targetHead.val := by
           cases targetHead with | mk val _ _ =>
-            simp only [AstNode.val]
+            simp only []
             subst_vars
             omega
         omega))
       -- For field inner expressions in attach-based mapM:
       all_goals (try (
-        have hmem := List.sizeOf_lt_of_mem ‹_›
-        have hval := AstNode.sizeOf_val_lt t
+        have := List.sizeOf_lt_of_mem ‹_›
+        have := AstNode.sizeOf_val_lt t
         have : sizeOf t.val = sizeOf (Variable.Field target fieldName) := by exact congrArg sizeOf _htv
         omega))
       -- For target inside Field in attach-based mapM:
       all_goals (
-        have hmem := List.sizeOf_lt_of_mem ‹_›
-        have hval := AstNode.sizeOf_val_lt t
+        have := List.sizeOf_lt_of_mem ‹_›
+        have := AstNode.sizeOf_val_lt t
         have heq : sizeOf t.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf _htv
         have hsz : sizeOf (Variable.Field target fieldName) = 1 + sizeOf target + sizeOf fieldName := by rfl
         have hallTargets : sizeOf allTargets = 1 + sizeOf targetHead + sizeOf targetTail := by rfl
-        have hlist : sizeOf (targetHead :: targetTail) = 1 + sizeOf targetHead + sizeOf targetTail := by simp [List.cons]
+        have hlist : sizeOf (targetHead :: targetTail) = 1 + sizeOf targetHead + sizeOf targetTail := by simp
         omega)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
