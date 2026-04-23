@@ -190,11 +190,11 @@ private def ensuresClauseToArg (c : Condition) : Arg :=
   laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
 private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
-  if hasModifiesWildcard modifies then
-    #[laurelOp "modifiesWildcard" #[]]
-  else
-    let refs := modifies.map stmtExprToArg |>.toArray
-    #[laurelOp "modifiesClause" #[commaSep refs]]
+  let (wildcards, specific) := modifies.partition (fun m => match m.val with | .All => true | _ => false)
+  let wildcardArgs := wildcards.map (fun _ => laurelOp "modifiesWildcard" #[]) |>.toArray
+  let specificArgs := if specific.isEmpty then #[]
+    else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
+  wildcardArgs ++ specificArgs
 
 private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let opName := if proc.isFunctional then "function" else "procedure"
