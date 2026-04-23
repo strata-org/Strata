@@ -302,7 +302,7 @@ elab "#testCompile" : command => do
   -- ion-java is required for compilation (Node.java imports IonSexp)
   let jarPath := "StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
-    Lean.logWarning s!"Test 12 skipped: ion-java jar not found at {jarPath}"
+    Lean.logError s!"Test 12 failed: ion-java jar not found at {jarPath}"
     IO.FS.removeDirAll dir
     return
 
