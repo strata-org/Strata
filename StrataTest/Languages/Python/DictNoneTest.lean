@@ -94,6 +94,9 @@ def main() -> None:
 
 -- Test 6: len() on a class instance without __len__.
 -- This should be rejected as a user error.
+/--
+error: pythonAndSpecToLaurel failed: User code error: len() is not supported on 'MyObj' (no __len__ method)
+-/
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
