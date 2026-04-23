@@ -168,6 +168,9 @@ inductive HighType : Type where
   Any type can be assigned to unknown and unknown can be assigned to any type.
   The unknown type can not be represented in Core so its occurence will abort compilation before evaluating Core -/
   | Unknown
+  /-- A multi-valued expression type, returned by procedure calls with multiple outputs.
+  Used by the resolution pass to validate that the LHS of an assignment has the correct number of targets. -/
+  | MultiValuedExpr (types : List (AstNode HighType))
   deriving Repr
 
 mutual
@@ -399,11 +402,14 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
   | HighType.Unknown, HighType.Unknown => true
+  | HighType.MultiValuedExpr ts1, HighType.MultiValuedExpr ts2 =>
+      ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
   | _, _ => false
   termination_by (SizeOf.sizeOf a)
   decreasing_by
     all_goals (cases a; cases b; try term_by_mem)
     . cases a1; term_by_mem
+    . cases t1; term_by_mem
     . cases t1; term_by_mem
 
 instance : BEq HighTypeMd where

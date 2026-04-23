@@ -417,18 +417,6 @@ def translateStmt (stmt : StmtExprMd)
               let ident : Core.CoreIdent := ⟨name.text, ()⟩
               lhs := lhs ++ [ident]
             | .Field _ _ => pure () -- already handled above
-          -- Synthesize throwaway LHS variables for any outputs beyond the
-          -- assigned targets (e.g. void-returns-Any adds an extra output).
-          let outputs := match model.get callee with
-            | .staticProcedure proc => proc.outputs
-            | .instanceProcedure _ proc => proc.outputs
-            | _ => []
-          for out in outputs.drop lhs.length do
-            let id ← freshId
-            let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
-            let coreType := LTy.forAll [] (← translateType out.type)
-            inits := inits ++ [Core.Statement.init unusedIdent coreType .nondet md]
-            lhs := lhs ++ [unusedIdent]
           let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
           return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
       | .InstanceCall _target callee args =>
@@ -480,8 +468,8 @@ def translateStmt (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        -- Synthesize throwaway LHS variables so Core arity checking
-        -- passes (lhs.length == outputs.length).
+        -- Generate throwaway LHS variables for all outputs so Core arity
+        -- checking passes (lhs.length == outputs.length).
         let outputs := match model.get callee with
           | .staticProcedure proc => proc.outputs
           | .instanceProcedure _ proc => proc.outputs

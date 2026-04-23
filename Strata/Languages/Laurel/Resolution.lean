@@ -292,6 +292,9 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
+  | .MultiValuedExpr tys =>
+    let tys' ← tys.mapM resolveHighType
+    pure (.MultiValuedExpr tys')
   | other => pure other
   return ⟨val', ty.source, ty.md⟩
 
@@ -347,6 +350,32 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs, vm⟩ : VariableMd)
     let value' ← resolveStmtExpr value
+    -- Check that LHS target count matches the number of outputs from the RHS
+    let expectedOutputCount ← match value'.val with
+      | .StaticCall callee _ => do
+        let s ← get
+        match s.scope.get? callee.text with
+        | some (_, .staticProcedure proc) => pure (some proc.outputs.length)
+        | some (_, .instanceProcedure _ proc) => pure (some proc.outputs.length)
+        | _ => pure none
+      | .InstanceCall _ callee _ => do
+        let s ← get
+        match s.scope.get? callee.text with
+        | some (_, .instanceProcedure _ proc) => pure (some proc.outputs.length)
+        | some (_, .staticProcedure proc) => pure (some proc.outputs.length)
+        | _ => pure none
+      | _ => pure none
+    match expectedOutputCount with
+    | some expected =>
+      if targets'.length != expected then
+        let calleeName := match value'.val with
+          | .StaticCall callee _ => callee.text
+          | .InstanceCall _ callee _ => callee.text
+          | _ => "unknown"
+        let diag := coreMd.toDiagnostic
+          s!"Assignment target count mismatch: {targets'.length} targets but '{calleeName}' returns {expected} values"
+        modify fun s => { s with errors := s.errors.push diag }
+    | none => pure ()
     pure (.Assign targets' value')
   | .Var (.Field target fieldName) =>
     let target' ← resolveStmtExpr target
@@ -584,6 +613,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
     args.foldl collectHighType map
   | .Pure base => collectHighType map base
   | .Intersection tys => tys.foldl collectHighType map
+  | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map
 
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
