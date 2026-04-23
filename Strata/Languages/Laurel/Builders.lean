@@ -37,6 +37,14 @@ def defaultMd : MetaData :=
     (md : MetaData := defaultMd) : StmtExprMd :=
   { val := e, source := source, md := md }
 
+/-- A Laurel `StmtExprMd` tagged with its `HighType`. -/
+structure TypedExpr (tp : HighType) where
+  expr : StmtExprMd
+
+/-- Allow typed expressions to be used wherever StmtExprMd is expected. -/
+instance : CoeOut (TypedExpr tp) StmtExprMd where
+  coe e := e.expr
+
 /-! ## Untyped builders (return StmtExprMd) -/
 
 def litInt (n : Int) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
@@ -62,19 +70,19 @@ def localVar (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none
 def assign (targets : List StmtExprMd) (value : StmtExprMd)
     (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
   mkNode (.Assign targets value) source md
-def assert_ (cond : StmtExprMd) (summary : Option String := none)
+def assert_ (cond : TypedExpr .TBool) (summary : Option String := none)
     (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Assert { condition := cond, summary }) source md
-def assume_ (cond : StmtExprMd) (source : Option FileRange := none)
+  mkNode (.Assert { condition := cond.expr, summary }) source md
+def assume_ (cond : TypedExpr .TBool) (source : Option FileRange := none)
     (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Assume cond) source md
+  mkNode (.Assume cond.expr) source md
 def block (stmts : List StmtExprMd) (label : Option String := none)
     (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
   mkNode (.Block stmts label) source md
-def ifThenElse (cond : StmtExprMd) (thenBranch : StmtExprMd)
+def ifThenElse (cond : TypedExpr .TBool) (thenBranch : StmtExprMd)
     (elseBranch : Option StmtExprMd := none) (source : Option FileRange := none)
     (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.IfThenElse cond thenBranch elseBranch) source md
+  mkNode (.IfThenElse cond.expr thenBranch elseBranch) source md
 def exit_ (label : String) (source : Option FileRange := none)
     (md : MetaData := defaultMd) : StmtExprMd :=
   mkNode (.Exit label) source md
@@ -95,14 +103,6 @@ def while_ (cond : StmtExprMd) (invs : List StmtExprMd := [])
   mkNode (.While cond invs dec body) source md
 
 /-! ## Type-safe builders -/
-
-/-- A Laurel `StmtExprMd` tagged with its `HighType`. -/
-structure TypedExpr (tp : HighType) where
-  expr : StmtExprMd
-
-/-- Allow typed expressions to be used wherever StmtExprMd is expected. -/
-instance : CoeOut (TypedExpr tp) StmtExprMd where
-  coe e := e.expr
 
 namespace Typed
 

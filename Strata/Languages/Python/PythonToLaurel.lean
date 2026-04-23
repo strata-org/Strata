@@ -1697,11 +1697,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Break _ =>
     match ctx.loopBreakLabel with
     | some lbl => return (ctx, [exit_ lbl (md := md)])
-    | none => return (ctx, [assert_ hole (md := md)])
+    | none => return (ctx, [assert_ ⟨hole⟩ (md := md)])
   | .Continue _ =>
     match ctx.loopContinueLabel with
     | some lbl => return (ctx, [exit_ lbl (md := md)])
-    | none => return (ctx, [assert_ hole (md := md)])
+    | none => return (ctx, [assert_ ⟨hole⟩ (md := md)])
 
   -- Augmented assignment: x += expr  →  x = x op expr
   | .AugAssign sr target op value => do
