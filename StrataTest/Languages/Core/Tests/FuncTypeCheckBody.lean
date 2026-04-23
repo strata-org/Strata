@@ -17,7 +17,7 @@ program Core;
 function bool_to_int (b: bool) : int {if b then 1 else 0}
 function str_to_bool (s: string) : bool;
 
-procedure test () returns ()
+procedure test ()
 {
   var b: string, i: int;
   var x: string;

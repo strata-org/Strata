@@ -2,11 +2,12 @@ name = "Strata"
 version = "0.1.0"
 defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTest"
+lintDriver = "CheckImports"
 
 [[require]]
 name = "plausible"
 git = "https://github.com/leanprover-community/plausible.git"
-rev = "bump_to_v4.27.0"
+rev = "bump_to_v4.29.0-rc8"
 
 [[lean_lib]]
 name = "Strata"
@@ -28,6 +29,14 @@ name = "StrataToCBMC"
 
 [[lean_exe]]
 name = "StrataCoreToGoto"
+
+[[lean_exe]]
+name = "CheckImports"
+root = "Scripts.CheckImports"
+
+[[lean_exe]]
+name = "ImportStats"
+root = "Scripts.ImportStats"
 
 [[lean_exe]]
 name = "DiffTestCore"

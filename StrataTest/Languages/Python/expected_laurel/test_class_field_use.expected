@@ -1,7 +1,6 @@
 test_class_field_use.py(19, 11): ✔️ always true if reached - Check PMul exception
 test_class_field_use.py(14, 4): ✔️ always true if reached - assert(302)
-test_class_field_use.py(15, 4): ✔️ always true if reached - assert_assert(343)_calls_Any_to_bool_0
 test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
 test_class_field_use.py(12, 0): ✔️ always true if reached - postcondition
-DETAIL: 5 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

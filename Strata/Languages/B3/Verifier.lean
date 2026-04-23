@@ -3,12 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.Verifier.Expression
-import Strata.Languages.B3.Verifier.Formatter
-import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Program
-import Strata.Languages.B3.Verifier.Diagnosis
+public import Strata.Languages.B3.Verifier.Expression
+public import Strata.Languages.B3.Verifier.Formatter
+public import Strata.Languages.B3.Verifier.State
+public import Strata.Languages.B3.Verifier.Program
+public import Strata.Languages.B3.Verifier.Diagnosis
+meta import Strata.Languages.B3.DDMTransform.ParseCST
+meta import Strata.Languages.B3.Verifier.Statements
+meta import Strata.Languages.B3.Verifier.Program
 
 open Strata
 open Strata.B3.Verifier
@@ -57,7 +61,7 @@ Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - r
 
 -- Example: Verify a simple B3 program (meta to avoid including in production)
 -- This is not a test, it only demonstrates the end-to-end API
-meta def exampleVerification : IO Unit := do
+public meta def exampleVerification : IO Unit := do
   -- Parse B3 program using DDM syntax
   let ddmProgram : Strata.Program := #strata program B3CST;
     function f(x : int) : int { x + 1 }

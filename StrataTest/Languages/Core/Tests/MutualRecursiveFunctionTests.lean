@@ -31,7 +31,7 @@ function isOdd (@[cases] n : MyNat) : bool
   if MyNat..isZero(n) then false else isEven(MyNat..pred(n))
 };
 
-procedure TestMutual() returns ()
+procedure TestMutual()
 spec {
   ensures true;
 }
@@ -43,7 +43,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mutualRecPgm) |>.snd |>.isEmpty
 
@@ -139,7 +141,7 @@ function listSize (@[cases] xs : RoseList) : int
   if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
 };
 
-procedure TestRoseTreeGround() returns ()
+procedure TestRoseTreeGround()
 spec {
   ensures true;
 }
@@ -149,7 +151,7 @@ spec {
   assert [twoChildren]: treeSize(Node(RCons(Leaf(1), RCons(Leaf(2), RNil())))) == 2;
 };
 
-procedure TestRoseTreeHavoc() returns ()
+procedure TestRoseTreeHavoc()
 spec {
   ensures true;
 }
@@ -171,7 +173,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram roseTreePgm) |>.snd |>.isEmpty
 
@@ -255,7 +259,7 @@ function oddHalf (@[cases] n : MyNat) : int
   evenHalf(MyNat..pred(n))
 };
 
-procedure TestHalfGround() returns ()
+procedure TestHalfGround()
 spec {
   ensures true;
 }
@@ -266,7 +270,7 @@ spec {
   assert [half3]: oddHalf(Succ(Succ(Succ(Zero())))) == 1;
 };
 
-procedure TestHalfHavoc() returns ()
+procedure TestHalfHavoc()
 spec {
   ensures true;
 }
@@ -279,7 +283,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mutualPrecondPgm) |>.snd |>.isEmpty
 
