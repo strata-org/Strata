@@ -100,6 +100,10 @@ def while_ (cond : StmtExprMd) (invs : List StmtExprMd := [])
 structure TypedExpr (tp : HighType) where
   expr : StmtExprMd
 
+/-- Allow typed expressions to be used wherever StmtExprMd is expected. -/
+instance : CoeOut (TypedExpr tp) StmtExprMd where
+  coe e := e.expr
+
 namespace Typed
 
 /-- Typed literal int. -/

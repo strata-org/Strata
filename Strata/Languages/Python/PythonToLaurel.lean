@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.Builders
+public import Strata.Languages.Laurel.Builders
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
 import Strata.Util.DecideProp
@@ -299,11 +299,11 @@ def compositeToStringAnyName (typeName : String) : String := "$composite_to_stri
 def isCompositeType (ctx : TranslationContext) (typeName : String) : Bool :=
   typeName != PyLauType.Any && (ctx.importedSymbols[typeName]?.any fun s =>
     match s with | .compositeType _ => true | _ => false)
-def strToAny (s: String) := call "from_str" [litStr s]
-def intToAny (i: Int) := call "from_int" [litInt i]
-def boolToAny (b: Bool) := call "from_bool" [litBool b]
-def AnyNone := call "from_None" []
-def Any_to_bool (b: StmtExprMd) := call "Any_to_bool" [b]
+def strToAny (s: String) : Laurel.TypedExpr (.UserDefined "Any") := Laurel.Typed.call "from_str" [litStr s] _
+def intToAny (i: Int) : Laurel.TypedExpr (.UserDefined "Any") := Laurel.Typed.call "from_int" [litInt i] _
+def boolToAny (b: Bool) : Laurel.TypedExpr (.UserDefined "Any") := Laurel.Typed.call "from_bool" [litBool b] _
+def AnyNone : Laurel.TypedExpr (.UserDefined "Any") := Laurel.Typed.call "from_None" [] _
+def Any_to_bool (b: StmtExprMd) : Laurel.TypedExpr .TBool := Laurel.Typed.call "Any_to_bool" [b] _
 
 /-- The set of PyLauType names that have runtime type-tester predicates
     (`Any..isfrom_<type>`). Keep in sync with `PythonIdent.toPyLauType?`
