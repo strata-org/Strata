@@ -1065,8 +1065,8 @@ partial def translateCall (ctx : TranslationContext)
         let keyPresent := call "DictStrAny_contains"
           [dictExpr, litStr arg.name]
         let val := DictStrAny_get_param trans_dict arg.name true
-        let isCorrectType := call testerName [val]
-        let cond := primOp .Implies [keyPresent, isCorrectType]
+        let isCorrectType := Laurel.Typed.call testerName [val] .TBool
+        let cond := Laurel.Typed.implies ⟨keyPresent⟩ isCorrectType
         typeAsserts := assert_ cond :: typeAsserts
     let typeAssertsOrdered := typeAsserts.reverse
     let call ← emitCall (allArgs ++ kwargsArg)
@@ -1671,11 +1671,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             if ¬ (isAnyNone stopExpr && isAnyNone stepExpr) then
               throw (.unsupportedConstruct "Unsupport range function with more than 1 input" (toString (repr iter)))
             let asIntStart := call "Any..as_int!" [startExpr]
-            let assumeTypeInt := assume_ $ call "Any..isfrom_int" [targetVar] (md := md)
+            let assumeTypeInt := assume_ (Laurel.Typed.call "Any..isfrom_int" [targetVar] .TBool) (md := md)
             let asIntTarget := call "Any..as_int!" [targetVar]
-            let inRangeExpr := primOp .And [
-                  (primOp .Geq [asIntTarget, litInt 0]),
-                  (primOp .Lt [asIntTarget, asIntStart]) ]
+            let inRangeExpr := Laurel.Typed.and
+                  ⟨primOp .Geq [asIntTarget, litInt 0]⟩
+                  ⟨primOp .Lt [asIntTarget, asIntStart]⟩
             let assumeInRange := assume_ inRangeExpr (md := md)
             pure [assumeTypeInt, assumeInRange]
           | _ =>
@@ -1869,7 +1869,7 @@ def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   match exprs with
   | [] => litBool true
   | [expr] => expr
-  | expr::exprs => primOp .Or [expr, createBoolOrExpr exprs]
+  | expr::exprs => Laurel.Typed.or ⟨expr⟩ ⟨createBoolOrExpr exprs⟩
 
 def getUnionTypeConstraint (var: String) (md: MetaData) (tys: List String) (funcname: String)
     (displayName : String := var): Option Condition :=
