@@ -377,11 +377,8 @@ def simpleMapProgram :=
 #strata
 program Core;
 
-var m : Map int int;
-
-procedure UpdateAndRead(k : int, v : int) returns (result : int)
+procedure UpdateAndRead(inout m : Map int int, k : int, v : int, out result : int)
 spec {
-    modifies m;
     ensures result == v;
 }
 {
@@ -393,7 +390,7 @@ spec {
 -- Test verification with axiomatized maps (default)
 /--
 info:
-Obligation: UpdateAndRead_ensures_1
+Obligation: UpdateAndRead_ensures_0
 Property: assert
 Result: ✅ pass
 -/
@@ -403,7 +400,7 @@ Result: ✅ pass
 -- Test verification with Array theory
 /--
 info:
-Obligation: UpdateAndRead_ensures_1
+Obligation: UpdateAndRead_ensures_0
 Property: assert
 Result: ✅ pass
 -/
@@ -415,9 +412,7 @@ def quotedStringProgram :=
 #strata
 program Core;
 
-var x: string;
-
-procedure Test() returns ()
+procedure Test(x: string)
 spec { ensures true; }
 {
   assume x == "{\"key\":\"val\"}";
