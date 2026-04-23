@@ -595,7 +595,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           -- user variables. Shadowing is semantically fine, but a formal
           -- non-collision proof would require threading variable-scope info
           -- through the translator.
-          let freshVar := s!"cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
+          let freshVar := s!"$cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
           let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
           tempDecls := tempDecls.push varDecl
           operandRefs := operandRefs.push (mkStmtExprMd (StmtExpr.Identifier freshVar))
