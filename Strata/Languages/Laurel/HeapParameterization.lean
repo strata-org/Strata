@@ -333,13 +333,20 @@ where
           | _ => return (accTargets ++ [t], accStmts)
 
       let (v', addedHeap) <- match _hv : v.val with
-        | .StaticCall _callee args => do
-          let _args' <- args.mapM recurse
-          pure (v, true)
+        | .StaticCall callee args => do
+          let args' <- args.mapM recurse
+          let calleeWritesHeap ← writesHeap callee
+          let calleeReadsHeap ← readsHeap callee
+          if calleeWritesHeap then
+            pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source, v.md ⟩, true)
+          else if calleeReadsHeap then
+            pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source, v.md ⟩, false)
+          else
+            pure (⟨ .StaticCall callee args', v.source, v.md ⟩, false)
         | .InstanceCall callTarget _callee args => do
           let _callTarget' ← recurse callTarget
           let _args' <- args.mapM recurse
-          pure (v, true)
+          pure (v, false)
         | _ =>
           pure (<- recurse v, false)
 
