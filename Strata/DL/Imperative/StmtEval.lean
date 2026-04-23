@@ -35,6 +35,8 @@ structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   evalCmd : S → CmdT → S
   /-- Extend the evaluator with a function declaration. -/
   extendEval : S → PureFunc P → S
+  /-- Check if the state has an error (to short-circuit execution). -/
+  hasError : S → Bool := fun _ => false
 
 def runStep [BEq P.Expr] [HasBool P]
     (ops : RunOps P CmdT S)
@@ -75,7 +77,9 @@ def runStep [BEq P.Expr] [HasBool P]
 
   | .stmts [] ρ => .terminal ρ
 
-  | .stmts (s :: ss) ρ => .seq (.stmt s ρ) ss
+  | .stmts (s :: ss) ρ =>
+    if ops.hasError ρ then .terminal ρ
+    else .seq (.stmt s ρ) ss
 
   | .seq inner ss =>
     match inner with

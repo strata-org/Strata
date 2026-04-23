@@ -802,16 +802,20 @@ def Command.runCall
               } with
               | .ok E' => E'
               | .error _ => E
+            hasError := fun E => E.error.isSome
           }
           let config : Imperative.RunConfig Expression Command Env :=
             .stmts proc.body callEnv
           let configAfter := Imperative.runStmt ops fuel' config
           match configAfter with
           | .terminal callEnv' =>
-            let outputVals := proc.header.outputs.keys.map fun name =>
-              (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            lhs.zip outputVals |>.foldl (fun env (name, val) =>
-              env.insertInContext (name, none) val) E
+            match callEnv'.error with
+            | some _ => { E with error := callEnv'.error }
+            | none =>
+              let outputVals := proc.header.outputs.keys.map fun name =>
+                (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+              lhs.zip outputVals |>.foldl (fun env (name, val) =>
+                env.insertInContext (name, none) val) E
           | _ => Env.stuck E "failed to terminate"
 
 def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
