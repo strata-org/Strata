@@ -1,4 +1,3 @@
-# strata-args: --check-mode bugFinding --check-level full
 class Bag:
     def __init__(self, item):
         self.item = item
