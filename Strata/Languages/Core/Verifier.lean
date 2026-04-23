@@ -888,7 +888,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
           (label := obligation.label))
   let tDone ← IO.monoNanosNow
   if profile then
-    let _ ← (IO.println s!"[profile]         getVars: {nsToMs (tDischarge - tGetVars)}ms, discharge: {nsToMs (tDone - tDischarge)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]         getVars: {nsToMs (tDischarge - tGetVars)}ms, serialize/write/solve: {nsToMs (tDone - tDischarge)}ms" |>.toBaseIO)
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
