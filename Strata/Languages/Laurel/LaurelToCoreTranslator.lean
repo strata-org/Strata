@@ -375,7 +375,7 @@ def translateStmt (stmt : StmtExprMd)
       let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨id.text, ()⟩
       match initializer with
-      | some (⟨ .StaticCall callee args, callSrc, callMd⟩) =>
+      | some (⟨ .StaticCall callee args, callSrc, _callMd⟩) =>
           -- Check if this is a function or a procedure call
           if model.isFunction callee then
             -- Translate as expression (function application)
