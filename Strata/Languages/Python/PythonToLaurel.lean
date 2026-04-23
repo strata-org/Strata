@@ -2099,7 +2099,8 @@ def translateMethod (ctx : TranslationContext) (className : String)
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
-/-- Extract fields from __init__ method body by scanning for self.field : type = expr patterns -/
+/-- Extract fields from __init__ method body by scanning for self.field : type = expr
+    and self.field = expr patterns -/
 def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.stmt SourceRange))
     : Except TranslationError (List Field) := do
   let mut fields : List Field := []
@@ -2113,6 +2114,18 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
           type := fieldType
           isMutable := true
         }]
+    | .Assign _ targets _ _ =>
+      if targets.val.size == 1 then
+        match targets.val[0]! with
+        | .Attribute _ (.Name _ selfName _) attr _ =>
+          if selfName.val == "self" then
+            unless fields.any (fun f => f.name.text == attr.val) do
+              fields := fields ++ [{
+                name := attr.val
+                type := AnyTy
+                isMutable := true
+              }]
+        | _ => pure ()
     | _ => pure ()
   return fields
 
