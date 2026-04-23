@@ -313,39 +313,75 @@ where
     | .Return v =>
         let v' ← match v with | some x => some <$> recurse x | none => pure none
         return ⟨ .Return v', source, md ⟩
-    | .Assign targets v =>
-        match targets with
-        | [⟨.Field target fieldName, _, _fieldSelectMd⟩] =>
-            let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | return ⟨ .Hole, source, md ⟩
-            let valTy := (model.get fieldName).getType
-            let target' ← recurse target
-            let v' ← recurse v
-            -- Wrap value in Box constructor
-            recordBoxConstructor model valTy.val
-            let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
-            let heapAssign := ⟨ .Assign [mkVarMd (.Local heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source, md ⟩
-            if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, source, md ⟩
+    | .Assign [⟨.Field target fieldName, _, _fieldSelectMd⟩] v =>
+        -- Single field-write target (not a call): original field write handling
+        let some qualifiedName := resolveQualifiedFieldName model fieldName
+          | return ⟨ .Hole, source, md ⟩
+        let valTy := (model.get fieldName).getType
+        let target' ← recurse target
+        let v' ← recurse v
+        recordBoxConstructor model valTy.val
+        let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
+        let heapAssign := ⟨ .Assign [mkVarMd (.Local heapVar)]
+          (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source, md ⟩
+        if valueUsed then
+          return ⟨ .Block [heapAssign, v'] none, source, md ⟩
+        else
+          return heapAssign
+    | .Assign (targetHead :: targetTail) v =>
+        -- Dedicated handler for calls: add heap parameter to args and heap target to front
+        match _hv : v.val with
+        | .StaticCall callee args => do
+          let args' ← args.mapM (recurse ·)
+          let calleeWritesHeap ← writesHeap callee
+          let calleeReadsHeap ← readsHeap callee
+          let v' :=
+            if calleeWritesHeap || calleeReadsHeap then
+              ⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source, md ⟩
             else
-              return heapAssign
-        | [fieldSelectMd] =>
-          let tgt' : VariableMd := match fieldSelectMd.val with
-            | .Field _ _ => fieldSelectMd
-            | .Local _ => fieldSelectMd
-            | .Declare _ => fieldSelectMd
-          return ⟨ .Assign [tgt'] (← recurse v), source, md ⟩
-        | [] =>
-            return ⟨ .Assign [] (← recurse v), source, md ⟩
+              ⟨ .StaticCall callee args', source, md ⟩
+          let targets' ← (targetHead :: targetTail).attach.mapM fun ⟨t, _⟩ => do
+            let ⟨vv, vs, vm⟩ := t
+            match vv with
+            | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, vs, vm⟩
+            | .Local _ => pure t
+            | .Declare _ => pure t
+          if calleeWritesHeap then
+            return ⟨ .Assign (mkVarMd (.Local heapVar) :: targets') v', source, md ⟩
+          else
+            return ⟨ .Assign targets' v', source, md ⟩
+        | .InstanceCall callTarget callee args => do
+          let t ← recurse callTarget
+          let args' ← args.mapM (recurse ·)
+          let v' := ⟨ .InstanceCall t callee args', source, md ⟩
+          let targets' ← (targetHead :: targetTail).attach.mapM fun ⟨t, _⟩ => do
+            let ⟨vv, vs, vm⟩ := t
+            match vv with
+            | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, vs, vm⟩
+            | .Local _ => pure t
+            | .Declare _ => pure t
+          return ⟨ .Assign targets' v', source, md ⟩
         | _ =>
-            let targets' ← targets.attach.mapM fun ⟨t, _⟩ => do
-              let ⟨vv, vs, vm⟩ := t
-              match vv with
-              | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, vs, vm⟩
-              | .Local _ => pure t
-              | .Declare _ => pure t
-            return ⟨ .Assign targets' (← recurse v), source, md ⟩
+          -- Non-call value: use original single/multi-target handling
+          match targetHead :: targetTail with
+          | [fieldSelectMd] =>
+            let tgt' : VariableMd := match fieldSelectMd.val with
+              | .Field _ _ => fieldSelectMd
+              | .Local _ => fieldSelectMd
+              | .Declare _ => fieldSelectMd
+            return ⟨ .Assign [tgt'] (← recurse v), source, md ⟩
+          | _ =>
+              let v' ← recurse v
+              let targets' ← (targetHead :: targetTail).attach.mapM fun ⟨t, _⟩ => do
+                let ⟨vv, vs, vm⟩ := t
+                match vv with
+                | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, vs, vm⟩
+                | .Local _ => pure t
+                | .Declare _ => pure t
+              return ⟨ .Assign targets' v', source, md ⟩
+    | .Assign targets v =>
+        let v' ← recurse v
+        return ⟨ .Assign targets v', source, md ⟩
     | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source, md ⟩
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
@@ -391,7 +427,28 @@ where
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), source, md ⟩
     | _ => return exprMd
     termination_by sizeOf exprMd
-    decreasing_by all_goals (simp_wf; try term_by_mem; try omega)
+    decreasing_by
+      all_goals simp_wf
+      all_goals (try have := AstNode.sizeOf_val_lt exprMd)
+      all_goals (try have := AstNode.sizeOf_val_lt v)
+      all_goals (try term_by_mem)
+      all_goals (try omega)
+      all_goals (try (cases exprMd; simp_all; omega))
+      -- For sub-expressions of StaticCall/InstanceCall inside Assign value:
+      all_goals (try (
+        have : sizeOf args < sizeOf v := by
+          have h1 := AstNode.sizeOf_val_lt v
+          rw [_hv] at h1; simp at h1; omega
+        term_by_mem))
+      -- For target inside Field in single-target case and multi-target Field recursion:
+      all_goals (
+        have h1 := AstNode.sizeOf_val_lt targetHead
+        have h2 : sizeOf target < sizeOf targetHead.val := by
+          cases targetHead with | mk val _ _ =>
+            simp only [AstNode.val]
+            subst_vars
+            omega
+        omega)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName : Identifier := "$heap"
