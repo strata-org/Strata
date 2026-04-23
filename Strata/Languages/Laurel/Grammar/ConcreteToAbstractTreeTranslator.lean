@@ -249,9 +249,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.parenthesis, #[arg0] => translateStmtExpr arg0
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
-      let targetVar : VariableMd := match target.val with
-        | .Var v => ⟨v, target.source, target.md⟩
-        | _ => ⟨.Local "", target.source, target.md⟩
+      let targetVar : VariableMd ← match target.val with
+        | .Var v => pure ⟨v, target.source, target.md⟩
+        | _ => TransM.error s!"assign target must be a variable or field access"
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [targetVar] value) src
     | q`Laurel.multiAssign, #[targetsSeq, valueArg] =>

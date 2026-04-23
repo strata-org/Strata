@@ -226,7 +226,7 @@ inductive Body where
   | External
 
 /--
-A variable reference: either a local variable or a field access on an expression.
+A variable reference or declaration: a local variable, a field access on an expression, or a local variable declaration.
 -/
 inductive Variable : Type where
   /-- A local variable reference by name. -/

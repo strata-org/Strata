@@ -63,8 +63,9 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | none => []
   | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s)
   | .Assign _targets v =>
-      -- Note: targets are Variables; only Field targets contain StmtExpr children
-      -- but we skip collecting from them since field targets don't contain static calls
+      -- Targets are Variables; Field targets can contain StmtExpr children,
+      -- but field-target assigns are eliminated before this pass runs,
+      -- so we only need to collect from the value.
       collectStaticCallNames v
   | .Return v =>
       match v with

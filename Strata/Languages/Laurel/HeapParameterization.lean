@@ -339,7 +339,13 @@ where
         | [] =>
             return ⟨ .Assign [] (← recurse v), source, md ⟩
         | _ =>
-            return ⟨ .Assign targets (← recurse v), source, md ⟩
+            let targets' ← targets.attach.mapM fun ⟨t, _⟩ => do
+              let ⟨vv, vs, vm⟩ := t
+              match vv with
+              | .Field target fieldName => pure ⟨Variable.Field (← recurse target) fieldName, vs, vm⟩
+              | .Local _ => pure t
+              | .Declare _ => pure t
+            return ⟨ .Assign targets' (← recurse v), source, md ⟩
     | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source, md ⟩
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)

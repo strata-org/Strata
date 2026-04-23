@@ -120,7 +120,7 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
-partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
+def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   | .Var (.Field target fieldName) =>
@@ -137,7 +137,7 @@ partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
   | .Assign targets value =>
     let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
-      match t.val with
+      match _hv : t.val with
       | .Field target fieldName =>
         let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
         let fieldError := match (computeExprType model target).val with
@@ -168,6 +168,15 @@ partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
+  termination_by sizeOf expr
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try have := AstNode.sizeOf_val_lt expr)
+    all_goals (try have := AstNode.sizeOf_val_lt t)
+    all_goals (try term_by_mem)
+    all_goals (try omega)
+    -- For nested Variable.Field in Var (.Field ..) case
+    all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
