@@ -55,6 +55,10 @@ def keyword.arg {α} : keyword α → Ann (Option (Ann String α)) α
 def keyword.value {α} : keyword α → expr α
 | .mk_keyword _ _ value => value
 
+/-- Extract the keyword name (if present) and value as a pair. -/
+def keyword.nameAndValue {α} : keyword α → (Option String × expr α)
+| .mk_keyword _ arg value => (arg.val.map (·.val), value)
+
 namespace int
 
 def value {α} (i : int α) : Int :=

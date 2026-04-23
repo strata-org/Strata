@@ -1,6 +1,6 @@
 program Core;
 
-procedure loopSimple (n: int) returns (r: int)
+procedure loopSimple (n: int, out r: int)
 spec {
   requires (n >= 0);
 }
