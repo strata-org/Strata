@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.StatementEval
 
 namespace Core
 
@@ -436,18 +437,21 @@ private def runProc (pgm : Strata.Program) (procName : String)
   match parseAndTypeCheck pgm with
   | .error e => IO.println s!"type error: {e.message}"
   | .ok prog =>
-    let result := Core.interpProcedure prog procName args fuel
-    match result with
+    match prog.run with
     | .ok E =>
-      let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
-      match proc with
-      | none => IO.println "success (no proc)"
-      | some p =>
-        let outputs := p.header.outputs.keys.map fun name =>
-          let val := (E.exprEnv.state.find? name).map (·.snd)
-          s!"{name} = {val.map (fun v => toString (format v))}"
-        IO.println (String.intercalate ", " outputs)
-    | .error msg => IO.println s!"error: {msg}"
+      let E := Core.Statement.Command.runCall [] procName args fuel E
+      match E.error with
+      | none =>
+        let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
+        match proc with
+        | none => IO.println "success (no proc)"
+        | some p =>
+          let outputs := p.header.outputs.keys.map fun name =>
+            let val := (E.exprEnv.state.find? name).map (·.snd)
+            s!"{name} = {val.map (fun v => toString (format v))}"
+          IO.println (String.intercalate ", " outputs)
+      | some e => IO.println f!"error: {e}"
+    | .error diag => IO.println s!"error: {diag}"
 
 -- Simple assignment
 private def simplePgm : Strata.Program :=
