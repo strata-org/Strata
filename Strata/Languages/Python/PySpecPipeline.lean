@@ -100,7 +100,10 @@ private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
 
 private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
   new.fold (init := old) fun o name n =>
-    o.alter name fun s => some <| s.getD {} |>.union n
+    o.alter name fun s =>
+      let existing := s.getD {}
+      some { paramName := existing.paramName <|> n.paramName
+             entries := existing.entries.union n.entries }
 
 
 
@@ -188,11 +191,7 @@ public def readDispatchOverloads
     let (overloads, errors) :=
       Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     allWarnings := allWarnings ++ errors
-    for (funcName, fnOverloads) in overloads do
-      let existing := tbl.getD funcName {}
-      tbl := tbl.insert funcName
-        (fnOverloads.fold (init := existing)
-          fun acc k v => acc.insert k v)
+    tbl := mergeOverloads tbl overloads
   return (tbl, allWarnings)
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for

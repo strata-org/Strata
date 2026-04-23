@@ -384,6 +384,7 @@ def DictStrAny_get_param (dict : StmtExprMd) (key : String) (isOptional : Bool) 
 def resolveDispatch (ctx : TranslationContext)
     (f : Python.expr SourceRange)
     (args : Array (Python.expr SourceRange))
+    (kwords : List (Python.keyword SourceRange) := [])
     : Except TranslationError (Option String) := do
   let funcName := match f with
     | .Attribute _ _ attr _ => attr.val
@@ -392,15 +393,22 @@ def resolveDispatch (ctx : TranslationContext)
   match ctx.overloadTable[funcName]? with
   | none => return none
   | some fnOverloads =>
-    let .isTrue _ := decideProp (args.size > 0)
-      | throw (.typeError
-          s!"Dispatched function '{funcName}' called with no \
-            arguments (expected a string literal first argument)")
-    match args[0] with
+    let kwPairs := kwords.map Python.keyword.nameAndValue
+    let some firstArg := fnOverloads.findDispatchArg args kwPairs
+      | let msg := match fnOverloads.paramName, kwPairs.filterMap (·.1) with
+          | some expected, provided@(_ :: _) =>
+            s!"Dispatched function '{funcName}' called with wrong \
+              keyword argument, expected '{expected}' but got \
+              '{String.intercalate "', '" provided}'"
+          | _, _ =>
+            s!"Dispatched function '{funcName}' called with no \
+              arguments (expected a string literal first argument)"
+        throw (.typeError msg)
+    match firstArg with
     | .Constant range (.ConString _ s) _ =>
-      let some ident := fnOverloads[s.val]?
-        | let knownServices := fnOverloads.keysArray.insertionSort.take 2
-          let suffix := if fnOverloads.size > 2 then s!" ... ({fnOverloads.size} total)" else ""
+      let some ident := fnOverloads.entries[s.val]?
+        | let knownServices := fnOverloads.entries.keysArray.insertionSort.take 2
+          let suffix := if fnOverloads.entries.size > 2 then s!" ... ({fnOverloads.entries.size} total)" else ""
           throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
       let className :=
@@ -699,11 +707,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         | none => return fieldExpr
 
   -- List literal: [1, 2, 3]
-  -- Abstract: return havoc'd list (sound abstraction)
   | .List _ elems _ => translateList ctx elems.val.toList
 
   -- Dict literal: {'a': 1}
-  -- Abstract: return havoc'd dict (sound abstraction)
   | .Dict _ keys vals => translateDictStrAny ctx keys.val.toList vals.val.toList
 
   -- Set literal: {1, 2, 3}
@@ -711,8 +717,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .Set .. => return mkStmtExprMd .Hole
 
   -- Tuple literal: (1, 2)
-  -- Abstract: return havoc'd tuple (sound abstraction)
-  | .Tuple .. => return mkStmtExprMd .Hole
+  | .Tuple _ elems _ => translateList ctx elems.val.toList
 
   -- List comprehension: [x for x in items]
   -- Abstract: return havoc'd list (sound abstraction)
@@ -786,15 +791,18 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   -- FormattedValue produces string-typed Any
   | .FormattedValue _ _ _ _ => return PyLauType.Str
 
-  | .Call _ f args _ => getFunctionReturnType ctx f args.val
+  | .Call _ f args kwargs =>
+    getFunctionReturnType ctx f args.val kwargs.val.toList
 
   | _ => return PyLauType.Any
 
 partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr SourceRange) (args : Array (Python.expr SourceRange))
+    (kwords : List (Python.keyword SourceRange) := [])
     : Except TranslationError String := do
-  match resolveDispatch ctx func args with
-  |.ok (some classname) => return classname
-  | _=>
+  match resolveDispatch ctx func args kwords with
+  | .ok (some classname) => return classname
+  | .error e => throw e
+  | .ok none =>
     let (fname, _) ← refineFunctionCallExpr ctx func
     match ctx.functionSignatures.find? (λ f => f.name == fname) with
       | some funcDecl => match funcDecl.ret with
@@ -958,7 +966,7 @@ partial def translateCall (ctx : TranslationContext)
                           (kwords : List (Python.keyword SourceRange))
     : Except TranslationError StmtExprMd := do
   -- Step 1: factory dispatch (e.g., boto3.client('iam'))
-  if let some className ← resolveDispatch ctx f args.toArray then
+  if let some className ← resolveDispatch ctx f args.toArray kwords then
     return mkStmtExprMd (.New className)
   -- Step 2: method call on typed variable (e.g., iam.get_role())
   --   Resolve to ClassName_method(obj, args)
@@ -1101,38 +1109,6 @@ def freeVar (name: String) := mkStmtExprMd (.Identifier name)
 def maybeExceptVar := freeVar "maybe_except"
 def nullcall_var := freeVar "nullcall_ret"
 
--- Invariant: if `callExpr` is not `.Call`, returns `[]`.
--- Otherwise the returned block always havocs `maybe_except`;
--- additionally havocs callee (if non-composite instance call)
--- and `$heap` (if any argument — or the implicit receiver — is composite).
-private def mkHavocStmtsForUnmodeledCall (ctx : TranslationContext)
-    (callExpr : Python.expr SourceRange)
-    (md : Imperative.MetaData Core.Expression) : List StmtExprMd :=
-  if let .Call _ funccall args kwords := callExpr then
-    let holeExceptHavoc := [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
-    let (calleeHavoc, calleeIsComposite) :=
-      if let (.Attribute _ callee _ _) := funccall then
-        let (base, _) := getListAttributes callee
-        if let .Name _ n _ := base then
-          match ctx.variableTypes.find? (λ v => Prod.fst v == n.val) with
-          | some (varName, ty) =>
-            if isCompositeType ctx ty then ([], true)
-            else
-              ([mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar varName] (mkStmtExprMd (.Hole false none))) md], false)
-          | _ => ([], false)
-        else ([], false)
-      else ([], false)
-    let inputExprs:= args.val.toList ++ kwords.val.toList.map (λ kw => match kw with
-            | keyword.mk_keyword _ _ expr => expr)
-    let involveHeap := calleeIsComposite || (inputExprs.any fun inputExpr =>
-        match inferExprType ctx inputExpr with
-        | .ok ty => isCompositeType ctx ty
-        | _ => false)
-    let heapHavoc := if !involveHeap then [] else
-        [mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar "$heap"] (mkStmtExprMd (.Hole false none))) md]
-    [mkStmtExprMd $ .Block (holeExceptHavoc ++ calleeHavoc ++ heapHavoc) none]
-  else []
-
 partial def translateAssign  (ctx : TranslationContext)
                              (lhs: Python.expr SourceRange)
                              (annotation: Option (Python.expr SourceRange) )
@@ -1167,12 +1143,15 @@ partial def translateAssign  (ctx : TranslationContext)
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
   if let .Hole := rhs_trans.val then
   {
-    let havocStmts := mkHavocStmtsForUnmodeledCall ctx rhs md
+    let exceptHavoc :=
+      if rhsIsCall then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match lhs with
     | .Name _ n _ =>
       if n.val ∈ ctx.variableTypes.unzip.1 then
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ havocStmts, true)
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc, true)
       else
         -- Use type annotation if it matches a known composite type
         let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
@@ -1184,8 +1163,8 @@ partial def translateAssign  (ctx : TranslationContext)
           | _ => pure (AnyTy, "Any")
         let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
         let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
-        return (newctx, [initStmt] ++ havocStmts, true)
-    | _ => return (ctx, [mkStmtExprMd .Hole] ++ havocStmts, false)
+        return (newctx, [initStmt] ++ exceptHavoc, true)
+    | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc, false)
   }
   let mut newctx := ctx
   match lhs with
@@ -1520,8 +1499,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- When a call has no model (translates to Hole), also havoc maybe_except
     -- since an unmodeled call is a black box that could throw any exception.
-    let havocStmts := mkHavocStmtsForUnmodeledCall ctx value md
-
+    let holeExceptHavoc :=
+      if let .Call _ _ _ _ := value then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match expr.val with
     | .StaticCall fnname _ =>
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
@@ -1535,7 +1516,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, exceptionCheck ++ [expr])
     -- Unmodeled call: skip exception checks (no model to check against),
     -- but havoc maybe_except since the call could throw.
-    | .Hole => return (ctx, [expr] ++ havocStmts)
+    | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
@@ -1619,22 +1600,45 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let block := mkStmtExprMdWithLoc (StmtExpr.Block (setupStmts ++ bodyStmts ++ cleanupStmts) none) md
     return (bodyCtx, [block])
 
-  -- For loop: for target in iter: body (target may be any assignment target)
-  -- Abstract: execute body once with havoc'd target, then havoc all modified variables
-  -- This is sound: if there are 0 iterations, we havoc; if >0, we execute once and havoc
+  -- For loop is translated into a while loop:
+  -- for x in iter : \n body
+  -- is translated into
+  -- @for_loop_counter_xxx = 0
+  -- while (@for_loop_counter_xxx < Any_len(iter)):
+  --  body
+  --  @for_loop_counter_xxx += 1
+  -- Invariant: for `for x in iter: body`, the emitted while loop visits
+  -- each index 0 ≤ i < len(iter) exactly once with x = iter[i], and all
+  -- variables modified in body are properly havocked by while semantics.
+  -- Incompleteness: The functions Any_len, Any_iter_index are now opaque.
+  -- Note that Any_iter_index(iter, index) should not return an exception when 0 <= index < Any_len(iter)
+  -- and Any_iter_index is only called inside the loop body where that condition is satisfied,
+  -- so it is sound to not put it inside AnyMaybeExceptionList
   | .For _ target iter body _orelse _ => do
     -- The iterator expression (we abstract it away)
     let iterExpr ← translateExpr ctx iter
+    if let .Call _ (.Name _ {val:= "range",..} _) _ _  := iter then
+      if let .StaticCall "range" _ := iterExpr.val then
+        pure ()
+      else
+        throw (.internalError "Translation of Python range function changed")
     -- Create context with target(s) and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
     let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
     -- Havoc the target(s) (Ellipsis always translates to Hole)
     let sr := target.ann
-    let holeRhs := expr.Constant sr (constant.ConEllipsis sr) ⟨sr, none⟩
-    let (bodyCtxNoLabels, targetDecls, _) ← translateAssign ctx target none holeRhs md
+    let counterName := s!"@for_loop_counter_{s.toAst.ann.start.byteIdx}"
+    let counterVar := freeVar counterName
+    let counterDecl := mkStmtExprMd $ .LocalVariable counterName (mkHighTypeMd $ .TInt) (mkStmtExprMd $ .LiteralInt 0)
+    let counterIncrease := mkStmtExprMd $ .Assign [counterVar] (mkStmtExprMd $ .PrimitiveOp .Add [counterVar, mkStmtExprMd $ .LiteralInt 1])
+    let indexRhs := expr.Call sr (.Name sr {val:= "Any_iter_index", ann:= sr} default)
+                        {val:= #[iter, .Name sr {val:= counterName, ann:= sr} default], ann:= sr} {val:= #[], ann:= sr}
+    -- Any_iter_index is defined in PythonRuntimeLaurelPart, so indexRhs would be translated into .StaticCall "Any_iter_index" ..., hot .Hole
+    let (bodyCtxNoLabels, targetDecls, _) ← translateAssign ctx target none indexRhs md
     let bodyCtx := { bodyCtxNoLabels with
       loopBreakLabel := some breakLabel
-      loopContinueLabel := some continueLabel }
+      loopContinueLabel := some continueLabel
+      variableTypes := bodyCtxNoLabels.variableTypes ++ [(counterName, "int")]}
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
     let assumeStmts : List StmtExprMd ← do match target with
       | .Name _ n _ =>
@@ -1646,26 +1650,30 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             if ¬ (isAnyNone stopExpr && isAnyNone stepExpr) then
               throw (.unsupportedConstruct "Unsupport range function with more than 1 input" (toString (repr iter)))
             let asIntStart := mkStmtExprMd $ .StaticCall "Any..as_int!" [startExpr]
-            let emptyRangeExit := mkStmtExprMdWithLoc (.IfThenElse
-              (mkStmtExprMd $ .PrimitiveOp .Leq [asIntStart, mkStmtExprMd $ .LiteralInt 0])
-              (mkStmtExprMd $ .Exit breakLabel)
-              none) md
             let assumeTypeInt := mkStmtExprMdWithLoc (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar])) md
             let asIntTarget := mkStmtExprMd $ .StaticCall "Any..as_int!" [targetVar]
             let inRangeExpr := mkStmtExprMd $ .PrimitiveOp .And [
                   (mkStmtExprMd $ .PrimitiveOp .Geq [asIntTarget, mkStmtExprMd $ .LiteralInt 0]),
                   (mkStmtExprMd $ .PrimitiveOp .Lt [asIntTarget, asIntStart]) ]
             let assumeInRange := mkStmtExprMdWithLoc (.Assume inRangeExpr) md
-            pure [emptyRangeExit, assumeTypeInt, assumeInRange]
+            pure [assumeTypeInt, assumeInRange]
           | _ =>
             let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
             let assumeInStmt := mkStmtExprMdWithLoc (.Assume (Any_to_bool targetInIter)) md
             pure [assumeInStmt]
       | _ => pure []
-    let bodyStmts := assumeStmts ++ bodyStmts
+    let counterLtLen := match iterExpr.val with
+      | .StaticCall "range" (boundExpr::_) =>
+          mkStmtExprMd $ .PrimitiveOp .Lt [counterVar,
+                          mkStmtExprMd $ .StaticCall "Any..as_int!" [boundExpr]]
+      | _ =>
+          mkStmtExprMd $ .PrimitiveOp .Lt [counterVar,
+                          mkStmtExprMd $ .StaticCall "Any_len" [iterExpr]]
+    let bodyStmts := targetDecls ++ assumeStmts ++ bodyStmts ++ [counterIncrease]
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
-    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ targetDecls ++ [loopBlock])
+    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
+    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
@@ -2378,7 +2386,7 @@ def pythonToLaurel' (info : PreludeInfo)
   }
 
   let overloadCompositeType := Std.HashSet.ofList $
-      (overloadTable.values.flatMap (·.values)).map fun ident =>
+      (overloadTable.values.flatMap (·.entries.values)).map fun ident =>
         if ident.pythonModule.isEmpty then
           ident.name
         else
