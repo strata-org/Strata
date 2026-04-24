@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
+import Strata.Languages.Laurel.InlineLocalVariablesInExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
@@ -129,6 +130,9 @@ private def laurelPipeline : Array LaurelPass := #[
     needsResolves := true
     run := fun p _m =>
       (eliminateReturnsInExpressionTransform p, [], {}) },
+  { name := "InlineLocalVariablesInExpressions"
+    run := fun p _m =>
+      (inlineLocalVariablesInExpressions p, [], {}) },
   { name := "ConstrainedTypeElim"
     needsResolves := true
     run := fun p m =>

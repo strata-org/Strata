@@ -22,15 +22,11 @@ function assertAndAssumeInFunctions(a: int) returns (r: int)
   a
 };
 
-// Lettish bindings in functions not yet supported
-// because Core expressions do not support let bindings
+// Lettish bindings in functions now supported via inlining
 function letsInFunction() returns (r: int) {
   var x: int := 0;
-//^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var y: int := x + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var z: int := y + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   z
 };
 
