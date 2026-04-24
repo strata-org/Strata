@@ -655,4 +655,60 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
       if arg.name.startsWith "$in_" then
         throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
 
+-- End-to-end bug-finding test for method resolution:
+-- The assertion `result == 7` can only be verified if Calculator.add's body
+-- is correctly resolved and inlined. If the method were unresolved (Hole),
+-- the result would be havocked and the assertion would be unknown/failing.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Calculator:
+    def __init__(self, base: int) -> None:
+        self.base: int = base
+
+    def add(self, x: int) -> int:
+        return self.base + x
+
+def main() -> None:
+    c: Calculator = Calculator(3)
+    result: int = c.add(4)
+    assert result == 7, \"method body must be inlined to verify this\"
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- If method resolution failed, we'd see an unknown/failing diagnostic
+  -- for the assertion. A clean pass means the method body was inlined.
+  let failures := diags.filter fun d => d.message.contains "fail" || d.message.contains "unknown"
+  unless failures.isEmpty do
+    throw <| .userError s!"Method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
+
+-- End-to-end test for self.field.method() resolution:
+-- Inner.greet's body must be resolved through the Outer.inner field
+-- for the assertion to be verifiable.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Inner:
+    def __init__(self, prefix: str) -> None:
+        self.prefix: str = prefix
+
+    def greet(self, name: str) -> str:
+        return self.prefix + name
+
+class Outer:
+    def __init__(self) -> None:
+        self.inner: Inner = Inner(\"hello \")
+
+    def run(self, name: str) -> str:
+        return self.inner.greet(name)
+
+def main() -> None:
+    o: Outer = Outer()
+    result: str = o.run(\"world\")
+    assert result == \"hello world\", \"field.method() must be resolved to verify this\"
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  let failures := diags.filter fun d => d.message.contains "fail" || d.message.contains "unknown"
+  unless failures.isEmpty do
+    throw <| .userError s!"Field method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest
