@@ -490,8 +490,11 @@ partial def unifyTypes
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
       pure args
     | .tvar _ _ =>
-      -- tvar inferred types are passed through; type inference will catch mismatches
-      pure args
+      -- Propagate the tvar to sub-components so that bvar type parameters
+      -- (e.g., inTp/outTp in apply_expr) get filled with the tvar rather
+      -- than being left unresolved.
+      let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax inferredType args
+      unifyTypes isTypeP argLevel0 er tctx exprSyntax inferredType res
     | .arrow _ ia ir =>
       let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax ia args
       unifyTypes isTypeP argLevel0 er tctx exprSyntax ir res

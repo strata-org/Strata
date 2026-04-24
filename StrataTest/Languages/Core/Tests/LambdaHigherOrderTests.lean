@@ -486,6 +486,30 @@ Result: ✅ pass-/
 #guard_msgs in
 #eval verify exprApplyPgm (options := .quiet)
 
+
+-- Expression application with polymorphic selector (requires apply_expr type inference)
+def polyDatatypeFnInstExprAppPgm :=
+#strata
+program Core;
+
+datatype Box (a : Type) { MkBox(val: a) };
+
+procedure Test(out result : int)
+spec {
+  ensures result == 6;
+}
+{
+  result := (Box..val(MkBox(lambda x : int :: x + 1)))(5);
+};
+#end
+
+/-- info: Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval verify polyDatatypeFnInstExprAppPgm (options := .quiet)
+
+
 /-! ## Lambda in a spec -/
 
 def lambdaInSpecPgm :=
