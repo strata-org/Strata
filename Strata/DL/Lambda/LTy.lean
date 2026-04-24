@@ -9,7 +9,6 @@ public import Strata.DL.Util.Map
 import Strata.Util.Tactics
 public meta import Lean.Elab.Term
 
-
 /-! ## Formalization of Mono- and Poly- Types in Lambda
 
 We implement a Hindley-Milner type system for expressions in Lambda, which means

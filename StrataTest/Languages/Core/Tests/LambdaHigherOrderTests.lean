@@ -115,6 +115,8 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify lambdaApplyPgm (options := .quiet)
 
+/-! ## Lambda used as a function body, no "inline" (fails) -/
+
 def lambdaApplyNoInlinePgm :=
 #strata
 program Core;
@@ -462,7 +464,7 @@ Result: ✅ pass-/
 #guard_msgs in
 #eval verify multiBindingLambdaPgm (options := .quiet)
 
-/-! ## Expression application that verifies -/
+/-! ## Expression application -/
 
 -- (lambda)(arg) applied directly, reduced by partial evaluation
 def exprApplyPgm :=
@@ -607,6 +609,7 @@ spec {
 #guard_msgs in
 #eval verify datatypeFnFieldLambdaPgm (options := .quiet)
 
+-- A similar test with symbolic values
 def datatypeFnFieldSymbolicPgm :=
 #strata
 program Core;
