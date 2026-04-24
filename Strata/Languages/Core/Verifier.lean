@@ -1361,7 +1361,9 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     IO.asTask (prio := .dedicated) workerFn
   -- Wait for all workers to finish
   for task in workerTasks do
-    let _ := task.get
+    match task.get with
+    | .ok () => pure ()
+    | .error e => throw e
   -- Collect results in original order
   let rmap ← resultMap.get
   let mut revResults : List (Except DiagnosticModel VCResult) := []
