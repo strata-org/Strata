@@ -29,8 +29,7 @@ namespace Strata.Laurel
 public section
 
 /-- Default metadata with unknown file range. -/
-def defaultMd : MetaData :=
-  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+def defaultMd : MetaData := .empty
 
 /-- Build a StmtExprMd from a StmtExpr with optional source and metadata. -/
 @[inline] def mkNode (e : StmtExpr) (source : Option FileRange := none)
