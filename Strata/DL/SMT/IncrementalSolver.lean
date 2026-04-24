@@ -137,6 +137,11 @@ private def formatConstrs (constrs : List (String × List (String × TermType)))
       result := s!"({cname} {String.intercalate " " fieldStrs})" :: result
   return .ok result
 
+/-- Construct the sort for a datatype given its name and type parameter names. -/
+private def mkDatatypeSort (name : String) (params : List String) : TermType × List TermType :=
+  let paramSorts := params.map fun p => TermType.constr p []
+  (.constr name paramSorts, paramSorts)
+
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
 def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
   setLogic logic := emitln s!"(set-logic {logic})"
@@ -234,8 +239,7 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
     return .ok (.constr name (List.replicate arity (.constr "_" [])))
 
   declareDatatype name params callback := do
-    let selfSort : TermType := .constr name (params.map fun p => .constr p [])
-    let paramSorts : List TermType := params.map fun p => .constr p []
+    let (selfSort, paramSorts) := mkDatatypeSort name params
     match callback selfSort paramSorts with
     | .error msg => return .error msg
     | .ok constrs =>
@@ -253,10 +257,9 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   declareDatatypes dts callback := do
     if dts.isEmpty then return .ok []
-    let selfSorts := dts.map fun (name, params) =>
-      TermType.constr name (params.map fun p => .constr p [])
-    let paramSorts := dts.map fun (_, params) =>
-      params.map fun p => TermType.constr p []
+    let sortsAndParams := dts.map fun (name, params) => mkDatatypeSort name params
+    let selfSorts := sortsAndParams.map (·.1)
+    let paramSorts := sortsAndParams.map (·.2)
     match callback selfSorts paramSorts with
     | .error msg => return .error msg
     | .ok allConstrs =>

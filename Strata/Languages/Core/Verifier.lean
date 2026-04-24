@@ -134,15 +134,13 @@ private def unwrap [MonadExceptOf IO.Error m] [Monad m] (label : String) (r : Ex
   | .ok a => return a
   | .error msg => throw (IO.userError s!"{label}: {msg}")
 
-/-- Convert datatype constructors to the format expected by the `declareDatatype` callback.
-    Takes the self-reference sort and type parameter sorts provided by the callback. -/
-private def datatypeToAbstractConstrs (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
-    (_selfSort : TermType) (_paramSorts : List TermType)
-    : Except String (List (String × List (String × TermType))) :=
-  .ok (d.constrs.map fun c =>
+/-- Build constructor declarations for a datatype (shared by single and mutual cases). -/
+private def datatypeConstrs (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
+    : List (String × List (String × TermType)) :=
+  d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
       (d.name ++ ".." ++ name.name, Core.lMonoTyToTermType fieldTy)
-    (c.name.name, fields))
+    (c.name.name, fields)
 
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
 private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
@@ -153,16 +151,11 @@ private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     | [] => pure ()
     | [d] =>
       let _ ← unwrap "declareDatatype" (← solver.declareDatatype d.name d.typeArgs
-        (datatypeToAbstractConstrs d))
+        fun _ _ => .ok (datatypeConstrs d))
     | _ =>
       let dtHeaders := usedBlock.map fun d => (d.name, d.typeArgs)
       let _ ← unwrap "declareDatatypes" (← solver.declareDatatypes dtHeaders
-        fun _selfSorts _paramSorts =>
-          .ok (usedBlock.map fun d =>
-            d.constrs.map fun c =>
-              let fields := c.args.map fun (name, fieldTy) =>
-                (d.name ++ ".." ++ name.name, Core.lMonoTyToTermType fieldTy)
-              (c.name.name, fields)))
+        fun _ _ => .ok (usedBlock.map datatypeConstrs))
 
 /-- Encode declarations and assertions through the `AbstractSolver` API.
     Replaces `encodeDeclarations` for the incremental path — all commands
