@@ -1335,10 +1335,13 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
   let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
   -- Result slots indexed by job position
   let resultMap ← IO.mkRef ({} : Std.HashMap Nat (Except DiagnosticModel VCResult))
+  -- Early termination flag for stopOnFirstError
+  let shouldStop ← IO.mkRef false
   -- Worker loop: claim jobs from the queue until exhausted
   let workerFn : IO Unit := do
     let mut running := true
     while running do
+      if ← shouldStop.get then break
       -- Atomically pop the next job
       let entry ← queue.modifyGet fun q =>
         match q with
@@ -1349,6 +1352,10 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
       | some (job, idx) =>
         let result ← dispatchSolverJob job p options counter tempDir phases
         resultMap.modify (·.insert idx result)
+        if options.stopOnFirstError then
+          match result with
+          | .ok r => if r.isNotSuccess then shouldStop.set true
+          | .error _ => shouldStop.set true
   -- Spawn `workers` worker tasks (or fewer if there are fewer jobs)
   let numWorkers := min workers jobs.length
   let workerTasks ← (List.range numWorkers).mapM fun _ =>
