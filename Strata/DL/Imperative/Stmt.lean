@@ -309,7 +309,11 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
 
   | .loop guard measure invariant body md =>
       let body := formatBlock P body
-      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}{invariant}"
+      -- Format each labeled invariant as `[lbl]: expr` (unlabeled ones just as `expr`).
+      let invParts : List Format := invariant.map fun (l, e) =>
+        if l.isEmpty then f!"{e}" else f!"[{l}]: {e}"
+      let invFmt : Format := f!"[{Format.joinSep invParts f!", "}]"
+      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}{invFmt}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
   | .exit label md => match label with

@@ -136,7 +136,7 @@ info: while
 info: while
   x == 0
   (some x)
-  [(inv1, true)]
+  [[inv1]: true]
 {
   x := 1;
 }

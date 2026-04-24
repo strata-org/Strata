@@ -87,12 +87,13 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
   | _, _ =>
     .error ".some and .none mismatch"
 
-private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
+private def alphaEquivExprsList (l1 l2 : List (String × Expression.Expr)) (map : IdMap)
     : Except Format Bool :=
   if l1.length != l2.length then
     .error "invariant lists have different lengths"
   else
-    return (l1.zip l2).all (fun (a, b) => alphaEquivExprs a b map)
+    return (l1.zip l2).all (fun ((lbl1, a), (lbl2, b)) =>
+      lbl1 == lbl2 && alphaEquivExprs a b map)
 
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
