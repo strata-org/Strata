@@ -1312,12 +1312,12 @@ def verifyCommand : Command where
 def pyInterpretCommand : Command where
   name := "pyInterpret"
   args := [ "file" ]
-  flags := [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" },
-            { name := "verbose", help := "Show the generated Core program." }]
+  flags := [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" }]
+            ++ laurelTranslateFlags
   help := "Interpret a Python Ion program concretely (Python → Laurel → Core → execute)."
   callback := fun v pflags => do
     let filePath := v[0]
-    let verbose := pflags.getBool "verbose"
+    let keepDir := pflags.getString "keep-all-files"
     let fuel ← match pflags.getString "fuel" with
       | some s => match s.toNat? with
         | .some n => pure n
@@ -1325,12 +1325,17 @@ def pyInterpretCommand : Command where
       | none => pure 10000
 
     let (core, _diags) ←
-      match <- pyTranslateLaurel filePath #[] #[] (specDir := ".") |>.toBaseIO with
-      | .ok r => pure r
-      | .error msg => exitFailure msg
-    if verbose then
-      IO.println "\n==== Core Program ===="
-      IO.println f!"{core}"
+      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") |>.toBaseIO with
+      | .ok laurel =>
+        if let some dir := keepDir then
+          IO.FS.createDirAll dir
+          IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))
+        match ← Strata.translateCombinedLaurel laurel with
+        | (some core, diags) => pure (core, diags)
+        | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
+      | .error msg => exitFailure (toString msg)
+    if let some dir := keepDir then
+      IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
     let core ← match Core.typeCheck Core.VerifyOptions.quiet core
         (moreFns := Strata.Python.ReFactory) with
       | .ok prog => pure prog
@@ -1342,9 +1347,7 @@ def pyInterpretCommand : Command where
       let E := Core.Statement.Command.runCall [] "__main__" [] fuel E
       match E.error with
       | none =>
-        if verbose then
-          IO.println s!"{Std.format E}"
-          IO.println "Execution completed successfully."
+        IO.println "Execution completed successfully."
       | some e =>
           IO.println s!"{Std.format e}"
           IO.Process.exit ExitCode.failuresFound
