@@ -224,7 +224,7 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
-  incremental := true
+  incremental := false
   pathCap := .none
   parallelWorkers := 1
 }
