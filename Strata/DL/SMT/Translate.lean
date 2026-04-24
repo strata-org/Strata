@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Lean.Expr
-import Lean.ToExpr
-import Strata.Languages.Core.SMTEncoder
+public import Lean.Expr
+public import Lean.ToExpr
+public import Strata.Languages.Core.SMTEncoder
+
+public section
 
 open Lean
 open Strata hiding Expr

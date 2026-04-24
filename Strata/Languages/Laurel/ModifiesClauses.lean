@@ -125,8 +125,8 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Forall ⟨ fldName, { val := .TTypedField { val := .TInt, source := none }, source := none } ⟩ none implBody
-  let outerForall : StmtExprMd := { val := .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := none, md := proc.name.md }
+  let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .TTypedField { val := .TInt, source := none }, source := none } ⟩ none implBody
+  let outerForall : StmtExprMd := { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := none, md := proc.name.md }
   some outerForall
 
 /--
@@ -154,7 +154,7 @@ def transformModifiesClauses (model: SemanticModel)
         let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
-          | some frame => postconds ++ [frame]
+          | some frame => postconds ++ [{ condition := frame : Condition }]
           | none => postconds
         .ok { proc with body := .Opaque postconds' impl [] }
       else

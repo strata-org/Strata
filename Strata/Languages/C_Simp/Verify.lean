@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.Verifier
+public import Strata.Languages.C_Simp.C_Simp
+public import Strata.Languages.C_Simp.DDMTransform.Translate
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.CoreOp
 import Strata.DL.Imperative.Stmt
+
+public section
 
 open Core
 
@@ -165,8 +168,7 @@ def loop_elimination_function(f : C_Simp.Function) : Core.Procedure :=
   {header := {name := f.name.name, typeArgs := [],
               inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},
-              spec := {modifies := [],
-                       preconditions := core_preconditions,
+              spec := {preconditions := core_preconditions,
                        postconditions := core_postconditions},
                        body := f.body.map loop_elimination_statement}
 

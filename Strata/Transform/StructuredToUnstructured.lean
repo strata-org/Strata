@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.BasicBlock
-import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.CFGSemantics
 import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.Stmt
 import Strata.DL.Lambda.LExpr
-import Strata.DL.Util.LabelGen
+public import Strata.DL.Util.LabelGen
+
+public section
 
 namespace Imperative
 

@@ -20,9 +20,9 @@ private def testProgram1 : Cmds Expression :=
 
 /--
 info: Commands:
-init (x : int) := #0
-x := #10
-assert [x_value_eq] #true
+init (x : int) := 0
+x := 10
+assert [x_value_eq] true
 
 State:
 Error:
@@ -31,7 +31,7 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → #10]
+[(x : int) → 10]
 
 Evaluation Config:
 Eval Depth: 200
@@ -53,7 +53,7 @@ Label: x_value_eq
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram1
@@ -64,8 +64,8 @@ private def testProgram2 : Cmds Expression :=
 
 /--
 info: Commands:
-init (x : int) := (y : int)
-assert [x_eq_12] ((y : int) == #12)
+init (x : int) := y
+assert [x_eq_12] y == 12
 
 State:
 Error:
@@ -74,8 +74,8 @@ Subst Map:
 
 Expression Env:
 State:
-[(y : int) → (y : int)
-(x : int) → (y : int)]
+[(y : int) → y
+(x : int) → y]
 
 Evaluation Config:
 Eval Depth: 200
@@ -97,7 +97,7 @@ Label: x_eq_12
 Property: assert
 Assumptions:
 Proof Obligation:
-((y : int) == #12)
+y == 12
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram2

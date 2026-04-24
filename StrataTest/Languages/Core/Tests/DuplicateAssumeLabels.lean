@@ -18,7 +18,7 @@ def duplicateAssumes : Program :=
 program Core;
 
 
-procedure Double(n : int) returns (result : int)
+procedure Double(n : int, out result : int)
 spec {
   ensures [double_correct]: (result == n * 2);
 }

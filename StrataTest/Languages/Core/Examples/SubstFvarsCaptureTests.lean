@@ -24,7 +24,7 @@ program Core;
 
 inline function foo(x : int, $__y0 : int) : int { x + $__y0 }
 
-procedure TestFoo() returns ()
+procedure TestFoo()
 {
   var y : int;
   assert [fooEq]: (foo(y, 2) == 4);
@@ -49,14 +49,14 @@ def callCondBugPgm : Program :=
 #strata
 program Core;
 
-procedure P(x : int, $__y3 : int) returns ()
+procedure P(x : int, $__y3 : int)
 spec {
   requires x == $__y3;
 }
 {
 };
 
-procedure Test() returns ()
+procedure Test()
 {
   var y : int;
   havoc y;

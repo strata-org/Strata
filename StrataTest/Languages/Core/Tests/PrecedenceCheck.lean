@@ -17,7 +17,7 @@ function foo(a : bool, b : bool, c : bool, d : bool) : bool {
   (((!a) || b) && ((!c) || d))
 }
 
-procedure TestFoo () returns () {
+procedure TestFoo () {
   var a : bool, b : bool, c : bool, d : bool, imp_expr : bool, foo_expr : bool;
 
   assert [implies_and_eq_not_or_1]: (((a ==> b) && (c ==> d)) == foo(a, b, c, d));

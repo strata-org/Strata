@@ -3,7 +3,6 @@ test_param_reassign_kwargs.py(1, 59): ✅ pass - (greet ensures) Return type con
 test_param_reassign_kwargs.py(6, 4): ✅ pass - (greet requires) Type constraint of name
 test_param_reassign_kwargs.py(6, 4): ✅ pass - (greet requires) Type constraint of greeting
 test_param_reassign_kwargs.py(6, 4): ✅ pass - assert(137)
-test_param_reassign_kwargs.py(7, 4): ✅ pass - assert_assert(181)_calls_Any_to_bool_0
 test_param_reassign_kwargs.py(7, 4): ❓ unknown - kwargs call
-DETAIL: 6 passed, 0 failed, 1 inconclusive
+DETAIL: 5 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Backends.CBMC.GOTO.InstToJson
-import Strata.Backends.CBMC.GOTO.DefaultSymbols
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
-import Strata.DL.Imperative.ToCProverGOTO
+public import Strata.Backends.CBMC.GOTO.InstToJson
+public import Strata.Backends.CBMC.GOTO.DefaultSymbols
+public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+public import Strata.DL.Imperative.ToCProverGOTO
+public import Strata.Languages.Core.Verifier
+
+public section
 
 open Std (ToFormat Format format)
 
@@ -37,7 +40,7 @@ abbrev Core.ExprStr : Imperative.PureExpr :=
 
 namespace CoreToGOTO
 
-private def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
+def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
     Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
   | none => throw f!"Cannot find {i} in the type context!"
@@ -47,7 +50,7 @@ private def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
       ty.toGotoType
     else throw f!"Poly-type unexpected in the context for {i}: {ty}"
 
-private def updateType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident)
+def updateType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident)
     (ty : Core.Expression.Ty) : Core.Expression.TyEnv :=
   @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Unit⟩ T [(i, ty)]
 
@@ -58,7 +61,7 @@ instance : Imperative.ToGoto Core.Expression where
   toGotoType := (fun ty => Lambda.LMonoTy.toGotoType ty.toMonoTypeUnsafe)
   toGotoExpr := Lambda.LExpr.toGotoExpr
 
-private def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
+def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
     Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
   | none => throw f!"Cannot find {i} in the type context!"
@@ -68,7 +71,7 @@ private def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
       ty.toGotoType
     else throw f!"Poly-type unexpected in the context for {i}: {ty}"
 
-private def updateTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident)
+def updateTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident)
     (ty : Core.ExprStr.Ty) : Core.ExprStr.TyEnv :=
   T.addInNewestContext [(i, ty)]
 
@@ -98,7 +101,7 @@ def substVarNames {Metadata IDMeta: Type} [DecidableEq IDMeta]
 /-- Convert metadata from `Core.Expression` to `Core.ExprStr`, preserving
     label-keyed elements (fileRange, propertySummary, etc.) and dropping
     variable-keyed elements whose identifier type changes. -/
-private def convertMetaData (md : Imperative.MetaData Core.Expression)
+def convertMetaData (md : Imperative.MetaData Core.Expression)
     : Imperative.MetaData Core.ExprStr :=
   md.filterMap fun elem =>
     match elem.fld with

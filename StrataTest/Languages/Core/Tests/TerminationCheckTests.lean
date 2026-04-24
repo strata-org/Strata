@@ -32,8 +32,7 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 
-procedure TestListLen() returns ()
-spec {
+procedure TestListLen() spec {
   ensures true;
 }
 {
@@ -243,8 +242,7 @@ function isOdd (@[cases] n : MyNat) : bool
   if MyNat..isZero(n) then false else isEven(MyNat..pred(n))
 };
 
-procedure TestMutual() returns ()
-spec {
+procedure TestMutual() spec {
   ensures true;
 }
 {
@@ -304,8 +302,7 @@ rec function listSum (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else IntList..hd(xs) + listSum(IntList..tl(xs))
 };
 
-procedure Test() returns ()
-spec {
+procedure Test() spec {
   ensures true;
 }
 {
@@ -368,8 +365,7 @@ rec function treeSize (@[cases] t : Tree) : int
   else 1 + treeSize(Tree..tail(t))
 };
 
-procedure TestTreeSize() returns ()
-spec {
+procedure TestTreeSize() spec {
   ensures true;
 }
 {

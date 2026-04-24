@@ -15,7 +15,7 @@ axiom [g_idempotent]: forall x: int :: g(g(x)) == g(x);
 function h(x: int): int;
 axiom [h_def]: forall x: int :: h(x) == f(x) + 1;
 
-procedure TestF(x: int) returns (result: int)
+procedure TestF(x: int, out result: int)
 spec {
   ensures [result_positive]: result > 0;
 }

@@ -81,12 +81,11 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
-  | .Forall _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
-  | .Exists _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
+  | .Quantifier _ _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert c => collectExprMd c
+  | .Assert ⟨c, _⟩ => collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
@@ -104,8 +103,8 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
         if !modif.isEmpty then
           { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
         else
-          let r1 := postconds.foldl (fun (acc : AnalysisResult) pc =>
-            let r := (collectExprMd pc).run {} |>.2
+          let r1 := postconds.foldl (fun (acc : AnalysisResult) (pc : Condition) =>
+            let r := (collectExprMd pc.condition).run {} |>.2
             { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
               writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
               callees := acc.callees ++ r.callees }) {}
@@ -115,10 +114,10 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
           { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
             writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
             callees := r1.callees ++ r2.callees }
-    | .Abstract postconds => (postconds.forM collectExprMd).run {} |>.2
+    | .Abstract postconds => (postconds.forM (collectExprMd ·.condition)).run {} |>.2
     | .External => {}
   -- Also analyze preconditions
-  let precondResult := (proc.preconditions.forM collectExprMd).run {} |>.2
+  let precondResult := (proc.preconditions.forM (collectExprMd ·.condition)).run {} |>.2
   { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
     writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
     callees := bodyResult.callees ++ precondResult.callees }
@@ -370,19 +369,17 @@ where
     | .AsType t ty =>
         let t' ← recurse t valueUsed
         let isCheck := ⟨ .IsType t' ty, source, md ⟩
-        let assertStmt := ⟨ .Assert isCheck, source, md ⟩
+        let assertStmt := ⟨ .Assert { condition := isCheck }, source, md ⟩
         return ⟨ .Block [assertStmt, t'] none, source, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, source, md ⟩
-    | .Forall p trigger b =>
+    | .Quantifier mode p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Forall p trigger' (← recurse b), source, md⟩
-    | .Exists p trigger b =>
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Exists p trigger' (← recurse b), source, md⟩
+      return ⟨.Quantifier mode p trigger' (← recurse b), source, md⟩
     | .Assigned n => return ⟨ .Assigned (← recurse n), source, md ⟩
     | .Old v => return ⟨ .Old (← recurse v), source, md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), source, md ⟩
-    | .Assert c => return ⟨ .Assert (← recurse c), source, md ⟩
+    | .Assert ⟨condExpr, summary⟩ =>
+        return ⟨ .Assert { condition := ← recurse condExpr, summary }, source, md ⟩
     | .Assume c => return ⟨ .Assume (← recurse c), source, md ⟩
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), source, md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), source, md ⟩
@@ -405,7 +402,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let outputs' := heapOutParam :: proc.outputs
 
     -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapInName model)
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
@@ -416,7 +413,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
       | .Opaque postconds impl modif =>
           -- Postconditions use $heap (the output state)
-          let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
                 let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
@@ -426,7 +423,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 
@@ -441,19 +438,19 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none, #[]⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName model)
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 

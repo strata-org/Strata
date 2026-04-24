@@ -163,8 +163,7 @@ private def mkTermCheckProc
       outputs := []
       noFilter := true
     }
-    spec := { modifies := [],
-               preconditions := dtRankAxioms.map fun (name, e) =>
+    spec := { preconditions := dtRankAxioms.map fun (name, e) =>
                  (name, { expr := e, attr := .Free }),
                postconditions := [] }
     body := paramInits ++ stmts

@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SMTEncoder
+public import Strata.Languages.Core.SMTEncoder
+
+public section
 
 /-!
 # Denotation of SMT terms for the Strata DSL
@@ -24,7 +27,7 @@ theorem List.getElem_of_findIdx?_eq_some {xs : List α} {mkTypeFunType : α → 
   have ⟨h1, h2⟩ := List.findIdx?_eq_some_iff_getElem.mp h
   exact h2.1
 
-def mkTypeFunType (n : Nat) : Type 1 := n.repeat (Type → ·) Type
+@[expose] def mkTypeFunType (n : Nat) : Type 1 := n.repeat (Type → ·) Type
 
 def applyTypeArg {n : Nat} (tf : mkTypeFunType (n + 1)) (α : Type) : mkTypeFunType n :=
   tf α
@@ -380,7 +383,7 @@ Check that denoted argument types match declared variable types.
 
 If lengths differ, this returns `false`.
 -/
-@[simp]
+@[simp, expose]
 noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
   match as, vs with
   | [], [] => true
@@ -410,13 +413,13 @@ theorem argTypesAlign_length_eq (h : argTypesAlign as vs) : as.length = vs.lengt
     have h' : as.length = vs.length := argTypesAlign_length_eq (Bool.and_eq_true_iff.mp h).right
     simpa using congrArg Nat.succ h'
 
-theorem argTypesAlign_true (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
-  exact argTypesAlign_true_with_len h (argTypesAlign_length_eq h)
+theorem argTypesAlign_true {as : List (TermDenoteResult ctx)} {vs : List TermVar} (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty :=
+  argTypesAlign_true_with_len h (argTypesAlign_length_eq h)
 
-theorem argTypesAlign_arg_types (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
-  exact argTypesAlign_true h
+theorem argTypesAlign_arg_types {as : List (TermDenoteResult ctx)} {vs : List TermVar} (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty :=
+  argTypesAlign_true h
 
 -- Note: `noncomputable` because of a compiler error
 /--

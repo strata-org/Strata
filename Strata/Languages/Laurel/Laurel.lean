@@ -170,6 +170,12 @@ inductive HighType : Type where
   | Unknown
   deriving Repr
 
+/-- Whether a quantifier is universal or existential. -/
+inductive QuantifierMode where
+  | Forall
+  | Exists
+  deriving Repr, BEq, Inhabited
+
 mutual
 
 /--
@@ -185,7 +191,7 @@ structure Procedure : Type where
   /-- Output parameters with their types. Multiple outputs are supported. -/
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
-  preconditions : List (AstNode StmtExpr)
+  preconditions : List Condition
   -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
@@ -208,6 +214,16 @@ structure Parameter where
   type : AstNode HighType
 
 /--
+A condition with an optional human-readable summary.
+Used for assertions, preconditions, and postconditions.
+-/
+structure Condition where
+  /-- The boolean condition expression. -/
+  condition : AstNode StmtExpr
+  /-- Optional human-readable summary describing the property being checked. -/
+  summary : Option String := none
+
+/--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
@@ -217,11 +233,11 @@ inductive Body where
   | Transparent (body : AstNode StmtExpr)
   /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
   | Opaque
-      (postconditions : List (AstNode StmtExpr))
+      (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
       (modifies : List (AstNode StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
-  | Abstract (postconditions : List (AstNode StmtExpr))
+  | Abstract (postconditions : List Condition)
   /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
   | External
 
@@ -280,10 +296,8 @@ inductive StmtExpr : Type where
   | IsType (target : AstNode StmtExpr) (type : AstNode HighType)
   /-- Call an instance method on a target object. -/
   | InstanceCall (target : AstNode StmtExpr) (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Universal quantification over a typed parameter with an optional trigger. -/
-  | Forall (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
-  /-- Existential quantification over a typed parameter with an optional trigger. -/
-  | Exists (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
+  /-- Quantification (universal or existential) over a typed parameter with an optional trigger. -/
+  | Quantifier (mode : QuantifierMode) (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
   | Assigned (name : AstNode StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/
@@ -291,7 +305,7 @@ inductive StmtExpr : Type where
   /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
   | Fresh (value : AstNode StmtExpr)
   /-- Assert a condition, generating a proof obligation. -/
-  | Assert (condition : AstNode StmtExpr)
+  | Assert (condition : Condition)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : AstNode StmtExpr)
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
@@ -319,6 +333,17 @@ end
 
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
+
+theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
+  cases c; grind
+
+/-- Apply a monadic transformation to the condition expression, preserving the summary. -/
+def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
+  return { c with condition := ← f c.condition }
+
+/-- Apply a pure transformation to the condition expression, preserving the summary. -/
+def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
+  { c with condition := f c.condition }
 
 /-- Build Core metadata from an optional source location and Laurel metadata. -/
 def fileRangeToCoreMd (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : Imperative.MetaData Core.Expression :=
@@ -462,8 +487,16 @@ def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Paramet
 def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
   s!"{dt.name.text}..{field.name.text}!"
 
+/-- A type alias, mapping a name to an existing type. Eliminated by the
+    `TypeAliasElim` pass after the first resolution. -/
+structure TypeAlias where
+  name : Identifier
+  target : HighTypeMd
+  deriving Repr
+
 /--
-A user-defined type, either a composite type, a constrained type, or an algebraic datatype.
+A user-defined type, either a composite type, a constrained type, an algebraic datatype,
+or a type alias.
 
 Algebriac datatypes can also be encoded uses composite and constrained types. Here are two examples:
 
@@ -482,12 +515,15 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  /-- A type alias (e.g. `MyInt = int`). Eliminated before Core translation. -/
+  | Alias (ty : TypeAlias)
   deriving Inhabited
 
 def TypeDefinition.name : TypeDefinition → Identifier
   | .Composite ty => ty.name
   | .Constrained ty => ty.name
   | .Datatype ty => ty.name
+  | .Alias ty => ty.name
 
 structure Constant where
   name : Identifier

@@ -13,7 +13,7 @@ private def testPgm : Program :=
 #strata
 program Core;
 
-procedure min(n : int, m : int) returns (k : int)
+procedure min(n : int, m : int, out k : int)
 spec {
   ensures ((k <= n) && (k <= m));
 }

@@ -12,7 +12,7 @@ namespace Strata
 def quantPgm :=
 #strata
 program Core;
-procedure Test(x : int) returns (r : int)
+procedure Test(x : int, out r : int)
 spec {
   ensures [good]: (forall y : int :: exists z : int :: r + (z + y) == y + (z + r));
   ensures [bad]: (forall q : int :: q < x);
@@ -35,7 +35,7 @@ axiom [g_neg]: forall x : int, y : int :: { g(x, y) } x > 0 ==> g(x, y) < 0;
 axiom [f_and_g]: forall x : int, y : int :: { g(x, y) } { f(x) } g(x, y) < f(x);
 axiom [f_and_g2]: forall x : int, y : int :: { g(x, y), f(x) } g(x, y) < f(x);
 
-procedure TestTriggers(x : int) returns (r : int)
+procedure TestTriggers(x : int, out r : int)
 spec {
   ensures [f_and_g]: r < 0;
 }

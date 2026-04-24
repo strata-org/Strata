@@ -236,7 +236,7 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
   -- evaluator is identity on values
     (∀ v' σ, HasVal.value v' → δ σ v' = some v')
 
-def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
+@[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
 
 def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
