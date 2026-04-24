@@ -88,7 +88,7 @@ jobs:
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
-          test-args: "-- --exclude Languages.Python.VerifyPythonTest"
+          test-args: "-- --exclude Languages.Python"
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
@@ -305,7 +305,7 @@ jobs:
               sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
             fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest StrataTest.Languages.Python.VerifyPythonTest StrataTest.Languages.Python.PropertySummaryTest StrataTest.Languages.Python.DictNoneTest
+      run: PYTHON=python lake test -- Languages.Python --exclude Languages.Python.VerifyPythonTest
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
