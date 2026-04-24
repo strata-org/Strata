@@ -164,6 +164,12 @@ inductive HighType : Type where
   | Unknown
   deriving Repr
 
+/-- Whether a quantifier is universal or existential. -/
+inductive QuantifierMode where
+  | Forall
+  | Exists
+  deriving Repr, BEq, Inhabited
+
 mutual
 
 /--
@@ -284,10 +290,8 @@ inductive StmtExpr : Type where
   | IsType (target : AstNode StmtExpr) (type : AstNode HighType)
   /-- Call an instance method on a target object. -/
   | InstanceCall (target : AstNode StmtExpr) (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Universal quantification over a typed parameter with an optional trigger. -/
-  | Forall (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
-  /-- Existential quantification over a typed parameter with an optional trigger. -/
-  | Exists (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
+  /-- Quantification (universal or existential) over a typed parameter with an optional trigger. -/
+  | Quantifier (mode : QuantifierMode) (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
   | Assigned (name : AstNode StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/

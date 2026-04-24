@@ -66,11 +66,8 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
   | .InstanceCall target callee args =>
     pure ⟨.InstanceCall (← mapStmtExprM f target) callee
       (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
-  | .Forall param trigger body =>
-    pure ⟨.Forall param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source⟩
-  | .Exists param trigger body =>
-    pure ⟨.Exists param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
+  | .Quantifier mode param trigger body =>
+    pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
       (← mapStmtExprM f body), source⟩
   | .Assigned name =>
     pure ⟨.Assigned (← mapStmtExprM f name), source⟩

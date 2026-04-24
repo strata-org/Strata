@@ -107,11 +107,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .PrimitiveOp _ args => args.forM collectExprNames
   | .AsType target ty => collectExprNames target; collectHighTypeNames ty
   | .IsType target ty => collectExprNames target; collectHighTypeNames ty
-  | .Forall param trigger body =>
-    collectHighTypeNames param.type
-    trigger.forM collectExprNames
-    collectExprNames body
-  | .Exists param trigger body =>
+  | .Quantifier _ param trigger body =>
     collectHighTypeNames param.type
     trigger.forM collectExprNames
     collectExprNames body
