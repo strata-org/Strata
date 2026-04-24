@@ -110,7 +110,7 @@ def main() -> None:
   match ← (processPythonFile pythonCmd (stringInputContext "test.py" program)).toBaseIO with
   | .ok _ => throw <| IO.userError "Expected error for len() on class without __len__"
   | .error err =>
-    unless ((toString err).splitOn "len() is not supported").length > 1 do
+    unless containsSubstr (toString err) "len() is not supported" do
       throw <| IO.userError s!"Unexpected error: {err}"
 
 end Strata.Python.DictNoneTest
