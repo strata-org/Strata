@@ -147,16 +147,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | .Assigned n => return ⟨.Assigned (← inferExpr n defaultHoleType), source, md⟩
   | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p defaultHoleType), source, md⟩
   | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f defaultHoleType), source, md⟩
-  | .Forall p trigger b =>
+  | .Quantifier mode p trigger b =>
       let trigger' ← match trigger with
         | some t => pure (some (← inferExpr t defaultHoleType))
         | none => pure none
-      return ⟨.Forall p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
-  | .Exists p trigger b =>
-      let trigger' ← match trigger with
-        | some t => pure (some (← inferExpr t defaultHoleType))
-        | none => pure none
-      return ⟨.Exists p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
+      return ⟨.Quantifier mode p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
   | _ => return expr
 end
 

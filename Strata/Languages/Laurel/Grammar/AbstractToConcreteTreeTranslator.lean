@@ -167,12 +167,10 @@ where
       let calleeExpr := laurelOp "fieldAccess" #[stmtExprToArg target, ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp "call" #[calleeExpr, commaSep argsArr]
-    | .Forall param trigger body =>
+    | .Quantifier mode param trigger body =>
       let trigOpt := optionArg (trigger.map fun t => laurelOp "trigger" #[stmtExprToArg t])
-      laurelOp "forallExpr" #[ident param.name.text, highTypeToArg param.type, trigOpt, stmtExprToArg body]
-    | .Exists param trigger body =>
-      let trigOpt := optionArg (trigger.map fun t => laurelOp "trigger" #[stmtExprToArg t])
-      laurelOp "existsExpr" #[ident param.name.text, highTypeToArg param.type, trigOpt, stmtExprToArg body]
+      let opName := match mode with | .Forall => "forallExpr" | .Exists => "existsExpr"
+      laurelOp opName #[ident param.name.text, highTypeToArg param.type, trigOpt, stmtExprToArg body]
     | .ReferenceEquals lhs rhs =>
       laurelOp "eq" #[stmtExprToArg lhs, stmtExprToArg rhs]
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]

@@ -101,22 +101,17 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
     ⟨.Assign (targets.map (resolveVariable ptMap)) value, source, md⟩
   | .Var (.Declare param) =>
     ⟨.Var (.Declare { param with type := resolveType ptMap param.type }), source, md⟩
-  | .Forall param trigger body =>
+  | .Quantifier mode param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
-    -- created `PrimitiveOp .Implies [c, body]` won't be visited again, which
-    -- is safe because `c` (from `constraintCallFor`) is a StaticCall with
-    -- Identifier leaves that don't need further resolution.
+    -- created `PrimitiveOp` won't be visited again, which is safe because
+    -- `c` (from `constraintCallFor`) is a StaticCall with Identifier leaves
+    -- that don't need further resolution.
+    let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.And
     let injected := match constraintCallFor ptMap param.type.val param.name md (src := source) with
-      | some c => ⟨.PrimitiveOp .Implies [c, body], source, md⟩
+      | some c => ⟨.PrimitiveOp combiner [c, body], source, md⟩
       | none => body
-    ⟨.Forall param' trigger injected, source, md⟩
-  | .Exists param trigger body =>
-    let param' := { param with type := resolveType ptMap param.type }
-    let injected := match constraintCallFor ptMap param.type.val param.name md (src := source) with
-      | some c => ⟨.PrimitiveOp .And [c, body], source, md⟩
-      | none => body
-    ⟨.Exists param' trigger injected, source, md⟩
+    ⟨.Quantifier mode param' trigger injected, source, md⟩
   | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source, md⟩
   | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source, md⟩
   | _ => expr

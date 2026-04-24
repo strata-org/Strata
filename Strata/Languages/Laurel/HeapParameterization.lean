@@ -79,8 +79,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
-  | .Forall _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
-  | .Exists _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
+  | .Quantifier _ _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
@@ -406,12 +405,9 @@ where
         let assertStmt := ⟨ .Assert { condition := isCheck }, source, md ⟩
         return ⟨ .Block [assertStmt, t'] none, source, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, source, md ⟩
-    | .Forall p trigger b =>
+    | .Quantifier mode p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Forall p trigger' (← recurse b), source, md⟩
-    | .Exists p trigger b =>
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Exists p trigger' (← recurse b), source, md⟩
+      return ⟨.Quantifier mode p trigger' (← recurse b), source, md⟩
     | .Assigned n => return ⟨ .Assigned (← recurse n), source, md ⟩
     | .Old v => return ⟨ .Old (← recurse v), source, md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), source, md ⟩
