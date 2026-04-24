@@ -572,3 +572,36 @@ Property: assert
 Result: ✅ pass-/
 #guard_msgs in
 #eval verify higherOrderLambdaPgm (options := .quiet)
+
+/-! ## Datatype with function-typed field + lambda -/
+
+-- A datatype whose constructor takes a function argument, instantiated with a lambda
+def datatypeFnFieldLambdaPgm :=
+#strata
+program Core;
+
+datatype Transformer { MkTransformer(f: int -> int, base: int) };
+
+inline function applyTransformer(t : Transformer) : int
+{
+  (Transformer..f(t))(Transformer..base(t))
+}
+
+procedure Test(out result : int)
+spec {
+  ensures result == 6;
+}
+{
+  result := applyTransformer(MkTransformer(lambda x : int :: x + 1, 5));
+};
+#end
+
+/-- info: Obligation: applyTransformer_body_calls_Transformer..base_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval verify datatypeFnFieldLambdaPgm (options := .quiet)
