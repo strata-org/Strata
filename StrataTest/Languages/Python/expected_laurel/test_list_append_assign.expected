@@ -1,0 +1,5 @@
+test_list_append_assign.py(3, 8): ✅ pass - set_xs_calls_Any_List_append_0
+test_list_append_assign.py(4, 4): ✅ pass - assert(56)
+test_list_append_assign.py(5, 4): ✅ pass - assert(86)
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

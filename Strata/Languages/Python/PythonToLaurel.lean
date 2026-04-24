@@ -238,6 +238,9 @@ def isOfAnyType (ty: String): Bool := ty ∈ [PyLauType.None, PyLauType.Bool, Py
                            PyLauType.Str, PyLauType.Datetime, PyLauType.Bytes, PyLauType.ListAny, PyLauType.DictStrAny, PyLauType.Any]
 
 def PyLauFuncReturnVar := "LaurelResult"
+def freeVar (name: String) := mkStmtExprMd (.Identifier name)
+def maybeExceptVar := freeVar "maybe_except"
+def nullcall_var := freeVar "nullcall_ret"
 
 /-- Convert a Laurel HighType to a PyLauType string for type inference. -/
 def highTypeToPyLauType : HighType → String
@@ -270,6 +273,7 @@ def isKnownType (ctx : TranslationContext) (typeStr : String) : Bool :=
 /-- Translate Python type annotation to Laurel HighType -/
 def translateType (ctx : TranslationContext) (typeStr : String) : Except TranslationError HighTypeMd :=
   -- Check if it matches a known composite type (user-defined or PySpec)
+  if isOfAnyType typeStr then .ok (mkCoreType PyLauType.Any) else
   match ctx.importedSymbols[typeStr]? with
     | some (ImportedSymbol.compositeType laurelName) =>
         .ok (mkHighTypeMd (.UserDefined laurelName))
@@ -749,6 +753,7 @@ partial def reMapFunctionName (_ctx: TranslationContext) (fname: String) : Strin
   | "int" => "to_int_any"
   | "len" => "Any_len_to_Any"
   | "timedelta" => "timedelta_func" -- We handle timedelta as an int, not a class
+  | "ListAny@append" => "Any_List_append"
   | _ => fname
 
 partial def isPackage (ctx : TranslationContext) (expr: Python.expr SourceRange) : Bool :=
@@ -793,6 +798,10 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
 
   | .Call _ f args kwargs =>
     getFunctionReturnType ctx f args.val kwargs.val.toList
+
+  | .List _ _ _ => return PyLauType.ListAny
+
+  | .Dict _ _ _ => return PyLauType.DictStrAny
 
   | _ => return PyLauType.Any
 
@@ -848,7 +857,13 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
             match ctx.importedSymbols[callerTy]? with
             | some (ImportedSymbol.compositeType laurelName) => laurelName
             | _ => callerTy
-          return (manglePythonMethod resolvedTy callname, some v, false)
+          if resolvedTy == PyLauType.ListAny then
+            if let .Name _ _ _ := v then
+              pure ()
+            else
+              throw (.unsupportedConstruct "List procedure calleer not a variable is unsupported" (toString (repr v)))
+          let fnName := reMapFunctionName ctx $ manglePythonMethod resolvedTy callname
+          return (fnName, some v, false)
     | _ => throw (.internalError s!"{repr func} is not a function")
 
 --Kwargs can be a single Dict variable: func_call (**var) or a normal Kwargs (key1 = val1, key2 =val2 ...)
@@ -1024,6 +1039,8 @@ partial def translateCall (ctx : TranslationContext)
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
+          if let some (ImportedSymbol.function _ ) := ctx.importedSymbols[funcName]? then
+            return mkCall funcName
           else if funcName ∈ ctx.userFunctions then
             -- funcName is already resolved to "ClassName@method" using the
             -- receiver's *static* type (from refineFunctionCallExpr). If the
@@ -1074,6 +1091,14 @@ partial def translateCall (ctx : TranslationContext)
     if typeAssertsOrdered.isEmpty then return call
     else return mkStmtExprMd (.Block (typeAssertsOrdered ++ [call]) none)
   else
+  match opt_firstarg with
+  | some (.Name _ n _) => match ctx.variableTypes.find? (λ v => v.fst == n.val) with
+      | some (_, "ListAny") =>
+          let trans_args ← args.mapM (translateExpr ctx)
+          let rhs ← emitCall ((freeVar n.val)::trans_args)
+          return mkStmtExprMd $ .Assign [freeVar n.val] rhs
+      | _ => pure ()
+  | _ => pure ()
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
   let trans_args ← args.mapM (translateExpr ctx)
@@ -1105,10 +1130,6 @@ def withException (ctx : TranslationContext) (funcname: String) : Bool :=
     | some sig => hasErrorOutput sig
     | none => false
 
-def freeVar (name: String) := mkStmtExprMd (.Identifier name)
-def maybeExceptVar := freeVar "maybe_except"
-def nullcall_var := freeVar "nullcall_ret"
-
 partial def translateAssign  (ctx : TranslationContext)
                              (lhs: Python.expr SourceRange)
                              (annotation: Option (Python.expr SourceRange) )
@@ -1137,7 +1158,7 @@ partial def translateAssign  (ctx : TranslationContext)
       curCtx := newCtx
       stmts := stmts ++ eltStmts
     return (curCtx, stmts, false)
-  let rhs_trans ←  translateExpr ctx rhs
+  let mut rhs_trans ←  translateExpr ctx rhs
   -- When an unmodeled call produces a Hole, also havoc maybe_except since
   -- the call is a black box that could throw any exception.
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
@@ -1195,6 +1216,12 @@ partial def translateAssign  (ctx : TranslationContext)
               let varType := mkHighTypeMd (.UserDefined className)
               let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some rhs_trans)) md
               [newStmt]
+        | .Assign _ _ =>
+            -- Only occurs when the right hand side is a Python built-in List or Dict procedure
+            if rhsIsCall then
+              [rhs_trans, mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] AnyNone) md]
+            else
+              [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         | _ => [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
@@ -1285,7 +1312,8 @@ partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : Lis
   let rec go (s : Python.stmt SourceRange) : List (String × String) :=
     match s with
     | .Assign _ lhs value _ =>
-      let ty := (inferClassTypeFromLaurelExpr ctx value).getD PyLauType.Any
+      let inferredRhsTy := (inferExprType ctx value).toOption.getD PyLauType.Any
+      let ty := (inferClassTypeFromLaurelExpr ctx value).getD inferredRhsTy
       let names := (lhs.val.toList.filter (λ e => match e with |.Name _ _ _ => true | _=> false)).map pyExprToString
       names.map (λ n => (n, ty))
     | .AnnAssign _ lhs annoTy value _ =>
@@ -1320,9 +1348,7 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
   let hoistedDecls : List StmtExprMd ←  newDecls.mapM fun (name, tyStr) => do
       let ty ← translateType ctx tyStr
       pure $ mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
-  let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
-      (newDecls.map fun (n, ty) =>
-        if isCompositeType ctx ty then (n, ty) else (n, PyLauType.Any)) }
+  let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++ newDecls}
   return (hoistedDecls, hoistedCtx)
 
 --Check if a prelude function returns a value of Any type, which may be an exception (such as PAdd, PMul, ...)

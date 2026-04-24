@@ -342,6 +342,18 @@ function List_extend (l1 : ListAny, l2: ListAny) : ListAny
   else ListAny_cons(ListAny..head!(l1), List_extend(ListAny..tail!(l1), l2))
 };
 
+function List_append (l : ListAny, e: Any) : ListAny
+{
+  if ListAny..isListAny_nil(l) then ListAny_cons(e, ListAny_nil())
+  else ListAny_cons(ListAny..head!(l), List_append(ListAny..tail!(l), e))
+};
+
+function Any_List_append (l : Any, e: Any) : Any
+  requires Any..isfrom_ListAny(l)
+{
+  from_ListAny(List_append(Any..as_ListAny!(l), e))
+};
+
 function List_get_non_neg (l : ListAny, i : int) : Any
   requires i >= 0 && i < List_len(l)
 {
