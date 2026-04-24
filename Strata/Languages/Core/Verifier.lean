@@ -43,13 +43,6 @@ namespace AbstractEncoder
 
 variable {m : Type → Type} [Monad m] [MonadExceptOf IO.Error m]
 
-private def defineTerm (solver : AbstractSolver Term TermType m) (inBinder : Bool) (ty : TermType) (body : Term) : AbstractEncoderM m Term := do
-  if inBinder then return body
-  let id := termId (← get).terms.size
-  match ← liftM (solver.defineFun id [] ty body) with
-  | .ok _ => return .var ⟨id, ty⟩
-  | .error msg => throw (IO.userError s!"defineFun failed: {msg}")
-
 private def encodeUF (solver : AbstractSolver Term TermType m) (uf : UF) : AbstractEncoderM m String := do
   if let .some enc := (← get).ufs.get? uf then return enc
   let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
@@ -62,51 +55,49 @@ private def encodeUF (solver : AbstractSolver Term TermType m) (uf : UF) : Abstr
   | .error msg => throw (IO.userError s!"declareFun failed: {msg}")
   modifyGet fun state => (id, { state with ufs := state.ufs.insert uf id })
 
-private def defineApp (solver : AbstractSolver Term TermType m) (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List Term) : AbstractEncoderM m Term := do
+private def defineApp (solver : AbstractSolver Term TermType m) (ty : TermType) (op : Op) (tEncs : List Term) : AbstractEncoderM m Term := do
   match op with
   | .uf f =>
     let ufName ← encodeUF solver f
     let ufRef : UF := { id := ufName, args := f.args, out := f.out }
-    defineTerm solver inBinder ty (.app (.uf ufRef) tEncs ty)
+    return .app (.uf ufRef) tEncs ty
   | _ =>
-    defineTerm solver inBinder ty (.app op tEncs ty)
+    return .app op tEncs ty
 
-private def defineQuantifierHelper (solver : AbstractSolver Term TermType m) (inBinder : Bool) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List Term)) (bodyEnc : Term) : AbstractEncoderM m Term := do
+private def defineQuantifierHelper (_solver : AbstractSolver Term TermType m) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List Term)) (bodyEnc : Term) : AbstractEncoderM m Term := do
   let tr : Term := match trEncs with
     | [] => .app .triggers [] .trigger
     | groups =>
       let triggerTerms := groups.map fun group => .app .triggers group .trigger
       .app .triggers triggerTerms .trigger
-  defineTerm solver inBinder .bool (.quant qk args tr bodyEnc)
+  return .quant qk args tr bodyEnc
 
-def encodeTerm (solver : AbstractSolver Term TermType m) (inBinder : Bool) (t : Term) : AbstractEncoderM m Term := do
-  if let .some enc := (← get).terms.get? t then return enc
+def encodeTerm (solver : AbstractSolver Term TermType m) (t : Term) : AbstractEncoderM m Term := do
   let ty := t.typeOf
   let enc ← match t with
     | .var _ => return t
     | .prim _ => return t
-    | .none _ => defineTerm solver inBinder ty t
+    | .none _ => return t
     | .some t₁ =>
-      let t₁Enc ← encodeTerm solver inBinder t₁
-      defineTerm solver inBinder ty (.some t₁Enc)
+      let t₁Enc ← encodeTerm solver t₁
+      return .some t₁Enc
     | .app .re_allchar [] .regex => return t
     | .app .re_all     [] .regex => return t
     | .app .re_none    [] .regex => return t
     | .app .bvnego [inner] .bool =>
       match inner.typeOf with
       | .bitvec n =>
-        let innerEnc ← encodeTerm solver inBinder inner
+        let innerEnc ← encodeTerm solver inner
         let minVal : Term := .prim (.bitvec (BitVec.intMin n))
-        defineApp solver inBinder ty .eq [innerEnc, minVal]
+        defineApp solver ty .eq [innerEnc, minVal]
       | _ => return Term.bool false
-    | .app op ts _ => defineApp solver inBinder ty op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver inBinder tᵢ))
+    | .app op ts _ => defineApp solver ty op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver tᵢ))
     | .quant qk qargs tr body =>
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver True ti))
-      let bodyEnc ← encodeTerm solver True body
-      defineQuantifierHelper solver inBinder qk qargs trEncs bodyEnc
-  if inBinder then pure enc
-  else modifyGet fun state => (enc, { state with terms := state.terms.insert t enc })
+      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver ti))
+      let bodyEnc ← encodeTerm solver body
+      defineQuantifierHelper solver qk qargs trEncs bodyEnc
+  pure enc
 termination_by sizeOf t
 decreasing_by
   all_goals first
@@ -123,7 +114,7 @@ private def encodeFunction (solver : AbstractSolver Term TermType m) (uf : UF) (
   let id := ufId (← get).ufs.size
   liftM (solver.comment uf.id)
   let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
-  let bodyEnc ← encodeTerm solver true body
+  let bodyEnc ← encodeTerm solver body
   match ← liftM (solver.defineFun id argPairs uf.out bodyEnc) with
   | .ok _ => pure ()
   | .error msg => throw (IO.userError s!"defineFun failed: {msg}")
@@ -186,13 +177,13 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   emitDatatypesAbstract solver ctx
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver False ax) |>.run estate
+  let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
     unwrap "assert" (← solver.assert id)
-  let (assumptionIds, estate) ← assumptionTerms.mapM (AbstractEncoder.encodeTerm solver False) |>.run estate
+  let (assumptionIds, estate) ← assumptionTerms.mapM (AbstractEncoder.encodeTerm solver) |>.run estate
   for id in assumptionIds do
     unwrap "assert" (← solver.assert id)
-  let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver False obligationTerm) |>.run estate
+  let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty then some id else none
   return (obligationId, ids, estate)
