@@ -60,6 +60,8 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
+  -- Use original parameter names (prefixed with $__ to avoid SMT reserved name
+  -- conflicts like 'exp') so the obligations program is readable.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)

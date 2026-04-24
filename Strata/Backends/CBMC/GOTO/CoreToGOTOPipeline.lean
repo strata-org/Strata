@@ -498,7 +498,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
   let inlined ← match Core.Transform.run program (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
-    | .error msg => throw msg
+    | .error msg => throw (toString msg)
   let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg

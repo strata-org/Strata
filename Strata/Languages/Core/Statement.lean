@@ -456,6 +456,73 @@ end
 
 ---------------------------------------------------------------------
 
+/-- Apply a function to all user-facing expressions in a statement. -/
+def Statement.mapExprs (f : Expression.Expr → Expression.Expr) : Statement → Statement
+  | .cmd (.cmd (.assert l e md)) => .cmd (.cmd (.assert l (f e) md))
+  | .cmd (.cmd (.assume l e md)) => .cmd (.cmd (.assume l (f e) md))
+  | .cmd (.cmd (.cover l e md)) => .cmd (.cmd (.cover l (f e) md))
+  | .cmd (.cmd (.init n ty (.det e) md)) => .cmd (.cmd (.init n ty (.det (f e)) md))
+  | .cmd (.cmd (.set n (.det e) md)) => .cmd (.cmd (.set n (.det (f e)) md))
+  | .cmd (.call pname args md) => .cmd (.call pname (args.map fun
+      | .inArg e => .inArg (f e)
+      | a => a) md)
+  | .block l ss md => .block l (ss.map (Statement.mapExprs f)) md
+  | .ite (.det c) tss ess md =>
+    .ite (.det (f c)) (tss.map (Statement.mapExprs f)) (ess.map (Statement.mapExprs f)) md
+  | .ite .nondet tss ess md =>
+    .ite .nondet (tss.map (Statement.mapExprs f)) (ess.map (Statement.mapExprs f)) md
+  | .loop (.det g) measure inv body md =>
+    .loop (.det (f g)) (measure.map f) (inv.map f) (body.map (Statement.mapExprs f)) md
+  | .loop .nondet measure inv body md =>
+    .loop .nondet (measure.map f) (inv.map f) (body.map (Statement.mapExprs f)) md
+  | .cmd (.cmd (.init n ty .nondet md)) => .cmd (.cmd (.init n ty .nondet md))
+  | .cmd (.cmd (.set n .nondet md)) => .cmd (.cmd (.set n .nondet md))
+  | .exit l md => .exit l md
+  | .funcDecl decl md => .funcDecl decl md
+  | .typeDecl tc md => .typeDecl tc md
+
+/-- Apply a function to all user-facing expressions in a list of statements. -/
+def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
+    (ss : Statements) : Statements :=
+  ss.map (Statement.mapExprs f)
+
+/-- Collect all user-facing expressions from a statement. -/
+def Statement.collectExprs :
+    Statement → List Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) => [e]
+  | .cmd (.cmd (.assume _ e _)) => [e]
+  | .cmd (.cmd (.cover _ e _)) => [e]
+  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
+  | .cmd (.cmd (.set _ (.det e) _)) => [e]
+  | .cmd (.call _ args _) => args.filterMap fun
+      | .inArg e => some e
+      | _ => none
+  | .block _ ss _ => ss.flatMap Statement.collectExprs
+  | .ite (.det c) tss ess _ =>
+    [c] ++ tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .ite .nondet tss ess _ =>
+    tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .loop (.det g) measure inv body _ =>
+    [g] ++ measure.toList ++
+    inv ++ body.flatMap Statement.collectExprs
+  | .loop .nondet measure inv body _ =>
+    measure.toList ++
+    inv ++ body.flatMap Statement.collectExprs
+  | .cmd (.cmd (.init _ _ .nondet _)) => []
+  | .cmd (.cmd (.set _ .nondet _)) => []
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Collect all user-facing expressions from a list of statements. -/
+def Statements.collectExprs
+    (ss : Statements) : List Expression.Expr :=
+  ss.flatMap Statement.collectExprs
+
+---------------------------------------------------------------------
+
 
 end
 end Core

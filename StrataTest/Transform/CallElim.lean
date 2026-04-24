@@ -201,7 +201,7 @@ def callElim (p : Core.Program)
   : Core.Program :=
   match (run p callElim') with
   | .ok (_changed, res) => res
-  | .error e => panic! e
+  | .error e => panic! (toString e)
 
 /--
 info: true

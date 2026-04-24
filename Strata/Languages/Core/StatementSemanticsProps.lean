@@ -2454,6 +2454,52 @@ theorem core_noFailure_preserved
         (fun a cfg hcs hat => hvalid a _ hcs hat)
         hf₀ hstep)
 
+/-! ## mapExprs identity -/
+
+private theorem list_map_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    ss.map (Statement.mapExprs id) = ss := by
+  induction ss with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [List.map_cons, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s :=
+  s.inductionOn
+    (cmd_case := fun c => by
+      cases c with
+      | cmd c =>
+        cases c with
+        | assert l e md => simp [Statement.mapExprs]
+        | assume l e md => simp [Statement.mapExprs]
+        | cover l e md => simp [Statement.mapExprs]
+        | init n ty e md => cases e <;> simp [Statement.mapExprs]
+        | set n e md => cases e <;> simp [Statement.mapExprs]
+      | call pname args md =>
+        simp [Statement.mapExprs]
+        induction args with
+        | nil => rfl
+        | cons h t ih => simp [ih]; cases h <;> rfl)
+    (block_case := fun l ss md ih => by
+      simp [Statement.mapExprs, list_map_id_of_forall ih])
+    (ite_case := fun cond tss ess md iht ihe => by
+      cases cond <;> simp [Statement.mapExprs, list_map_id_of_forall iht,
+                            list_map_id_of_forall ihe])
+    (loop_case := fun guard measure inv body md ihb => by
+      cases guard <;> simp [Statement.mapExprs, list_map_id_of_forall ihb]
+      all_goals constructor
+      all_goals first | (cases measure <;> simp) | (induction inv with | nil => rfl | cons _ _ ih => simp [ih]))
+    (exit_case := fun l md => by simp [Statement.mapExprs])
+    (funcDecl_case := fun decl md => by simp [Statement.mapExprs])
+    (typeDecl_case := fun tc md => by simp [Statement.mapExprs])
+
+theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
+  simp [Statements.mapExprs]
+  induction ss with
+  | nil => rfl
+  | cons s rest ih => simp [Statement.mapExprs_id s, ih]
+
 end Core
 
 end -- public section

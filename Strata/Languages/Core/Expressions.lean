@@ -40,6 +40,19 @@ instance : Inhabited Expression.Expr where
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
   .op () op.toString ty
 
+/-- Extract the type annotation from a typechecked expression, if available. -/
+def getExprType? : Expression.Expr → Option Lambda.LMonoTy
+  | .fvar _ _ ty => ty
+  | .op _ _ ty => ty
+  | .const _ c => some c.ty
+  | .eq _ _ _ => some .bool
+  | .ite _ _ t _ => getExprType? t
+  | .app _ fn _ =>
+    match getExprType? fn with
+    | some (.tcons "arrow" [_, ret]) => some ret
+    | _ => none
+  | _ => none
+
 ---------------------------------------------------------------------
 
 end

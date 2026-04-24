@@ -10,6 +10,7 @@ import Lean.Elab.Tactic
 
 import Strata.Languages.Core.Verifier
 import Strata.Transform.LoopElim
+import Strata.Transform.ObligationExtraction
 public import Strata.Languages.C_Simp.Verify
 public import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
@@ -53,18 +54,24 @@ namespace Core
 abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
-def genVCsSingleENV (E : Env) : Option coreVCs := do
-  match E.error with
-  | some _ => none
-  | _ => return E.deferred.toList.map (fun ob => (E, ob))
-
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   let program := (loopElim program).fst
-  match Core.typeCheckAndEval options program with
+  match Core.typeCheck options program with
   | .error _ => none
-  | .ok (pEs, _stats) =>
-    let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs
-    return VCss.flatten.reverse
+  | .ok tcProgram =>
+    match Core.toCoreProofObligationProgram options tcProgram with
+    | .error _ => none
+    | .ok (oblProgram, _stats) =>
+      match Core.ObligationExtraction.extractObligations oblProgram with
+      | .error _ => none
+      | .ok obligations =>
+        let E := match Core.buildEnv options tcProgram with
+          | .ok (initE, _) =>
+            match Program.eval initE with
+            | .ok (pEs, _) => pEs.head?.getD initE
+            | .error _ => initE
+          | .error _ => Env.init (empty_factory := true)
+        return obligations.toList.map (fun ob => (E, ob))
 
 end Core
 
