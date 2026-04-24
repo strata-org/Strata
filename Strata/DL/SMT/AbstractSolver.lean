@@ -75,9 +75,6 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   mkBool : Bool → m τ
   mkInt : Int → m τ
   mkPrim : TermPrim → m τ
-  mkVar : String → σ → m τ
-  mkNone : σ → m τ
-  mkSome : τ → m τ
 
   /-- Fallback for operations not covered by specific mk* methods
       (e.g. bitvectors, strings, regex). The backend receives the raw `Op`,

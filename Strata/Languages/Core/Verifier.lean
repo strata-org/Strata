@@ -34,36 +34,46 @@ open Strata
 
 public section
 
-/-- Encoder monad over an abstract solver backend. Uses the same `EncoderState`
-    as the batch encoder but routes all solver commands through `AbstractSolver`.
-    Parameterized by the underlying monad `m` so the encoder is not tied to any
-    particular solver backend. -/
-abbrev AbstractEncoderM (m : Type → Type) := StateT EncoderState m
+/-- Encoder state for the abstract solver backend. Extends `EncoderState` with
+    a cache of `τ` handles for declared variables, so that `encodeTerm` can
+    look up handles by name instead of requiring a `mkVar` method on the solver. -/
+structure AbstractEncoderState (τ : Type) where
+  /-- The underlying encoder state (UF name mappings). -/
+  base : EncoderState
+  /-- Maps declared variable/function names to their solver handles.
+      Populated by `encodeUF` / `declareFun`; looked up by `encodeTerm`. -/
+  varHandles : Std.HashMap String τ := {}
+
+/-- Encoder monad over an abstract solver backend.
+    Parameterized by the underlying monad `m` and the solver's term type `τ`
+    so the encoder is not tied to any particular solver backend. -/
+abbrev AbstractEncoderM (τ : Type) (m : Type → Type) := StateT (AbstractEncoderState τ) m
 
 namespace AbstractEncoder
 
 variable {τ σ : Type} {m : Type → Type} [Monad m] [MonadExceptOf IO.Error m]
 
-private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM m String := do
-  if let .some enc := (← get).ufs.get? uf then return enc
+private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
+  if let .some enc := (← get).base.ufs.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
-  let existingNames := (← get).ufs.toList.map (·.2)
+  let existingNames := (← get).base.ufs.toList.map (·.2)
   let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
   let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (solver.termTypeToSort vt.ty))
   let outSort ← liftM (solver.termTypeToSort uf.out)
   match ← liftM (solver.declareFun id argSorts outSort) with
-  | .ok _ => pure ()
+  | .ok handle =>
+    modify fun st => { st with varHandles := st.varHandles.insert id handle }
   | .error msg => throw (IO.userError s!"declareFun failed: {msg}")
-  modifyGet fun state => (id, { state with ufs := state.ufs.insert uf id })
+  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
 
-private def liftExcept (label : String) (r : Except String α) : AbstractEncoderM m α :=
+private def liftExcept (label : String) (r : Except String α) : AbstractEncoderM τ m α :=
   match r with
   | .ok a => return a
   | .error msg => throw (IO.userError s!"{label}: {msg}")
 
-private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM m τ := do
+private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   match op, tEncs with
   -- Boolean operations
   | .and, _         => liftExcept "mkAnd" (← liftM (solver.mkAnd tEncs))
@@ -102,7 +112,7 @@ private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op)
   -- All other operations (bitvectors, strings, etc.): route through mkAppOp
   | _, _ => liftExcept "mkAppOp" (← liftM (solver.mkAppOp op tEncs retSort))
 
-private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List τ)) (bodyEnc : τ) : AbstractEncoderM m τ := do
+private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List τ)) (bodyEnc : τ) : AbstractEncoderM τ m τ := do
   let bindings ← args.mapM fun v => do
     let s ← liftM (solver.termTypeToSort v.ty)
     return (v.id, s)
@@ -111,18 +121,29 @@ private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : Quant
     | .exist => solver.mkExists
   liftExcept "mkQuant" (← liftM (mkQuant bindings (fun _vars => .ok (bodyEnc, trEncs))))
 
-def encodeTerm (solver : AbstractSolver τ σ m) (t : Term) : AbstractEncoderM m τ := do
+def encodeTerm (solver : AbstractSolver τ σ m) (t : Term) : AbstractEncoderM τ m τ := do
   match t with
   | .var v =>
-    let s ← liftM (solver.termTypeToSort v.ty)
-    liftM (solver.mkVar v.id s)
+    -- Look up the τ handle cached when the variable was declared via declareFun/declareNew
+    match (← get).varHandles.get? v.id with
+    | .some handle => return handle
+    | .none =>
+      -- Variable not yet declared — declare it now via declareNew
+      let s ← liftM (solver.termTypeToSort v.ty)
+      let handle ← liftM (solver.declareNew v.id s)
+      modify fun st => { st with varHandles := st.varHandles.insert v.id handle }
+      return handle
   | .prim p => liftM (solver.mkPrim p)
   | .none ty =>
-    let s ← liftM (solver.termTypeToSort ty)
-    liftM (solver.mkNone s)
+    -- Option none: use the datatype constructor via mkAppOp
+    let retSort ← liftM (solver.termTypeToSort (.option ty))
+    liftExcept "mkAppOp(none)" (← liftM (solver.mkAppOp (.datatype_op .constructor "none") [] retSort))
   | .some t₁ =>
+    -- Option some: encode the inner term and apply the constructor via mkAppOp
     let t₁Enc ← encodeTerm solver t₁
-    liftM (solver.mkSome t₁Enc)
+    let retSort ← liftM (solver.termTypeToSort (.option t₁.typeOf))
+    let handle ← liftExcept "mkAppOp(some)" (← liftM (solver.mkAppOp (.datatype_op .constructor "some") [] retSort))
+    liftExcept "mkApp(some)" (← liftM (solver.mkApp handle [t₁Enc]))
   | .app .re_allchar [] .regex =>
     let s ← liftM (solver.termTypeToSort .regex)
     liftExcept "mkAppOp(re)" (← liftM (solver.mkAppOp .re_allchar [] s))
@@ -159,9 +180,9 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM m String := do
-  if let .some enc := (← get).ufs.get? uf then return enc
-  let id := ufId (← get).ufs.size
+private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
+  if let .some enc := (← get).base.ufs.get? uf then return enc
+  let id := ufId (← get).base.ufs.size
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
     let s ← liftM (solver.termTypeToSort vt.ty)
@@ -171,7 +192,7 @@ private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : T
   match ← liftM (solver.defineFun id argPairs outSort bodyEnc) with
   | .ok _ => pure ()
   | .error msg => throw (IO.userError s!"defineFun failed: {msg}")
-  modifyGet fun state => (id, { state with ufs := state.ufs.insert uf id })
+  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
 
 end AbstractEncoder
 
@@ -238,7 +259,8 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   for s in ctx.sorts do
     let _ ← unwrap "declareSort" (← solver.declareSort s.name s.arity)
   emitDatatypesAbstract solver ctx
-  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run EncoderState.init
+  let initState : AbstractEncoderState τ := { base := EncoderState.init }
+  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
@@ -247,9 +269,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   for id in assumptionIds do
     unwrap "assert" (← solver.assert id)
   let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
-  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+  let ids := estate.base.ufs.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty then some id else none
-  return (obligationId, ids, estate)
+  return (obligationId, ids, estate.base)
 
 /-- Encode a verification condition into SMT-LIB format, including check-sat
     commands. Used by the batch pipeline. -/
