@@ -33,7 +33,6 @@ test_if_elif.py.ion             SKIP
 test_variable_reassign.py.ion   SKIP
 test_datetime_now_tz.py.ion     SKIP
 test_timedelta_expr.py.ion      SKIP
-test_composite_return.py.ion    FAIL
 test_multi_assign.py.ion        FAIL
 test_multi_assign_triple.py.ion FAIL
 test_multi_assign_side_effect.py.ion SKIP
