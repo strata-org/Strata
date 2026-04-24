@@ -1222,8 +1222,7 @@ def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
       SMT.dischargeObligationIncremental options vars md
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
     else
-      let counterVal ← counter.get
-      counter.set (counterVal + 1)
+      let counterVal ← counter.modifyGet fun n => (n, n + 1)
       let filename := tempDir / s!"{SMT.sanitizeFilename label}_{counterVal}.smt2"
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
