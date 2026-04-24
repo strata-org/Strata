@@ -34,17 +34,17 @@ open Lambda Imperative
     Valid inputs contain only: `assume`, `assert`, `cover`, `var` declarations,
     non-deterministic or deterministic branching (`if *` / `if cond`),
     labelled blocks (from loop elimination), and `exit` statements. -/
-private def isValidInput : Statements → Bool
+private def isValidObligationInput : Statements → Bool
   | [] => true
-  | s :: rest => isValidStatement s && isValidInput rest
+  | s :: rest => isValidObligationStatement s && isValidObligationInput rest
 where
-  isValidStatement : Statement → Bool
+  isValidObligationStatement : Statement → Bool
     | .cmd (.cmd (.assert _ _ _)) => true
     | .cmd (.cmd (.assume _ _ _)) => true
     | .cmd (.cmd (.cover _ _ _)) => true
     | .cmd (.cmd (.init _ _ _ _)) => true
-    | .ite _ thenSs elseSs _ => isValidInput thenSs && isValidInput elseSs
-    | .block _ innerSs _ => isValidInput innerSs
+    | .ite _ thenSs elseSs _ => isValidObligationInput thenSs && isValidObligationInput elseSs
+    | .block _ innerSs _ => isValidObligationInput innerSs
     | .exit _ _ => true
     | _ => false
 
