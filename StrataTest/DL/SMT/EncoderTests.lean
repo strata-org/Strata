@@ -6,23 +6,23 @@
 
 import Strata.DL.SMT.Encoder
 
-/-! ## Tests and proofs for disambiguateName / breakDisambiguatedName -/
+/-! ## Tests and proofs for Strata.Name.disambiguate / Strata.Name.breakDisambiguated -/
 
 namespace Strata.SMT.Encoder
 
 /-! ### Concrete roundtrip checks -/
 
-#guard breakDisambiguatedName (disambiguateName "x" 1) == ("x", 2)
-#guard breakDisambiguatedName (disambiguateName "x" 0) == ("x", 1)
-#guard breakDisambiguatedName (disambiguateName "foo" 42) == ("foo", 43)
-#guard breakDisambiguatedName (disambiguateName "$__bv0" 1) == ("$__bv0", 2)
+#guard Strata.Name.breakDisambiguated (Strata.Name.disambiguate "x" 1) == ("x", 2)
+#guard Strata.Name.breakDisambiguated (Strata.Name.disambiguate "x" 0) == ("x", 1)
+#guard Strata.Name.breakDisambiguated (Strata.Name.disambiguate "foo" 42) == ("foo", 43)
+#guard Strata.Name.breakDisambiguated (Strata.Name.disambiguate "$__bv0" 1) == ("$__bv0", 2)
 -- Non-disambiguated names
-#guard breakDisambiguatedName "x" == ("x", 1)
-#guard breakDisambiguatedName "hello" == ("hello", 1)
+#guard Strata.Name.breakDisambiguated "x" == ("x", 1)
+#guard Strata.Name.breakDisambiguated "hello" == ("hello", 1)
 -- Names with @ but no numeric suffix
-#guard breakDisambiguatedName "x@y" == ("x@y", 1)
+#guard Strata.Name.breakDisambiguated "x@y" == ("x@y", 1)
 -- Names with existing disambiguation
-#guard breakDisambiguatedName "x@1" == ("x", 2)
+#guard Strata.Name.breakDisambiguated "x@1" == ("x", 2)
 
 /-! ### Roundtrip proof -/
 
@@ -120,9 +120,9 @@ private theorem readBack_digitLoopFuel (n : Nat) :
       simp [List.foldl]
       omega
 
-/-- `digitsToNat` on the digits of `n` recovers `n`. -/
+/-- `Strata.Name.digitsToNat` on the digits of `n` recovers `n`. -/
 theorem digitsToNat_digitLoopFuel (n : Nat) :
-    digitsToNat (digitLoopFuel (n + 1) n []) = n :=
+    Strata.Name.digitsToNat (digitLoopFuel (n + 1) n []) = n :=
   readBack_digitLoopFuel n
 
 /-- `Nat.repr n` is non-empty. -/
@@ -161,10 +161,12 @@ set_option linter.unusedSimpArgs false
 
 /-- Breaking a disambiguated name recovers the base name and incremented suffix,
     provided the base name does not contain `@`. -/
-theorem breakDisambiguatedName_disambiguateName (baseName : String) (n : Nat)
+theorem breakDisambiguated_disambiguate (baseName : String) (n : Nat)
     (_h : ¬ baseName.any (· == '@')) :
-    breakDisambiguatedName (disambiguateName baseName n) = (baseName, n + 1) := by
-  simp only [disambiguateName, breakDisambiguatedName, toString, String.toList_append,
+    Strata.Name.breakDisambiguated (Strata.Name.disambiguate baseName n) = (baseName, n + 1) := by
+  simp only [Strata.Name.disambiguate, Strata.Name.breakDisambiguated,
+    Strata.Name.digitsToNat,
+    toString, String.toList_append,
     List.reverse_append, List.append_assoc]
   have hat : "@".toList.reverse = ['@'] := by native_decide
   rw [hat]
@@ -185,11 +187,12 @@ theorem breakDisambiguatedName_disambiguateName (baseName : String) (n : Nat)
   | [] => exact absurd h hne
   | c :: cs =>
     simp only []
-    -- digitsToNat (c :: cs) = digitsToNat n.repr.toList = n
+    -- Strata.Name.digitsToNat (c :: cs) = Strata.Name.digitsToNat n.repr.toList = n
     -- via digitLoopFuel bridge
-    simp only [digitsToNat, Nat.repr, String.toList_ofList, Nat.toDigits,
+    simp only [Strata.Name.digitsToNat,
+      Nat.repr, String.toList_ofList, Nat.toDigits,
       ← digitLoopFuel_eq_toDigitsCore] at h
-    rw [← h, digitsToNat, readBack_digitLoopFuel]
+    rw [← h, readBack_digitLoopFuel]
     simp only [List.reverse_cons, List.reverse_reverse, List.dropLast_concat,
       String.mk_eq_ofList, String.ofList_toList]
 
