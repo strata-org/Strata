@@ -40,3 +40,7 @@ root = "Scripts.ImportStats"
 
 [[lean_exe]]
 name = "DiffTestCore"
+
+[[lean_exe]]
+name = "purityCheck"
+root = "Tools.PurityCheck"
