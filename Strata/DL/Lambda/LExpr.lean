@@ -340,6 +340,7 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
   | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
   | _ => []
 
+/-- Checks if the expression contains a lambda abstraction anywhere. -/
 def hasAbs {T : LExprParamsT} : LExpr T → Bool
   | .abs _ _ _ _ => true
   | .app _ e1 e2 => hasAbs e1 || hasAbs e2

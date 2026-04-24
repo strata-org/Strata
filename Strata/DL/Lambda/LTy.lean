@@ -153,6 +153,7 @@ def LMonoTy.isArrow : LMonoTy → Option (LMonoTy × LMonoTy)
   | .tcons "arrow" [dom, cod] => some (dom, cod)
   | _ => none
 
+/-- Checks if the type contains an arrow (function type) at any depth. -/
 def LMonoTy.containsArrow : LMonoTy → Bool
   | .tcons "arrow" _ => true
   | .tcons _ args => args.attach.any (fun x => LMonoTy.containsArrow x.1)
