@@ -236,6 +236,89 @@ def create_service() -> Any:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Class with field initialized via constructor call.
+-- Verifies that dispatch detection in __init__ doesn't break
+-- normal class translation.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Wrapper:
+    name: str
+    def __init__(self, name: str) -> None:
+        self.name = name
+    def greet(self) -> str:
+        return self.name
+
+def main() -> None:
+    w: Wrapper = Wrapper(\"test\")
+    r: str = w.greet()
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
+-- Regression test: class with self.field = Constructor() translates without crashing.
+-- Verifies that field method calls on user-defined classes don't cause
+-- "Coercion to Any not supported" or other translation errors.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        self.svc = Svc()
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- Translation should succeed without coercion errors
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error: {d.message}")
+  -- Log diagnostic count for visibility; fail if unexpectedly many
+  if diags.size > 10 then
+    throw (IO.userError s!"Unexpected number of diagnostics: {diags.size}: {diags.map (·.message)}")
+
+-- Dispatch detection inside try/except in __init__.
+-- self.svc = Svc() inside a try block should still be detected.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        try:
+            self.svc = Svc()
+        except:
+            pass
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error in try/except dispatch: {d.message}")
 -- Instance method call resolution and body preservation:
 -- Verifies that the method body is translated (not opaque) and the
 -- instance call resolves to a StaticCall (not a Hole).
@@ -505,6 +588,40 @@ def test() -> None:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
+-- Callable[..., Any], dict[str, Any], and list[str] type annotations
+-- should not crash the pipeline (issue #960).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from typing import Any, Callable
+
+def retry(func: Callable[..., Any], retries: int = 3) -> Any:
+    return func()
+
+def make_record(name: str) -> dict[str, Any]:
+    return {\"name\": name}
+
+def get_names(names: list[str]) -> list[str]:
+    return names
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- typing.Callable (qualified, without `from typing import Callable`)
+-- exercises the .Attribute normalization path.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"import typing
+
+def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.Any:
+    return func()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 -- print() with multiple positional arguments exercises the opt parameter.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
@@ -537,5 +654,61 @@ def test() -> None:
     for arg in sig.args do
       if arg.name.startsWith "$in_" then
         throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
+
+-- End-to-end bug-finding test for method resolution:
+-- The assertion `result == 7` can only be verified if Calculator.add's body
+-- is correctly resolved and inlined. If the method were unresolved (Hole),
+-- the result would be havocked and the assertion would be unknown/failing.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Calculator:
+    def __init__(self, base: int) -> None:
+        self.base: int = base
+
+    def add(self, x: int) -> int:
+        return self.base + x
+
+def main() -> None:
+    c: Calculator = Calculator(3)
+    result: int = c.add(4)
+    assert result == 7, \"method body must be inlined to verify this\"
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- If method resolution failed, we'd see an unknown/failing diagnostic
+  -- for the assertion. A clean pass means the method body was inlined.
+  let failures := diags.filter fun d => d.message.contains "fail" || d.message.contains "unknown"
+  unless failures.isEmpty do
+    throw <| .userError s!"Method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
+
+-- End-to-end test for self.field.method() resolution:
+-- Inner.greet's body must be resolved through the Outer.inner field
+-- for the assertion to be verifiable.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Inner:
+    def __init__(self, prefix: str) -> None:
+        self.prefix: str = prefix
+
+    def greet(self, name: str) -> str:
+        return self.prefix + name
+
+class Outer:
+    def __init__(self) -> None:
+        self.inner: Inner = Inner(\"hello \")
+
+    def run(self, name: str) -> str:
+        return self.inner.greet(name)
+
+def main() -> None:
+    o: Outer = Outer()
+    result: str = o.run(\"world\")
+    assert result == \"hello world\", \"field.method() must be resolved to verify this\"
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  let failures := diags.filter fun d => d.message.contains "fail" || d.message.contains "unknown"
+  unless failures.isEmpty do
+    throw <| .userError s!"Field method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
 
 end Strata.Python.VerifyPythonTest

@@ -2064,16 +2064,14 @@ NOTE:
   created in the concrete semantics. That is, evaluating the procedure body may
   create new variables in the store, and since the temporary variables are
   discarded at the end of the call, it is possible to show that those created
-  variables are irrelevant, and can be approximated by updating the relevant
-  variables (that is, lhs ++ modifies)
+  variables are irrelevant.
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ lhs n args σ' p md md'},
+  ∀ {π φ δ σ n callArgs σ' p md md'},
   π n = .some p →
-  p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' false →
-  EvalCommandContract π δ σ (CmdExt.call lhs n args md') σ' false := by
-  intros π φ δ σ lhs n args σ' p md md' pFound modValid H
+  EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false →
+  EvalCommandContract π δ σ (CmdExt.call n callArgs md') σ' false := by
+  intros π φ δ σ n callArgs σ' p md md' pFound H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
@@ -2086,8 +2084,6 @@ EvalCommandContract π δ σ c σ' f := by
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
   | call_sem _ =>
     apply EvalCallBodyRefinesContract <;> try assumption
-    -- need to connect `modifies` with `modifiedVarsTrans`
-    sorry
     constructor <;> assumption
 
 /-- A single `StepStmt` with `EvalCommand` can be simulated by a single

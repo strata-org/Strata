@@ -1,76 +1,51 @@
 test_regex_negative.py(9, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(10, 4): ✅ pass - assert_assert(272)_calls_Any_to_bool_0
 test_regex_negative.py(10, 4): ❓ unknown - EXPECTED_FAIL: fullmatch a on b
 test_regex_negative.py(12, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(13, 4): ✅ pass - assert_assert(365)_calls_Any_to_bool_0
 test_regex_negative.py(13, 4): ❓ unknown - EXPECTED_FAIL: fullmatch abc on abd
 test_regex_negative.py(15, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(16, 4): ✅ pass - assert_assert(465)_calls_Any_to_bool_0
 test_regex_negative.py(16, 4): ❓ unknown - EXPECTED_FAIL: fullmatch [a-z]+ on ABC
 test_regex_negative.py(19, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(20, 4): ✅ pass - assert_assert(603)_calls_Any_to_bool_0
 test_regex_negative.py(20, 4): ❓ unknown - EXPECTED_FAIL: fullmatch ^abc$ on abcd
 test_regex_negative.py(22, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(23, 4): ✅ pass - assert_assert(702)_calls_Any_to_bool_0
 test_regex_negative.py(23, 4): ❓ unknown - EXPECTED_FAIL: search ^abc in xabc
 test_regex_negative.py(25, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(26, 4): ✅ pass - assert_assert(797)_calls_Any_to_bool_0
 test_regex_negative.py(26, 4): ❓ unknown - EXPECTED_FAIL: search abc$ in abcx
 test_regex_negative.py(28, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_negative.py(29, 4): ✅ pass - assert_assert(888)_calls_Any_to_bool_0
 test_regex_negative.py(29, 4): ❓ unknown - EXPECTED_FAIL: match ^a$ in ab
 test_regex_negative.py(32, 4): ✅ pass - set_p_calls_re_compile_0
 test_regex_negative.py(33, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(34, 4): ✅ pass - assert_assert(1038)_calls_Any_to_bool_0
 test_regex_negative.py(34, 4): ❓ unknown - EXPECTED_FAIL: compiled ^abc$ search xabc
 test_regex_negative.py(36, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_negative.py(37, 4): ✅ pass - assert_assert(1133)_calls_Any_to_bool_0
 test_regex_negative.py(37, 4): ❓ unknown - EXPECTED_FAIL: compiled ^abc$ match abcx
 test_regex_negative.py(44, 8): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(47, 4): ✅ pass - assert_assert(1495)_calls_Any_to_bool_0
 test_regex_negative.py(47, 4): ❓ unknown - malformed: unmatched paren should raise
 test_regex_negative.py(51, 8): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(54, 4): ✅ pass - assert_assert(1667)_calls_Any_to_bool_0
 test_regex_negative.py(54, 4): ❓ unknown - malformed: nothing to repeat should raise
 test_regex_negative.py(58, 8): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(61, 4): ✅ pass - assert_assert(1846)_calls_Any_to_bool_0
 test_regex_negative.py(61, 4): ❓ unknown - malformed: bad bounds should raise
 test_regex_negative.py(65, 8): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(68, 4): ✅ pass - assert_assert(2015)_calls_Any_to_bool_0
 test_regex_negative.py(68, 4): ❓ unknown - malformed: search with bad pattern should raise
 test_regex_negative.py(72, 8): ✅ pass - set_m_calls_re_match_0
-test_regex_negative.py(75, 4): ✅ pass - assert_assert(2193)_calls_Any_to_bool_0
 test_regex_negative.py(75, 4): ❓ unknown - malformed: match with bad pattern should raise
 test_regex_negative.py(83, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(84, 4): ✅ pass - assert_assert(2681)_calls_Any_to_bool_0
 test_regex_negative.py(84, 4): ❓ unknown - unsupported: search \S+ should match non-empty non-whitespace
 test_regex_negative.py(86, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(87, 4): ✅ pass - assert_assert(2805)_calls_Any_to_bool_0
 test_regex_negative.py(87, 4): ❓ unknown - unsupported: fullmatch \d+ on digit string
 test_regex_negative.py(89, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(90, 4): ✅ pass - assert_assert(2918)_calls_Any_to_bool_0
 test_regex_negative.py(90, 4): ❓ unknown - unsupported: fullmatch \w+ on word string
 test_regex_negative.py(92, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(93, 4): ✅ pass - assert_assert(3027)_calls_Any_to_bool_0
 test_regex_negative.py(93, 4): ❓ unknown - unsupported: search \s+ finds whitespace
 test_regex_negative.py(96, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(97, 4): ✅ pass - assert_assert(3187)_calls_Any_to_bool_0
 test_regex_negative.py(97, 4): ❓ unknown - unsupported: fullmatch [a-z\d]+ on alphanumeric
 test_regex_negative.py(99, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(100, 4): ✅ pass - assert_assert(3309)_calls_Any_to_bool_0
 test_regex_negative.py(100, 4): ❓ unknown - unsupported: fullmatch [\w\-]+ on word with dash
 test_regex_negative.py(103, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(104, 4): ✅ pass - assert_assert(3492)_calls_Any_to_bool_0
 test_regex_negative.py(104, 4): ❓ unknown - unsupported: search \t+ on tab string
 test_regex_negative.py(106, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_negative.py(107, 4): ✅ pass - assert_assert(3597)_calls_Any_to_bool_0
 test_regex_negative.py(107, 4): ❓ unknown - unsupported: fullmatch [^\n]+ on non-newline string
 test_regex_negative.py(110, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(111, 4): ✅ pass - assert_assert(3759)_calls_Any_to_bool_0
 test_regex_negative.py(111, 4): ❓ unknown - unsupported: non-greedy .*? quantifier
 test_regex_negative.py(113, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_negative.py(114, 4): ✅ pass - assert_assert(3866)_calls_Any_to_bool_0
 test_regex_negative.py(114, 4): ❓ unknown - unsupported: positive lookahead (?=foo)
-test_regex_negative.py(116, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 50 passed, 0 failed, 24 inconclusive
+DETAIL: 25 passed, 0 failed, 24 inconclusive
 RESULT: Inconclusive

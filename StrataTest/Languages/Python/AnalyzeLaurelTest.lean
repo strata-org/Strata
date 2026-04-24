@@ -190,6 +190,10 @@ private meta def testCases : List (String × Expected) := [
     .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
   -- Type alias resolution tests (TDD for resolveTypeName refactoring)
   .mk "test_method_dispatch.py" .success,
+  .mk "test_keyword_dispatch.py" .success,
+  .mk "test_keyword_dispatch_variable.py" .success,
+  .mk "test_wrong_keyword_dispatch.py" $
+    .failPrefix "Python to Laurel translation failed: Type error: Dispatched function 'connect' called with wrong keyword argument, expected 'service_name' but got 'wrong_param'",
   .mk "test_annotation_dispatch.py" .success,
   .mk "test_constructor_dispatch.py" .success,
   .mk "test_reassign_dispatch.py" .success,
@@ -233,10 +237,10 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
       let task ← IO.asTask (runTestCase pythonCmd tmpDir scriptName expected)
       tasks := tasks.push (scriptName, task)
     -- Composite/Any kind mismatch tests
-    -- composite_as_any auto-resolves Storage via connect(); any_as_composite needs explicit pyspec
+    -- composite_as_any: dispatch-initialized fields return Hole (no coercion error)
     let task ← IO.asTask (runTestCase pythonCmd tmpDir
       "test_class_composite_as_any.py"
-      (.failPrefix "Known limitation: Unsupported construct: Coercion from user-defined class"))
+      .success)
     tasks := tasks.push ("test_class_composite_as_any.py", task)
     -- test_class_any_as_composite: assigning a str to a Composite-typed field
     -- causes a type unification error in Core.typeCheck, which is expected.

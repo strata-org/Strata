@@ -1,6 +1,4 @@
 test_class_empty.py(5, 4): ✅ pass - callElimAssert_requires_2
-test_class_empty.py(6, 4): ✅ pass - assert_assert(55)_calls_Any_to_bool_0
 test_class_empty.py(6, 4): ✅ pass - empty class instantiated
-test_class_empty.py(4, 0): ✅ pass - postcondition
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

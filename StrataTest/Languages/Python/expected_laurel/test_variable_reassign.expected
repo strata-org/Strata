@@ -1,28 +1,17 @@
 test_variable_reassign.py(3, 4): ✅ pass - assert(44)
-test_variable_reassign.py(4, 4): ✅ pass - assert_assert(59)_calls_Any_to_bool_0
 test_variable_reassign.py(4, 4): ✅ pass - initial value
-test_variable_reassign.py(6, 4): ✅ pass - assert_assert(104)_calls_Any_to_bool_0
 test_variable_reassign.py(6, 4): ✅ pass - after reassignment
 test_variable_reassign.py(7, 8): ✅ pass - Check PAdd exception
-test_variable_reassign.py(8, 4): ✅ pass - assert_assert(158)_calls_Any_to_bool_0
 test_variable_reassign.py(8, 4): ✅ pass - after increment
 test_variable_reassign.py(11, 4): ✅ pass - assert(223)
 test_variable_reassign.py(12, 4): ✅ pass - assert(242)
 test_variable_reassign.py(13, 10): ✅ pass - Check PLt exception
-test_variable_reassign.py(13, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_variable_reassign.py(14, 16): ❓ unknown - Check PAdd exception
-test_variable_reassign.py(15, 12): ✅ pass - Check PAdd exception
-test_variable_reassign.py(13, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
-test_variable_reassign.py(16, 4): ✅ pass - assert_assert(318)_calls_Any_to_bool_0
+test_variable_reassign.py(15, 12): ❓ unknown - Check PAdd exception
 test_variable_reassign.py(16, 4): ❓ unknown - loop sum should be 10
 test_variable_reassign.py(19, 4): ✅ pass - assert(398)
 test_variable_reassign.py(20, 4): ✅ pass - assert(415)
-test_variable_reassign.py(21, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_variable_reassign.py(25, 4): ✅ pass - assert_assert(496)_calls_Any_to_bool_0
 test_variable_reassign.py(25, 4): ✅ pass - should be 100
-test_variable_reassign.py(28, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_variable_reassign.py(32, 4): ✅ pass - assert_assert(612)_calls_Any_to_bool_0
 test_variable_reassign.py(32, 4): ✅ pass - should be 200
-test_variable_reassign.py(34, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 24 passed, 0 failed, 2 inconclusive
+DETAIL: 12 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

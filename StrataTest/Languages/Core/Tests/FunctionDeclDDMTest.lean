@@ -17,7 +17,7 @@ def funcDeclStmtPgm : Program :=
 #strata
 program Core;
 
-procedure testFuncDecl(c: int) returns () {
+procedure testFuncDecl(c: int) {
   function double(x : int) : int { x + x + c}
   var y : int := 5;
   var result : int := double(y);
@@ -29,7 +29,7 @@ procedure testFuncDecl(c: int) returns () {
 -- Verify the program parses and type checks correctly
 /--
 info: program Core;
-procedure testFuncDecl (c : int) returns ()
+procedure testFuncDecl (c : int)
 {
   function double (x : int) : int { x + x + c }
   var y : int := 5;

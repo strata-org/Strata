@@ -12,12 +12,10 @@ namespace Strata
 def simpleProcPgm : Program :=
 #strata
 program Core;
-var g : bool;
-procedure Test(x : bool) returns (y : bool)
+procedure Test(x : bool, out y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
-  ensures (g == old g);
 }
 {
   y := x || x;
@@ -26,7 +24,9 @@ spec {
 
 -- Translation from DDM AST to Strata Core AST
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.snd |>.isEmpty
@@ -34,15 +34,13 @@ spec {
 /--
 info: program Core;
 
-var g : bool;
-procedure Test (x : bool) returns (y : bool)
+procedure Test (x : bool, out y : bool)
 spec {
   ensures [Test_ensures_0]: y == x;
   ensures [Test_ensures_1]: x == y;
-  ensures [Test_ensures_2]: g == old g;
   } {
   y := x || x;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.fst
@@ -55,17 +53,12 @@ VCs:
 Label: Test_ensures_0
 Property: assert
 Obligation:
-($__x1 || $__x1) == $__x1
+(x@1 || x@1) == x@1
 
 Label: Test_ensures_1
 Property: assert
 Obligation:
-$__x1 == ($__x1 || $__x1)
-
-Label: Test_ensures_2
-Property: assert
-Obligation:
-true
+x@1 == (x@1 || x@1)
 
 ---
 info:
@@ -74,10 +67,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: Test_ensures_1
-Property: assert
-Result: ✅ pass
-
-Obligation: Test_ensures_2
 Property: assert
 Result: ✅ pass
 -/

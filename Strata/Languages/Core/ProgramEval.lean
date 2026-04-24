@@ -30,15 +30,6 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
   | decl :: rest =>
     match decl with
 
-    | .var name ty init md =>
-      let (ssEs, varStats) := Statement.eval declsE [] [(.init name ty init md)]
-      let stats := stats.merge varStats
-      ssEs.foldl (fun acc E => do
-                      let (accEs, statsAcc) ← acc
-                      let (results, s) ← go rest E statsAcc
-                      .ok (accEs ++ results, s))
-        (.ok ([], stats))
-
     | .type _ _ =>
       go rest declsE stats
 

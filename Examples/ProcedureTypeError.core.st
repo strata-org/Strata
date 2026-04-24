@@ -15,7 +15,7 @@ program Core;
 //  limitations under the License.
 //
 
-procedure SumPositive(a: int, b: int) returns (c: int)
+procedure SumPositive(a: int, b: int, out c: int)
 spec {
     requires [precond1]: 0 <= a;
     requires [precond2]: c <= b;
