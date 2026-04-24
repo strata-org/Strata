@@ -68,9 +68,21 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   bitvecSort : Nat → m σ
   arraySort : σ → σ → m (Except String σ)
 
-  -- Literal constructors
+  -- Sort conversion from Strata's TermType
+  termTypeToSort : TermType → m σ
+
+  -- Literal / leaf constructors
   mkBool : Bool → m τ
   mkInt : Int → m τ
+  mkPrim : TermPrim → m τ
+  mkVar : String → σ → m τ
+  mkNone : σ → m τ
+  mkSome : τ → m τ
+
+  /-- Fallback for operations not covered by specific mk* methods
+      (e.g. bitvectors, strings, regex). The backend receives the raw `Op`,
+      the already-encoded arguments, and the result sort. -/
+  mkAppOp : Op → List τ → σ → m (Except String τ)
 
   -- Boolean operations
   mkAnd : List τ → m (Except String τ)

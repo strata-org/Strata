@@ -165,8 +165,15 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
   bitvecSort n := return .bitvec n
   arraySort k v := return .ok (.constr "Array" [k, v])
 
+  termTypeToSort ty := return ty
+
   mkBool b := return Term.bool b
   mkInt i := return Term.int i
+  mkPrim p := return .prim p
+  mkVar name ty := return Term.var ⟨name, ty⟩
+  mkNone ty := return .none ty
+  mkSome t := return .some t
+  mkAppOp op args retTy := return .ok (.app op args retTy)
 
   mkAnd ts := return .ok (ts.foldl Factory.and (Term.bool true))
   mkOr ts := return .ok (ts.foldl Factory.or (Term.bool false))
