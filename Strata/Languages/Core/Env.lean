@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
+public import Strata.Util.Name
 
 public section
 
@@ -247,23 +248,21 @@ def Env.addToContext
     : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
--- TODO: prove uniqueness, add different prefix
+-- TODO: prove uniqueness
 def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × Lambda.EvalConfig CoreLParams :=
-  let new_idx := c.gen
-  let c := c.incGen
-  let new_var := c.varPrefix ++ x ++ toString new_idx
+  let (new_var, c) := c.genSym x
   (⟨new_var, ()⟩, c)
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
-  let (new_var, config) := Env.genSym x σ.config
+  -- If `x` is already bound in the state, mark it used so that findUnique
+  -- skips the bare name and avoids self-referential substitutions
+  -- (e.g. havoc x generating fvar "x" when x is in scope).
+  let config := if σ.state.find? (⟨x, ()⟩ : CoreIdent) |>.isSome
+    then { σ.config with usedNames := σ.config.usedNames.insert x }
+    else σ.config
+  let (new_var, config) := Env.genSym x config
   let σ : Lambda.LState CoreLParams := { σ with config := config }
-  -- let known_vars := Lambda.LState.knownVars σ
-  -- if new_var ∈ known_vars then
-  --   panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
-  --            Known variables: {Std.format σ.knownVars}"
-  -- else
-  --   (new_var, σ)
   (new_var, σ)
 
 def Env.genVar (x : Expression.Ident) (E : Env) : Expression.Ident × Env :=
