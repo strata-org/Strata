@@ -46,7 +46,7 @@ def EvalConfig.init : EvalConfig T :=
 
 def EvalConfig.genSym (x : String) (c : EvalConfig T) : String × EvalConfig T :=
   let (base, startSuffix) := Strata.Name.breakDisambiguated x
-  let new_var := Strata.Name.findUnique base startSuffix c.usedNames.toList
+  let new_var := Strata.Name.findUnique base startSuffix c.usedNames
   let c := { c with usedNames := c.usedNames.insert new_var }
   (new_var, c)
 

@@ -5,6 +5,7 @@
 -/
 module
 import all Strata.Util.Name
+import Std.Data.HashSet.Lemmas
 
 /-!
 # Proofs about `Strata.Name.findUnique`
@@ -18,33 +19,38 @@ namespace Strata.Name
 
 /-- When `findUniqueFast` returns `some result`, the result is not in `usedNames`. -/
 theorem findUniqueFast_not_mem (baseName candidate : String) (suffix : Nat)
-    (usedNames : List String) (fuel : Nat) (result : String)
+    (usedNames : Std.HashSet String) (fuel : Nat) (result : String)
     (h : findUniqueFast baseName candidate suffix usedNames fuel = some result) :
     result ∉ usedNames := by
   induction fuel generalizing candidate suffix with
   | zero =>
     unfold findUniqueFast at h
     split at h
-    · simp at h; subst h; simp [Bool.not_eq_eq_eq_not] at *; assumption
+    · simp at h; subst h
+      rename_i hc; simp [Std.HashSet.contains_eq_false_iff_not_mem] at hc
+      exact hc
     · simp at h
   | succ n ih =>
     unfold findUniqueFast at h
     split at h
-    · simp at h; subst h; simp [Bool.not_eq_eq_eq_not] at *; assumption
+    · simp at h; subst h
+      rename_i hc; simp [Std.HashSet.contains_eq_false_iff_not_mem] at hc
+      exact hc
     · exact ih _ _ h
 
-/-- When `findUniqueSlow` returns `some result`, the result is not in `usedNames`. -/
+/-- When `findUniqueSlow` returns `some result`, the result is not in `usedSet`. -/
 theorem findUniqueSlow_not_mem (baseName candidate : String) (suffix : Nat)
-    (usedNames remaining : List String) (result : String)
-    (h : findUniqueSlow baseName candidate suffix usedNames remaining = some result) :
-    result ∉ usedNames := by
+    (usedSet : Std.HashSet String) (remaining : List String) (result : String)
+    (h : findUniqueSlow baseName candidate suffix usedSet remaining = some result) :
+    result ∉ usedSet := by
   generalize hlen : remaining.length = n at *
   induction n using Nat.strongRecOn generalizing candidate suffix remaining with
   | _ n ih =>
     unfold findUniqueSlow at h
     split at h
     · simp at h; subst h
-      rename_i hc; simp [Bool.not_eq_eq_eq_not, Bool.not_true] at hc; exact hc
+      rename_i hc; simp [Std.HashSet.contains_eq_false_iff_not_mem] at hc
+      exact hc
     · split at h
       · have : (remaining.erase candidate).length < remaining.length := by grind
         exact ih _ (by omega) _ _ _ h rfl
@@ -52,7 +58,7 @@ theorem findUniqueSlow_not_mem (baseName candidate : String) (suffix : Nat)
 
 /-- `findUnique` returns a name not in `usedNames`. -/
 theorem findUnique_not_mem (baseName : String) (startSuffix : Nat)
-    (usedNames : List String) :
+    (usedNames : Std.HashSet String) :
     findUnique baseName startSuffix usedNames ∉ usedNames := by
   unfold findUnique
   simp only
@@ -64,7 +70,7 @@ theorem findUnique_not_mem (baseName : String) (startSuffix : Nat)
     split
     · next hslow => exact findUniqueSlow_not_mem _ _ _ _ _ _ hslow
     · next hslow =>
-      -- Ultimate fallback: disambiguate with a suffix beyond usedNames.length.
+      -- Ultimate fallback: disambiguate with a suffix beyond usedNames.toList.length.
       -- The result is not in usedNames because the slow path already exhausted
       -- every element of usedNames that matched a candidate, and the fallback
       -- uses a suffix that was never tried.  A full formal proof would require

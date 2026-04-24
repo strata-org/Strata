@@ -168,7 +168,7 @@ def encodeUF (uf : UF) : EncoderM String := do
   -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
   let baseName := sanitizeSmtName uf.id
   let existingNames := (← get).ufs.toList.map (·.2)
-  let usedNames := existingNames ++ smtReservedKeywords
+  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
   let id := Strata.Name.findUnique baseName 1 usedNames
   comment uf.id
   let argTys := uf.args.map (fun vt => vt.ty)

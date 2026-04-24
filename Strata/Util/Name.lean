@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Std.Data.HashSet.Basic
 
 /-! # Name disambiguation utilities
 
@@ -38,7 +39,7 @@ def breakDisambiguated (name : String) : String × Nat :=
 
 /-- Fast candidate search with a fuel counter. Returns `none` if fuel is exhausted. -/
 def findUniqueFast (baseName : String) (candidate : String) (suffix : Nat)
-    (usedNames : List String) (fuel : Nat) : Option String :=
+    (usedNames : Std.HashSet String) (fuel : Nat) : Option String :=
   if !usedNames.contains candidate then some candidate
   else match fuel with
     | 0 => none
@@ -46,18 +47,18 @@ def findUniqueFast (baseName : String) (candidate : String) (suffix : Nat)
       findUniqueFast baseName (disambiguate baseName suffix) (suffix + 1) usedNames fuel
 
 /-- Provably-terminating fallback via list erasure.
-    Checks membership against `usedNames` (constant) and uses `remaining`
-    (a copy of `usedNames` that shrinks via erasure) for termination.
+    Uses `usedSet` (a `HashSet`) for O(1) membership checks and `remaining`
+    (a list that shrinks via erasure) for termination.
     Returns `none` only if `remaining` is exhausted before finding a
-    candidate outside `usedNames` — unreachable when `remaining = usedNames`
-    and candidates are distinct. -/
+    candidate outside `usedSet` — unreachable when `remaining` covers
+    `usedSet` and candidates are distinct. -/
 def findUniqueSlow (baseName : String) (candidate : String) (suffix : Nat)
-    (usedNames remaining : List String) : Option String :=
-  if !usedNames.contains candidate then some candidate
+    (usedSet : Std.HashSet String) (remaining : List String) : Option String :=
+  if !usedSet.contains candidate then some candidate
   else if h : remaining.contains candidate then
     have : (remaining.erase candidate).length < remaining.length := by grind
     findUniqueSlow baseName (disambiguate baseName suffix) (suffix + 1)
-                   usedNames (remaining.erase candidate)
+                   usedSet (remaining.erase candidate)
   else none
 termination_by remaining.length
 
@@ -65,7 +66,7 @@ termination_by remaining.length
     Uses a fast counter-based loop, falling back to a provably-terminating
     list-erasure search if the counter is exhausted (so we never panic). -/
 def findUnique (baseName : String) (startSuffix : Nat)
-    (usedNames : List String) : String :=
+    (usedNames : Std.HashSet String) : String :=
   let firstCandidate :=
     if startSuffix == 1 then baseName
     else disambiguate baseName (startSuffix - 1)
@@ -73,10 +74,11 @@ def findUnique (baseName : String) (startSuffix : Nat)
   | some name => name
   | none =>
     let slowSuffix := startSuffix + 1000000
+    let usedList := usedNames.toList
     match findUniqueSlow baseName (disambiguate baseName slowSuffix)
-                         (slowSuffix + 1) usedNames usedNames with
+                         (slowSuffix + 1) usedNames usedList with
     | some name => name
-    | none => disambiguate baseName (slowSuffix + usedNames.length + 1)
+    | none => disambiguate baseName (slowSuffix + usedList.length + 1)
 
 end Strata.Name
 
