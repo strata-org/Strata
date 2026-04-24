@@ -1,4 +1,9 @@
-test_method_call_with_kwargs.py(8, 0): ✅ pass - callElimAssert_requires_13
-test_method_call_with_kwargs.py(9, 0): ✅ pass - callElimAssert_requires_6
-DETAIL: 2 passed, 0 failed, 0 inconclusive
+test_method_call_with_kwargs.py(5, 82): ✅ pass - (MyClass@some_method ensures) Return type constraint
+test_method_call_with_kwargs.py(8, 0): ✅ pass - (MyClass@__init__ requires) Type constraint of ip1
+test_method_call_with_kwargs.py(8, 0): ✅ pass - (MyClass@__init__ requires) Type constraint of ip2
+test_method_call_with_kwargs.py(8, 0): ✅ pass - (MyClass@__init__ requires) Type constraint of ip3
+test_method_call_with_kwargs.py(9, 0): ✅ pass - (MyClass@some_method requires) Type constraint of ip1
+test_method_call_with_kwargs.py(9, 0): ✅ pass - (MyClass@some_method requires) Type constraint of ip2
+test_method_call_with_kwargs.py(9, 0): ✅ pass - (MyClass@some_method requires) Type constraint of ip3
+DETAIL: 7 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
