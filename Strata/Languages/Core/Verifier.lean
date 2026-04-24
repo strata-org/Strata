@@ -1280,6 +1280,77 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
+/-- Data needed to dispatch a single obligation to the solver. Produced by
+    the sequential preprocessing phase and consumed by the (potentially
+    parallel) solver dispatch phase. -/
+private structure SolverJob where
+  obligation : ProofObligation Expression
+  assumptionTerms : List Term
+  obligationTerm : Term
+  ctx : SMT.Context
+  encStats : Statistics
+  needSatCheck : Bool
+  needValCheck : Bool
+  peSatResult? : Option SMT.Result
+  peValResult? : Option SMT.Result
+  typedVarsInObligation : List Expression.TypedIdent
+
+/-- Dispatch a single solver job. This is the I/O-bound part that can run
+    in parallel: it spawns a solver process, sends the obligation, and
+    reads the result. -/
+private def dispatchSolverJob (job : SolverJob) (p : Program)
+    (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (phases : List AbstractedPhase)
+    : IO (Except DiagnosticModel VCResult) := do
+  let discharge := mkDischargeFn options counter tempDir
+    job.typedVarsInObligation job.obligation.metadata job.obligation.label
+  let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
+    job.obligation p options discharge job.needSatCheck job.needValCheck phases).toBaseIO
+  match resultOrErr with
+  | .error diag => return .error diag
+  | .ok result =>
+    let result := match result.outcome with
+      | .ok solverOutcome =>
+        let satResult := job.peSatResult?.getD solverOutcome.satisfiabilityProperty
+        let valResult := job.peValResult?.getD solverOutcome.validityProperty
+        { result with outcome := .ok { solverOutcome with
+            satisfiabilityProperty := satResult,
+            validityProperty := valResult } }
+      | .error _ => result
+    return .ok result
+
+/-- Dispatch solver jobs in parallel batches of size `workers`. Results are
+    returned in the same order as the input jobs.
+    Note: the shared `counter` IO.Ref is only used in the batch (non-incremental)
+    solver path for generating unique filenames. In incremental mode (the default),
+    each task spawns its own solver process with no shared mutable state. -/
+private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
+    (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (phases : List AbstractedPhase) (workers : Nat)
+    : IO (List (Except DiagnosticModel VCResult)) := do
+  let mut revResults : List (Except DiagnosticModel VCResult) := []
+  -- Process in batches of `workers`
+  let mut remaining := jobs
+  while !remaining.isEmpty do
+    let batch := remaining.take workers
+    remaining := remaining.drop workers
+    let mut tasks : List (Task (Except IO.Error (Except DiagnosticModel VCResult))) := []
+    for job in batch.reverse do
+      let task ← IO.asTask (dispatchSolverJob job p options counter tempDir phases)
+      tasks := task :: tasks
+    -- Collect results in order
+    for task in tasks do
+      match task.get with
+      | .ok result => revResults := result :: revResults
+      | .error ioErr => revResults := .error (DiagnosticModel.fromFormat f!"{ioErr}") :: revResults
+    -- Early termination: if stopOnFirstError and a failure was found, stop
+    if options.stopOnFirstError then
+      let hasFailure := revResults.any fun r => match r with
+        | .ok result => result.isNotSuccess
+        | .error _ => true
+      if hasFailure then break
+  return revResults.reverse
+
 
 def verifySingleEnv (oblProgram : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
@@ -1310,6 +1381,15 @@ def verifySingleEnv (oblProgram : Program)
   let mut smtEncodeNs : Nat := 0
   let mut solverNs : Nat := 0
   let mut peResolvedCount : Nat := 0
+  -- Phase 1: Sequential preprocessing and SMT encoding.
+  -- Obligations resolved by the evaluator are added to results immediately.
+  -- Obligations that need the solver are collected as SolverJobs.
+  let mut solverJobs : List SolverJob := []
+  -- Track the index in `results` where each solver job's result should go.
+  -- For sequential mode, results are appended directly. For parallel mode,
+  -- we insert placeholder results and patch them after dispatch.
+  let mut solverJobIndices : List Nat := []
+  let useParallel := options.parallelWorkers > 1
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1347,7 +1427,7 @@ def verifySingleEnv (oblProgram : Program)
           if options.verbose >= .debug then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
-          if options.stopOnFirstError then break
+          if !useParallel && options.stopOnFirstError then break
         continue
     -- Need the solver for at least one check
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
@@ -1369,7 +1449,7 @@ def verifySingleEnv (oblProgram : Program)
         let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
         dbg_trace f!"\n\nResult: {result}\n{prog}"
       results := results.push result
-      if options.stopOnFirstError then break
+      if !useParallel && options.stopOnFirstError then break
     | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
       stats := stats.merge encStats
       let varsInObligation := ProofObligation.getVars obligation
@@ -1378,28 +1458,56 @@ def verifySingleEnv (oblProgram : Program)
           match ty with
           | .some ty => return (v,LTy.forAll [] ty)
           | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
-      let discharge := mkDischargeFn options counter tempDir
-        typedVarsInObligation obligation.metadata obligation.label
-      let t4 ← IO.monoNanosNow
-      let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                    discharge needSatCheck needValCheck (externalPhases ++ corePhases)
-      let t5 ← IO.monoNanosNow
-      solverNs := solverNs + (t5 - t4)
-      -- Merge evaluator results with solver results
-      let result := match result.outcome with
-        | .ok solverOutcome =>
-          let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-          let valResult := peValResult?.getD solverOutcome.validityProperty
-          { result with outcome := .ok { solverOutcome with
-              satisfiabilityProperty := satResult,
-              validityProperty := valResult } }
-        | .error _ => result
-      results := results.push result
-      if result.isNotSuccess then
-        if options.verbose >= .debug then
-          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-          dbg_trace f!"\n\nResult: {result}\n{prog}"
-        if options.stopOnFirstError then break
+      if useParallel then
+        -- Collect job for parallel dispatch; insert placeholder result
+        let job : SolverJob := {
+          obligation, assumptionTerms, obligationTerm, ctx, encStats,
+          needSatCheck, needValCheck, peSatResult?, peValResult?,
+          typedVarsInObligation }
+        solverJobs := solverJobs ++ [job]
+        solverJobIndices := solverJobIndices ++ [results.size]
+        -- Placeholder result to be replaced after parallel dispatch
+        results := results.push { obligation, outcome := .error "pending parallel dispatch",
+                                  verbose := options.verbose, checkLevel := options.checkLevel,
+                                  checkMode := options.checkMode, lexprModel := [] }
+      else
+        -- Sequential: dispatch immediately
+        let discharge := mkDischargeFn options counter tempDir
+          typedVarsInObligation obligation.metadata obligation.label
+        let t4 ← IO.monoNanosNow
+        let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                      discharge needSatCheck needValCheck (externalPhases ++ corePhases)
+        let t5 ← IO.monoNanosNow
+        solverNs := solverNs + (t5 - t4)
+        -- Merge evaluator results with solver results
+        let result := match result.outcome with
+          | .ok solverOutcome =>
+            let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
+            let valResult := peValResult?.getD solverOutcome.validityProperty
+            { result with outcome := .ok { solverOutcome with
+                satisfiabilityProperty := satResult,
+                validityProperty := valResult } }
+          | .error _ => result
+        results := results.push result
+        if result.isNotSuccess then
+          if options.verbose >= .debug then
+            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+            dbg_trace f!"\n\nResult: {result}\n{prog}"
+          if options.stopOnFirstError then break
+  -- Phase 2: Parallel solver dispatch (only when parallelWorkers > 1 and there are jobs)
+  if useParallel && !solverJobs.isEmpty then
+    let t4 ← IO.monoNanosNow
+    let phases := externalPhases ++ corePhases
+    let jobResults ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+      (dispatchJobsParallel solverJobs p options counter tempDir phases options.parallelWorkers)
+    let t5 ← IO.monoNanosNow
+    solverNs := solverNs + (t5 - t4)
+    -- Patch placeholder results with actual solver results
+    for (jobResult, jobIdx) in jobResults.zip solverJobIndices do
+      match jobResult with
+      | .ok result =>
+        results := results.setIfInBounds jobIdx result
+      | .error diag => throw diag
   if profile then
     let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
     let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
