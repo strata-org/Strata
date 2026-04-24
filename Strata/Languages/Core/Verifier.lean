@@ -1209,6 +1209,18 @@ abbrev DischargeFn :=
   List Term → Term → SMT.Context → Bool → Bool →
   IO (Except Format (SMT.Result × SMT.Result × EncoderState))
 
+/-- A `CoreSMTSolver` encapsulates the strategy for discharging all proof
+    obligations extracted from a CoreSMT program. The pipeline is parametrized
+    by this function so that the solver backend can be swapped — e.g. for a
+    parallel solver that dispatches obligations concurrently, or an incremental
+    solver that shares path-condition state across assertions.
+
+    The solver receives the obligation program (in CoreSMT format after all
+    pipeline transformations) and returns verification results together with
+    statistics. -/
+abbrev CoreSMTSolver :=
+  Program → EIO DiagnosticModel (VCResults × Statistics)
+
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
     `options.incremental` and `options.alwaysGenerateSMT`. -/
@@ -1407,6 +1419,24 @@ def verifySingleEnv (oblProgram : Program)
     let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
   return (results, stats)
 
+/-- Construct the default `CoreSMTSolver` that discharges obligations
+    sequentially using the batch or incremental SMT-LIB backend (selected
+    by `options.incremental`). This is the standard solver used by `verify`
+    when no custom solver is provided. -/
+def mkDefaultCoreSMTSolver
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (options : VerifyOptions)
+    (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    (axiomNames : List String := [])
+    (axiomProgram : Option Program := .none)
+    (externalPhases : List AbstractedPhase := [])
+    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    CoreSMTSolver :=
+  fun oblProgram =>
+    verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
+      axiomNames axiomProgram externalPhases corePhases
+
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
 All program-wide transformations that occur before any analyses
@@ -1422,6 +1452,7 @@ def verify (program : Program)
     (externalPhases : List AbstractedPhase := [])
     (prefixPhases : List PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (solver : Option CoreSMTSolver := none)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
@@ -1468,7 +1499,10 @@ def verify (program : Program)
     if options.checkOnly then
       pure []
     else
-      pure [← verifySingleEnv oblProgram moreFns options counter tempDir axiomCache? axiomNames (axiomProgram := program) externalPhases phases]
+      let coreSMTSolver := solver.getD
+        (mkDefaultCoreSMTSolver moreFns options counter tempDir axiomCache?
+          axiomNames (axiomProgram := program) externalPhases phases)
+      pure [← coreSMTSolver oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
