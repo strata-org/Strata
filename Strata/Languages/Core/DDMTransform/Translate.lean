@@ -702,7 +702,7 @@ def translateLambda
       match ty with
       | .forAll [] mty =>
         .abs () name.name (.some mty) e
-      | _ => panic! s!"Expected monomorphic type in lambda, got: {ty}"
+      | _ => panic! s!"Expected monomorphic type in lambda, got: {ty}" -- nopanic:ok
     return xsArray.foldr buildLambda (init := b)
 
 partial
