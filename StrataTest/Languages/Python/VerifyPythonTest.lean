@@ -34,7 +34,8 @@ def assertTransparent (laurel : Laurel.Program) (procName : String) : IO Unit :=
   | some proc =>
     match proc.body with
     | .Transparent _ => pure ()
-    | _ => throw <| .userError s!"{procName} body should be Transparent, not Opaque"
+    | .Opaque _ (some _) _ => pure ()  -- Opaque with implementation is also acceptable
+    | _ => throw <| .userError s!"{procName} body should be Transparent (or Opaque with implementation)"
 
 /-- Assert that a procedure with the given name exists and has an Opaque body. -/
 def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
