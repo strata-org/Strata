@@ -853,15 +853,10 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome) .empty]
   | .command_recfndefs _ ⟨_, funcs⟩ =>
-    -- Collect names first so we can build sibling bvar expressions.
-    -- The DDM elaborator's @[declareFn] accumulates bvars across siblings:
+    -- Mirror the DDM elaborator's @[declareFn] sibling-bvar accumulation:
     -- the i-th function's body sees the i preceding siblings as bvars.
-    -- We mirror that here by wrapping each body translation with
-    -- withBVarExprs for the preceding sibling op expressions.
     let funcList := funcs.toList
-    let funcNames : List String := funcList.filterMap fun
-      | .recfn_decl _ ⟨_, n⟩ _ _ _ _ _ => some n
-    let (fs, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
+    let (fsRev, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
       match func with
       | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
@@ -869,9 +864,8 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
           (.op () (mkIdent sn) none : Core.Expression.Expr)
         let f ← withBVarExprs siblingBvars.toArray
           (lowerPureFuncDef m n tys bs ret pres body false)
-        return (acc ++ [{ f with isRecursive := true }], prevNames ++ [n])
-    discard (pure funcNames)
-    return [.recFuncBlock fs .empty]
+        return ({ f with isRecursive := true } :: acc, prevNames ++ [n])
+    return [.recFuncBlock fsRev.reverse .empty]
   | .command_var _m _b =>
     return []
   | .command_axiom m ⟨_, l?⟩ e =>

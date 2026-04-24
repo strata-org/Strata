@@ -18,10 +18,10 @@ Near-upstream anchors:
 - Source: dalek-lite scalar multiplication — bit extraction uses `>>` to read
   individual scalar bits; conditional swap uses `^` and `~` for constant-time
   branching; nibble reconstruction uses `<<` and `|`.
-- Implemented: bitwise operators (`&`, `|`, `^`, `>>`, `<<`, `~`) on `bvN` types
-  are now supported in the Boole grammar and lower to the corresponding
-  `Bv{N}.And`, `Bv{N}.Or`, `Bv{N}.Xor`, `Bv{N}.Shl`, `Bv{N}.UShr`, `Bv{N}.SShr`,
-  `Bv{N}.Not` Core operations.
+- Implemented: bitwise operators (`&`, `|`, `^`, `>>`, `>>s`, `<<`, `~`) on `bvN`
+  types are now supported in the Boole grammar and lower to the corresponding
+  `Bv{N}.And`, `Bv{N}.Or`, `Bv{N}.Xor`, `Bv{N}.UShr`, `Bv{N}.SShr`, `Bv{N}.Shl`,
+  `Bv{N}.Not` Core operations. `>>` is unsigned (UShr); `>>s` is signed (SShr).
 -/
 
 -- Exercises & and | (X25519 scalar clamping).
@@ -82,5 +82,31 @@ spec {
 #eval Strata.Boole.verify "cvc5" bitvectorShiftXorSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect bitvectorShiftXorSeed := by
+  gen_smt_vcs
+  all_goals (first | grind | decide)
+
+-- Exercises >>s (arithmetic/signed right shift): vacated bits are filled with
+-- the sign bit, unlike >> which fills with 0.
+private def bitvectorSShrSeed : Strata.Program :=
+#strata
+program Boole;
+
+procedure bv_sshr(b: bv8) returns (r: bv8)
+spec {
+  ensures r == b >>s bv{8}(1);
+  // negative value: sign bit propagates into vacated position
+  ensures bv{8}(0b10000000) >>s bv{8}(1) == bv{8}(0b11000000);
+  // positive value: behaves like unsigned shift
+  ensures bv{8}(0b01000000) >>s bv{8}(1) == bv{8}(0b00100000);
+}
+{
+  r := b >>s bv{8}(1);
+};
+#end
+
+#guard_msgs (drop info) in
+#eval Strata.Boole.verify "cvc5" bitvectorSShrSeed (options := .quiet)
+
+example : Strata.smtVCsCorrect bitvectorSShrSeed := by
   gen_smt_vcs
   all_goals (first | grind | decide)

@@ -27,7 +27,7 @@ This document tracks the selected Boole feature-request seeds kept under
   - Every procedure body is wrapped in a Core labeled block named after the procedure.
   - `exit functionName;` exits that block, acting as an early return; no grammar changes needed.
 - **Bitwise operators on `bvN` types** (#970)
-  - `&`, `|`, `^`, `>>`, `<<`, `~` now lower from Boole to `Bv{N}.And/Or/Xor/Shl/UShr/SShr/Not` Core ops.
+  - `&`, `|`, `^`, `>>` (UShr), `>>s` (SShr), `<<`, `~` lower to `Bv{N}.And/Or/Xor/UShr/SShr/Shl/Not` Core ops.
   - `bvWidth` helper extracts the bit-width from the Boole type and dispatches to the right-sized op.
   - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
 - **Mutual recursion over datatypes** (#599)
