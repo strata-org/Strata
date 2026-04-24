@@ -322,7 +322,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | _, _ => pure none
         | _ => pure none
       let body ← translateStmtExpr bodyArg
-      return mkNode (.Forall { name := name, type := ty } trigger body) (source := src)
+      return mkNode (.Quantifier .Forall { name := name, type := ty } trigger body) (source := src)
     | q`Laurel.existsExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
@@ -333,7 +333,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | _, _ => pure none
         | _ => pure none
       let body ← translateStmtExpr bodyArg
-      return mkNode (.Exists { name := name, type := ty } trigger body) (source := src)
+      return mkNode (.Quantifier .Exists { name := name, type := ty } trigger body) (source := src)
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
