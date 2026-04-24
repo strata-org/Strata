@@ -694,8 +694,8 @@ def translateQuantifier
   (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
   TransM Core.Expression.Expr := do
     let xsArray ← translateDeclList bindings xsa
-    -- Note: the indices in the following are placeholders
-    let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar xsa.ann i))
+    let n := xsArray.size
+    let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar xsa.ann (n - 1 - i)))
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
     let b ← translateExpr p xbindings bodya
