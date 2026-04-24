@@ -1319,8 +1319,11 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
       | .error _ => result
     return .ok result
 
-/-- Dispatch solver jobs in parallel batches of size `workers`. Results are
-    returned in the same order as the input jobs.
+/-- Dispatch solver jobs using a bounded worker pool of size `workers`.
+    All jobs are placed in a shared queue. Each worker pulls the next
+    available job as soon as it finishes — fast-finishing solvers don't
+    idle while slow ones complete.
+    Results are returned in the same order as the input jobs.
     Note: the shared `counter` IO.Ref is only used in the batch (non-incremental)
     solver path for generating unique filenames. In incremental mode (the default),
     each task spawns its own solver process with no shared mutable state. -/
@@ -1328,28 +1331,39 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase) (workers : Nat)
     : IO (List (Except DiagnosticModel VCResult)) := do
+  -- Shared job queue: workers pop (job, index) pairs from the front
+  let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
+  -- Result slots indexed by job position
+  let resultMap ← IO.mkRef ({} : Std.HashMap Nat (Except DiagnosticModel VCResult))
+  -- Worker loop: claim jobs from the queue until exhausted
+  let workerFn : IO Unit := do
+    let mut running := true
+    while running do
+      -- Atomically pop the next job
+      let entry ← queue.modifyGet fun q =>
+        match q with
+        | [] => (none, [])
+        | hd :: tl => (some hd, tl)
+      match entry with
+      | none => running := false
+      | some (job, idx) =>
+        let result ← dispatchSolverJob job p options counter tempDir phases
+        resultMap.modify (·.insert idx result)
+  -- Spawn `workers` worker tasks (or fewer if there are fewer jobs)
+  let numWorkers := min workers jobs.length
+  let workerTasks ← (List.range numWorkers).mapM fun _ =>
+    IO.asTask (prio := .dedicated) workerFn
+  -- Wait for all workers to finish
+  for task in workerTasks do
+    let _ := task.get
+  -- Collect results in original order
+  let rmap ← resultMap.get
   let mut revResults : List (Except DiagnosticModel VCResult) := []
-  -- Process in batches of `workers`
-  let mut remaining := jobs
-  while !remaining.isEmpty do
-    let batch := remaining.take workers
-    remaining := remaining.drop workers
-    let mut tasks : List (Task (Except IO.Error (Except DiagnosticModel VCResult))) := []
-    for job in batch.reverse do
-      let task ← IO.asTask (dispatchSolverJob job p options counter tempDir phases)
-      tasks := task :: tasks
-    -- Collect results in order
-    for task in tasks do
-      match task.get with
-      | .ok result => revResults := result :: revResults
-      | .error ioErr => revResults := .error (DiagnosticModel.fromFormat f!"{ioErr}") :: revResults
-    -- Early termination: if stopOnFirstError and a failure was found, stop
-    if options.stopOnFirstError then
-      let hasFailure := revResults.any fun r => match r with
-        | .ok result => result.isNotSuccess
-        | .error _ => true
-      if hasFailure then break
-  return revResults.reverse
+  for idx in (List.range jobs.length).reverse do
+    match rmap[idx]? with
+    | some result => revResults := result :: revResults
+    | none => revResults := .error (DiagnosticModel.fromFormat f!"parallel dispatch: job {idx} was not executed") :: revResults
+  return revResults
 
 
 def verifySingleEnv (oblProgram : Program)
