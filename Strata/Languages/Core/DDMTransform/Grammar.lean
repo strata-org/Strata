@@ -256,12 +256,12 @@ op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";";
 
 category Invariant;
-op invariant (e : Expr) : Invariant => "invariant" e ";";
+op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
 
 category Invariants;
 op nilInvariants : Invariants => ;
-op consInvariants(e : Expr, is : Invariants) : Invariants =>
-  "invariant " e "\n" is:0;
+op consInvariants(label : Option Label, e : Expr, is : Invariants) : Invariants =>
+  "invariant " label e "\n" is:0;
 
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";

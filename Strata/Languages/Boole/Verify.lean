@@ -371,9 +371,12 @@ def toCoreInvariants (is : BooleDDM.Invariants SourceRange) :
     TranslateM (List (String × Core.Expression.Expr)) := do
   match is with
   | .nilInvariants _ => return []
-  | .consInvariants _ e rest => do
+  | .consInvariants _ lbl? e rest => do
+    let lbl := match lbl?.val with
+      | some (.label _ ⟨_, l⟩) => l
+      | none => ""
     let e' ← toCoreExpr e
-    return ("", e') :: (← toCoreInvariants rest)
+    return (lbl, e') :: (← toCoreInvariants rest)
 
 def lowerFor
     (m : SourceRange)

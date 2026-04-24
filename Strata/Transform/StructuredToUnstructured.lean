@@ -123,9 +123,15 @@ match ss with
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
   -- Body jumps to bodyK (either directly to lentry, or through the decrease block)
   let (bl, bbs) ← stmtsToBlocks bodyK bss exitConts []
+  -- For each invariant, emit an `assert` whose label preserves the source
+  -- label when present.  When the source label is empty (frontend did not
+  -- supply one), generate a fresh `inv$` label for uniqueness.
   let invCmds : List CmdT ←
-    is.mapM (fun (invLabel, i) => do
-      pure (HasPassiveCmds.assert invLabel i MetaData.empty))
+    is.mapM (fun (srcLabel, i) => do
+      let assertLabel ←
+        if srcLabel.isEmpty then StringGenState.gen "inv$"
+        else pure srcLabel
+      pure (HasPassiveCmds.assert assertLabel i MetaData.empty))
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>

@@ -1099,12 +1099,15 @@ end
 
 ---------------------------------------------------------------------
 
-def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (List Core.Expression.Expr) := do
+def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) :
+    TransM (List (String × Core.Expression.Expr)) := do
   match arg with
   | .option _ (.some m) => do
-    let args ← checkOpArg m q`Core.invariant 1
-    let e ← translateExpr p bindings args[0]!
-    pure [e]
+    -- invariant takes: label (Option Label), e (Expr)
+    let args ← checkOpArg m q`Core.invariant 2
+    let label ← translateOptionLabel "" args[0]!
+    let e ← translateExpr p bindings args[1]!
+    pure [(label, e)]
   | _ => pure []
 
 partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
@@ -1115,10 +1118,12 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
   | q`Core.nilInvariants =>
     pure []
   | q`Core.consInvariants =>
-    let args ← checkOpArg arg q`Core.consInvariants 2
-    let i ← translateExpr p bindings args[0]!
-    let is ← translateInvariants p bindings args[1]!
-    pure (("", i)::is)
+    -- consInvariants takes: label (Option Label), e (Expr), is (Invariants)
+    let args ← checkOpArg arg q`Core.consInvariants 3
+    let label ← translateOptionLabel "" args[0]!
+    let i ← translateExpr p bindings args[1]!
+    let is ← translateInvariants p bindings args[2]!
+    pure ((label, i)::is)
   | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
 
 def translateMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :
