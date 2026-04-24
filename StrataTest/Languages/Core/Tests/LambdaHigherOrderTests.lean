@@ -8,6 +8,13 @@ import Strata.Languages.Core.Core
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.Verifier
 
+/-! # Lambda, Higher-Order Function, and Function Type Tests
+
+Tests for lambda expressions, higher-order functions, and function types in Core.
+Covers parsing, type checking, verification, SMT encoding error messages,
+and interactions with polymorphism, recursive functions, and datatypes.
+-/
+
 open Core
 open Strata
 
@@ -596,7 +603,66 @@ spec {
 };
 #end
 
-/-- info: Obligation: applyTransformer_body_calls_Transformer..base_0
+/-- error: Cannot encode datatype 'Transformer' to SMT: constructor 'MkTransformer' has function-typed field 'f' of type '(arrow int int)'. Function types cannot be represented in SMT-LIB datatypes.-/
+#guard_msgs in
+#eval verify datatypeFnFieldLambdaPgm (options := .quiet)
+
+def datatypeFnFieldSymbolicPgm :=
+#strata
+program Core;
+
+datatype Transformer { MkTransformer(f: int -> int, base: int) };
+
+inline function applyTransformer(t : Transformer) : int
+{
+  (Transformer..f(t))(Transformer..base(t))
+}
+
+function add1 (x: int) : int {
+  x + 1
+}
+
+procedure Test(z : int, out result : int)
+spec {
+  ensures result == z + 1;
+
+}
+{
+  var x: Transformer;
+  assume (Transformer..f(x) == add1);
+  assume (Transformer..base(x) == z);
+  result := applyTransformer(x);
+};
+#end
+
+/-- error: Cannot encode datatype 'Transformer' to SMT: constructor 'MkTransformer' has function-typed field 'f' of type '(arrow int int)'. Function types cannot be represented in SMT-LIB datatypes.-/
+#guard_msgs in
+#eval verify datatypeFnFieldSymbolicPgm (options := .quiet)
+
+/-! ## Polymorphic datatype instantiated with function type -/
+
+-- Box<T> instantiated with int -> int, holding a lambda. Solved by partial evaluation.
+def polyDatatypeFnInstPgm :=
+#strata
+program Core;
+
+datatype Box (a : Type) { MkBox(val: a) };
+
+inline function apply(f : int -> int, x : int) : int
+{
+  f(x)
+}
+
+procedure Test(out result : int)
+spec {
+  ensures result == 6;
+}
+{
+  result := apply(Box..val(MkBox(lambda x : int :: x + 1)), 5);
+};
+#end
+
+/-- info: Obligation: set_result_calls_Box..val_0
 Property: assert
 Result: ✅ pass
 
@@ -604,4 +670,4 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify datatypeFnFieldLambdaPgm (options := .quiet)
+#eval verify polyDatatypeFnInstPgm (options := .quiet)

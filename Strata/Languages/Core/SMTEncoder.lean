@@ -114,6 +114,20 @@ private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List 
       (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
     { name := c.name.name, args := fields }
 
+/-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
+  constructor arguments-/
+private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+    (seenDatatypes : Std.HashSet String) : Except Format Unit := do
+  for block in typeFactory.toList do
+    for d in block do
+      if !seenDatatypes.contains d.name then continue
+      for c in d.constrs do
+        for (fieldName, fieldTy) in c.args do
+          if fieldTy.containsArrow then
+            throw f!"Cannot encode datatype '{d.name}' to SMT: \
+                     constructor '{c.name.name}' has function-typed field '{fieldName.name}' of type '{fieldTy}'. \
+                     Function types cannot be represented in SMT-LIB datatypes."
+
 /--
 Emit datatype declarations to the solver.
 Uses the TypeFactory ordering (already topologically sorted).
@@ -121,6 +135,9 @@ Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+  | .error msg => throw (IO.userError (toString msg))
+  | .ok () => pure ()
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
