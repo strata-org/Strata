@@ -74,25 +74,43 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln s!"  {modName}"
     return 1
 
+  IO.println s!"Launching {tests.size} test(s) concurrently ..."
+  let tasks ← tests.mapM fun (file, modName) => do
+    let task ← IO.asTask do
+      let child ← IO.Process.spawn {
+        cmd := "lean"
+        args := #[file.toString]
+        stdout := .piped
+        stderr := .piped
+      }
+      let stdout ← IO.asTask child.stdout.readToEnd Task.Priority.dedicated
+      let stderr ← child.stderr.readToEnd
+      let exitCode ← child.wait
+      let stdout ← IO.ofExcept stdout.get
+      return (exitCode, stdout, stderr)
+    return (modName, task)
+
   let mut failures := 0
-  for (file, modName) in tests do
-    IO.println s!"Running {modName} ..."
-    let child ← IO.Process.spawn {
-      cmd := "lean"
-      args := #[file.toString]
-      stdout := .inherit
-      stderr := .inherit
-    }
-    let exitCode ← child.wait
-    if exitCode == 0 then
-      IO.println s!"  PASS: {modName}"
-    else
-      IO.eprintln s!"  FAIL: {modName} (exit code {exitCode})"
+  let stdout ← IO.getStdout
+  let stderr ← IO.getStderr
+  for (modName, task) in tasks do
+    match task.get with
+    | .ok (exitCode, childOut, childErr) =>
+      if exitCode == 0 then
+        stdout.putStrLn s!"  PASS: {modName}"
+      else
+        stdout.putStrLn s!"  FAIL: {modName} (exit code {exitCode})"
+        unless childOut.isEmpty do stdout.putStr childOut
+        unless childErr.isEmpty do stdout.putStr childErr
+        failures := failures + 1
+    | .error e =>
+      stdout.putStrLn s!"  FAIL: {modName} (task error: {e})"
       failures := failures + 1
+    stdout.flush
 
   if failures > 0 then
-    IO.eprintln s!"\n{failures} of {tests.size} test file(s) failed."
+    stderr.putStrLn s!"\n{failures} of {tests.size} test file(s) failed."
     return 1
   else
-    IO.println s!"\nAll {tests.size} test file(s) passed."
+    stdout.putStrLn s!"\nAll {tests.size} test file(s) passed."
     return 0
