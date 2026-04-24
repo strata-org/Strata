@@ -26,8 +26,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 2
 Factory Functions:
 func Int.Add :  ((x : int) (y : int)) → int;
 func Int.Sub :  ((x : int) (y : int)) → int;
@@ -390,9 +388,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, 0 < $__x0)
+(0_lt_x, 0 < x@1)
 Proof Obligation:
--$__x0 < 0
+-x@1 < 0
 -/
 #guard_msgs in
 #eval do let E := Env.init

@@ -34,7 +34,7 @@ resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 
 ### Definition nodes (introduce a name into scope)
 - `StmtExpr.LocalVariable` — local variable declaration
-- `StmtExpr.Forall` / `StmtExpr.Exists` — quantifier-bound variable
+- `StmtExpr.Quantifier` — quantifier-bound variable
 - `Parameter` — procedure parameter
 - `Procedure` — procedure definition
 - `Field` — field on a composite type
@@ -372,20 +372,13 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let callee' ← resolveRef callee coreMd
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
-  | .Forall param trigger body =>
+  | .Quantifier mode param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
       let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Forall ⟨paramName', paramTy'⟩ trigger' body')
-  | .Exists param trigger body =>
-    withScope do
-      let paramTy' ← resolveHighType param.type
-      let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
-      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
-      let body' ← resolveStmtExpr body
-      pure (.Exists ⟨paramName', paramTy'⟩ trigger' body')
+      pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body')
   | .Assigned name =>
     let name' ← resolveStmtExpr name
     pure (.Assigned name')
@@ -619,12 +612,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
   | .InstanceCall target _ args =>
     let map := collectStmtExpr map target
     args.foldl collectStmtExpr map
-  | .Forall param trigger body =>
-    let map := register map param.name (.quantifierVar param.name param.type)
-    let map := collectHighType map param.type
-    let map := match trigger with | some t => collectStmtExpr map t | none => map
-    collectStmtExpr map body
-  | .Exists param trigger body =>
+  | .Quantifier _ param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
     let map := match trigger with | some t => collectStmtExpr map t | none => map

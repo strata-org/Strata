@@ -144,26 +144,26 @@ VCs:
 Label: inc_ensures_1_2418
 Property: assert
 Assumptions:
-inc_requires_0_2400: $__z1 > 0
+inc_requires_0_2400: z@1 > 0
 Obligation:
 true
 
 Label: callElimAssert_inc_requires_0_2400_6
 Property: assert
 Assumptions:
-main_caller_requires_2_2534: $__z6 == 10
-main_caller_requires_3_2554: $__g5 == 0
+main_caller_requires_2_2534: z@3 == 10
+main_caller_requires_3_2554: g@3 == 0
 Obligation:
-$__z6 > 0
+z@3 > 0
 
 Label: main_caller_ensures_4_2573
 Property: assert
 Assumptions:
-main_caller_requires_2_2534: $__z6 == 10
-main_caller_requires_3_2554: $__g5 == 0
-callElimAssume_inc_ensures_1_2418_7: $__g9 == $__g5 + 5 + $__z10
+main_caller_requires_2_2534: z@3 == 10
+main_caller_requires_3_2554: g@3 == 0
+callElimAssume_inc_ensures_1_2418_7: g@5 == g@3 + 5 + z@5
 Obligation:
-$__g9 == 15
+g@5 == 15
 
 ---
 info:
@@ -179,7 +179,7 @@ Obligation: main_caller_ensures_4_2573
 Property: assert
 Result: ❓ unknown
 Model:
-($__g9, 5) ($__z6, 10) ($__g5, 0) ($__z10, 0)
+(g@5, 5) (z@3, 10) (g@3, 0) (z@5, 0)
 -/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" callerPgm
