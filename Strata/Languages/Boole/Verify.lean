@@ -367,19 +367,20 @@ def nestMapSet (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr) 
     let updatedInner := nestMapSet innerMap rest rhs
     mkCoreApp Core.mapUpdateOp [base, i, updatedInner]
 
-def toCoreInvariants (is : BooleDDM.Invariants SourceRange) : TranslateM (List Core.Expression.Expr) := do
+def toCoreInvariants (is : BooleDDM.Invariants SourceRange) :
+    TranslateM (List (String × Core.Expression.Expr)) := do
   match is with
   | .nilInvariants _ => return []
   | .consInvariants _ e rest => do
     let e' ← toCoreExpr e
-    return e' :: (← toCoreInvariants rest)
+    return ("", e') :: (← toCoreInvariants rest)
 
 def lowerFor
     (m : SourceRange)
     (id : Core.Expression.Ident)
     (ty : Lambda.LMonoTy)
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
-    (invs : List Core.Expression.Expr)
+    (invs : List (String × Core.Expression.Expr))
     (body : List Core.Statement) : TranslateM Core.Statement := do
   let blockLabel ← defaultLabel m "for" none
   let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (.det initExpr) (← toCoreMetaData m)

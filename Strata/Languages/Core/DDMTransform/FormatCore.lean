@@ -854,10 +854,10 @@ partial def elseToCST {M} [Inhabited M] (stmts : List Core.Statement)
     pure (.else1 default blockCST)
 
 partial def invariantsToCST {M} [Inhabited M]
-    (inv : List (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
+    (inv : List (String × Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
   match inv with
   | [] => pure (.nilInvariants default)
-  | expr :: rest => do
+  | (_, expr) :: rest => do
     let exprCST ← lexprToExpr expr 0
     let restCST ← invariantsToCST rest
     pure (.consInvariants default exprCST restCST)

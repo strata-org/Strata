@@ -35,7 +35,6 @@ structure Env (P : PureExpr) where
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
-
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -70,8 +69,9 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
       The optional label identifies which block to exit to. -/
   | exiting : Option String → Env P → Config P CmdT
   /-- A block context: execute the inner config, then consume matching exits.
-      The string is the block label. -/
-  | block : String → Config P CmdT → Config P CmdT
+      The label is `Option String` — `none` denotes an unnamed block that only
+      catches unlabeled exits. -/
+  | block : Option String → Config P CmdT → Config P CmdT
   /-- A sequence context: execute the first statement (as a sub-config), then
       continue with the remaining statements. -/
   | seq : Config P CmdT → List (Stmt P CmdT) → Config P CmdT
@@ -79,24 +79,6 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
 /-! ## Configuration accessors -/
 
 variable {P : PureExpr} {CmdT : Type}
-
-/-- Extract the store from a configuration. -/
-@[expose] def Config.getStore : Config P CmdT → SemanticStore P
-  | .stmt _ ρ => ρ.store
-  | .stmts _ ρ => ρ.store
-  | .terminal ρ => ρ.store
-  | .exiting _ ρ => ρ.store
-  | .block _ inner => inner.getStore
-  | .seq inner _ => inner.getStore
-
-/-- Extract the evaluator from a configuration. -/
-@[expose] def Config.getEval : Config P CmdT → SemanticEval P
-  | .stmt _ ρ => ρ.eval
-  | .stmts _ ρ => ρ.eval
-  | .terminal ρ => ρ.eval
-  | .exiting _ ρ => ρ.eval
-  | .block _ inner => inner.getEval
-  | .seq inner _ => inner.getEval
 
 /-- Extract the execution environment from a configuration. -/
 @[expose] def Config.getEnv : Config P CmdT → Env P
@@ -107,6 +89,14 @@ variable {P : PureExpr} {CmdT : Type}
   | .block _ inner => inner.getEnv
   | .seq inner _ => inner.getEnv
 
+/-- Extract the store from a configuration. -/
+@[expose] def Config.getStore (cfg: Config P CmdT): SemanticStore P
+  := cfg.getEnv.store
+
+/-- Extract the evaluator from a configuration. -/
+@[expose] def Config.getEval (cfg: Config P CmdT): SemanticEval P
+  := cfg.getEnv.eval
+
 /-! ## noMatchingAssert
 
 `noMatchingAssert` checks that a statement, list of statements, or
@@ -115,14 +105,16 @@ a given label.  This is specific to `Cmd P`. -/
 
 /-- `noMatchingAssert` for statements and statement lists.
     Returns `True` when `s` does not syntactically contain any `assert`
-    command with the given label. -/
+    command or loop invariant with the given label. -/
 @[expose] def Stmt.noMatchingAssert : Stmt P (Cmd P) → String → Prop
   | .cmd (.assert l _ _), label => l ≠ label
   | .cmd _, _ => True
   | .block _ ss _, label => Stmts.noMatchingAssert ss label
   | .ite _ tss ess _, label =>
     Stmts.noMatchingAssert tss label ∧ Stmts.noMatchingAssert ess label
-  | .loop _ _ _ body _, label => Stmts.noMatchingAssert body label
+  | .loop _ _ inv body _, label =>
+    (∀ (le : String × P.Expr), le ∈ inv → le.1 ≠ label) ∧
+    Stmts.noMatchingAssert body label
   | .exit _ _, _ => True
   | .funcDecl _ _, _ => True
   | .typeDecl _ _, _ => True
@@ -152,12 +144,12 @@ def Config.noFuncDecl : Config P CmdT → Prop
   | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
 
 /-- Extend `exitsCoveredByBlocks` to configurations. -/
-@[expose] def Config.exitsCoveredByBlocks : List String → Config P CmdT → Prop
+@[expose] def Config.exitsCoveredByBlocks : List (Option String) → Config P CmdT → Prop
   | labels, .stmt s _ => s.exitsCoveredByBlocks labels
   | labels, .stmts ss _ => Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
   | _, .terminal _ => True
   | labels, .exiting none _ => labels.length > 0
-  | labels, .exiting (some l) _ => l ∈ labels
+  | labels, .exiting (some l) _ => .some l ∈ labels
   | labels, .block l inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
     Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
@@ -190,11 +182,13 @@ inductive StepStmt
       (.stmt (.cmd c) ρ)
       (.terminal { ρ with store := σ', hasFailure := ρ.hasFailure || hasAssertFailure })
 
-  /-- A labeled block steps to a block context that wraps its body as `.stmts`. -/
+  /-- A labeled block steps to a block context that wraps its body as `.stmts`.
+      The AST label `label : String` is lifted into `.some label` for the
+      `Config.block` wrapper (whose label is `Option String`). -/
   | step_block :
     StepStmt EvalCmd extendEval
       (.stmt (.block label ss _) ρ)
-      (.block label (.stmts ss ρ))
+      (.block (.some label) (.stmts ss ρ))
 
   /-- If the condition of an `ite` statement evaluates to true, step to the
       then branch. -/
@@ -228,35 +222,64 @@ inductive StepStmt
       (.stmt (.ite .nondet tss ess _) ρ)
       (.stmts ess ρ)
 
-  /-- If a loop guard is true, execute the body (followed by the loop again). -/
-  | step_loop_enter :
+  /-- If a loop guard is true, execute the body (followed by the loop again).
+      Each invariant expression must evaluate to a boolean (`tt` or `ff`);
+      otherwise execution is stuck here, just as a non-boolean guard would
+      block `step_ite_true`.  If any invariant evaluates to `ff`, the
+      cumulative `hasFailure` flag is set via `hasInvFailure`, matching the
+      pattern `step_cmd` uses for `assert` failure.  The invariants are
+      labeled pairs `(String × P.Expr)`; only the expression part is
+      evaluated.
+
+      The body+recursion is wrapped in an unnamed `.block`, so an unlabeled
+      `exit` inside the body terminates the loop (and nothing else), while a
+      labeled `exit` propagates past the loop. -/
+  | step_loop_enter {hasInvFailure : Bool} :
     ρ.eval ρ.store g = .some HasBool.tt →
+    (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
+                 ρ.eval ρ.store le.2 = .some HasBool.ff) →
+    (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body md) ρ)
-      (.stmts (body ++ [.loop (.det g) m inv body md]) ρ)
+      (.block .none (.stmts (body ++ [.loop (.det g) m inv body md])
+        { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
 
-  /-- If a loop guard is false, terminate the loop. -/
-  | step_loop_exit :
+  /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
+      invariants must be boolean-valued and any `ff` result flips `hasFailure`. -/
+  | step_loop_exit {hasInvFailure : Bool} :
     ρ.eval ρ.store g = .some HasBool.ff →
+    (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
+                 ρ.eval ρ.store le.2 = .some HasBool.ff) →
+    (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body _) ρ)
-      (.terminal ρ)
+      (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
 
-  /-- Non-deterministic loop: enter the body. -/
-  | step_loop_nondet_enter :
+  /-- Non-deterministic loop: enter the body.  Same invariant-boolean
+      condition as the deterministic case.  As with the det variant, the
+      body is wrapped in an unnamed `.block` so that an unlabeled `exit`
+      terminates just the loop. -/
+  | step_loop_nondet_enter {hasInvFailure : Bool} :
+    (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
+                 ρ.eval ρ.store le.2 = .some HasBool.ff) →
+    (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     StepStmt EvalCmd extendEval
       (.stmt (.loop .nondet m inv body md) ρ)
-      (.stmts (body ++ [.loop .nondet m inv body md]) ρ)
+      (.block .none (.stmts (body ++ [.loop .nondet m inv body md])
+        { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
 
   /-- Non-deterministic loop: exit the loop. -/
-  | step_loop_nondet_exit :
+  | step_loop_nondet_exit {hasInvFailure : Bool} :
+    (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
+                 ρ.eval ρ.store le.2 = .some HasBool.ff) →
+    (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     StepStmt EvalCmd extendEval
       (.stmt (.loop .nondet m inv body _) ρ)
-      (.terminal ρ)
+      (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
 
   /-- An exit statement produces an exiting configuration. -/
   | step_exit :
@@ -326,7 +349,8 @@ inductive StepStmt
       (.block label (.terminal ρ'))
       (.terminal ρ')
 
-  /-- When a block's inner body exits with no label, the block consumes the exit. -/
+  /-- When a block's inner body exits with no label, the block consumes the exit
+      (regardless of the block's own label). -/
   | step_block_exit_none :
     StepStmt EvalCmd extendEval
       (.block label (.exiting .none ρ'))
@@ -334,15 +358,17 @@ inductive StepStmt
 
   /-- When a block's inner body exits with a matching label, the block consumes it. -/
   | step_block_exit_match :
-    l = label →
+    label = .some l →
     ----
     StepStmt EvalCmd extendEval
       (.block label (.exiting (.some l) ρ'))
       (.terminal ρ')
 
-  /-- When a block's inner body exits with a non-matching label, the exit propagates. -/
+  /-- When a block's inner body exits with a non-matching label, the exit propagates.
+      "Non-matching" covers both the unnamed-block (`.none`) case and any other
+      mismatched `some` label. -/
   | step_block_exit_mismatch :
-    l ≠ label →
+    label ≠ .some l →
     ----
     StepStmt EvalCmd extendEval
       (.block label (.exiting (.some l) ρ'))
@@ -435,7 +461,7 @@ theorem seq_inner_star
     enclosing `.block` takes the same number of steps. -/
 theorem block_inner_star
     (inner inner' : Config P CmdT)
-    (label : String)
+    (label : Option String)
     (h : StepStmtStar P EvalCmd extendEval inner inner') :
     StepStmtStar P EvalCmd extendEval (.block label inner) (.block label inner') := by
   induction h with
@@ -526,7 +552,7 @@ theorem seq_reaches_exiting
 /-- Invert a block execution reaching terminal: the inner either
     terminated or exited (caught by the block). -/
 theorem block_reaches_terminal
-    {inner : Config P CmdT} {l : String} {ρ' : Env P}
+    {inner : Config P CmdT} {l : Option String} {ρ' : Env P}
     (hstar : StepStmtStar P EvalCmd extendEval (.block l inner) (.terminal ρ')) :
     StepStmtStar P EvalCmd extendEval inner (.terminal ρ') ∨
     (∃ lbl, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) := by
@@ -560,7 +586,7 @@ theorem block_reaches_terminal
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block. -/
 theorem block_reaches_exiting
-    {inner : Config P CmdT} {l : String} {lbl : Option String} {ρ' : Env P}
+    {inner : Config P CmdT} {l : Option String} {lbl : Option String} {ρ' : Env P}
     (hstar : StepStmtStar P EvalCmd extendEval (.block l inner) (.exiting lbl ρ')) :
     ∃ lbl_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ') := by
   suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
@@ -591,11 +617,11 @@ theorem block_reaches_exiting
 /-! ## Trace construction helpers -/
 
 /-- Entering a block: a single step from `.stmt (.block l body md) ρ`
-    to `.block l (.stmts body ρ)`. -/
+    to `.block (.some l) (.stmts body ρ)`. -/
 theorem step_block_enter (l : String) (body : List (Stmt P CmdT))
     (md : MetaData P) (ρ : Env P) :
     StepStmtStar P EvalCmd extendEval
-      (.stmt (.block l body md) ρ) (.block l (.stmts body ρ)) :=
+      (.stmt (.block l body md) ρ) (.block (.some l) (.stmts body ρ)) :=
   .step _ _ _ .step_block (.refl _)
 
 /-- If a prefix of a statement list terminates, the full list steps
@@ -644,8 +670,10 @@ theorem stmts_append_terminates
     assumption) to fill arguments so that no hypothesis names are needed. -/
 local macro "apply_step" : tactic => `(tactic| first
   | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
-  | exact .step_ite_false ‹_› ‹_› | exact .step_loop_enter ‹_› ‹_›
-  | exact .step_loop_exit ‹_› ‹_› | exact .step_block
+  | exact .step_ite_false ‹_› ‹_›
+  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_›
+  | exact .step_loop_exit ‹_› ‹_› ‹_› ‹_›
+  | exact .step_block
   | exact .step_exit            | exact .step_funcDecl
   | exact .step_typeDecl        | exact .step_stmts_nil
   | exact .step_stmts_cons)
@@ -673,7 +701,7 @@ private def step_simulation
   -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
   -- constructor is valid, and the output ConfigSE follows by `simp_all`.
   | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
-  | step_loop_enter _ _ | step_loop_exit _ _
+  | step_loop_enter _ _ _ _ | step_loop_exit _ _ _ _
   | step_exit | step_funcDecl | step_typeDecl | step_stmts_nil | step_stmts_cons =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst he
@@ -686,14 +714,14 @@ private def step_simulation
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
     exact ⟨_, .step_ite_nondet_false, by simp [ConfigSE]⟩
-  | step_loop_nondet_enter =>
+  | step_loop_nondet_enter _ _ =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
-    exact ⟨_, .step_loop_nondet_enter, by simp [ConfigSE]⟩
-  | step_loop_nondet_exit =>
+    exact ⟨_, .step_loop_nondet_enter ‹_› ‹_›, by simp_all [ConfigSE]⟩
+  | step_loop_nondet_exit _ _ =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
-    exact ⟨_, .step_loop_nondet_exit, by simp [ConfigSE]⟩
+    exact ⟨_, .step_loop_nondet_exit ‹_› ‹_›, by simp_all [ConfigSE]⟩
   | step_seq_inner h =>
     cases c₂ with
     | seq i₂ _ =>
@@ -791,7 +819,7 @@ theorem smallStep_hasFailure_irrel
 
 /-- A single step preserves `Config.exitsCoveredByBlocks`. -/
 private theorem step_preserves_exitsCoveredByBlocks
-    (labels : List String)
+    (labels : List (Option String))
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
     (hwp : c₁.exitsCoveredByBlocks labels) :
@@ -811,13 +839,21 @@ private theorem step_preserves_exitsCoveredByBlocks
   | step_ite_nondet_false => intro _ hwp; exact hwp.2
   | step_loop_enter _ _ =>
     intro labels hwp
+    -- Goal: (.block .none (.stmts (body ++ [.loop ...]) ρ')) covers labels
+    --  ↔ .stmts (body ++ [...]) covers (none :: labels).
     simp only [Config.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks] at hwp ⊢
-    exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) labels _ _ hwp ⟨hwp, True.intro⟩
+    have hbody := (exitsCoveredByBlocks_weaken (P := P) (CmdT := CmdT)
+      labels (.none :: labels) (fun l hl => .tail _ hl)).2 _ hwp
+    exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) (.none :: labels) _ _
+      hbody ⟨hbody, True.intro⟩
   | step_loop_exit => intro _ _; trivial
   | step_loop_nondet_enter =>
     intro labels hwp
     simp only [Config.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks] at hwp ⊢
-    exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) labels _ _ hwp ⟨hwp, True.intro⟩
+    have hbody := (exitsCoveredByBlocks_weaken (P := P) (CmdT := CmdT)
+      labels (.none :: labels) (fun l hl => .tail _ hl)).2 _ hwp
+    exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) (.none :: labels) _ _
+      hbody ⟨hbody, True.intro⟩
   | step_loop_nondet_exit => intro _ _; trivial
   | step_exit =>
     intro labels hwp
@@ -851,9 +887,9 @@ theorem exitsCoveredByBlocks_noEscape
   intro ρ lbl ρ' hstar
   -- Prove Config.exitsCoveredByBlocks [] is preserved, then show .exiting contradicts it.
   suffices ∀ c₁ c₂,
-      c₁.exitsCoveredByBlocks ([] : List String) →
+      c₁.exitsCoveredByBlocks ([] : List (Option String)) →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      c₂.exitsCoveredByBlocks ([] : List String) by
+      c₂.exitsCoveredByBlocks ([] : List (Option String)) by
     have hwp' := this _ _ (show Config.exitsCoveredByBlocks [] (.stmt s ρ) from hwp) hstar
     -- Config.exitsCoveredByBlocks [] (.exiting lbl ρ') requires:
     --   lbl = none → [].length > 0 (False)
@@ -877,9 +913,9 @@ theorem block_exitsCoveredByBlocks_noEscape
       ¬ StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.exiting lbl ρ') := by
   intro ρ lbl ρ' hstar
   suffices ∀ c₁ c₂,
-      c₁.exitsCoveredByBlocks ([] : List String) →
+      c₁.exitsCoveredByBlocks ([] : List (Option String)) →
       StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      c₂.exitsCoveredByBlocks ([] : List String) by
+      c₂.exitsCoveredByBlocks ([] : List (Option String)) by
     have hwp' := this _ _ (show Config.exitsCoveredByBlocks [] (.stmts bss ρ) from hwp) hstar
     cases lbl with
     | none => exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
@@ -894,7 +930,7 @@ theorem block_exitsCoveredByBlocks_noEscape
     and `cfg` is neither terminal nor exiting, then `cfg = .block l inner'`
     for some `inner'` with `inner →* inner'`. -/
 theorem block_star_extract_inner
-    {l : String} {inner cfg : Config P CmdT}
+    {l : Option String} {inner cfg : Config P CmdT}
     (h_star : StepStmtStar P EvalCmd extendEval (.block l inner) cfg)
     (h_no_exit : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval
         inner (.exiting lbl ρ'))
@@ -1079,22 +1115,25 @@ variable (extendEval : ExtendEval P)
 /-! ## Assertion Identity -/
 
 /-- An assertion identifier: the label + expression attached to an
-    `assert` command.  Metadata is intentionally excluded — it is not
-    semantically relevant for assertion validity. -/
+    `assert` command. -/
 structure AssertId where
   label : String
   expr  : P.Expr
 
 /-! ## Detecting an assert in a configuration -/
 
-/-- `isAtAssert cfg aid` holds when the head of `cfg` is an `assert` command
-    whose label and expression match `aid`.  Recurses into `block` and `seq`
-    wrappers so that asserts inside compound statements are visible. -/
+/-- `isAtAssert cfg aid` holds when the head of `cfg` is either an `assert`
+    command whose label and expression match `aid`, or a loop statement
+    whose invariant list contains an entry with matching label and
+    expression.  Recurses into `block` and `seq` wrappers so that
+    assertions inside compound statements are visible. -/
 @[expose] def isAtAssert : Config P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, aid =>
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
+  | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
+  | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
   | .block _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
@@ -1112,9 +1151,14 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmt (.cmd (.init ..)) _ | .stmt (.cmd (.set ..)) _
   | .stmt (.cmd (.assume ..)) _
   | .stmt (.cmd (.cover ..)) _
-  | .stmt (.block ..) _ | .stmt (.ite ..) _ | .stmt (.loop ..) _
+  | .stmt (.block ..) _ | .stmt (.ite ..) _
   | .stmt (.exit ..) _ | .stmt (.funcDecl ..) _ | .stmt (.typeDecl ..) _ =>
     simp [isAtAssert]
+  | .stmt (.loop _ _ inv _ _) _ =>
+    simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
+    intro hat
+    -- hat : (label, expr) ∈ inv
+    exact hno.1 label expr hat rfl
   | .stmts [] _ => simp [isAtAssert]
   | .stmts ((.cmd (.assert l _ _)) :: _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
@@ -1123,9 +1167,15 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmts ((.cmd (.assume ..)) :: _) _
   | .stmts ((.cmd (.cover ..)) :: _) _
   | .stmts ((.block ..) :: _) _ | .stmts ((.ite ..) :: _) _
-  | .stmts ((.loop ..) :: _) _ | .stmts ((.exit ..) :: _) _
+  | .stmts ((.exit ..) :: _) _
   | .stmts ((.funcDecl ..) :: _) _ | .stmts ((.typeDecl ..) :: _) _ =>
     simp [isAtAssert]
+  | .stmts ((.loop _ _ inv _ _) :: _) _ =>
+    simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert,
+      Stmt.noMatchingAssert] at hno
+    intro hat
+    -- hat : (label, expr) ∈ inv
+    exact hno.1.1 label expr hat rfl
   | .terminal _ | .exiting _ _ => simp [isAtAssert]
   | .block _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
@@ -1158,14 +1208,14 @@ private def step_preserves_noMatchingAssert
   | step_loop_enter =>
     simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
     apply stmts_noMatchingAssert_append
-    exact hno
-    exact ⟨hno, True.intro⟩
+    · exact hno.2
+    · exact ⟨hno, True.intro⟩
   | step_loop_exit => trivial
   | step_loop_nondet_enter =>
     simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
     apply stmts_noMatchingAssert_append
-    exact hno
-    exact ⟨hno, True.intro⟩
+    · exact hno.2
+    · exact ⟨hno, True.intro⟩
   | step_loop_nondet_exit => trivial
   | step_exit => trivial
   | step_funcDecl => trivial
@@ -1306,8 +1356,41 @@ theorem assert_tail_getEvalStore
 
 /-! ## hasFailure preservation -/
 
+/-- Helper: when all asserts at a loop config pass (via `hv`), the
+    loop-step's `hasInvFailure` boolean is forced to `false`. -/
+private theorem loop_step_hasInvFailure_false
+    {c : Config P (Cmd P)} {ρ : Env P}
+    {inv : List (String × P.Expr)} {guard : ExprOrNondet P}
+    {m : Option P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    {hasInvFailure : Bool}
+    (hc_shape : c = .stmt (.loop guard m inv body md) ρ)
+    (hv : ∀ a cfg, StepStmtStar P (EvalCmd P) extendEval c cfg →
+      isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ inv ∧
+      ρ.eval ρ.store le.snd = some HasBool.ff) :
+    hasInvFailure = false := by
+  cases hb : hasInvFailure with
+  | false => rfl
+  | true =>
+    exfalso
+    rw [hb] at hff_iff
+    have ⟨⟨lbl, e⟩, hmem, he_ff⟩ := hff_iff.mp rfl
+    have hat : isAtAssert P c ⟨lbl, e⟩ := by
+      rw [hc_shape]
+      show (lbl, e) ∈ inv
+      exact hmem
+    have htt := hv ⟨lbl, e⟩ c (.refl _) hat
+    rw [hc_shape] at htt
+    simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
+    rw [he_ff] at htt
+    exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
+
 /-- Single-step: if hasFailure is false and all reachable asserts pass,
-    then hasFailure stays false after one step. -/
+    then hasFailure stays false after one step.
+
+    Note: `hv` covers loop invariants too, thanks to `isAtAssert`'s clauses
+    for `.loop`.  A failing invariant at a reachable loop config would be
+    ruled out by `hv`, keeping `hasInvFailure = false` in `step_loop_*`. -/
 private theorem step_preserves_noFailure
     (c₁ c₂ : Config P (Cmd P))
     (hv : ∀ a cfg, StepStmtStar P (EvalCmd P) extendEval c₁ cfg →
@@ -1320,7 +1403,7 @@ private theorem step_preserves_noFailure
     cases hcmd with
     | eval_assert_fail hff _ =>
       have htt := hv ⟨_, _⟩ _ (.refl _) ⟨rfl, rfl⟩
-      simp only [Config.getEval, Config.getStore] at htt
+      simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
       rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
     | _ => simp_all [Config.getEnv]
   | step_block => simp [Config.getEnv]; exact hnf
@@ -1328,10 +1411,26 @@ private theorem step_preserves_noFailure
   | step_ite_false _ _ => exact hnf
   | step_ite_nondet_true => exact hnf
   | step_ite_nondet_false => exact hnf
-  | step_loop_enter _ _ => exact hnf
-  | step_loop_exit _ _ => exact hnf
-  | step_loop_nondet_enter => exact hnf
-  | step_loop_nondet_exit => exact hnf
+  | step_loop_enter _ _ hff_iff _ =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false (P := P) (extendEval := extendEval) (hc_shape := rfl) hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
+  | step_loop_exit _ _ hff_iff _ =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false (P := P) (extendEval := extendEval) (hc_shape := rfl) hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
+  | step_loop_nondet_enter _ hff_iff =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false (P := P) (extendEval := extendEval) (hc_shape := rfl) hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
+  | step_loop_nondet_exit _ hff_iff =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false (P := P) (extendEval := extendEval) (hc_shape := rfl) hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
   | step_exit => exact hnf
   | step_funcDecl => simp [Config.getEnv]; exact hnf
   | step_typeDecl => exact hnf
@@ -1377,3 +1476,4 @@ theorem allAssertsValid_preserves_noFailure
 end -- section
 
 end -- public section
+end Imperative

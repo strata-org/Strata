@@ -49,7 +49,7 @@ def stmtsToBlocks
   [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
   (k : String)
   (ss : List (Stmt P CmdT))
-  (exitConts : List (String × String))
+  (exitConts : List (Option String × String))
   (accum : List CmdT) :
   StringGenM (String × DetBlocks String CmdT P) :=
 match ss with
@@ -69,7 +69,7 @@ match ss with
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Process block body, extending the list of exit continuations.
-  let (bl, bbs) ← stmtsToBlocks kNext bss ((l, kNext) :: exitConts) []
+  let (bl, bbs) ← stmtsToBlocks kNext bss ((.some l, kNext) :: exitConts) []
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "blk$" accum .none bl
   -- Create labeled block if needed
@@ -124,8 +124,7 @@ match ss with
   -- Body jumps to bodyK (either directly to lentry, or through the decrease block)
   let (bl, bbs) ← stmtsToBlocks bodyK bss exitConts []
   let invCmds : List CmdT ←
-    is.mapM (fun i => do
-      let invLabel ← StringGenState.gen "inv$"
+    is.mapM (fun (invLabel, i) => do
       pure (HasPassiveCmds.assert invLabel i MetaData.empty))
   -- For nondet guards, introduce a fresh boolean variable
   match c with
@@ -151,7 +150,7 @@ match ss with
     | (.none, []) => k
     | (.none, (_, k) :: _) => k
     | (.some l, _) =>
-      match exitConts.lookup l with
+      match exitConts.lookup (.some l) with
       | .some k => k
       -- Just keep going if this is an invalid exit. We assume a prior
       -- check to avoid this.

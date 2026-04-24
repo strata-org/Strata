@@ -1108,7 +1108,7 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : Tr
   | _ => pure []
 
 partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (List Core.Expression.Expr) := do
+  TransM (List (String × Core.Expression.Expr)) := do
   let .op op := arg
     | TransM.error s!"translateInvariants expects an op {repr arg}"
   match op.name with
@@ -1118,7 +1118,7 @@ partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) 
     let args ← checkOpArg arg q`Core.consInvariants 2
     let i ← translateExpr p bindings args[0]!
     let is ← translateInvariants p bindings args[1]!
-    pure (i::is)
+    pure (("", i)::is)
   | _ => TransM.error s!"translateInvariants unimplemented for {repr op}"
 
 def translateMeasure (p : Program) (bindings : TransBindings) (arg : Arg) :

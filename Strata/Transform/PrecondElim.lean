@@ -289,7 +289,7 @@ def transformStmt (s : Statement)
     let measureAssertsEnd := match measure with
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure_end" md
-    let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
+    let invAsserts := invariant.flatMap (fun (_, inv) => collectPrecondAsserts F inv "loop_invariant" md)
     let guardAsserts := match guard with
       | .det g => collectPrecondAsserts F g "loop_guard" md
       | .nondet => []

@@ -2249,7 +2249,7 @@ theorem core_seq_inner_star
 theorem core_block_inner_star
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
-    (inner inner' : CoreConfig) (label : String)
+    (inner inner' : CoreConfig) (label : Option String)
     (h : CoreStepStar π φ inner inner') :
     CoreStepStar π φ (.block label inner) (.block label inner') :=
   StepStmtStar_to_CoreStepStar
@@ -2376,6 +2376,41 @@ theorem stmts_allAssert_preserves_store
 
 /-! ## hasFailure preservation (Core-specific) -/
 
+/-- Helper: at a reachable `.stmt (.loop ...)` config, if every assert
+    (including loop invariants via `coreIsAtAssert`) evaluates to `tt`,
+    then the loop-step's `hasInvFailure` boolean must be `false`. -/
+private theorem loop_step_hasInvFailure_false_core
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c : CoreConfig} {ρ : Env Expression}
+    {inv : List (String × Expression.Expr)} {guard : ExprOrNondet Expression}
+    {m : Option Expression.Expr} {body : List Statement} {md : MetaData Expression}
+    {hasInvFailure : Bool}
+    (hv : ∀ (a : AssertId Expression) (cfg : CoreConfig),
+      CoreStepStar π φ c cfg →
+      coreIsAtAssert cfg a →
+      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ inv ∧
+      ρ.eval ρ.store le.snd = some HasBool.ff)
+    (hc_shape : c = .stmt (.loop guard m inv body md) ρ := by rfl) :
+    hasInvFailure = false := by
+  cases hb : hasInvFailure with
+  | false => rfl
+  | true =>
+    exfalso
+    rw [hb] at hff_iff
+    have ⟨⟨lbl, e⟩, hmem, he_ff⟩ := hff_iff.mp rfl
+    have hat : coreIsAtAssert c ⟨lbl, e⟩ := by
+      rw [hc_shape]
+      show (lbl, e) ∈ inv
+      exact hmem
+    have htt := hv ⟨lbl, e⟩ c .refl hat
+    rw [hc_shape] at htt
+    simp only [Imperative.Config.getEval, Imperative.Config.getStore,
+      Imperative.Config.getEnv] at htt
+    rw [he_ff] at htt
+    exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
+
 theorem core_step_preserves_noFailure
     (c₁ c₂ : CoreConfig)
     (hv : ∀ (a : AssertId Expression) (cfg : CoreConfig),
@@ -2392,7 +2427,7 @@ theorem core_step_preserves_noFailure
       cases heval with
       | eval_assert_fail hff _ =>
         have htt := hv ⟨_, _⟩ _ .refl ⟨rfl, rfl⟩
-        simp only [Config.getEval, Config.getStore] at htt
+        simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
         rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
       | _ => simp_all [Config.getEnv]
     | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
@@ -2400,12 +2435,28 @@ theorem core_step_preserves_noFailure
   | step_block => simp [Config.getEnv]; exact hnf
   | step_ite_true _ _ => exact hnf
   | step_ite_false _ _ => exact hnf
-  | step_loop_enter _ _ => exact hnf
-  | step_loop_exit _ _ => exact hnf
+  | step_loop_enter _ _ hff_iff _ =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false_core hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
+  | step_loop_exit _ _ hff_iff _ =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false_core hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
   | step_ite_nondet_true => exact hnf
   | step_ite_nondet_false => exact hnf
-  | step_loop_nondet_enter => exact hnf
-  | step_loop_nondet_exit => exact hnf
+  | step_loop_nondet_enter _ hff_iff =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false_core hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
+  | step_loop_nondet_exit _ hff_iff =>
+    simp only [Config.getEnv]
+    have := loop_step_hasInvFailure_false_core hv hff_iff
+    simp [Config.getEnv] at hnf
+    rw [hnf, Bool.false_or]; exact this
   | step_exit => exact hnf
   | step_funcDecl => simp [Config.getEnv]; exact hnf
   | step_typeDecl => exact hnf
