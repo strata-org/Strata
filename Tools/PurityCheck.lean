@@ -87,6 +87,7 @@ private def pureCommandKinds : Std.HashSet SyntaxNodeKind := .ofList [
 /-- Command kind prefixes known to be pure (syntax/notation/macro definitions). -/
 private def pureCommandPrefixes : Array Name := #[
   `Lean.Parser.Command.syntax,
+  `Lean.Parser.Command.syntaxAbbrev,
   `Lean.Parser.Command.syntaxCat,
   `Lean.Parser.Command.notation,
   `Lean.Parser.Command.macro,
@@ -113,7 +114,10 @@ private def pureCommandPrefixes : Array Name := #[
   `Lean.Parser.Command.declare_command_config_elab,
   `Lean.Parser.Command.declare_config_getter,
   `Lean.Parser.Command.declare_simp_like_tactic,
-  `Lean.Parser.Command.declare_tagged_region
+  `Lean.Parser.Command.declare_tagged_region,
+  `Lean.Parser.Command.mixfix,
+  `Lean.Parser.Command.grindPattern,
+  `Lean.Parser.Command.binderPredicate
 ]
 
 /-- Check if a command syntax node kind is known to be pure. -/
@@ -146,22 +150,68 @@ def checkFilePurity (contents : String) (fileName : String := "<input>") :
         reasons := (kind, cmd.getPos?.getD 0) :: reasons
   return reasons.reverse
 
+/-- Recursively collect all .lean files under a directory. -/
+partial def collectLeanFiles (path : System.FilePath) : IO (Array System.FilePath) := do
+  let mut result := #[]
+  if ← path.isDir then
+    for entry in ← path.readDir do
+      let sub ← collectLeanFiles entry.path
+      result := result ++ sub
+  else if path.extension == some "lean" then
+    result := result.push path
+  return result
+
+/-- Resolve arguments: expand directories into .lean files. -/
+def resolveInputs (inputs : List String) : IO (Array System.FilePath) := do
+  let mut files := #[]
+  for input in inputs do
+    let path : System.FilePath := input
+    if ← path.isDir then
+      files := files ++ (← collectLeanFiles path)
+    else
+      files := files.push path
+  return files
+
 def main (args : List String) : IO UInt32 := do
   let impureOnly := args.contains "--impure-only"
-  let files := args.filter (fun a => !a.startsWith "--")
-  if files.isEmpty then
-    IO.eprintln "Usage: purityCheck [--impure-only] <file1.lean> [file2.lean ...]"
+  -- Parse --output <file>
+  let rec findOutput : List String → Option String
+    | "--output" :: v :: _ => some v
+    | _ :: rest => findOutput rest
+    | [] => none
+  let outputFile := findOutput args
+  -- Collect non-flag arguments as inputs
+  let mut inputs : List String := []
+  let mut skipNext := false
+  for arg in args do
+    if skipNext then
+      skipNext := false
+    else if arg == "--output" then
+      skipNext := true
+    else if !arg.startsWith "--" then
+      inputs := arg :: inputs
+  let inputPaths := inputs.reverse
+  if inputPaths.isEmpty then
+    IO.eprintln "Usage: purityCheck [--impure-only] [--output <file>] <path> [path ...]"
+    IO.eprintln "  <path> can be a .lean file or a directory (recursively scanned)"
     return 1
+  let files ← resolveInputs inputPaths
   let mut exitCode : UInt32 := 0
-  for file in files do
+  let mut outputLines : Array String := #[]
+  for file in files.toList.mergeSort (·.toString < ·.toString) do
     let contents ← IO.FS.readFile file
-    let reasons ← checkFilePurity contents file
+    let reasons ← checkFilePurity contents file.toString
     if reasons.isEmpty then
       unless impureOnly do
         IO.println s!"PURE:   {file}"
     else
-      IO.println s!"IMPURE: {file}"
+      let line := s!"IMPURE: {file}"
+      IO.println line
+      outputLines := outputLines.push file.toString
       for (kind, pos) in reasons do
         IO.println s!"  - {kind} at byte {pos}"
       exitCode := 1
+  if let some outPath := outputFile then
+    IO.FS.writeFile outPath (outputLines.toList.map (· ++ "\n") |>.foldl (· ++ ·) "")
+    IO.eprintln s!"Wrote {outputLines.size} impure files to {outPath}"
   return exitCode
