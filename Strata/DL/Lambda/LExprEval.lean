@@ -362,19 +362,6 @@ def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBas
     | some _ => .error "expression contains stuck redex"
     | none => .ok v
 
--- TODO: foldlM?
-def runList (σ : LState TBase) (es : List (LExpr TBase.mono)) : Except String (List (LExpr TBase.mono)) :=
-  match es with
-  | [] => .ok []
-  | e::rest =>
-    match run σ e with
-    | .error e => .error e
-    | .ok v =>
-      match runList σ rest with
-      | .error e => .error e
-      | .ok vs => .ok (v::vs)
-
-
 end LExpr
 end -- public section
 end Lambda

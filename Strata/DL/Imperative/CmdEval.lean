@@ -120,6 +120,10 @@ def stuck {P S} [EC : EvalContext P S] (σ : S) (message : String) : S :=
 
 /--
 Concrete execution for an Imperative Command.
+
+This currently has substantial overlap with `eval`,
+but it is likely to diverge further in the future,
+especially when we add an oracle to make choices for non-deterministic elements.
 -/
 def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S :=
   match EC.lookupError σ with
@@ -153,7 +157,6 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
           let expr := EC.eval σ expr
           EC.update σ x xty expr
         | .nondet =>
-          --
           let (expr, σ) := EC.genFreeVar σ x xty
           EC.update σ x xty expr
 

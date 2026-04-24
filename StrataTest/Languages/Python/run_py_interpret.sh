@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: ./run_py_interpret.sh [--filter <pattern>] [--fuel <n>] [--direct] [--verbose] [--update]
+# Usage: ./run_py_interpret.sh [--filter <pattern>] [--fuel <n>] [--verbose] [--update]
 #
 # Runs pyInterpret on all test_*.py files and reports pass/fail.
 #
@@ -13,7 +13,6 @@
 # Options:
 #   --filter <pattern>  Only run tests whose name contains <pattern>
 #   --fuel <n>          Set the interpreter fuel limit (default: 100000)
-#   --direct            Use the direct Python→Core path (no Laurel)
 #   --verbose           Show full interpreter output on failure
 #   --update            Regenerate .expected files from actual output
 
@@ -29,7 +28,6 @@ errors=0
 skipped=0
 filter=""
 fuel=""
-direct=""
 verbose=0
 update=0
 
@@ -37,7 +35,6 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --filter) filter="$2"; shift ;;
         --fuel) fuel="--fuel $2"; shift ;;
-        --direct) direct="--direct" ;;
         --verbose) verbose=1 ;;
         --update) update=1 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -80,7 +77,7 @@ for test_file in "$TESTS_DIR"/test_*.py; do
 
     # Run interpreter
     rel_ion="StrataTest/Languages/Python/tests/${base_name}.python.st.ion"
-    output=$(cd "$PROJECT_ROOT" && ./.lake/build/bin/strata pyInterpret $direct $fuel \
+    output=$(cd "$PROJECT_ROOT" && ./.lake/build/bin/strata pyInterpret $fuel \
         "$rel_ion" 2>&1)
     exit_code=$?
 

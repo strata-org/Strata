@@ -35,12 +35,14 @@ structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   evalCmd : S → CmdT → S
   /-- Extend the evaluator with a function declaration. -/
   extendEval : S → PureFunc P → S
-  /-- Check if the state has an error (to short-circuit execution). -/
-  hasError : S → Bool := fun _ => false
   /-- Push a new variable scope (for blocks). -/
   pushScope : S → S := id
   /-- Pop a variable scope (for blocks). -/
   popScope : S → S := id
+  /-- Produce a new state with an error -/
+  addError : S → String -> S
+  /-- Check if the state has an error (to short-circuit execution). -/
+  hasError : S → Bool := fun _ => false
 
 def runStep [BEq P.Expr] [HasBool P]
     (ops : RunOps P CmdT S)
@@ -61,7 +63,7 @@ def runStep [BEq P.Expr] [HasBool P]
       | some v =>
         if v == HasBool.tt then .stmts tss ρ
         else .stmts ess ρ
-      | none => c
+      | none => .terminal (ops.addError ρ "ITE condition did not reduce to bool")
 
   | .stmt s@(.loop guard _ _ body _) ρ =>
     match guard with
@@ -71,7 +73,7 @@ def runStep [BEq P.Expr] [HasBool P]
       | some v =>
         if v == HasBool.tt then .stmts (body ++ [s]) ρ
         else .terminal ρ
-      | none => c
+      | none => .terminal (ops.addError ρ "Loop guard did not reduce to bool")
 
   | .stmt (.exit label _) ρ => .exiting label ρ
 

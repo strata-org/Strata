@@ -767,7 +767,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     | some proc =>
       if proc.body.isEmpty then Env.stuck E s!"procedure '{procName}' has no body"
       else
-        match LExpr.runList E.exprEnv args with
+        match args.mapM (LExpr.run E.exprEnv) with
         | .error s => Env.stuck E s
         | .ok argVals =>
           let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
@@ -800,9 +800,10 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               } with
               | .ok E' => E'
               | .error _ => E
-            hasError := fun E => E.error.isSome
             pushScope := fun E => E.pushEmptyScope
             popScope := fun E => E.popScope
+            addError := fun E => E.stuck
+            hasError := fun E => E.error.isSome
           }
           let config : Imperative.RunConfig Expression Command Env :=
             .stmts proc.body callEnv

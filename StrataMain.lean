@@ -1318,9 +1318,11 @@ def pyInterpretCommand : Command where
   callback := fun v pflags => do
     let filePath := v[0]
     let verbose := pflags.getBool "verbose"
-    let fuel := match pflags.getString "fuel" with
-      | some s => s.toNat!
-      | none => 10000
+    let fuel ← match pflags.getString "fuel" with
+      | some s => match s.toNat? with
+        | .some n => pure n
+        | .none => exitFailure s!"Invalid fuel: '{s}'"
+      | none => pure 10000
 
     let (core, _diags) ←
       match <- pyTranslateLaurel filePath #[] #[] (specDir := ".") |>.toBaseIO with
