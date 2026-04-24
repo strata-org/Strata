@@ -6,8 +6,6 @@
 module
 
 public import Strata.Languages.Core.Env
-import Strata.Transform.LoopElim
-
 /-! # Proof Obligation Extraction
 
 A Core-to-obligations pass that walks a post-PE, post-dedup program and extracts
@@ -102,33 +100,12 @@ private def guardNewAssumptions (cond? : Option Expression.Expr)
   | some cond => newPcs.map fun (l, e) => (l, guardAssumption cond e)
   | none => newPcs
 
-/-- At a loop_N block boundary, strip unguarded loop-elim assumptions and
-    keep guarded ones (which carry loop invariant information needed by
-    post-loop obligations). Unguarded assumptions are raw loop conditions
-    scoped to the loop body and should not leak to post-loop obligations. -/
-private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : String) : PathConditions Expression :=
-  let guardPrefix := s!"{Core.loopElimGuardPrefix}{loopNum}"
-  let invPrefix := s!"{Core.loopElimInvariantPrefix}{loopNum}_"
-  pc.map (·.filterMap (fun (l, e) =>
-    let isThisLoop := l.startsWith guardPrefix || l.startsWith invPrefix
-    if !isThisLoop then some (l, e)
-    else match e with
-      | .ite _ _ _ _ => some (l, e)  -- guarded: keep as-is
-      | _ => none))
-
-/-- Check if a block label is a loop-elim top-level block (loop_N). -/
-private def isLoopElimBlock (label : String) : Bool :=
-  label.startsWith "loop_" && label.length > 5 &&
-    (label.toList.drop 5).all (·.isDigit)
-
 /-- Merge path conditions from two nondet ITE branches for post-ITE statements.
     Each branch's new assumptions (those not in the pre-ITE path conditions) are
     guarded by the branch condition extracted from the first `assume` statement
     in each branch. This prevents contradictory branch assumptions from making
     the path conditions unsatisfiable while preserving information needed by
-    post-ITE statements (e.g., loop invariants).
-    Loop-elim-internal assumptions are excluded from the merge because they are
-    scoped to the loop body and should not leak to post-loop obligations. -/
+    post-ITE statements (e.g., loop invariants). -/
 private def mergeNondetBranchPcs (preItePc : PathConditions Expression)
     (thenSs elseSs : Statements)
     (thenPc elsePc : PathConditions Expression) : PathConditions Expression :=
@@ -230,12 +207,7 @@ where
         | .some .none => true
         | .some (.some l) => l == label
         | .none => true
-      -- Strip unguarded loop-elim assumptions for this specific loop
-      -- at the loop_N block boundary, preserving outer loop assumptions.
-      let outPc := if isLoopElimBlock label
-        then stripLoopElimForLoop innerRes.pathConditions (label.drop 5).toString
-        else innerRes.pathConditions
-      .ok ⟨acc ++ innerRes.obligations, outPc,
+      .ok ⟨acc ++ innerRes.obligations, innerRes.pathConditions,
            if consumed then .none else innerRes.exitLabel⟩
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
