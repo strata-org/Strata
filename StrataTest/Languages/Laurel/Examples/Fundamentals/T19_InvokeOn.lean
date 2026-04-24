@@ -58,7 +58,7 @@ function R(x: int): bool;
 procedure badPostcondition(x: int)
   invokeOn R(x)
   ensures R(x)
-//        ^^^^ error: assertion
+//        ^^^^ error: assertion does not hold
 {
 };
 

@@ -1287,7 +1287,6 @@ private structure SolverJob where
   assumptionTerms : List Term
   obligationTerm : Term
   ctx : SMT.Context
-  encStats : Statistics
   needSatCheck : Bool
   needValCheck : Bool
   peSatResult? : Option SMT.Result
@@ -1329,7 +1328,7 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
 private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase) (workers : Nat)
-    : IO (List (Except DiagnosticModel VCResult)) := do
+    : IO (List (Option (Except DiagnosticModel VCResult))) := do
   -- Shared job queue: workers pop (job, index) pairs from the front
   let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
   -- Result slots indexed by job position
@@ -1364,14 +1363,12 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     match task.get with
     | .ok () => pure ()
     | .error e => throw e
-  -- Collect results in original order
+  -- Collect results in original order; skipped jobs (from stopOnFirstError) are `none`
   let rmap ← resultMap.get
-  let mut revResults : List (Except DiagnosticModel VCResult) := []
+  let mut results : List (Option (Except DiagnosticModel VCResult)) := []
   for idx in (List.range jobs.length).reverse do
-    match rmap[idx]? with
-    | some result => revResults := result :: revResults
-    | none => revResults := .error (DiagnosticModel.fromFormat f!"parallel dispatch: job {idx} was not executed") :: revResults
-  return revResults
+    results := rmap[idx]? :: results
+  return results
 
 
 def verifySingleEnv (oblProgram : Program)
@@ -1483,11 +1480,11 @@ def verifySingleEnv (oblProgram : Program)
       if useParallel then
         -- Collect job for parallel dispatch; insert placeholder result
         let job : SolverJob := {
-          obligation, assumptionTerms, obligationTerm, ctx, encStats,
+          obligation, assumptionTerms, obligationTerm, ctx,
           needSatCheck, needValCheck, peSatResult?, peValResult?,
           typedVarsInObligation }
-        solverJobs := solverJobs ++ [job]
-        solverJobIndices := solverJobIndices ++ [results.size]
+        solverJobs := job :: solverJobs
+        solverJobIndices := results.size :: solverJobIndices
         -- Placeholder result to be replaced after parallel dispatch
         results := results.push { obligation, outcome := .error "pending parallel dispatch",
                                   verbose := options.verbose, checkLevel := options.checkLevel,
@@ -1521,15 +1518,16 @@ def verifySingleEnv (oblProgram : Program)
     let t4 ← IO.monoNanosNow
     let phases := externalPhases ++ corePhases
     let jobResults ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-      (dispatchJobsParallel solverJobs p options counter tempDir phases options.parallelWorkers)
+      (dispatchJobsParallel solverJobs.reverse p options counter tempDir phases options.parallelWorkers)
     let t5 ← IO.monoNanosNow
     solverNs := solverNs + (t5 - t4)
-    -- Patch placeholder results with actual solver results
-    for (jobResult, jobIdx) in jobResults.zip solverJobIndices do
-      match jobResult with
-      | .ok result =>
+    -- Patch placeholder results with actual solver results; skip jobs not executed (stopOnFirstError)
+    for (jobResult?, jobIdx) in jobResults.zip solverJobIndices.reverse do
+      match jobResult? with
+      | some (.ok result) =>
         results := results.setIfInBounds jobIdx result
-      | .error diag => throw diag
+      | some (.error diag) => throw diag
+      | none => pure () -- job was skipped by stopOnFirstError; leave placeholder
   if profile then
     let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
     let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
