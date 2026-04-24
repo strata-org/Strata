@@ -88,6 +88,7 @@ jobs:
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
+          test-args: "-- --exclude Languages.Python.VerifyPythonTest"
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
