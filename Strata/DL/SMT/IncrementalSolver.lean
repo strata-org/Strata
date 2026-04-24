@@ -231,40 +231,52 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   declareSort name arity := do
     emitln s!"(declare-sort {name} {arity})"
-    return .ok ()
+    return .ok (.constr name (List.replicate arity (.constr "_" [])))
 
-  declareDatatype name params constrs := do
-    let cStrs ← formatConstrs constrs
-    match cStrs with
+  declareDatatype name params callback := do
+    let selfSort : TermType := .constr name (params.map fun p => .constr p [])
+    let paramSorts : List TermType := params.map fun p => .constr p []
+    match callback selfSort paramSorts with
     | .error msg => return .error msg
-    | .ok strs =>
-      let cInline := "\n  " ++ String.intercalate "\n  " strs
-      if params.isEmpty then
-        emitln s!"(declare-datatype {name} ({cInline}))"
-      else
-        let pInline := String.intercalate " " params
-        emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
-      return .ok ()
-
-  declareDatatypes dts := do
-    if dts.isEmpty then return .ok ()
-    let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
-    let sortDeclStr := String.intercalate " " sortDecls
-    let mut bodies := []
-    for (_, params, constrs) in dts.reverse do
+    | .ok constrs =>
       let cStrs ← formatConstrs constrs
       match cStrs with
       | .error msg => return .error msg
       | .ok strs =>
-        let cInline := String.intercalate " " strs
+        let cInline := "\n  " ++ String.intercalate "\n  " strs
         if params.isEmpty then
-          bodies := s!"({cInline})" :: bodies
+          emitln s!"(declare-datatype {name} ({cInline}))"
         else
           let pInline := String.intercalate " " params
-          bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
-    let bodyStr := String.intercalate "\n  " bodies
-    emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
-    return .ok ()
+          emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
+        return .ok selfSort
+
+  declareDatatypes dts callback := do
+    if dts.isEmpty then return .ok []
+    let selfSorts := dts.map fun (name, params) =>
+      TermType.constr name (params.map fun p => .constr p [])
+    let paramSorts := dts.map fun (_, params) =>
+      params.map fun p => TermType.constr p []
+    match callback selfSorts paramSorts with
+    | .error msg => return .error msg
+    | .ok allConstrs =>
+      let sortDecls := dts.map fun (name, params) => s!"({name} {params.length})"
+      let sortDeclStr := String.intercalate " " sortDecls
+      let mut bodies := []
+      for ((_, params), constrs) in (dts.zip allConstrs).reverse do
+        let cStrs ← formatConstrs constrs
+        match cStrs with
+        | .error msg => return .error msg
+        | .ok strs =>
+          let cInline := String.intercalate " " strs
+          if params.isEmpty then
+            bodies := s!"({cInline})" :: bodies
+          else
+            let pInline := String.intercalate " " params
+            bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
+      let bodyStr := String.intercalate "\n  " bodies
+      emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
+      return .ok selfSorts
 
   mkForall bindings callback := do
     mkQuantHelper .all bindings callback

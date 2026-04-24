@@ -46,9 +46,10 @@ variable {m : Type → Type} [Monad m] [MonadExceptOf IO.Error m]
 
 private def encodeUF (solver : AbstractSolver Term TermType m) (uf : UF) : AbstractEncoderM m String := do
   if let .some enc := (← get).ufs.get? uf then return enc
-  let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
-  let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
-  let id := findUniqueName uf.id 1 isUsed (existingNames.size + smtReservedKeywords.length)
+  let baseName := sanitizeSmtName uf.id
+  let existingNames := (← get).ufs.toList.map (·.2)
+  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
+  let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
   let argTys := uf.args.map (fun vt => vt.ty)
   match ← liftM (solver.declareFun id argTys uf.out) with
@@ -133,13 +134,15 @@ private def unwrap [MonadExceptOf IO.Error m] [Monad m] (label : String) (r : Ex
   | .ok a => return a
   | .error msg => throw (IO.userError s!"{label}: {msg}")
 
-/-- Convert datatype constructors to the format expected by `AbstractSolver.declareDatatype`. -/
+/-- Convert datatype constructors to the format expected by the `declareDatatype` callback.
+    Takes the self-reference sort and type parameter sorts provided by the callback. -/
 private def datatypeToAbstractConstrs (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
-    : List (String × List (String × TermType)) :=
-  d.constrs.map fun c =>
+    (_selfSort : TermType) (_paramSorts : List TermType)
+    : Except String (List (String × List (String × TermType))) :=
+  .ok (d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
       (d.name ++ ".." ++ name.name, Core.lMonoTyToTermType fieldTy)
-    (c.name.name, fields)
+    (c.name.name, fields))
 
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
 private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
@@ -149,10 +152,17 @@ private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      unwrap "declareDatatype" (← solver.declareDatatype d.name d.typeArgs (datatypeToAbstractConstrs d))
+      let _ ← unwrap "declareDatatype" (← solver.declareDatatype d.name d.typeArgs
+        (datatypeToAbstractConstrs d))
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeToAbstractConstrs d)
-      unwrap "declareDatatypes" (← solver.declareDatatypes dts)
+      let dtHeaders := usedBlock.map fun d => (d.name, d.typeArgs)
+      let _ ← unwrap "declareDatatypes" (← solver.declareDatatypes dtHeaders
+        fun _selfSorts _paramSorts =>
+          .ok (usedBlock.map fun d =>
+            d.constrs.map fun c =>
+              let fields := c.args.map fun (name, fieldTy) =>
+                (d.name ++ ".." ++ name.name, Core.lMonoTyToTermType fieldTy)
+              (c.name.name, fields)))
 
 /-- Encode declarations and assertions through the `AbstractSolver` API.
     Replaces `encodeDeclarations` for the incremental path — all commands
@@ -174,7 +184,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   solver.setLogic "ALL"
   prelude
   for s in ctx.sorts do
-    unwrap "declareSort" (← solver.declareSort s.name s.arity)
+    let _ ← unwrap "declareSort" (← solver.declareSort s.name s.arity)
   emitDatatypesAbstract solver ctx
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate

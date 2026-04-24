@@ -101,16 +101,26 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   /-- Define an interpreted function with a body term. -/
   defineFun : String → List (String × σ) → σ → τ → m (Except String Unit)
 
-  /-- Declare a new sort with the given arity. -/
-  declareSort : String → Nat → m (Except String Unit)
+  /-- Declare a new sort with the given arity. Returns the declared sort. -/
+  declareSort : String → Nat → m (Except String σ)
 
   /-- Declare an algebraic datatype.
-      Parameters: name, type parameters, constructors (name × fields). -/
-  declareDatatype : String → List String → List (String × List (String × σ)) → m (Except String Unit)
+      Takes the datatype name, type parameter names, and a callback that
+      receives `(selfSort, typeParamSorts)` and returns the constructors.
+      Returns the declared sort. This callback pattern (like `mkForall`)
+      allows recursive and parametric datatypes: the sort being declared
+      does not exist yet when selectors need to reference it. -/
+  declareDatatype : String → List String →
+    (σ → List σ → Except String (List (String × List (String × σ)))) →
+    m (Except String σ)
 
   /-- Declare mutually recursive algebraic datatypes.
-      Each element is (name, type parameters, constructors (name × fields)). -/
-  declareDatatypes : List (String × List String × List (String × List (String × σ))) → m (Except String Unit)
+      Takes a list of `(name, typeParams)` and a callback that receives
+      `(selfSorts, typeParamSorts)` and returns constructors for each datatype.
+      Returns the declared sorts. -/
+  declareDatatypes : List (String × List String) →
+    (List σ → List (List σ) → Except String (List (List (String × List (String × σ))))) →
+    m (Except String (List σ))
 
   /-- Construct a universally quantified term.
       Takes name-sort pairs for bound variables and a callback that receives
