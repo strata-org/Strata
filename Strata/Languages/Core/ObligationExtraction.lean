@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Env
+import Strata.Transform.LoopElim
 
 /-! # Proof Obligation Extraction
 
@@ -106,8 +107,8 @@ private def guardNewAssumptions (cond? : Option Expression.Expr)
     post-loop obligations). Unguarded assumptions are raw loop conditions
     scoped to the loop body and should not leak to post-loop obligations. -/
 private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : String) : PathConditions Expression :=
-  let guardPrefix := s!"assume_guard_{loopNum}"
-  let invPrefix := s!"assume_invariant_{loopNum}_"
+  let guardPrefix := s!"{Core.loopElimGuardPrefix}{loopNum}"
+  let invPrefix := s!"{Core.loopElimInvariantPrefix}{loopNum}_"
   pc.map (·.filterMap (fun (l, e) =>
     let isThisLoop := l.startsWith guardPrefix || l.startsWith invPrefix
     if !isThisLoop then some (l, e)
