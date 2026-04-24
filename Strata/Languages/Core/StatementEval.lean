@@ -756,19 +756,25 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
 
 mutual
 
-/-- Interpret a single command. -/
-def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr := [])
+/--
+Interpret a single procedure call.
+
+Importantly, this creates a separate Env to execute the body of the procedure with,
+which initially only contains globals and the input/output variables.
+The resulting Env is the original passed in Env with the output variables copied back into it.
+-/
+def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)
     (fuel : Nat) (E : Env) : Env :=
     match fuel with
     | 0 => { E with error := some .OutOfFuel }
     | fuel' + 1 =>
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
-    | none => Env.stuck E s!"procedure '{procName}' not found"
+    | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
     | some proc =>
-      if proc.body.isEmpty then Env.stuck E s!"procedure '{procName}' has no body"
+      if proc.body.isEmpty then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
         match args.mapM (LExpr.run E.exprEnv) with
-        | .error s => Env.stuck E s
+        | .error s => CmdEval.updateError E (.Misc s)
         | .ok argVals =>
           let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
             proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
@@ -776,8 +782,6 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
           let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
             proc.header.outputs.keys.zip proc.header.outputs.values
             |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-          -- Create an isolated environment for the callee: only globals + formals/outputs.
-          -- This prevents the caller's local variables from leaking into the callee.
           let globals := E.exprEnv.state.oldest
           let callEnv : Env := { E with
             exprEnv := { E.exprEnv with
@@ -802,8 +806,8 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               | .error _ => E
             pushScope := fun E => E.pushEmptyScope
             popScope := fun E => E.popScope
-            addError := fun E => E.stuck
             hasError := fun E => E.error.isSome
+            addError := fun E msg => CmdEval.updateError E (.Misc msg)
           }
           let config : Imperative.RunConfig Expression Command Env :=
             .stmts proc.body callEnv
@@ -817,7 +821,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                 (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
               lhs.zip outputVals |>.foldl (fun env (name, val) =>
                 env.insertInContext (name, none) val) E
-          | _ => Env.stuck E "failed to terminate"
+          | _ => CmdEval.updateError E (.Misc "failed to terminate")
 
 def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with
