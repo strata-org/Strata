@@ -27,15 +27,16 @@ def toLaurel (pythonCmd : System.FilePath) (program : String)
   let laurel ← processPythonToLaurel pythonCmd (stringInputContext "test.py" program)
   pure (laurel, toString (Laurel.formatProgram laurel))
 
-/-- Assert that a procedure with the given name exists and has a Transparent body. -/
-def assertTransparent (laurel : Laurel.Program) (procName : String) : IO Unit := do
+/-- Assert that a procedure has an implementation body available for verification
+    (either Transparent or Opaque with an implementation). -/
+def assertHasBody (laurel : Laurel.Program) (procName : String) : IO Unit := do
   match laurel.staticProcedures.find? (fun p => p.name.text == procName) with
   | none => throw <| .userError s!"{procName} procedure not found in Laurel output"
   | some proc =>
     match proc.body with
     | .Transparent _ => pure ()
-    | .Opaque _ (some _) _ => pure ()  -- Opaque with implementation is also acceptable
-    | _ => throw <| .userError s!"{procName} body should be Transparent (or Opaque with implementation)"
+    | .Opaque _ (some _) _ => pure ()
+    | _ => throw <| .userError s!"{procName} has no implementation body (External or Opaque without implementation)"
 
 /-- Assert that a procedure with the given name exists and has an Opaque body. -/
 def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
@@ -256,7 +257,7 @@ def main() -> None:
 "
   let (laurel, output) ← toLaurel pythonCmd program
   let calcAdd := manglePythonMethod "Calculator" "add"
-  assertTransparent laurel calcAdd
+  assertHasBody laurel calcAdd
   unless containsSubstr output s!"{calcAdd}(" do
     throw <| IO.userError s!"Expected '{calcAdd}(' in Laurel output but not found"
 
