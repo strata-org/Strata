@@ -147,24 +147,17 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- Type/datatype declarations come from the original program.
   let typeDecls := program.decls.filter fun d =>
     match d with | .type _ _ => true | _ => false
-  let procNames := program.decls.filterMap fun d =>
-    match d with | .proc p _ => some p.header.name | _ => none
-  let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
-    let blocks := E.deferred.toList.map fun ob =>
-      let assumes := ob.assumptions.flatten.map fun (label, e) =>
-        Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
-      let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
-        if ob.property == .cover
-        then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
-        else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
-      assumes ++ [assertStmt]
-    let body := match blocks with
-      | [] => []
-      | [b] => b
-      | b :: rest => rest.foldl (fun acc block =>
-          [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let postEvalEnv := pEs.head?.getD E
+  let oblProcs := postEvalEnv.deferred.toList.mapIdx fun i ob =>
+    let assumes := ob.assumptions.flatten.map fun (label, e) =>
+      Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
+    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
+      if ob.property == .cover
+      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
+      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+    let body := assumes ++ [assertStmt]
     let proc : Procedure := {
-      header := { name := procName, typeArgs := [], inputs := [], outputs := [] },
+      header := { name := ⟨s!"$obl_{i}", ()⟩, typeArgs := [], inputs := [], outputs := [] },
       spec := { preconditions := [], postconditions := [] },
       body := body
     }
@@ -173,7 +166,6 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- Include function declarations and distinct constraints from the
   -- evaluation environment so the obligations program is self-contained
   -- for downstream phases (ANF encoding, SMT encoding).
-  let postEvalEnv := pEs.head?.getD E
   -- Get functions added during evaluation (not in the initial factory)
   let initialFactorySize := E.exprEnv.config.factory.toArray.size
   let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize

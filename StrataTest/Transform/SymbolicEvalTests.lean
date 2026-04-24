@@ -41,11 +41,11 @@ spec { requires [pre]: x >= 0; }
 /--
 info: program Core;
 
-procedure test ()
+procedure $obl_0 ()
 {
   assume [pre]: x@1 >= 0;
   assert [a]: x@1 >= 0;
-  };
+};
 -/
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint simpleProg
@@ -69,17 +69,17 @@ spec { requires [pre]: x >= 0; }
 /--
 info: program Core;
 
-procedure detIfTest ()
+procedure $obl_0 ()
 {
-  if * {
-    assume [|<label_ite_cond_true: x > 5>|]: x@1 > 5;
-    assume [pre]: x@1 >= 0;
-    assert [big]: x@1 > 5;
-  } else {
-    assume [|<label_ite_cond_false: !(x > 5)>|]: if x@1 > 5 then false else true;
-    assume [pre]: x@1 >= 0;
-    assert [small]: x@1 <= 5;
-  }
+  assume [|<label_ite_cond_true: x > 5>|]: x@1 > 5;
+  assume [pre]: x@1 >= 0;
+  assert [big]: x@1 > 5;
+};
+procedure $obl_1 ()
+{
+  assume [|<label_ite_cond_false: !(x > 5)>|]: if x@1 > 5 then false else true;
+  assume [pre]: x@1 >= 0;
+  assert [small]: x@1 <= 5;
 };
 -/
 #guard_msgs (whitespace := lax) in
@@ -107,7 +107,7 @@ spec {
 /--
 info: program Core;
 
-procedure nondetIfTest ()
+procedure $obl_0 ()
 {
   assume [pre]: x@1 >= 0;
   assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__nondet_cond_2 then $__nondet_cond_2 else true;
@@ -139,17 +139,17 @@ spec { requires [pre]: x >= 0; }
 /--
 info: program Core;
 
-procedure blockExitTest ()
+procedure $obl_0 ()
 {
-  if * {
-    assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-    assume [pre]: x@1 >= 0;
-    assert [big]: x@1 > 10;
-  } else {
-    assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
-    assume [pre]: x@1 >= 0;
-    assert [small]: x@1 <= 10;
-  }
+  assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
+  assume [pre]: x@1 >= 0;
+  assert [big]: x@1 > 10;
+};
+procedure $obl_1 ()
+{
+  assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+  assume [pre]: x@1 >= 0;
+  assert [small]: x@1 <= 10;
 };
 -/
 #guard_msgs (whitespace := lax) in
@@ -189,53 +189,53 @@ spec {
 /--
 info: program Core;
 
-procedure blockTest ()
+procedure $obl_0 ()
 {
-  if * {
-    if * {
-      if * {
-        if * {
-          if * {
-            assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-            assume [pre_x]: x@1 >= 0;
-            assume [pre_y]: y@1 >= 0;
-            assert [big_x]: x@1 > 10;
-          } else {
-            assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-            assume [pre_x]: x@1 >= 0;
-            assume [pre_y]: y@1 >= 0;
-            assert [final]: x@1 >= 0;
-          }
-        } else {
-          assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-          assume [pre_x]: x@1 >= 0;
-          assume [pre_y]: y@1 >= 0;
-          assert [post]: x@1 >= 0;
-        }
-      } else {
-        assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
-        assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
-        assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-        assume [pre_x]: x@1 >= 0;
-        assume [pre_y]: y@1 >= 0;
-        assert [after_inner]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
-      }
-    } else {
-      assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
-      assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
-      assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-      assume [pre_x]: x@1 >= 0;
-      assume [pre_y]: y@1 >= 0;
-      assert [final]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
-    }
-  } else {
-    assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
-    assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
-    assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-    assume [pre_x]: x@1 >= 0;
-    assume [pre_y]: y@1 >= 0;
-    assert [post]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
-  }
+  assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
+  assume [pre_x]: x@1 >= 0;
+  assume [pre_y]: y@1 >= 0;
+  assert [big_x]: x@1 > 10;
+};
+procedure $obl_1 ()
+{
+  assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
+  assume [pre_x]: x@1 >= 0;
+  assume [pre_y]: y@1 >= 0;
+  assert [final]: x@1 >= 0;
+};
+procedure $obl_2 ()
+{
+  assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
+  assume [pre_x]: x@1 >= 0;
+  assume [pre_y]: y@1 >= 0;
+  assert [post]: x@1 >= 0;
+};
+procedure $obl_3 ()
+{
+  assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+  assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
+  assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
+  assume [pre_x]: x@1 >= 0;
+  assume [pre_y]: y@1 >= 0;
+  assert [after_inner]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
+};
+procedure $obl_4 ()
+{
+  assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+  assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
+  assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
+  assume [pre_x]: x@1 >= 0;
+  assume [pre_y]: y@1 >= 0;
+  assert [final]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
+};
+procedure $obl_5 ()
+{
+  assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+  assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
+  assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
+  assume [pre_x]: x@1 >= 0;
+  assume [pre_y]: y@1 >= 0;
+  assert [post]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
 };
 -/
 #guard_msgs (whitespace := lax) in
