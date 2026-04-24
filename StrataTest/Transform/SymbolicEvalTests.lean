@@ -18,7 +18,7 @@ private def translateCore (p : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
 private def evalAndPrint (p : Strata.Program) : IO Unit := do
-  match typeCheckAndEval .quiet (translateCore p) with
+  match typeCheckAndBuildObligationProgram .quiet (translateCore p) with
   | .ok (oblProg, _) =>
     let s := (Core.formatProgram oblProg).pretty
     -- Strip trailing newlines from program output

@@ -102,10 +102,9 @@ private def guardNewAssumptions (cond? : Option Expression.Expr)
   | none => newPcs
 
 /-- At a loop_N block boundary, strip unguarded loop-elim assumptions and
-    rename guarded ones so they don't trigger the loopElimPipelinePhase
-    demotion. Guarded versions carry loop invariant information needed by
-    post-loop obligations; renaming preserves the information while
-    preventing spurious demotion. -/
+    keep guarded ones (which carry loop invariant information needed by
+    post-loop obligations). Unguarded assumptions are raw loop conditions
+    scoped to the loop body and should not leak to post-loop obligations. -/
 private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : String) : PathConditions Expression :=
   let guardPrefix := s!"assume_guard_{loopNum}"
   let invPrefix := s!"assume_invariant_{loopNum}_"
@@ -113,7 +112,7 @@ private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : Str
     let isThisLoop := l.startsWith guardPrefix || l.startsWith invPrefix
     if !isThisLoop then some (l, e)
     else match e with
-      | .ite _ _ _ _ => some (s!"post_loop_{l}", e)  -- rename to avoid demotion
+      | .ite _ _ _ _ => some (l, e)  -- guarded: keep as-is
       | _ => none))
 
 /-- Check if a block label is a loop-elim top-level block (loop_N). -/

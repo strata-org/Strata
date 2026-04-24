@@ -65,34 +65,39 @@ where
     | .app _ fn arg => collectAppArgs fn ++ collectSubexprs arg
     | _ => []
 
-/-- Hash an expression structurally, ignoring type annotations and metadata
-    (matching `eraseTypes`/`eraseMetadata` semantics) for use in HashMap-based
-    ANF encoding. -/
-private def hashUntypedExpr : Expression.Expr → UInt64
+/-- Hash an optional type annotation by its string representation. -/
+private def hashOptType (ty : Option LMonoTy) : UInt64 :=
+  match ty with
+  | none => 0
+  | some t => hash (toString t)
+
+/-- Hash an expression structurally, including type annotations but ignoring
+    metadata, for use in HashMap-based ANF encoding. -/
+private def hashExpr : Expression.Expr → UInt64
   | .const _ c => mixHash 1 (hash (toString c))
   | .bvar _ i => mixHash 2 (hash i)
-  | .fvar _ n _ => mixHash 3 (hash n.name)
-  | .op _ o _ => mixHash 4 (hash o.name)
-  | .app _ fn arg => mixHash 5 (mixHash (hashUntypedExpr fn) (hashUntypedExpr arg))
-  | .ite _ c t f => mixHash 6 (mixHash (hashUntypedExpr c) (mixHash (hashUntypedExpr t) (hashUntypedExpr f)))
-  | .eq _ e1 e2 => mixHash 7 (mixHash (hashUntypedExpr e1) (hashUntypedExpr e2))
-  | .abs _ name _ body => mixHash 8 (mixHash (hash name) (hashUntypedExpr body))
-  | .quant _ k name _ tr body =>
+  | .fvar _ n ty => mixHash 3 (mixHash (hash n.name) (hashOptType ty))
+  | .op _ o ty => mixHash 4 (mixHash (hash o.name) (hashOptType ty))
+  | .app _ fn arg => mixHash 5 (mixHash (hashExpr fn) (hashExpr arg))
+  | .ite _ c t f => mixHash 6 (mixHash (hashExpr c) (mixHash (hashExpr t) (hashExpr f)))
+  | .eq _ e1 e2 => mixHash 7 (mixHash (hashExpr e1) (hashExpr e2))
+  | .abs _ name ty body => mixHash 8 (mixHash (hash name) (mixHash (hashOptType ty) (hashExpr body)))
+  | .quant _ k name ty tr body =>
     let kh : UInt64 := match k with | .all => 0 | .exist => 1
-    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashUntypedExpr tr) (hashUntypedExpr body))))
+    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptType ty) (mixHash (hashExpr tr) (hashExpr body)))))
 
-/-- Wrapper for using expressions as HashMap keys with type-erased comparison. -/
+/-- Wrapper for using expressions as HashMap keys with metadata-ignoring comparison. -/
 private structure ExprKey where
   expr : Expression.Expr
 
 private instance : BEq ExprKey where
-  beq a b := a.expr.eraseTypes == b.expr.eraseTypes
+  beq a b := a.expr == b.expr
 
 private instance : Hashable ExprKey where
-  hash k := hashUntypedExpr k.expr
+  hash k := hashExpr k.expr
 
 /-- Find expressions that appear more than once in a list. Uses a HashMap
-    for O(1) lookup with type-erased comparison. -/
+    for O(1) lookup. -/
 private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr :=
   -- Single pass: count occurrences and remember the first expression per key
   let map := exprs.foldl (fun (m : Std.HashMap ExprKey (Expression.Expr × Nat)) e =>
@@ -106,10 +111,9 @@ private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr
   ) ([] : List Expression.Expr)
   revDups.reverse
 
-/-- Replace all occurrences of any target (compared with erased types) with
-    its corresponding replacement in an expression. Computes hashes bottom-up
-    to avoid redundant traversals. The map stores (erasedTarget, replacement)
-    pairs keyed by hash. -/
+/-- Replace all occurrences of any target with its corresponding replacement
+    in an expression. Computes hashes bottom-up to avoid redundant traversals.
+    The map stores (target, replacement) pairs keyed by hash. -/
 partial def replaceExprs (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
     (e : Expression.Expr) : Expression.Expr :=
   (go e).2
@@ -119,8 +123,8 @@ where
     match e with
     | .const _ c => (mixHash 1 (hash (toString c)), e)
     | .bvar _ i => (mixHash 2 (hash i), e)
-    | .fvar _ n _ => (mixHash 3 (hash n.name), e)
-    | .op _ o _ => (mixHash 4 (hash o.name), e)
+    | .fvar _ n ty => (mixHash 3 (mixHash (hash n.name) (hashOptType ty)), e)
+    | .op _ o ty => (mixHash 4 (mixHash (hash o.name) (hashOptType ty)), e)
     | .app m fn arg =>
       let (hFn, fn') := go fn
       let (hArg, arg') := go arg
@@ -139,29 +143,29 @@ where
       check h (.eq m e1' e2')
     | .abs m name ty body =>
       let (hB, body') := go body
-      let h := mixHash 8 (mixHash (hash name) hB)
+      let h := mixHash 8 (mixHash (hash name) (mixHash (hashOptType ty) hB))
       check h (.abs m name ty body')
     | .quant m k name ty tr body =>
       let (hTr, tr') := go tr
       let (hB, body') := go body
       let kh : UInt64 := match k with | .all => 0 | .exist => 1
-      let h := mixHash 9 (mixHash kh (mixHash (hash name) (mixHash hTr hB)))
+      let h := mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptType ty) (mixHash hTr hB))))
       check h (.quant m k name ty tr' body')
   /-- Check if the hash matches a replacement target. -/
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
-    | some (targetErased, replacement) =>
-      if e.eraseTypes == targetErased then (h, replacement) else (h, e)
+    | some (target, replacement) =>
+      if e == target then (h, replacement) else (h, e)
     | none => (h, e)
 
 /-- Collect all subexpression hashes from an expression,
     excluding the expression itself. -/
 private def collectSubexprHashes (e : Expression.Expr) : Std.HashSet UInt64 :=
-  let topHash := hashUntypedExpr e
+  let topHash := hashExpr e
   go e |>.erase topHash
 where
   go (e : Expression.Expr) : Std.HashSet UInt64 :=
-    let h := hashUntypedExpr e
+    let h := hashExpr e
     match e with
     | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => ({} : Std.HashSet UInt64).insert h
     | .app _ fn arg => (go fn |>.union (go arg)).insert h
@@ -178,7 +182,7 @@ private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr
     acc.union (collectSubexprHashes e)
   ) {}
   -- Keep only expressions whose hash is NOT a subexpression of another target
-  exprs.filter (fun e => !subHashes.contains (hashUntypedExpr e))
+  exprs.filter (fun e => !subHashes.contains (hashExpr e))
 
 /-- Shared pipeline: collect subexpressions, filter, find duplicates, remove
     subsumed, and sort by size (largest first). -/
@@ -210,8 +214,8 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
       | some mty => LTy.forAll [] mty
       | none => LTy.forAll ["α"] (.ftvar "α")
     let varDecl := Statement.init freshName ty (.det dup) .empty
-    let h := hashUntypedExpr dup
-    (varDecl :: decls, repMap.insert h (dup.eraseTypes, freshVar), idx + 1)
+    let h := hashExpr dup
+    (varDecl :: decls, repMap.insert h (dup, freshVar), idx + 1)
   ) ([], ({} : Std.HashMap UInt64 (Expression.Expr × Expression.Expr)), startIdx)
   -- Single pass: replace all targets at once
   let body' := Statements.mapExprs (replaceExprs replacements) body

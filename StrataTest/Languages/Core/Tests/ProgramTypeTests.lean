@@ -89,7 +89,7 @@ procedure P ()
 };
 -/
 #guard_msgs in
-#eval do let (ans, _) ← typeCheckAndEval .default good_prog
+#eval do let (ans, _) ← typeCheckAndBuildObligationProgram .default good_prog
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -199,7 +199,7 @@ function intID () : int -> int {
 }
 -/
 #guard_msgs in
-#eval do let (ans, _) ← typeCheckAndEval .default intIdentityFnPgm
+#eval do let (ans, _) ← typeCheckAndBuildObligationProgram .default intIdentityFnPgm
           return (format ans)
 end
 
