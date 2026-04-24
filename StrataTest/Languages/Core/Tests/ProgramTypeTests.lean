@@ -83,7 +83,7 @@ type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo int bool;
 function fooAliasVal () : Foo int bool;
 function fooVal () : Foo int bool;
-procedure P ()
+procedure $obl_0 ()
 {
   assert [test]: fooAliasVal == fooVal;
 };
