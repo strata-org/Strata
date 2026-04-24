@@ -189,12 +189,24 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   return (oblProgram, stats)
 
 
-/-- Convenience: type check then symbolic eval. -/
-def typeCheckAndEval (options : VerifyOptions) (program : Program)
+/-- Convenience: type check then build obligation program. -/
+def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
   let program ← typeCheck options program moreFns
   toCoreProofObligationProgram options program moreFns
+
+/-- Convenience: type check then symbolic eval. Returns the list of
+    evaluation environments and statistics. -/
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel ((List Env) × Statistics) := do
+  let program ← typeCheck options program moreFns
+  let (E, declStats) ← buildEnv options program moreFns
+  let (pEs, evalStats) ← Program.eval E
+  let stats := declStats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+  return (pEs, stats)
 
 end -- public section
 
