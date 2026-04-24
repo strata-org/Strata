@@ -10,7 +10,7 @@ import Lean.Elab.Tactic
 
 import Strata.Languages.Core.Verifier
 import Strata.Transform.LoopElim
-import Strata.Transform.ObligationExtraction
+import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.Verify
 public import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils

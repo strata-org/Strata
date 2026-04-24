@@ -39,9 +39,9 @@ The differences across paths are:
   clears `deferred` on the false branch, so pre-split obligations appear only
   in the first (true) path; post-split obligations appear in each path under
   distinct path conditions.
-- `exprEnv.config.gen`: may diverge when branches execute different numbers of
-  `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
-  prevent fresh-variable name collisions in subsequent evaluation.
+- `exprEnv.config.usedNames`: may diverge when branches generate different
+  variables. We union the sets to prevent fresh-variable name collisions in
+  subsequent evaluation.
 
 The `fallback` Env is returned when `results` is empty (which should not occur
 in practice, since `Statement.eval` always produces at least one result).
@@ -52,20 +52,32 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
   | [E] => E
   | E :: rest =>
     let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) E.deferred
-    let maxGen      := rest.foldl (fun acc e => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
+    let mergedNames := rest.foldl (fun acc e =>
+      acc.union e.exprEnv.config.usedNames) E.exprEnv.config.usedNames
     { E with
       deferred := allDeferred,
-      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } }
+      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
+
+/--
+Evaluate a single procedure: generate fresh variables for parameters,
+execute the body, check postconditions, and collect proof obligations.
+-/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
-  -- Use original parameter names (prefixed with $__ to avoid SMT reserved name
-  -- conflicts like 'exp') so the obligations program is readable.
+  -- Parameters go through genFVars for globally unique names.
+  -- Mark original parameter names as used so that fvar names always differ
+  -- from the scope keys. Without this, a bare fvar "x" would be captured
+  -- by the scope entry for "x" after reassignment, causing old(x) to
+  -- resolve to the post-assignment value instead of the initial value.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
+  let E := vars.foldl (fun E (v : CoreIdent) =>
+    { E with exprEnv.config.usedNames := E.exprEnv.config.usedNames.insert v.name }) E
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
   let var_tys := var_tys.map (fun ty => some ty)
-  let (vals, E) := E.genFVars (vars.zip var_tys)
+  let vars_typed := vars.zip var_tys
+  let (vals, E) := E.genFVars vars_typed
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap
   let E := { E with pathConditions := E.pathConditions.push [] }

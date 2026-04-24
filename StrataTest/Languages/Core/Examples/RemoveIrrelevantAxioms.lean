@@ -88,19 +88,19 @@ procedure Q3(x : int)
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    if line.contains "$__x" && line.contains ", " then
-      -- Handle multi-variable model lines: normalize each ($__xN, val) entry
-      let result := line.splitOn "($__x" |>.drop 1 |>.map fun entry =>
+    -- Handle multi-variable model lines: normalize each (x@N, val) entry
+    if line.contains "(x" && line.contains ", " then
+      let entries := line.splitOn "(x" |>.drop 1 |>.map fun entry =>
         match entry.splitOn ", " with
         | [varSuffix, rest] =>
-          let val := (rest.splitOn ")").head!
+          let val := (rest.splitOn ")").head!.trimAscii
           let val := if val.startsWith "#" then val.drop 1 else val
           match val.toInt? with
-          | some v => if v == 2 then s!"($__x{varSuffix}, VALUE_WAS_2)"
-                      else s!"($__x{varSuffix}, model_not_2)"
-          | none => s!"($__x{varSuffix}, {val})"
-        | _ => s!"($__x{entry}"
-      String.intercalate " " result
+          | some v => if v == 2 then s!"(x{varSuffix}, VALUE_WAS_2)"
+                      else s!"(x{varSuffix}, model_not_2)"
+          | none => s!"(x{varSuffix}, {val})"
+        | _ => s!"(x{entry}"
+      String.intercalate " " entries
     else line
   String.intercalate "\n" normalized
 
@@ -114,7 +114,7 @@ Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -128,49 +128,49 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2) ($__x0, model_not_2) ($__x2, model_not_2) ($__x1, model_not_2)
+(x@1, model_not_2) (x@3, model_not_2) (x@4, model_not_2) (x@2, model_not_2)
 -/
 #guard_msgs in
 #eval do
