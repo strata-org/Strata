@@ -67,6 +67,16 @@ def good_prog : Program := { decls := [
 ]}
 
 /--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: test
+Property: assert
+Obligation:
+fooAliasVal == fooVal
+
+---
 info: ok: program Core;
 
 type Foo (a : Type, b : Type);
@@ -77,11 +87,9 @@ procedure P ()
 {
   assert [test]: fooAliasVal == fooVal;
 };
-
-
 -/
 #guard_msgs in
-#eval do let (ans, _) ← typeCheckAndEval .quiet good_prog
+#eval do let (ans, _) ← typeCheckAndEval .default good_prog
          return (format ans)
 
 ---------------------------------------------------------------------
