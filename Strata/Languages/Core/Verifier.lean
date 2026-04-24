@@ -57,22 +57,55 @@ private def encodeUF (solver : AbstractSolver Term TermType m) (uf : UF) : Abstr
   | .error msg => throw (IO.userError s!"declareFun failed: {msg}")
   modifyGet fun state => (id, { state with ufs := state.ufs.insert uf id })
 
+private def liftExcept (label : String) (r : Except String α) : AbstractEncoderM m α :=
+  match r with
+  | .ok a => return a
+  | .error msg => throw (IO.userError s!"{label}: {msg}")
+
 private def defineApp (solver : AbstractSolver Term TermType m) (ty : TermType) (op : Op) (tEncs : List Term) : AbstractEncoderM m Term := do
-  match op with
-  | .uf f =>
+  match op, tEncs with
+  -- Boolean operations
+  | .and, _         => liftExcept "mkAnd" (← liftM (solver.mkAnd tEncs))
+  | .or, _          => liftExcept "mkOr" (← liftM (solver.mkOr tEncs))
+  | .not, [t]       => liftExcept "mkNot" (← liftM (solver.mkNot t))
+  | .implies, [a,b] => liftExcept "mkImplies" (← liftM (solver.mkImplies a b))
+  | .eq, _          => liftExcept "mkEq" (← liftM (solver.mkEq tEncs))
+  | .ite, [c,t,f]   => liftExcept "mkIte" (← liftM (solver.mkIte c t f))
+  -- Arithmetic operations
+  | .add, _         => liftExcept "mkAdd" (← liftM (solver.mkAdd tEncs))
+  | .sub, _         => liftExcept "mkSub" (← liftM (solver.mkSub tEncs))
+  | .mul, _         => liftExcept "mkMul" (← liftM (solver.mkMul tEncs))
+  | .div, [a, b]    => liftExcept "mkDiv" (← liftM (solver.mkDiv a b))
+  | .mod, [a, b]    => liftExcept "mkMod" (← liftM (solver.mkMod a b))
+  | .neg, [t]       => liftExcept "mkNeg" (← liftM (solver.mkNeg t))
+  | .abs, [t]       => liftExcept "mkAbs" (← liftM (solver.mkAbs t))
+  -- Comparison operations
+  | .lt, _          => liftExcept "mkLt" (← liftM (solver.mkLt tEncs))
+  | .le, _          => liftExcept "mkLe" (← liftM (solver.mkLe tEncs))
+  | .gt, _          => liftExcept "mkGt" (← liftM (solver.mkGt tEncs))
+  | .ge, _          => liftExcept "mkGe" (← liftM (solver.mkGe tEncs))
+  -- Array operations
+  | .select, [a, i]  => liftExcept "mkSelect" (← liftM (solver.mkSelect a i))
+  | .store, [a,i,v]  => liftExcept "mkStore" (← liftM (solver.mkStore a i v))
+  -- Uninterpreted functions
+  | .uf f, _ =>
     let ufName ← encodeUF solver f
     let ufRef : UF := { id := ufName, args := f.args, out := f.out }
-    return .app (.uf ufRef) tEncs ty
-  | _ =>
-    return .app op tEncs ty
+    let handle := Term.app (.uf ufRef) [] ufRef.out
+    liftExcept "mkApp" (← liftM (solver.mkApp handle tEncs))
+  -- Datatype operations: route through mkApp
+  | .datatype_op kind name, _ =>
+    let handle := Term.app (.datatype_op kind name) [] ty
+    liftExcept "mkApp" (← liftM (solver.mkApp handle tEncs))
+  -- All other operations (bitvectors, strings, etc.): pass through as Term
+  | _, _ => return .app op tEncs ty
 
-private def defineQuantifierHelper (_solver : AbstractSolver Term TermType m) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List Term)) (bodyEnc : Term) : AbstractEncoderM m Term := do
-  let tr : Term := match trEncs with
-    | [] => .app .triggers [] .trigger
-    | groups =>
-      let triggerTerms := groups.map fun group => .app .triggers group .trigger
-      .app .triggers triggerTerms .trigger
-  return .quant qk args tr bodyEnc
+private def defineQuantifierHelper (solver : AbstractSolver Term TermType m) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List Term)) (bodyEnc : Term) : AbstractEncoderM m Term := do
+  let bindings := args.map fun v => (v.id, v.ty)
+  let mkQuant := match qk with
+    | .all => solver.mkForall
+    | .exist => solver.mkExists
+  liftExcept "mkQuant" (← liftM (mkQuant bindings (fun _vars => .ok (bodyEnc, trEncs))))
 
 def encodeTerm (solver : AbstractSolver Term TermType m) (t : Term) : AbstractEncoderM m Term := do
   let ty := t.typeOf
@@ -92,7 +125,7 @@ def encodeTerm (solver : AbstractSolver Term TermType m) (t : Term) : AbstractEn
         let innerEnc ← encodeTerm solver inner
         let minVal : Term := .prim (.bitvec (BitVec.intMin n))
         defineApp solver ty .eq [innerEnc, minVal]
-      | _ => return Term.bool false
+      | _ => liftM (solver.mkBool false)
     | .app op ts _ => defineApp solver ty op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver tᵢ))
     | .quant qk qargs tr body =>
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
