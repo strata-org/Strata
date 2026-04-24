@@ -42,13 +42,6 @@ def anfVarPrefix : String := "$__anf."
 -- Expression analysis utilities
 ---------------------------------------------------------------------
 
-/-- Check if an expression is a leaf node that should not be ANF-encoded. -/
-private def isTrivial (e : Expression.Expr) : Bool := e.isLeaf
-
-/-- Check if an expression contains bound variables, which would make
-    ANF encoding unsound across different binding contexts. -/
-private def hasBVar (e : Expression.Expr) : Bool := e.hasBVar
-
 /-- Collect non-trivial subexpressions from an expression, suitable for
     ANF encoding. For function applications, collects the full (curried)
     application and recurses into each argument, but does not collect
@@ -72,20 +65,21 @@ where
     | .app _ fn arg => collectAppArgs fn ++ collectSubexprs arg
     | _ => []
 
-/-- Hash an expression structurally, ignoring type annotations (matching
-    `eraseTypes` semantics) for use in HashMap-based ANF encoding. -/
-private def hashExpr : Expression.Expr → UInt64
+/-- Hash an expression structurally, ignoring type annotations and metadata
+    (matching `eraseTypes`/`eraseMetadata` semantics) for use in HashMap-based
+    ANF encoding. -/
+private def hashUntypedExpr : Expression.Expr → UInt64
   | .const _ c => mixHash 1 (hash (toString c))
   | .bvar _ i => mixHash 2 (hash i)
   | .fvar _ n _ => mixHash 3 (hash n.name)
   | .op _ o _ => mixHash 4 (hash o.name)
-  | .app _ fn arg => mixHash 5 (mixHash (hashExpr fn) (hashExpr arg))
-  | .ite _ c t f => mixHash 6 (mixHash (hashExpr c) (mixHash (hashExpr t) (hashExpr f)))
-  | .eq _ e1 e2 => mixHash 7 (mixHash (hashExpr e1) (hashExpr e2))
-  | .abs _ name _ body => mixHash 8 (mixHash (hash name) (hashExpr body))
+  | .app _ fn arg => mixHash 5 (mixHash (hashUntypedExpr fn) (hashUntypedExpr arg))
+  | .ite _ c t f => mixHash 6 (mixHash (hashUntypedExpr c) (mixHash (hashUntypedExpr t) (hashUntypedExpr f)))
+  | .eq _ e1 e2 => mixHash 7 (mixHash (hashUntypedExpr e1) (hashUntypedExpr e2))
+  | .abs _ name _ body => mixHash 8 (mixHash (hash name) (hashUntypedExpr body))
   | .quant _ k name _ tr body =>
     let kh : UInt64 := match k with | .all => 0 | .exist => 1
-    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashExpr tr) (hashExpr body))))
+    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashUntypedExpr tr) (hashUntypedExpr body))))
 
 /-- Wrapper for using expressions as HashMap keys with type-erased comparison. -/
 private structure ExprKey where
@@ -95,7 +89,7 @@ private instance : BEq ExprKey where
   beq a b := a.expr.eraseTypes == b.expr.eraseTypes
 
 private instance : Hashable ExprKey where
-  hash k := hashExpr k.expr
+  hash k := hashUntypedExpr k.expr
 
 /-- Find expressions that appear more than once in a list. Uses a HashMap
     for O(1) lookup with type-erased comparison. -/
@@ -113,49 +107,61 @@ private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr
   revDups.reverse
 
 /-- Replace all occurrences of any target (compared with erased types) with
-    its corresponding replacement in an expression. Uses a HashMap keyed by
-    hash for O(1) lookup at each node, falling back to equality check only
-    on hash match. The map stores (erasedTarget, replacement) pairs. -/
+    its corresponding replacement in an expression. Computes hashes bottom-up
+    to avoid redundant traversals. The map stores (erasedTarget, replacement)
+    pairs keyed by hash. -/
 partial def replaceExprs (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
     (e : Expression.Expr) : Expression.Expr :=
-  let h := hashExpr e
-  match replacements[h]? with
-  | some (targetErased, replacement) =>
-    if e.eraseTypes == targetErased then replacement
-    else descend replacements e
-  | none => descend replacements e
+  (go e).2
 where
-  descend (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
-      (e : Expression.Expr) : Expression.Expr :=
+  /-- Bottom-up traversal returning (hash, replaced expression). -/
+  go (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match e with
-    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => e
+    | .const _ c => (mixHash 1 (hash (toString c)), e)
+    | .bvar _ i => (mixHash 2 (hash i), e)
+    | .fvar _ n _ => (mixHash 3 (hash n.name), e)
+    | .op _ o _ => (mixHash 4 (hash o.name), e)
     | .app m fn arg =>
-      .app m (replaceExprs replacements fn)
-             (replaceExprs replacements arg)
+      let (hFn, fn') := go fn
+      let (hArg, arg') := go arg
+      let h := mixHash 5 (mixHash hFn hArg)
+      check h (.app m fn' arg')
     | .ite m c t f =>
-      .ite m (replaceExprs replacements c)
-             (replaceExprs replacements t)
-             (replaceExprs replacements f)
+      let (hC, c') := go c
+      let (hT, t') := go t
+      let (hF, f') := go f
+      let h := mixHash 6 (mixHash hC (mixHash hT hF))
+      check h (.ite m c' t' f')
     | .eq m e1 e2 =>
-      .eq m (replaceExprs replacements e1)
-            (replaceExprs replacements e2)
+      let (h1, e1') := go e1
+      let (h2, e2') := go e2
+      let h := mixHash 7 (mixHash h1 h2)
+      check h (.eq m e1' e2')
     | .abs m name ty body =>
-      .abs m name ty (replaceExprs replacements body)
+      let (hB, body') := go body
+      let h := mixHash 8 (mixHash (hash name) hB)
+      check h (.abs m name ty body')
     | .quant m k name ty tr body =>
-      .quant m k name ty (replaceExprs replacements tr)
-                         (replaceExprs replacements body)
-
-/-- Get the type annotation from an expression, if available. -/
-private def getExprType? (e : Expression.Expr) : Option LMonoTy := Core.getExprType? e
+      let (hTr, tr') := go tr
+      let (hB, body') := go body
+      let kh : UInt64 := match k with | .all => 0 | .exist => 1
+      let h := mixHash 9 (mixHash kh (mixHash (hash name) (mixHash hTr hB)))
+      check h (.quant m k name ty tr' body')
+  /-- Check if the hash matches a replacement target. -/
+  check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
+    match replacements[h]? with
+    | some (targetErased, replacement) =>
+      if e.eraseTypes == targetErased then (h, replacement) else (h, e)
+    | none => (h, e)
 
 /-- Collect all subexpression hashes from an expression,
     excluding the expression itself. -/
 private def collectSubexprHashes (e : Expression.Expr) : Std.HashSet UInt64 :=
-  let topHash := hashExpr e
+  let topHash := hashUntypedExpr e
   go e |>.erase topHash
 where
   go (e : Expression.Expr) : Std.HashSet UInt64 :=
-    let h := hashExpr e
+    let h := hashUntypedExpr e
     match e with
     | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => ({} : Std.HashSet UInt64).insert h
     | .app _ fn arg => (go fn |>.union (go arg)).insert h
@@ -172,30 +178,16 @@ private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr
     acc.union (collectSubexprHashes e)
   ) {}
   -- Keep only expressions whose hash is NOT a subexpression of another target
-  exprs.filter (fun e => !subHashes.contains (hashExpr e))
+  exprs.filter (fun e => !subHashes.contains (hashUntypedExpr e))
 
 /-- Shared pipeline: collect subexpressions, filter, find duplicates, remove
     subsumed, and sort by size (largest first). -/
 private def findANFEncoderTargets (exprs : List Expression.Expr) :
     List Expression.Expr :=
-  let candidates := exprs.filter (fun e => !isTrivial e && !hasBVar e)
+  let candidates := exprs.filter (fun e => !e.isLeaf && !e.hasBVar)
   let duplicates := findDuplicates candidates
   let duplicates := removeSubsumed duplicates
   duplicates.mergeSort (fun a b => LExpr.size _ a > LExpr.size _ b)
-
----------------------------------------------------------------------
--- Statement-level expression mapping
----------------------------------------------------------------------
-
-/-- Apply a function to all user-facing expressions in a list of statements. -/
-private def mapExprsInStatements (f : Expression.Expr → Expression.Expr)
-    (ss : Statements) : Statements :=
-  Statements.mapExprs f ss
-
-/-- Collect all user-facing expressions from a list of statements. -/
-private def collectExprsFromStatements (ss : Statements) :
-    List Expression.Expr :=
-  (Statements.collectExprs ss).flatMap collectSubexprs
 
 ---------------------------------------------------------------------
 -- Program level ANF encoding
@@ -203,23 +195,26 @@ private def collectExprsFromStatements (ss : Statements) :
 
 /-- Deduplicate a procedure's body by extracting common subexpressions into
     `var` declarations prepended to the body. Returns the modified body and
-    the next available dedup index. -/
+    the next available dedup index.
+    Assumes single-assignment (SSA-like) property of the post-PE Core IR:
+    variables are assigned only once, so structurally equal expressions
+    always denote the same value within a procedure body. -/
 def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
-  let targets := findANFEncoderTargets (collectExprsFromStatements body)
+  let targets := findANFEncoderTargets ((Statements.collectExprs body).flatMap collectSubexprs)
   -- Build all var declarations and the replacement map
   let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
     let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
-    let freshTy := getExprType? dup
+    let freshTy := Core.getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
     let ty : Expression.Ty := match freshTy with
       | some mty => LTy.forAll [] mty
       | none => LTy.forAll ["α"] (.ftvar "α")
     let varDecl := Statement.init freshName ty (.det dup) .empty
-    let h := hashExpr dup
+    let h := hashUntypedExpr dup
     (varDecl :: decls, repMap.insert h (dup.eraseTypes, freshVar), idx + 1)
   ) ([], ({} : Std.HashMap UInt64 (Expression.Expr × Expression.Expr)), startIdx)
   -- Single pass: replace all targets at once
-  let body' := mapExprsInStatements (replaceExprs replacements) body
+  let body' := Statements.mapExprs (replaceExprs replacements) body
   (revDecls.reverse ++ body', nextIdx)
 
 /-- Deduplicate all procedures in a program. -/

@@ -30,6 +30,24 @@ namespace Core.ObligationExtraction
 
 open Lambda Imperative
 
+/-- Check if a statement list is a valid input for obligation extraction.
+    Valid inputs contain only: `assume`, `assert`, `cover`, `var` declarations,
+    non-deterministic or deterministic branching (`if *` / `if cond`),
+    labelled blocks (from loop elimination), and `exit` statements. -/
+private def isValidInput : Statements → Bool
+  | [] => true
+  | s :: rest => isValidStatement s && isValidInput rest
+where
+  isValidStatement : Statement → Bool
+    | .cmd (.cmd (.assert _ _ _)) => true
+    | .cmd (.cmd (.assume _ _ _)) => true
+    | .cmd (.cmd (.cover _ _ _)) => true
+    | .cmd (.cmd (.init _ _ _ _)) => true
+    | .ite _ thenSs elseSs _ => isValidInput thenSs && isValidInput elseSs
+    | .block _ innerSs _ => isValidInput innerSs
+    | .exit _ _ => true
+    | _ => false
+
 /-- Collect assert and cover obligations from a dead (unreachable) branch.
     Asserts get obligation `true` (trivially pass), covers get `false` (unreachable).
     A dead-branch path condition is added so the solver can detect unreachability. -/
@@ -82,11 +100,6 @@ private def guardNewAssumptions (cond? : Option Expression.Expr)
   match cond? with
   | some cond => newPcs.map fun (l, e) => (l, guardAssumption cond e)
   | none => newPcs
-
-/-- True if a label is internal to the loop-elimination encoding and should
-    not propagate to post-loop obligations. -/
-private def isLoopElimInternal (label : String) : Bool :=
-  label.startsWith "assume_guard_" || label.startsWith "assume_invariant_"
 
 /-- At a loop_N block boundary, strip unguarded loop-elim assumptions and
     rename guarded ones so they don't trigger the loopElimPipelinePhase

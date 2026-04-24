@@ -19,7 +19,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.LoopElim
 import Strata.Transform.ANFEncoder
-import Strata.Transform.ObligationExtraction
+import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
