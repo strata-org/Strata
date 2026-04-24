@@ -25,6 +25,7 @@ namespace Strata
 
 -- Sequence operations increase the grammar size enough to require a higher recursion limit.
 set_option maxRecDepth 10000
+set_option maxHeartbeats 400000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
 
@@ -208,8 +209,12 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
   triggers group;
 
 // Lambda abstraction
-fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : tp =>
+fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
   "lambda " d " :: " body:3;
+
+// Application of an expression to an argument
+fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =>
+  "(" f ")" "(" x ")";
 
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>

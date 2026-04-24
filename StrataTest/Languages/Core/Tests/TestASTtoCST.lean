@@ -691,4 +691,57 @@ function namedLam () : int -> int {
 #guard_msgs in
 #eval formatCore lambdaNamedPgm
 
+-- Lambda applied to an argument (expression application)
+private def lambdaAppliedPgm : Core.Program := { decls := [
+  .func { name := "test", typeArgs := [], inputs := [],
+          output := .int,
+          body := some (.app () (.abs () "x" (.some .int) (.bvar () 0)) (.intConst () 5)) } .empty
+]}
+
+/--
+info: program Core;
+
+function test () : int {
+  (lambda x : int :: x)(5)
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaAppliedPgm
+
+-- Multi-binding lambda (curried): lambda x : int :: lambda y : int :: x + y
+private def lambdaMultiBindPgm : Core.Program := { decls := [
+  .func { name := "add", typeArgs := [], inputs := [],
+          output := .arrow .int (.arrow .int .int),
+          body := some (.abs () "x" (.some .int)
+            (.abs () "y" (.some .int)
+              (.app () (.app () Core.intAddOp (.bvar () 1)) (.bvar () 0)))) } .empty
+]}
+
+/--
+info: program Core;
+
+function add () : int -> int -> int {
+  lambda x : int :: lambda y : int :: x + y
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaMultiBindPgm
+
+-- Higher-order lambda: lambda that takes a function argument
+private def lambdaHigherOrderPgm : Core.Program := { decls := [
+  .func { name := "applyFn", typeArgs := [], inputs := [],
+          output := .arrow (.arrow .int .int) (.arrow .int .int),
+          body := some (.abs () "f" (.some (.arrow .int .int))
+            (.abs () "x" (.some .int)
+              (.app () (.bvar () 1) (.bvar () 0)))) } .empty
+]}
+
+/-- info: program Core;
+
+function applyFn () : int -> int -> int -> int {
+  lambda f : int -> int :: lambda x : int :: f(x)
+}-/
+#guard_msgs in
+#eval formatCore lambdaHigherOrderPgm
+
 end Strata.Test

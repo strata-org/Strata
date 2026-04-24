@@ -270,7 +270,11 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ _ _ =>
+    .error f!"Cannot encode lambda expression to SMT. \
+              Lambda abstractions must be eliminated (e.g., by beta-reduction) \
+              before SMT encoding.\n\
+              Lambda: {e}"
 
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
@@ -587,6 +591,24 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
         let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
         let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
+        let arrowParams := func.inputs.toList.filter (fun (_, ty) => ty.containsArrow)
+        if !arrowParams.isEmpty then
+          let names := arrowParams.map (fun (n, _) => toString (format n))
+          .error f!"Cannot encode function '{func.name}' to SMT: \
+                    it has function-typed parameter(s) {names}. \
+                    Higher-order functions cannot be encoded to SMT. \
+                    Consider marking the function as `inline`."
+        else if func.output.containsArrow then
+          .error f!"Cannot encode function '{func.name}' to SMT: \
+                    it returns a function type '{func.output}'. \
+                    Higher-order functions cannot be encoded to SMT. \
+                    Consider marking the function as `inline`."
+        else if func.body.any LExpr.hasAbs then
+          .error f!"Cannot encode function '{func.name}' to SMT: \
+                    its body contains a lambda expression. \
+                    Lambda abstractions cannot be encoded to SMT. \
+                    Consider marking the function as `inline`."
+        else
         let (ctx, isNew) ←
           if func.isRecursive then
             .ok (ctx.addUF uf, !ctx.ufs.contains uf)

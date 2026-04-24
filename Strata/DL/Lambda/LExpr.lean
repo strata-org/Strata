@@ -340,6 +340,17 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
   | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
   | _ => []
 
+def hasAbs {T : LExprParamsT} : LExpr T → Bool
+  | .abs _ _ _ _ => true
+  | .app _ e1 e2 => hasAbs e1 || hasAbs e2
+  | .quant _ _ _ _ tr e => hasAbs tr || hasAbs e
+  | .ite _ c t e => hasAbs c || hasAbs t || hasAbs e
+  | .eq _ e1 e2 => hasAbs e1 || hasAbs e2
+  | .const _ _ => false
+  | .op _ _ _ => false
+  | .bvar _ _ => false
+  | .fvar _ _ _ => false
+
 def isConst {T : LExprParamsT} (e : LExpr T) : Bool :=
   match e with
   | .const _ _ => true
