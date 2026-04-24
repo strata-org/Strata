@@ -142,6 +142,16 @@ private def mkDatatypeSort (name : String) (params : List String) : TermType × 
   let paramSorts := params.map fun p => TermType.constr p []
   (.constr name paramSorts, paramSorts)
 
+/-- Build constructor/tester/selector handles for a list of constructors. -/
+private def mkConstructorHandles (selfSort : TermType)
+    (constrs : List (String × List (String × TermType)))
+    : List (DatatypeConstructorHandles Term) :=
+  constrs.map fun (cname, fields) =>
+    { constr := Term.app (.datatype_op .constructor cname) [] selfSort
+      tester := Term.app (.datatype_op .tester cname) [] .bool
+      selectors := fields.map fun (fname, fty) =>
+        Term.app (.datatype_op .selector fname) [] fty }
+
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
 def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
   setLogic logic := emitln s!"(set-logic {logic})"
@@ -187,7 +197,8 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
   mkStore arr idx val := return .ok (Term.app .store [arr, idx, val] arr.typeOf)
   mkApp fn args := return match fn with
     | .app (.uf uf) _ _ => .ok (Term.app (.uf uf) args uf.out)
-    | _ => .error "mkApp: expected an uninterpreted function term"
+    | .app (.datatype_op kind name) _ retTy => .ok (Term.app (.datatype_op kind name) args retTy)
+    | _ => .error "mkApp: expected a function handle (uninterpreted function or datatype op)"
 
   declareNew name ty := do
     let st ← get
@@ -253,7 +264,7 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
         else
           let pInline := String.intercalate " " params
           emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
-        return .ok selfSort
+        return .ok { sort := selfSort, constructors := mkConstructorHandles selfSort constrs }
 
   declareDatatypes dts callback := do
     if dts.isEmpty then return .ok []
@@ -279,7 +290,8 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
             bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
       let bodyStr := String.intercalate "\n  " bodies
       emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
-      return .ok selfSorts
+      return .ok (selfSorts.zip allConstrs |>.map fun (sort, constrs) =>
+        { sort, constructors := mkConstructorHandles sort constrs })
 
   mkForall bindings callback := do
     mkQuantHelper .all bindings callback

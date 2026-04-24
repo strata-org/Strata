@@ -34,6 +34,20 @@ namespace Strata.SMT
 
 public section
 
+/-- Handles for a single datatype constructor returned by `declareDatatype`.
+    - `constr` is the constructor function (use with `mkApp` to build values)
+    - `tester` is the recognizer predicate (use with `mkApp` to test membership)
+    - `selectors` are the field accessors in declaration order -/
+structure DatatypeConstructorHandles (τ : Type) where
+  constr : τ
+  tester : τ
+  selectors : List τ
+
+/-- Result of declaring a datatype: the sort and handles for each constructor. -/
+structure DatatypeInfo (τ : Type) (σ : Type) where
+  sort : σ
+  constructors : List (DatatypeConstructorHandles τ)
+
 /-- Abstract solver interface parameterized by term type `τ`, sort type `σ`,
 and monad `m`.
 
@@ -107,20 +121,21 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   /-- Declare an algebraic datatype.
       Takes the datatype name, type parameter names, and a callback that
       receives `(selfSort, typeParamSorts)` and returns the constructors.
-      Returns the declared sort. This callback pattern (like `mkForall`)
-      allows recursive and parametric datatypes: the sort being declared
-      does not exist yet when selectors need to reference it. -/
+      Returns the declared sort and constructor/tester/selector handles.
+      This callback pattern (like `mkForall`) allows recursive and parametric
+      datatypes: the sort being declared does not exist yet when selectors
+      need to reference it. -/
   declareDatatype : String → List String →
     (σ → List σ → Except String (List (String × List (String × σ)))) →
-    m (Except String σ)
+    m (Except String (DatatypeInfo τ σ))
 
   /-- Declare mutually recursive algebraic datatypes.
       Takes a list of `(name, typeParams)` and a callback that receives
       `(selfSorts, typeParamSorts)` and returns constructors for each datatype.
-      Returns the declared sorts. -/
+      Returns the declared sorts and constructor/tester/selector handles. -/
   declareDatatypes : List (String × List String) →
     (List σ → List (List σ) → Except String (List (List (String × List (String × σ))))) →
-    m (Except String (List σ))
+    m (Except String (List (DatatypeInfo τ σ)))
 
   /-- Construct a universally quantified term.
       Takes name-sort pairs for bound variables and a callback that receives
