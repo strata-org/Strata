@@ -1124,7 +1124,7 @@ structure CommandGroup where
   commonFlags : List Flag := []
 
 private def validPasses :=
-  "inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms"
+  "inlineProcedures, loopElim, callElim, ssa, filterProcedures, removeIrrelevantAxioms"
 
 /-- A single transform pass together with the `--procedures`/`--functions`
     that were specified immediately after it on the command line. -/
@@ -1199,6 +1199,8 @@ def transformCommand : Command where
           passes := passes ++ [.loopElim]
         | "callElim" =>
           passes := passes ++ [.callElim]
+        | "ssa" =>
+          passes := passes ++ [.ssa]
         | "filterProcedures" =>
           if pc.procedures.isEmpty then
             exitFailure "filterProcedures requires --procedures"
