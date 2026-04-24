@@ -43,21 +43,36 @@ def parseArgs (args : List String) : Except String Config := do
       throw s!"unknown flag: {arg}"
     else
       includes := includes.push arg
+  if !includes.isEmpty && !excludes.isEmpty then
+    throw "--exclude cannot be used with explicit include prefixes"
   return { includes, excludes }
 
 def Config.matches (cfg : Config) (modName : String) : Bool :=
-  let included :=
-    if cfg.includes.isEmpty then true
-    else cfg.includes.any (fun inc => modName.startsWith inc)
-  let excluded := cfg.excludes.any (fun exc => modName.startsWith exc)
-  included && !excluded
+  if !cfg.includes.isEmpty then
+    cfg.includes.any (fun inc => modName.startsWith inc)
+  else
+    !cfg.excludes.any (fun exc => modName.startsWith exc)
+
+def usage : String :=
+  "Usage: lake test [-- [MODULE_PREFIX...] [--exclude PREFIX...]]
+
+Run uncached tests under StrataTestExtra/.
+
+Options:
+  MODULE_PREFIX     Run only tests whose module name starts with PREFIX
+  --exclude PREFIX  Exclude tests whose module name starts with PREFIX
+                    (cannot be combined with include prefixes)
+  --help            Show this help message"
 
 def main (args : List String) : IO UInt32 := do
+  if args.any (· == "--help") then
+    IO.println usage
+    return 0
   let cfg ← match parseArgs args with
     | .ok cfg => pure cfg
     | .error msg =>
       IO.eprintln s!"Error: {msg}"
-      IO.eprintln "Usage: lake test [-- [MODULE_PREFIX...] [--exclude PREFIX...]]"
+      IO.eprintln usage
       return 1
 
   let testDir : System.FilePath := "StrataTestExtra"
