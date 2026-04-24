@@ -264,7 +264,7 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
     return prog
   | .ssa =>
-    let (_, prog) ← Core.SSA.ssaPipelinePhase.transform program
+    let (_, prog) ← Core.SSA.ssaTransform program
     return prog
   | .filterProcedures procs =>
     Core.FilterProcedures.run program procs

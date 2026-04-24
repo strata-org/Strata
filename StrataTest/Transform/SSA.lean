@@ -19,9 +19,11 @@ private def translate (p : Strata.Program) : Core.Program :=
   program
 
 private def runSSA (p : Core.Program) : Core.Program :=
-  match ssaTransform p with
-  | .ok (res, _) => res
-  | .error e => panic! e
+  match Core.Transform.run p (fun prog => do
+    let (_, result) ← Core.SSA.ssaTransform prog
+    return result) with
+  | .ok res => res
+  | .error _ => { decls := [] }
 
 /-! ## SSA Basic Tests -/
 section SSABasicTests

@@ -21,6 +21,7 @@ namespace Core
 namespace SSA
 
 open Imperative Lambda
+open Core.Transform
 
 public section
 
@@ -31,55 +32,39 @@ inductive Stats where
 
 #derive_prefixed_toString Stats "SSA"
 
+/-- An entry in the SSA environment: the current versioned identifier and its type. -/
 structure VarInfo where
   ident : Expression.Ident
   ty    : Expression.Ty
   deriving Repr, BEq
 
+/-- The SSA environment maps original variable names to their current version and type. -/
 abbrev Env := Std.HashMap String VarInfo
 
-structure SSAState where
-  counter : Nat := 0
-  env : Env := {}
-  statistics : Statistics := {}
+/-- SSA name prefix for fresh variables. -/
+def ssaVarPrefix (id : String) : String := s!"ssa_{id}"
 
-abbrev SSAM := ExceptT String (StateM SSAState)
+/-- Generate a fresh SSA identifier using the CoreTransformM generator. -/
+def genSSAIdent (baseName : String) : CoreTransformM Expression.Ident :=
+  genIdent ⟨baseName, ()⟩ ssaVarPrefix
 
-def freshIdent (baseName : String) : SSAM Expression.Ident := do
-  let st ← get
-  let freshName := s!"{baseName}_{st.counter}"
-  set { st with counter := st.counter + 1 }
-  return ⟨freshName, ()⟩
+/-- Rewrite free variables in an expression according to the SSA environment. -/
+def rewriteExpr (env : Env) (e : Expression.Expr) : Expression.Expr :=
+  if env.isEmpty then e
+  else
+    let sm : Map Expression.Ident Expression.Expr :=
+      env.fold (init := Map.empty) fun acc origName info =>
+        acc.insert ⟨origName, ()⟩ (createFvar info.ident)
+    Lambda.LExpr.substFvars e sm
 
-def bindVar (origName : String) (newIdent : Expression.Ident) (ty : Expression.Ty) : SSAM Unit :=
-  modify fun st => { st with env := st.env.insert origName { ident := newIdent, ty := ty } }
-
-def incrStat (key : String) (n : Nat := 1) : SSAM Unit :=
-  modify fun st => { st with statistics := st.statistics.increment key n }
-
-def mkFvar (id : Expression.Ident) : Expression.Expr :=
-  Lambda.LExpr.fvar ((): ExpressionMetadata) id none
-
-def rewriteExpr (e : Expression.Expr) : SSAM Expression.Expr := do
-  let env := (← get).env
-  if env.isEmpty then return e
-  let sm : Map Expression.Ident Expression.Expr :=
-    env.fold (init := Map.empty) fun acc origName info =>
-      acc.insert ⟨origName, ()⟩ (mkFvar info.ident)
-  return Lambda.LExpr.substFvars e sm
-
-def rewriteExprOrNondet (e : ExprOrNondet Expression) : SSAM (ExprOrNondet Expression) :=
+/-- Rewrite free variables in an `ExprOrNondet`. -/
+def rewriteExprOrNondet (env : Env) (e : ExprOrNondet Expression) : ExprOrNondet Expression :=
   match e with
-  | .det expr => return .det (← rewriteExpr expr)
-  | .nondet => return .nondet
-
-def getEnv : SSAM Env := return (← get).env
-
-def setEnv (env : Env) : SSAM Unit :=
-  modify fun st => { st with env := env }
+  | .det expr => .det (rewriteExpr env expr)
+  | .nondet => .nondet
 
 /-- Helper to get the identifier from a VarInfo option, with fallback. -/
-private def getIdOr (info : Option VarInfo) (fallback : Option VarInfo) (origName : String)
+private def getIdOr (info fallback : Option VarInfo) (origName : String)
     : Expression.Ident :=
   match info with
   | some i => i.ident
@@ -104,38 +89,42 @@ private def varChanged (info pre : Option VarInfo) : Bool :=
   | some _, none => true
   | none, _ => false
 
-def transformCmd (cmd : Command) : SSAM (List Statement) := do
+/-- Transform a single command in SSA form. Returns updated env and new statements. -/
+def transformCmd (env : Env) (cmd : Command) : CoreTransformM (Env × List Statement) := do
   match cmd with
   | .cmd (.init name ty rhs imd) =>
-    let rhs' ← rewriteExprOrNondet rhs
-    let freshId ← freshIdent name.name
-    bindVar name.name freshId ty
-    incrStat s!"{Stats.renamedVars}"
-    return [Statement.init freshId ty rhs' imd]
+    let rhs' := rewriteExprOrNondet env rhs
+    let freshId ← genSSAIdent name.name
+    let env' := env.insert name.name { ident := freshId, ty := ty }
+    incrementStat s!"{Stats.renamedVars}"
+    return (env', [Statement.init freshId ty rhs' imd])
   | .cmd (.set name (.det expr) smd) =>
-    let expr' ← rewriteExpr expr
-    match (← get).env.get? name.name with
+    let expr' := rewriteExpr env expr
+    match env.get? name.name with
     | some info =>
-      let freshId ← freshIdent name.name
+      let freshId ← genSSAIdent name.name
       let some mty := LTy.toMonoType? info.ty
         | throw s!"SSA: type of '{name.name}' is not a monotype"
-      bindVar name.name freshId info.ty
-      incrStat s!"{Stats.renamedVars}"
-      return [Statement.init freshId (.forAll [] mty) (.det expr') smd]
+      let env' := env.insert name.name { ident := freshId, ty := info.ty }
+      incrementStat s!"{Stats.renamedVars}"
+      return (env', [Statement.init freshId (.forAll [] mty) (.det expr') smd])
     | none => throw s!"SSA: variable '{name.name}' not found in environment (set)"
   | .cmd (.set name .nondet smd) =>
-    match (← get).env.get? name.name with
+    match env.get? name.name with
     | some info =>
-      let freshId ← freshIdent name.name
+      let freshId ← genSSAIdent name.name
       let some mty := LTy.toMonoType? info.ty
         | throw s!"SSA: type of '{name.name}' is not a monotype"
-      bindVar name.name freshId info.ty
-      incrStat s!"{Stats.renamedVars}"
-      return [Statement.init freshId (.forAll [] mty) .nondet smd]
+      let env' := env.insert name.name { ident := freshId, ty := info.ty }
+      incrementStat s!"{Stats.renamedVars}"
+      return (env', [Statement.init freshId (.forAll [] mty) .nondet smd])
     | none => throw s!"SSA: variable '{name.name}' not found in environment (havoc)"
-  | .cmd (.assert label b amd) => return [Statement.assert label (← rewriteExpr b) amd]
-  | .cmd (.assume label b amd) => return [Statement.assume label (← rewriteExpr b) amd]
-  | .cmd (.cover label b cmd') => return [Statement.cover label (← rewriteExpr b) cmd']
+  | .cmd (.assert label b amd) =>
+    return (env, [Statement.assert label (rewriteExpr env b) amd])
+  | .cmd (.assume label b amd) =>
+    return (env, [Statement.assume label (rewriteExpr env b) amd])
+  | .cmd (.cover label b cmd') =>
+    return (env, [Statement.cover label (rewriteExpr env b) cmd'])
   | .call _ _ _ => throw "SSA: unexpected call command (callElim should have run first)"
 
 private def collectAllKeys (envs : List Env) : List String :=
@@ -144,10 +133,12 @@ private def collectAllKeys (envs : List Env) : List String :=
     (Std.HashSet.emptyWithCapacity (α := String))
   hs.toList
 
+/-- Emit conditional merge inits at a deterministic join point. -/
 def emitJoinMerges (condVar : Expression.Ident)
     (preEnv thenEnv elseEnv : Env)
-    (md : Imperative.MetaData Expression) : SSAM (List Statement) := do
+    (md : Imperative.MetaData Expression) : CoreTransformM (Env × List Statement) := do
   let allKeys := collectAllKeys [preEnv, thenEnv, elseEnv]
+  let mut env := thenEnv  -- start from one branch, will be overwritten for changed vars
   let mut merges : List Statement := []
   for origName in allKeys do
     let preInfo := preEnv.get? origName
@@ -159,17 +150,24 @@ def emitJoinMerges (condVar : Expression.Ident)
       let ty := getTyOr thenInfo elseInfo preInfo
       let some mty := LTy.toMonoType? ty
         | throw s!"SSA: type of '{origName}' is not a monotype at join point"
-      let freshId ← freshIdent origName
+      let freshId ← genSSAIdent origName
       let iteExpr : Expression.Expr :=
-        Lambda.LExpr.ite () (mkFvar condVar) (mkFvar thenId) (mkFvar elseId)
+        Lambda.LExpr.ite () (createFvar condVar) (createFvar thenId) (createFvar elseId)
       merges := merges ++ [Statement.init freshId (.forAll [] mty) (.det iteExpr) md]
-      bindVar origName freshId ty
-      incrStat s!"{Stats.joinPointMerges}"
-  return merges
+      env := env.insert origName { ident := freshId, ty := ty }
+      incrementStat s!"{Stats.joinPointMerges}"
+    else
+      -- Variable unchanged: keep the pre-branch version
+      match preInfo with
+      | some info => env := env.insert origName info
+      | none => pure ()
+  return (env, merges)
 
+/-- Emit havoc inits at a nondet join point. -/
 def emitNondetJoinHavocs (preEnv thenEnv elseEnv : Env)
-    (md : Imperative.MetaData Expression) : SSAM (List Statement) := do
+    (md : Imperative.MetaData Expression) : CoreTransformM (Env × List Statement) := do
   let allKeys := collectAllKeys [preEnv, thenEnv, elseEnv]
+  let mut env := preEnv
   let mut havoces : List Statement := []
   for origName in allKeys do
     let preInfo := preEnv.get? origName
@@ -179,92 +177,78 @@ def emitNondetJoinHavocs (preEnv thenEnv elseEnv : Env)
       let ty := getTyOr thenInfo elseInfo preInfo
       let some mty := LTy.toMonoType? ty
         | throw s!"SSA: type of '{origName}' is not a monotype at nondet join"
-      let freshId ← freshIdent origName
+      let freshId ← genSSAIdent origName
       havoces := havoces ++ [Statement.init freshId (.forAll [] mty) .nondet md]
-      bindVar origName freshId ty
-      incrStat s!"{Stats.joinPointMerges}"
-  return havoces
+      env := env.insert origName { ident := freshId, ty := ty }
+      incrementStat s!"{Stats.joinPointMerges}"
+  return (env, havoces)
 
-def initEnvFromProcedure (proc : Procedure) : SSAM Unit := do
-  let _ ← (proc.header.inputs : List _).mapM fun (id, mty) =>
-    bindVar id.name id (.forAll [] mty)
-  let _ ← (proc.header.outputs : List _).mapM fun (id, mty) =>
-    bindVar id.name id (.forAll [] mty)
+/-- Initialize the SSA environment from a procedure's parameters. -/
+def initEnvFromProcedure (proc : Procedure) : Env :=
+  let env := (proc.header.inputs : List _).foldl (fun acc (id, mty) =>
+    acc.insert id.name { ident := id, ty := .forAll [] mty }) {}
+  (proc.header.outputs : List _).foldl (fun acc (id, mty) =>
+    acc.insert id.name { ident := id, ty := .forAll [] mty }) env
 
 mutual
-partial def transformStmt (s : Statement) : SSAM (List Statement) := do
+partial def transformStmt (env : Env) (s : Statement) : CoreTransformM (Env × List Statement) := do
   match s with
-  | .cmd cmd => transformCmd cmd
+  | .cmd cmd => transformCmd env cmd
   | .block label stmts md =>
-    let stmts' ← transformBlock stmts
-    return [Stmt.block label stmts' md]
+    let (env', stmts') ← transformBlock env stmts
+    return (env', [Stmt.block label stmts' md])
   | .ite cond thenStmts elseStmts md =>
     match cond with
     | .det condExpr =>
-      let condExpr' ← rewriteExpr condExpr
-      let condVar ← freshIdent "$ssa_cond"
+      let condExpr' := rewriteExpr env condExpr
+      let condVar ← genSSAIdent "$ssa_cond"
       let condInit := Statement.init condVar (.forAll [] LMonoTy.bool) (.det condExpr') md
-      let preEnv ← getEnv
-      let thenStmts' ← transformBlock thenStmts
-      let thenEnv ← getEnv
-      setEnv preEnv
-      let elseStmts' ← transformBlock elseStmts
-      let elseEnv ← getEnv
-      let merges ← emitJoinMerges condVar preEnv thenEnv elseEnv md
-      let iteStmt := Stmt.ite (.det (mkFvar condVar)) thenStmts' elseStmts' md
-      return [condInit, iteStmt] ++ merges
+      let (thenEnv, thenStmts') ← transformBlock env thenStmts
+      let (elseEnv, elseStmts') ← transformBlock env elseStmts
+      let (mergedEnv, merges) ← emitJoinMerges condVar env thenEnv elseEnv md
+      let iteStmt := Stmt.ite (.det (createFvar condVar)) thenStmts' elseStmts' md
+      return (mergedEnv, [condInit, iteStmt] ++ merges)
     | .nondet =>
-      let preEnv ← getEnv
-      let thenStmts' ← transformBlock thenStmts
-      let thenEnv ← getEnv
-      setEnv preEnv
-      let elseStmts' ← transformBlock elseStmts
-      let elseEnv ← getEnv
-      let havoces ← emitNondetJoinHavocs preEnv thenEnv elseEnv md
-      return [Stmt.ite .nondet thenStmts' elseStmts' md] ++ havoces
+      let (thenEnv, thenStmts') ← transformBlock env thenStmts
+      let (elseEnv, elseStmts') ← transformBlock env elseStmts
+      let (mergedEnv, havoces) ← emitNondetJoinHavocs env thenEnv elseEnv md
+      return (mergedEnv, [Stmt.ite .nondet thenStmts' elseStmts' md] ++ havoces)
   | .loop _ _ _ _ _ =>
     throw "SSA: unexpected loop statement (loopElim should have run first)"
-  | .exit label md => return [Stmt.exit label md]
-  | .funcDecl decl md => return [Stmt.funcDecl decl md]
-  | .typeDecl tc md => return [Stmt.typeDecl tc md]
+  | .exit label md => return (env, [Stmt.exit label md])
+  | .funcDecl decl md => return (env, [Stmt.funcDecl decl md])
+  | .typeDecl tc md => return (env, [Stmt.typeDecl tc md])
 
-partial def transformBlock (stmts : List Statement) : SSAM (List Statement) := do
+partial def transformBlock (env : Env) (stmts : List Statement)
+    : CoreTransformM (Env × List Statement) := do
+  let mut curEnv := env
   let mut result : List Statement := []
   for s in stmts do
-    let stmts' ← transformStmt s
+    let (env', stmts') ← transformStmt curEnv s
+    curEnv := env'
     result := result ++ stmts'
-  return result
+  return (curEnv, result)
 end
 
-def transformProcedure (proc : Procedure) : SSAM Procedure := do
+/-- Transform a single procedure into SSA form. -/
+def transformProcedure (proc : Procedure) : CoreTransformM Procedure := do
   if proc.body.isEmpty then return proc
-  initEnvFromProcedure proc
-  let body' ← transformBlock proc.body
+  let env := initEnvFromProcedure proc
+  let (_, body') ← transformBlock env proc.body
   return { proc with body := body' }
 
-def ssaTransform (p : Program) : Except String (Program × Statistics) := do
+/-- SSA transformation on an entire program, using CoreTransformM. -/
+def ssaTransform (p : Program) : CoreTransformM (Bool × Program) := do
   let decls ← p.decls.mapM fun d =>
     match d with
-    | .proc proc md =>
-      let initState : SSAState := {}
-      let (result, finalState) := StateT.run (transformProcedure proc) initState
-      match result with
-      | .ok proc' => .ok (.proc proc' md, finalState.statistics)
-      | .error e => .error s!"SSA error in procedure '{proc.header.name}': {e}"
-    | other => .ok (other, {})
-  let (decls', stats) := decls.foldl (fun (acc, stats) (d, s) =>
-    (acc ++ [d], stats.merge s)) ([], {})
-  .ok ({ decls := decls' }, stats)
+    | .proc proc md => return .proc (← transformProcedure proc) md
+    | other => return other
+  return (true, { decls := decls })
 
-def ssaTransform' (p : Program) : Transform.CoreTransformM (Bool × Program) := do
-  match ssaTransform p with
-  | .ok (p', stats) =>
-    modify fun σ => { σ with statistics := σ.statistics.merge stats }
-    return (true, p')
-  | .error e => throw e
-
+/-- SSA pipeline phase: converts procedure bodies to SSA form.
+    SSA is semantics-preserving, so models are preserved. -/
 def ssaPipelinePhase : PipelinePhase where
-  transform := ssaTransform'
+  transform := ssaTransform
   phase.name := "SSA"
   phase.getValidation _ := .modelPreserving
 
