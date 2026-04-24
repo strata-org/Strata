@@ -14,6 +14,7 @@ public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.IsCoreSMT
 import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
@@ -1116,6 +1117,34 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- A discharge function encapsulates the solver backend. It takes assumption
+    terms, the obligation term, the SMT context, and the satisfiability/validity
+    check flags, and returns the solver results. The pipeline is parametrized
+    by this function so it does not know about SMT-LIB or any specific solver. -/
+abbrev DischargeFn :=
+  List Term → Term → SMT.Context → Bool → Bool →
+  IO (Except Format (SMT.Result × SMT.Result × EncoderState))
+
+/-- Construct a `DischargeFn` from verification options. Selects the incremental
+    (abstract solver) backend or the batch (SMT-LIB file) backend based on
+    `options.incremental` and `options.alwaysGenerateSMT`. -/
+def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
+    (tempDir : System.FilePath)
+    (vars : List Expression.TypedIdent)
+    (md : Imperative.MetaData Expression)
+    (label : String) : DischargeFn :=
+  fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck => do
+    if options.incremental && !options.alwaysGenerateSMT then
+      SMT.dischargeObligationIncremental options vars md
+        assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
+    else
+      let counterVal ← counter.get
+      counter.set (counterVal + 1)
+      let filename := tempDir / s!"{SMT.sanitizeFilename label}_{counterVal}.smt2"
+      SMT.dischargeObligation options vars md filename.toString
+        assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+        (label := label)
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -1123,37 +1152,16 @@ given proof obligation.
 def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
-    (options : VerifyOptions) (counter : IO.Ref Nat)
-    (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
+    (options : VerifyOptions)
+    (discharge : DischargeFn)
+    (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-  let counterVal ← counter.get
-  counter.set (counterVal + 1)
-  let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
-  let varsInObligation := ProofObligation.getVars obligation
-  -- All variables in ProofObligation must have been typed.
-  let typedVarsInObligation ← varsInObligation.mapM
-    (fun (v,ty) => do
-      match ty with
-      | .some ty => return (v,LTy.forAll [] ty)
-      | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
-        (if options.incremental && !options.alwaysGenerateSMT then
-          SMT.dischargeObligationIncremental options
-            typedVarsInObligation
-            obligation.metadata
-            assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-            obligation.label
-        else
-          SMT.dischargeObligation options
-            typedVarsInObligation
-            obligation.metadata
-            filename.toString
-            assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-            (label := obligation.label))
+        (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck)
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -1280,9 +1288,17 @@ def verifySingleEnv (oblProgram : Program)
       if options.stopOnFirstError then break
     | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
       stats := stats.merge encStats
+      let varsInObligation := ProofObligation.getVars obligation
+      let typedVarsInObligation ← varsInObligation.mapM
+        (fun (v,ty) => do
+          match ty with
+          | .some ty => return (v,LTy.forAll [] ty)
+          | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
+      let discharge := mkDischargeFn options counter tempDir
+        typedVarsInObligation obligation.metadata obligation.label
       let t4 ← IO.monoNanosNow
       let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                    counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+                    discharge needSatCheck needValCheck (externalPhases ++ corePhases)
       let t5 ← IO.monoNanosNow
       solverNs := solverNs + (t5 - t4)
       -- Merge evaluator results with solver results
