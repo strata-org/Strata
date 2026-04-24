@@ -97,6 +97,7 @@ deriving Inhabited, Repr
 A PySpec type is a union of atom types.
 -/
 structure SpecType where
+  private mk ::
   atoms : Array SpecAtomType
   /-- Source location of this type. May be `.none` for builtin types. -/
   loc : SourceRange
@@ -205,9 +206,9 @@ private partial def unionAux (x y : Array SpecAtomType) (i : Fin x.size) (j : Fi
       if yjp : j' < y.size then
         unionAux x y ⟨i', xip⟩ ⟨j', yjp⟩ (r.push xe)
       else
-        r.push xe ++ x.drop i'
+        r ++ x.drop i
     else
-      r.push xe ++ y.drop j
+      r ++ y.drop j
   | .gt =>
     let j' := j.val + 1
     if yjp : j' < y.size then
@@ -215,17 +216,21 @@ private partial def unionAux (x y : Array SpecAtomType) (i : Fin x.size) (j : Fi
     else
       r.push ye ++ x.drop i.val
 
-/-- Union two SpecTypes with a specified location for the result -/
-def union (loc : SourceRange) (x y : SpecType) : SpecType :=
-  if xp : 0 < x.atoms.size then
-    if yp : 0 < y.atoms.size then
-      { loc := loc, atoms := unionAux x.atoms y.atoms ⟨0, xp⟩ ⟨0, yp⟩ #[] }
+private partial def unionElts (x y : Array SpecAtomType) : Array SpecAtomType :=
+  if xp : 0 < x.size then
+    if yp : 0 < y.size then
+      unionAux x y ⟨0, xp⟩ ⟨0, yp⟩ #[]
     else
       x
   else
     y
 
-def ofAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType := { loc := loc, atoms := #[atom] }
+
+/-- Union two SpecTypes with a specified location for the result -/
+def union (loc : SourceRange) (x y : SpecType) : SpecType :=
+  { loc := loc, atoms := unionElts x.atoms y.atoms }
+
+private def ofAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType := { loc := loc, atoms := #[atom] }
 
 @[specialize]
 private def removeAdjDupsAux {α} [BEq α] (a : Array α) (i : Nat) (r : Array α) (rne : r.size > 0) : Array α :=
@@ -249,12 +254,33 @@ private def removeAdjDups {α} [BEq α] (a : Array α) : Array α :=
 
 /-- Construct a `SpecType` from an array of atoms by sorting and
     removing duplicates to produce a canonical representation. -/
-protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
+private def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
   let elts := atoms.qsort (compare · · == .lt)
   { loc := loc, atoms := removeAdjDups elts }
 
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
   ofAtom loc (.ident i args)
+
+def noneType (loc : SourceRange) : SpecType :=
+  ofAtom loc .noneType
+
+def intLiteral (loc : SourceRange) (value : Int) : SpecType :=
+  ofAtom loc (.intLiteral value)
+
+def stringLiteral (loc : SourceRange) (value : String) : SpecType :=
+  ofAtom loc (.stringLiteral value)
+
+def typedDict (loc : SourceRange) (fields : Array String)
+    (fieldTypes : Array SpecType) (fieldRequired : Array Bool) : SpecType :=
+  ofAtom loc (.typedDict fields fieldTypes fieldRequired)
+
+def unionArray (loc : SourceRange) (elts : Array SpecType) : SpecType :=
+  { loc := loc, atoms := elts.foldl (init := #[]) (unionElts · ·.atoms) }
+
+theorem sizeOf_atom_lt_of_mem {a : SpecAtomType} {tp : SpecType}
+    (h : a ∈ tp.atoms) : sizeOf a < sizeOf tp := by
+  cases tp
+  decreasing_tactic
 
 def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then

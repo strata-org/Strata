@@ -23,7 +23,7 @@ open Strata.Python (OverloadTable PythonFunctionDecl PyArgInfo)
 private def loc : SourceRange := default
 
 private def identType (nm : PythonIdent) : SpecType :=
-  SpecType.ofAtom loc (.ident nm #[])
+  SpecType.ident loc nm
 
 private def mkArg (name : String) (type : SpecType) : Specs.Arg :=
   { name, type }
@@ -48,8 +48,8 @@ private def getFuncSigs (sigs : Array Signature) : IO (List PythonFunctionDecl) 
     | .ok r => pure r.functionSignatures
     | .error msg => throw <| .userError msg
 
-private def unionType (atoms : Array SpecAtomType) : SpecType :=
-  { atoms, loc }
+private def unionType (elts : Array SpecType) : SpecType :=
+  SpecType.unionArray loc elts
 
 /--
 info: typed_func: x=[int], y=[str], z=[bool], w=[float]
@@ -74,8 +74,8 @@ optional_func: s=[None, str], n=[None, int]
         mkArg "q" (identType .typingAny)]
       (identType .noneType),
     mkFunc "optional_func"
-      #[mkArg "s" (unionType #[.ident .noneType #[], .ident .builtinsStr #[]]),
-        mkArg "n" (unionType #[.ident .noneType #[], .ident .builtinsInt #[]])]
+      #[mkArg "s" (unionType #[identType .noneType, identType .builtinsStr]),
+        mkArg "n" (unionType #[identType .noneType, identType .builtinsInt])]
       (identType .noneType)
   ]
   for f in sigs do

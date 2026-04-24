@@ -20,17 +20,24 @@ private def assertEq [BEq α] [ToString α] (actual expected : α) : IO Unit := 
 
 private def loc : SourceRange := default
 
+private def wrapAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType :=
+  match atom with
+  | .ident nm args => .ident loc nm args
+  | .intLiteral v => .intLiteral loc v
+  | .stringLiteral v => .stringLiteral loc v
+  | .typedDict fields types req => .typedDict loc fields types req
+
 private def mkType (atom : SpecAtomType) : SpecType :=
-  SpecType.ofAtom default atom
+  wrapAtom default atom
 
 private def mkUnion (atoms : Array SpecAtomType) : SpecType :=
-  { atoms := atoms, loc := default }
+  SpecType.unionArray default (atoms.map (wrapAtom default))
 
 private def identAtom (nm : PythonIdent) : SpecAtomType :=
   .ident nm #[]
 
 private def identType (nm : PythonIdent) : SpecType :=
-  mkType (identAtom nm)
+  SpecType.ident default nm
 
 private def mkArg (name : String) (type : SpecType) (default : Option SpecDefault := none) : Arg :=
   { name, type, default := default }
@@ -238,14 +245,7 @@ info: procedure f() returns(result:UserDefined(Bar))
     (identType (PythonIdent.mk "foo" "Bar"))]
 
 /--
-info: pySpecToLaurel.emptyType: Empty type (no atoms) encountered in Laurel conversion
--/
-#guard_msgs in
-#eval runTestWarningKinds
-  #[mkFuncSig "f" { atoms := #[], loc := default }]
-
-/--
-info: pySpecToLaurel.unsupportedUnion: Union type (builtins.str | builtins.int) not yet supported in Laurel
+info: pySpecToLaurel.unsupportedUnion: Union type (builtins.int | builtins.str) not yet supported in Laurel
 -/
 #guard_msgs in
 #eval runTestWarningKinds
@@ -472,7 +472,7 @@ body contains FieldSelect: false
   let strTy := identType .builtinsStr
   let dictTy := identType .typingDict
   -- kwargs must be a TypedDict so expandKwargsArgs can expand it
-  let kwargsTy := SpecType.ofAtom loc (.typedDict #["Outer"] #[dictTy] #[true])
+  let kwargsTy := SpecType.typedDict loc #["Outer"] #[dictTy] #[true]
   let result := signaturesToLaurel "<test>" #[
     .functionDecl {
       loc := loc, nameLoc := loc, name := "f"
@@ -760,8 +760,7 @@ private def translatePrecond (preconditions : Array Assertion)
 -- not via containsKey on kwargs: `!` prefix syntax
 #eval do
   let strTy := identType .builtinsStr
-  let kwargsTy := SpecType.ofAtom loc
-    (.typedDict #["key"] #[strTy] #[false])
+  let kwargsTy := SpecType.typedDict loc #["key"] #[strTy] #[false]
   let result := signaturesToLaurel "<test>" #[
     .functionDecl {
       loc := loc, nameLoc := loc, name := "f"

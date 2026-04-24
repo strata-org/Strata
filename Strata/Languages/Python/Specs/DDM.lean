@@ -223,10 +223,10 @@ private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
     .typeUnion d.loc ⟨.none, d.atoms.map (·.toDDM)⟩
 termination_by sizeOf d
 decreasing_by
-  all_goals {
-    cases d
-    decreasing_tactic
-  }
+  · have mem : d.atoms[0] ∈ d.atoms := by grind
+    exact SpecType.sizeOf_atom_lt_of_mem mem
+  · rename_i a mem
+    exact SpecType.sizeOf_atom_lt_of_mem mem
 
 end
 
@@ -341,13 +341,13 @@ private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType
       .ident loc pyIdent a
     else
       panic! "Bad identifier"
-  | .typeIntLiteral loc i => .ofAtom loc <| .intLiteral i.ofDDM
-  | .typeStringLiteral loc ⟨_, s⟩ => .ofAtom loc <| .stringLiteral s
+  | .typeIntLiteral loc i => .intLiteral loc i.ofDDM
+  | .typeStringLiteral loc ⟨_, s⟩ => .stringLiteral loc s
   | .typeTypedDict loc ⟨_, fields⟩ =>
     let names := fields.map fun (.mkDictFieldDecl _ ⟨_, name⟩ _ _) => name
     let types := fields.attach.map fun ⟨.mkDictFieldDecl _ _ tp _, mem⟩ => tp.fromDDM
     let required := fields.map fun (.mkDictFieldDecl _ _ _ ⟨_, r⟩) => r
-    .ofAtom loc <| .typedDict names types required
+    .typedDict loc names types required
   | .typeUnion loc ⟨_, args⟩ =>
     if p : args.size > 0 then
       args.attach.foldl (init := args[0].fromDDM) (start := 1)

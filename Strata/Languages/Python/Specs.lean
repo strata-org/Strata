@@ -415,7 +415,7 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
   | .typeValue itp =>
     pure itp
   | .noneConst =>
-    return .ofAtom loc .noneType
+    return .noneType loc
   | .requiredType tp => return tp
   | .notRequiredType tp => return tp
   | .stringConst loc val =>
@@ -427,7 +427,7 @@ def valueAsType (loc : SourceRange) (v : SpecValue) : PySpecM SpecType := do
       recordTypeRef loc val
       let mod := toString (← read).currentModule
       let pyIdent : PythonIdent := { pythonModule := mod, name := val }
-      return .ofAtom loc (.ident pyIdent #[])
+      return .ident loc pyIdent
   | _ =>
     specError loc s!"Expected type instead of {repr v}."
     return default
@@ -463,16 +463,16 @@ def literalTranslator : TypeTranslator where
       |  arg => #[arg]
     let .isTrue _ := decideProp (args.size > 0)
       | specError loc s!"Union expects at least one argument."; return default
-    let trans (v : SpecValue) : PySpecM SpecAtomType := do
+    let trans (v : SpecValue) : PySpecM SpecType := do
           match v with
           | .intConst _ n =>
-            pure <| .intLiteral n
+            pure <| .intLiteral loc n
           | .stringConst _ s =>
-            pure <| .stringLiteral s
+            pure <| .stringLiteral loc s
           | _ =>
             specError loc s!"Unsupported literal value {repr v}."
             pure default
-    return .ofArray loc (← args.mapM trans)
+    return .unionArray loc (← args.mapM trans)
 
 def metadataProcessor : MetadataType → TypeTranslator
 | .typingDict => fixedTranslator .typingDict 2
@@ -512,7 +512,7 @@ def translateCall (loc : SourceRange) (func : SpecValue)
           -- Bare type (no Required/NotRequired wrapper) — treat as required
           fieldTypes := fieldTypes.push (← valueAsType loc v)
           fieldRequired := fieldRequired.push true
-      return .typeValue <| .ofAtom loc <| .typedDict fields fieldTypes fieldRequired
+      return .typeValue <| .typedDict loc fields fieldTypes fieldRequired
     else
       let .isTrue kwargsSizep := decideProp (kwargs.size = 1)
         | specError loc "TypedDict expects 0 or 1 keywords"; return default
@@ -523,7 +523,7 @@ def translateCall (loc : SourceRange) (func : SpecValue)
         | specError loc "TypedDict expects total bool"; return default
       let values ← fieldsPairs |>.mapM fun (_name, v) => valueAsType loc v
       let fieldRequired := values.map fun _ => total
-      return .typeValue <| .ofAtom loc <| .typedDict fields values fieldRequired
+      return .typeValue <| .typedDict loc fields values fieldRequired
   | _ =>
     specError loc s!"Unknown call {repr func}."
     return default

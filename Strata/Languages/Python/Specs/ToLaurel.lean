@@ -179,10 +179,10 @@ def specTypeToString (t : SpecType) : String :=
     String.intercalate " | " strs.toList
 termination_by sizeOf t
 decreasing_by
-  · cases t
-    decreasing_tactic
-  · cases t
-    decreasing_tactic
+  · have mem : t.atoms[0] ∈ t.atoms := by grind
+    exact SpecType.sizeOf_atom_lt_of_mem mem
+  · rename_i a mem
+    exact SpecType.sizeOf_atom_lt_of_mem mem
 
 end
 
@@ -280,9 +280,6 @@ private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
 /-- Convert a SpecType to a Laurel HighTypeMd. -/
 def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
   match ty.atoms.size with
-  | 0 =>
-    reportError .emptyType default "Empty type (no atoms) encountered in Laurel conversion"
-    return tyString
   | _ =>
     -- Check for union types
     if ty.atoms.size > 1 then
