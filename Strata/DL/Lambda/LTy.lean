@@ -39,7 +39,7 @@ inductive LMonoTy : Type where
   /-- A bit vector type. This is a special case so that it can be parameterized
   by a size. -/
   | bitvec (size : Nat)
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, Hashable
 
 @[expose] abbrev LMonoTys := List LMonoTy
 

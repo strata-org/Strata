@@ -65,11 +65,11 @@ where
     | .app _ fn arg => collectAppArgs fn ++ collectSubexprs arg
     | _ => []
 
-/-- Hash an optional type annotation by its string representation. -/
+/-- Hash an optional type annotation. -/
 private def hashOptType (ty : Option LMonoTy) : UInt64 :=
   match ty with
   | none => 0
-  | some t => hash (toString t)
+  | some t => hash t
 
 /-- Hash an expression structurally, including type annotations but ignoring
     metadata, for use in HashMap-based ANF encoding. -/
