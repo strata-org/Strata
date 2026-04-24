@@ -83,66 +83,66 @@ VCs:
 Label: c_0_eq_a
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-$__c2[0] == $__a0
+c@1[0] == a@1
 
 Label: c_1_eq_a
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-($__c2[1:=$__a0])[1] == $__a0
+(c@1[1:=a@1])[1] == a@1
 
 Label: a0eq0
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-$__a0[0] == 0
+a@1[0] == 0
 
 Label: a1eq1
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-($__a0[1:=1])[1] == 1
+(a@1[1:=1])[1] == 1
 
 Label: a0eq1
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-(($__a0[1:=1])[0:=1])[0] == 1
+((a@1[1:=1])[0:=1])[0] == 1
 
 Label: a0neq2
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-!((($__a0[1:=1])[0:=1])[0] == 2)
+!(((a@1[1:=1])[0:=1])[0] == 2)
 
 Label: bTrueEqTrue
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-($__b1[true:=-1])[true] == -1
+(b@1[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-1])[true])
+((a@1[1:=1])[0:=1])[1] == -((b@1[true:=-1])[true])
 
 ---
 info:
@@ -189,66 +189,66 @@ VCs:
 Label: c_0_eq_a
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-$__c2[0] == $__a0
+c@1[0] == a@1
 
 Label: c_1_eq_a
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-($__c2[1:=$__a0])[1] == $__a0
+(c@1[1:=a@1])[1] == a@1
 
 Label: a0eq0
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-$__a0[0] == 0
+a@1[0] == 0
 
 Label: a1eq1
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-($__a0[1:=1])[1] == 1
+(a@1[1:=1])[1] == 1
 
 Label: a0eq1
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-(($__a0[1:=1])[0:=1])[0] == 1
+((a@1[1:=1])[0:=1])[0] == 1
 
 Label: a0neq2
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-!((($__a0[1:=1])[0:=1])[0] == 2)
+!(((a@1[1:=1])[0:=1])[0] == 2)
 
 Label: bTrueEqTrue
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-($__b1[true:=-1])[true] == -1
+(b@1[true:=-1])[true] == -1
 
 Label: mix
 Property: assert
 Assumptions:
-P_requires_0: $__a0[0] == 0
-P_requires_1: $__c2[0] == $__a0
+P_requires_0: a@1[0] == 0
+P_requires_1: c@1[0] == a@1
 Obligation:
-(($__a0[1:=1])[0:=1])[1] == -(($__b1[true:=-1])[true])
+((a@1[1:=1])[0:=1])[1] == -((b@1[true:=-1])[true])
 
 ---
 info:
