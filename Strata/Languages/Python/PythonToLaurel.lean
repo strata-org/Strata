@@ -2212,8 +2212,14 @@ private partial def scanDispatchFields (ctx : TranslationContext)
         let c ← scanDispatchFields ctx orelse.val.toList
         let d ← scanDispatchFields ctx finalbody.val.toList
         pure (a ++ b ++ c ++ d)
-      | .For _ _ _ body _ _ | .While _ _ body _ =>
-        scanDispatchFields ctx body.val.toList
+      | .For _ _ _ body orelse _ =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← scanDispatchFields ctx orelse.val.toList
+        pure (a ++ b)
+      | .While _ _ body orelse =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← scanDispatchFields ctx orelse.val.toList
+        pure (a ++ b)
       | .With _ _ body _ =>
         scanDispatchFields ctx body.val.toList
       | _ => pure []
@@ -2309,9 +2315,8 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
             match dispatchFields[fieldName]? with
             | some existing =>
               if existing != cn then
-                -- Same field assigned different dispatch types in different
-                -- branches — mark as conflicting and remove from dispatch map.
                 conflictingFields := conflictingFields.insert fieldName
+                continue
             | none => pure ()
             dispatchFields := dispatchFields.insert fieldName cn
     -- Remove fields with conflicting types (e.g., different types in if/else branches)
@@ -2566,6 +2571,10 @@ def pythonToLaurel' (info : PreludeInfo)
         functionSignatures := info.functionSignatures ++ allClassFuncDecls
         preludeTypes := info.types,
         importedSymbols := localSymbols,
+        compositeTypeReverse := localSymbols.fold (init := ({}:Std.HashMap String String)) fun m k v =>
+          match v with
+          | .compositeType laurelName => if laurelName != k then m.insert laurelName k else m
+          | _ => m,
         overloadTable := overloadTable,
         classFieldHighType := classFieldHighType,
         userFunctions := userFunctions,
