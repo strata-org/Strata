@@ -126,15 +126,21 @@ private def isPureCommand (kind : SyntaxNodeKind) : Bool :=
   pureCommandPrefixes.any (fun pfx => pfx.isPrefixOf kind) ||
   kind == nullKind
 
+/-- An impure command found during purity checking. -/
+structure ImpureCommand where
+  kind : SyntaxNodeKind
+  line : Nat
+  col  : Nat
+
 /-- Parse a .lean file and check all top-level commands for purity.
-Returns the list of impure command kind names (empty = pure module). -/
+Returns the list of impure commands found (empty = pure module). -/
 def checkFilePurity (contents : String) (fileName : String := "<input>") :
-    IO (List (SyntaxNodeKind × String.Pos.Raw)) := do
+    IO (List ImpureCommand) := do
   let inputCtx := mkInputContext contents fileName
   let (header, parserState, msgs) ← parseHeader inputCtx
   let (env, _msgs) ← Elab.processHeader header {} msgs inputCtx
   let pmctx : ParserModuleContext := { env, options := {} }
-  let mut reasons : List (SyntaxNodeKind × String.Pos.Raw) := []
+  let mut reasons : List ImpureCommand := []
   let mut mps := parserState
   let mut messages := MessageLog.empty
   let mut done := false
@@ -147,7 +153,8 @@ def checkFilePurity (contents : String) (fileName : String := "<input>") :
     else
       let kind := cmd.getKind
       if !isPureCommand kind then
-        reasons := (kind, cmd.getPos?.getD 0) :: reasons
+        let pos := inputCtx.fileMap.toPosition (cmd.getPos?.getD 0)
+        reasons := { kind, line := pos.line, col := pos.column } :: reasons
   return reasons.reverse
 
 /-- Recursively collect all .lean files under a directory. -/
@@ -208,8 +215,8 @@ def purityCheckMain (args : List String) : IO UInt32 := do
       let line := s!"IMPURE: {file}"
       IO.println line
       outputLines := outputLines.push file.toString
-      for (kind, pos) in reasons do
-        IO.println s!"  - {kind} at byte {pos}"
+      for r in reasons do
+        IO.println s!"  - {r.kind} at {r.line}:{r.col}"
       exitCode := 1
   if let some outPath := outputFile then
     IO.FS.writeFile outPath (outputLines.toList.map (· ++ "\n") |>.foldl (· ++ ·) "")
