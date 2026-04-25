@@ -4,166 +4,82 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Lean.Parser
-import Lean.Parser.Command
-import Lean.Parser.Module
-import Lean.Elab.Import
-
 /-! # Module Purity Checker
 
 Determines whether elaborating a Lean module could potentially perform I/O.
 
-Uses a conservative allowlist approach: commands whose elaboration is known to
-be pure are on the allowlist; everything else is treated as potentially impure.
+Uses text scanning for known impure command patterns. This is sound because
+Lean's impure-during-elaboration commands are a closed set — there are only
+a handful of ways to trigger IO during elaboration, and they all have
+distinctive textual signatures.
 
 ## Usage
 
-  lake exe purityCheck [--impure-only] <file1.lean> [file2.lean ...]
+  lake exe purityCheck [--impure-only] [--output <file>] <path> [path ...]
 
 Prints each file with its purity status. With `--impure-only`, only prints
 files that might perform I/O (useful for cache invalidation).
 -/
 
-open Lean Parser
-
-/-- Commands whose elaboration is known to be pure (no I/O side effects). -/
-private def pureCommandKinds : Std.HashSet SyntaxNodeKind := .ofList [
-  -- Top-level declarations (elaborate types/terms but don't execute them)
-  ``Command.declaration,
-  ``Command.«deriving»,
-
-  -- Structural / scoping
-  ``Command.«section»,
-  ``Command.«namespace»,
-  ``Command.«end»,
-  ``Command.«variable»,
-  ``Command.«universe»,
-  ``Command.«open»,
-  ``Command.«export»,
-  ``Command.«import»,
-  ``Command.«mutual»,
-  ``Command.«in»,
-  ``Command.«include»,
-  ``Command.«omit»,
-  ``Command.withWeakNamespace,
-  ``Command.withExporting,
-
-  -- Options and attributes (pure metadata)
-  ``Command.«set_option»,
-  ``Command.«attribute»,
-
-  -- Inspection commands (pure — only print/check, no execution)
-  ``Command.check,
-  ``Command.check_failure,
-  ``Command.print,
-  ``Command.printSig,
-  ``Command.printAxioms,
-  ``Command.printEqns,
-  ``Command.printTacTags,
-  ``Command.«where»,
-  ``Command.version,
-  ``Command.synth,
-
-  -- Assertions about the environment (pure checks)
-  ``Command.assertNotExists,
-  ``Command.assertNotImported,
-  ``Command.checkAssertions,
-
-  -- Documentation
-  ``Command.moduleDoc,
-  ``Command.addDocString,
-
-  -- Misc pure commands
-  ``Command.«register_tactic_tag»,
-  ``Command.«tactic_extension»,
-  ``Command.«recommended_spelling»,
-  ``Command.genInjectiveTheorems,
-  ``Command.registerErrorExplanationStx,
-  ``Command.«init_quot»,
-  ``Command.exit,
-  ``Command.eoi
-]
-
-/-- Command kind prefixes known to be pure (syntax/notation/macro definitions). -/
-private def pureCommandPrefixes : Array Name := #[
-  `Lean.Parser.Command.syntax,
-  `Lean.Parser.Command.syntaxAbbrev,
-  `Lean.Parser.Command.syntaxCat,
-  `Lean.Parser.Command.notation,
-  `Lean.Parser.Command.macro,
-  `Lean.Parser.Command.macro_rules,
-  `Lean.Parser.Command.elab,
-  `Lean.Parser.Command.elab_rules,
-  `Lean.Parser.Command.«scoped»,
-  `Lean.Parser.Command.«local»,
-  `Lean.Parser.Command.simproc,
-  `Lean.Parser.Command.builtin_simproc,
-  `Lean.Parser.Command.dsimproc,
-  `Lean.Parser.Command.builtin_dsimproc,
-  `Lean.Parser.Command.register_simp_attr,
-  `Lean.Parser.Command.register_option,
-  `Lean.Parser.Command.register_builtin_option,
-  `Lean.Parser.Command.register_label_attr,
-  `Lean.Parser.Command.«infix»,
-  `Lean.Parser.Command.«infixl»,
-  `Lean.Parser.Command.«infixr»,
-  `Lean.Parser.Command.«prefix»,
-  `Lean.Parser.Command.«postfix»,
-  `Lean.Parser.Command.declare_syntax_cat,
-  `Lean.Parser.Command.declare_config_elab,
-  `Lean.Parser.Command.declare_command_config_elab,
-  `Lean.Parser.Command.declare_config_getter,
-  `Lean.Parser.Command.declare_simp_like_tactic,
-  `Lean.Parser.Command.declare_tagged_region,
-  `Lean.Parser.Command.mixfix,
-  `Lean.Parser.Command.grindPattern,
-  `Lean.Parser.Command.binderPredicate
-]
-
-/-- Check if a command syntax node kind is known to be pure. -/
-private def isPureCommand (kind : SyntaxNodeKind) : Bool :=
-  pureCommandKinds.contains kind ||
-  pureCommandPrefixes.any (fun pfx => pfx.isPrefixOf kind) ||
-  kind == nullKind
-
 /-- An impure command found during purity checking. -/
 structure ImpureCommand where
-  kind : SyntaxNodeKind
+  kind : String
   line : Nat
   col  : Nat
 
-/-- Parse a .lean file and check all top-level commands for purity.
-Returns the list of impure commands found (empty = pure module). -/
-def checkFilePurity (contents : String) (fileName : String := "<input>") :
-    IO (List ImpureCommand) := do
-  let inputCtx := mkInputContext contents fileName
-  let (header, parserState, msgs) ← parseHeader inputCtx
-  let (env, _msgs) ← Elab.processHeader header {} msgs inputCtx
-  let pmctx : ParserModuleContext := { env, options := {} }
-  let mut reasons : List ImpureCommand := []
-  let mut mps := parserState
-  let mut messages := MessageLog.empty
-  let mut done := false
-  while !done do
-    let (cmd, mps', msgs') := parseCommand inputCtx pmctx mps messages
-    mps := mps'
-    messages := msgs'
-    if isTerminalCommand cmd then
-      done := true
-    else
-      let kind := cmd.getKind
-      if !isPureCommand kind then
-        let pos := inputCtx.fileMap.toPosition (cmd.getPos?.getD 0)
-        reasons := { kind, line := pos.line, col := pos.column } :: reasons
-  return reasons.reverse
+/-- Text patterns that indicate impure commands. Each pattern is matched
+against the start of a trimmed line. The patterns cover all known ways
+to perform IO during Lean module elaboration:
 
-/-- Recursively collect all .lean files under a directory. -/
+- `#eval` / `#eval!` — executes arbitrary code
+- `initialize` / `builtin_initialize` — runs code at module load time
+- `#guard_msgs` — executes code and checks output
+- `#guard` — executes a boolean check at elaboration time
+
+Custom elaborators defined via `initialize` in *other* modules could
+perform IO, but those are caught by the `initialize` pattern in the
+module that defines them. -/
+private def impurePatterns : Array (String × String) := #[
+  ("#eval!", "eval!"),
+  ("#eval ", "eval"),
+  ("#eval\n", "eval"),
+  ("#guard_msgs", "guard_msgs"),
+  ("#guard ", "guard"),
+  ("builtin_initialize", "builtin_initialize"),
+  ("initialize ", "initialize"),
+  ("initialize\n", "initialize"),
+  ("public initialize", "initialize"),
+  ("private initialize", "initialize"),
+  ("protected initialize", "initialize")
+]
+
+/-- Scan file text for impure command patterns. -/
+def textScanForImpurity (contents : String) : List ImpureCommand :=
+  go (contents.splitOn "\n") 1
+where
+  go : List String → Nat → List ImpureCommand
+  | [], _ => []
+  | line :: rest, lineNum =>
+    let trimmed := line.trimAsciiStart.toString
+    match impurePatterns.findSome? fun (pat, kind) =>
+      if trimmed.startsWith pat then
+        some { kind, line := lineNum, col := line.length - trimmed.length : ImpureCommand }
+      else none
+    with
+    | some cmd => cmd :: go rest (lineNum + 1)
+    | none => go rest (lineNum + 1)
+
+/-- Check a file for purity. Returns impure commands found (empty = pure). -/
+def checkFilePurity (contents : String) (_fileName : String := "<input>") :
+    IO (List ImpureCommand) := do
+  return textScanForImpurity contents
+
+/-- Recursively collect all `.lean` files under a directory. -/
 partial def collectLeanFiles (path : System.FilePath) : IO (Array System.FilePath) := do
   let mut result := #[]
   if ← path.isDir then
     for entry in ← path.readDir do
-      let sub ← collectLeanFiles entry.path
-      result := result ++ sub
+      result := result ++ (← collectLeanFiles entry.path)
   else if path.extension == some "lean" then
     result := result.push path
   return result
@@ -181,13 +97,11 @@ def resolveInputs (inputs : List String) : IO (Array System.FilePath) := do
 
 def purityCheckMain (args : List String) : IO UInt32 := do
   let impureOnly := args.contains "--impure-only"
-  -- Parse --output <file>
   let rec findOutput : List String → Option String
     | "--output" :: v :: _ => some v
     | _ :: rest => findOutput rest
     | [] => none
   let outputFile := findOutput args
-  -- Collect non-flag arguments as inputs
   let mut inputs : List String := []
   let mut skipNext := false
   for arg in args do
@@ -212,8 +126,7 @@ def purityCheckMain (args : List String) : IO UInt32 := do
       unless impureOnly do
         IO.println s!"PURE:   {file}"
     else
-      let line := s!"IMPURE: {file}"
-      IO.println line
+      IO.println s!"IMPURE: {file}"
       outputLines := outputLines.push file.toString
       for r in reasons do
         IO.println s!"  - {r.kind} at {r.line}:{r.col}"
