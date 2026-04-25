@@ -43,4 +43,12 @@ name = "DiffTestCore"
 
 [[lean_exe]]
 name = "purityCheck"
-root = "Tools.PurityCheck"
+root = "Tools.PurityCheckMain"
+
+[[lean_lib]]
+name = "Tools"
+globs = ["Tools.+"]
+
+[[lean_exe]]
+name = "skim"
+root = "Scripts.Skim"

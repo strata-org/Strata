@@ -172,7 +172,7 @@ def resolveInputs (inputs : List String) : IO (Array System.FilePath) := do
       files := files.push path
   return files
 
-def main (args : List String) : IO UInt32 := do
+def purityCheckMain (args : List String) : IO UInt32 := do
   let impureOnly := args.contains "--impure-only"
   -- Parse --output <file>
   let rec findOutput : List String → Option String
