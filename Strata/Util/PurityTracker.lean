@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Lean
 
@@ -18,6 +19,8 @@ which survives across the elaboration of a single file.
 -/
 
 open Lean
+
+public section
 
 namespace Strata.PurityTracker
 
@@ -86,12 +89,25 @@ simplification procedures. Pure.
 `Lean.Option.registerOption`, `Lean.Option.registerBuiltinOption`:
 Macros expanding to option registration. Pure.
 
-## NOT on the allowlist (known impure)
-`eval`, `evalBang`: Execute arbitrary code. IMPURE.
-`initialize`: Runs IO at module load. IMPURE.
-`guard_msgs`, `guard`: Execute code and check results. IMPURE.
-`run_cmd`, `run_elab`, `run_meta`: Execute monadic code. IMPURE.
-Any unknown command: Conservatively treated as IMPURE.
+## NOT on the allowlist (known impure or unknown)
+
+Per the purity definition: a command is impure if its elaboration could read
+state not determined by the module's source and its dependencies' content, or
+mutate state beyond stdout/stderr.
+
+`eval`, `evalBang`: Execute arbitrary code that may perform IO. IMPURE.
+`initialize`: Runs an `IO` action at module load. Even though many only
+  create refs or register extensions, we cannot statically distinguish safe
+  from unsafe. IMPURE.
+`guard`: Evaluates an expression at elaboration time. Could depend on
+  external state via `native_decide` or IO-capable code. IMPURE.
+`run_cmd`, `run_elab`, `run_meta`: Execute monadic code with IO access. IMPURE.
+
+`guard_msgs`: Pure by itself — it wraps another command and checks output
+  against source text. The wrapped command is elaborated separately and
+  checked by the linter independently. ON THE ALLOWLIST (see below).
+
+Any unknown/unrecognized command: Conservatively treated as IMPURE.
 -/
 private def pureCommandKinds : Std.HashSet SyntaxNodeKind := .ofList [
   ``Lean.Parser.Command.declaration, ``Lean.Parser.Command.«deriving»,
@@ -183,3 +199,5 @@ def checkFile (contents : String) (fileName : String := "<input>") : IO (Array S
   getResults
 
 end Strata.PurityTracker
+
+end -- public section

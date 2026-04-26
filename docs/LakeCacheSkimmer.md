@@ -7,15 +7,67 @@ elaboration depends on external state (file system, SMT solvers, network, etc.),
 the cached result may be stale — but Lake has no way to know this, since it only
 tracks source file changes and dependency graphs.
 
-We need a tool that identifies modules whose elaboration *might* perform IO and
-invalidates their cached build artifacts, forcing `lake build` to re-elaborate
-them.
+We need a tool that identifies modules whose elaboration *might* depend on
+external state and invalidates their cached build artifacts, forcing `lake build`
+to re-elaborate them.
+
+## Definition of Purity
+
+A Lean module is **pure** if replaying its build trace produces exactly the same
+observable behavior, given that:
+
+1. The module's source content has not changed, and
+2. The content of all of its transitive dependencies has not changed.
+
+Equivalently, a module is **impure** if its elaboration:
+
+- **Reads** any state not determined by (1) and (2) above — e.g., file system
+  contents outside the dependency graph, environment variables, network state,
+  timestamps, random values, or
+- **Mutates** any state other than stdout and stderr output (which is captured
+  by the build trace).
+
+Note that stdout/stderr output during elaboration (e.g., from `#check`, `#print`,
+`logInfo`) is NOT considered a side effect for our purposes, because Lake's build
+trace already captures it. The concern is specifically about elaboration behavior
+that depends on or affects state *outside* the Lean build system's tracking.
+
+### Implications
+
+Under this definition:
+
+- **`initialize`** is impure: it runs an arbitrary `IO` action that *could* read
+  external state, even though many `initialize` blocks only create `IO.Ref`s or
+  register extensions (which is deterministic). We cannot statically distinguish
+  safe `initialize` from unsafe ones, so all are conservatively impure.
+
+- **`#eval`** is impure: it executes arbitrary code that could perform IO.
+
+- **`#guard_msgs`** is pure *by itself*: it wraps another command and checks its
+  output against expected text from the source. The wrapped command is elaborated
+  separately and will be checked by the linter independently. If the wrapped
+  command is `#eval`, the linter catches `#eval`, not `#guard_msgs`.
+
+- **`#guard`** is impure: it evaluates an expression at elaboration time. The
+  expression could in principle depend on external state via `native_decide` or
+  similar, though in practice it rarely does. Conservatively impure.
+
+- **`run_cmd` / `run_elab` / `run_meta`** are impure: they execute monadic code
+  that has access to `IO`.
+
+- **`declaration`** (`def`, `theorem`, etc.) is pure: elaboration only reads the
+  environment (determined by deps) and the source text. Even `native_decide` in
+  proofs is deterministic given the same source and deps.
+
+- **Inspection commands** (`#check`, `#print`, etc.) are pure: they only read
+  the environment and write to stdout/stderr (captured by build trace).
 
 ## Design Goals
 
 1. **Soundness**: If we identify a module as pure, it must be impossible for its
-   elaboration to have performed any IO. False negatives (missing an impure module)
-   cause stale cache bugs that are extremely hard to diagnose.
+   elaboration to have read external state or mutated state beyond stdout/stderr.
+   False negatives (missing an impure module) cause stale cache bugs that are
+   extremely hard to diagnose.
 
 2. **Precision**: Minimize false positives. If we flag too many modules as impure,
    every build re-elaborates them unnecessarily, defeating the purpose of caching.
