@@ -110,13 +110,28 @@ that writes to this extension whenever an impure command is elaborated. After
 
 ## Recommendation
 
-**Option D** is the recommended approach. It achieves both design goals:
+**Option D needs modification.** The linter API cannot write to persistent
+environment extensions (`withoutModifyingEnv`). Two viable alternatives:
 
-1. **Soundness**: The hook runs inside the real elaboration loop, so it sees
-   exactly what Lean sees. If a command performs IO, the hook records it.
+### Option D' — Custom command elaborator wrappers
 
-2. **Precision**: Only modules that actually elaborate impure commands are
-   flagged. No false positives from text patterns in comments or custom syntax.
+Register `@[command_elab]` handlers for each known impure command kind
+(`eval`, `initialize`, `guard_msgs`, etc.) that write to the persistent
+extension before delegating to the real elaborator. Since these run during
+normal elaboration (not as linters), environment modifications persist.
+
+### Option D'' — Linter + IO.Ref side channel
+
+Use the linter API to detect impure commands, but write to a global `IO.Ref`
+instead of the environment. After `Elab.process` completes, read the ref.
+This works when re-elaborating files post-build but does NOT persist in
+`.olean` files — the skimmer must re-elaborate each file.
+
+### Current pragmatic approach
+
+Until a persistent mechanism is implemented, the hybrid approach (`.olean`
+inspection for `[init]` attributes + text scan for `#eval`/`#guard_msgs`)
+provides a reasonable approximation with known limitations.
 
 ### Implementation Sketch
 
@@ -167,44 +182,37 @@ but may have false positives from text patterns in non-code contexts.
 
 ## Open Questions
 
-### 1. Is there a `CommandElab` hook API? — RESOLVED ✅
+### 1. Is there a `CommandElab` hook API? — RESOLVED ⚠️
 
-**Yes.** Lean provides the `Linter` API in `Lean.Elab.Command`:
+**Partially.** Lean provides the `Linter` API (`Lean.addLinter`) which registers
+a callback that runs after every top-level command elaboration. The linter
+receives the full command `Syntax` and runs in `CommandElabM`.
 
-```lean
-structure Linter where
-  run : Syntax → CommandElabM Unit
-  name : Name
-```
+**However**, linters run inside `withoutModifyingEnv` (see `runLintersAsync` in
+`Lean/Elab/Command.lean:334`), which means **environment modifications are
+discarded**. This is by design — linters are intended for reporting diagnostics,
+not for modifying the environment.
 
-`Lean.addLinter` registers a linter that runs **after every top-level command
-elaboration** (called from `elabCommandTopLevel` → `runLintersAsync`). The
-linter receives the full command `Syntax` and runs in `CommandElabM`, which
-means it can:
+This means:
+- ✅ A linter CAN inspect each command's syntax kind
+- ✅ A linter CAN produce messages/warnings
+- ❌ A linter CANNOT write to a persistent environment extension
+- ❌ A linter CANNOT modify the `.olean` output
 
-- Inspect `stx.getKind` to identify the command type
-- Call `modifyEnv` to write to a persistent environment extension
-- Access the full elaboration state
+**Consequence**: Option D as originally sketched (linter + persistent extension)
+does not work. The linter can see the commands but cannot persist its findings
+in the `.olean`.
 
-This is the exact mechanism needed for Option D. The linter sees every command
-as Lean sees it, after macro expansion, with the correct syntax kind. It runs
-during normal `lake build` with no special instrumentation needed — just
-`import` the module that registers the linter.
-
-**Registration** is via `initialize`:
-
-```lean
-initialize addLinter {
-  name := `purityTracker
-  run := fun stx => do
-    let kind := stx.getKind
-    if !isPureCommand kind then
-      modifyEnv fun env => purityExt.addEntry env kind
-}
-```
-
-This resolves the feasibility question for Options A and D. Option D is
-confirmed as the recommended approach.
+**Alternative mechanisms to investigate**:
+- **Custom `@[command_elab]` wrappers**: Register elaborators for known impure
+  command kinds that record to the extension before delegating to the real
+  elaborator. This runs *during* elaboration (not as a linter), so environment
+  modifications persist.
+- **`IO.Ref` side channel**: The linter writes to a global `IO.Ref` instead of
+  the environment. Post-elaboration, the skimmer reads the ref. This works for
+  `Elab.process` but not for `.olean`-based post-build analysis.
+- **Lean plugin / Lake hook**: Use Lake's plugin system to inject instrumentation
+  into the build pipeline.
 
 2. **What is the right set of impure command kinds?** The table above covers
    known built-in commands. We should audit Lean's source for any others and
