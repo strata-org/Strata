@@ -150,6 +150,10 @@ def checkFilePurity (contents : String) (fileName : String := "<input>") :
     messages := msgs'
     if isTerminalCommand cmd then
       done := true
+    else if cmd.hasMissing then
+      let pos := inputCtx.fileMap.toPosition (cmd.getPos?.getD mps.pos)
+      reasons := { kind := `parseError, line := pos.line, col := pos.column } :: reasons
+      done := true
     else
       let kind := cmd.getKind
       if !isPureCommand kind then
