@@ -120,28 +120,31 @@ that writes to this extension whenever an impure command is elaborated. After
 
 ### Implementation Sketch
 
-```
--- PurityHook.lean (imported by all modules)
+```lean
+-- PurityHook.lean (imported transitively by all modules)
 
-initialize purityExt : SimplePersistentEnvExtension Name NameSet ←
+/-- Persistent extension recording impure command kinds used in this module. -/
+initialize purityExt : SimplePersistentEnvExtension SyntaxNodeKind (Array SyntaxNodeKind) ←
   registerSimplePersistentEnvExtension {
-    addEntryFn := fun s n => s.insert n
-    addImportedFn := fun _ => pure {}  -- only track current module
+    addEntryFn := fun s n => s.push n
+    addImportedFn := fun _ => pure #[]  -- only track current module's commands
   }
 
-initialize
-  -- Register a command elaboration hook
-  Lean.Elab.Command.modifyCommandElabHookRef fun hook stx => do
+/-- Register a linter that records impure commands into the environment. -/
+initialize addLinter {
+  name := `purityTracker
+  run := fun stx => do
     let kind := stx.getKind
-    if impureKinds.contains kind then
+    if !isPureCommand kind then
       modifyEnv fun env => purityExt.addEntry env kind
-    hook stx
+}
 ```
 
 Post-build, the skimmer loads each `.olean` and checks:
 
-```
-let entries := purityExt.getState env
+```lean
+let env ← importModules #[{ module := modName }] {}
+let entries := purityExt.getState env  -- only current module's entries
 if entries.isEmpty then PURE else IMPURE
 ```
 
@@ -164,10 +167,44 @@ but may have false positives from text patterns in non-code contexts.
 
 ## Open Questions
 
-1. **Is there a `CommandElab` hook API?** The sketch above assumes we can
-   register a callback that runs before every command elaboration. If this API
-   doesn't exist, we may need to use a different mechanism (e.g., a custom
-   `elabCommand` wrapper via macro).
+### 1. Is there a `CommandElab` hook API? — RESOLVED ✅
+
+**Yes.** Lean provides the `Linter` API in `Lean.Elab.Command`:
+
+```lean
+structure Linter where
+  run : Syntax → CommandElabM Unit
+  name : Name
+```
+
+`Lean.addLinter` registers a linter that runs **after every top-level command
+elaboration** (called from `elabCommandTopLevel` → `runLintersAsync`). The
+linter receives the full command `Syntax` and runs in `CommandElabM`, which
+means it can:
+
+- Inspect `stx.getKind` to identify the command type
+- Call `modifyEnv` to write to a persistent environment extension
+- Access the full elaboration state
+
+This is the exact mechanism needed for Option D. The linter sees every command
+as Lean sees it, after macro expansion, with the correct syntax kind. It runs
+during normal `lake build` with no special instrumentation needed — just
+`import` the module that registers the linter.
+
+**Registration** is via `initialize`:
+
+```lean
+initialize addLinter {
+  name := `purityTracker
+  run := fun stx => do
+    let kind := stx.getKind
+    if !isPureCommand kind then
+      modifyEnv fun env => purityExt.addEntry env kind
+}
+```
+
+This resolves the feasibility question for Options A and D. Option D is
+confirmed as the recommended approach.
 
 2. **What is the right set of impure command kinds?** The table above covers
    known built-in commands. We should audit Lean's source for any others and
