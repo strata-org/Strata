@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: ./run_py_interpret.sh [--filter <pattern>] [--fuel <n>] [--verbose] [--update]
+# Usage: ./run_py_interpret.sh [--filter <pattern>] [--fuel <n>] [--keep-all-files <dir>] [--verbose] [--update]
 #
 # Runs pyInterpret on all test_*.py files and reports pass/fail.
 #
@@ -27,6 +27,7 @@ passed=0
 errors=0
 skipped=0
 filter=""
+keepAllFiles=""
 fuel=""
 verbose=0
 update=0
@@ -34,6 +35,7 @@ update=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --filter) filter="$2"; shift ;;
+        --keep-all-files) keepAllFiles="--keep-all-files $2"; shift ;;
         --fuel) fuel="--fuel $2"; shift ;;
         --verbose) verbose=1 ;;
         --update) update=1 ;;
@@ -77,7 +79,7 @@ for test_file in "$TESTS_DIR"/test_*.py; do
 
     # Run interpreter
     rel_ion="StrataTest/Languages/Python/tests/${base_name}.python.st.ion"
-    output=$(cd "$PROJECT_ROOT" && ./.lake/build/bin/strata pyInterpret $fuel \
+    output=$(cd "$PROJECT_ROOT" && ./.lake/build/bin/strata pyInterpret $fuel $keepAllFiles \
         "$rel_ion" 2>&1)
     exit_code=$?
 
