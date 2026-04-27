@@ -6,314 +6,44 @@ on:
   push:
     branches: [main]
 
-env:
-  SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
-
 jobs:
-  get-branch-name:
+  strata-benchmarks:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for OIDC
+      contents: read
     steps:
-      - name: Get branch name
-        shell: bash
-        # The workflow is triggered by pull_request so we use `GITHUB_BASE_REF`
-        run: echo "branch_name=${GITHUB_BASE_REF}" >> $GITHUB_OUTPUT
-        id: get_branch_name
-    outputs:
-      branch_name: ${{ steps.get_branch_name.outputs.branch_name }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::636399217481:role/github-actions-codebuild-role
+          aws-region: us-east-1
 
-  build_and_test_lean:
-    name: Build and test Lean
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain:
-          - stable
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install cvc5
+      - name: Trigger CodeBuild and wait
         shell: bash
         run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-              unzip cvc5-Linux-${ARCH_NAME}-static.zip
-              chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
-              echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
-      - name: Install z3
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
-                ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
-                ARCHIVE_NAME="z3-4.15.2-arm64-win"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              unzip "${ARCHIVE_NAME}.zip"
-              chmod +x "${ARCHIVE_NAME}/bin/z3"
-              echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
-      - name: Install .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '8.0.x'
-      - name: Restore lake cache
-        # Only use the caches on PRs because there is a risk of stale results:
-        # https://github.com/strata-org/Strata/issues/952
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
-      - name: Download ion-java jar for Java codegen test
-        run: wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
-      - name: Build and test Strata
-        uses: leanprover/lean-action@v1
-        with:
-          use-github-cache: false
-          test: false
-      - name: Run tests (excluding Python)
-        run: lake test -- --exclude Languages.Python
-      - name: Save lake cache
-        uses: actions/cache/save@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      - name: Verify Java testdata is up to date
-        run: |
-          StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTestExtra/DDM/Integration/Java/testdata/
-      - name: Verify generated editor syntax files are up to date
-        run: |
-          lake env lean --run editors/GenSyntax.lean all
-          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
-      - name: Build and run strata verify
-        run: lake exe strata verify Examples/SimpleProc.core.st
-      - name: Build BoogieToStrata
-        run: dotnet build -warnaserror ${SOLUTION}
-      - name: Test BoogieToStrata
-        run: dotnet test ${SOLUTION}
-      - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh
-      - name: Validate examples against expected output
-        working-directory: Examples
-        shell: bash
-        run: ./run_examples.sh
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.14'
-      - name: Build using pip
-        run: pip install .
-        working-directory: Tools/Python
-      - name: Run pyAnalyze SARIF tests
-        working-directory: StrataTest/Languages/Python
-        shell: bash
-        run: python run_py_analyze_sarif.py --laurel
-      - name: Run pyAnalyze golden-file tests
-        working-directory: StrataTest/Languages/Python
-        shell: bash
-        run: ./run_py_analyze.sh
-      - name: Run regex differential tests
-        working-directory: StrataTest/Languages/Python/Regex
-        run: python diff_test.py
+          BUILD_ID=$(aws codebuild start-build \
+            --project-name strata-benchmarks \
+            --query 'build.id' --output text \
+            --region us-east-1)
+          echo "Build started: $BUILD_ID"
 
-  check_pending_python:
-    needs: build_and_test_lean
-    name: Check pending Python tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.14'
-    - name: Build using pip
-      run: pip install .
-      working-directory: Tools/Python
-    - name: Restore Lean build cache
-      # The cache is safe to use here because we just saved it for this exact SHA
-      # in the build_and_test_lean job
-      # https://github.com/strata-org/Strata/issues/952
-      uses: actions/cache/restore@v5
-      with:
-        path: .lake
-        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-        fail-on-cache-miss: true
-    - name: Install Lean
-      uses: leanprover/lean-action@v1
-      with:
-        auto-config: false
-        build: false
-    - name: Install cvc5
-      shell: bash
-      run: |
-            ARCH=$(uname -m)
-            if [ "$ARCH" = "x86_64" ]; then ARCH_NAME="x86_64"
-            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then ARCH_NAME="arm64"
-            else echo "Unsupported architecture: $ARCH"; exit 1; fi
-            wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-            unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
-            sudo cp cvc5-Linux-${ARCH_NAME}-static/bin/cvc5 /usr/local/bin/
-    - name: Check pending tests for newly passing
-      working-directory: StrataTest/Languages/Python
-      shell: bash
-      run: ./run_py_analyze.sh --check-pending
+          LOG_KEY="logs/${BUILD_ID}.log"
+          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
 
-  lint_checks:
-    name: Run lint checks
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      matrix:
-        toolchain:
-          - stable
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Check copyright headers
-        run: python3 .github/scripts/check_copyright_headers.py .
-        shell: bash
-      - name: Check for trailing whitespace
-        run: .github/scripts/lintWhitespace.sh
-      - name: Check for import Lean
-        run: .github/scripts/checkLeanImport.sh
-      - name: Check Lean version consistncy
-        run: .github/scripts/check_lean_consistency.sh
-      - name: Check for new panic! usage
-        run: .github/scripts/checkNoPanic.sh "origin/${{ github.base_ref || 'main' }}"
+          while true; do
+            STATUS=$(aws codebuild batch-get-builds \
+              --ids "$BUILD_ID" \
+              --query 'builds[0].buildStatus' --output text \
+              --region us-east-1)
+            echo "Current status: [$STATUS]"
+            case "$STATUS" in
+              SUCCEEDED) break;;
+              FAILED|FAULT|TIMED_OUT|STOPPED) echo "Build failed: $STATUS" ; break ;;
+              IN_PROGRESS) sleep 30 ;;
+              *) echo "Unexpected status: $STATUS"; sleep 10 ; break ;;
+            esac
+          done
 
-  build_doc:
-    name: Build documentation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build API documentation package
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: 'docs/api'
-      - name: Restore lake cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            .lake
-            docs/verso/.lake
-          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
-      - name: Build documentation package
-        uses: leanprover/lean-action@v1
-        with:
-          build-args: '--wfail'
-          lake-package-directory: 'docs/verso'
-          use-github-cache: false
-      - name: Build documentation
-        run: ./generate.sh
-        working-directory: docs/verso
-      - name: Save lake cache
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            .lake
-            docs/verso/.lake
-          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      - name: Check for broken links
-        uses: lycheeverse/lychee-action@v2
-        with:
-          args: --offline --no-progress --exclude-path '.*/find/.*' docs/verso/_out/
-          fail: true
-
-  build_python:
-    needs: build_and_test_lean
-    name: Build and test Python
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      matrix:
-        python_version: [3.11, 3.12, 3.13, 3.14]
-    steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python_version }}
-    - name: Build using pip
-      run: pip install .
-      working-directory: Tools/Python
-    - name: Restore Lean build cache
-      # The cache is safe to use here because we just saved it for this exact SHA
-      # in the build_and_test_lean job from ci.yml
-      # https://github.com/strata-org/Strata/issues/952
-      uses: actions/cache/restore@v5
-      with:
-        path: .lake
-        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-        fail-on-cache-miss: true
-    - name: Install Lean (for lake env)
-      uses: leanprover/lean-action@v1
-      with:
-        auto-config: false
-        build: false
-        use-github-cache: false
-    - name: Install cvc5
-      shell: bash
-      run: |
-            ARCH=$(uname -m)
-            if [ "$ARCH" = "x86_64" ]; then
-              ARCH_NAME="x86_64"
-            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-              ARCH_NAME="arm64"
-            else
-              echo "Unsupported architecture: $ARCH"
-              exit 1
-            fi
-            wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-            unzip cvc5-Linux-${ARCH_NAME}-static.zip
-            chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
-            sudo cp cvc5-Linux-${ARCH_NAME}-static/bin/cvc5 /usr/local/bin/
-    - name: Install z3
-      shell: bash
-      run: |
-            pip install z3-solver
-            Z3_PATH=$(python -c "import z3; import os; print(os.path.join(os.path.dirname(z3.__file__), 'lib', 'z3'))")
-            sudo cp "$Z3_PATH" /usr/local/bin/z3 || true
-            # Fallback: install from GitHub release
-            if ! command -v z3 &> /dev/null; then
-              wget https://github.com/Z3Prover/z3/releases/download/z3-4.13.4/z3-4.13.4-x64-glibc-2.35.zip
-              unzip z3-4.13.4-x64-glibc-2.35.zip
-              sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
-            fi
-    - name: Run PySpec and dispatch tests
-      run: PYTHON=python lake test -- Languages.Python
-    - name: Run test script
-      run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
-      working-directory: Tools/Python
-
-  cbmc:
-    needs: build_and_test_lean
-    permissions:
-      contents: read
-    uses: ./.github/workflows/cbmc.yml
+          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs?prefix=${LOG_KEY}"
+          [ "$STATUS" = "SUCCEEDED" ] && exit 0 || exit 1
