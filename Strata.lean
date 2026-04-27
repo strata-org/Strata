@@ -18,7 +18,6 @@ import Strata.DL.Imperative.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
-import Strata.Util.PurityTracker
 import Strata.Util.Sarif
 
 /- Strata Languages -/

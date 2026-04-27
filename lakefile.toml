@@ -45,15 +45,3 @@ root = "Scripts.ImportStats"
 
 [[lean_exe]]
 name = "DiffTestCore"
-
-[[lean_exe]]
-name = "purityCheck"
-root = "Tools.PurityCheckMain"
-
-[[lean_lib]]
-name = "Tools"
-globs = ["Tools.+"]
-
-[[lean_exe]]
-name = "skim"
-root = "Scripts.Skim"
