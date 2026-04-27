@@ -211,7 +211,7 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
 
 // Lambda abstraction
 fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
-  "lambda " d " :: " body:3;
+  "fun " d " => " body:3;
 
 // Application of an expression to an argument
 fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =>

@@ -28,7 +28,7 @@ def lambdaIdentityPgm :=
 program Core;
 
 function intID() : int -> int {
-  lambda x : int :: x
+  fun x : int => x
 }
 #end
 
@@ -39,7 +39,7 @@ info: [Strata.Core] Type checking succeeded.
 info: ok: program Core;
 
 function intID () : int -> int {
-  lambda x : int :: x
+  fun x : int => x
 }
 -/
 #guard_msgs in
@@ -50,7 +50,7 @@ def lambdaNestedPgm :=
 program Core;
 
 function constFn() : int -> int -> int {
-  lambda x : int :: lambda y : int :: x
+  fun x : int => fun y : int => x
 }
 #end
 
@@ -61,7 +61,7 @@ info: [Strata.Core] Type checking succeeded.
 info: ok: program Core;
 
 function constFn () : int -> int -> int {
-  lambda x : int :: lambda y : int :: x
+  fun x : int => fun y : int => x
 }
 -/
 #guard_msgs in
@@ -83,7 +83,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(lambda x : int :: x + 1, 5);
+  result := apply(fun x : int => x + 1, 5);
 };
 #end
 
@@ -100,7 +100,7 @@ procedure TestLambdaApply (out result : int)
 spec {
   ensures [TestLambdaApply_ensures_0]: result == 6;
   } {
-  result := apply(lambda x : int :: x + 1, 5);
+  result := apply(fun x : int => x + 1, 5);
 };
 -/
 #guard_msgs in
@@ -131,7 +131,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(lambda x : int :: x + 1, 5);
+  result := apply(fun x : int => x + 1, 5);
 };
 #end
 
@@ -152,7 +152,7 @@ program Core;
 
 function mkFn(i: int) : int
 {
-  (lambda x : int :: x + 1)(i)
+  (fun x : int => x + 1)(i)
 }
 
 procedure Test(out result : int)
@@ -189,7 +189,7 @@ spec {
   ensures result == 3;
 }
 {
-  result := applyN(Succ(Succ(Succ(Zero()))), lambda x : int :: x + 1, 0);
+  result := applyN(Succ(Succ(Succ(Zero()))), fun x : int => x + 1, 0);
 };
 #end
 
@@ -214,8 +214,8 @@ datatype MyNat { Zero(), Succ(pred: MyNat) };
 
 rec function foo(@[cases] n : MyNat) : int -> int
 {
-  if MyNat..isZero(n) then lambda x : int :: x
-  else lambda x : int :: x + 1
+  if MyNat..isZero(n) then fun x : int => x
+  else fun x : int => x + 1
 };
 
 procedure Test(out result : int)
@@ -245,16 +245,16 @@ spec {
   ensures result == true;
 }
 {
-  var y : int -> int := lambda x : int :: x + 1;
+  var y : int -> int := fun x : int => x + 1;
 
-  result := (y == lambda x : int :: 1 + x);
+  result := (y == fun x : int => 1 + x);
 };
 #end
 
 /-- info: Obligation: Test_ensures_0
 Property: assert
 Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode lambda expression to SMT. Lambda abstractions must be eliminated (e.g., by beta-reduction) before SMT encoding.
-Lambda: lambda x : int :: x + 1-/
+Lambda: fun x : int => x + 1-/
 #guard_msgs in
 #eval verify lambdaInAssertPgm (options := .quiet)
 
@@ -268,9 +268,9 @@ spec {
   ensures result == true;
 }
 {
-  var y : int -> int := lambda x : int :: x + 1;
+  var y : int -> int := fun x : int => x + 1;
 
-  result := (y == lambda z : int :: z + 1);
+  result := (y == fun z : int => z + 1);
 };
 #end
 
@@ -297,7 +297,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(lambda x : int :: x + 1, 5);
+  result := apply(fun x : int => x + 1, 5);
 };
 #end
 
@@ -322,7 +322,7 @@ spec {
   ensures result == true;
 }
 {
-  result := compose(lambda x : int :: x >= 0, lambda x : int :: x + 1, -1);
+  result := compose(fun x : int => x >= 0, fun x : int => x + 1, -1);
 };
 
 procedure Test1(out result : bool)
@@ -330,7 +330,7 @@ spec {
   ensures result == false;
 }
 {
-  result := compose(lambda x : int :: x > 0, lambda x : int :: x + 1, -1);
+  result := compose(fun x : int => x > 0, fun x : int => x + 1, -1);
 };
 #end
 
@@ -351,7 +351,7 @@ program Core;
 
 inline function mkIdentity<T>() : T -> T
 {
-  lambda x : T :: x
+  fun x : T => x
 }
 
 inline function apply<T>(f : T -> T, x : T) : T
@@ -390,8 +390,8 @@ spec {
   ensures r1 == 5 && r2 == true;
 }
 {
-  r1 := apply(lambda x : int :: x + 1, 4);
-  r2 := apply(lambda b : bool :: !b, false);
+  r1 := apply(fun x : int => x + 1, 4);
+  r2 := apply(fun b : bool => !b, false);
 };
 #end
 
@@ -423,7 +423,7 @@ spec {
   ensures result == 5;
 }
 {
-  result := apply(lambda n : int :: n + 2, intListLen(Cons(1, Cons(2, Cons(3, Nil())))));
+  result := apply(fun n : int => n + 2, intListLen(Cons(1, Cons(2, Cons(3, Nil())))));
 };
 #end
 
@@ -454,7 +454,7 @@ spec {
   ensures result == 7;
 }
 {
-  result := apply2(lambda x : int, y : int :: x + y, 3, 4);
+  result := apply2(fun x : int, y : int => x + y, 3, 4);
 };
 #end
 
@@ -476,7 +476,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := (lambda x : int :: x + 1)(5);
+  result := (fun x : int => x + 1)(5);
 };
 #end
 
@@ -499,7 +499,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := (Box..val(MkBox(lambda x : int :: x + 1)))(5);
+  result := (Box..val(MkBox(fun x : int => x + 1)))(5);
 };
 #end
 
@@ -523,7 +523,7 @@ inline function apply(f : int -> int, x : int) : int
 
 procedure Test(out result : int)
 spec {
-  ensures (lambda x : int :: x * 2)(result) == 10;
+  ensures (fun x : int => x * 2)(result) == 10;
 }
 {
   result := 5;
@@ -547,7 +547,7 @@ spec {
   ensures result == 7;
 }
 {
-  result := ((lambda x : int :: lambda y : int :: x + y)(3))(4);
+  result := ((fun x : int => fun y : int => x + y)(3))(4);
 };
 #end
 
@@ -573,8 +573,8 @@ spec {
   ensures r1 == 5 && r2 == 6;
 }
 {
-  r1 := apply(if true then lambda x : int :: x else lambda x : int :: x + 1, 5);
-  r2 := apply(if false then lambda x : int :: x else lambda x : int :: x + 1, 5);
+  r1 := apply(if true then fun x : int => x else fun x : int => x + 1, 5);
+  r2 := apply(if false then fun x : int => x else fun x : int => x + 1, 5);
 };
 #end
 
@@ -596,7 +596,7 @@ spec {
 }
 {
   // (λ f . λ x. f x) (λ y. y + 1) 5
-  result := ((lambda f : int -> int, x : int :: (f)(x))(lambda y : int :: y + 1))(5);
+  result := ((fun f : int -> int, x : int => (f)(x))(fun y : int => y + 1))(5);
 };
 #end
 
@@ -625,7 +625,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := applyTransformer(MkTransformer(lambda x : int :: x + 1, 5));
+  result := applyTransformer(MkTransformer(fun x : int => x + 1, 5));
 };
 #end
 
@@ -685,7 +685,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(Box..val(MkBox(lambda x : int :: x + 1)), 5);
+  result := apply(Box..val(MkBox(fun x : int => x + 1)), 5);
 };
 #end
 

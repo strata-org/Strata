@@ -652,7 +652,7 @@ private def lambdaIdentityPgm : Core.Program := { decls := [
 info: program Core;
 
 function intID () : int -> int {
-  lambda __q0 : int :: __q0
+  fun __q0 : int => __q0
 }
 -/
 #guard_msgs in
@@ -669,7 +669,7 @@ private def lambdaNestedPgm : Core.Program := { decls := [
 info: program Core;
 
 function constFn () : int -> int -> int {
-  lambda __q0 : int :: lambda __q1 : int :: __q0
+  fun __q0 : int => fun __q1 : int => __q0
 }
 -/
 #guard_msgs in
@@ -685,7 +685,7 @@ private def lambdaNamedPgm : Core.Program := { decls := [
 info: program Core;
 
 function namedLam () : int -> int {
-  lambda x : int :: x
+  fun x : int => x
 }
 -/
 #guard_msgs in
@@ -702,13 +702,13 @@ private def lambdaAppliedPgm : Core.Program := { decls := [
 info: program Core;
 
 function test () : int {
-  (lambda x : int :: x)(5)
+  (fun x : int => x)(5)
 }
 -/
 #guard_msgs in
 #eval formatCore lambdaAppliedPgm
 
--- Multi-binding lambda (curried): lambda x : int :: lambda y : int :: x + y
+-- Multi-binding lambda (curried): fun x : int => fun y : int => x + y
 private def lambdaMultiBindPgm : Core.Program := { decls := [
   .func { name := "add", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
@@ -721,7 +721,7 @@ private def lambdaMultiBindPgm : Core.Program := { decls := [
 info: program Core;
 
 function add () : int -> int -> int {
-  lambda x : int :: lambda y : int :: x + y
+  fun x : int => fun y : int => x + y
 }
 -/
 #guard_msgs in
@@ -739,7 +739,7 @@ private def lambdaHigherOrderPgm : Core.Program := { decls := [
 /-- info: program Core;
 
 function applyFn () : int -> int -> int -> int {
-  lambda f : int -> int :: lambda x : int :: f(x)
+  fun f : int -> int => fun x : int => f(x)
 }-/
 #guard_msgs in
 #eval formatCore lambdaHigherOrderPgm
