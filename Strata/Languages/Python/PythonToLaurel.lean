@@ -1978,7 +1978,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       (fun arg => getUnionTypeConstraint (paramInputPrefix ++ arg.name) arg.source arg.tys funcDecl.name arg.name)
     let typeConstraintPostcondition :=
       if funcDecl.name.endsWith "@__init__" then [] else
-      match funcDecl.ret.map fun (tys, md) => getReturnTypeEnsure source tys funcDecl.name with
+      match funcDecl.ret.map fun (tys, source) => getReturnTypeEnsure source tys funcDecl.name with
         | some (some constraint) => [constraint]
         | _ => []
 
