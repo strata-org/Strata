@@ -57,7 +57,7 @@ private def fmtStmt (s : Core.Statement) (fvs : Array String := #[]) : String :=
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [u1]: unknownUnary(x);\n\n\n-- Errors encountered during conversion:\nUnsupported construct in handleUnaryOps: unknown operation, rendering as generic call: unknownUnary\nContext: Global scope:\n  freeVars: [x]"
+info: "assert [u1]: unknownUnary(x);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleUnaryOps: unknown operation, rendering as generic call: unknownUnary\nContext: Global scope:\n  freeVars: [x]"
 -/
 #guard_msgs in
 #eval do
@@ -70,7 +70,7 @@ info: "assert [u1]: unknownUnary(x);\n\n\n-- Errors encountered during conversio
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [b1]: re_search_bool(\"^[0-9]+$\", s);\n\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBitvecBinaryOps: unknown operation, rendering as generic call: re_search_bool\nContext: Global scope:\n  freeVars: [s]"
+info: "assert [b1]: re_search_bool(\"^[0-9]+$\", s);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBitvecBinaryOps: unknown operation, rendering as generic call: re_search_bool\nContext: Global scope:\n  freeVars: [s]"
 -/
 #guard_msgs in
 #eval do
@@ -82,7 +82,7 @@ info: "assert [b1]: re_search_bool(\"^[0-9]+$\", s);\n\n\n-- Errors encountered 
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [b2]: customBinOp(x, y);\n\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBitvecBinaryOps: unknown operation, rendering as generic call: customBinOp\nContext: Global scope:\n  freeVars: [x, y]"
+info: "assert [b2]: customBinOp(x, y);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBitvecBinaryOps: unknown operation, rendering as generic call: customBinOp\nContext: Global scope:\n  freeVars: [x, y]"
 -/
 #guard_msgs in
 #eval do
@@ -95,7 +95,7 @@ info: "assert [b2]: customBinOp(x, y);\n\n\n-- Errors encountered during convers
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [t1]: ternaryFoo(x, y, z);\n\n\n-- Errors encountered during conversion:\nUnsupported construct in handleTernaryOps: unknown operation, rendering as generic call: ternaryFoo\nContext: Global scope:\n  freeVars: [x, y, z]"
+info: "assert [t1]: ternaryFoo(x, y, z);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleTernaryOps: unknown operation, rendering as generic call: ternaryFoo\nContext: Global scope:\n  freeVars: [x, y, z]"
 -/
 #guard_msgs in
 #eval do
@@ -107,7 +107,7 @@ info: "assert [t1]: ternaryFoo(x, y, z);\n\n\n-- Errors encountered during conve
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [q1]: fourArgFn(a, b, c, d);\n\n\n-- Errors encountered during conversion:\nUnsupported construct in lopToExpr: unknown operation, rendering as generic call: fourArgFn\nContext: Global scope:\n  freeVars: [a, b, c, d]"
+info: "assert [q1]: fourArgFn(a, b, c, d);\n\n-- Errors encountered during conversion:\nUnsupported construct in lopToExpr: unknown operation, rendering as generic call: fourArgFn\nContext: Global scope:\n  freeVars: [a, b, c, d]"
 -/
 #guard_msgs in
 #eval do
@@ -119,7 +119,7 @@ info: "assert [q1]: fourArgFn(a, b, c, d);\n\n\n-- Errors encountered during con
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [known_add]: x + y;\n"
+info: "assert [known_add]: x + y;"
 -/
 #guard_msgs in
 #eval do
@@ -127,7 +127,7 @@ info: "assert [known_add]: x + y;\n"
   IO.println (repr (fmtStmt (mkAssert "known_add" e) #["x", "y"]))
 
 /--
-info: "assert [known_not]: !x;\n"
+info: "assert [known_not]: !x;"
 -/
 #guard_msgs in
 #eval do

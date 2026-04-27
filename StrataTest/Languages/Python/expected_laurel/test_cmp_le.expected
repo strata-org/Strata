@@ -1,11 +1,8 @@
 test_cmp_le.py(2, 11): ✅ pass - Check PLe exception
-test_cmp_le.py(2, 4): ✅ pass - assert_assert(23)_calls_Any_to_bool_0
 test_cmp_le.py(2, 4): ✅ pass - le equal
 test_cmp_le.py(3, 11): ✅ pass - Check PLe exception
-test_cmp_le.py(3, 4): ✅ pass - assert_assert(53)_calls_Any_to_bool_0
 test_cmp_le.py(3, 4): ✅ pass - le less
 test_cmp_le.py(4, 11): ✅ pass - Check PNot exception
-test_cmp_le.py(4, 4): ✅ pass - assert_assert(82)_calls_Any_to_bool_0
 test_cmp_le.py(4, 4): ✅ pass - not le
-DETAIL: 9 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

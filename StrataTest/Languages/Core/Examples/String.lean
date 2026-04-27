@@ -18,7 +18,7 @@ def strPgm :=
 #strata
 program Core;
 
-procedure main() returns () {
+procedure main() {
 
     var s1 : string, s2 : string, s3 : string;
 
@@ -49,27 +49,27 @@ true
 Label: s1_s2_len_sum_eq_s3_len
 Property: assert
 Assumptions:
-s1_len: str.len($__s10) == 3
-s2_len: str.len($__s21) == 3
-s1_s2_concat_eq_s3: str.concat($__s10, $__s21) == $__s32
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
-str.len($__s10) + str.len($__s21) == str.len($__s32)
+str.len(s1) + str.len(s2) == str.len(s3)
 
 Label: substr_of_concat
 Property: assert
 Assumptions:
-s1_len: str.len($__s10) == 3
-s2_len: str.len($__s21) == 3
-s1_s2_concat_eq_s3: str.concat($__s10, $__s21) == $__s32
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
-str.substr(str.concat($__s10, $__s21), 0, str.len($__s10)) == $__s10
+str.substr(str.concat(s1, s2), 0, str.len(s1)) == s1
 
 Label: substr_of_concat_concrete_test
 Property: assert
 Assumptions:
-s1_len: str.len($__s10) == 3
-s2_len: str.len($__s21) == 3
-s1_s2_concat_eq_s3: str.concat($__s10, $__s21) == $__s32
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
 str.substr("testing123", 2, 0) == ""
 

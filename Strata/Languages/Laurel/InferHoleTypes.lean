@@ -138,7 +138,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | some d => pure (some (← inferExpr d (bareType .TInt)))
         | none => pure none
       return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), source, md⟩
-  | .Assert cond => return ⟨.Assert (← inferExpr cond (bareType .TBool)), source, md⟩
+  | .Assert ⟨condExpr, summary⟩ =>
+      return ⟨.Assert { condition := ← inferExpr condExpr (bareType .TBool), summary }, source, md⟩
   | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), source, md⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source, md⟩
@@ -147,16 +148,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | .Assigned n => return ⟨.Assigned (← inferExpr n defaultHoleType), source, md⟩
   | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p defaultHoleType), source, md⟩
   | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f defaultHoleType), source, md⟩
-  | .Forall p trigger b =>
+  | .Quantifier mode p trigger b =>
       let trigger' ← match trigger with
         | some t => pure (some (← inferExpr t defaultHoleType))
         | none => pure none
-      return ⟨.Forall p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
-  | .Exists p trigger b =>
-      let trigger' ← match trigger with
-        | some t => pure (some (← inferExpr t defaultHoleType))
-        | none => pure none
-      return ⟨.Exists p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
+      return ⟨.Quantifier mode p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
   | _ => return expr
 end
 

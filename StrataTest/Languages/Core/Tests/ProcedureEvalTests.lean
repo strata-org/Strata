@@ -25,24 +25,22 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 2
 Factory Functions:
 func Int.Add :  ((x : int) (y : int)) → int;
 func Int.Sub :  ((x : int) (y : int)) → int;
 func Int.Mul :  ((x : int) (y : int)) → int;
 func Int.Div :  ((x : int) (y : int)) → int;
 func Int.SafeDiv :  ((x : int) (y : int)) → int
-  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
+  requires !(y == 0);
 func Int.Mod :  ((x : int) (y : int)) → int;
 func Int.SafeMod :  ((x : int) (y : int)) → int
-  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
+  requires !(y == 0);
 func Int.DivT :  ((x : int) (y : int)) → int;
 func Int.SafeDivT :  ((x : int) (y : int)) → int
-  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
+  requires !(y == 0);
 func Int.ModT :  ((x : int) (y : int)) → int;
 func Int.SafeModT :  ((x : int) (y : int)) → int
-  requires ((~Bool.Not : (arrow bool bool)) ((y : int) == #0));
+  requires !(y == 0);
 func Int.Neg :  ((x : int)) → int;
 func Int.Lt :  ((x : int) (y : int)) → bool;
 func Int.Le :  ((x : int) (y : int)) → bool;
@@ -267,139 +265,115 @@ func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SAddOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(x <= y);
 func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SSubOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(x <= y);
 func Bv1.SafeMul :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SMulOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(x <= y);
 func Bv1.SafeNeg :  ((x : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SNegOverflow : (arrow bv1 bool)) (x : bv1)));
+  requires !(!x);
 func Bv1.SafeUAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.UAddOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(x <= y);
 func Bv1.SafeUSub :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.USubOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(x <= y);
 func Bv1.SafeUMul :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.UMulOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(x <= y);
 func Bv1.SafeUNeg :  ((x : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.UNegOverflow : (arrow bv1 bool)) (x : bv1)));
+  requires !(!x);
 func Bv8.SafeAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SAddOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(x <= y);
 func Bv8.SafeSub :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SSubOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(x <= y);
 func Bv8.SafeMul :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SMulOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(x <= y);
 func Bv8.SafeNeg :  ((x : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SNegOverflow : (arrow bv8 bool)) (x : bv8)));
+  requires !(!x);
 func Bv8.SafeUAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.UAddOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(x <= y);
 func Bv8.SafeUSub :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.USubOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(x <= y);
 func Bv8.SafeUMul :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.UMulOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(x <= y);
 func Bv8.SafeUNeg :  ((x : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.UNegOverflow : (arrow bv8 bool)) (x : bv8)));
+  requires !(!x);
 func Bv16.SafeAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.SAddOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(x <= y);
 func Bv16.SafeSub :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.SSubOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(x <= y);
 func Bv16.SafeMul :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.SMulOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(x <= y);
 func Bv16.SafeNeg :  ((x : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv16.SNegOverflow : (arrow bv16 bool)) (x : bv16)));
+  requires !(!x);
 func Bv16.SafeUAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.UAddOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(x <= y);
 func Bv16.SafeUSub :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.USubOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(x <= y);
 func Bv16.SafeUMul :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.UMulOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(x <= y);
 func Bv16.SafeUNeg :  ((x : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv16.UNegOverflow : (arrow bv16 bool)) (x : bv16)));
+  requires !(!x);
 func Bv32.SafeAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.SAddOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(x <= y);
 func Bv32.SafeSub :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.SSubOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(x <= y);
 func Bv32.SafeMul :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.SMulOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(x <= y);
 func Bv32.SafeNeg :  ((x : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv32.SNegOverflow : (arrow bv32 bool)) (x : bv32)));
+  requires !(!x);
 func Bv32.SafeUAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.UAddOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(x <= y);
 func Bv32.SafeUSub :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.USubOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(x <= y);
 func Bv32.SafeUMul :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.UMulOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(x <= y);
 func Bv32.SafeUNeg :  ((x : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv32.UNegOverflow : (arrow bv32 bool)) (x : bv32)));
+  requires !(!x);
 func Bv64.SafeAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.SAddOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(x <= y);
 func Bv64.SafeSub :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.SSubOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(x <= y);
 func Bv64.SafeMul :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.SMulOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(x <= y);
 func Bv64.SafeNeg :  ((x : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv64.SNegOverflow : (arrow bv64 bool)) (x : bv64)));
+  requires !(!x);
 func Bv64.SafeUAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.UAddOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(x <= y);
 func Bv64.SafeUSub :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.USubOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(x <= y);
 func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.UMulOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(x <= y);
 func Bv64.SafeUNeg :  ((x : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv64.UNegOverflow : (arrow bv64 bool)) (x : bv64)));
+  requires !(!x);
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv1) == #0))
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SDivOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(y == bv{1}(0))
+  requires !(x <= y);
 func Bv1.SafeSMod :  ((x : bv1) (y : bv1)) → bv1
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv1) == #0))
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SDivOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  requires !(y == bv{1}(0))
+  requires !(x <= y);
 func Bv8.SafeSDiv :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv8) == #0))
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SDivOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(y == bv{8}(0))
+  requires !(x <= y);
 func Bv8.SafeSMod :  ((x : bv8) (y : bv8)) → bv8
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv8) == #0))
-  requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SDivOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  requires !(y == bv{8}(0))
+  requires !(x <= y);
 func Bv16.SafeSDiv :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv16) == #0))
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.SDivOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(y == bv{16}(0))
+  requires !(x <= y);
 func Bv16.SafeSMod :  ((x : bv16) (y : bv16)) → bv16
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv16) == #0))
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv16.SDivOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  requires !(y == bv{16}(0))
+  requires !(x <= y);
 func Bv32.SafeSDiv :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv32) == #0))
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.SDivOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(y == bv{32}(0))
+  requires !(x <= y);
 func Bv32.SafeSMod :  ((x : bv32) (y : bv32)) → bv32
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv32) == #0))
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv32.SDivOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  requires !(y == bv{32}(0))
+  requires !(x <= y);
 func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv64) == #0))
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.SDivOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(y == bv{64}(0))
+  requires !(x <= y);
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
-  requires ((~Bool.Not : (arrow bool bool)) ((y : bv64) == #0))
-  requires ((~Bool.Not : (arrow bool bool))
- ((~Bv64.SDivOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  requires !(y == bv{64}(0))
+  requires !(x <= y);
 
 
 Datatypes:
@@ -413,9 +387,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, (~Int.Lt #0 $__x0))
+(0_lt_x, 0 < x@1)
 Proof Obligation:
-(~Int.Lt (~Int.Neg ($__x0 : int)) #0)
+-x@1 < 0
 -/
 #guard_msgs in
 #eval do let E := Env.init
@@ -425,7 +399,6 @@ Proof Obligation:
                            inputs := [("x", mty[int])],
                            outputs := [("y", mty[int])] },
                 spec := {
-                    modifies := [],
                     preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                     postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                 body := [

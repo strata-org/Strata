@@ -13,7 +13,7 @@ meta import StrataTest.Util.Python
 namespace Strata.Python.Specs
 
 private meta def testDir : System.FilePath :=
-  "StrataTest/Languages/Python/Specs"
+  "StrataTestExtra/Languages/Python/Specs"
 
 meta def expectedPySpec :=
 #strata
@@ -215,7 +215,7 @@ class "ClassWithInit" {
 }
 #end
 
-meta def testCase : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+meta def testCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun strataDir => do
@@ -253,7 +253,7 @@ meta def testCase : IO Unit := withPython (warnOnSkip := false) fun pythonCmd =>
 #eval testCase
 
 /-- Test that unsupported patterns emit appropriate warnings. -/
-meta def warningTestCase : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun strataDir => do

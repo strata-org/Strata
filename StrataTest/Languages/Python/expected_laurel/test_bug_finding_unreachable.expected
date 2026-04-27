@@ -1,11 +1,7 @@
-test_bug_finding_unreachable.py(3, 4): ✔️ always true if reached - assert_assert(112)_calls_Any_to_bool_0
 test_bug_finding_unreachable.py(3, 4): ✖️ always false if reached - impossible condition
 test_bug_finding_unreachable.py(4, 7): ✔️ always true if reached - Check PGt exception
-test_bug_finding_unreachable.py(4, 4): ✔️ always true if reached - ite_cond_calls_Any_to_bool_0
 test_bug_finding_unreachable.py(5, 11): ✔️ always true if reached - Check PLt exception
-test_bug_finding_unreachable.py(5, 8): ✔️ always true if reached - ite_cond_calls_Any_to_bool_0
-test_bug_finding_unreachable.py(6, 12): ❌ fail (❗path unreachable) - assert_assert(194)_calls_Any_to_bool_0
 test_bug_finding_unreachable.py(6, 12): ❌ fail (❗path unreachable) - dead code
 test_bug_finding_unreachable.py(2, 44): ✔️ always true if reached - (test_bug_finding_unreachable ensures) Return type constraint
-DETAIL: 6 passed, 3 failed, 0 inconclusive, 2 unreachable
+DETAIL: 3 passed, 2 failed, 0 inconclusive, 1 unreachable
 RESULT: Failures found

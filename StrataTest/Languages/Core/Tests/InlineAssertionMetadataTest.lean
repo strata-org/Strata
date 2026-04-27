@@ -22,15 +22,15 @@ open Imperative
 private def inlineAssertPgm : Strata.Program :=
 #strata
 program Core;
-procedure callee() returns () {
+procedure callee() {
   assert [willFail]: false;
 };
-procedure caller() returns () {
+procedure caller() {
   call callee();
 };
 #end
 
-/-- info: "willFail: ❌ fail\n Assertion is 63 characters after the related location" -/
+/-- info: "willFail: ❌ fail\n Assertion is 52 characters after the related location" -/
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm

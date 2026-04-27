@@ -1,8 +1,6 @@
 test_ternary_false.py(2, 4): ✅ pass - assert(30)
 test_ternary_false.py(3, 19): ✅ pass - Check PGt exception
-test_ternary_false.py(3, 4): ✅ pass - set_r_calls_Any_to_bool_0
 test_ternary_false.py(3, 4): ✅ pass - assert(45)
-test_ternary_false.py(4, 4): ✅ pass - assert_assert(78)_calls_Any_to_bool_0
 test_ternary_false.py(4, 4): ✅ pass - ternary false branch
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

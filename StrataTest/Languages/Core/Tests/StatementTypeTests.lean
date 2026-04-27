@@ -18,9 +18,9 @@ open Imperative (PureFunc)
 
 /--
 info: ok: {
-  init (x : int) := (xinit : int)
-  x := (xinit : int)
-  init (y : int) := (xinit : int)
+  var x : int := xinit;
+  x := xinit;
+  var y : int := xinit;
 }
 -/
 #guard_msgs in
@@ -126,8 +126,8 @@ subst: [($__ty0, int)]
 
 /--
 info: ok: {
-  init (x : int) := #1
-  x := #2
+  var x : int := 1;
+  x := 2;
 }
 -/
 #guard_msgs in
@@ -193,8 +193,12 @@ def testFuncDeclTypeCheck : List Statement :=
 /--
 info: ok: {
   funcDecl <function>
-  init (y : int) := ((~identity : (arrow int int)) #5)
-  assert [y_eq_5] ((y : int) == #5)
+  var y : int := identity(5);
+  ⏎
+  -- Errors encountered during conversion:
+  Unsupported construct in handleUnaryOps: unknown operation, rendering as generic call: identity
+  Context: Global scope:
+  assert [y_eq_5]: y == 5;
 }
 -/
 #guard_msgs in
@@ -234,5 +238,46 @@ subst:
          return format ans.snd
 
 end NondetCondTests
+
+section CallOutArgTests
+
+open Std (ToFormat Format format)
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative (ExprOrNondet)
+
+/-- A test procedure: `procedure Foo(inout x: int, out y: int)` -/
+private def testProc : Procedure :=
+  { header := {
+      name := ⟨"Foo", ()⟩,
+      typeArgs := [],
+      inputs := [(⟨"x", ()⟩, .int)],
+      outputs := [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)] },
+    spec := { preconditions := [], postconditions := [] },
+    body := [] }
+
+private def testProgram : Program :=
+  { decls := [.proc testProc .empty] }
+
+-- Passing `x == x` (which contains output variable `x` inside an expression) should fail.
+/--
+info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters appearing in both inputs and outputs) must be simple variable references
+-/
+#guard_msgs in
+#eval do
+  let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
+  let ans ← typeCheck LContext.default env testProgram none
+    [.cmd (.call "Foo" [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+  return format ans
+
+-- Passing a bare variable `x` as an inout argument should succeed.
+/-- info: ok: () -/
+#guard_msgs in
+#eval do
+  let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
+  let _ ← typeCheck LContext.default env testProgram none
+    [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+  return format ()
+
+end CallOutArgTests
 
 end Core

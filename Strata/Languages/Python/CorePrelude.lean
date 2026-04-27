@@ -165,7 +165,7 @@ datatype Client () {
 // In the Strata Core representation, an int type that corresponds to the full
 // milliseconds is simply used. See Timedelta_mk.
 
-procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, maybe_except: ExceptOrNone)
+procedure timedelta(days: IntOrNone, hours: IntOrNone, out delta : int, out maybe_except: ExceptOrNone)
 spec{
 }
 {
@@ -217,7 +217,7 @@ function Datetime_get_timedelta(d : Datetime) : int;
 // means subtracting an 'old' timestamp from a 'new' timestamp may return
 // a negative difference.
 
-procedure datetime_now(tz: AnyOrNone) returns (d:Datetime, maybe_except: ExceptOrNone)
+procedure datetime_now(tz: AnyOrNone, out d:Datetime, out maybe_except: ExceptOrNone)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
@@ -225,7 +225,7 @@ spec {
   assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
 
-procedure datetime_utcnow() returns (d:Datetime, maybe_except: ExceptOrNone)
+procedure datetime_utcnow(out d:Datetime, out maybe_except: ExceptOrNone)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
@@ -257,14 +257,14 @@ axiom [Datetime_lt_ax]:
 
 
 type Date;
-procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
+procedure datetime_date(dt: Datetime, out d : Datetime, out maybe_except: ExceptOrNone)
 spec{};
 
 function datetime_to_str(dt : Datetime) : string;
 
 function datetime_to_int() : int;
 
-procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
+procedure datetime_strptime(time: string, format: string, out d : Datetime, out maybe_except: ExceptOrNone)
 spec{
   requires [req_format_str]: (format == "%Y-%m-%d");
   ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
@@ -279,20 +279,20 @@ spec{
 // /////////////////////////////////////////////////////////////////////////////////////
 
 // Uninterpreted procedures
-procedure importFrom(module : string, names : ListStr, level : int) returns ();
-procedure import(names : ListStr) returns ();
-procedure print(msg : string, opt : StrOrNone, sep : StrOrNone, end : StrOrNone, file : AnyOrNone, flush : BoolOrNone) returns ();
+procedure importFrom(module : string, names : ListStr, level : int);
+procedure import(names : ListStr);
+procedure print(msg : string, opt : StrOrNone, sep : StrOrNone, end : StrOrNone, file : AnyOrNone, flush : BoolOrNone);
 
-procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
+procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone, out s: string, out maybe_except: ExceptOrNone)
 spec{};
 
-procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+procedure json_loads(msg : string, out d: DictStrAny, out maybe_except: ExceptOrNone)
 spec{};
 
-procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
+procedure input(msg : string, out result: string, out maybe_except: ExceptOrNone)
 spec{};
 
-procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+procedure random_choice(l : ListStr, out result: string, out maybe_except: ExceptOrNone)
 spec{};
 
 function str_in_list_str(s : string, l: ListStr) : bool;
@@ -311,7 +311,7 @@ function dict_str_any_get_str(d : DictStrAny, k: string) : string;
 
 function dict_str_any_length(d : DictStrAny) : int;
 
-procedure str_to_float(s : string) returns (result: string, maybe_except: ExceptOrNone)
+procedure str_to_float(s : string, out result: string, out maybe_except: ExceptOrNone)
 ;
 
 function Float_gt(lhs : string, rhs: string) : bool;
@@ -320,7 +320,7 @@ function Float_gt(lhs : string, rhs: string) : bool;
 
 
 
-procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
+procedure test_helper_procedure(req_name : string, opt_name : StrOrNone, out maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
   requires [req_opt_name_none_or_str]: (if (!StrOrNone..isStrOrNone_mk_none(opt_name)) then (StrOrNone..isStrOrNone_mk_str(opt_name)) else true);
