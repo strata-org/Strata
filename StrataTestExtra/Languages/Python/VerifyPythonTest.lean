@@ -242,7 +242,7 @@ def create_service() -> Any:
 -- Verifies that dispatch detection in __init__ doesn't break
 -- normal class translation.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Wrapper:
     name: str
@@ -262,7 +262,7 @@ def main() -> None:
 -- Verifies that field method calls on user-defined classes don't cause
 -- "Coercion to Any not supported" or other translation errors.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Svc:
     name: str
@@ -294,7 +294,7 @@ def main() -> None:
 -- Dispatch detection inside try/except in __init__.
 -- self.svc = Svc() inside a try block should still be detected.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Svc:
     name: str
@@ -662,7 +662,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
 -- is correctly resolved and inlined. If the method were unresolved (Hole),
 -- the result would be havocked and the assertion would be unknown/failing.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Calculator:
     def __init__(self, base: int) -> None:
@@ -687,7 +687,7 @@ def main() -> None:
 -- Inner.greet's body must be resolved through the Outer.inner field
 -- for the assertion to be verifiable.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Inner:
     def __init__(self, prefix: str) -> None:
