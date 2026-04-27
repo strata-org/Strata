@@ -70,7 +70,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-(g@5, 0) (g@1, 0)
+(g@5, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm
