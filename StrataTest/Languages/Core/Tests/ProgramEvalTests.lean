@@ -496,7 +496,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 3) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst () (Int.negSucc 2)]
+#eval runProc itePgm "Test" [.intConst () (-3)]
 
 -- Procedure call
 private def callPgm : Strata.Program :=

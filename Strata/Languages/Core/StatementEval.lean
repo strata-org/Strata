@@ -760,7 +760,7 @@ mutual
 Interpret a single procedure call.
 
 Importantly, this creates a separate Env to execute the body of the procedure with,
-which initially only contains globals and the input/output variables.
+which initially only contains input/output variables.
 The resulting Env is the original passed in Env with the output variables copied back into it.
 -/
 def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)
@@ -779,49 +779,54 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
           let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
             proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
             |>.map fun ((name, ty), val) => (name, (some ty, val))
-          let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
-            proc.header.outputs.keys.zip proc.header.outputs.values
-            |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-          let globals := E.exprEnv.state.oldest
-          let callEnv : Env := { E with
-            exprEnv := { E.exprEnv with
-              state := [globals, formalBindings ++ outputBindings] } }
-          let ops : Imperative.RunOps Expression Command Env := {
-            evalExpr := fun E e =>
-              some (e.eval E.exprEnv.config.fuel E.exprEnv)
-            evalCmd := Command.run fuel'
-            extendEval := fun E decl =>
-              match E.addFactoryFunc {
-                name := decl.name
-                typeArgs := decl.typeArgs
-                isConstr := decl.isConstr
-                inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
-                output := Lambda.LTy.toMonoTypeUnsafe decl.output
-                body := decl.body
-                attr := decl.attr
-                concreteEval := decl.concreteEval
-                axioms := decl.axioms
-              } with
-              | .ok E' => E'
-              | .error _ => E
-            pushScope := fun E => E.pushEmptyScope
-            popScope := fun E => E.popScope
-            hasError := fun E => E.error.isSome
-            addError := fun E msg => CmdEval.updateError E (.Misc msg)
-          }
-          let config : Imperative.RunConfig Expression Command Env :=
-            .stmts proc.body callEnv
-          let configAfter := Imperative.runStmt ops fuel' config
-          match configAfter with
-          | .terminal callEnv' =>
-            match callEnv'.error with
-            | some _ => { E with error := callEnv'.error }
-            | none =>
-              let outputVals := proc.header.outputs.keys.map fun name =>
-                (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-              lhs.zip outputVals |>.foldl (fun env (name, val) =>
-                env.insertInContext (name, none) val) E
-          | _ => CmdEval.updateError E (.Misc "failed to terminate")
+          if argVals.length != proc.header.inputs.keys.length then
+            CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.inputs.keys.length} arguments, got {argVals.length}")
+          else
+            let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+              proc.header.outputs.keys.zip proc.header.outputs.values
+              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+            let callEnv : Env := { E with
+              exprEnv := { E.exprEnv with
+                state := [formalBindings ++ outputBindings] } }
+            let ops : Imperative.RunOps Expression Command Env := {
+              evalExpr := fun E e =>
+                some (e.eval E.exprEnv.config.fuel E.exprEnv)
+              evalCmd := Command.run fuel'
+              extendEval := fun E decl =>
+                match E.addFactoryFunc {
+                  name := decl.name
+                  typeArgs := decl.typeArgs
+                  isConstr := decl.isConstr
+                  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
+                  output := Lambda.LTy.toMonoTypeUnsafe decl.output
+                  body := decl.body
+                  attr := decl.attr
+                  concreteEval := decl.concreteEval
+                  axioms := decl.axioms
+                } with
+                | .ok E' => E'
+                | .error _ => E
+              pushScope := fun E => E.pushEmptyScope
+              popScope := fun E => E.popScope
+              hasError := fun E => E.error.isSome
+              addError := fun E msg => CmdEval.updateError E (.Misc msg)
+            }
+            let config : Imperative.RunConfig Expression Command Env :=
+              .stmts proc.body callEnv
+            let configAfter := Imperative.runStmt ops fuel' config
+            match configAfter with
+            | .terminal callEnv' =>
+              match callEnv'.error with
+              | some _ => { E with error := callEnv'.error }
+              | none =>
+                if lhs.length != proc.header.outputs.keys.length then
+                  CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
+                else
+                  let outputVals := proc.header.outputs.keys.map fun name =>
+                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+                  lhs.zip outputVals |>.foldl (fun env (name, val) =>
+                    env.insertInContext (name, none) val) E
+            | _ => CmdEval.updateError E (.Misc "failed to terminate")
 
 def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with

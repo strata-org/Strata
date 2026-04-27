@@ -140,6 +140,9 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
           EC.update σ x ty expr
         | .nondet =>
           -- Unconstrained initialization - generate a fresh value
+          -- Reading the value of this variable will cause execution to get stuck,
+          -- but this still allows the common pattern of initializing a variable
+          -- and then immediately overwriting it with a deterministic value.
           let (expr, σ) := EC.genFreeVar σ x ty
           EC.update σ x ty expr
       | some (xv, xty) => EC.updateError σ (.InitVarExists (x, xty) xv)
@@ -157,6 +160,7 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
           let expr := EC.eval σ expr
           EC.update σ x xty expr
         | .nondet =>
+          -- See .init comment above
           let (expr, σ) := EC.genFreeVar σ x xty
           EC.update σ x xty expr
 
