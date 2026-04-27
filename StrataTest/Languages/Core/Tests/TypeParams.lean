@@ -141,7 +141,7 @@ function left<T, U>(t: T, u: U) : T {
   t
 }
 
-function condSelect(cond: bool, a: int, b: int) : int {
+function condSelect<Q>(cond: bool, a: Q, b: Q) : Q {
   if cond then id(a) else left(b, cond)
 }
 
@@ -162,6 +162,39 @@ function sumIds(a: int, b: int, c: int) : int {
 
 function allTrue(p: bool, q: bool) : bool {
   id(p) && id(q)
+}
+
+#end
+
+-- The same type parameter name T resolves to different concrete types across
+-- call sites within a single expression. Each call site gets independent uvars,
+-- so id<T=int> and id<T=bool> can coexist in one expression.
+def differentInstantiationsPrg : Program :=
+#strata
+program Core;
+
+function id<T>(x: T) : T {
+  x
+}
+
+function left<T, U>(t: T, u: U) : T {
+  t
+}
+
+function right<T, U>(t: T, u: U) : U {
+  u
+}
+
+function mixedId(a: int, b: bool) : bool {
+  id(b) && (id(a) == 0)
+}
+
+function mixedLeft(a: int, b: bool) : bool {
+  left(b, a) && (left(a, b) == 0)
+}
+
+function chainDifferent(a: int, b: bool) : int {
+  id(left(a, b)) + id(right(b, a))
 }
 
 #end
