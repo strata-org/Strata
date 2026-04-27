@@ -1,4 +1,4 @@
-# Pending: analyzer cannot resolve bool(x) == y equality assertions
+# Resolved: analyzer can now resolve bool(x) == y equality assertions
 # See https://github.com/strata-org/Strata/issues/945
 
 def test_bool_none():
@@ -13,11 +13,6 @@ def test_bool_int():
     assert bool(1) == True
     assert bool(-1) == True
 
-def test_bool_float():
-    assert bool(0.0) == False
-    assert bool(1.5) == True
-    assert bool(-0.0) == False
-
 def test_bool_str():
     assert bool("") == False
     assert bool("x") == True
@@ -29,6 +24,11 @@ def test_bool_list():
 def test_bool_dict():
     assert bool({}) == False
     assert bool({"a": 1}) == True
+
+def test_bool_float():
+    assert bool(0.0) == False
+    assert bool(1.5) == True
+    assert bool(-0.0) == False
 
 test_bool_none()
 test_bool_bool()
