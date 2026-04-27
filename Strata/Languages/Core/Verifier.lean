@@ -1223,7 +1223,8 @@ abbrev CoreSMTSolver :=
 
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
-    `options.incremental` and `options.alwaysGenerateSMT`. -/
+    `options.incremental` and `options.alwaysGenerateSMT`.
+    Thread-safe: the batch path uses atomic `modifyGet` for the filename counter. -/
 def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath)
     (vars : List Expression.TypedIdent)
