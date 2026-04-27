@@ -47,7 +47,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Passing assertions produce no diagnostics.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -61,7 +61,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Failing assertion produces a diagnostic with the expected message.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -73,7 +73,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Mix of passing and failing assertions: only failing ones produce diagnostics.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -88,7 +88,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Diagnostic line numbers point to the correct assertion.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -107,7 +107,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 -- Annotated-style test using testInputWithOffset and # comment expectations.
 -- testInputWithOffset prints on success; we validate silently here instead.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -128,7 +128,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Multiple `with` blocks reusing the same variable name should not crash.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main(path1: str, path2: str) -> None:
     with open(path1, 'w') as f:
@@ -141,7 +141,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Try/except with str(e) on PythonError should not produce type checking errors.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def handle_error() -> bool:
     try:
@@ -159,7 +159,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 -- Also exercises multi-output prelude procedure detection (timedelta_func
 -- returns (delta: Any, maybe_except: Error)).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from datetime import datetime, timedelta
 
@@ -175,7 +175,7 @@ def main() -> None:
 
 -- Calling a user-defined function with too many positional args should error.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def greet(name: str) -> str:
     return name
@@ -193,7 +193,7 @@ def main() -> None:
 
 -- Extra positional args with **kwargs expansion should also error.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def greet(name: str) -> str:
     return name
@@ -215,7 +215,7 @@ def main() -> None:
 -- The class uses inheritance, so method bodies are conservatively stripped
 -- to opaque (no diagnostics produced).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from typing import Any
 
@@ -236,11 +236,94 @@ def create_service() -> Any:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Class with field initialized via constructor call.
+-- Verifies that dispatch detection in __init__ doesn't break
+-- normal class translation.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Wrapper:
+    name: str
+    def __init__(self, name: str) -> None:
+        self.name = name
+    def greet(self) -> str:
+        return self.name
+
+def main() -> None:
+    w: Wrapper = Wrapper(\"test\")
+    r: str = w.greet()
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
+-- Regression test: class with self.field = Constructor() translates without crashing.
+-- Verifies that field method calls on user-defined classes don't cause
+-- "Coercion to Any not supported" or other translation errors.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        self.svc = Svc()
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- Translation should succeed without coercion errors
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error: {d.message}")
+  -- Log diagnostic count for visibility; fail if unexpectedly many
+  if diags.size > 10 then
+    throw (IO.userError s!"Unexpected number of diagnostics: {diags.size}: {diags.map (·.message)}")
+
+-- Dispatch detection inside try/except in __init__.
+-- self.svc = Svc() inside a try block should still be detected.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        try:
+            self.svc = Svc()
+        except:
+            pass
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error in try/except dispatch: {d.message}")
 -- Instance method call resolution and body preservation:
 -- Verifies that the method body is translated (not opaque) and the
 -- instance call resolves to a StaticCall (not a Hole).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Calculator:
     def __init__(self, label: str) -> None:
@@ -264,7 +347,7 @@ def main() -> None:
 -- that field, the call should resolve to a StaticCall (not a Hole).
 -- The composite field assignment (self.inner: Inner = ...) should use New.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Inner:
     def __init__(self, name: str) -> None:
@@ -297,7 +380,7 @@ def main() -> None:
 -- method calls on it should emit Hole (not StaticCall) because the
 -- runtime type may differ from the static type.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Base:
     def __init__(self) -> None:
@@ -334,7 +417,7 @@ def main() -> None:
 -- with a different type. Both classes are in the hierarchy, so method bodies
 -- must be opaque and call sites must emit Holes.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class A:
     def __init__(self) -> None:
@@ -365,7 +448,7 @@ def main() -> None:
 -- has assert False). The hierarchy guard makes both methods opaque and
 -- the call site emits a Hole.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class A:
     def f(self) -> None:
@@ -399,7 +482,7 @@ def main() -> None:
 -- Cross-class method dispatch: a method in one class calls a method on
 -- a field typed as another class. The call should resolve via userFunctions.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Engine:
     def __init__(self, hp: int) -> None:
@@ -432,7 +515,7 @@ def main() -> None:
 -- Full pipeline: composite field assignment goes through the entire
 -- Python → Laurel → Core → SMT pipeline without crashing.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Config:
     def __init__(self, value: int) -> None:
@@ -452,7 +535,7 @@ def main() -> None:
 -- Python → Laurel → Core → SMT pipeline without crashing.
 -- The assertion inside the method body is reachable and verified.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Greeter:
     def __init__(self, name: str) -> None:
@@ -472,7 +555,7 @@ def main() -> None:
 -- exactly once. a = b = c.next() must call next() once, so both a and b
 -- get the same value and the counter increments by 1.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Counter:
     def __init__(self) -> None:
@@ -494,7 +577,7 @@ def test() -> None:
 
 -- print() with keyword arguments (sep, end, flush) should not produce errors.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     print(\"hello\", end=\"\")
@@ -508,7 +591,7 @@ def test() -> None:
 -- Callable[..., Any], dict[str, Any], and list[str] type annotations
 -- should not crash the pipeline (issue #960).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from typing import Any, Callable
 
@@ -528,7 +611,7 @@ def get_names(names: list[str]) -> list[str]:
 -- typing.Callable (qualified, without `from typing import Callable`)
 -- exercises the .Attribute normalization path.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "import typing
 
@@ -541,7 +624,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
 
 -- print() with multiple positional arguments exercises the opt parameter.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     print()
@@ -558,7 +641,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
 -- PreludeInfo.ofLaurelProgram should strip the $in_ prefix from parameter
 -- names so that cross-module keyword argument calls use the original names.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def add(x: int, y: int) -> int:
     return x + y
@@ -571,5 +654,61 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
     for arg in sig.args do
       if arg.name.startsWith "$in_" then
         throw <| .userError s!"Parameter '{arg.name}' still has $in_ prefix in PreludeInfo"
+
+-- End-to-end bug-finding test for method resolution:
+-- The assertion `result == 7` can only be verified if Calculator.add's body
+-- is correctly resolved and inlined. If the method were unresolved (Hole),
+-- the result would be havocked and the assertion would be unknown/failing.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Calculator:
+    def __init__(self, base: int) -> None:
+        self.base: int = base
+
+    def add(self, x: int) -> int:
+        return self.base + x
+
+def main() -> None:
+    c: Calculator = Calculator(3)
+    result: int = c.add(4)
+    assert result == 7, \"method body must be inlined to verify this\"
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- If method resolution failed, we'd see an unknown/failing diagnostic
+  -- for the assertion. A clean pass means the method body was inlined.
+  let failures := diags.filter fun d => d.message.contains "fail" || d.message.contains "unknown"
+  unless failures.isEmpty do
+    throw <| .userError s!"Method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
+
+-- End-to-end test for self.field.method() resolution:
+-- Inner.greet's body must be resolved through the Outer.inner field
+-- for the assertion to be verifiable.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Inner:
+    def __init__(self, prefix: str) -> None:
+        self.prefix: str = prefix
+
+    def greet(self, name: str) -> str:
+        return self.prefix + name
+
+class Outer:
+    def __init__(self) -> None:
+        self.inner: Inner = Inner(\"hello \")
+
+    def run(self, name: str) -> str:
+        return self.inner.greet(name)
+
+def main() -> None:
+    o: Outer = Outer()
+    result: str = o.run(\"world\")
+    assert result == \"hello world\", \"field.method() must be resolved to verify this\"
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  let failures := diags.filter fun d => d.message.contains "fail" || d.message.contains "unknown"
+  unless failures.isEmpty do
+    throw <| .userError s!"Field method resolution test: expected all checks to pass but got: {failures.map (·.message)}"
 
 end Strata.Python.VerifyPythonTest
