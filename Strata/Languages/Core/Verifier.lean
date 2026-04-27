@@ -299,20 +299,20 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       anfUfs.foldl (init := estate) fun estate uf =>
         { estate with ufs := estate.ufs.insert uf uf.id }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
+  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
   for id in _axms do
     Solver.assert id
   -- Emit ANF variable definitions as define-fun (macro expansions, not constraints)
   let estate ← anfDefinitions.foldlM (init := estate) fun estate def_ => do
-    let (bodyEnc, estate) ← (encodeTerm False def_.body) |>.run estate
+    let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
     Solver.defineFunTerm def_.name [] def_.ty bodyEnc
     pure estate
   -- Assert assumption terms
-  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
+  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm) |>.run estate
   for id in assumptionIds do
     Solver.assert id
   -- Encode the obligation term Q (not negated)
-  let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
+  let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty && !anfDefNames.contains uf.id then some id else none
@@ -347,7 +347,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
-      Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
+      Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
   -- Emit the property summary (or label) as the final message in the SMT-LIB output.
@@ -1336,7 +1336,6 @@ def verifySingleEnv (oblProgram : Program)
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
     | .ok obs => pure obs
     | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
-  let obligations := Core.ObligationExtraction.inlineAnfVariables obligations
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)

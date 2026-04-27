@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Core.Env
-import Strata.Transform.ANFEncoder
 /-! # Proof Obligation Extraction
 
 A Core-to-obligations pass that walks a post-PE, post-dedup program and extracts
@@ -105,55 +104,6 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       .ok (axiomPc, allObs ++ obs)
     | _ => .ok (axiomPc, allObs)
   return allObs
-
-/-- Substitute free variables in an expression according to a substitution map. -/
-private partial def substFVars (subst : List (CoreIdent × Expression.Expr))
-    (e : Expression.Expr) : Expression.Expr :=
-  if subst.isEmpty then e
-  else go e
-where
-  go : Expression.Expr → Expression.Expr
-    | .fvar m name ty => match subst.find? (·.1 == name) with
-      | some (_, replacement) => replacement
-      | none => .fvar m name ty
-    | .app m fn arg => .app m (go fn) (go arg)
-    | .ite m c t f => .ite m (go c) (go t) (go f)
-    | .eq m e1 e2 => .eq m (go e1) (go e2)
-    | .abs m n ty body => .abs m n ty (go body)
-    | .quant m k n ty tr body => .quant m k n ty (go tr) (go body)
-    | e => e
-
-/-- Inline ANF-generated variable definitions in proof obligations.
-
-    ANF encoding introduces temporary variables (`$__anf.N`) that appear as
-    equality assumptions in path conditions. These extra equalities can make
-    SMT queries harder to solve (causing timeouts). This pass removes ANF
-    variable equalities from path conditions and substitutes their values
-    into all remaining expressions, keeping the SMT query equivalent to the
-    pre-ANF form. -/
-def inlineAnfVariables (obs : ProofObligations Expression) : ProofObligations Expression :=
-  obs.map fun ob =>
-    -- Collect ANF variable substitutions from path conditions.
-    -- Each ANF entry has key "$__anf.N" and value (.eq () (.fvar ..) rhs).
-    let (subst, cleanedPc) := ob.assumptions.foldl (init := ([], [])) fun (subst, pcs) pc =>
-      let (pcSubst, kept) := pc.foldl (init := (subst, [])) fun (subst, kept) (key, expr) =>
-        if key.startsWith ANFEncoder.anfVarPrefix then
-          match expr with
-          | .eq _ (.fvar _ name _) rhs =>
-            -- Apply existing substitutions to the RHS before adding
-            (subst ++ [(name, substFVars subst rhs)], kept)
-          | _ => (subst, kept ++ [(key, expr)])
-        else
-          (subst, kept ++ [(key, expr)])
-      (pcSubst, pcs ++ [kept])
-    if subst.isEmpty then ob
-    else
-      -- Apply substitutions to remaining path condition expressions
-      let finalPc := cleanedPc.map fun pc =>
-        pc.map fun (key, expr) => (key, substFVars subst expr)
-      { ob with
-        assumptions := finalPc
-        obligation := substFVars subst ob.obligation }
 
 end Core.ObligationExtraction
 
