@@ -83,11 +83,14 @@ jobs:
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
       - name: Download ion-java jar for Java codegen test
-        run: wget -q -O StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+        run: wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
+          test: false
+      - name: Run tests (excluding Python)
+        run: lake test -- --exclude Languages.Python
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
@@ -95,8 +98,8 @@ jobs:
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Verify Java testdata is up to date
         run: |
-          StrataTest/DDM/Integration/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTest/DDM/Integration/Java/testdata/
+          StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh
+          git diff --exit-code StrataTestExtra/DDM/Integration/Java/testdata/
       - name: Verify generated editor syntax files are up to date
         run: |
           lake env lean --run editors/GenSyntax.lean all
@@ -308,7 +311,7 @@ jobs:
               sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
             fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest StrataTest.Languages.Python.VerifyPythonTest StrataTest.Languages.Python.PropertySummaryTest StrataTest.Languages.Python.DictNoneTest
+      run: PYTHON=python lake test -- Languages.Python
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python

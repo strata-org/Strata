@@ -587,7 +587,7 @@ partial def extractTriggerPatterns {M} [Inhabited M]
     let expr ← lexprToExpr trigger qLevel
     pure #[expr]
 
-/-- Convert a lambda abstraction to a CoreDDM `lambda` expression, reusing the
+/-- Convert a lambda abstraction to a CoreDDM `fun` expression, reusing the
     prettyName stored in the `abs` constructor as the bound variable name. -/
 partial def labsToExpr {M} [Inhabited M]
     (prettyName : String) (ty : Option Lambda.LMonoTy)
