@@ -24,7 +24,7 @@ open Strata.Python.Specs (translateFile ModuleName)
 open Strata.Python (containsSubstr)
 
 private meta def testDir : System.FilePath :=
-  "StrataTest/Languages/Python/Specs/import_test"
+  "StrataTestExtra/Languages/Python/Specs/import_test"
 
 /-- Run a single test case. An empty `expectedErrors` array means the file
     should translate successfully; a non-empty array means translation should
@@ -130,7 +130,7 @@ private meta def testCases : Array TestCase := #[
 -- Test runner
 -- ============================================================
 
-private meta def runAllTests : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def runAllTests : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     let mut errors : Array String := #[]

@@ -87,8 +87,6 @@ info: ok: [Error:
  ⏎
  Evaluation Config:
  Eval Depth: 200
- Variable Prefix: $__
- Variable gen count: 0
  Factory Functions:
  func Int.Add :  ((x : int) (y : int)) → int;
  func Int.Sub :  ((x : int) (y : int)) → int;
@@ -568,7 +566,7 @@ VCs:
 info: ok: program Core;
 
 function intID () : int -> int {
-  lambda __q0 : int :: __q0
+  fun __q0 : int => __q0
 }
 -/
 #guard_msgs in
