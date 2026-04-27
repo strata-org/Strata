@@ -23,7 +23,8 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
--- Sequence operations increase the grammar size enough to require a higher recursion limit.
+-- Sequence operations and lambda/application syntax increase the grammar size enough
+-- to require higher recursion and heartbeat limits.
 set_option maxRecDepth 10000
 set_option maxHeartbeats 400000
 

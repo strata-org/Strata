@@ -620,54 +620,56 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
                     it returns a function type '{func.output}'. \
                     Higher-order functions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
+        -- Note: hasAbs does not special-case directly-applied lambdas (let expressions)
+        -- because the partial evaluator beta-reduces those before SMT encoding.
         else if func.body.any LExpr.hasAbs then
           .error f!"Cannot encode function '{func.name}' to SMT: \
                     its body contains a lambda expression. \
                     Lambda abstractions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
         else
-        let (ctx, isNew) ←
-          if func.isRecursive then
-            .ok (ctx.addUF uf, !ctx.ufs.contains uf)
-          else match func.body with
-          | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
-          | some body =>
-            -- Substitute the formals in the function body with appropriate
-            -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
-            let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
-            let body := LExpr.substFvarsLifting body (formals.zip bvars)
-            let (term, ctx) ← toSMTTerm E bvs body ctx
-            .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
-        -- For recursive functions, generate per-constructor axioms
-        let recAxioms ← if func.isRecursive && isNew then
-            Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
-          else .ok []
-        let allAxioms := func.axioms ++ recAxioms
-        if isNew then
-          -- To ensure termination, we add the axioms only for new functions
-          -- Get the function's type patterns (input types + output type)
-          let inputPatterns := func.inputs.values
-          let outputPattern := func.output
-          let allPatterns := inputPatterns ++ [outputPattern]
+          let (ctx, isNew) ←
+            if func.isRecursive then
+              .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            else match func.body with
+            | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            | some body =>
+              -- Substitute the formals in the function body with appropriate
+              -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
+              let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
+              let body := LExpr.substFvarsLifting body (formals.zip bvars)
+              let (term, ctx) ← toSMTTerm E bvs body ctx
+              .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+          -- For recursive functions, generate per-constructor axioms
+          let recAxioms ← if func.isRecursive && isNew then
+              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
+            else .ok []
+          let allAxioms := func.axioms ++ recAxioms
+          if isNew then
+            -- To ensure termination, we add the axioms only for new functions
+            -- Get the function's type patterns (input types + output type)
+            let inputPatterns := func.inputs.values
+            let outputPattern := func.output
+            let allPatterns := inputPatterns ++ [outputPattern]
 
-          -- Extract type instantiations by matching patterns against concrete types
-          let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
-          let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
-            .ok (acc_map.insert tyVar smtTy)
-          ) Map.empty
-          -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-          -- Save the original tySubst to restore after processing axioms
-          let savedSubst := ctx.tySubst
-          let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
-            let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
-              let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
-              .ok (new_ctx.addAxiom axiom_term)
-          ) ctx
-          let ctx := ctx.restoreSubst savedSubst
-          .ok (.app (Op.uf uf), smt_outty, ctx)
-        else
-          .ok (.app (Op.uf uf), smt_outty, ctx)
+            -- Extract type instantiations by matching patterns against concrete types
+            let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
+            let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
+              let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
+              .ok (acc_map.insert tyVar smtTy)
+            ) Map.empty
+            -- Add all axioms for this function to the context, with types binding for the type variables in the expr
+            -- Save the original tySubst to restore after processing axioms
+            let savedSubst := ctx.tySubst
+            let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
+              let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
+                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+                .ok (new_ctx.addAxiom axiom_term)
+            ) ctx
+            let ctx := ctx.restoreSubst savedSubst
+            .ok (.app (Op.uf uf), smt_outty, ctx)
+          else
+            .ok (.app (Op.uf uf), smt_outty, ctx)
 
 end
 

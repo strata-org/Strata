@@ -687,17 +687,27 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
 
 mutual
 
+/-- Shared binding setup for lambdas and quantifiers: translates the declaration list,
+    creates scoped bound variables, and translates the body in the extended scope. -/
 partial
-def translateLambda
+def withScopedBindings
   (p : Program)
   (bindings : TransBindings) (xsa : Arg) (bodya : Arg) :
-  TransM Core.Expression.Expr := do
+  TransM (ListMap Core.Expression.Ident Core.Expression.Ty × TransBindings × Core.Expression.Expr) := do
     let xsArray ← translateDeclList bindings xsa
     let n := xsArray.size
     let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar () (n - 1 - i)))
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
     let b ← translateExpr p xbindings bodya
+    return (xsArray, xbindings, b)
+
+partial
+def translateLambda
+  (p : Program)
+  (bindings : TransBindings) (xsa : Arg) (bodya : Arg) :
+  TransM Core.Expression.Expr := do
+    let (xsArray, _, b) ← withScopedBindings p bindings xsa bodya
     let buildLambda := fun (name, ty) e =>
       match ty with
       | .forAll [] mty =>
@@ -711,12 +721,7 @@ def translateQuantifier
   (p : Program)
   (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
   TransM Core.Expression.Expr := do
-    let xsArray ← translateDeclList bindings xsa
-    let n := xsArray.size
-    let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar () (n - 1 - i)))
-    let boundVars' := bindings.boundVars ++ newBoundVars
-    let xbindings := { bindings with boundVars := boundVars' }
-    let b ← translateExpr p xbindings bodya
+    let (xsArray, xbindings, b) ← withScopedBindings p bindings xsa bodya
 
     -- Handle triggers if present
     let triggers ← match triggersa with
