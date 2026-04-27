@@ -546,6 +546,7 @@ function Any_len_to_Any (v: Any) : Any {
 
 procedure Any_len_pos(v: Any)
   invokeOn Any_len(v)
+  opaque
   ensures Any_len(v) >= 0;
 
 function Any_iter_index(iter: Any, index: int) : Any;
