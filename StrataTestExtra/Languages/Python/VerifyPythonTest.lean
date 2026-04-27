@@ -47,7 +47,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Passing assertions produce no diagnostics.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -61,7 +61,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Failing assertion produces a diagnostic with the expected message.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -73,7 +73,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Mix of passing and failing assertions: only failing ones produce diagnostics.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -88,7 +88,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Diagnostic line numbers point to the correct assertion.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -107,7 +107,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 -- Annotated-style test using testInputWithOffset and # comment expectations.
 -- testInputWithOffset prints on success; we validate silently here instead.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -128,7 +128,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Multiple `with` blocks reusing the same variable name should not crash.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main(path1: str, path2: str) -> None:
     with open(path1, 'w') as f:
@@ -141,7 +141,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 
 -- Try/except with str(e) on PythonError should not produce type checking errors.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def handle_error() -> bool:
     try:
@@ -159,7 +159,7 @@ def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
 -- Also exercises multi-output prelude procedure detection (timedelta_func
 -- returns (delta: Any, maybe_except: Error)).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from datetime import datetime, timedelta
 
@@ -175,7 +175,7 @@ def main() -> None:
 
 -- Calling a user-defined function with too many positional args should error.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def greet(name: str) -> str:
     return name
@@ -193,7 +193,7 @@ def main() -> None:
 
 -- Extra positional args with **kwargs expansion should also error.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def greet(name: str) -> str:
     return name
@@ -215,7 +215,7 @@ def main() -> None:
 -- The class uses inheritance, so method bodies are conservatively stripped
 -- to opaque (no diagnostics produced).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from typing import Any
 
@@ -323,7 +323,7 @@ def main() -> None:
 -- Verifies that the method body is translated (not opaque) and the
 -- instance call resolves to a StaticCall (not a Hole).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Calculator:
     def __init__(self, label: str) -> None:
@@ -347,7 +347,7 @@ def main() -> None:
 -- that field, the call should resolve to a StaticCall (not a Hole).
 -- The composite field assignment (self.inner: Inner = ...) should use New.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Inner:
     def __init__(self, name: str) -> None:
@@ -380,7 +380,7 @@ def main() -> None:
 -- method calls on it should emit Hole (not StaticCall) because the
 -- runtime type may differ from the static type.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Base:
     def __init__(self) -> None:
@@ -417,7 +417,7 @@ def main() -> None:
 -- with a different type. Both classes are in the hierarchy, so method bodies
 -- must be opaque and call sites must emit Holes.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class A:
     def __init__(self) -> None:
@@ -448,7 +448,7 @@ def main() -> None:
 -- has assert False). The hierarchy guard makes both methods opaque and
 -- the call site emits a Hole.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class A:
     def f(self) -> None:
@@ -482,7 +482,7 @@ def main() -> None:
 -- Cross-class method dispatch: a method in one class calls a method on
 -- a field typed as another class. The call should resolve via userFunctions.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Engine:
     def __init__(self, hp: int) -> None:
@@ -515,7 +515,7 @@ def main() -> None:
 -- Full pipeline: composite field assignment goes through the entire
 -- Python → Laurel → Core → SMT pipeline without crashing.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Config:
     def __init__(self, value: int) -> None:
@@ -535,7 +535,7 @@ def main() -> None:
 -- Python → Laurel → Core → SMT pipeline without crashing.
 -- The assertion inside the method body is reachable and verified.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Greeter:
     def __init__(self, name: str) -> None:
@@ -555,7 +555,7 @@ def main() -> None:
 -- exactly once. a = b = c.next() must call next() once, so both a and b
 -- get the same value and the counter increments by 1.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Counter:
     def __init__(self) -> None:
@@ -577,7 +577,7 @@ def test() -> None:
 
 -- print() with keyword arguments (sep, end, flush) should not produce errors.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     print(\"hello\", end=\"\")
@@ -591,7 +591,7 @@ def test() -> None:
 -- Callable[..., Any], dict[str, Any], and list[str] type annotations
 -- should not crash the pipeline (issue #960).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from typing import Any, Callable
 
@@ -611,7 +611,7 @@ def get_names(names: list[str]) -> list[str]:
 -- typing.Callable (qualified, without `from typing import Callable`)
 -- exercises the .Attribute normalization path.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "import typing
 
@@ -624,7 +624,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
 
 -- print() with multiple positional arguments exercises the opt parameter.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     print()
@@ -641,7 +641,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
 -- PreludeInfo.ofLaurelProgram should strip the $in_ prefix from parameter
 -- names so that cross-module keyword argument calls use the original names.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def add(x: int, y: int) -> int:
     return x + y

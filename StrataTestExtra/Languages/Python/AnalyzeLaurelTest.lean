@@ -25,7 +25,7 @@ namespace Strata.Python.AnalyzeLaurelTest
 open Strata (pythonAndSpecToLaurel pySpecsDir)
 
 private meta def testDir : System.FilePath :=
-  "StrataTest/Languages/Python/Specs/dispatch_test"
+  "StrataTestExtra/Languages/Python/Specs/dispatch_test"
 
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
     Returns the path to the generated Ion file. -/
