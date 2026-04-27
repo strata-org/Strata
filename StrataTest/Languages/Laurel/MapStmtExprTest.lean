@@ -55,6 +55,7 @@ private def testMapStmtExprId (input : String) : IO Unit := do
 def testProgram : String := r"
 procedure test(x: int, b: bool) returns (r: int)
   requires x > 0
+  opaque
   ensures r >= 0
 {
   var y: int := x;

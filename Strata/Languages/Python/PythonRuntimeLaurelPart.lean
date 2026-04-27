@@ -329,6 +329,7 @@ function List_len (l : ListAny) : int
 
 procedure List_len_pos(l : ListAny)
   invokeOn List_len(l)
+  opaque
   ensures List_len(l) >= 0;
 
 function List_contains (l : ListAny, x: Any) : bool
@@ -367,6 +368,7 @@ function List_take (l : ListAny, i: int) : ListAny
 
 procedure List_take_len(l : ListAny, i: int)
   invokeOn List_len(List_take(l,i))
+  opaque
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_take(l,i)) == i;
 
 function List_drop (l : ListAny, i: int) : ListAny
@@ -379,6 +381,7 @@ function List_drop (l : ListAny, i: int) : ListAny
 
 procedure List_drop_len(l : ListAny, i: int)
   invokeOn List_len(List_drop(l,i))
+  opaque
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
 function int_max (i1: int, i2: int) : int
@@ -543,6 +546,7 @@ function Any_len_to_Any (v: Any) : Any {
 
 procedure Any_len_pos(v: Any)
   invokeOn Any_len(v)
+  opaque
   ensures Any_len(v) >= 0;
 
 function Any_iter_index(iter: Any, index: int) : Any;
@@ -1011,10 +1015,12 @@ function datetime_strptime(dtstring: Any, format: Any) : Any;
 
 procedure datetime_tostring_cancel(dt: Any)
   invokeOn datetime_strptime(to_string_any(dt), from_str ("%Y-%m-%d"))
+  opaque
   ensures datetime_strptime(to_string_any(dt), from_str ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
   requires Any..isfrom_datetime(d) summary "(Origin_datetime_date_Requires)d_type"
+  opaque
   ensures Any..isfrom_datetime(ret) && Any..as_datetime!(ret) <= Any..as_datetime!(d) summary "ret_type"
 {
   var timedt: int;
@@ -1031,6 +1037,7 @@ procedure datetime_date(d: Any) returns (ret: Any, error: Error)
 };
 
 procedure datetime_now(tz: Any) returns (ret: Any)
+  opaque
   ensures Any..isfrom_datetime(ret) summary "ret_type"
 {
   var d: int;
@@ -1042,6 +1049,7 @@ procedure timedelta_func(days: Any, hours: Any) returns (delta : Any, maybe_exce
   requires Any..isfrom_None(hours) || Any..isfrom_int(hours) summary "(Origin_timedelta_Requires)hours_type"
   requires Any..isfrom_int(days) ==> Any..as_int!(days)>=0 summary "(Origin_timedelta_Requires)days_pos"
   requires Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0 summary "(Origin_timedelta_Requires)hours_pos"
+  opaque
   ensures Any..isfrom_int(delta) && Any..as_int!(delta)>=0 summary "ret_pos"
 {
   var days_i : int := 0;
@@ -1063,6 +1071,7 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   requires req_name == from_str("foo") summary "(Origin_test_helper_procedure_Requires)req_name_is_foo"
   requires (Any..isfrom_None(opt_name)) || (Any..isfrom_str(opt_name)) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str"
   requires (opt_name == from_None()) || (opt_name == from_str("bar")) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar"
+  opaque
   ensures (Error..isNoError(maybe_except)) summary "ensures_maybe_except_none"
 {
   assert req_name == from_str("foo") summary "assert_name_is_foo";
