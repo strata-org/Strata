@@ -181,9 +181,40 @@ This works when re-elaborating files post-build but does NOT persist in
 
 ### Current pragmatic approach
 
-Until a persistent mechanism is implemented, the hybrid approach (`.olean`
-inspection for `[init]` attributes + text scan for `#eval`/`#guard_msgs`)
-provides a reasonable approximation with known limitations.
+`lake exe skim` runs `lake build` followed by linter-based purity checking.
+This is correct and sound but requires developers to use `lake exe skim`
+instead of `lake build`.
+
+### Future: Lake plugin (zero-workflow-change)
+
+Lake supports `plugins` on `lean_lib` and `lean_exe` targets — shared libraries
+loaded via `lean --plugin` during elaboration. A plugin could register the
+purity linter, which would then run automatically during every `lake build`
+with no workflow change for developers.
+
+The plugin would:
+1. Register the purity linter via `initialize` (same as current `PurityTracker`)
+2. Write a `.impure` marker file when impure commands are detected
+3. A post-build step (or Lake `post_update` hook) would read markers and
+   delete the corresponding `.olean` files
+
+Configuration in `lakefile.toml`:
+```toml
+[[lean_lib]]
+name = "PurityPlugin"
+# Lake builds this as a shared library
+
+[[lean_lib]]
+name = "Strata"
+plugins = ["PurityPlugin"]
+```
+
+**Status**: Feasible based on Lake documentation. The `plugins` field is
+documented and supported in both TOML and Lean lakefiles. Implementation
+requires experimentation with the plugin build/load machinery.
+
+**Key advantage**: Developers just run `lake build` — the plugin runs
+automatically, no risk of forgetting to skim.
 
 ### Implementation Sketch
 
