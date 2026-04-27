@@ -981,6 +981,14 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp sr fn [s, n]
+  -- Lambda abstraction
+  | .fn _ q`Core.lambda, [_, xsa, ba] =>
+    translateLambda p bindings xsa ba
+  -- Expression application: (f)(x)
+  | .fn _ q`Core.apply_expr, [_, _, fa, xa] => do
+    let f ← translateExpr p bindings fa
+    let x ← translateExpr p bindings xa
+    return .app sr f x
   -- Quantifiers
   | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
