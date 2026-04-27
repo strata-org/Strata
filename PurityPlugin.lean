@@ -142,36 +142,32 @@ private def pureCommandKinds : Std.HashSet SyntaxNodeKind := .ofList [
   ``Lean.Parser.Command.registerErrorExplanationStx,
   ``Lean.Parser.Command.«init_quot», ``Lean.Parser.Command.exit,
   ``Lean.Parser.Command.eoi,
-  `Lean.Option.registerOption, `Lean.Option.registerBuiltinOption
-]
-
-private def pureCommandPrefixes : Array Name := #[
-  `Lean.Parser.Command.syntax, `Lean.Parser.Command.syntaxAbbrev,
-  `Lean.Parser.Command.syntaxCat, `Lean.Parser.Command.notation,
-  `Lean.Parser.Command.macro, `Lean.Parser.Command.macro_rules,
-  `Lean.Parser.Command.elab, `Lean.Parser.Command.elab_rules,
+  `Lean.Option.registerOption, `Lean.Option.registerBuiltinOption,
+  -- Syntax/notation/macro definitions (previously matched by prefix)
+  ``Lean.Parser.Command.syntax, ``Lean.Parser.Command.syntaxAbbrev,
+  ``Lean.Parser.Command.syntaxCat, ``Lean.Parser.Command.notation,
+  ``Lean.Parser.Command.macro, ``Lean.Parser.Command.macro_rules,
+  ``Lean.Parser.Command.elab, ``Lean.Parser.Command.elab_rules,
   `Lean.Parser.Command.«scoped», `Lean.Parser.Command.«local»,
   `Lean.Parser.Command.simproc, `Lean.Parser.Command.builtin_simproc,
   `Lean.Parser.Command.dsimproc, `Lean.Parser.Command.builtin_dsimproc,
   `Lean.Parser.Command.register_simp_attr,
   `Lean.Parser.Command.register_option, `Lean.Parser.Command.register_builtin_option,
   `Lean.Parser.Command.register_label_attr,
-  `Lean.Parser.Command.«infix», `Lean.Parser.Command.«infixl»,
-  `Lean.Parser.Command.«infixr», `Lean.Parser.Command.«prefix»,
-  `Lean.Parser.Command.«postfix»,
+  ``Lean.Parser.Command.«infix», ``Lean.Parser.Command.«infixl»,
+  ``Lean.Parser.Command.«infixr», ``Lean.Parser.Command.«prefix»,
+  ``Lean.Parser.Command.«postfix»,
   `Lean.Parser.Command.declare_syntax_cat, `Lean.Parser.Command.declare_config_elab,
   `Lean.Parser.Command.declare_command_config_elab,
   `Lean.Parser.Command.declare_config_getter,
   `Lean.Parser.Command.declare_simp_like_tactic,
   `Lean.Parser.Command.declare_tagged_region,
-  `Lean.Parser.Command.mixfix, `Lean.Parser.Command.grindPattern,
-  `Lean.Parser.Command.binderPredicate
+  ``Lean.Parser.Command.mixfix, ``Lean.Parser.Command.grindPattern,
+  ``Lean.Parser.Command.binderPredicate
 ]
 
 private def isPureCommand (kind : SyntaxNodeKind) : Bool :=
-  pureCommandKinds.contains kind ||
-  pureCommandPrefixes.any (fun pfx => pfx.isPrefixOf kind) ||
-  kind == nullKind
+  pureCommandKinds.contains kind || kind == nullKind
 
 /-- Convert a source path to the build artifact stem.
 `Strata/DDM/Elab/Env.lean` → `.lake/build/lib/lean/Strata/DDM/Elab/Env`
