@@ -52,7 +52,7 @@ VCs:
 Label: barEq
 Property: assert
 Obligation:
-barTest1($__a0) == $__a0
+barTest1(a@1) == a@1
 
 Label: fooEq
 Property: assert
@@ -100,7 +100,7 @@ VCs:
 Label: addComm
 Property: assert
 Obligation:
-add($__a0, $__b1) == add($__b1, $__a0)
+add(a@1, b@1) == add(b@1, a@1)
 
 ---
 info:
@@ -140,7 +140,7 @@ VCs:
 Label: quantOk
 Property: assert
 Obligation:
-$__n0 > 0 ==> allPositive($__n0)
+n@1 > 0 ==> allPositive(n@1)
 
 ---
 info:

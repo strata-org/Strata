@@ -88,8 +88,8 @@ procedure Q3(x : int)
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    if line.startsWith "($__x" && line.contains ", " then
-      -- Extract the value after the comma
+    -- Match model lines like (x, val) or (x@N, val)
+    if (line.startsWith "(x," || line.startsWith "(x@") && line.contains ", " then
       match line.splitOn ", " with
       | [var, rest] =>
         -- Remove trailing ")" and strip LExpr integer prefix "#"
@@ -129,49 +129,49 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
 Model:
-($__x2, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2)
+(x@4, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-($__x3, model_not_2)
+(x@4, model_not_2)
 -/
 #guard_msgs in
 #eval do
