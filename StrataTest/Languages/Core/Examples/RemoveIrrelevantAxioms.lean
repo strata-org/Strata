@@ -88,20 +88,23 @@ procedure Q3(x : int)
 def normalizeModelValues (s : String) : String :=
   let lines := s.splitOn "\n"
   let normalized := lines.map fun line =>
-    -- Handle multi-variable model lines: normalize each (x@N, val) entry
-    if line.contains "(x" && line.contains ", " then
-      let entries := line.splitOn "(x" |>.drop 1 |>.map fun entry =>
-        match entry.splitOn ", " with
-        | [varSuffix, rest] =>
-          let val := (rest.splitOn ")").head!.trimAscii
-          let val := if val.startsWith "#" then val.drop 1 else val
-          match val.toInt? with
-          | some v => if v == 2 then s!"(x{varSuffix}, VALUE_WAS_2)"
-                      else s!"(x{varSuffix}, model_not_2)"
-          | none => s!"(x{varSuffix}, {val})"
-        | _ => s!"(x{entry}"
-      String.intercalate " " (entries.mergeSort (· ≤ ·))
-    else line
+    -- Match model lines like (x, val) or (x@N, val)
+    if (line.startsWith "(x," || line.startsWith "(x@") && line.contains ", " then
+      match line.splitOn ", " with
+      | [var, rest] =>
+        -- Remove trailing ")" and strip LExpr integer prefix "#"
+        let valStr := rest.dropEnd 1 |>.trimAscii
+        let valStr := if valStr.startsWith "#" then valStr.drop 1 else valStr
+        match valStr.toInt? with
+        | some val =>
+          if val == 2 then
+            s!"{var}, VALUE_WAS_2)"
+          else
+            s!"{var}, model_not_2)"
+        | none => line
+      | _ => line
+    else
+      line
   String.intercalate "\n" normalized
 
 /--
@@ -113,8 +116,6 @@ Result: ✅ pass
 Obligation: a1
 Property: assert
 Result: ❌ fail
-Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -128,49 +129,49 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 -/
 #guard_msgs in
 #eval do
