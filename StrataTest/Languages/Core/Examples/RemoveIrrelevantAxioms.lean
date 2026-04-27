@@ -113,8 +113,6 @@ Result: ✅ pass
 Obligation: a1
 Property: assert
 Result: ❌ fail
-Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -128,49 +126,49 @@ Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 -/
 #guard_msgs in
 #eval do
