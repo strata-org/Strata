@@ -128,8 +128,11 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     let maybeTerms := Core.ProofObligation.toSMTTerms E ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, t, ctx, _stats) =>
-      (ob.label, sanitizeSMTContext ctx, ts, t)
+    | .ok (ts, anfDefs, t, ctx, _stats) =>
+      -- For denotational semantics, ANF definitions are equivalent to equalities
+      let anfAssumptions := anfDefs.map fun d =>
+        Strata.SMT.Factory.eq (.app (.uf ⟨d.name, [], d.ty⟩) [] d.ty) d.body
+      (ob.label, sanitizeSMTContext ctx, anfAssumptions ++ ts, t)
 
 /--
 Interpret a list of SMT verification conditions as the conjunction of their

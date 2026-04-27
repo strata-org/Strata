@@ -279,17 +279,34 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool)
-    (label : String) :
+    (label : String)
+    (anfDefinitions : List Core.ANFDefinition := []) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
   ctx.emitDatatypes
-  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+  let anfDefNames := anfDefinitions.map (·.name)
+  -- Filter out ANF variables from UF declarations (they will be emitted as define-fun)
+  let ufsToDecl := if anfDefinitions.isEmpty then ctx.ufs
+    else ctx.ufs.filter fun uf => !anfDefNames.contains uf.id
+  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+  -- Pre-populate encoder state with ANF variable names so encodeTerm
+  -- recognizes them without emitting declare-fun
+  let estate := if anfDefinitions.isEmpty then estate
+    else
+      let anfUfs := ctx.ufs.filter fun uf => anfDefNames.contains uf.id
+      anfUfs.foldl (init := estate) fun estate uf =>
+        { estate with ufs := estate.ufs.insert uf uf.id }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
   for id in _axms do
     Solver.assert id
+  -- Emit ANF variable definitions as define-fun (macro expansions, not constraints)
+  let estate ← anfDefinitions.foldlM (init := estate) fun estate def_ => do
+    let (bodyEnc, estate) ← (encodeTerm False def_.body) |>.run estate
+    Solver.defineFunTerm def_.name [] def_.ty bodyEnc
+    pure estate
   -- Assert assumption terms
   let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
   for id in assumptionIds do
@@ -298,7 +315,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty then some id else none
+    if uf.args.isEmpty && !anfDefNames.contains uf.id then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
@@ -405,6 +422,7 @@ def dischargeObligation
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
   (label : String)
+  (anfDefinitions : List ANFDefinition := [])
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -418,7 +436,7 @@ def dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
-      (label := label))
+      (label := label) (anfDefinitions := anfDefinitions))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -1206,7 +1224,7 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
     check flags, and returns the solver results. The pipeline is parametrized
     by this function so it does not know about SMT-LIB or any specific solver. -/
 abbrev DischargeFn :=
-  List Term → Term → SMT.Context → Bool → Bool →
+  List Term → Term → SMT.Context → Bool → Bool → List ANFDefinition →
   IO (Except Format (SMT.Result × SMT.Result × EncoderState))
 
 /-- A `CoreSMTSolver` encapsulates the strategy for discharging all proof
@@ -1230,7 +1248,8 @@ def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
     (label : String) : DischargeFn :=
-  fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck => do
+  fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+      anfDefinitions => do
     if options.incremental && !options.alwaysGenerateSMT then
       SMT.dischargeObligationIncremental options vars md
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
@@ -1239,7 +1258,7 @@ def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
       let filename := tempDir / s!"{SMT.sanitizeFilename label}_{counterVal}.smt2"
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-        (label := label)
+        (label := label) (anfDefinitions := anfDefinitions)
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -1252,12 +1271,14 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (discharge : DischargeFn)
     (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
+    (anfDefinitions : List ANFDefinition := [])
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
-        (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck)
+        (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+          anfDefinitions)
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -1305,6 +1326,7 @@ private structure SolverJob where
   peSatResult? : Option SMT.Result
   peValResult? : Option SMT.Result
   typedVarsInObligation : List Expression.TypedIdent
+  anfDefs : List ANFDefinition
 
 /-- Dispatch a single solver job. This is the I/O-bound part that can run
     in parallel: it spawns a solver process, sends the obligation, and
@@ -1316,7 +1338,8 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
   let discharge := mkDischargeFn options counter tempDir
     job.typedVarsInObligation job.obligation.metadata job.obligation.label
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
-    job.obligation p options discharge job.needSatCheck job.needValCheck phases).toBaseIO
+    job.obligation p options discharge job.needSatCheck job.needValCheck phases
+    (anfDefinitions := job.anfDefs)).toBaseIO
   match resultOrErr with
   | .error diag => return .error diag
   | .ok result =>
@@ -1484,7 +1507,7 @@ def verifySingleEnv (oblProgram : Program)
         dbg_trace f!"\n\nResult: {result}\n{prog}"
       results := results.push result
       if !useParallel && options.stopOnFirstError then break
-    | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
+    | .ok (assumptionTerms, anfDefs, obligationTerm, ctx, encStats) =>
       stats := stats.merge encStats
       let varsInObligation := ProofObligation.getVars obligation
       let typedVarsInObligation ← varsInObligation.mapM
@@ -1497,7 +1520,7 @@ def verifySingleEnv (oblProgram : Program)
         let job : SolverJob := {
           obligation, assumptionTerms, obligationTerm, ctx,
           needSatCheck, needValCheck, peSatResult?, peValResult?,
-          typedVarsInObligation }
+          typedVarsInObligation, anfDefs }
         solverJobs := job :: solverJobs
         solverJobIndices := results.size :: solverJobIndices
         -- Placeholder result to be replaced after parallel dispatch
@@ -1511,6 +1534,7 @@ def verifySingleEnv (oblProgram : Program)
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       discharge needSatCheck needValCheck (externalPhases ++ corePhases)
+                      (anfDefinitions := anfDefs)
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
         -- Merge evaluator results with solver results
