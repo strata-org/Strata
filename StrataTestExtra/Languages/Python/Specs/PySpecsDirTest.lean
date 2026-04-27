@@ -20,7 +20,7 @@ namespace Strata.Python.Specs.PySpecsDirTest
 open Strata (pySpecsDir pySpecOutputPath)
 
 private meta def testDir : System.FilePath :=
-  "StrataTest/Languages/Python/Specs/pyspecs_dir_test"
+  "StrataTestExtra/Languages/Python/Specs/pyspecs_dir_test"
 
 /-- Check that a file exists at the given path. -/
 private meta def fileExists (path : System.FilePath) : IO Bool := do
@@ -32,7 +32,7 @@ private meta def fileExists (path : System.FilePath) : IO Bool := do
 -- Test: full directory scan produces expected output files
 -- ============================================================
 
-private meta def testFullDirectory : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def testFullDirectory : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
@@ -64,7 +64,7 @@ private meta def testFullDirectory : IO Unit := withPython (warnOnSkip := false)
 -- Test: --module flag filters to specific modules
 -- ============================================================
 
-private meta def testModuleFilter : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def testModuleFilter : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
@@ -87,7 +87,7 @@ private meta def testModuleFilter : IO Unit := withPython (warnOnSkip := false) 
 -- Test: --module with package name resolves __init__.py
 -- ============================================================
 
-private meta def testModulePackage : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def testModulePackage : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
@@ -107,7 +107,7 @@ private meta def testModulePackage : IO Unit := withPython (warnOnSkip := false)
 -- correctly (from . import helper in a non-__init__ file)
 -- ============================================================
 
-private meta def testSubdirRelativeImport : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def testSubdirRelativeImport : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
@@ -126,7 +126,7 @@ private meta def testSubdirRelativeImport : IO Unit := withPython (warnOnSkip :=
 -- Test: incremental - second run skips up-to-date files
 -- ============================================================
 
-private meta def testIncremental : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def testIncremental : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
@@ -166,7 +166,7 @@ private meta def testIncremental : IO Unit := withPython (warnOnSkip := false) f
 -- Test: error in one module doesn't prevent others
 -- ============================================================
 
-private meta def testContinueOnError : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
+private meta def testContinueOnError : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do

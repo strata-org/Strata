@@ -26,8 +26,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -63,8 +61,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -102,8 +98,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -138,8 +132,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -197,8 +189,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -282,8 +272,6 @@ zinit → zinit]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -346,8 +334,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 2
 Factory Functions:
 
 
@@ -364,7 +350,7 @@ Label: x_eq_1
 Property: assert
 Assumptions:
 Proof Obligation:
-$__x0 == 1
+x@1 == 1
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |> format
@@ -401,8 +387,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 func double :  ((x : int)) → int :=
   (x + x)
@@ -461,8 +445,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 func addN :  ((x : int)) → int :=
   (x + 10)
@@ -531,8 +513,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 @[inline]
 func choose : ∀[a]. ((cond : bool) (x : a) (y : a)) → a :=
@@ -570,13 +550,11 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → if $__$__nondet_cond_00 then 1 else 2
-($__nondet_cond_0 : bool) → $__$__nondet_cond_00]
+[(x : int) → if $__nondet_cond_0 then 1 else 2
+($__nondet_cond_0 : bool) → $__nondet_cond_0]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 1
 Factory Functions:
 
 
@@ -584,8 +562,8 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(<label_ite_cond_true: $__nondet_cond_0>, if $__$__nondet_cond_00 then $__$__nondet_cond_00 else true)
-(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__$__nondet_cond_00 then false else true then if $__$__nondet_cond_00 then false else true else true)
+(<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
+(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
 
 
 Warnings:
@@ -594,10 +572,10 @@ Deferred Proof Obligations:
 Label: x_pos
 Property: assert
 Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, if $__$__nondet_cond_00 then $__$__nondet_cond_00 else true)
-(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__$__nondet_cond_00 then false else true then if $__$__nondet_cond_00 then false else true else true)
+(<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
+(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
 Proof Obligation:
-if $__$__nondet_cond_00 then 1 else 2 == 1
+if $__nondet_cond_0 then 1 else 2 == 1
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
