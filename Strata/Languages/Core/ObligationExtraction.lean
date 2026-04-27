@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Env
+import Strata.Transform.ANFEncoder
 /-! # Proof Obligation Extraction
 
 A Core-to-obligations pass that walks a post-PE, post-dedup program and extracts
@@ -44,19 +45,43 @@ where
     | .ite .nondet thenSs elseSs _ => isValidObligationInput thenSs && isValidObligationInput elseSs
     | _ => false
 
+/-- Substitute ANF free variables in an expression. -/
+private partial def substAnf (subst : List (CoreIdent × Expression.Expr))
+    (e : Expression.Expr) : Expression.Expr :=
+  if subst.isEmpty then e
+  else go e
+where
+  go : Expression.Expr → Expression.Expr
+    | .fvar m name ty => match subst.find? (·.1 == name) with
+      | some (_, replacement) => replacement
+      | none => .fvar m name ty
+    | .app m fn arg => .app m (go fn) (go arg)
+    | .ite m c t f => .ite m (go c) (go t) (go f)
+    | .eq m e1 e2 => .eq m (go e1) (go e2)
+    | .abs m n ty body => .abs m n ty (go body)
+    | .quant m k n ty tr body => .quant m k n ty (go tr) (go body)
+    | e => e
+
 /-- Extract proof obligations from a procedure body, reconstructing path
     conditions from the program structure.
 
     `pathConditions` accumulates the current path conditions (from `assume`
-    statements and `var` definitions) as we walk the statement tree.
+    statements) as we walk the statement tree. ANF-generated `var`
+    declarations (identified by the `$__anf.` prefix) are substituted back
+    into subsequent expressions rather than added as path condition
+    equalities, keeping the SMT query identical to the pre-ANF form.
+    Non-ANF `var` declarations are added as equalities in the path
+    conditions so the SMT solver knows the variable's value.
 
     Returns the extracted obligations. -/
 private partial def extractFromStatements
     (pathConditions : PathConditions Expression)
+    (anfSubst : List (CoreIdent × Expression.Expr))
     (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
-  go pathConditions ss #[]
+  go pathConditions anfSubst ss #[]
 where
-  go (pc : PathConditions Expression) : Statements →
+  go (pc : PathConditions Expression)
+      (subst : List (CoreIdent × Expression.Expr)) : Statements →
       Array (ProofObligation Expression) →
       Except String (Array (ProofObligation Expression))
   | [], acc => .ok acc
@@ -66,25 +91,30 @@ where
       let propType := match md.getPropertyType with
         | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
         | none => .assert
-      go pc rest (acc.push (ProofObligation.mk label propType pc e md))
+      go pc subst rest (acc.push (ProofObligation.mk label propType pc (substAnf subst e) md))
 
     | .cmd (.cmd (.cover label e md)) =>
-      go pc rest (acc.push (ProofObligation.mk label .cover pc e md))
+      go pc subst rest (acc.push (ProofObligation.mk label .cover pc (substAnf subst e) md))
 
     | .cmd (.cmd (.assume label e _md)) =>
-      go (pc.addInNewest [(label, e)]) rest acc
+      go (pc.addInNewest [(label, substAnf subst e)]) subst rest acc
 
     | .ite .nondet thenSs elseSs _md => do
-      let thenObs ← extractFromStatements pc thenSs
-      let elseObs ← extractFromStatements pc elseSs
-      go pc rest (acc ++ thenObs ++ elseObs)
+      let thenObs ← extractFromStatements pc subst thenSs
+      let elseObs ← extractFromStatements pc subst elseSs
+      go pc subst rest (acc ++ thenObs ++ elseObs)
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
-      -- Variable definitions become equalities in the path conditions,
-      -- so the SMT solver knows the variable's value.
-      let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
-      let varExpr : Expression.Expr := .fvar () name varTy
-      go (pc.insert name.toPretty (.eq () varExpr e)) rest acc
+      if name.toPretty.startsWith ANFEncoder.anfVarPrefix then
+        -- ANF variables: substitute back into subsequent expressions
+        -- to avoid adding equalities that make SMT queries harder.
+        go pc (subst ++ [(name, substAnf subst e)]) rest acc
+      else
+        -- Non-ANF variables: add as equalities in path conditions.
+        let e := substAnf subst e
+        let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
+        let varExpr : Expression.Expr := .fvar () name varTy
+        go (pc.insert name.toPretty (.eq () varExpr e)) subst rest acc
 
     | _other =>
       .error s!"ObligationExtraction: unsupported statement"
@@ -100,7 +130,7 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       .ok (axiomPc ++ [(a.name, a.e)], allObs)
     | .proc proc _md => do
       let globalPc : PathConditions Expression := [axiomPc]
-      let obs ← extractFromStatements globalPc proc.body
+      let obs ← extractFromStatements globalPc [] proc.body
       .ok (axiomPc, allObs ++ obs)
     | _ => .ok (axiomPc, allObs)
   return allObs
