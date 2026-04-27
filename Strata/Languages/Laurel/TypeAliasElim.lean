@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 # Type Alias Elimination

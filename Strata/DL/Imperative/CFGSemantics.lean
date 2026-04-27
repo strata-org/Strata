@@ -6,10 +6,7 @@
 module
 
 public import Strata.DL.Imperative.BasicBlock
-public import Strata.DL.Imperative.Cmd
-public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemantics
-public import Strata.DL.Util.Relations
 
 public section
 

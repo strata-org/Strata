@@ -14,7 +14,7 @@ import Strata.DDM.Ion
 /- Dialect Library -/
 import Strata.DL.SMT.SMT
 import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.Imperative
+import Strata.DL.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
@@ -41,10 +41,13 @@ import Strata.Languages.Boole.Verify
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.ProcedureWF
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.StatementWF
 import Strata.Languages.Core.VerifierProofs
-import Strata.Languages.Dyn.Dyn
+import Strata.Languages.Dyn
 import Strata.Languages.Dyn.Verify
-import Strata.Languages.Python.Python
+import Strata.Languages.Python
 
 /- DDM -/
 import Strata.DDM
@@ -53,6 +56,7 @@ import Strata.DDM
 import Strata.Backends.CBMC
 
 /- Dialect Library — additional (can't go in aggregates due to cycles) -/
+import Strata.DL.Imperative.CFGSemantics
 import Strata.DL.Imperative.CFGToCProverGOTO
 import Strata.DL.Imperative.ToCProverGOTO
 import Strata.DL.SMT.Denote

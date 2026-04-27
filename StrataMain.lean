@@ -6,37 +6,36 @@
 module
 
 -- Executable with utilities for working with Strata files.
+
 import Lean.Parser.Extension
+
 import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Backends.CBMC.GOTO -- shake: keep
+import Strata.DDM.BuiltinDialects
+import Strata.DDM.Elab
 import Strata.DDM.Integration.Java.Gen
-import Strata.Languages.Core.Verifier
+import Strata.DDM.Util.String
+import Strata.DL.SMT.DDMTransform.Parse
+import Strata.Languages.B3.Verifier.Program
+import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
-import Strata.Languages.B3.Verifier.Program
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Boole.Boole
 import Strata.Languages.Boole.Verify
-import Strata.Languages.Python.Python
+import Strata.Languages.Python.PyFactory
+import Strata.Languages.Python.PySpecPipeline
+import Strata.Languages.Python.ReadPython
+import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Core.EntryPoint
-import Strata.Transform.ProcedureInlining
-import Strata.Util.IO
-
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
-import Strata.DDM.BuiltinDialects
-import Strata.DDM.Util.String
-import Strata.Languages.Python.PyFactory
-import Strata.Languages.Python.Specs
-import Strata.Languages.Python.Specs.DDM
-import Strata.Languages.Python.ReadPython
 
 open Strata
 

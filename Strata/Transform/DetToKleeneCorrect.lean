@@ -5,9 +5,6 @@
 -/
 module
 
-public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.StmtSemantics
-public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.Transform.DetToKleene
 public import Strata.Transform.Specification
@@ -17,6 +14,7 @@ import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Util.Relations
+import Std.Tactic.BVDecide.Normalize.Prop
 
 /-! # Deterministic-to-Kleene Transformation Correctness.
 

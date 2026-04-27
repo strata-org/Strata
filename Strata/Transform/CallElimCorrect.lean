@@ -5,20 +5,7 @@
 -/
 module
 
-import Init.Data.List.Basic
-import Init.Data.List.Lemmas
-public import Strata.Languages.Core.Env
-public import Strata.Languages.Core.Identifiers
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.ProgramType
-public import Strata.Languages.Core.WF
-public import Strata.DL.Lambda.Lambda
-public import Strata.Transform.CoreTransform
-public import Strata.Transform.CallElim
-public import Strata.DL.Imperative.CmdSemantics
-public import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.StatementSemanticsProps
-import Strata.DL.Util.ListUtils
+import Strata.Transform.CallElim -- shake: keep (bug)
 
 /-! # Call Elimination Correctness Proof (DEPRECATED)
 
@@ -35,9 +22,7 @@ import Strata.DL.Util.ListUtils
 namespace CallElimCorrect
 open Core Core.Transform CallElim
 
-public section
-
--- inidividual lemmas
+-- individual lemmas
 
 theorem createHavocsApp :
 createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
@@ -4591,7 +4576,5 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
 
 -/
 -/
-
-end -- public section
 
 end CallElimCorrect

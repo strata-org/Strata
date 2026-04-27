@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.TypeContext
-public import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.LExprT
 
 namespace Core
 open Lambda Imperative

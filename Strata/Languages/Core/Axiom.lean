@@ -7,9 +7,7 @@ module
 
 
 
-public import Strata.Languages.Core.Statement
-public import Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.LExpr
+public import Strata.Languages.Core.Identifiers
 
 namespace Core
 public section

@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.LaurelTypes
 
 /-
 Modifies clause transformation (Laurel → Laurel).

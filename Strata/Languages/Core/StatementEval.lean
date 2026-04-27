@@ -5,18 +5,15 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
-import all Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Env
-public import Strata.Languages.Core.CmdEval
-public import Strata.Languages.Core.Statistics
-public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.LExprT
-public import Strata.DL.Imperative.StmtEval
-public import Strata.Languages.Core.StatementSemantics
+import Strata.DL.Imperative.CmdEval
 import all Strata.DL.Imperative.Stmt
-import all Strata.DL.Imperative.CmdEval
+import Strata.DL.Imperative.StmtEval
+import Strata.Languages.Core.CmdEval
+public import Strata.Languages.Core.Env
+import all Strata.Languages.Core.Statement
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.Statistics
+public import Strata.Util.Statistics
 
 ---------------------------------------------------------------------
 

@@ -5,12 +5,11 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.CmdType
 public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.FunctionType
-public import Strata.DL.Imperative.CmdType
-import Strata.Util.Tactics
+import Strata.DL.Imperative.CmdType
+import Strata.DL.Lambda.LExprT
+import Strata.Languages.Core.CmdType
+import Strata.Languages.Core.FunctionType
 
 public section
 

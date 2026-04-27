@@ -17,7 +17,6 @@ import Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Error
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Util.DecideProp
 import Strata.Util.Profile
 
 /-! ## PySpec Pipeline

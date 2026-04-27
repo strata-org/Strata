@@ -5,9 +5,7 @@
 -/
 module
 
-public import Lean.Data.Json.Basic
-public import Lean.Data.Json.FromToJson
-import Lean.Data.Json
+public import Lean.Data.Json.FromToJson.Basic
 
 public section
 

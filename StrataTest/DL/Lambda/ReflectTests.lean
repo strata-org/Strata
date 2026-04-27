@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Lean.Meta
 import Strata.DL.Lambda.Reflect
 
 /-! ## Tests for Reflect -/

@@ -7,7 +7,6 @@ module
 
 public import Strata.DDM.Elab.DeclM
 
-
 public section
 namespace Strata.Elab
 

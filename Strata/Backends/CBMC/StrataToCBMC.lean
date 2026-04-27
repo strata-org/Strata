@@ -5,13 +5,10 @@
 -/
 module
 
-import Lean.Data.Json
-import Lean.Parser.Types
-import Strata.DL.Util.Map
 public import Strata.Languages.C_Simp.C_Simp
-public import Strata.Languages.C_Simp.Verify
 public import Strata.Backends.CBMC.Common
-import Strata.Util.Tactics
+import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
+import Strata.Languages.C_Simp.DDMTransform.Translate
 
 open Lean
 open Strata.CBMC

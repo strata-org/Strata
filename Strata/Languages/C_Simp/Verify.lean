@@ -6,12 +6,8 @@
 module
 
 public import Strata.Languages.C_Simp.C_Simp
-public import Strata.Languages.C_Simp.DDMTransform.Translate
-public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
-import Lean.Parser.Types
-import Strata.Languages.Core.CoreOp
-import Strata.DL.Imperative.Stmt
+import Strata.Languages.C_Simp.DDMTransform.Translate
 
 public section
 

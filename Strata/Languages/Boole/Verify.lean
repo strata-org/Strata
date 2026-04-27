@@ -6,12 +6,8 @@
 module
 
 public import Strata.Languages.Boole.Boole
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Verifier
-public import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Imperative.Stmt
+import Strata.Util.Tactics
 
 public section
 

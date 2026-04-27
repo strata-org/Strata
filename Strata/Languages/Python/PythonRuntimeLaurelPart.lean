@@ -7,6 +7,8 @@ module
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 public import Strata.Languages.Laurel.Laurel
+public import Strata.DDM.AST
+import Strata.DDM.Integration.Lean.HashCommands -- shake: keep
 
 namespace Strata
 namespace Python

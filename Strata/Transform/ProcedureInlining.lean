@@ -5,15 +5,7 @@
 -/
 module
 
-import Strata.DL.Util.LabelGen
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.CoreGen
-import Strata.Languages.Core.ProgramWF
-public import Strata.Languages.Core.Statement
-public import Strata.Transform.CoreTransform
 public import Strata.Languages.Core.PipelinePhase
-import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
 

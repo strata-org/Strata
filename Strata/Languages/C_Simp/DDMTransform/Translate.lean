@@ -5,9 +5,7 @@
 -/
 module
 
-public import Strata.Languages.C_Simp.DDMTransform.Parse
 public import Strata.Languages.C_Simp.C_Simp
-import Strata.DDM.AST
 public import Strata.Languages.Core.CoreOp
 
 public section

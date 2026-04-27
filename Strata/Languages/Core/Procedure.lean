@@ -6,7 +6,6 @@
 module
 
 
-public import Strata.DL.Imperative.HasVars
 public import Strata.Languages.Core.Statement
 
 ---------------------------------------------------------------------

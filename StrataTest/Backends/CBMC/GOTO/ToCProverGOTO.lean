@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Lambda.LState
 import StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
 import Strata.DL.Imperative.ToCProverGOTO
 import Strata.Backends.CBMC.GOTO.InstToJson

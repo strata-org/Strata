@@ -7,7 +7,8 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
-public import Strata.Util.Name
+public import Strata.DL.Lambda.LExprEval
+public import Strata.Languages.Core.Factory
 
 public section
 

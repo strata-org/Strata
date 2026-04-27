@@ -5,9 +5,9 @@
 -/
 module
 
-public import Std.Data.HashMap
+public import Std.Data.HashMap.Basic
+import Lean.Exception
 public meta import Lean.Elab.Command
-public meta import Lean.Parser
 
 /-! # Transform statistics
 

@@ -7,10 +7,9 @@ module
 
 public import Strata.Transform.ProcBodyVerify
 public import Strata.Transform.CoreSpecification
-public import Strata.Languages.Core.WF
-public import Strata.Languages.Core.ProcedureWF
-import Strata.DL.Util.ListMap
-import Strata.DL.Util.List
+import Strata.Languages.Core.ProcedureWF
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Core.StatementSemanticsProps
 
 public section
 

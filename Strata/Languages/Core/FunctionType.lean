@@ -6,7 +6,8 @@
 module
 
 public import Strata.Languages.Core.Function
-public import Strata.Languages.Core.Program
+import Strata.DL.Lambda.LExprT
+import Strata.Languages.Core.Procedure
 
 ---------------------------------------------------------------------
 

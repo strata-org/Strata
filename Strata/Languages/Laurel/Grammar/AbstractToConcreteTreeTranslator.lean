@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.DDM.AST
-public import Strata.DDM.Format
-public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import Strata.Languages.Laurel.Grammar.LaurelGrammar -- shake: keep (imports use this)
 public import Strata.Languages.Laurel.Laurel
+import Strata.DDM.Format
 
 namespace Strata
 namespace Laurel

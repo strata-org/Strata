@@ -5,14 +5,12 @@
 -/
 module
 
-public import Strata.DL.SMT.DDMTransform.Translate
-public import Strata.DL.SMT.Factory
-public import Strata.DL.SMT.Op
-public import Strata.Util.Name
 public import Strata.DL.SMT.Solver
-public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
-import Std.Data.HashMap
+import Strata.Util.Name
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.SMT.DDMTransform.Parse
+import Strata.DL.SMT.Factory
+import Strata.Util.Tactics
 
 /-!
 Based on Cedar's Term language.

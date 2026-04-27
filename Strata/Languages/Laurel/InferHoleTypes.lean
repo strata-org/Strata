@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Util.Statistics
+public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.LaurelTypes
 
 /-!
 # Hole Type Inference

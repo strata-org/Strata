@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Util.Func
 public import Strata.DL.Util.ListUtils
 import all Strata.DL.Util.ListUtils
 public import Strata.Languages.Core.Program

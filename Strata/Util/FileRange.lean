@@ -5,7 +5,6 @@
 -/
 module
 public import Strata.DDM.Util.SourceRange
-public import Lean.Data.Position
 
 open Std (Format)
 

@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemantics

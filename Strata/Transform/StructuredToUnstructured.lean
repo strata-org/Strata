@@ -5,12 +5,8 @@
 -/
 module
 
-import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.BasicBlock
-public import Strata.DL.Imperative.CFGSemantics
-import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
-import Strata.DL.Lambda.LExpr
 public import Strata.DL.Util.LabelGen
 
 public section

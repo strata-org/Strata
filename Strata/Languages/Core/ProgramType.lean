@@ -5,10 +5,10 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprType
-public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.FunctionType
 public import Strata.Languages.Core.ProcedureType
+public import Strata.DL.Lambda.LExprT
+public import Strata.Languages.Core.Factory
 
 public section
 

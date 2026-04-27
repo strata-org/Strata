@@ -8,7 +8,6 @@ module
 import Std.Data.HashMap.Lemmas
 
 public import Strata.DDM.Elab.Core
-
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
 import Strata.Util.DecideProp

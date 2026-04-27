@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Core.Factory
 
 /-! ### Prelude Filtering
 

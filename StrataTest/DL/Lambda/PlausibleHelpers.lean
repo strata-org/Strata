@@ -5,9 +5,8 @@
 -/
 module
 
-public meta import Plausible.Sampleable
-public meta import Plausible.DeriveArbitrary
-public meta import Plausible.Attr
+public import Plausible.Gen
+public import Plausible.Random
 
 /-! ## Helpers for using Plausible with Chamelean generated instances.
 

@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.Expr
 public import Strata.Backends.CBMC.GOTO.Code
 
 namespace CProverGOTO

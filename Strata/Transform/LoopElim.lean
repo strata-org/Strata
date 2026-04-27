@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Imperative.Stmt
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Languages.Core.StatementSemantics
 

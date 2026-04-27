@@ -5,15 +5,13 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
 public import Strata.Languages.Python.Specs.Decls
 
-import Strata.DDM.AST
-import Strata.DDM.Util.ByteArray
-import Strata.DDM.Format
-import Strata.DDM.BuiltinDialects.Init
+import Strata.DDM.Integration.Lean -- shake: keep
 public import Strata.DDM.Integration.Lean.OfAstM
+
 import Strata.DDM.Ion
+public import Strata.DDM.Format
 
 public section
 

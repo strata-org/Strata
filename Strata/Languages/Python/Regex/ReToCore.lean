@@ -6,7 +6,8 @@
 module
 
 public import Strata.Languages.Python.Regex.ReParser
-public import Strata.Languages.Core.Factory
+public import Strata.Languages.Core.Expressions
+import Strata.Languages.Core.Factory
 
 namespace Strata
 namespace Python

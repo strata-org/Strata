@@ -5,8 +5,6 @@
 -/
 module
 
-import Lean.Meta.Basic
-
 public import Strata.Languages.Core.SMTEncoder
 
 public section

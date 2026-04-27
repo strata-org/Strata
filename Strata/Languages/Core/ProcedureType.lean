@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Core.Procedure
-public import Strata.DL.Imperative.HasVars
-public import Strata.Languages.Core.StatementType
+public import Strata.Languages.Core.Program
+import Strata.DL.Lambda.LExprT
+import Strata.Languages.Core.StatementType
 
 ---------------------------------------------------------------------
 

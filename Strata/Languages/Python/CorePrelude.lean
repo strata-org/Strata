@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.DDM.Elab
-public import Strata.DDM.AST
-public import Strata.Languages.Core.DDMTransform.Grammar
-public import Strata.Languages.Core.Verifier
+import Strata.DDM.Integration.Lean.HashCommands --shake: keep
+public import Strata.Languages.Core.Program
+import Strata.Languages.Core.Verifier
 
 namespace Strata
 namespace Python
