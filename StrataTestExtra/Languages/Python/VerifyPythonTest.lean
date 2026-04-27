@@ -27,14 +27,16 @@ def toLaurel (pythonCmd : System.FilePath) (program : String)
   let laurel ← processPythonToLaurel pythonCmd (stringInputContext "test.py" program)
   pure (laurel, toString (Laurel.formatProgram laurel))
 
-/-- Assert that a procedure with the given name exists and has a Transparent body. -/
-def assertTransparent (laurel : Laurel.Program) (procName : String) : IO Unit := do
+/-- Assert that a procedure has an implementation body available for verification
+    (either Transparent or Opaque with an implementation). -/
+def assertHasBody (laurel : Laurel.Program) (procName : String) : IO Unit := do
   match laurel.staticProcedures.find? (fun p => p.name.text == procName) with
   | none => throw <| .userError s!"{procName} procedure not found in Laurel output"
   | some proc =>
     match proc.body with
     | .Transparent _ => pure ()
-    | _ => throw <| .userError s!"{procName} body should be Transparent, not Opaque"
+    | .Opaque _ (some _) _ => pure ()
+    | _ => throw <| .userError s!"{procName} has no implementation body (External or Opaque without implementation)"
 
 /-- Assert that a procedure with the given name exists and has an Opaque body. -/
 def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
@@ -240,7 +242,7 @@ def create_service() -> Any:
 -- Verifies that dispatch detection in __init__ doesn't break
 -- normal class translation.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Wrapper:
     name: str
@@ -260,7 +262,7 @@ def main() -> None:
 -- Verifies that field method calls on user-defined classes don't cause
 -- "Coercion to Any not supported" or other translation errors.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Svc:
     name: str
@@ -292,7 +294,7 @@ def main() -> None:
 -- Dispatch detection inside try/except in __init__.
 -- self.svc = Svc() inside a try block should still be detected.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Svc:
     name: str
@@ -338,7 +340,7 @@ def main() -> None:
 "
   let (laurel, output) ← toLaurel pythonCmd program
   let calcAdd := manglePythonMethod "Calculator" "add"
-  assertTransparent laurel calcAdd
+  assertHasBody laurel calcAdd
   unless containsSubstr output s!"{calcAdd}(" do
     throw <| IO.userError s!"Expected '{calcAdd}(' in Laurel output but not found"
 
@@ -660,7 +662,7 @@ def retry(func: typing.Callable[..., typing.Any], retries: int = 3) -> typing.An
 -- is correctly resolved and inlined. If the method were unresolved (Hole),
 -- the result would be havocked and the assertion would be unknown/failing.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Calculator:
     def __init__(self, base: int) -> None:
@@ -685,7 +687,7 @@ def main() -> None:
 -- Inner.greet's body must be resolved through the Outer.inner field
 -- for the assertion to be verifiable.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class Inner:
     def __init__(self, prefix: str) -> None:
