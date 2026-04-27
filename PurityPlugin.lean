@@ -9,23 +9,28 @@ import Lean
 
 /-! # Purity Plugin
 
-A Lean compiler plugin that registers a linter to detect impure commands
-during elaboration. When loaded via `lean --plugin`, it writes `.impure`
-marker files next to `.olean` files for modules that use impure commands.
+A Lean compiler plugin that ensures impure modules are always re-elaborated.
 
-Configure in lakefile.toml:
-```toml
-[[lean_lib]]
-name = "PurityPlugin"
-plugins = ["PurityPlugin"]
-```
+## How it works
+
+1. **At plugin load** (start of each `lake build`): For every `.lean` source file
+   that does NOT have a `.pure` marker in `.lake/build/lib/lean/`, delete its
+   `.trace` file so Lake rebuilds it.
+
+2. **During elaboration**: A linter runs after each command. It optimistically
+   writes a `.pure` marker. If any impure command is detected, it deletes the
+   marker. At the end of elaboration, only pure modules retain their marker.
+
+Markers live in `.lake/build/lib/lean/` alongside `.olean` files, so they're
+automatically cleaned by `lake clean` and ignored by git.
+
+**Safe by default**: no `.pure` marker = rebuild.
 -/
 
 open Lean
 
 namespace Strata.PurityPlugin
 
-/-- Commands whose elaboration is known to be pure. -/
 private def pureCommandKinds : Std.HashSet SyntaxNodeKind := .ofList [
   ``Lean.Parser.Command.declaration, ``Lean.Parser.Command.«deriving»,
   ``Lean.Parser.Command.«section», ``Lean.Parser.Command.«namespace»,
@@ -82,61 +87,71 @@ private def isPureCommand (kind : SyntaxNodeKind) : Bool :=
   pureCommandPrefixes.any (fun pfx => pfx.isPrefixOf kind) ||
   kind == nullKind
 
-/-- Delete build artifacts for a single .impure marker. -/
-private def cleanMarker (marker : System.FilePath) : IO Unit := do
-  let src := marker.toString.dropRight 7  -- strip ".impure"
-  let stem := (if src.endsWith ".lean" then (src.dropEnd 5).toString else src)
-  for suffix in #[".trace"] do
-    try IO.FS.removeFile s!".lake/build/lib/lean/{stem}{suffix}" catch _ => pure ()
-  try IO.FS.removeFile marker catch _ => pure ()
+/-- Convert a source path to the build artifact stem.
+`Strata/DDM/Elab/Env.lean` → `.lake/build/lib/lean/Strata/DDM/Elab/Env`
+Handles absolute paths by stripping the CWD prefix. -/
+private def toBuildStem (srcPath : String) : IO String := do
+  let cwd ← IO.currentDir
+  let rel := if srcPath.startsWith cwd.toString
+    then ((srcPath.drop cwd.toString.length).dropWhile (· == '/')).toString
+    else srcPath
+  let stem := if rel.endsWith ".lean" then (rel.dropEnd 5).toString else rel
+  return s!".lake/build/lib/lean/{stem}"
 
-/-- Recursively find and clean .impure markers. -/
-private partial def cleanImpureInDir (root : System.FilePath) : IO Unit := do
+private partial def findLeanFiles (root : System.FilePath) : IO (Array System.FilePath) := do
+  let mut result := #[]
   if ← root.isDir then
     for entry in ← root.readDir do
-      if entry.path.extension == some "impure" then
-        cleanMarker entry.path
-      else if ← entry.path.isDir then
-        cleanImpureInDir entry.path
+      result := result ++ (← findLeanFiles entry.path)
+  else if root.extension == some "lean" then
+    result := result.push root
+  return result
 
-/-- Scan for .impure markers from the previous build and delete the
-corresponding build artifacts so Lake re-elaborates those modules. -/
-private def cleanPreviousImpureMarkers : IO Unit := do
+/-- At plugin load: delete traces for modules without .pure markers. -/
+private def invalidateImpureTraces : IO Unit := do
+  let lockFile : System.FilePath := ".lake/build/purity_cleanup.lock"
+  if ← lockFile.pathExists then return
+  try IO.FS.writeFile lockFile "" catch _ => return
   for dir in #["Strata", "StrataTest"] do
     let path : System.FilePath := dir
     if ← path.isDir then
-      cleanImpureInDir path
-  let marker : System.FilePath := "StrataMain.lean.impure"
-  if ← marker.pathExists then
-    cleanMarker marker
+      let files ← findLeanFiles path
+      for file in files do
+        let stem ← toBuildStem file.toString
+        let pureMarker : System.FilePath := stem ++ ".pure"
+        unless ← pureMarker.pathExists do
+          try IO.FS.removeFile (stem ++ ".trace") catch _ => pure ()
+  for extra in #["StrataMain.lean"] do
+    let file : System.FilePath := extra
+    if ← file.pathExists then
+      let stem ← toBuildStem extra
+      let pureMarker : System.FilePath := stem ++ ".pure"
+      unless ← pureMarker.pathExists do
+        try IO.FS.removeFile (stem ++ ".trace") catch _ => pure ()
+  try IO.FS.removeFile lockFile catch _ => pure ()
 
-initialize cleanPreviousImpureMarkers
+initialize invalidateImpureTraces
 
-/-- Global ref tracking impure commands in the current module. -/
-initialize impureRef : IO.Ref (Array SyntaxNodeKind) ← IO.mkRef #[]
-
-/-- Register the purity linter. When an impure command is detected, write a
-`.impure` marker file. The marker path is derived from the source file name
-available in the elaboration context. -/
+/-- Linter: optimistically write .pure marker on first pure command.
+Delete it if any impure command is seen. -/
 initialize Lean.addLinter {
   name := `Strata.purityPlugin
   run := fun stx => do
+    let ctx ← readThe Lean.Elab.Command.Context
+    let fileName := ctx.fileName
+    if fileName.isEmpty then return
+    let stem ← toBuildStem fileName
+    let pureMarker := stem ++ ".pure"
     let kind := stx.getKind
-    if kind != nullKind && !isPureCommand kind then
-      impureRef.modify (·.push kind)
-      let ctx ← readThe Lean.Elab.Command.Context
-      let fileName := ctx.fileName
-      if !fileName.isEmpty then
-        -- Write marker file for diagnostics
-        let markerPath := fileName ++ ".impure"
-        let existing ← try IO.FS.readFile markerPath catch _ => pure ""
-        IO.FS.writeFile markerPath (existing ++ toString kind ++ "\n")
-        -- Delete the .olean trace file so Lake rebuilds this module next time.
-        -- Source: Strata/Foo/Bar.lean → Trace: .lake/build/lib/lean/Strata/Foo/Bar.trace
-        let srcPath := fileName
-        let stem := if srcPath.endsWith ".lean" then (srcPath.dropEnd 5).toString else srcPath
-        let tracePath := s!".lake/build/lib/lean/{stem}.trace"
-        try IO.FS.removeFile tracePath catch _ => pure ()
+    if kind == nullKind then return
+    if !isPureCommand kind then
+      try IO.FS.removeFile pureMarker catch _ => pure ()
+    else
+      let markerExists ← (System.FilePath.mk pureMarker).pathExists
+      unless markerExists do
+        let parent := (System.FilePath.mk pureMarker).parent.getD "."
+        try IO.FS.createDirAll parent catch _ => pure ()
+        IO.FS.writeFile pureMarker ""
 }
 
 end Strata.PurityPlugin
