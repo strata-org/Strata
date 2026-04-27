@@ -304,10 +304,17 @@ def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (
 def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
 
 /-- Parse a Python float literal string (e.g. "0.0", "1.5", "1e10") into a Decimal.
-    Returns `none` for formats that cannot be represented.
+    Returns `none` for formats that cannot be represented (e.g. "inf", "nan").
+    Handles underscores in numeric literals (e.g. "1_000.5") by stripping them.
     -- TODO: prove round-trip: ∀ s d, parseFloatString s = some d → the Decimal d
     -- represents the same real number as the Python float literal s. -/
 private def parseFloatString (s : String) : Option Decimal := do
+  -- Non-finite floats cannot be represented as Decimal
+  let lower := s.toLower
+  if lower == "inf" || lower == "-inf" || lower == "nan" then none
+  else
+  -- Strip underscores (Python allows e.g. 1_000.5)
+  let s := s.replace "_" ""
   -- Split on 'e'/'E' for scientific notation
   let (coeffStr, expPart) :=
     match s.splitOn "e" with
