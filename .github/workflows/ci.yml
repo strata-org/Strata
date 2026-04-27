@@ -10,7 +10,7 @@ jobs:
   strata-benchmarks:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # required for OIDC
+      id-token: write
       contents: read
     steps:
       - name: Configure AWS credentials
