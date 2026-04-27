@@ -711,7 +711,7 @@ def translateLambda
     let buildLambda := fun (name, ty) e =>
       match ty with
       | .forAll [] mty =>
-        .abs () name.name (.some mty) e
+        .abs Strata.SourceRange.none name.name (.some mty) e
       | _ => panic! s!"Expected monomorphic type in lambda, got: {ty}" -- nopanic:ok
     return xsArray.foldr buildLambda (init := b)
 
