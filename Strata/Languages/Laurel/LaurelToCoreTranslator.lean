@@ -72,11 +72,15 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-/-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
+/-- Emit a diagnostic and return a fresh type variable as a placeholder.
+    A fresh type variable lets the unifier assign any concrete type,
+    which is the correct semantics for "type unknown". -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
   emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic msg)
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  return .tcons "Error" []
+  let s ← get
+  let id := s.nextId
+  set { s with coreProgramHasSuperfluousErrors := true, nextId := id + 1 }
+  return .ftvar s!"$__ty_unused_{id}"
 
 /-
 Translate Laurel HighType to Core Type
@@ -429,6 +433,9 @@ def translateStmt (stmt : StmtExprMd)
                 return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
+              return [Core.Statement.havoc ident md]
+          | .Hole _ _ =>
+              -- Nondet hole: havoc the target variable
               return [Core.Statement.havoc ident md]
           | _ =>
               let coreExpr ← translateExpr value
