@@ -24,7 +24,7 @@ inductive RunConfig (P : PureExpr) (CmdT : Type) (S : Type) where
   | stmts  : List (Stmt P CmdT) → S → RunConfig P CmdT S
   | terminal : S → RunConfig P CmdT S
   | exiting  : Option String → S → RunConfig P CmdT S
-  | block  : Option String → RunConfig P CmdT S → RunConfig P CmdT S
+  | block  : String → RunConfig P CmdT S → RunConfig P CmdT S
   | seq    : RunConfig P CmdT S → List (Stmt P CmdT) → RunConfig P CmdT S
 
 /-- Operations the stepper needs from the state. -/
@@ -71,7 +71,7 @@ def runStep [BEq P.Expr] [HasBool P]
     | .det g =>
       match ops.evalExpr ρ g with
       | some v =>
-        if v == HasBool.tt then .block .none (.stmts (body ++ [s]) ρ)
+        if v == HasBool.tt then .stmts (body ++ [s]) ρ
         else .terminal ρ
       | none => .terminal (ops.addError ρ "Loop guard did not reduce to bool")
 
