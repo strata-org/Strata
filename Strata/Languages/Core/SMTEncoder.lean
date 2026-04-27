@@ -114,6 +114,20 @@ private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List 
       (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
     { name := c.name.name, args := fields }
 
+/-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
+  constructor arguments-/
+private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+    (seenDatatypes : Std.HashSet String) : Except Format Unit := do
+  for block in typeFactory.toList do
+    for d in block do
+      if !seenDatatypes.contains d.name then continue
+      for c in d.constrs do
+        for (fieldName, fieldTy) in c.args do
+          if fieldTy.containsArrow then
+            throw f!"Cannot encode datatype '{d.name}' to SMT: \
+                     constructor '{c.name.name}' has function-typed field '{fieldName.name}' of type '{fieldTy}'. \
+                     Function types cannot be represented in SMT-LIB datatypes."
+
 /--
 Emit datatype declarations to the solver.
 Uses the TypeFactory ordering (already topologically sorted).
@@ -121,6 +135,9 @@ Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+  | .error msg => throw (IO.userError (toString msg))
+  | .ok () => pure ()
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
@@ -270,7 +287,11 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ _ _ =>
+    .error f!"Cannot encode lambda expression to SMT. \
+              Lambda abstractions must be eliminated (e.g., by beta-reduction) \
+              before SMT encoding.\n\
+              Lambda: {e}"
 
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
@@ -628,7 +649,48 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           let ctx := ctx.restoreSubst savedSubst
           .ok (.app (Op.uf uf), smt_outty, ctx)
         else
-          .ok (.app (Op.uf uf), smt_outty, ctx)
+          let (ctx, isNew) ←
+            if func.isRecursive then
+              .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            else match func.body with
+            | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            | some body =>
+              -- Substitute the formals in the function body with appropriate
+              -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
+              let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
+              let body := LExpr.substFvarsLifting body (formals.zip bvars)
+              let (term, ctx) ← toSMTTerm E bvs body ctx
+              .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+          -- For recursive functions, generate per-constructor axioms
+          let recAxioms ← if func.isRecursive && isNew then
+              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
+            else .ok []
+          let allAxioms := func.axioms ++ recAxioms
+          if isNew then
+            -- To ensure termination, we add the axioms only for new functions
+            -- Get the function's type patterns (input types + output type)
+            let inputPatterns := func.inputs.values
+            let outputPattern := func.output
+            let allPatterns := inputPatterns ++ [outputPattern]
+
+            -- Extract type instantiations by matching patterns against concrete types
+            let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
+            let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
+              let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
+              .ok (acc_map.insert tyVar smtTy)
+            ) Map.empty
+            -- Add all axioms for this function to the context, with types binding for the type variables in the expr
+            -- Save the original tySubst to restore after processing axioms
+            let savedSubst := ctx.tySubst
+            let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
+              let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
+                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+                .ok (new_ctx.addAxiom axiom_term)
+            ) ctx
+            let ctx := ctx.restoreSubst savedSubst
+            .ok (.app (Op.uf uf), smt_outty, ctx)
+          else
+            .ok (.app (Op.uf uf), smt_outty, ctx)
 
 end
 
