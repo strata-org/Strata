@@ -126,6 +126,20 @@ procedure modifiesWildcardWithBody(c: Container, d: Container)
   d#value := 3
 };
 
+procedure modifiesWildcardAndSpecific(c: Container, d: Container)
+  modifies c
+  modifies *
+;
+
+procedure modifiesWildcardAndSpecificCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardAndSpecific(c, d);
+  assert x == d#value // fails because modifies * subsumes modifies c
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Without `ensures`, the body is transparent and `modifies *` is silently dropped.
 // The caller sees through the body, so heap changes are tracked directly. See #969.
 procedure modifiesWildcardTransparent(c: Container, d: Container)
