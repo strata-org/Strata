@@ -6,20 +6,20 @@
 module
 
 public meta import Lean.Elab.Command
-public meta import Strata.DDM.AST
--- `public import` provides object-level access for generated code at call sites.
--- `public meta import` provides meta-level access for #strata_gen elaboration.
-public import      Strata.DDM.BuiltinDialects.Init  -- Generated code uses Init types
-public import      Strata.DDM.HNF  -- Generated ofAst uses ExprF.hnf
-public meta import Strata.DDM.BuiltinDialects.Init
+import Lean.Parser.Command
+
+public import      Strata.DDM.BuiltinDialects.Init -- shake: keep (Generated code uses Init types)
+public meta import Strata.DDM.BuiltinDialects.Init -- shake: keep
 meta import        Strata.DDM.BuiltinDialects.StrataDDL
-public meta import Strata.DDM.Integration.Categories
+public import      Strata.DDM.HNF  -- shake: keep (Generated ofAst uses ExprF.hnf)
+public meta import Strata.DDM.Integration.Categories --shake: keep (shake bug)
 public meta import Strata.DDM.Integration.Lean.Env
-public meta import Strata.DDM.Integration.Lean.GenTrace  -- trace option
-public import      Strata.DDM.Integration.Lean.OfAstM  -- Generated ofAst combinators
-public meta import Strata.DDM.Integration.Lean.OfAstM
-public meta import Strata.DDM.Util.Graph.Tarjan
-meta import        Strata.Util.DecideProp
+public meta import Strata.DDM.Integration.Lean.GenTrace  -- shake: keep (trace option)
+public import      Strata.DDM.Integration.Lean.OfAstM -- shake: keep (Generated ofAst combinators)
+public meta import Strata.DDM.Integration.Lean.OfAstM -- shake: keep
+public meta import Strata.DDM.Util.Graph.Tarjan -- shake: keep (shake bug)
+import Strata.DDM.Util.Graph.Tarjan
+meta import Strata.Util.DecideProp
 
 /-!
 Implements the `#strata_gen` command, which reads a dialect definition and

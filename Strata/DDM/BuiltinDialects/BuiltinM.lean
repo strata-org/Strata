@@ -6,8 +6,6 @@
 module
 
 public import Strata.DDM.Elab.DeclM
-public import Lean.Parser.Types
-public import Strata.DDM.Elab.LoadedDialects
 
 
 public section
