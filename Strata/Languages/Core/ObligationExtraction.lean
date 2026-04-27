@@ -108,6 +108,10 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
     | _ => .ok (axiomPc, allObs)
   return allObs
 
+@[simp] theorem extractFromStatements_eq (pc : PathConditions Expression) (ss : Statements) :
+    extractFromStatements pc ss = extractGo pc ss #[] := by
+  unfold extractFromStatements; rfl
+
 private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
     (acc : Array (ProofObligation Expression))
     (h : isValidObligationInput ss = true) :
