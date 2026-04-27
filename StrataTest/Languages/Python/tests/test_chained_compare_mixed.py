@@ -1,4 +1,3 @@
-# strata-args: --check-mode bugFinding
 def test_chained_compare_mixed():
     a: int = 1
     b: int = 2

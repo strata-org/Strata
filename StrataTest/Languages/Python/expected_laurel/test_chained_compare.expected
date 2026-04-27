@@ -1,9 +1,9 @@
-test_chained_compare.py(3, 4): ❓ unknown - test_chained_compare_assert(71)_5
-test_chained_compare.py(4, 11): ❓ unknown - Check PAnd exception
-test_chained_compare.py(4, 4): ❓ unknown - chained compare
-test_chained_compare.py(5, 11): ❓ unknown - Check PAnd exception
-test_chained_compare.py(5, 4): ❌ fail - reversed bounds should fail
-test_chained_compare.py(6, 11): ❓ unknown - Check PGt exception
-test_chained_compare.py(6, 4): ❌ fail - should fail: x is 5
-DETAIL: 0 passed, 2 failed, 5 inconclusive
-RESULT: Failures found
+test_chained_compare.py(2, 4): ✅ pass - assert(32)
+test_chained_compare.py(3, 11): ✅ pass - Check PAnd exception
+test_chained_compare.py(3, 4): ✅ pass - chained compare
+test_chained_compare.py(4, 11): ✅ pass - Check PAnd exception
+test_chained_compare.py(4, 4): ❓ unknown - reversed bounds should fail
+test_chained_compare.py(5, 11): ✅ pass - Check PGt exception
+test_chained_compare.py(5, 4): ❓ unknown - should fail: x is 5
+DETAIL: 5 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

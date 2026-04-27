@@ -1,11 +1,11 @@
-test_chained_compare_mixed.py(3, 4): ❓ unknown - test_chained_compare_mixed_assert(77)_7
-test_chained_compare_mixed.py(4, 4): ❓ unknown - test_chained_compare_mixed_assert(92)_8
-test_chained_compare_mixed.py(5, 4): ❓ unknown - test_chained_compare_mixed_assert(107)_9
-test_chained_compare_mixed.py(6, 11): ❓ unknown - Check PAnd exception
-test_chained_compare_mixed.py(6, 4): ❓ unknown - mixed operators
-test_chained_compare_mixed.py(7, 11): ❓ unknown - Check PAnd exception
-test_chained_compare_mixed.py(7, 4): ❌ fail - reversed mixed should fail
-test_chained_compare_mixed.py(8, 11): ❓ unknown - Check PGt exception
-test_chained_compare_mixed.py(8, 4): ❌ fail - should fail: a is 1
-DETAIL: 0 passed, 2 failed, 7 inconclusive
-RESULT: Failures found
+test_chained_compare_mixed.py(2, 4): ✅ pass - assert(38)
+test_chained_compare_mixed.py(3, 4): ✅ pass - assert(53)
+test_chained_compare_mixed.py(4, 4): ✅ pass - assert(68)
+test_chained_compare_mixed.py(5, 11): ✅ pass - Check PAnd exception
+test_chained_compare_mixed.py(5, 4): ✅ pass - mixed operators
+test_chained_compare_mixed.py(6, 11): ✅ pass - Check PAnd exception
+test_chained_compare_mixed.py(6, 4): ❓ unknown - reversed mixed should fail
+test_chained_compare_mixed.py(7, 11): ✅ pass - Check PGt exception
+test_chained_compare_mixed.py(7, 4): ❓ unknown - should fail: a is 1
+DETAIL: 7 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

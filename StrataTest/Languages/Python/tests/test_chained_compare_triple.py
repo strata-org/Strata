@@ -1,4 +1,3 @@
-# strata-args: --check-mode bugFinding
 def test_chained_compare_triple():
     x: int = 3
     y: int = 7
