@@ -423,7 +423,7 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
   | .isInstanceOf _ typeName loc => do
     reportError .isinstanceUnsupported loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return default
-  | .len subject loc => do
+  | .stringLen subject loc => do
     let src ← nodeSource loc
     let s ← asAny loc <| specExprToLaurel subject src
     return .mkSome <| .fromInt (.strLength (.anyAsString s))

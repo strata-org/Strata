@@ -78,7 +78,7 @@ op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
   @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
   "isinstance" "(" subject ", " typeName ")";
-op lenExpr(subject : SpecExprDecl) : SpecExprDecl =>
+op stringLenExpr(subject : SpecExprDecl) : SpecExprDecl =>
   "len" "(" subject ")";
 op intExpr(value : Int) : SpecExprDecl => value;
 op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
@@ -242,7 +242,7 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .var name loc => .varExpr loc ⟨loc, name⟩
   | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
   | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
-  | .len subj loc => .lenExpr loc subj.toDDM
+  | .stringLen subj loc => .stringLenExpr loc subj.toDDM
   | .intLit v loc => .intExpr loc (toDDMInt loc v)
   | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
   | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
@@ -382,7 +382,7 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .varExpr loc ⟨_, name⟩ => .var name loc
   | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
   | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
-  | .lenExpr loc subj => .len subj.fromDDM loc
+  | .stringLenExpr loc subj => .stringLen subj.fromDDM loc
   | .intExpr loc i => .intLit i.ofDDM loc
   | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc
   | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM loc

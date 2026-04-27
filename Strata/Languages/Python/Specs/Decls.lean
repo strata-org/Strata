@@ -287,7 +287,16 @@ def asSingleton (tp : SpecType) : Option SpecAtomType := do
     for atp in tp.atoms do return atp
   none
 
-def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
+private def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
+
+-- FIXME: This should also work for int literals
+def isIntType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsInt #[])
+
+def isFloatType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsFloat #[])
+
+def isStringType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsStr #[])
+
+def isBoolType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsBool #[])
 
 end SpecType
 
@@ -330,7 +339,9 @@ inductive SpecExpr where
 | var (name : String) (loc : SourceRange)
 | getIndex (subject : SpecExpr) (field : String) (loc : SourceRange)
 | isInstanceOf (subject : SpecExpr) (typeName : String) (loc : SourceRange)
-| len (subject : SpecExpr) (loc : SourceRange)
+/-- `stringLen subject` represents `len(subject)` where `subject` is a string.
+    Used in preconditions like `assert len(name) >= 1`. -/
+| stringLen (subject : SpecExpr) (loc : SourceRange)
 | intLit (value : Int) (loc : SourceRange)
 | intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
@@ -360,6 +371,30 @@ inductive SpecExpr where
     Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
 | forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
 deriving Inhabited
+
+/-- Structural equality ignoring source locations. -/
+def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
+  | .placeholder _, .placeholder _ => true
+  | .var n₁ _, .var n₂ _ => n₁ == n₂
+  | .getIndex s₁ f₁ _, .getIndex s₂ f₂ _ => s₁.softBEq s₂ && f₁ == f₂
+  | .isInstanceOf s₁ t₁ _, .isInstanceOf s₂ t₂ _ => s₁.softBEq s₂ && t₁ == t₂
+  | .stringLen s₁ _, .stringLen s₂ _ => s₁.softBEq s₂
+  | .intLit v₁ _, .intLit v₂ _ => v₁ == v₂
+  | .intGe s₁ b₁ _, .intGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .intLe s₁ b₁ _, .intLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatLit v₁ _, .floatLit v₂ _ => v₁ == v₂
+  | .floatGe s₁ b₁ _, .floatGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatLe s₁ b₁ _, .floatLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .enumMember s₁ v₁ _, .enumMember s₂ v₂ _ => s₁.softBEq s₂ && v₁ == v₂
+  | .regexMatch s₁ p₁ _, .regexMatch s₂ p₂ _ => s₁.softBEq s₂ && p₁ == p₂
+  | .containsKey c₁ k₁ _, .containsKey c₂ k₂ _ => c₁.softBEq c₂ && k₁ == k₂
+  | .implies c₁ b₁ _, .implies c₂ b₂ _ => c₁.softBEq c₂ && b₁.softBEq b₂
+  | .not e₁ _, .not e₂ _ => e₁.softBEq e₂
+  | .forallList l₁ v₁ b₁ _, .forallList l₂ v₂ b₂ _ =>
+    l₁.softBEq l₂ && v₁ == v₂ && b₁.softBEq b₂
+  | .forallDict d₁ k₁ v₁ b₁ _, .forallDict d₂ k₂ v₂ b₂ _ =>
+    d₁.softBEq d₂ && k₁ == k₂ && v₁ == v₂ && b₁.softBEq b₂
+  | _, _ => false
 
 inductive MessagePart where
 | str (s : String)
