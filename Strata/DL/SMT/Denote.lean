@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.SMT.SmtArray
 public import Strata.Languages.Core.SMTEncoder
 
 public section
@@ -161,6 +162,10 @@ def denoteSortAux (sctx : SortContext) (ty : TermType) : Option (SortDenoteResul
   | .option ty =>
     let ty ← denoteSortAux sctx ty
     return fun sΓ => Option (ty sΓ)
+  | .constr "Array" [kTy, vTy] =>
+    let kTy ← denoteSortAux sctx kTy
+    let vTy ← denoteSortAux sctx vTy
+    return fun sΓ => SmtArray (kTy sΓ) (vTy sΓ)
   | .constr id args =>
     match hi : sctx.uss.findIdx? (·.name == id) with
     | some i =>
@@ -197,6 +202,10 @@ def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult s
   | .option ty =>
     let ty ← denoteSort sctx ty
     return fun sΓ => Option (ty sΓ)
+  | .constr "Array" [kTy, vTy] =>
+    let kTy ← denoteSort sctx kTy
+    let vTy ← denoteSort sctx vTy
+    return fun sΓ => SmtArray (kTy sΓ) (vTy sΓ)
   | .constr id args =>
     match hi : sctx.uss.findIdx? (·.name == id) with
     | some i =>
@@ -247,6 +256,22 @@ theorem isSome_denoteSortOption (h : (denoteSort sctx ty).isSome) :
 
 theorem denoteSortOption_Some :
   (denoteSort sctx (.option ty)).get h sΓ = Option ((denoteSort sctx ty).get (denoteSortOption_isSome h) sΓ) := by
+  simp [denoteSort]
+
+theorem denoteSortArray_isSome_key (h : (denoteSort sctx (.constr "Array" [kTy, vTy])).isSome) :
+    (denoteSort sctx kTy).isSome := by
+  exact Option.isSome_of_isSome_bind h
+
+theorem denoteSortArray_isSome_val (h : (denoteSort sctx (.constr "Array" [kTy, vTy])).isSome) :
+    (denoteSort sctx vTy).isSome := by
+  simp only [denoteSort, Bind.bind] at h
+  rewrite [Option.bind_comm (denoteSort sctx kTy) (denoteSort sctx vTy)] at h
+  apply Option.isSome_of_isSome_bind h
+
+theorem denoteSortArray_Some :
+  (denoteSort sctx (.constr "Array" [kTy, vTy])).get h sΓ =
+   SmtArray ((denoteSort sctx kTy).get (denoteSortArray_isSome_key h) sΓ)
+            ((denoteSort sctx vTy).get (denoteSortArray_isSome_val h) sΓ) := by
   simp [denoteSort]
 
 theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
@@ -866,6 +891,23 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
   | .none ty =>
     if h : (denoteSort ctx.sctx ty).isSome then
       return ⟨.option ty, isSome_denoteSortOption h, fun _ => denoteSortOption_Some ▸ none⟩
+    else
+      none
+  -- Array datatype
+  | .app .select [x, i] _ =>
+    let ⟨.constr "Array" [αTy, βTy], h, x⟩ ← denoteTerm ctx x | none
+    let ⟨αTy', _, i⟩ ← denoteTerm ctx i
+    if hα' : αTy' = αTy then
+      return ⟨βTy, denoteSortArray_isSome_val h, fun Γ => (denoteSortArray_Some ▸ x Γ).select (hα' ▸ i Γ)⟩
+    else
+      none
+  | .app .store [x, i, v] _ =>
+    let ⟨.constr "Array" [αTy, βTy], h, x⟩ ← denoteTerm ctx x | none
+    let ⟨αTy', _, i⟩ ← denoteTerm ctx i
+    let ⟨βTy', _, v⟩ ← denoteTerm ctx v
+    if hαβ : αTy' = αTy ∧ βTy' = βTy then
+      return ⟨.constr "Array" [αTy, βTy], h, fun Γ => denoteSortArray_Some ▸
+              @SmtArray.store _ _ (Classical.typeDecidableEq _) (denoteSortArray_Some ▸ x Γ) (hαβ.left ▸ i Γ) (hαβ.right ▸ v Γ)⟩
     else
       none
   | .some a =>

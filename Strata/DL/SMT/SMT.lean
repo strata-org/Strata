@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.SMT.ArrayAxiomatization
 public import Strata.DL.SMT.Encoder
 public import Strata.DL.SMT.Factory
 public import Strata.DL.SMT.Function

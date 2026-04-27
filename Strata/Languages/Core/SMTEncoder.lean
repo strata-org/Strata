@@ -12,7 +12,6 @@ public import Strata.DL.Lambda.RecursiveAxioms
 import Init.Data.String.Extra
 public import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.SMTUtils
-public import Strata.Languages.Core.CoreOp
 
 ---------------------------------------------------------------------
 
@@ -92,6 +91,23 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
   { ctx with typeFactory := tf }
 
+/-- Apply array axiomatization: replace `Array` types with `Map` sorts,
+    `Op.select`/`Op.store` with UFs, and add read-over-write axioms.
+    Called when `useArrayTheory = false`. -/
+def SMT.Context.axiomatizeArrays (ctx : SMT.Context)
+    (assumptions : List Term) (conclusion : Term)
+    : SMT.Context × List Term × Term :=
+  let ifPairs := ctx.ifs.map fun f => (f.uf, f.body)
+  let result : ArrayAxiom.AxiomatizeResult :=
+    ArrayAxiom.axiomatizeArrays ctx.ufs ifPairs ctx.axms assumptions conclusion
+  let ctx' : SMT.Context := { ctx with
+    ufs := result.ufs
+    ifs := result.ifs.map fun (uf, body) => { uf, body }
+    axms := result.axioms
+  }
+  let ctx' := if result.hasArrayTypes then ctx'.addSort { name := "Map", arity := 2 } else ctx'
+  (ctx', result.assumptions, result.conclusion)
+
 /--
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
 Handles monomorphic types and type variables (as `.constr tv []`).
@@ -104,14 +120,22 @@ private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   | .tcons "real" [] => .real
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
+  -- Map is always encoded as Array (matching LMonoTy.toSMTType).
+  -- axiomatizeArrays rewrites these to Map when array theory is disabled.
+  | .tcons "Map" args => .constr "Array" (args.map lMonoTyToTermType)
   | .tcons name args => .constr name (args.map lMonoTyToTermType)
   | .ftvar tv => .constr tv []
 
-/-- Convert a datatype's constructors to typed SMT constructors. -/
-private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List SMTConstructor :=
+/-- Convert a datatype's constructors to typed SMT constructors.
+    When `axiomatized` is true (array theory disabled), applies `replaceArrayType`
+    to convert `Array` field types back to `Map`. -/
+private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta)
+    (axiomatized : Bool := false) : List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
-      (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
+      let ty := lMonoTyToTermType fieldTy
+      let ty := if axiomatized then ArrayAxiom.replaceArrayType ty else ty
+      (d.name ++ ".." ++ name.name, ty)
     { name := c.name.name, args := fields }
 
 /--
@@ -119,17 +143,20 @@ Emit datatype declarations to the solver.
 Uses the TypeFactory ordering (already topologically sorted).
 Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
+When the context contains a `Map` sort (i.e. arrays were axiomatized), field types
+with `Array` are rewritten to `Map` for consistency.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  let axiomatized := ctx.sorts.any (fun s => s.name == "Map")
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constructors := datatypeConstructorsToSMT d
+      let constructors := datatypeConstructorsToSMT d axiomatized
       Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
+      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d axiomatized)
       Strata.SMT.Solver.declareDatatypes dts
 
 @[expose] abbrev BoundVars := List (String × TermType)
@@ -158,9 +185,10 @@ def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy)
 /--
 Returns true if the given type name is a built-in Core type whose SMT-LIB
 encoding is handled specially and should not be declared via `declare-sort`.
+`Map` is included because it is always encoded as the built-in SMT-LIB `Array` sort.
 -/
 def isBuiltinCoreTy (id : String) : Bool :=
-  id ∈ ["bool", "int", "real", "string", "regex"]
+  id ∈ ["bool", "int", "real", "string", "regex", "Map"]
 
 /-
 Add a type to the context. Sorts are easy, but datatypes are tricky:
@@ -171,12 +199,15 @@ we leave as `partial` for now.
 partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
   SMT.Context :=
   -- Always recurse into concrete args to register any type references
+  -- (e.g. Map Composite Int needs to register Composite even though Map itself
+  -- is built-in).
   let ctx := args.foldl (fun ctx arg =>
     match arg with
-    | .tcons id1 args1 =>
-      if isBuiltinCoreTy id1 then ctx
-      else SMT.Context.addType E id1 args1 ctx
+    | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
     | _ => ctx) ctx
+  -- Built-in types (including Map, which is encoded as the built-in Array sort)
+  -- should never be declared via declare-sort.
+  if isBuiltinCoreTy id then ctx else
   match E.datatypes.getType id with
   | some d =>
     if ctx.hasDatatype id then ctx else
@@ -193,7 +224,7 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
     ctx.addSort { name := id, arity := args.length }
 
 mutual
-def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
   | .bitvec n => .ok (.bitvec n, ctx)
@@ -203,28 +234,26 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
   | .tcons "string"  [] => .ok (.string, ctx)
   | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons "Map" args =>
-    -- When using Array theory, convert Map to Array
-    let id := if useArrayTheory then "Array" else "Map"
-    let ctx := if useArrayTheory then ctx
-               else SMT.Context.addType E id args ctx
-    let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
-    .ok ((.constr id args'), ctx)
+    -- Always encode Map as Array (built-in SMT-LIB sort, no declare-sort needed).
+    -- If array theory is disabled, `axiomatizeArrays` rewrites these to Map UFs.
+    let (args', ctx) ← LMonoTys.toSMTType E args ctx
+    .ok ((.constr "Array" args'), ctx)
   | .tcons id args =>
     let ctx := SMT.Context.addType E id args ctx
-    let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
+    let (args', ctx) ← LMonoTys.toSMTType E args ctx
     .ok ((.constr id args'), ctx)
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
                     | _ => .error f!"Unimplemented encoding for type var {tyv}"
 
-def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
   match args with
   | [] => .ok ([], ctx)
   | t :: trest =>
-    let (t', ctx) ← LMonoTy.toSMTType E t ctx useArrayTheory
-    let (trest', ctx) ← LMonoTys.toSMTType E trest ctx useArrayTheory
+    let (t', ctx) ← LMonoTy.toSMTType E t ctx
+    let (trest', ctx) ← LMonoTys.toSMTType E trest ctx
     .ok ((t' :: trest'), ctx)
 end
 
@@ -236,7 +265,6 @@ mutual
 
 @[expose]
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false)
   : Except Format (Term × SMT.Context) := do
   match e with
   | .boolConst _ b => .ok (Term.bool b, ctx)
@@ -252,7 +280,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     | none => .error f!"Cannot encode unannotated operation {fn}."
     | some fnty =>
       -- 0-ary Operation.
-      let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
+      let (op, retty, ctx) ← toSMTOp E fn fnty ctx
       .ok (op [] retty, ctx)
 
   | .bvar _ i =>
@@ -266,7 +294,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     match ty with
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
-      let (tty, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
+      let (tty, ctx) ← LMonoTy.toSMTType E ty ctx
       let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
@@ -288,31 +316,30 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList)
     let x := Strata.Name.findUnique baseName startSuffix usedNames
-    let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-    let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
-    let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
+    let (ety, ctx) ← LMonoTy.toSMTType E ty ctx
+    let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
+    let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
     .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
   | .eq _ e1 e2 =>
-    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
-    let (e2t, ctx) ← toSMTTerm E bvs e2 ctx useArrayTheory
+    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
+    let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
     .ok ((Factory.eq e1t e2t), ctx)
 
   | .ite _ c t f =>
-    let (ct, ctx) ← toSMTTerm E bvs c ctx useArrayTheory
-    let (tt, ctx) ← toSMTTerm E bvs t ctx useArrayTheory
-    let (ft, ctx) ← toSMTTerm E bvs f ctx useArrayTheory
+    let (ct, ctx) ← toSMTTerm E bvs c ctx
+    let (tt, ctx) ← toSMTTerm E bvs t ctx
+    let (ft, ctx) ← toSMTTerm E bvs f ctx
     .ok ((Factory.ite ct tt ft), ctx)
 
   | .app _ _ _ =>
-    appToSMTTerm E bvs e [] ctx useArrayTheory
+    appToSMTTerm E bvs e [] ctx
 
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format (Term × SMT.Context) := do
+  : Except Format (Term × SMT.Context) := do
   match e with
   -- Special case for indexed SMT operations.
   | .app _ (.app _ (.app _ (.op _ "Re.Loop" _) x) n1) n2 =>
-    let (xt, ctx) ← toSMTTerm E bvs x ctx useArrayTheory
+    let (xt, ctx) ← toSMTTerm E bvs x ctx
     match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
     | .some n1i, .some n2i =>
       match Int.toNat? n1i, Int.toNat? n2i with
@@ -326,28 +353,28 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
   | .app _ (.app m fn e1) e2 => do
     match e1, e2 with
     | _, _ =>
-      let (e2t, ctx) ← toSMTTerm E bvs e2 ctx useArrayTheory
-      appToSMTTerm E bvs (.app m fn e1) (e2t :: acc) ctx useArrayTheory
+      let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
+      appToSMTTerm E bvs (.app m fn e1) (e2t :: acc) ctx
 
   | .app _ (.op _ fn fnty) e1 => do
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}. \n\
                         Appears in expression: {e}"
     | some fnty =>
-      let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
-      let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
+      let (op, retty, ctx) ← toSMTOp E fn fnty ctx
+      let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
       .ok (op (e1t :: acc) retty, ctx)
   | .app _ (.fvar _ fn (.some fnty)) e1 => do
     let tys := LMonoTy.destructArrow fnty
     let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
     let intys := tys.take (tys.length - 1)
-    let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
-    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
+    let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
+    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let allArgs := e1t :: acc
     let mut argvars : List TermVar := []
     let mut ctx := ctx
     for inty in intys do
-      let (smt_inty, ctx') ← LMonoTy.toSMTType E inty ctx useArrayTheory
+      let (smt_inty, ctx') ← LMonoTy.toSMTType E inty ctx
       ctx := ctx'
       argvars := argvars ++ [TermVar.mk (toString $ format inty) smt_inty]
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
@@ -355,21 +382,20 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
   | .app _ _ _ =>
     .error f!"Cannot encode expression {e}"
 
-  | _ => toSMTTerm E bvs e ctx useArrayTheory
+  | _ => toSMTTerm E bvs e ctx
 
 partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
+  : Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in do
   -- Encode the type to ensure any datatypes are registered in the context
   let tys := LMonoTy.destructArrow fnty
   let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
   let intys := tys.take (tys.length - 1)
   -- Need to encode arg types also (e.g. for testers)
-  let ctx := match LMonoTys.toSMTType E intys ctx useArrayTheory with
+  let ctx := match LMonoTys.toSMTType E intys ctx with
     | .ok (_, ctx') => ctx'
     | .error _ => ctx
-  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
+  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
 
   match ctx.datatypeFuns.find? fn.name with
   | some (kind, c) =>
@@ -386,76 +412,28 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     .ok (adtApp, smt_outty, ctx)
   | none =>
     -- Not a constructor, tester, or destructor
-    -- Helper: SDivOverflow(x, y) = (x == INT_MIN) ∧ (y == -1)
-    let sdivOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
-      let sdivOverflowApp := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let intMin := Term.prim (.bitvec (BitVec.intMin n))
-          let negOne := Term.prim (.bitvec (BitVec.allOnes n))
-          let xIsMin := Term.app Op.eq [x, intMin] .bool
-          let yIsNegOne := Term.app Op.eq [y, negOne] .bool
-          Term.app Op.and [xIsMin, yIsNegOne] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (sdivOverflowApp, TermType.prim .bool, ctx)
-    -- USubOverflow(x, y) = bvult(x, y)
-    let usubOverflowEnc := fun (ctx : SMT.Context) =>
-      Except.ok (Term.app Op.bvult, TermType.prim .bool, ctx)
-    -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
-    let uaddOverflowEnc := fun (_n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let bvTy := x.typeOf
-          let sum := Term.app Op.bvadd [x, y] bvTy
-          Term.app Op.bvult [sum, x] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (app, TermType.prim .bool, ctx)
-    -- UMulOverflow(x, y) = bvugt(zero_extend(N, x) * zero_extend(N, y), zero_extend(N, MAX))
-    let umulOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let extTy := TermType.prim (.bitvec (n + n))
-          let xe := Term.app (.zero_extend n) [x] extTy
-          let ye := Term.app (.zero_extend n) [y] extTy
-          let prod := Term.app Op.bvmul [xe, ye] extTy
-          let maxVal := Term.prim (.bitvec (BitVec.allOnes n))
-          let maxExt := Term.app (.zero_extend n) [maxVal] extTy
-          Term.app Op.bvugt [prod, maxExt] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (app, TermType.prim .bool, ctx)
-    -- UNegOverflow(x) = x != 0
-    let unegOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x] =>
-          let zero := Term.prim (.bitvec (BitVec.zero n))
-          Term.app Op.not [Term.app Op.eq [x, zero] .bool] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (app, TermType.prim .bool, ctx)
     match E.factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      match CoreOp.ofString func.name.name with
-    | .bool .And     => .ok (.app Op.and,        .bool,   ctx)
-    | .bool .Or      => .ok (.app Op.or,         .bool,   ctx)
-    | .bool .Not     => .ok (.app Op.not,        .bool,   ctx)
-    | .bool .Implies => .ok (.app Op.implies,    .bool,   ctx)
-    | .bool .Equiv   => .ok (.app Op.eq,         .bool,   ctx)
+      match func.name.name with
+    | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
+    | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
+    | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
+    | "Bool.Implies" => .ok (.app Op.implies,    .bool,   ctx)
+    | "Bool.Equiv"   => .ok (.app Op.eq,         .bool,   ctx)
 
-    | .numeric ⟨.int, .Neg⟩      => .ok (.app Op.neg,        .int ,   ctx)
-    | .numeric ⟨.int, .Add⟩      => .ok (.app Op.add,        .int ,   ctx)
-    | .numeric ⟨.int, .Sub⟩      => .ok (.app Op.sub,        .int ,   ctx)
-    | .numeric ⟨.int, .Mul⟩      => .ok (.app Op.mul,        .int ,   ctx)
-    | .numeric ⟨.int, .Div⟩ | .numeric ⟨.int, .SafeDiv⟩ =>
-      -- Safe to encode as normal SMT div/mod: preconditions have already been
-      -- checked and generated well-formedness conditions in the environment.
-      .ok (.app Op.div,        .int ,   ctx)
-    | .numeric ⟨.int, .Mod⟩ | .numeric ⟨.int, .SafeMod⟩ =>
-      .ok (.app Op.mod,        .int ,   ctx)
+    | "Int.Neg"      => .ok (.app Op.neg,        .int ,   ctx)
+    | "Int.Add"      => .ok (.app Op.add,        .int ,   ctx)
+    | "Int.Sub"      => .ok (.app Op.sub,        .int ,   ctx)
+    | "Int.Mul"      => .ok (.app Op.mul,        .int ,   ctx)
+    | "Int.Div"      => .ok (.app Op.div,        .int ,   ctx)
+    -- Safe to encode as normal SMT div/mod: preconditions have already been
+    -- checked and generated well-formedness conditions in the environment.
+    | "Int.SafeDiv"  => .ok (.app Op.div,        .int ,   ctx)
+    | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
+    | "Int.SafeMod"  => .ok (.app Op.mod,        .int ,   ctx)
     -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | .numeric ⟨.int, .DivT⟩ | .numeric ⟨.int, .SafeDivT⟩ =>
+    | "Int.DivT" | "Int.SafeDivT" =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -471,7 +449,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       .ok (divTApp, .int, ctx)
     -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
     -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | .numeric ⟨.int, .ModT⟩ | .numeric ⟨.int, .SafeModT⟩ =>
+    | "Int.ModT" | "Int.SafeModT" =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
         | [a, b] =>
@@ -487,105 +465,179 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           Term.app Op.sub [a, bTimesTdiv] retTy
         | _ => Term.app Op.mod args retTy
       .ok (modTApp, .int, ctx)
-    | .numeric ⟨.int, .Lt⟩       => .ok (.app Op.lt,         .bool,   ctx)
-    | .numeric ⟨.int, .Le⟩       => .ok (.app Op.le,         .bool,   ctx)
-    | .numeric ⟨.int, .Gt⟩       => .ok (.app Op.gt,         .bool,   ctx)
-    | .numeric ⟨.int, .Ge⟩       => .ok (.app Op.ge,         .bool,   ctx)
+    | "Int.Lt"       => .ok (.app Op.lt,         .bool,   ctx)
+    | "Int.Le"       => .ok (.app Op.le,         .bool,   ctx)
+    | "Int.Gt"       => .ok (.app Op.gt,         .bool,   ctx)
+    | "Int.Ge"       => .ok (.app Op.ge,         .bool,   ctx)
 
-    | .numeric ⟨.real, .Neg⟩     => .ok (.app Op.neg,        .real,   ctx)
-    | .numeric ⟨.real, .Add⟩     => .ok (.app Op.add,        .real,   ctx)
-    | .numeric ⟨.real, .Sub⟩     => .ok (.app Op.sub,        .real,   ctx)
-    | .numeric ⟨.real, .Mul⟩     => .ok (.app Op.mul,        .real,   ctx)
-    | .numeric ⟨.real, .Div⟩     => .ok (.app Op.rdiv,       .real,   ctx)
-    | .numeric ⟨.real, .Lt⟩      => .ok (.app Op.lt,         .bool,   ctx)
-    | .numeric ⟨.real, .Le⟩      => .ok (.app Op.le,         .bool,   ctx)
-    | .numeric ⟨.real, .Gt⟩      => .ok (.app Op.gt,         .bool,   ctx)
-    | .numeric ⟨.real, .Ge⟩      => .ok (.app Op.ge,         .bool,   ctx)
+    | "Real.Neg"     => .ok (.app Op.neg,        .real,   ctx)
+    | "Real.Add"     => .ok (.app Op.add,        .real,   ctx)
+    | "Real.Sub"     => .ok (.app Op.sub,        .real,   ctx)
+    | "Real.Mul"     => .ok (.app Op.mul,        .real,   ctx)
+    | "Real.Div"     => .ok (.app Op.rdiv,       .real,   ctx)
+    | "Real.Lt"      => .ok (.app Op.lt,         .bool,   ctx)
+    | "Real.Le"      => .ok (.app Op.le,         .bool,   ctx)
+    | "Real.Gt"      => .ok (.app Op.gt,         .bool,   ctx)
+    | "Real.Ge"      => .ok (.app Op.ge,         .bool,   ctx)
 
-    -- Bitvector operations: size-generic via CoreOp
-    | .bv ⟨n, .Neg⟩  => .ok (.app Op.bvneg,      .bitvec n, ctx)
-    | .bv ⟨n, .Add⟩  => .ok (.app Op.bvadd,      .bitvec n, ctx)
-    | .bv ⟨n, .Sub⟩  => .ok (.app Op.bvsub,      .bitvec n, ctx)
-    | .bv ⟨n, .Mul⟩  => .ok (.app Op.bvmul,      .bitvec n, ctx)
-    | .bv ⟨n, .UDiv⟩ => .ok (.app Op.bvudiv,     .bitvec n, ctx)
-    | .bv ⟨n, .UMod⟩ => .ok (.app Op.bvurem,     .bitvec n, ctx)
-    | .bv ⟨n, .SDiv⟩ => .ok (.app Op.bvsdiv,     .bitvec n, ctx)
-    | .bv ⟨n, .SMod⟩ => .ok (.app Op.bvsrem,     .bitvec n, ctx)
-    | .bv ⟨n, .Not⟩  => .ok (.app Op.bvnot,      .bitvec n, ctx)
-    | .bv ⟨n, .And⟩  => .ok (.app Op.bvand,      .bitvec n, ctx)
-    | .bv ⟨n, .Or⟩   => .ok (.app Op.bvor,       .bitvec n, ctx)
-    | .bv ⟨n, .Xor⟩  => .ok (.app Op.bvxor,      .bitvec n, ctx)
-    | .bv ⟨n, .Shl⟩  => .ok (.app Op.bvshl,      .bitvec n, ctx)
-    | .bv ⟨n, .UShr⟩ => .ok (.app Op.bvlshr,     .bitvec n, ctx)
-    | .bv ⟨n, .SShr⟩ => .ok (.app Op.bvashr,     .bitvec n, ctx)
-    | .bv ⟨_, .ULt⟩  => .ok (.app Op.bvult,      .bool,   ctx)
-    | .bv ⟨_, .ULe⟩  => .ok (.app Op.bvule,      .bool,   ctx)
-    | .bv ⟨_, .UGt⟩  => .ok (.app Op.bvugt,      .bool,   ctx)
-    | .bv ⟨_, .UGe⟩  => .ok (.app Op.bvuge,      .bool,   ctx)
-    | .bv ⟨_, .SLt⟩  => .ok (.app Op.bvslt,      .bool,   ctx)
-    | .bv ⟨_, .SLe⟩  => .ok (.app Op.bvsle,      .bool,   ctx)
-    | .bv ⟨_, .SGt⟩  => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
-    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat, .bitvec (n * 2), ctx)
+    | "Bv1.Neg"     => .ok (.app Op.bvneg,      .bitvec 1, ctx)
+    | "Bv1.Add"     => .ok (.app Op.bvadd,      .bitvec 1, ctx)
+    | "Bv1.Sub"     => .ok (.app Op.bvsub,      .bitvec 1, ctx)
+    | "Bv1.Mul"     => .ok (.app Op.bvmul,      .bitvec 1, ctx)
+    | "Bv1.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 1, ctx)
+    | "Bv1.UMod"    => .ok (.app Op.bvurem,     .bitvec 1, ctx)
+    | "Bv1.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 1, ctx)
+    | "Bv1.SMod"    => .ok (.app Op.bvsrem,     .bitvec 1, ctx)
+    | "Bv1.Not"     => .ok (.app Op.bvnot,      .bitvec 1, ctx)
+    | "Bv1.And"     => .ok (.app Op.bvand,      .bitvec 1, ctx)
+    | "Bv1.Or"      => .ok (.app Op.bvor,       .bitvec 1, ctx)
+    | "Bv1.Xor"     => .ok (.app Op.bvxor,      .bitvec 1, ctx)
+    | "Bv1.Shl"     => .ok (.app Op.bvshl,      .bitvec 1, ctx)
+    | "Bv1.UShr"    => .ok (.app Op.bvlshr,     .bitvec 1, ctx)
+    | "Bv1.SShr"    => .ok (.app Op.bvashr,     .bitvec 1, ctx)
+    | "Bv1.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv1.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv1.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv1.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
+    | "Bv1.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
+    | "Bv1.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
+    | "Bv1.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
+    | "Bv1.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
 
-    | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
-    | .str .Concat   => .ok (.app Op.str_concat,    .string, ctx)
-    | .str .Substr   => .ok (.app Op.str_substr,    .string, ctx)
-    | .str .ToRegEx  => .ok (.app Op.str_to_re,     .regex,  ctx)
-    | .str .InRegEx  => .ok (.app Op.str_in_re,     .bool,   ctx)
-    | .re .All       => .ok (.app Op.re_all,        .regex,  ctx)
-    | .re .AllChar   => .ok (.app Op.re_allchar,    .regex,  ctx)
-    | .re .Range     => .ok (.app Op.re_range,      .regex,  ctx)
-    | .re .Concat    => .ok (.app Op.re_concat,     .regex,  ctx)
-    | .re .Star      => .ok (.app Op.re_star,       .regex,  ctx)
-    | .re .Plus      => .ok (.app Op.re_plus,       .regex,  ctx)
-    | .re .Union     => .ok (.app Op.re_union,      .regex,  ctx)
-    | .re .Inter     => .ok (.app Op.re_inter,      .regex,  ctx)
-    | .re .Comp      => .ok (.app Op.re_comp,       .regex,  ctx)
-    | .re .None      => .ok (.app Op.re_none,       .regex,  ctx)
+    | "Bv8.Neg"     => .ok (.app Op.bvneg,      .bitvec 8, ctx)
+    | "Bv8.Add"     => .ok (.app Op.bvadd,      .bitvec 8, ctx)
+    | "Bv8.Sub"     => .ok (.app Op.bvsub,      .bitvec 8, ctx)
+    | "Bv8.Mul"     => .ok (.app Op.bvmul,      .bitvec 8, ctx)
+    | "Bv8.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 8, ctx)
+    | "Bv8.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 8, ctx)
+    | "Bv8.UMod"    => .ok (.app Op.bvurem,     .bitvec 8, ctx)
+    | "Bv8.SMod"    => .ok (.app Op.bvsrem,     .bitvec 8, ctx)
+    | "Bv8.Not"     => .ok (.app Op.bvnot,      .bitvec 8, ctx)
+    | "Bv8.And"     => .ok (.app Op.bvand,      .bitvec 8, ctx)
+    | "Bv8.Or"      => .ok (.app Op.bvor,       .bitvec 8, ctx)
+    | "Bv8.Xor"     => .ok (.app Op.bvxor,      .bitvec 8, ctx)
+    | "Bv8.Shl"     => .ok (.app Op.bvshl,      .bitvec 8, ctx)
+    | "Bv8.UShr"    => .ok (.app Op.bvlshr,     .bitvec 8, ctx)
+    | "Bv8.SShr"    => .ok (.app Op.bvashr,     .bitvec 8, ctx)
+    | "Bv8.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv8.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv8.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv8.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
+    | "Bv8.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
+    | "Bv8.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
+    | "Bv8.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
+    | "Bv8.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
 
-    | .trigger .EmptyTriggers | .trigger .EmptyGroup =>
-      .ok (.app Op.triggers, .trigger, ctx)
-    | .trigger .AddTrigger | .trigger .AddGroup =>
-      .ok (Factory.addTriggerList, .trigger, ctx)
+    | "Bv16.Neg"     => .ok (.app Op.bvneg,      .bitvec 16, ctx)
+    | "Bv16.Add"     => .ok (.app Op.bvadd,      .bitvec 16, ctx)
+    | "Bv16.Sub"     => .ok (.app Op.bvsub,      .bitvec 16, ctx)
+    | "Bv16.Mul"     => .ok (.app Op.bvmul,      .bitvec 16, ctx)
+    | "Bv16.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 16, ctx)
+    | "Bv16.UMod"    => .ok (.app Op.bvurem,     .bitvec 16, ctx)
+    | "Bv16.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 16, ctx)
+    | "Bv16.SMod"    => .ok (.app Op.bvsrem,     .bitvec 16, ctx)
+    | "Bv16.Not"     => .ok (.app Op.bvnot,      .bitvec 16, ctx)
+    | "Bv16.And"     => .ok (.app Op.bvand,      .bitvec 16, ctx)
+    | "Bv16.Or"      => .ok (.app Op.bvor,       .bitvec 16, ctx)
+    | "Bv16.Xor"     => .ok (.app Op.bvxor,      .bitvec 16, ctx)
+    | "Bv16.Shl"     => .ok (.app Op.bvshl,      .bitvec 16, ctx)
+    | "Bv16.UShr"    => .ok (.app Op.bvlshr,     .bitvec 16, ctx)
+    | "Bv16.SShr"    => .ok (.app Op.bvashr,     .bitvec 16, ctx)
+    | "Bv16.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv16.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv16.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv16.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
+    | "Bv16.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
+    | "Bv16.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
+    | "Bv16.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
+    | "Bv16.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
 
-    -- Safe BV operations: same encoding as unsafe (preconditions already checked)
-    | .bv ⟨n, .SafeAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
-    | .bv ⟨n, .SafeSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
-    | .bv ⟨n, .SafeMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
-    | .bv ⟨n, .SafeNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
-    | .bv ⟨n, .SafeSDiv⟩ => .ok (.app Op.bvsdiv, .bitvec n, ctx)
-    | .bv ⟨n, .SafeSMod⟩ => .ok (.app Op.bvsrem, .bitvec n, ctx)
-    -- Signed overflow predicates
-    | .bv ⟨_, .SAddOverflow⟩ => .ok (.app Op.bvsaddo, .bool, ctx)
-    | .bv ⟨_, .SSubOverflow⟩ => .ok (.app Op.bvssubo, .bool, ctx)
-    | .bv ⟨_, .SMulOverflow⟩ => .ok (.app Op.bvsmulo, .bool, ctx)
-    | .bv ⟨_, .SNegOverflow⟩ => .ok (.app Op.bvnego, .bool, ctx)
-    | .bv ⟨n, .SDivOverflow⟩ => sdivOverflowEnc n ctx
-    -- Unsigned overflow predicates
-    | .bv ⟨n, .UAddOverflow⟩ => uaddOverflowEnc n ctx
-    | .bv ⟨_, .USubOverflow⟩ => usubOverflowEnc ctx
-    | .bv ⟨n, .UMulOverflow⟩ => umulOverflowEnc n ctx
-    | .bv ⟨n, .UNegOverflow⟩ => unegOverflowEnc n ctx
+    | "Bv32.Neg"     => .ok (.app Op.bvneg,      .bitvec 32, ctx)
+    | "Bv32.Add"     => .ok (.app Op.bvadd,      .bitvec 32, ctx)
+    | "Bv32.Sub"     => .ok (.app Op.bvsub,      .bitvec 32, ctx)
+    | "Bv32.Mul"     => .ok (.app Op.bvmul,      .bitvec 32, ctx)
+    | "Bv32.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 32, ctx)
+    | "Bv32.UMod"    => .ok (.app Op.bvurem,     .bitvec 32, ctx)
+    | "Bv32.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 32, ctx)
+    | "Bv32.SMod"    => .ok (.app Op.bvsrem,     .bitvec 32, ctx)
+    | "Bv32.Not"     => .ok (.app Op.bvnot,      .bitvec 32, ctx)
+    | "Bv32.And"     => .ok (.app Op.bvand,      .bitvec 32, ctx)
+    | "Bv32.Or"      => .ok (.app Op.bvor,       .bitvec 32, ctx)
+    | "Bv32.Xor"     => .ok (.app Op.bvxor,      .bitvec 32, ctx)
+    | "Bv32.Shl"     => .ok (.app Op.bvshl,      .bitvec 32, ctx)
+    | "Bv32.UShr"    => .ok (.app Op.bvlshr,     .bitvec 32, ctx)
+    | "Bv32.SShr"    => .ok (.app Op.bvashr,     .bitvec 32, ctx)
+    | "Bv32.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv32.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv32.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv32.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
+    | "Bv32.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
+    | "Bv32.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
+    | "Bv32.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
+    | "Bv32.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
 
-    | _ => do
-      let fnname := func.name.name
-      if (fnname == "select" || fnname == "update") && useArrayTheory then
-        .ok (.app (if fnname == "select" then Op.select else Op.store), smt_outty, ctx)
-      else
+    | "Bv64.Neg"     => .ok (.app Op.bvneg,      .bitvec 64, ctx)
+    | "Bv64.Add"     => .ok (.app Op.bvadd,      .bitvec 64, ctx)
+    | "Bv64.Sub"     => .ok (.app Op.bvsub,      .bitvec 64, ctx)
+    | "Bv64.Mul"     => .ok (.app Op.bvmul,      .bitvec 64, ctx)
+    | "Bv64.UDiv"    => .ok (.app Op.bvudiv,     .bitvec 64, ctx)
+    | "Bv64.UMod"    => .ok (.app Op.bvurem,     .bitvec 64, ctx)
+    | "Bv64.SDiv"    => .ok (.app Op.bvsdiv,     .bitvec 64, ctx)
+    | "Bv64.SMod"    => .ok (.app Op.bvsrem,     .bitvec 64, ctx)
+    | "Bv64.Not"     => .ok (.app Op.bvnot,      .bitvec 64, ctx)
+    | "Bv64.And"     => .ok (.app Op.bvand,      .bitvec 64, ctx)
+    | "Bv64.Or"      => .ok (.app Op.bvor,       .bitvec 64, ctx)
+    | "Bv64.Xor"     => .ok (.app Op.bvxor,      .bitvec 64, ctx)
+    | "Bv64.Shl"     => .ok (.app Op.bvshl,      .bitvec 64, ctx)
+    | "Bv64.UShr"    => .ok (.app Op.bvlshr,     .bitvec 64, ctx)
+    | "Bv64.SShr"    => .ok (.app Op.bvashr,     .bitvec 64, ctx)
+    | "Bv64.ULt"     => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv64.ULe"     => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv64.UGt"     => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv64.UGe"     => .ok (.app Op.bvuge,      .bool,   ctx)
+    | "Bv64.SLt"     => .ok (.app Op.bvslt,      .bool,   ctx)
+    | "Bv64.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
+    | "Bv64.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
+    | "Bv64.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
+
+    | "Bv8.Concat"   => .ok (.app Op.bvconcat,   .bitvec 16, ctx)
+    | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)
+    | "Bv32.Concat"  => .ok (.app Op.bvconcat,   .bitvec 64, ctx)
+
+    | "Str.Length"   => .ok (.app Op.str_length,    .int,    ctx)
+    | "Str.Concat"   => .ok (.app Op.str_concat,    .string, ctx)
+    | "Str.Substr"   => .ok (.app Op.str_substr,    .string, ctx)
+    | "Str.ToRegEx"  => .ok (.app Op.str_to_re,     .regex,  ctx)
+    | "Str.InRegEx"  => .ok (.app Op.str_in_re,     .bool,   ctx)
+    | "Re.All"       => .ok (.app Op.re_all,        .regex,  ctx)
+    | "Re.AllChar"   => .ok (.app Op.re_allchar,    .regex,  ctx)
+    | "Re.Range"     => .ok (.app Op.re_range,      .regex,  ctx)
+    | "Re.Concat"    => .ok (.app Op.re_concat,     .regex,  ctx)
+    | "Re.Star"      => .ok (.app Op.re_star,       .regex,  ctx)
+    | "Re.Plus"      => .ok (.app Op.re_plus,       .regex,  ctx)
+    | "Re.Union"     => .ok (.app Op.re_union,      .regex,  ctx)
+    | "Re.Inter"     => .ok (.app Op.re_inter,      .regex,  ctx)
+    | "Re.Comp"      => .ok (.app Op.re_comp,       .regex,  ctx)
+    | "Re.None"      => .ok (.app Op.re_none,       .regex,  ctx)
+
+    | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
+    | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
+    | "TriggerGroup.addTrigger" => .ok (Factory.addTriggerList, .trigger, ctx)
+    | "Triggers.addGroup"       => .ok (Factory.addTriggerList, .trigger, ctx)
+    -- Always encode select/update as array-theory ops (Op.select/Op.store).
+    -- If array theory is disabled, `axiomatizeArrays` rewrites these to UFs.
+    | "select" => .ok (.app Op.select, smt_outty, ctx)
+    | "update" => .ok (.app Op.store, smt_outty, ctx)
+    | fnname => do
         let formals := func.inputs.keys
         let formalStrs := formals.map (toString ∘ format)
         let tys := LMonoTy.destructArrow fnty
         let intys := tys.take (tys.length - 1)
-        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx useArrayTheory
+        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx
         let bvs := formalStrs.zip smt_intys
         let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
-        let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
+        let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
         let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
         let (ctx, isNew) ←
           if func.isRecursive then
@@ -614,7 +666,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           -- Extract type instantiations by matching patterns against concrete types
           let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
           let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
+            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx
             .ok (acc_map.insert tyVar smtTy)
           ) Map.empty
           -- Add all axioms for this function to the context, with types binding for the type variables in the expr
@@ -632,15 +684,14 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
 
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
+def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
   let ctx := if ctx.typeFactory.isEmpty then ctx.withTypeFactory E.datatypes else ctx
   match es with
   | [] => .ok ([], ctx)
   | e :: erest =>
-    let (et, ctx) ← toSMTTerm E [] e ctx useArrayTheory
-    let (erestt, ctx) ← toSMTTerms E erest ctx useArrayTheory
+    let (et, ctx) ← toSMTTerm E [] e ctx
+    let (erestt, ctx) ← toSMTTerms E erest ctx
     .ok ((et :: erestt), ctx)
 
 /--
@@ -649,28 +700,23 @@ The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
 for the check-sat encoding that applies negation for validity checks.
 -/
 def ProofObligation.toSMTTerms (E : Env)
-  (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
-  (useArrayTheory : Bool := false) :
-  Except Format (List Term × Term × SMT.Context × Statistics) := do
+  (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default) :
+  Except Format (List Term × Term × SMT.Context) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
-    do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
+    do let (ts, ctx') ← Core.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
-  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
-  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
-  let stats : Statistics := ({} : Statistics)
-    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
-        (distinct_assumptions.length + assumptions_terms.length)
-  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx, stats)
+  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx
+  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx
+  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
 def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
-  (useArrayTheory : Bool := false)
   : IO String := do
-  let smtctx := toSMTTerm E [] e ctx useArrayTheory
+  let smtctx := toSMTTerm E [] e ctx
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt

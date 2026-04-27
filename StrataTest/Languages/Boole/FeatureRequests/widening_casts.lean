@@ -51,5 +51,5 @@ spec {
 example : Strata.smtVCsCorrect wideningCastsSeed := by
   gen_smt_vcs
   all_goals
-    intro Map inst n bv32_to_int_u select v hn hNonneg i hi
-    exact hNonneg (select v i)
+    intro n bv32_to_int_u v hn hNonneg i hi
+    exact hNonneg (v.select i)

@@ -117,7 +117,6 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
   (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
     (.fvar () "m" (.some (mapTy .int .int))))
     (.fvar () "i" (.some .int)))
-  (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -135,7 +134,6 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
     (.fvar () "m" (.some (mapTy .int .int))))
     (.fvar () "i" (.some .int)))
     (.fvar () "v" (.some .int)))
-  (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -155,7 +153,6 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
       (.fvar () "i" (.some .int)))
       (.fvar () "v" (.some .int))))
     (.fvar () "j" (.some .int)))
-  (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -163,7 +160,7 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
       }
    }})
 
--- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
+-- Test that UF input types use Array for Map (regression for Map/Array mismatch)
 /--
 info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int Int) m)\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(define-fun $__t.1 () Int (getFirst $__t.0))\n"
 -/
@@ -171,7 +168,6 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
 #eval toSMTTermString
   (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
            (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
-  (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -285,8 +281,8 @@ end ArrayTheory
   -- toSMTType for a user-defined type "Foo" should register the sort
   let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Foo" [.tcons "int" [], .tcons "bool" []]) ctx
     | unreachable!
-  -- Map with useArrayTheory converts to Array; should NOT register a sort
-  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx (useArrayTheory := true)
+  -- Map always converts to Array (built-in sort); should NOT register a sort
+  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx
     | unreachable!
   return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
 

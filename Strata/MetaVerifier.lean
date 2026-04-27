@@ -120,7 +120,7 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     let maybeTerms := Core.ProofObligation.toSMTTerms E ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, t, ctx, _stats) =>
+    | .ok (ts, t, ctx) =>
       (ob.label, sanitizeSMTContext ctx, ts, t)
 
 /--
