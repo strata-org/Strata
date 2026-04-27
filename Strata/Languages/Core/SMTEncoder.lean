@@ -305,20 +305,17 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     let fvarNames := (e.collectFvarNames.map (·.name)).toArray
     -- Generate base name using global counter to ensure uniqueness across terms.
     -- The `$__` prefix is reserved for internal use and cannot appear in user
-    -- identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
+    -- identifiers.
     let (baseName, startSuffix) :=
       if ctx.uniqueBoundNames || name.isEmpty then
         (s!"$__bv{ctx.bvCounter}", 1)
       else
-        Encoder.breakDisambiguatedName name
+        let (b, s) := Strata.Name.breakDisambiguated name
+        (Encoder.sanitizeSmtName b, s)
     let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
-    let isUsed := fun candidate =>
-      bvs.any (fun (n, _) => n == candidate) ||
-      ctx.ufs.any (fun uf => uf.id == candidate) ||
-      fvarNames.contains candidate
-    let limit := bvs.length + ctx.ufs.size + fvarNames.size
-    let x := Encoder.findUniqueName baseName startSuffix isUsed limit
+    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList)
+    let x := Strata.Name.findUnique baseName startSuffix usedNames
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
