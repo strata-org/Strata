@@ -48,6 +48,7 @@ info: function nat$constraint(x: int): bool
 procedure test(n: int)
   returns (r: int)
   requires nat$constraint(n)
+  opaque
   ensures nat$constraint(r)
 { assert r >= 0; var y: int := n; assert nat$constraint(y); return y };
 procedure $witness_nat()
