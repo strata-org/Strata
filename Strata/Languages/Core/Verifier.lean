@@ -1334,10 +1334,11 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     All jobs are placed in a shared queue. Each worker pulls the next
     available job as soon as it finishes — fast-finishing solvers don't
     idle while slow ones complete.
-    Results are returned in the same order as the input jobs.
-    Note: the shared `counter` IO.Ref is only used in the batch (non-incremental)
-    solver path for generating unique filenames. In incremental mode (the default),
-    each task spawns its own solver process with no shared mutable state. -/
+    Results are returned in the same order as the input jobs; jobs skipped
+    by `stopOnFirstError` are `none`.
+    Thread-safe: the shared `counter` IO.Ref uses atomic `modifyGet` in the
+    batch path. In incremental mode (the default), each task spawns its own
+    solver process with no shared mutable state. -/
 private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase) (workers : Nat)
