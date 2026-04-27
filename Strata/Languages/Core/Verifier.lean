@@ -1315,6 +1315,7 @@ def verifySingleEnv (oblProgram : Program)
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
     | .ok obs => pure obs
     | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
+  let obligations := Core.ObligationExtraction.inlineAnfVariables obligations
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)
