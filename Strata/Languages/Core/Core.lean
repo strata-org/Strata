@@ -56,10 +56,11 @@ def typeCheck (options : VerifyOptions) (program : Program)
 
 def formatProofObligation (ob : Imperative.ProofObligation Expression) :
     Std.Format :=
-  let assumptionPairs := ob.assumptions.flatMap (·.toList)
-  let assumptionFmt := assumptionPairs.map fun (label, expr) =>
-    f!"{label}: {Core.formatExprs [expr]}"
-  let assumptionLine := if assumptionPairs.isEmpty then f!""
+  let flatEntries := ob.assumptions.flatten
+  let assumptionFmt := flatEntries.filterMap fun
+    | .assumption label expr => some f!"{label}: {Core.formatExprs [expr]}"
+    | _ => none
+  let assumptionLine := if assumptionFmt.isEmpty then f!""
                         else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
   f!"Label: {ob.label}\n\
      Property: {ob.property}{assumptionLine}\n\
@@ -151,8 +152,10 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     match d with | .proc p _ => some p.header.name | _ => none
   let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
     let blocks := E.deferred.toList.map fun ob =>
-      let assumes := ob.assumptions.flatten.map fun (label, e) =>
-        Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata))
+      let assumes := ob.assumptions.flatten.filterMap fun
+        | .assumption label e =>
+          some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
+        | _ => none
       let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
         if ob.property == .cover
         then Imperative.Cmd.cover ob.label ob.obligation ob.metadata

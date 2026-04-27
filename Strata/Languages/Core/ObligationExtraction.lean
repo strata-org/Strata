@@ -72,19 +72,15 @@ where
       go pc rest (acc.push (ProofObligation.mk label .cover pc e md))
 
     | .cmd (.cmd (.assume label e _md)) =>
-      go (pc.addInNewest [(label, e)]) rest acc
+      go (pc.addInNewest [.assumption label e]) rest acc
 
     | .ite .nondet thenSs elseSs _md => do
       let thenObs ← extractFromStatements pc thenSs
       let elseObs ← extractFromStatements pc elseSs
       go pc rest (acc ++ thenObs ++ elseObs)
 
-    | .cmd (.cmd (.init name ty (.det e) _md)) =>
-      -- Variable definitions become equalities in the path conditions,
-      -- so the SMT solver knows the variable's value.
-      let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
-      let varExpr : Expression.Expr := .fvar () name varTy
-      go (pc.insert name.toPretty (.eq () varExpr e)) rest acc
+    | .cmd (.cmd (.init name ty e _md)) =>
+      go (pc.addEntry (.varDecl name ty e)) rest acc
 
     | _other =>
       .error s!"ObligationExtraction: unsupported statement"
@@ -97,7 +93,7 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
     match decl with
     | .ax a _ =>
       -- Add axiom to path conditions for subsequent procedures
-      .ok (axiomPc ++ [(a.name, a.e)], allObs)
+      .ok (axiomPc ++ [.assumption a.name a.e], allObs)
     | .proc proc _md => do
       let globalPc : PathConditions Expression := [axiomPc]
       let obs ← extractFromStatements globalPc proc.body

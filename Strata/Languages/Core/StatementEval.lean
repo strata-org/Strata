@@ -175,7 +175,8 @@ def Command.inlineCallContract (E : Env)
     let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst
 
     -- Add postconditions to path conditions.
-    let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
+    let postconditions := (postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)).map
+      fun (label, e) => Imperative.PathConditionEntry.assumption label e
     let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
 
     -- Update environment with post-call state.
@@ -376,7 +377,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false ())]
+    let deadPathConds := pathConditions.push [.assumption deadLabel (LExpr.false ())]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -673,9 +674,9 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
-  let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
+  let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
-                            [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
+                            [.assumption label_false (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by

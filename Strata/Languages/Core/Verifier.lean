@@ -53,30 +53,36 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
-    (anfDefinitions : List Core.ANFDefinition := []) :
+    (varDefinitions : List Core.VarDefinition := [])
+    (varDeclarations : List Core.VarDeclaration := []) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
   ctx.emitDatatypes
-  let anfDefNames := anfDefinitions.map (·.name)
-  -- Filter out ANF variables from UF declarations (they will be emitted as define-fun)
-  let ufsToDecl := if anfDefinitions.isEmpty then ctx.ufs
-    else ctx.ufs.filter fun uf => !anfDefNames.contains uf.id
+  let varDefNames := varDefinitions.map (·.name)
+  let varDeclNames := varDeclarations.map (·.name)
+  let managedNames := varDefNames ++ varDeclNames
+  -- Filter out managed variables from UF declarations (they will be emitted separately)
+  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
+    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
   let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
-  -- Pre-populate encoder state with ANF variable names so encodeTerm
+  -- Pre-populate encoder state with managed variable names so encodeTerm
   -- recognizes them without emitting declare-fun
-  let estate := if anfDefinitions.isEmpty then estate
+  let estate := if managedNames.isEmpty then estate
     else
-      let anfUfs := ctx.ufs.filter fun uf => anfDefNames.contains uf.id
-      anfUfs.foldl (init := estate) fun estate uf =>
+      let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+      managedUfs.foldl (init := estate) fun estate uf =>
         { estate with ufs := estate.ufs.insert uf uf.id }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
   for id in _axms do
     Solver.assert id
-  -- Emit ANF variable definitions as define-fun (macro expansions, not constraints)
-  let estate ← anfDefinitions.foldlM (init := estate) fun estate def_ => do
+  -- Emit variable declarations as declare-fun
+  for decl in varDeclarations do
+    Solver.declareFun decl.name [] decl.ty
+  -- Emit variable definitions as define-fun (macro expansions, not constraints)
+  let estate ← varDefinitions.foldlM (init := estate) fun estate def_ => do
     let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
     Solver.defineFunTerm def_.name [] def_.ty bodyEnc
     pure estate
@@ -88,7 +94,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty && !anfDefNames.contains uf.id then some id else none
+    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
@@ -195,7 +201,8 @@ def dischargeObligation
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
   (label : String)
-  (anfDefinitions : List ANFDefinition := [])
+  (varDefinitions : List VarDefinition := [])
+  (varDeclarations : List VarDeclaration := [])
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -209,7 +216,7 @@ def dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
-      (label := label) (anfDefinitions := anfDefinitions))
+      (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -803,10 +810,14 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
             -- set with every function they mention, causing those axioms to be
             -- found trivially relevant and never removed.
             let antecedentFns :=
-              (obligation.assumptions.flatten : List (String × Expression.Expr)).flatMap
-                (fun (label, e) =>
-                  if axiomNames.contains label then []
-                  else (Lambda.LExpr.getOps e).map CoreIdent.toPretty)
+              obligation.assumptions.flatten.flatMap
+                (fun entry =>
+                  match entry with
+                  | .assumption label e =>
+                    if axiomNames.contains label then []
+                    else (Lambda.LExpr.getOps e).map CoreIdent.toPretty
+                  | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map CoreIdent.toPretty
+                  | .varDecl _ _ .nondet => [])
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
@@ -907,16 +918,18 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
-    (anfDefinitions : List ANFDefinition := [])
+    (varDefinitions : List VarDefinition := [])
+    (varDeclarations : List VarDeclaration := [])
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
   let varsInObligation := ProofObligation.getVars obligation
-  -- Filter out ANF encoding variables (they are emitted as define-fun, not declare-fun)
+  -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
+  let managedNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
   let varsInObligation := varsInObligation.filter fun (v, _) =>
-    !v.name.startsWith ANFEncoder.anfVarPrefix
+    !managedNames.contains v.name
   -- All variables in ProofObligation must have been typed.
   let typedVarsInObligation ← varsInObligation.mapM
     (fun (v,ty) => do
@@ -931,7 +944,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             obligation.metadata
             filename.toString
           assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-          (label := obligation.label) (anfDefinitions := anfDefinitions))
+          (label := obligation.label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -955,8 +968,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
-    -- Filter out ANF encoding variables from model display
-    let model := model.filter fun (name, _) => !name.name.startsWith Core.ANFEncoder.anfVarPrefix
+    -- Filter out managed variables from model display
+    let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
+    let model := model.filter fun (name, _) => !managedVarNames.contains name.name
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
@@ -1056,12 +1070,12 @@ def verifySingleEnv (oblProgram : Program)
         dbg_trace f!"\n\nResult: {result}\n{prog}"
       results := results.push result
       if options.stopOnFirstError then break
-    | .ok (assumptionTerms, anfDefs, obligationTerm, ctx, encStats) =>
+    | .ok (assumptionTerms, varDefs, varDecls, obligationTerm, ctx, encStats) =>
       stats := stats.merge encStats
       let t4 ← IO.monoNanosNow
       let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
-                    (anfDefinitions := anfDefs)
+                    (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
       solverNs := solverNs + (t5 - t4)
       -- Merge evaluator results with solver results

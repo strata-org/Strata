@@ -64,7 +64,9 @@ def toSMTTerms (E : Env) (es : List Arith.Expr) : Except Format (List Term) := d
 
 def ProofObligation.toSMTTerms (E : Env) (d : Imperative.ProofObligation Arith.PureExpr) :
   Except Format (List Term) := do
-  let assumptions := d.assumptions.flatten.map (fun a => a.snd)
+  let assumptions := d.assumptions.flatten.filterMap (fun
+    | .assumption _ e => some e
+    | _ => none)
   let assumptions_terms ← Arith.toSMTTerms E assumptions
   let obligation_pos_term ← Arith.toSMTTerm E d.obligation
   let obligation_term := Factory.not obligation_pos_term
