@@ -105,10 +105,19 @@ structure TranslationContext where
   filePath : String := ""
   /-- Maps Python-visible names to their structured symbol info. -/
   importedSymbols : Std.HashMap String ImportedSymbol := {}
+  /-- Reverse map: laurelName → pythonName for compositeType entries.
+      Precomputed from importedSymbols for O(1) reverse lookups. -/
+  compositeTypeReverse : Std.HashMap String String := {}
   /-- Classes whose spec is considered exhaustive (lists all methods). -/
   exhaustiveClasses : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
+  /-- Dispatch-detected field types: ClassName → FieldName → CompositeTypeName.
+      Used only by refineFunctionCallExpr for self.field.method() dispatch. -/
+  dispatchFieldTypes : Std.HashMap String (Std.HashMap String String) := {}
+  /-- Suppress factory dispatch for the current expression (set when translating
+      the RHS of a self.field assignment to avoid composite coercion issues). -/
+  suppressDispatch : Bool := false
   /-- Classes involved in inheritance (have bases or are subclassed).
       Method calls on these classes may be dynamically dispatched,
       so call sites conservatively emit holes. -/
@@ -752,10 +761,17 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           attr.val)
         let className := ctx.currentClassName.get!
         match tryLookupFieldHighType ctx className attr.val with
-        | some (.UserDefined name) =>
-          throw (.unsupportedConstruct
-            s!"Coercion from user-defined class '{name.text}' to Any is not yet supported"
-            name.text)
+        | some (.UserDefined _) =>
+          -- Only return Hole if this field has a dispatch type (tracked in
+          -- dispatchFieldTypes). Method dispatch on self.field.method() is
+          -- handled by refineFunctionCallExpr via dispatchFieldTypes.
+          -- For non-dispatch UserDefined fields, return the field expression
+          -- so standalone reads like `x = self.field` are not silently lost.
+          let hasDispatch := ctx.dispatchFieldTypes[className]?.any (·.contains attr.val)
+          if hasDispatch then
+            return mkStmtExprMd .Hole
+          else
+            return fieldExpr
         | _ =>
           return fieldExpr
       else
@@ -911,7 +927,36 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
           return (pyExprToString func, none, false)
         else
         if callerTy == PyLauType.Any then
-          return (manglePythonMethod "AnyTyInstance" callname, some v, true)
+          -- Check if this is self.field where the field was initialized via
+          -- dispatch (e.g. self.client = boto3.client('s3')).
+          let dispatchTy : Option String := match v with
+            | .Attribute _ (.Name _ selfName _) fieldAttr _ =>
+              if selfName.val == "self" then
+                match ctx.currentClassName with
+                | some cn => ctx.dispatchFieldTypes[cn]?.bind (·[fieldAttr.val]?)
+                | none => none
+              else none
+            | _ => none
+          match dispatchTy with
+          | some ty =>
+            let resolvedTy :=
+              match ctx.importedSymbols[ty]? with
+              | some (ImportedSymbol.compositeType laurelName) => laurelName
+              | _ => ty
+            let unprefixedTy := ctx.compositeTypeReverse[ty]?
+            -- Try three name-mangling strategies for the method:
+            let candidates := [
+              -- 1. Raw dispatch name from overload table (e.g., "s3_S3Client@method")
+              manglePythonMethod ty callname,
+              -- 2. Laurel-resolved name with module prefix (e.g., "boto3_s3_S3Client@method")
+              manglePythonMethod resolvedTy callname] ++
+              -- 3. Python-visible short name (e.g., "S3Client@method" from `from mod import S3Client`)
+              (match unprefixedTy with | some u => [manglePythonMethod u callname] | none => [])
+            let funcName := candidates.find? (ctx.importedSymbols.contains ·)
+              |>.getD (manglePythonMethod resolvedTy callname)
+            return (funcName, some v, false)
+          | none =>
+            return (manglePythonMethod "AnyTyInstance" callname, some v, true)
         else
           let resolvedTy :=
             match ctx.importedSymbols[callerTy]? with
@@ -1035,8 +1080,14 @@ partial def translateCall (ctx : TranslationContext)
                           (kwords : List (Python.keyword SourceRange))
     : Except TranslationError StmtExprMd := do
   -- Step 1: factory dispatch (e.g., boto3.client('iam'))
-  if let some className ← resolveDispatch ctx f args.toArray kwords then
-    return mkStmtExprMd (.New className)
+  -- Suppressed when translating the RHS of self.field assignments to avoid
+  -- composite coercion issues; dispatch-initialized fields are tracked
+  -- separately via dispatchFieldTypes.
+  if !ctx.suppressDispatch then
+    if let some className ← resolveDispatch ctx f args.toArray kwords then
+      return mkStmtExprMd (.New className)
+  -- Reset suppressDispatch so nested calls within the RHS are not affected
+  let ctx := {ctx with suppressDispatch := false}
   -- Step 2: method call on typed variable (e.g., iam.get_role())
   --   Resolve to ClassName_method(obj, args)
 
@@ -1206,7 +1257,14 @@ partial def translateAssign  (ctx : TranslationContext)
       curCtx := newCtx
       stmts := stmts ++ eltStmts
     return (curCtx, stmts, false)
-  let rhs_trans ←  translateExpr ctx rhs
+  -- Suppress factory dispatch when translating the RHS of self.field assignments
+  -- to avoid composite coercion issues; dispatch-initialized fields are tracked
+  -- separately via dispatchFieldTypes for method resolution.
+  let isSelfFieldAssign := match lhs with
+    | .Attribute _ (.Name _ name _) _ _ => name.val == "self" && ctx.currentClassName.isSome
+    | _ => false
+  let rhsCtx := if isSelfFieldAssign then {ctx with suppressDispatch := true} else ctx
+  let rhs_trans ←  translateExpr rhsCtx rhs
   -- When an unmodeled call produces a Hole, also havoc maybe_except since
   -- the call is a black box that could throw any exception.
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
@@ -2114,6 +2172,58 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     | _ => pure ()
   return fields
 
+/-- Match a `self.field = dispatch_call(...)` pattern and return (fieldName, compositeType). -/
+private def matchDispatchField (ctx : TranslationContext) (target value : Python.expr SourceRange)
+    : Except TranslationError (Option (String × String)) := do
+  if let .Attribute _ (.Name _ selfName _) attr _ := target then
+    if selfName.val == "self" then
+      if let .Call _ f callArgs _ := value then
+        if let some cn ← resolveDispatch ctx f callArgs.val then
+          return some (attr.val, cn)
+  return none
+
+/-- Recursively scan statements for `self.field = dispatch_call(...)` patterns.
+    Descends into if/try/for/while/with blocks to find dispatch calls in
+    nested control flow (e.g., `try: self.client = boto3.client('s3')`). -/
+private partial def scanDispatchFields (ctx : TranslationContext)
+    (stmts : List (Python.stmt SourceRange))
+    : Except TranslationError (List (String × String)) := do
+  let mut result : List (String × String) := []
+  for s in stmts do
+    let fields ← match s with
+      | .Assign _ targets value _ =>
+        if let some target := targets.val[0]? then
+          (matchDispatchField ctx target value).map (·.toList)
+        else pure []
+      | .AnnAssign _ target _ value _ =>
+        if let some value := value.val then
+          (matchDispatchField ctx target value).map (·.toList)
+        else pure []
+      | .If _ _ body orelse =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← scanDispatchFields ctx orelse.val.toList
+        pure (a ++ b)
+      | .Try _ body handlers orelse finalbody =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← handlers.val.toList.flatMapM fun h =>
+          match h with | .ExceptHandler _ _ _ hbody => scanDispatchFields ctx hbody.val.toList
+        let c ← scanDispatchFields ctx orelse.val.toList
+        let d ← scanDispatchFields ctx finalbody.val.toList
+        pure (a ++ b ++ c ++ d)
+      | .For _ _ _ body orelse _ =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← scanDispatchFields ctx orelse.val.toList
+        pure (a ++ b)
+      | .While _ _ body orelse =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← scanDispatchFields ctx orelse.val.toList
+        pure (a ++ b)
+      | .With _ _ body _ =>
+        scanDispatchFields ctx body.val.toList
+      | _ => pure []
+    result := result ++ fields
+  return result
+
 /-- Synthesize a default `__init__` declaration and procedure for a class that lacks one.
     Returns a `PythonFunctionDecl` (for call-site arity checking) and a `Procedure` (for verification).
     The procedure is derived from the decl so that both stay in sync when the calling convention changes.
@@ -2190,7 +2300,30 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
 
     -- Populate field type maps so method bodies can wrap field accesses in Any coercions
     let classFields := fields.foldl (fun m f => m.insert f.name.text f.type.val) (ctx.classFieldHighType[className]?.getD {})
-    let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
+    -- Detect dispatch calls in __init__ (e.g. self.client = boto3.client('s3'))
+    -- and record the resolved composite type for method dispatch only.
+    -- Handles both plain assignments and annotated assignments.
+    -- Scans recursively into nested blocks (if/try/for/while/with).
+    let mut dispatchFields : Std.HashMap String String := {}
+    let mut conflictingFields : Std.HashSet String := {}
+    for stmt in body do
+      if let .FunctionDef _ name _ initBody _ _ _ _ := stmt then
+        if name.val == "__init__" then
+          let dispatchResult ← scanDispatchFields ctx initBody.val.toList
+          for (fieldName, cn) in dispatchResult do
+            match dispatchFields[fieldName]? with
+            | some existing =>
+              if existing != cn then
+                conflictingFields := conflictingFields.insert fieldName
+                continue
+            | none => pure ()
+            dispatchFields := dispatchFields.insert fieldName cn
+    -- Remove fields with conflicting types (e.g., different types in if/else branches)
+    for f in conflictingFields do
+      dispatchFields := dispatchFields.erase f
+    let ctx := {ctx with
+      classFieldHighType := ctx.classFieldHighType.insert className classFields
+      dispatchFieldTypes := ctx.dispatchFieldTypes.insert className dispatchFields}
 
     -- Translate each method
     -- Keep the translated body only for classes not involved in inheritance;
@@ -2432,9 +2565,14 @@ def pythonToLaurel' (info : PreludeInfo)
         (init := info.importedSymbols) fun m name =>
           m.insert name (ImportedSymbol.compositeType name)
       let initCtx : TranslationContext := {
-        functionSignatures := info.functionSignatures
+        functionSignatures := info.functionSignatures ++ allClassFuncDecls
         preludeTypes := info.types,
         importedSymbols := localSymbols,
+        compositeTypeReverse := localSymbols.fold (init := ({}:Std.HashMap String String)) fun m k v =>
+          match v with
+          | .compositeType laurelName => if laurelName != k then m.insert laurelName k else m
+          | _ => m,
+        overloadTable := overloadTable,
         classFieldHighType := classFieldHighType,
         userFunctions := userFunctions,
         classesInHierarchy := classesInHierarchy,
@@ -2457,8 +2595,13 @@ def pythonToLaurel' (info : PreludeInfo)
     (init := info.importedSymbols) fun m name =>
       m.insert name (ImportedSymbol.compositeType name)
 
-  let mut ctx : TranslationContext :=
-  {
+  -- Precompute reverse map: laurelName → pythonName for composite types
+  let compositeTypeReverse := importedSymbols.fold (init := ({}:Std.HashMap String String)) fun m k v =>
+    match v with
+    | .compositeType laurelName => if laurelName != k then m.insert laurelName k else m
+    | _ => m
+
+  let mut ctx : TranslationContext := {
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
@@ -2468,6 +2611,7 @@ def pythonToLaurel' (info : PreludeInfo)
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
     importedSymbols := importedSymbols,
+    compositeTypeReverse := compositeTypeReverse,
     exhaustiveClasses := exhaustiveClasses,
     classesInHierarchy := classesInHierarchy,
     filePath := filePath

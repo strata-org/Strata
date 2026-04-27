@@ -25,7 +25,7 @@ namespace Strata.Python.AnalyzeLaurelTest
 open Strata (pythonAndSpecToLaurel pySpecsDir)
 
 private meta def testDir : System.FilePath :=
-  "StrataTest/Languages/Python/Specs/dispatch_test"
+  "StrataTestExtra/Languages/Python/Specs/dispatch_test"
 
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
     Returns the path to the generated Ion file. -/
@@ -237,10 +237,10 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
       let task ← IO.asTask (runTestCase pythonCmd tmpDir scriptName expected)
       tasks := tasks.push (scriptName, task)
     -- Composite/Any kind mismatch tests
-    -- composite_as_any auto-resolves Storage via connect(); any_as_composite needs explicit pyspec
+    -- composite_as_any: dispatch-initialized fields return Hole (no coercion error)
     let task ← IO.asTask (runTestCase pythonCmd tmpDir
       "test_class_composite_as_any.py"
-      (.failPrefix "Known limitation: Unsupported construct: Coercion from user-defined class"))
+      .success)
     tasks := tasks.push ("test_class_composite_as_any.py", task)
     -- test_class_any_as_composite: assigning a str to a Composite-typed field
     -- causes a type unification error in Core.typeCheck, which is expected.
