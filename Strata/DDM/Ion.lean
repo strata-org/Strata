@@ -469,6 +469,9 @@ private protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeEx
     -- A polymorphic type variable with the given name.
     | .tvar ann name =>
       return Ion.sexp #[ionSymbol! "tvar", ← toIon ann, .string name]
+    -- A fresh unification variable (internal to elaboration, should not persist).
+    | .uvar ann id =>
+      return Ion.sexp #[ionSymbol! "uvar", ← toIon ann, .int id]
     | .fvar ann idx a => do
       let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon ann, .int idx]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
@@ -505,6 +508,11 @@ private protected def fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (T
     return .tvar
       (← FromIon.fromIon args[1])
       (← .asString "Type expression tvar name" args[2])
+  | "uvar" =>
+    let ⟨p⟩ ← .checkArgCount "Type expression uvar" args 3
+    return .uvar
+      (← FromIon.fromIon args[1])
+      (← .asNat "Type expression uvar id" args[2])
   | "fvar" =>
     let ⟨p⟩ ← .checkArgMin "Type expression free variable" args 3
     let ann ← FromIon.fromIon args[1]

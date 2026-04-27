@@ -1439,7 +1439,8 @@ def generateOfAstFunction (cat : QualifiedIdent) (ops : Array DefaultCtor)
         | .arrow ann arg res => do
           let arg ← $ofAst:ident arg
           let res ← $ofAst:ident res
-          pure ($arrowCtor ann arg res))
+          pure ($arrowCtor ann arg res)
+        | tp => Except.error s!"Unexpected internal type node {repr tp}")
     pure (#[cmd], ← mkOfAstDef cat ofAst v rhs)
   | q`Init.TypeP =>
     let v ← genFreshLeanName "v"

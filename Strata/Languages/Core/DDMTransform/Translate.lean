@@ -285,6 +285,8 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     return (.ftvar var)
   | .tvar _ name =>
     return (.ftvar name)
+  | .uvar _ id =>
+    TransM.error s!"translateLMonoTy: unexpected unification variable ?{id} (should have been resolved during elaboration)"
   | .arrow _ arg res =>
     let arg' ← translateLMonoTy bindings (.type arg)
     let res' ← translateLMonoTy bindings (.type res)
