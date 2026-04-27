@@ -1326,7 +1326,7 @@ private structure SolverJob where
   peSatResult? : Option SMT.Result
   peValResult? : Option SMT.Result
   typedVarsInObligation : List Expression.TypedIdent
-  anfDefs : List ANFDefinition
+  anfDefs : List ANFDefinition := []
 
 /-- Dispatch a single solver job. This is the I/O-bound part that can run
     in parallel: it spawns a solver process, sends the obligation, and
