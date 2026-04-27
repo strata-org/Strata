@@ -544,7 +544,7 @@ procedure Test(n : int, out sum : int)
   var i : int;
   sum := 0;
   i := 0;
-  while (i < n)
+  while (i <= n)
   {
     sum := sum + i;
     i := i + 1;
@@ -552,7 +552,7 @@ procedure Test(n : int, out sum : int)
 };
 #end
 
-/-- info: sum = (some 10) -/
+/-- info: sum = (some 15) -/
 #guard_msgs in
 #eval runProc loopPgm "Test" [.intConst () 5]
 
