@@ -31,6 +31,92 @@ open Lean
 
 namespace Strata.PurityPlugin
 
+/-- Commands whose elaboration is known to be pure.
+
+## Audit methodology
+
+Each entry was verified by checking the elaborator source in
+`~/.elan/toolchains/leanprover--lean4---v4.29.1/src/lean/Lean/Elab/`.
+A command is pure if its elaborator only modifies the `Environment`
+(adding declarations, setting attributes, modifying scopes) without
+performing `IO` actions that depend on external state.
+
+## Audit results (Lean v4.29.1)
+
+### Declarations — `Lean/Elab/Declaration.lean`, `Lean/Elab/Structure.lean`, etc.
+`declaration` covers `def`, `theorem`, `abbrev`, `opaque`, `instance`,
+`axiom`, `structure`, `class`, `inductive`. These elaborate types and terms,
+add declarations to the environment, and run type-checking. No IO.
+`deriving` generates instances via deriving handlers. Handlers modify the
+environment but don't perform IO.
+`example` elaborates a term and discards it. No persistent effect, no IO.
+
+### Structural — `Lean/Elab/BuiltinCommand.lean`
+`section`, `namespace`, `end`, `variable`, `universe`, `open`, `export`,
+`import`, `mutual`, `in`, `include`, `omit`, `withWeakNamespace`,
+`withExporting`: These modify scopes, namespaces, and open declarations.
+Pure environment operations only.
+
+### Options/attributes — `Lean/Elab/BuiltinCommand.lean`, `Lean/Elab/DeclModifiers.lean`
+`set_option`: Sets an option in the environment. Pure.
+`attribute`: Adds/removes attributes. Pure (attribute handlers may run
+elaboration but not IO).
+
+### Inspection — `Lean/Elab/BuiltinCommand.lean`, `Lean/Elab/Print.lean`
+`check`, `check_failure`, `print`, `printSig`, `printAxioms`, `printEqns`,
+`printTacTags`, `where`, `version`, `synth`: These produce messages but
+don't modify the environment or perform IO beyond message logging (which
+is internal to the elaboration monad, not external IO).
+
+### Assertions — `Lean/Elab/BuiltinCommand.lean`
+`assertNotExists`, `assertNotImported`, `checkAssertions`: Check
+environment properties and produce errors if violated. Pure.
+
+### Documentation — `Lean/Elab/BuiltinCommand.lean`
+`moduleDoc`, `addDocString`: Add documentation to the environment. Pure.
+
+### Syntax/notation — `Lean/Elab/Notation.lean`, `Lean/Elab/Syntax.lean`, etc.
+`syntax`, `syntaxAbbrev`, `syntaxCat`, `notation`, `macro`, `macro_rules`,
+`elab`, `elab_rules`, `scoped`, `local`, `infix`/`infixl`/`infixr`/
+`prefix`/`postfix`, `declare_syntax_cat`, `declare_config_elab`, etc.:
+These register parsers and elaborators in the environment. Pure.
+
+### Simproc — `Lean/Elab/Tactic/Simproc.lean`
+`simproc`, `builtin_simproc`, `dsimproc`, `builtin_dsimproc`: Register
+simplification procedures. Pure.
+
+### Misc — various
+`register_simp_attr`, `register_option`, `register_builtin_option`,
+`register_label_attr`: Register metadata. Pure.
+`register_tactic_tag`, `tactic_extension`, `recommended_spelling`,
+`genInjectiveTheorems`, `registerErrorExplanationStx`: Metadata/codegen. Pure.
+`init_quot`: Initializes quotient type. Pure kernel operation.
+`exit`, `eoi`: Terminate elaboration. Pure.
+`grindPattern`, `binderPredicate`, `mixfix`: Syntax definitions. Pure.
+`Lean.Option.registerOption`, `Lean.Option.registerBuiltinOption`:
+Macros expanding to option registration. Pure.
+
+## NOT on the allowlist (known impure or unknown)
+
+Per the purity definition: a command is impure if its elaboration could read
+state not determined by the module's source and its dependencies' content, or
+mutate state beyond stdout/stderr.
+
+`eval`, `evalBang`: Execute arbitrary code that may perform IO. IMPURE.
+`initialize`: Runs an `IO` action at module load. Even though many only
+  create refs or register extensions, we cannot statically distinguish safe
+  from unsafe. IMPURE.
+`guard`: Evaluates an expression at elaboration time. Could depend on
+  external state via `native_decide` or IO-capable code. IMPURE.
+`run_cmd`, `run_elab`, `run_meta`: Execute monadic code with IO access. IMPURE.
+
+`guard_msgs`: Pure by itself — it wraps another command and checks output
+  against source text. The wrapped command is elaborated separately and
+  checked by the linter independently. (Note: Lean skips linters for
+  `#guard_msgs` but runs them on the inner command.)
+
+Any unknown/unrecognized command: Conservatively treated as IMPURE.
+-/
 private def pureCommandKinds : Std.HashSet SyntaxNodeKind := .ofList [
   ``Lean.Parser.Command.declaration, ``Lean.Parser.Command.«deriving»,
   ``Lean.Parser.Command.«section», ``Lean.Parser.Command.«namespace»,
