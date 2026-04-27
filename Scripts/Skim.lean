@@ -4,32 +4,28 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Util.PurityTracker
-
 /-! # Lake Build + Skim
 
-Runs `lake build`, then uses the linter-based purity tracker to identify
-modules whose elaboration may have performed IO, and deletes their build
-artifacts so the next build re-elaborates them.
+Runs `lake build`, then reads `.impure` marker files written by the
+PurityPlugin during elaboration, and deletes build artifacts for impure
+modules so the next build re-elaborates them.
 
-**This is the recommended way to build.** Running `purityCheck` standalone
-can give incorrect results if the build cache is stale or missing.
+The PurityPlugin is a Lean compiler plugin configured in lakefile.toml.
+It runs automatically during `lake build` — no special setup needed.
 
 ## Usage
 
   lake exe skim [--dry-run]
 -/
 
-open Strata.PurityTracker
-
 namespace Skim
 
-partial def findLeanFiles (root : System.FilePath) : IO (Array System.FilePath) := do
+partial def findMarkerFiles (root : System.FilePath) : IO (Array System.FilePath) := do
   let mut result := #[]
   if ← root.isDir then
     for entry in ← root.readDir do
-      result := result ++ (← findLeanFiles entry.path)
-  else if root.extension == some "lean" then
+      result := result ++ (← findMarkerFiles entry.path)
+  else if root.extension == some "impure" then
     result := result.push root
   return result
 
@@ -62,7 +58,7 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "Error: must be run from the project root"
     return 1
 
-  -- Step 1: Run lake build (ensures all .olean files are up to date)
+  -- Step 1: Run lake build (plugin creates .impure markers automatically)
   IO.println "Building..."
   let buildResult ← IO.Process.output {
     cmd := "lake", args := #["build"], cwd := cwd
@@ -73,29 +69,36 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "lake build failed"
     return buildResult.exitCode
 
-  -- Step 2: Collect source files
-  IO.println "Scanning for impure modules..."
-  let mut allFiles := #[]
+  -- Step 2: Find .impure marker files and delete corresponding build artifacts
+  IO.println "Skimming impure module caches..."
+  let mut impureCount := 0
+  let mut totalDeleted := 0
+
+  -- Scan source directories for .impure markers
   for dir in #["Strata", "StrataTest"] do
     let path : System.FilePath := dir
     if ← path.isDir then
-      allFiles := allFiles ++ (← Skim.findLeanFiles path)
-  for extra in #["StrataMain.lean"] do
-    let path : System.FilePath := extra
-    if ← path.pathExists then allFiles := allFiles.push path
+      let markers ← Skim.findMarkerFiles path
+      for marker in markers do
+        -- marker is e.g. Strata/DDM/Elab/Env.lean.impure
+        -- source is Strata/DDM/Elab/Env.lean
+        let source := marker.toString.dropRight 7  -- strip ".impure"
+        impureCount := impureCount + 1
+        let deleted ← Skim.deleteArtifacts lakeBuild source dryRun
+        totalDeleted := totalDeleted + deleted
+        -- Clean up the marker file
+        unless dryRun do
+          IO.FS.removeFile marker
 
-  -- Step 3: Check each module using the linter-based purity tracker.
-  -- This re-elaborates each file against the freshly-built .olean imports,
-  -- so the linter sees every command with the correct syntax extensions.
-  let mut impureCount := 0
-  let mut totalDeleted := 0
-  for file in allFiles do
-    let contents ← IO.FS.readFile file
-    let impureCmds ← checkFile contents file.toString
-    if !impureCmds.isEmpty then
+  -- Also check root-level files
+  for extra in #["StrataMain.lean"] do
+    let marker : System.FilePath := extra ++ ".impure"
+    if ← marker.pathExists then
       impureCount := impureCount + 1
-      let deleted ← Skim.deleteArtifacts lakeBuild file dryRun
+      let deleted ← Skim.deleteArtifacts lakeBuild extra dryRun
       totalDeleted := totalDeleted + deleted
+      unless dryRun do
+        IO.FS.removeFile marker
 
   if dryRun then
     IO.println s!"\nDry run: {impureCount} impure modules, {totalDeleted} artifacts would be deleted."
