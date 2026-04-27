@@ -17,6 +17,8 @@ jobs:
         id: label-attempt-1
         continue-on-error: true
         with:
+          # According to Kiro, the label-merge-conflicts-action can fail when there is a race condition.
+          # Retry once after a delay to give the backend time to catch up.  
           conflict_label_name: "Git conflicts"
           github_token: ${{ secrets.GITHUB_TOKEN }}
           conflict_comment: ""
