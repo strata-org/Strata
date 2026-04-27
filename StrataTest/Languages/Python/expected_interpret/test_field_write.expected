@@ -1,1 +1,1 @@
-\[ERROR\] assert \(assert\(147\)\) condition did not reduce to bool
+\[ERROR\] procedure '__main__': expected 1 arguments, got 0

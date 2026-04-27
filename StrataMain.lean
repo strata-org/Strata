@@ -1344,8 +1344,12 @@ def pyInterpretCommand : Command where
         IO.Process.exit ExitCode.userError
     match core.run with
     | .ok E =>
-      let (exitVar, E) := Core.Env.genVar ⟨"__exit__", ()⟩ E
-      let E := Core.Statement.Command.runCall [exitVar] "__main__" [] fuel E
+      let outputNames := match Core.Program.Procedure.find? core ⟨"__main__", ()⟩ with
+        | some p => p.header.outputs.keys.map (·.name)
+        | none => []
+      let (lhs, exprEnv) := Core.Env.genVars outputNames E.exprEnv
+      let E := { E with exprEnv }
+      let E := Core.Statement.Command.runCall lhs "__main__" [] fuel E
       match E.error with
       | none =>
         IO.println "Execution completed successfully."
