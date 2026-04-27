@@ -26,7 +26,7 @@ open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
 open Strata.Python (OverloadTable)
 
 private meta def testDir : System.FilePath :=
-  "StrataTest/Languages/Python/Specs/dispatch_test"
+  "StrataTestExtra/Languages/Python/Specs/dispatch_test"
 
 /-- Compile a Python source file to Ion and return the path. -/
 private meta def compilePython

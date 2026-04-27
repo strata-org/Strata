@@ -296,31 +296,27 @@ elab "#testCompile" : command => do
     | Lean.logError "Simple dialect not found"; return
   let files := (generateDialect simple "com.test").toOption.get!
 
-  let dir : System.FilePath := "/tmp/strata-java-test"
-  writeJavaFiles dir "com.test" files
-
-  -- ion-java is required for compilation (Node.java imports IonSexp)
-  let jarPath := "StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
+  let jarPath := "StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
     Lean.logError s!"Test 12 failed: ion-java jar not found at {jarPath}"
-    IO.FS.removeDirAll dir
     return
 
-  let fileNames := #["SourceRange.java", "Node.java", "IonSerializer.java", files.builders.1]
-                   ++ files.categories.map Prod.fst
-                   ++ files.stubs.map Prod.fst
-  let pkgDir := (dir / "com" / "test").toString
-  let filePaths := fileNames.map fun f => pkgDir ++ "/" ++ f
+  IO.FS.withTempDir fun dir => do
+    writeJavaFiles dir "com.test" files
 
-  let result ← IO.Process.output {
-    cmd := "javac"
-    args := #["-cp", jarPath] ++ filePaths
-  }
+    let fileNames := #["SourceRange.java", "Node.java", "IonSerializer.java", files.builders.1]
+                     ++ files.categories.map Prod.fst
+                     ++ files.stubs.map Prod.fst
+    let pkgDir := (dir / "com" / "test").toString
+    let filePaths := fileNames.map fun f => pkgDir ++ "/" ++ f
 
-  IO.FS.removeDirAll dir
+    let result ← IO.Process.output {
+      cmd := "javac"
+      args := #["-cp", jarPath] ++ filePaths
+    }
 
-  if result.exitCode != 0 then
-    Lean.logError s!"javac failed:\n{result.stderr}"
+    if result.exitCode != 0 then
+      Lean.throwError s!"javac failed:\n{result.stderr}"
 
 #testCompile
 
@@ -332,7 +328,7 @@ elab "#testRoundtrip" : command => do
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
   let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
-  let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive.ion"
+  let ionBytes ← IO.FS.readBinFile "StrataTestExtra/DDM/Integration/Java/testdata/comprehensive.ion"
   match Strata.Program.fromIon dm "Simple" ionBytes with
   | .error e => Lean.logError s!"Roundtrip test failed: {e}"
   | .ok prog =>
@@ -363,7 +359,7 @@ elab "#testRoundtripFiles" : command => do
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
   let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
-  let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive-files.ion"
+  let ionBytes ← IO.FS.readBinFile "StrataTestExtra/DDM/Integration/Java/testdata/comprehensive-files.ion"
   match Strata.Program.filesFromIon dm ionBytes with
   | .error e => Lean.logError s!"Roundtrip files test failed: {e}"
   | .ok files =>
@@ -409,25 +405,19 @@ elab "#testRoundtripFiles" : command => do
 
 -- Test 15: javaGen works on preloaded dialects via CLI
 elab "#testJavaGenPreloaded" : command => do
-  let dir : System.FilePath := "/tmp/strata-javagen-preloaded-test"
-  if ← dir.pathExists then IO.FS.removeDirAll dir
-  let result ← IO.Process.output {
-    cmd := "lake"
-    args := #["exe", "strata", "javaGen", "Laurel", "com.test.laurel", dir.toString]
-  }
-  if result.exitCode != 0 then
-    Lean.logError s!"javaGen on preloaded Laurel dialect failed:\n{result.stdout}\n{result.stderr}"
-    if ← dir.pathExists then IO.FS.removeDirAll dir
-    return
-  -- Verify some expected files exist (now one file per category)
-  let pkgDir := (dir / "com" / "test" / "laurel").toString
-  let mut missing := false
-  for expected in #["Node.java", "StmtExpr.java", "Procedure.java", "Parameter.java"] do
-    if !(← System.FilePath.pathExists (pkgDir ++ "/" ++ expected)) then
-      Lean.logError s!"Expected file {expected} not found in {pkgDir}"
-      missing := true
-  IO.FS.removeDirAll dir
-  if missing then return
+  IO.FS.withTempDir fun parentDir => do
+    let dir := parentDir / "javagen-output"
+    let result ← IO.Process.output {
+      cmd := "lake"
+      args := #["exe", "strata", "javaGen", "Laurel", "com.test.laurel", dir.toString]
+    }
+    if result.exitCode != 0 then
+      Lean.throwError s!"javaGen on preloaded Laurel dialect failed:\n{result.stdout}\n{result.stderr}"
+    -- Verify some expected files exist (now one file per category)
+    let pkgDir := (dir / "com" / "test" / "laurel").toString
+    for expected in #["Node.java", "StmtExpr.java", "Procedure.java", "Parameter.java"] do
+      if !(← System.FilePath.pathExists (pkgDir ++ "/" ++ expected)) then
+        Lean.throwError s!"Expected file {expected} not found in {pkgDir}"
 
 #testJavaGenPreloaded
 

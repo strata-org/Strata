@@ -1,7 +1,7 @@
 name = "Strata"
 version = "0.1.0"
 defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
-testDriver = "StrataTest"
+testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
 [[require]]
@@ -23,6 +23,11 @@ globs = ["Examples.Lean.+"]
 [[lean_lib]]
 name = "StrataTest"
 globs = ["StrataTest.+"]
+
+[[lean_exe]]
+name = "StrataTestMain"
+root = "Scripts.StrataTestMain"
+needs = ["StrataTest"]
 
 [[lean_exe]]
 name = "StrataToCBMC"
