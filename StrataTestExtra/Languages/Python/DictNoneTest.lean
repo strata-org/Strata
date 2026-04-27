@@ -21,7 +21,7 @@ open Strata.Parser (stringInputContext)
 
 -- Test 1: Using a valid int should succeed (0 diagnostics).
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -36,7 +36,7 @@ private def isAssertionFailure (msg : String) : Bool :=
 
 -- Test 2: Assigning None to an int variable with a value-dependent assertion.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = None
@@ -48,7 +48,7 @@ private def isAssertionFailure (msg : String) : Bool :=
 
 -- Test 3: x: int = None without value assertion — type assertion catches it.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = None
@@ -62,7 +62,7 @@ private def isAssertionFailure (msg : String) : Bool :=
 -- Test 4: Dict unpacking with None for typed parameter.
 -- f(x: int) called via **{"x": None} detected at call site.
 #guard_msgs (drop info) in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from typing import Any
 
@@ -80,7 +80,7 @@ def main() -> None:
 -- Test 5: Negative list indexing on potentially empty list.
 -- xs[-1] converts to xs[len(xs) - 1]; Any_get precondition catches out-of-bounds.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "from typing import Any
 
@@ -96,7 +96,7 @@ def main() -> None:
 -- This should be rejected as a user error during translation (before
 -- diagnostics are produced), so processPythonFile throws an IO.Error.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "class MyObj:
     name: str

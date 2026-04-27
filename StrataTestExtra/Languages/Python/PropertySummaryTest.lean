@@ -51,7 +51,7 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
       vcr.obligation.metadata.getPropertySummary
 
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let summaries ← getPropertySummaries pythonCmd
     "def main(x: int) -> None:\n    assert x == x, \"reflexivity\"\n    assert x + 0 == x, \"additive identity\"\n"
   let expected := #["reflexivity", "additive identity"]
