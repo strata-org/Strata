@@ -1131,13 +1131,15 @@ private def mkHavocStmtsForUnmodeledCall (ctx : TranslationContext)
     let heapHavoc := if !involveHeap then [] else
         [mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar "$heap"] (mkStmtExprMd (.Hole false none))) md]
     -- Havoc local arguments: the unmodeled call may have side effects on
-    -- its arguments (e.g., iterating over an iterable argument).
+    -- arguments that are Any-typed (e.g., mutable containers like lists or dicts).
+    -- Primitive types (int, bool, str) are pass-by-value and cannot be mutated.
     let argHavoc := inputExprs.flatMap fun inputExpr =>
         if let .Name _ n _ := inputExpr then
           match ctx.variableTypes.find? (λ v => Prod.fst v == n.val) with
           | some (varName, ty) =>
-            if isCompositeType ctx ty then []
-            else [mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar varName] (mkStmtExprMd (.Hole false none))) md]
+            if ty == PyLauType.Any then
+              [mkStmtExprMdWithLoc (StmtExpr.Assign [freeVar varName] (mkStmtExprMd (.Hole false none))) md]
+            else []
           | _ => []
         else []
     [mkStmtExprMd $ .Block (holeExceptHavoc ++ calleeHavoc ++ argHavoc ++ heapHavoc) none]
