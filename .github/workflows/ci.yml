@@ -307,7 +307,7 @@ jobs:
               sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
             fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python lake test -- Languages.Python --exclude Languages.Python.VerifyPythonTest
+      run: PYTHON=python lake test -- Languages.Python
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
