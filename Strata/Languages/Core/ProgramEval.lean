@@ -41,7 +41,7 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
             "Internal error: path condition stack misaligned when adding axiom")
       else
         let declsE := { declsE with pathConditions :=
-                      declsE.pathConditions.insert (toString $ a.name) a.e }
+                      declsE.pathConditions.addEntry (.assumption (toString a.name) a.e) }
         go rest declsE stats
 
     | .distinct _ es _ =>

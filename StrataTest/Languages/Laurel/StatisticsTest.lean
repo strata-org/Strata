@@ -41,6 +41,7 @@ private def parseLaurelAndGetStats (input : String) : IO Statistics := do
 #eval! do
   let stats ← parseLaurelAndGetStats r"
 procedure test(x: int) returns (y: int)
+  opaque
   ensures y == x
 {
   y := x
@@ -58,6 +59,7 @@ info: [statistics] EliminateHoles.holesEliminated: 1
 #eval! do
   let stats ← parseLaurelAndGetStats r"
 procedure p1(a: bool, b: bool) returns (r: bool)
+  opaque
   ensures r == (a && b)
 {
   r := a && b
