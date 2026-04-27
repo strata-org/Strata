@@ -40,18 +40,18 @@ VCs:
 Label: after_double_internal
 Property: assert
 Assumptions:
-test: $__n0 >= 2
-test_1: $__n0 >= 0
+test: n@1 >= 2
+test_1: n@1 >= 0
 Obligation:
-$__n0 + $__n0 >= 4
+n@1 + n@1 >= 4
 
 Label: double_correct
 Property: assert
 Assumptions:
-test: $__n0 >= 2
-test_1: $__n0 >= 0
+test: n@1 >= 2
+test_1: n@1 >= 0
 Obligation:
-$__n0 + $__n0 == $__n0 * 2
+n@1 + n@1 == n@1 * 2
 
 ---
 info:

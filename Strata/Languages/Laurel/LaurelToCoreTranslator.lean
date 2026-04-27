@@ -274,9 +274,11 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
-  | .Block (⟨ .Assign [⟨ .Declare _, _, _⟩] _initializer, innerSrc, innerMd⟩ :: rest) label => do
-      _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
-      translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
+  | .Block (⟨ .Assign [⟨ .Declare ⟨name, ty ⟩, _source, _md⟩] initializer, innerSrc, innerMd⟩ :: rest) label => do
+      let valueExpr ← translateExpr initializer boundVars isPureContext
+      let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
+      let coreMonoType ← translateType ty
+      return .app () (.abs () name.text (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .Var (.Declare _), innerSrc, innerMd⟩ :: rest) label => do
     _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
