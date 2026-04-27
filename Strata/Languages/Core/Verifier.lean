@@ -52,17 +52,34 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool)
-    (label : String) :
+    (label : String)
+    (anfDefinitions : List Core.ANFDefinition := []) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
   ctx.emitDatatypes
-  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+  let anfDefNames := anfDefinitions.map (·.name)
+  -- Filter out ANF variables from UF declarations (they will be emitted as define-fun)
+  let ufsToDecl := if anfDefinitions.isEmpty then ctx.ufs
+    else ctx.ufs.filter fun uf => !anfDefNames.contains uf.id
+  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+  -- Pre-populate encoder state with ANF variable names so encodeTerm
+  -- recognizes them without emitting declare-fun
+  let estate := if anfDefinitions.isEmpty then estate
+    else
+      let anfUfs := ctx.ufs.filter fun uf => anfDefNames.contains uf.id
+      anfUfs.foldl (init := estate) fun estate uf =>
+        { estate with ufs := estate.ufs.insert uf uf.id }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
   for id in _axms do
     Solver.assert id
+  -- Emit ANF variable definitions as define-fun (macro expansions, not constraints)
+  let estate ← anfDefinitions.foldlM (init := estate) fun estate def_ => do
+    let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
+    Solver.defineFunTerm def_.name [] def_.ty bodyEnc
+    pure estate
   -- Assert assumption terms
   let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm) |>.run estate
   for id in assumptionIds do
@@ -71,7 +88,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty then some id else none
+    if uf.args.isEmpty && !anfDefNames.contains uf.id then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
@@ -178,6 +195,7 @@ def dischargeObligation
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
   (label : String)
+  (anfDefinitions : List ANFDefinition := [])
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -191,7 +209,7 @@ def dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
-      (label := label))
+      (label := label) (anfDefinitions := anfDefinitions))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -889,6 +907,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
+    (anfDefinitions : List ANFDefinition := [])
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
@@ -909,7 +928,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             obligation.metadata
             filename.toString
           assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-          (label := obligation.label))
+          (label := obligation.label) (anfDefinitions := anfDefinitions))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -1035,11 +1054,12 @@ def verifySingleEnv (oblProgram : Program)
         dbg_trace f!"\n\nResult: {result}\n{prog}"
       results := results.push result
       if options.stopOnFirstError then break
-    | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
+    | .ok (assumptionTerms, anfDefs, obligationTerm, ctx, encStats) =>
       stats := stats.merge encStats
       let t4 ← IO.monoNanosNow
       let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+                    (anfDefinitions := anfDefs)
       let t5 ← IO.monoNanosNow
       solverNs := solverNs + (t5 - t4)
       -- Merge evaluator results with solver results

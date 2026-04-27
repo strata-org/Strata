@@ -13,6 +13,7 @@ import Init.Data.String.Extra
 public import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.SMTUtils
 public import Strata.Languages.Core.CoreOp
+import Strata.Transform.ANFEncoder
 
 ---------------------------------------------------------------------
 
@@ -644,25 +645,55 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
     .ok ((et :: erestt), ctx)
 
 /--
+An ANF variable definition to be emitted as `define-fun` in SMT-LIB.
+Contains the variable name, its SMT type, and the encoded body term.
+-/
+structure ANFDefinition where
+  name : String
+  ty : Strata.SMT.TermType
+  body : Term
+
+/--
 Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
 The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
 for the check-sat encoding that applies negation for validity checks.
+
+ANF variable definitions (path condition entries whose key starts with `$__anf.`)
+are returned separately as `ANFDefinition`s so the caller can emit them as
+`define-fun` instead of `assert (= ...)`.
 -/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false) :
-  Except Format (List Term × Term × SMT.Context × Statistics) := do
-  let assumptions := d.assumptions.flatten.map (fun a => a.snd)
+  Except Format (List Term × List ANFDefinition × Term × SMT.Context × Statistics) := do
+  -- Separate ANF variable definitions from regular assumptions
+  let flatEntries := d.assumptions.flatten
+  let (anfEntries, regularEntries) := flatEntries.partition fun (key, _) =>
+    key.startsWith ANFEncoder.anfVarPrefix
+  let regularExprs := regularEntries.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
-  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
+  let (assumptions_terms, ctx) ← Core.toSMTTerms E regularExprs ctx useArrayTheory
+  -- Encode ANF definitions: extract the variable name, type, and RHS
+  let (anfDefs, ctx) ← anfEntries.foldlM (init := (([] : List ANFDefinition), ctx)) fun acc entry => do
+    let (defs, ctx) := acc
+    let (_, expr) := entry
+    match expr with
+    | .eq _ (.fvar _ name (some ty)) rhs =>
+      let (smtTy, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
+      let (rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
+      .ok (defs ++ [{ name := name.name, ty := smtTy, body := rhsTerm }], ctx)
+    | _ =>
+      -- Fallback: encode the full expression as a regular assumption term
+      let (_term, ctx) ← Core.toSMTTerm E [] expr ctx useArrayTheory
+      .ok (defs, ctx)
   let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
   let stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
         (distinct_assumptions.length + assumptions_terms.length)
-  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx, stats)
+  .ok (distinct_assumptions ++ assumptions_terms, anfDefs, obligation_term, ctx, stats)
 
 ---------------------------------------------------------------------
 
