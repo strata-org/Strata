@@ -914,6 +914,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
   let varsInObligation := ProofObligation.getVars obligation
+  -- Filter out ANF encoding variables (they are emitted as define-fun, not declare-fun)
+  let varsInObligation := varsInObligation.filter fun (v, _) =>
+    !v.name.startsWith ANFEncoder.anfVarPrefix
   -- All variables in ProofObligation must have been typed.
   let typedVarsInObligation ← varsInObligation.mapM
     (fun (v,ty) => do
@@ -986,7 +989,6 @@ def verifySingleEnv (oblProgram : Program)
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
     | .ok obs => pure obs
     | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
-  let obligations := Core.ObligationExtraction.inlineAnfVariables obligations
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)
