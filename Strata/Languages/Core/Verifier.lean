@@ -1294,6 +1294,12 @@ abbrev DischargeFn :=
 abbrev CoreSMTSolver :=
   Program → EIO DiagnosticModel (VCResults × Statistics)
 
+/-- Factory type for constructing discharge functions. Backends can provide
+    their own factory to plug in alternative solvers. -/
+abbrev MkDischargeFn :=
+  VerifyOptions → IO.Ref Nat → System.FilePath →
+  List Expression.TypedIdent → Imperative.MetaData Expression → String → DischargeFn
+
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
     `options.incremental` and `options.alwaysGenerateSMT`.
@@ -1393,8 +1399,9 @@ private structure SolverJob where
 private def dispatchSolverJob (job : SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
     : IO (Except DiagnosticModel VCResult) := do
-  let discharge := mkDischargeFn options counter tempDir
+  let discharge := mkDischarge options counter tempDir
     job.typedVarsInObligation job.obligation.metadata job.obligation.label
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
@@ -1424,6 +1431,7 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
 private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase) (workers : Nat)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
     : IO (List (Option (Except DiagnosticModel VCResult))) := do
   -- Shared job queue: workers pop (job, index) pairs from the front
   let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
@@ -1444,7 +1452,7 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
       match entry with
       | none => running := false
       | some (job, idx) =>
-        let result ← dispatchSolverJob job p options counter tempDir phases
+        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge
         resultMap.modify (·.insert idx result)
         if options.stopOnFirstError then
           match result with
@@ -1479,7 +1487,8 @@ def verifySingleEnv (oblProgram : Program)
     -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (mkDischarge : MkDischargeFn := mkDischargeFn) :
     EIO DiagnosticModel (VCResults × Statistics) := do
   -- Build SMT encoding context from the obligations program itself
   let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
@@ -1591,7 +1600,7 @@ def verifySingleEnv (oblProgram : Program)
                                   checkMode := options.checkMode, lexprModel := [] }
       else
         -- Sequential: dispatch immediately
-        let discharge := mkDischargeFn options counter tempDir
+        let discharge := mkDischarge options counter tempDir
           typedVarsInObligation obligation.metadata obligation.label
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
@@ -1619,7 +1628,7 @@ def verifySingleEnv (oblProgram : Program)
     let t4 ← IO.monoNanosNow
     let phases := externalPhases ++ corePhases
     let jobResults ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-      (dispatchJobsParallel solverJobs.reverse p options counter tempDir phases options.parallelWorkers)
+      (dispatchJobsParallel solverJobs.reverse p options counter tempDir phases options.parallelWorkers mkDischarge)
     let t5 ← IO.monoNanosNow
     solverNs := solverNs + (t5 - t4)
     -- Patch placeholder results with actual solver results; skip jobs not executed (stopOnFirstError)
@@ -1648,11 +1657,12 @@ def mkDefaultCoreSMTSolver
     (axiomNames : List String := [])
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (mkDischarge : MkDischargeFn := mkDischargeFn) :
     CoreSMTSolver :=
   fun oblProgram =>
     verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
-      axiomNames axiomProgram externalPhases corePhases
+      axiomNames axiomProgram externalPhases corePhases mkDischarge
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
