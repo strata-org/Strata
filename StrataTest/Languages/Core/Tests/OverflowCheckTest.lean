@@ -7,7 +7,7 @@
 import Strata.Languages.Core.Factory
 import Strata.DL.Lambda.Preconditions
 import Strata.Transform.PrecondElim
--- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 /-! # Tests: overflow safe operators
 

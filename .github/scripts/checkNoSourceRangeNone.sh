@@ -3,8 +3,10 @@
 # Only raises an error if more SourceRange.none are added than removed in this PR.
 #
 # Suppression:
-#   Per-line:  add "-- sourcerange:ok" on the same line
-#   Per-file:  add "-- sourcerange:file-ok" anywhere in the file (covers all occurrences)
+#   Per-line:  add "-- nosourcerange: <explanation>" on the same line
+#   Per-file:  add "-- nosourcerange-file: <explanation>" anywhere in the file
+#
+# The explanation must be non-empty and must not consist solely of "ok".
 
 set -euo pipefail
 
@@ -22,7 +24,7 @@ HITS=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lean' 
   ' \
   | { \
       grep -F 'SourceRange.none' | \
-      grep -v -F 'sourcerange:ok'; grep_status=$?; \
+      grep -v -P -- '-- nosourcerange(-file)?:\s*(?!ok\s*$)\S'; grep_status=$?; \
       if [ "$grep_status" -gt 1 ]; then exit "$grep_status"; else exit 0; fi; })
 
 if [ -z "$HITS" ]; then
@@ -34,7 +36,7 @@ fi
 FILTERED=""
 while IFS= read -r line; do
   file="${line%%:*}"
-  if ! grep -q -F 'sourcerange:file-ok' "$file" 2>/dev/null; then
+  if ! grep -qP -- '-- nosourcerange-file:\s*(?!ok\s*$)\S' "$file" 2>/dev/null; then
     FILTERED="${FILTERED}${line}
 "
   fi
@@ -63,8 +65,10 @@ if [ "$NET" -gt 0 ]; then
   echo ""
   echo "Each SourceRange.none should either propagate real source metadata or"
   echo "be suppressed with one of:"
-  echo "  -- sourcerange:ok       (on the same line)"
-  echo "  -- sourcerange:file-ok  (anywhere in the file, covers all occurrences)"
+  echo "  -- nosourcerange: <explanation>       (on the same line)"
+  echo "  -- nosourcerange-file: <explanation>  (anywhere in the file, covers all occurrences)"
+  echo ""
+  echo "The explanation must be non-empty and must not consist solely of \"ok\"."
   echo ""
   echo "$FILTERED"
   exit 1

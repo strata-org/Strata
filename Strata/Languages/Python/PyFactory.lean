@@ -11,10 +11,8 @@ public import Strata.Languages.Python.Regex.ReToCore
 namespace Strata
 namespace Python
 
--- sourcerange:file-ok
--- Expressions synthesized by the Python factory (regex patterns, error
--- constructors) carry `SourceRange.none` because they are generated
--- programmatically, not parsed from source.
+-- nosourcerange-file: expressions synthesized by the Python factory (regex patterns, error
+-- constructors) are generated programmatically, not parsed from source.
 
 public section
 

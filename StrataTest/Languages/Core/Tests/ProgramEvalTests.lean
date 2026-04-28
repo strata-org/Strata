@@ -6,7 +6,7 @@
 
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.StatementEval
--- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 namespace Core
 

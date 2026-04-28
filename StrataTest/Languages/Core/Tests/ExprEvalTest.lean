@@ -18,7 +18,7 @@ import Strata.Languages.Core.SMTEncoder
 import Strata.Languages.Core.Verifier
 import StrataTest.DL.Lambda.TestGen
 import StrataTest.DL.Lambda.PlausibleHelpers
--- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 import Plausible.Gen
 
 /-! This file does random testing of Strata Core operations registered in factory, by

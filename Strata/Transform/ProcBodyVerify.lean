@@ -49,8 +49,7 @@ block "verify_P" {
 ```
 -/
 
--- sourcerange:file-ok
--- Synthesized expressions from the procedure body verification transform
+-- nosourcerange-file: synthesized expressions from the procedure body verification transform
 -- (old-value snapshots, parameter initializations) have no source location.
 
 namespace Core.ProcBodyVerify

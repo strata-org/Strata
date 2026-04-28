@@ -14,7 +14,7 @@ import Strata.Languages.Core.ProgramWF
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 import Strata.Util.Tactics
--- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 open Core
 open Core.Transform

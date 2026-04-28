@@ -6,7 +6,7 @@
 
 import Strata.MetaVerifier
 import Strata.Languages.Boole.Verify
--- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 open Strata
 open Lambda

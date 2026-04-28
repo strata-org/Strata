@@ -7,7 +7,7 @@
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.Verifier
 import Lean.Data.Json
--- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 /-!
 # SARIF Output Tests

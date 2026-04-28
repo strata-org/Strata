@@ -24,7 +24,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
--- sourcerange:file-ok
+-- nosourcerange-file: C_Simp expressions carry Unit metadata, so no source range is available
 /-- Translate a C_Simp expression to a Core expression.
     C_Simp expressions carry `Unit` metadata, so no source range is available. -/
 def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=

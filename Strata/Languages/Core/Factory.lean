@@ -21,8 +21,7 @@ import all Strata.DL.Lambda.FactoryWF
 import Strata.DL.Util.BitVec
 ---------------------------------------------------------------------
 
--- sourcerange:file-ok
--- Operator constructors and factory helpers use SourceRange.none because
+-- nosourcerange-file: operator constructors and factory helpers use SourceRange.none because
 -- they build expressions programmatically, not from parsed source.
 
 namespace Core

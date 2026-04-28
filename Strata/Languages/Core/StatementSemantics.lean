@@ -17,8 +17,7 @@ public section
 
 namespace Core
 
--- sourcerange:file-ok
--- Proof terms must match synthesized expressions that use SourceRange.none
+-- nosourcerange-file: proof terms must match synthesized expressions that use SourceRange.none
 -- (canonical forms in semantic definitions represent abstract values, not parsed source terms).
 
 /-- Expressions that can't be reduced when evaluating.
