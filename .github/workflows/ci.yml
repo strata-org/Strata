@@ -331,7 +331,7 @@ jobs:
       contents: read
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{secrets.AWS_BENCHMARK_ACCOUNT}}:role/github-actions-codebuild-role
           aws-region: us-east-2
@@ -348,7 +348,7 @@ jobs:
           echo "Build started: $BUILD_ID"
 
           LOG_KEY="logs/${BUILD_ID}.log"
-          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs-${{secrets.AWS_BENCHMARK_ACCOUNT}}-us-east-2-an?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
+          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
 
           while true; do
             STATUS=$(aws codebuild batch-get-builds \
@@ -364,5 +364,5 @@ jobs:
             esac
           done
 
-          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs-${{secrets.AWS_BENCHMARK_ACCOUNT}}-us-east-2-an?prefix=${LOG_KEY}"
-          [ "$STATUS" = "SUCCEEDED" ] && exit 0 || exit 1
+          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY}"
+          test "$STATUS" = "SUCCEEDED"
