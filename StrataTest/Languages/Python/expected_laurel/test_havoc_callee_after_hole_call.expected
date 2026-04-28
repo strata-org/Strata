@@ -1,9 +1,6 @@
-test_havoc_callee_after_hole_call.py(7, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(12, 0): ✅ pass - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(17, 0): ✅ pass - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(21, 0): ✅ pass - expected pass nothing should be havocked
-test_havoc_callee_after_hole_call.py(23, 0): ✅ pass - (MyClass@__init__ requires) Type constraint of n
-test_havoc_callee_after_hole_call.py(26, 0): ✅ pass - expected unknown because heap should be havocked
-test_havoc_callee_after_hole_call.py(31, 0): ❓ unknown - expected unknown because argument locals should be havocked
-DETAIL: 5 passed, 0 failed, 2 inconclusive
+test_havoc_callee_after_hole_call.py(9, 4): ❓ unknown - set_x_calls_Any_get_0
+test_havoc_callee_after_hole_call.py(9, 4): ❓ unknown - assert(176)
+test_havoc_callee_after_hole_call.py(14, 4): ❓ unknown - set_y_calls_Any_get_0
+test_havoc_callee_after_hole_call.py(14, 4): ❓ unknown - assert(270)
+DETAIL: 0 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
