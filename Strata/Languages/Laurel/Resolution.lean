@@ -237,10 +237,10 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
   | none => return none
 
 /-- Resolve a field reference using the target's type to build a qualified lookup key.
-    Falls back to the instance type name (for `self.field` in instance methods),
-    then to unqualified lookup if the target type cannot be determined. -/
+    Falls back to the instance type name (for `self.field` in instance methods).
+    Unresolved field names are returned as-is for later passes to handle. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
+    (_md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -250,7 +250,13 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  resolveRef fieldName md
+  -- Fallback: field names that can't be resolved in any type scope are
+  -- returned as-is (no error). This is intentional because:
+  -- 1. Python classes can have dynamic attributes not declared in the class body
+  -- 2. HeapParameterization converts field accesses on composite types into
+  --    heap reads (readField($heap, obj, field)), which work for any field name
+  -- 3. For non-composite types, the field access becomes a Hole (unknown value)
+  return fieldName
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
