@@ -29,6 +29,7 @@ deriving DecidableEq, Inhabited, Repr
 
 namespace SourceRange
 
+@[expose]
 def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0

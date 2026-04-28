@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.PureExpr
 public import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
+public import Strata.DDM.Util.SourceRange
 
 namespace Core
 open Std (ToFormat Format format)
@@ -17,7 +18,7 @@ open Std (ToFormat Format format)
 
 public section
 
-@[expose] abbrev ExpressionMetadata := Unit
+@[expose] abbrev ExpressionMetadata := Strata.SourceRange
 
 @[expose]
 abbrev Expression : Imperative.PureExpr :=
@@ -34,11 +35,11 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
 instance : Inhabited Expression.Expr where
-  default := .intConst () 0
+  default := .intConst Strata.SourceRange.none 0
 
 /-- Build an `LExpr.op` node from a structured `CoreOp`. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
-  .op () op.toString ty
+  .op Strata.SourceRange.none op.toString ty
 
 ---------------------------------------------------------------------
 

@@ -68,7 +68,7 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) :=
       -- created by CoreGenM.
       -- All variables now have Unit metadata; we substitute by name.
       let old_id : Expression.Ident := { name := i1, metadata := () }
-      let new_expr : Expression.Expr := .fvar () { name := i2, metadata := () } .none
+      let new_expr : Expression.Expr := .fvar Strata.SourceRange.none { name := i2, metadata := () } .none
       e.substFvar old_id new_expr)
     e1
 

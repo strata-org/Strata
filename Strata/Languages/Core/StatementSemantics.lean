@@ -19,17 +19,17 @@ namespace Core
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const () _)
-  | bvar  :  Value (.bvar () _)
-  | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _ _)
+  | const :  Value (.const Strata.SourceRange.none _)
+  | bvar  :  Value (.bvar Strata.SourceRange.none _)
+  | op    :  Value (.op Strata.SourceRange.none _ _)
+  | abs   :  Value (.abs Strata.SourceRange.none _ _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
+  mkFvar := (.fvar Strata.SourceRange.none · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -39,18 +39,18 @@ instance : HasSubstFvar Core.Expression where
   substFvars := Lambda.LExpr.substFvars
 
 instance : HasIntOrder Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
-  zero        := .intConst () 0
+  eq    e1 e2 := .eq Strata.SourceRange.none e1 e2
+  lt    e1 e2 := .app Strata.SourceRange.none (.app Strata.SourceRange.none Core.intLtOp e1) e2
+  zero        := .intConst Strata.SourceRange.none 0
   intTy       := .forAll [] (.tcons "int" [])
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
 
 @[expose, match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+def Core.true : Core.Expression.Expr := .boolConst Strata.SourceRange.none Bool.true
 @[expose, match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+def Core.false : Core.Expression.Expr := .boolConst Strata.SourceRange.none Bool.false
 
 instance : HasBool Core.Expression where
   tt := Core.true
@@ -62,7 +62,7 @@ instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  | e => Lambda.LExpr.app Strata.SourceRange.none (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
 @[expose] abbrev CoreEval := SemanticEval Expression
 @[expose] abbrev CoreStore := SemanticStore Expression
@@ -200,10 +200,10 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+            δ σ (.fvar Strata.SourceRange.none (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
           -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ v))
+            δ σ (.fvar Strata.SourceRange.none (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 

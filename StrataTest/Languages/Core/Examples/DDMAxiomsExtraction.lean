@@ -395,13 +395,23 @@ info: #[{ ann := { start := { byteIdx := 296 }, stop := { byteIdx := 303 } },
 #eval examplePgm.commands
 
 /--
-info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
+info: [LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
    "Map"
    [Lambda.LMonoTy.ftvar "k",
     Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
-   "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
+      "v"]) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
+   "v") (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.eq { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.op { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } { name := "select",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -409,7 +419,11 @@ info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
       "arrow"
       [Lambda.LMonoTy.ftvar "k",
        Lambda.LMonoTy.ftvar
-         "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
+         "v"]])) (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.op { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } { name := "update",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -423,15 +437,31 @@ info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
             "Map"
             [Lambda.LMonoTy.ftvar "k",
              Lambda.LMonoTy.ftvar
-               "v"]]]])) (LExpr.bvar () 2)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 1)) (LExpr.bvar () 0)))),
- LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
+               "v"]]]])) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 2)) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 1)) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0))) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 1)) (LExpr.bvar { start := { byteIdx := 0 }, stop := { byteIdx := 0 } } 0)))),
+ LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
    "Map"
    [Lambda.LMonoTy.ftvar "k",
     Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "okk" (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
-   "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
+      "v"]) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "okk" (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.quant { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
+   "v") (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0) (LExpr.eq { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.op { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } { name := "select",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -439,7 +469,11 @@ info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
       "arrow"
       [Lambda.LMonoTy.ftvar "k",
        Lambda.LMonoTy.ftvar
-         "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
+         "v"]])) (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.op { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } { name := "update",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -453,14 +487,24 @@ info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
             "Map"
             [Lambda.LMonoTy.ftvar "k",
              Lambda.LMonoTy.ftvar
-               "v"]]]])) (LExpr.bvar () 3)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 2)) (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
+               "v"]]]])) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 3)) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 1)) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 0))) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 2)) (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.app { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } (LExpr.op { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } { name := "select",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
       "arrow"
-      [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])) (LExpr.bvar () 3)) (LExpr.bvar () 2))))))]
+      [Lambda.LMonoTy.ftvar "k",
+       Lambda.LMonoTy.ftvar
+         "v"]])) (LExpr.bvar { start := { byteIdx := 0 },
+   stop := { byteIdx := 0 } } 3)) (LExpr.bvar { start := { byteIdx := 0 }, stop := { byteIdx := 0 } } 2))))))]
 -/
-#guard_msgs in
+
 #eval
   extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]

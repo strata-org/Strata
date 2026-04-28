@@ -300,34 +300,34 @@ private theorem PrefixStepsOK_modifies_pair
     (h_ne : g ≠ oldG)
     : PrefixStepsOK π φ
         [Statement.init oldG gTy .nondet #[],
-         Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ := by
+         Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]] ρ := by
   constructor
   · constructor
     · exact trivial  -- PrefixStepsOK for []
     · refine ⟨_, rfl, ρ.store, ?_, rfl⟩
-      have h_none_g : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store g = none :=
+      have h_none_g : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]] ρ).store g = none :=
         prefixInitEnv_store_init _ _ _ _ rfl
-      have h_old_val : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store oldG = ρ.store oldG := by
+      have h_old_val : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]] ρ).store oldG = ρ.store oldG := by
         rw [prefixInitEnv_store_other _ _ _ oldG g rfl h_ne]
         simp [prefixInitEnv]
       rw [Option.isSome_iff_exists] at h_g_def
       obtain ⟨v, hv⟩ := h_g_def
-      have h_getFvar : HasFvar.getFvar (Lambda.LExpr.fvar () oldG none : Expression.Expr) = some oldG := by
+      have h_getFvar : HasFvar.getFvar (Lambda.LExpr.fvar Strata.SourceRange.none oldG none : Expression.Expr) = some oldG := by
         simp [HasFvar.getFvar]
-      have h_eval : ρ.eval (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store (Lambda.LExpr.fvar () oldG none) = some v := by
+      have h_eval : ρ.eval (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]] ρ).store (Lambda.LExpr.fvar Strata.SourceRange.none oldG none) = some v := by
         rw [h_wfVar _ _ _ h_getFvar, h_old_val, ← h_old_eq, hv]
       exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
         (InitState.init h_none_g hv (fun y hne => by
           have := prefixInitEnv_store_other
-            (Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[])
+            (Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[])
             [] ρ y g rfl hne
           simp [prefixInitEnv] at this
           exact this.symm))
         h_wfVar)
   · refine ⟨_, rfl, _, ?_, rfl⟩
-    have h_none_old : (prefixInitEnv [Statement.init oldG gTy .nondet #[], Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store oldG = none :=
+    have h_none_old : (prefixInitEnv [Statement.init oldG gTy .nondet #[], Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]] ρ).store oldG = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
-    have h_target : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store oldG = ρ.store oldG := by
+    have h_target : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]] ρ).store oldG = ρ.store oldG := by
       rw [prefixInitEnv_store_other _ _ _ oldG g rfl h_ne]
       simp [prefixInitEnv]
     rw [Option.isSome_iff_exists] at h_old_def
@@ -361,11 +361,11 @@ private theorem modifiesMapM_sublists
       let oldG := CoreIdent.mkOld g.name
       let gTy ← getIdentTy! p g
       return [Statement.init oldG gTy .nondet #[],
-              Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]])
+              Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none oldG none)) #[]])
       gs).run s0 = (Except.ok mInits, s1)) :
     ∀ sub ∈ mInits, ∃ g gTy, g ∈ gs ∧
       sub = [Statement.init (CoreIdent.mkOld g.name) gTy .nondet #[],
-             Statement.init g gTy (.det (Lambda.LExpr.fvar () (CoreIdent.mkOld g.name) none)) #[]] := by
+             Statement.init g gTy (.det (Lambda.LExpr.fvar Strata.SourceRange.none (CoreIdent.mkOld g.name) none)) #[]] := by
   induction gs generalizing s0 s1 mInits with
   | nil =>
     simp only [List.mapM_nil, pure, ExceptT.pure] at heq
@@ -541,7 +541,7 @@ theorem procToVerifyStmt_structure
                   let oldG := CoreIdent.mkOld g.name
                   let gTy ← getIdentTy! p g
                   return [Statement.init oldG gTy .nondet #[],
-                          Statement.init g gTy (.det (LExpr.fvar () oldG none)) #[]])
+                          Statement.init g gTy (.det (LExpr.fvar Strata.SourceRange.none oldG none)) #[]])
                   gs).run s0 = (Except.ok mInits, s1) →
                 (∀ g ∈ gs, g ∈ proc.spec.modifies) →
                 gs.Nodup →
