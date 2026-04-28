@@ -562,12 +562,10 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       let l := PyExprToCore translation_ctx v
       let k := PyExprToCore translation_ctx slice
       -- TODO: we need to plumb the type of `v` here
-      match s!"{repr l.expr}" with
-      | "LExpr.fvar _ { name := \"keys\", metadata := () } none" =>
-          -- let access_check : Core.Statement := .assert "subscript_bounds_check" (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "str_in_dict_str_any" none) k.expr) l.expr)
+      match l.expr with
+      | .fvar _ ⟨"keys", _⟩ _ =>
           {stmts := l.stmts ++ k.stmts, expr := .app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "list_str_get" none) l.expr) k.expr}
-      | "LExpr.fvar _ { name := \"blended_cost\", metadata := () } none" =>
-          -- let access_check : Core.Statement := .assert "subscript_bounds_check" (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "str_in_dict_str_any" none) k.expr) l.expr)
+      | .fvar _ ⟨"blended_cost", _⟩ _ =>
           {stmts := l.stmts ++ k.stmts, expr := .app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "dict_str_any_get_str" none) l.expr) k.expr}
       | _ =>
         match translation_ctx.expectedType with
