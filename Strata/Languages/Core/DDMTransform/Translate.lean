@@ -1095,7 +1095,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
               |.expr te => pure (some (← translateLMonoTy bindings (.type te)))
               | _ => pure none
     match decl with
-
     | .func func _md =>
       -- 0-ary Function
       return (.op m func.name ty?)
