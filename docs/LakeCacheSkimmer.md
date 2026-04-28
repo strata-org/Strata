@@ -6,9 +6,11 @@ Lean's `lake build` caches elaboration results in `.olean` files. When a module'
 elaboration depends on external state (file system, SMT solvers, network, etc.),
 the cached result may be stale — but Lake has no way to know this, since it only
 tracks source file changes and dependency graphs.
+See https://github.com/leanprover/lean4/issues/13449.
 
 We need a mechanism that identifies modules whose elaboration *might* depend on
 external state and forces `lake build` to re-elaborate them.
+
 
 ## Definition of Purity
 
