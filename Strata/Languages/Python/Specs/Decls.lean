@@ -317,9 +317,10 @@ def unionArray (loc : SourceRange) (elts : Array SpecType) : SpecType :=
   { loc := loc, atoms := elts.foldl (init := #[]) (unionElts · ·.atoms) }
 
 private def asSingleton (tp : SpecType) : Option SpecAtomType := do
-  if tp.atoms.size = 1 then
-    for atp in tp.atoms do return atp
-  none
+  if h : tp.atoms.size = 1 then
+    some tp.atoms[0]
+  else
+    none
 
 def asIdent (tp : SpecType) : Option PythonIdent := do
   let atom ← tp.asSingleton

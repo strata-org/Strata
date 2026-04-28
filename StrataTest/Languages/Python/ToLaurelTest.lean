@@ -80,10 +80,12 @@ private def fmtTypeDef : TypeDefinition → String
   | .Datatype ty => s!"datatype {ty.name}"
   | .Alias ty => s!"alias {ty.name}"
 
-/-- Run signaturesToLaurel and print formatted output. Asserts no errors. -/
+/-- Run signaturesToLaurel and print formatted output.
+    Prints warnings (if any) before procedures so `#guard_msgs` can verify them. -/
 private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
   let result := signaturesToLaurel "<test>" sigs modulePrefix
-  assert! result.errors.size = 0
+  for err in result.errors do
+    IO.println s!"warning: {err.kind.phase}.{err.kind.category}: {err.message}"
   for td in result.program.types do
     IO.println (fmtTypeDef td)
   for proc in result.program.staticProcedures do
@@ -174,7 +176,8 @@ procedure typed_dict() returns(result:UserDefined(Any))
 /-! ## Literal types, TypedDict, and string-literal unions → Any -/
 
 /--
-info: procedure int_literal_ret() returns(result:UserDefined(Any))
+info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(f)' approximated as DictStrAny in type 'TypedDict(f)'
+procedure int_literal_ret() returns(result:UserDefined(Any))
 procedure str_literal_ret() returns(result:UserDefined(Any))
 procedure typed_dict_ret() returns(result:UserDefined(Any))
 procedure str_enum() returns(result:UserDefined(Any))
@@ -195,7 +198,8 @@ procedure str_enum() returns(result:UserDefined(Any))
 /-! ## Optional type patterns (Union[None, T]) → Any -/
 
 /--
-info: procedure opt_str() returns(result:UserDefined(Any))
+info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(x)' approximated as DictStrAny in type 'Union[_types.NoneType, TypedDict(x)]'
+procedure opt_str() returns(result:UserDefined(Any))
 procedure opt_int() returns(result:UserDefined(Any))
 procedure opt_bool(x:UserDefined(Any)) returns(result:UserDefined(Any))
 procedure opt_typed_dict() returns(result:UserDefined(Any))
@@ -231,9 +235,7 @@ info: procedure f() returns(result:UserDefined(Any))
 #eval runTest
   #[mkFuncSig "f"
     (identType (PythonIdent.mk "foo" "Bar"))]
--- Note: Bar maps to Any because the return type always maps to Any
 
--- Union types now map to Any without warnings
 /--
 info: procedure f() returns(result:UserDefined(Any))
 -/
@@ -244,7 +246,8 @@ info: procedure f() returns(result:UserDefined(Any))
                identType .builtinsInt])]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: warning: pySpecToLaurel.unsupportedUnion: No type tester for 'foo.Bar' in type 'Union[_types.NoneType, foo.Bar]'
+procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest

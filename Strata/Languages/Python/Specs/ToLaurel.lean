@@ -33,16 +33,23 @@ namespace Strata.Python
 
 public section
 
-/-- Map a PythonIdent directly to its Laurel type-tester predicate name
-    (e.g., `builtins.int` → `"Any..isfrom_int"`), or `none` if no tester
-    exists for this type. -/
+private def typeTestersMap : Std.HashMap PythonIdent String :=
+  .ofList [
+    (.builtinsInt,       "Any..isfrom_int"),
+    (.builtinsStr,       "Any..isfrom_str"),
+    (.builtinsBool,      "Any..isfrom_bool"),
+    (.builtinsFloat,     "Any..isfrom_float"),
+    (.noneType,          "Any..isfrom_None"),
+    (.builtinsBytes,     "Any..isfrom_bytes"),
+    (.typingList,        "Any..isfrom_ListAny"),
+    (.typingSequence,    "Any..isfrom_ListAny"),
+    (.typingDict,        "Any..isfrom_DictStrAny"),
+    (.typingMapping,     "Any..isfrom_DictStrAny"),
+    (.builtinsException, "Any..isexception")
+  ]
+
 def PythonIdent.toTypeTester? (id : PythonIdent) : Option String :=
-  if id == .builtinsInt then some "Any..isfrom_int"
-  else if id == .builtinsStr then some "Any..isfrom_str"
-  else if id == .builtinsBool then some "Any..isfrom_bool"
-  else if id == .builtinsFloat then some "Any..isfrom_float"
-  else if id == .noneType then some "Any..isfrom_None"
-  else none
+  typeTestersMap[id]?
 
 /-- Fully qualified Laurel name for a `PythonIdent`: module dots become
     underscores. E.g., `"mylib.sub"` / `"Foo"` → `"mylib_sub_Foo"`. -/
@@ -158,24 +165,57 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     return mkTy (.UserDefined { text := nm.toLaurelName })
   | none => return tyAny
 
--- FIXME: typeTester? seems buggy It seems like it should build a disjunction
--- over atoms.  This doesn't distinguish between types and could hide errors.
--- I think it should be converted to take specType and value and return
--- ToLaurelM (Option StmtExprMd) with None meaning no assertion needed
--- (e.g., ty is Any or a user-defined type).  If a type exists that is not
--- supported it should raise a warning.
+/-- Build the assertion for a single atom: type tester for idents,
+    `isfrom_X(v) && as_X!(v) == literal` for literals.
+    When `isUnion` is true, warns on ident atoms that lack testers.
+    Always warns on TypedDict (needs a dedicated checker). -/
+private def atomAssertion? (atom : SpecAtomType) (ty : SpecType)
+    (value : StmtExprMd) (source : Option FileRange)
+    (isUnion : Bool) : ToLaurelM (Option StmtExprMd) := do
+  let mk (e : StmtExpr) : StmtExprMd := { val := e, source := none }
+  match atom with
+  | .ident nm _ =>
+    match typeTestersMap[nm]? with
+    | some testerName =>
+      return some <| mk (.StaticCall (mkId testerName) [value])
+    | none =>
+      if nm != .typingAny && isUnion then
+        reportError .unsupportedUnion ty.loc s!"No type tester for '{nm}' in type '{ty}'"
+      return none
+  | .intLiteral v =>
+    let typeCheck := mk (.StaticCall (mkId "Any..isfrom_int") [value])
+    let unwrap := mk (.StaticCall (mkId "Any..as_int!") [value])
+    let eqCheck := mk (.PrimitiveOp .Eq [unwrap, mk (.LiteralInt v)])
+    return some <| mk (.PrimitiveOp .And [typeCheck, eqCheck])
+  | .stringLiteral v =>
+    let typeCheck := mk (.StaticCall (mkId "Any..isfrom_str") [value])
+    let unwrap := mk (.StaticCall (mkId "Any..as_string!") [value])
+    let eqCheck := mk (.PrimitiveOp .Eq [unwrap, mk (.LiteralString v)])
+    return some <| mk (.PrimitiveOp .And [typeCheck, eqCheck])
+  | .typedDict .. =>
+    reportError .unsupportedUnion ty.loc s!"TypedDict '{atom}' approximated as DictStrAny in type '{ty}'"
+    return some <| mk (.StaticCall (mkId "Any..isfrom_DictStrAny") [value])
 
-
-/-- Map a SpecType to its `Any..isfrom_X` tester name, if applicable. -/
-private def typeTester? (ty : SpecType) : Option String :=
-  match ty.asIdent with
-  | some id =>
-    if id == .builtinsInt then some "Any..isfrom_int"
-    else if id == .builtinsStr then some "Any..isfrom_str"
-    else if id == .builtinsBool then some "Any..isfrom_bool"
-    else if id == .builtinsFloat then some "Any..isfrom_float"
-    else none
-  | none => none
+/-- Build a type-assertion expression for `value` given its declared `SpecType`.
+    Returns `none` when no assertion is needed (all atoms are Any/composites).
+    For union types, builds a disjunction over per-atom assertions. -/
+private def typeAssertion? (ty : SpecType) (value : StmtExprMd)
+    (source : Option FileRange) : ToLaurelM (Option StmtExprMd) := do
+  let mut result : Option StmtExprMd := none
+  for atom in ty.atoms do
+    match atom with
+    | .ident nm _ =>
+      if nm = .typingAny then
+        return none
+    | _ => pure ()
+    match ← atomAssertion? atom ty value source (ty.atoms.size > 1) with
+    | some call =>
+      match result with
+      | none => result := some call
+      | some prev =>
+        result := some { val := .PrimitiveOp .Or [prev, call], source := none }
+    | none => pure ()
+  return result
 
 /-! ## SpecExpr to Laurel Translation -/
 
@@ -387,16 +427,15 @@ def buildSpecBody (allArgs : Array Arg)
   -- 2. Assert type / required-param preconditions
   for arg in allArgs do
     let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := none }
-    match typeTester? arg.type with
-    | some testerName =>
-      let testerCall : StmtExprMd := { val := .StaticCall (mkId testerName) [paramId], source := none }
+    match ← typeAssertion? arg.type paramId source with
+    | some assertion =>
       if arg.default.isSome then
         let noneCheck : StmtExprMd := { val := .StaticCall (mkId "Any..isfrom_None") [paramId], source := none }
-        let orExpr : StmtExprMd := { val := .PrimitiveOp .Or [noneCheck, testerCall], source := none }
+        let orExpr : StmtExprMd := { val := .PrimitiveOp .Or [noneCheck, assertion], source := none }
         let assertStmt ← mkStmtWithLoc (.Assert { condition := orExpr, summary := none }) default
         stmts := stmts.push assertStmt
       else
-        let assertStmt ← mkStmtWithLoc (.Assert { condition := testerCall, summary := none }) default
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := assertion, summary := none }) default
         stmts := stmts.push assertStmt
     | none =>
       if arg.default.isNone then
@@ -431,10 +470,9 @@ def buildSpecBody (allArgs : Array Arg)
         reportError .typeError default
           s!"Postcondition expression is not Bool in '{ctx.procName}' (skipping)"
   -- 6. Assume return type postcondition
-  if let some testerName := typeTester? returnType then
-    let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
-    let testerCall : StmtExprMd := { val := .StaticCall (mkId testerName) [resultRef], source := none }
-    let assumeStmt ← mkStmtWithLoc (.Assume testerCall) default
+  let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
+  if let some retAssertion ← typeAssertion? returnType resultRef source then
+    let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
     stmts := stmts.push assumeStmt
   let body := {
       val := .Block stmts.toList none,
