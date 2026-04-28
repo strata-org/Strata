@@ -176,7 +176,7 @@ procedure typed_dict() returns(result:UserDefined(Any))
 /-! ## Literal types, TypedDict, and string-literal unions → Any -/
 
 /--
-info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(f)' approximated as DictStrAny in type 'TypedDict(f)'
+info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(f : builtins.str)' approximated as DictStrAny in type 'TypedDict(f : builtins.str)'
 procedure int_literal_ret() returns(result:UserDefined(Any))
 procedure str_literal_ret() returns(result:UserDefined(Any))
 procedure typed_dict_ret() returns(result:UserDefined(Any))
@@ -198,7 +198,7 @@ procedure str_enum() returns(result:UserDefined(Any))
 /-! ## Optional type patterns (Union[None, T]) → Any -/
 
 /--
-info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(x)' approximated as DictStrAny in type 'Union[_types.NoneType, TypedDict(x)]'
+info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(x : builtins.str)' approximated as DictStrAny in type 'Union[_types.NoneType, TypedDict(x : builtins.str)]'
 procedure opt_str() returns(result:UserDefined(Any))
 procedure opt_int() returns(result:UserDefined(Any))
 procedure opt_bool(x:UserDefined(Any)) returns(result:UserDefined(Any))
