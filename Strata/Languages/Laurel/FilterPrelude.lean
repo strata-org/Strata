@@ -73,6 +73,8 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TTypedField vt => collectHighTypeNames vt
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
+  | .TSeq et => collectHighTypeNames et
+  | .TArray et => collectHighTypeNames et
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
   | .Pure base => collectHighTypeNames base
@@ -119,6 +121,10 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .ContractOf _ func => collectExprNames func
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
   | .Hole _ ty => ty.forM collectHighTypeNames
+  | .Subscript target index update =>
+    collectExprNames target
+    collectExprNames index
+    update.forM collectExprNames
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Identifier _ | .This | .Abstract | .All => pure ()
 

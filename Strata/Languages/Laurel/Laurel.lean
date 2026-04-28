@@ -143,6 +143,10 @@ inductive HighType : Type where
   | TSet (elementType : AstNode HighType)
   /-- Map type. -/
   | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
+  /-- Immutable sequence type, e.g. `Seq<int>`. Maps to Core's polymorphic `Sequence` type. -/
+  | TSeq (elementType : AstNode HighType)
+  /-- Mutable heap-backed array type, e.g. `Array<int>`. Has reference (aliasing) semantics. -/
+  | TArray (elementType : AstNode HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
@@ -317,6 +321,8 @@ inductive StmtExpr : Type where
         not allowed in functions.
       - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
+  /-- Subscript access or update, e.g. `s[i]` or `s[i := v]`. Eliminated by `SubscriptElim`. -/
+  | Subscript (target : AstNode StmtExpr) (index : AstNode StmtExpr) (update : Option (AstNode StmtExpr))
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
@@ -379,6 +385,8 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
+  | HighType.TSeq t1, HighType.TSeq t2 => highEq t1 t2
+  | HighType.TArray t1, HighType.TArray t2 => highEq t1 t2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -554,5 +562,34 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+/-! ## Sequence and Array well-known names
+
+`SubscriptElim` and `ConcreteToAbstractTreeTranslator` reference these names
+when lowering `Seq<T>` and `Array<T>` to Core. They are collected here so
+changes do not silently diverge between passes.
+-/
+
+/-- `Sequence.empty() : Seq<T>` — the empty sequence. -/
+def SeqOp.empty    := "Sequence.empty"
+/-- `Sequence.build(s, v) : Seq<T>` — append `v` to the end of `s`. -/
+def SeqOp.build    := "Sequence.build"
+/-- `Sequence.select(s, i) : T` — read the element at index `i`. -/
+def SeqOp.select   := "Sequence.select"
+/-- `Sequence.update(s, i, v) : Seq<T>` — functional update. -/
+def SeqOp.update   := "Sequence.update"
+/-- `Sequence.length(s) : int` — length of the sequence. -/
+def SeqOp.length   := "Sequence.length"
+/-- Name of the `$data` field on the synthetic `$Array` composite. -/
+def SeqOp.dataField := "$data"
+
+/-- Name of the synthetic composite type injected by `SubscriptElim` to model
+    `Array<T>`. Uses the `$` prefix convention for internal names to avoid
+    colliding with user-defined composite types. -/
+def arrayCompositeName := "$Array"
+
+/-- Name of the `Array.length` function. Calls to this name are desugared by
+    `SubscriptElim` into `Sequence.length(a.$data)`. -/
+def arrayLengthName := "Array.length"
 
 end

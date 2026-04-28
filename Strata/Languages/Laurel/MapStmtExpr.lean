@@ -83,6 +83,9 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
     pure ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprM f func), source⟩
+  | .Subscript target index update =>
+    pure ⟨.Subscript (← mapStmtExprM f target) (← mapStmtExprM f index)
+      (← update.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   -- Leaves: no StmtExprMd children.
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently

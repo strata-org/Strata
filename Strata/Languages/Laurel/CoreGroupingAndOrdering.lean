@@ -31,6 +31,8 @@ open Lambda (LMonoTy LExpr)
 def collectTypeRefs : HighTypeMd → List String
   | ⟨.UserDefined name, _⟩ => [name.text]
   | ⟨.TSet elem, _⟩ => collectTypeRefs elem
+  | ⟨.TSeq elem, _⟩ => collectTypeRefs elem
+  | ⟨.TArray elem, _⟩ => collectTypeRefs elem
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
   | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
   | ⟨.Applied base args, _⟩ =>
@@ -87,6 +89,11 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       collectStaticCallNames body
   | .FieldSelect t _ => collectStaticCallNames t
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
+  | .Subscript target index update =>
+      collectStaticCallNames target ++ collectStaticCallNames index ++
+      (match update with
+      | some u => collectStaticCallNames u
+      | none => [])
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
   | .Old v | .Fresh v | .Assume v => collectStaticCallNames v
