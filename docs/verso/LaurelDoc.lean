@@ -110,6 +110,82 @@ type. Algebraic datatypes can be encoded using composite and constrained types.
 
 {docstring Strata.Laurel.TypeDefinition}
 
+# Sequences and Arrays
+
+Laurel provides two collection types that share a subscript syntax but differ in their
+semantics:
+
+- `Seq<T>` — immutable value sequences. Operations like functional update produce new
+  sequences, leaving the input unchanged. Variables of type `Seq<T>` are compared by value.
+- `Array<T>` — mutable heap-backed arrays. Assigning an array to a new variable creates an
+  alias; mutations through one reference are visible through all others.
+
+Currently `Array<T>` is supported only for `T = int`; other element types are
+rejected by the pre-pass validator. `Seq<T>` supports any element type.
+
+## Sequence literals
+
+Square-bracket literals construct a `Seq<T>`:
+
+```
+var s: Seq<int> := [1, 2, 3];
+```
+
+The empty literal `[]` produces `Sequence.empty()`.
+
+## Subscript syntax
+
+The expression `s[i]` reads the element at index `i`:
+
+```
+assert s[0] == 1;
+```
+
+On a `Seq<T>`, `s[i := v]` produces a new sequence with index `i` set to `v`:
+
+```
+var t: Seq<int> := s[0 := 99];  // t differs from s at index 0
+```
+
+On an `Array<T>`, `a[i] := v` updates the array in place:
+
+```
+var a: Array<int> := [1, 2, 3];
+a[0] := 42;
+assert a[0] == 42;
+```
+
+Out-of-bounds access is unconstrained, matching SMT-LIB semantics; the verifier may
+return any value for an out-of-bounds read and may leave an out-of-bounds write
+undefined.
+
+## Sequence operations
+
+The `Sequence` namespace exposes the following operations:
+
+- `Sequence.empty()` — the empty sequence
+- `Sequence.build(s, v)` — append `v` to the end of `s`
+- `Sequence.select(s, i)` — read index `i`; equivalent to `s[i]`
+- `Sequence.update(s, i, v)` — functional update; equivalent to `s[i := v]`
+- `Sequence.length(s)` — length
+- `Sequence.append(s1, s2)` — concatenate two sequences
+- `Sequence.contains(s, v)` — membership test
+- `Sequence.take(s, n)` — prefix of length `n`
+- `Sequence.drop(s, n)` — suffix after the first `n` elements
+
+## Array length
+
+`Array.length(a)` returns the length of an array. It is internally desugared to
+`Sequence.length(a#$data)` and requires its argument to be of type `Array<T>`.
+
+## Internal representation
+
+Arrays are represented internally by a synthetic `$Array` composite with a single
+`$data: Seq<int>` field (the `int` element type matches the current
+`Array<int>`-only restriction). The `$` prefix is a naming convention used for
+compiler-internal names to avoid collisions with user-declared types. The
+`$Array` composite is only injected into programs that actually use `Array<T>`.
+
 # Expressions and Statements
 
 Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like

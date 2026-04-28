@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.SubscriptElim
 import Strata.Languages.Core.Verifier
 import Strata.Util.Profile
 import Strata.Util.Statistics
@@ -90,6 +91,11 @@ structure LaurelPass where
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 private def laurelPipeline : Array LaurelPass := #[
+  { name := "SubscriptElim"
+    needsResolves := true
+    run := fun p m =>
+      let (p', diags) := subscriptElim m p
+      (p', diags, {}) },
   { name := "FilterNonCompositeModifies"
     run := fun p m =>
       let (p', diags) := filterNonCompositeModifies m p
