@@ -188,7 +188,7 @@ private def ensuresClauseToArg (c : Condition) : Arg :=
   laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
 private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
-  let (wildcards, specific) := modifies.partition (fun m => match m.val with | .All => true | _ => false)
+  let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
   let wildcardArgs := wildcards.map (fun _ => laurelOp "modifiesWildcard" #[]) |>.toArray
   let specificArgs := if specific.isEmpty then #[]
     else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
