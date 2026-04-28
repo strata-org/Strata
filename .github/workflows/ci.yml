@@ -323,3 +323,48 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/cbmc.yml
+
+  strata-benchmarks:
+    name: Run internal benchmarks of Strata
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{secrets.AWS_BENCHMARK_ACCOUNT}}:role/github-actions-codebuild-role
+          aws-region: us-east-2
+
+      - name: Trigger CodeBuild and wait
+        shell: bash
+        run: |
+          BUILD_ID=$(aws codebuild start-build \
+            --project-name strata-benchmarks \
+            --source-type-override GITHUB \
+            --source-location-override https://github.com/strata-org/Strata.git \
+            --query 'build.id' --output text \
+            --region us-east-2)
+          echo "Build started: $BUILD_ID"
+
+          LOG_KEY="logs/${BUILD_ID}.log"
+          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
+
+          while true; do
+            STATUS=$(aws codebuild batch-get-builds \
+              --ids "$BUILD_ID" \
+              --query 'builds[0].buildStatus' --output text \
+              --region us-east-2)
+            echo "Current status: [$STATUS]"
+            case "$STATUS" in
+              SUCCEEDED) break;;
+              FAILED|FAULT|TIMED_OUT|STOPPED) echo "Build failed: $STATUS" ; break ;;
+              IN_PROGRESS) sleep 30 ;;
+              *) echo "Unexpected status: $STATUS"; sleep 10 ; break ;;
+            esac
+          done
+
+          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY}"
+          
+          test "$STATUS" = "SUCCEEDED"
