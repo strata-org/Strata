@@ -216,19 +216,19 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
-  let (ensuresArgs, modifiesArgs, bodyArg) := match proc.body with
+  let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      (#[], #[], optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
-      (ens, mods, body)
+      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg mods])), body)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      (ens, #[], optionArg none)
+      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg #[]])), optionArg none)
     | .External =>
-      (#[], #[], optionArg (some (laurelOp "externalBody")))
+      (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr
     name := { dialect := "Laurel", name := opName }
     args := #[
@@ -238,8 +238,7 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       returnParamsArg,
       seqArg requiresArgs,
       invokeOnArg,
-      seqArg ensuresArgs,
-      seqArg modifiesArgs,
+      opaqueSpecArg,
       bodyArg
     ] }
 

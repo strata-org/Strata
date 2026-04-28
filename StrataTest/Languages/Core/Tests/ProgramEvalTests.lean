@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.ProcedureEval
+import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.StatementEval
 
 namespace Core
 
@@ -409,6 +410,205 @@ Proof Obligation:
 
 
 end Tests
+
+---------------------------------------------------------------------
+
+section ConcreteInterpretation
+
+/-! ## Concrete Interpretation Tests
+-/
+
+open Lambda Strata
+open Std (ToFormat Format format)
+
+private def parseAndTypeCheck (pgm : Strata.Program) : Except DiagnosticModel Core.Program := do
+  let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
+  Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
+
+private def runProc (pgm : Strata.Program) (procName : String)
+    (args : List Expression.Expr := [])
+    (fuel : Nat := 10000) : IO Unit := do
+  match parseAndTypeCheck pgm with
+  | .error e => IO.println s!"type error: {e.message}"
+  | .ok prog =>
+    match prog.run with
+    | .ok E =>
+      let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
+      match proc with
+      | none => IO.println "procedure not found"
+      | some p =>
+        let lhs := p.header.outputs.keys
+        let E := Core.Statement.Command.runCall lhs procName args fuel E
+        match E.error with
+        | none =>
+          let outputs := lhs.map fun name =>
+            let val := (E.exprEnv.state.find? name).map (·.snd)
+            s!"{name} = {val.map (fun v => toString (format v))}"
+          IO.println (String.intercalate ", " outputs)
+        | some e => IO.println f!"error: {e}"
+    | .error diag => IO.println s!"error: {diag}"
+
+-- Simple assignment
+private def simplePgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(out y : int)
+{
+  y := 42;
+};
+#end
+
+/-- info: y = (some 42) -/
+#guard_msgs in
+#eval runProc simplePgm "Test"
+
+-- Arithmetic
+private def arithPgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(x : int, out y : int)
+{
+  y := x + x;
+};
+#end
+
+/-- info: y = (some 10) -/
+#guard_msgs in
+#eval runProc arithPgm "Test" [.intConst () 5]
+
+-- If-then-else
+private def itePgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(x : int, out y : int)
+{
+  if (x > 0) {
+    y := x;
+  } else {
+    y := 0 - x;
+  }
+};
+#end
+
+/-- info: y = (some 7) -/
+#guard_msgs in
+#eval runProc itePgm "Test" [.intConst () 7]
+
+/-- info: y = (some 3) -/
+#guard_msgs in
+#eval runProc itePgm "Test" [.intConst () (-3)]
+
+-- Procedure call
+private def callPgm : Strata.Program :=
+#strata
+program Core;
+procedure Double(n : int, out result : int)
+{
+  result := n + n;
+};
+procedure Test(x : int, out y : int)
+{
+  call Double(x, out y);
+};
+#end
+
+/-- info: y = (some 20) -/
+#guard_msgs in
+#eval runProc callPgm "Test" [.intConst () 10]
+
+-- Chained procedure calls (DoubleTwice)
+private def chainedCallPgm : Strata.Program :=
+#strata
+program Core;
+procedure Double(n : int, out result : int)
+{
+  result := n + n;
+};
+procedure Test(x : int, out output : int)
+{
+  call Double(x, out output);
+  call Double(output, out output);
+};
+#end
+
+/-- info: output = (some 20) -/
+#guard_msgs in
+#eval runProc chainedCallPgm "Test" [.intConst () 5]
+
+-- Loop (sum of 0..n-1)
+private def loopPgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(n : int, out sum : int)
+{
+  var i : int;
+  sum := 0;
+  i := 0;
+  while (i <= n)
+  {
+    sum := sum + i;
+    i := i + 1;
+  }
+};
+#end
+
+/-- info: sum = (some 15) -/
+#guard_msgs in
+#eval runProc loopPgm "Test" [.intConst () 5]
+
+-- Assertion success
+private def assertSuccessPgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(out y : int)
+{
+  y := 42;
+  assert [check]: (y == 42);
+};
+#end
+
+/-- info: y = (some 42) -/
+#guard_msgs in
+#eval runProc assertSuccessPgm "Test"
+
+-- Assertion failure
+private def assertFailPgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(out y : int)
+{
+  y := 42;
+  assert [check]: (y == 0);
+};
+#end
+
+/-- info: error: [ASSERT ERROR] Assertion check failed!
+false
+-/
+#guard_msgs in
+#eval runProc assertFailPgm "Test"
+
+-- Nested blocks with scoping
+private def blockPgm : Strata.Program :=
+#strata
+program Core;
+procedure Test(out y : int)
+{
+  y := 0;
+  anon0: {
+    var x : int;
+    x := 10;
+    y := x;
+  }
+};
+#end
+
+/-- info: y = (some 10) -/
+#guard_msgs in
+#eval runProc blockPgm "Test"
+
+end ConcreteInterpretation
+
 ---------------------------------------------------------------------
 
 end Core
