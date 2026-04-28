@@ -804,4 +804,64 @@ private def hasTypeError (result : TranslationResult) : Bool :=
     #[{ message := #[], formula := .intLit 42 loc }]
   assert! hasTypeError result
 
+/-! ## Arithmetic SpecExpr integration tests -/
+
+-- intEq: x == 0
+/--
+info: { assert !Any..isfrom_None(x); assert Any..as_int!(x) == Any..as_int!(from_int(0)) }
+-/
+#guard_msgs in
+#eval do
+  let (body, _) := translatePrecond
+    #[{ message := #[], formula :=
+          .intEq (.var "x" loc) (.intLit 0 loc) loc }]
+    (args := #[mkArg "x" (identType .builtinsStr)])
+  IO.println body
+
+-- intAdd inside intGe: x + y >= 0
+/--
+info: { assert !Any..isfrom_None(x); assert !Any..isfrom_None(y); assert Any..as_int!(from_int(Any..as_int!(x) + Any..as_int!(y))) >= Any..as_int!(from_int(0)) }
+-/
+#guard_msgs in
+#eval do
+  let (body, _) := translatePrecond
+    #[{ message := #[], formula :=
+          .intGe
+            (.intAdd (.var "x" loc) (.var "y" loc) loc)
+            (.intLit 0 loc) loc }]
+    (args := #[mkArg "x" (identType .builtinsStr),
+               mkArg "y" (identType .builtinsStr)])
+  IO.println body
+
+-- intSub inside intEq: result == balance - amount
+/--
+info: { assert !Any..isfrom_None(result); assert !Any..isfrom_None(balance); assert !Any..isfrom_None(amount); assert Any..as_int!(result) == Any..as_int!(from_int(Any..as_int!(balance) - Any..as_int!(amount))) }
+-/
+#guard_msgs in
+#eval do
+  let (body, _) := translatePrecond
+    #[{ message := #[], formula :=
+          .intEq
+            (.var "result" loc)
+            (.intSub (.var "balance" loc) (.var "amount" loc) loc)
+            loc }]
+    (args := #[mkArg "result" (identType .builtinsStr),
+               mkArg "balance" (identType .builtinsStr),
+               mkArg "amount" (identType .builtinsStr)])
+  IO.println body
+
+-- intMul inside intGe: x * 2 >= 0
+/--
+info: { assert !Any..isfrom_None(x); assert Any..as_int!(from_int(Any..as_int!(x) * Any..as_int!(from_int(2)))) >= Any..as_int!(from_int(0)) }
+-/
+#guard_msgs in
+#eval do
+  let (body, _) := translatePrecond
+    #[{ message := #[], formula :=
+          .intGe
+            (.intMul (.var "x" loc) (.intLit 2 loc) loc)
+            (.intLit 0 loc) loc }]
+    (args := #[mkArg "x" (identType .builtinsStr)])
+  IO.println body
+
 end Strata.Python.Specs.ToLaurel.Tests

@@ -308,6 +308,14 @@ inductive SpecExpr where
 | intLit (value : Int) (loc : SourceRange)
 | intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+/-- Integer addition: `intAdd a b` represents `a + b`. -/
+| intAdd (left : SpecExpr) (right : SpecExpr) (loc : SourceRange)
+/-- Integer subtraction: `intSub a b` represents `a - b`. -/
+| intSub (left : SpecExpr) (right : SpecExpr) (loc : SourceRange)
+/-- Integer multiplication: `intMul a b` represents `a * b`. -/
+| intMul (left : SpecExpr) (right : SpecExpr) (loc : SourceRange)
+/-- Integer equality: `intEq a b` represents `a == b`. -/
+| intEq (left : SpecExpr) (right : SpecExpr) (loc : SourceRange)
 /-- A floating-point literal, stored as a string to preserve precision. -/
 | floatLit (value : String) (loc : SourceRange)
 | floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)

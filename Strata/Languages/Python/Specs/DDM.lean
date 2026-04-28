@@ -85,6 +85,14 @@ op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " >=_int " bound;
 op intLeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " <=_int " bound;
+op intAddExpr(left : SpecExprDecl, right : SpecExprDecl) : SpecExprDecl =>
+  @[prec(20)] left " +_int " right;
+op intSubExpr(left : SpecExprDecl, right : SpecExprDecl) : SpecExprDecl =>
+  @[prec(20)] left " -_int " right;
+op intMulExpr(left : SpecExprDecl, right : SpecExprDecl) : SpecExprDecl =>
+  @[prec(25)] left " *_int " right;
+op intEqExpr(left : SpecExprDecl, right : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] left " ==_int " right;
 op floatExpr(value : Str) : SpecExprDecl => value;
 op floatGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " >=_float " bound;
@@ -246,6 +254,10 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .intLit v loc => .intExpr loc (toDDMInt loc v)
   | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
   | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
+  | .intAdd left right loc => .intAddExpr loc left.toDDM right.toDDM
+  | .intSub left right loc => .intSubExpr loc left.toDDM right.toDDM
+  | .intMul left right loc => .intMulExpr loc left.toDDM right.toDDM
+  | .intEq left right loc => .intEqExpr loc left.toDDM right.toDDM
   | .floatLit v loc => .floatExpr loc ⟨loc, v⟩
   | .floatGe subj bound loc => .floatGeExpr loc subj.toDDM bound.toDDM
   | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
@@ -376,7 +388,7 @@ private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
     default := default.map (·.fromDDM)
   }
 
-private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
+protected def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
   | .placeholderExpr loc => .placeholder loc
   | .varExpr loc ⟨_, name⟩ => .var name loc
@@ -386,6 +398,10 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .intExpr loc i => .intLit i.ofDDM loc
   | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc
   | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM loc
+  | .intAddExpr loc left right => .intAdd left.fromDDM right.fromDDM loc
+  | .intSubExpr loc left right => .intSub left.fromDDM right.fromDDM loc
+  | .intMulExpr loc left right => .intMul left.fromDDM right.fromDDM loc
+  | .intEqExpr loc left right => .intEq left.fromDDM right.fromDDM loc
   | .floatExpr loc ⟨_, v⟩ => .floatLit v loc
   | .floatGeExpr loc subj bound => .floatGe subj.fromDDM bound.fromDDM loc
   | .floatLeExpr loc subj bound => .floatLe subj.fromDDM bound.fromDDM loc

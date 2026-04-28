@@ -76,6 +76,22 @@ def intLeq (x y : TypedStmtExpr .TInt)
     (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Leq [x.stmt, y.stmt]) md source
 
+def intAdd (x y : TypedStmtExpr .TInt)
+    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Add [x.stmt, y.stmt]) md source
+
+def intSub (x y : TypedStmtExpr .TInt)
+    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Sub [x.stmt, y.stmt]) md source
+
+def intMul (x y : TypedStmtExpr .TInt)
+    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TInt :=
+  .ofStmt (.PrimitiveOp .Mul [x.stmt, y.stmt]) md source
+
+def intEq (x y : TypedStmtExpr .TInt)
+    (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
+  .ofStmt (.PrimitiveOp .Eq [x.stmt, y.stmt]) md source
+
 def realGeq (x y : TypedStmtExpr .TReal)
     (md : Md := x.stmt.md) (source : Option FileRange := x.stmt.source) : TypedStmtExpr .TBool :=
   .ofStmt (.PrimitiveOp .Geq [x.stmt, y.stmt]) md source

@@ -385,6 +385,23 @@ private def lookupIdentifier (name : String) (loc : SourceRange) (md : Md)
     reportError .typeError loc s!"Unknown identifier '{name}' in '{pn}'"
     return default
 
+/-- Unwrap two Any-typed operands to TInt via `as_int!` and apply the
+    integer binary operation indicated by the original `SpecExpr` variant.
+    Arithmetic ops wrap the result back to Any via `from_int`;
+    comparisons return Bool directly. -/
+private def intBinOp
+    (e : SpecExpr)
+    (l r : TypedStmtExpr Laurel.tyAny) (md : Md)
+    : SomeTypedStmtExpr :=
+  let li := .anyAsInt l md; let ri := .anyAsInt r md
+  match e with
+  | .intGe  .. => .mkSome <| .intGeq li ri
+  | .intLe  .. => .mkSome <| .intLeq li ri
+  | .intAdd .. => .mkSome <| .fromInt (.intAdd li ri)
+  | .intSub .. => .mkSome <| .fromInt (.intSub li ri)
+  | .intMul .. => .mkSome <| .fromInt (.intMul li ri)
+  | _          => .mkSome <| .intEq li ri  -- intEq and fallback
+
 /-- Translate a SpecExpr to a typed Laurel expression (`SomeTypedStmtExpr`).
     Returns `default` (a `Hole`) for unsupported expressions; callers use
     `runChecked` to detect whether errors were reported during translation.
@@ -432,16 +449,13 @@ def specExprToLaurel (e : SpecExpr) (md : Md)
     let md ← nodeMd loc
     let s ← asAny loc <| specExprToLaurel subject md
     return .mkSome <| .fromInt (.strLength (.anyAsString s md))
-  | .intGe subject bound loc => do
+  | .intGe  left right loc | .intLe  left right loc
+  | .intAdd left right loc | .intSub left right loc
+  | .intMul left right loc | .intEq  left right loc => do
     let md ← nodeMd loc
-    let s ← asAny loc <| specExprToLaurel subject md
-    let b ← asAny loc <| specExprToLaurel bound md
-    return .mkSome <| .intGeq (.anyAsInt s md) (.anyAsInt b md)
-  | .intLe subject bound loc => do
-    let md ← nodeMd loc
-    let s ← asAny loc <| specExprToLaurel subject md
-    let b ← asAny loc <| specExprToLaurel bound md
-    return .mkSome <| .intLeq (.anyAsInt s md) (.anyAsInt b md)
+    let l ← asAny loc <| specExprToLaurel left md
+    let r ← asAny loc <| specExprToLaurel right md
+    return intBinOp e l r md
   | .floatGe subject bound loc => do
     let md ← nodeMd loc
     let s ← asAny loc <| specExprToLaurel subject md
