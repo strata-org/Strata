@@ -1,0 +1,29 @@
+module "t26_with_as_use":
+
+func MyCtx.__enter__(self):
+  bb0():
+    ret %0
+
+func MyCtx.__exit__(self, exc_type, exc_val, exc_tb):
+  bb0():
+    %4:_tmp.0 = boolLit false
+    ret %4
+
+func @module_init():
+  bb0():
+    %1:_tmp.0 = callQualified t26_with_as_use.MyCtx []
+    %3:ctx.0 = call attr(%1, "__enter__")()
+    %4:print.0 = undef("print")
+    branch bb1(%3, %4, %1)
+  bb1(%5:ctx.1, %6:print.1, %7:_mgr.0):
+    %8:_tmp.3 = call %6(positional(%5))
+    %10:_tmp.5 = noneLit
+    %11:_tmp.6 = call attr(%7, "__exit__")(positional(%10), positional(%10), positional(%10))
+    branch bb4()
+  bb2(%12:ctx.2, %13:print.2, %14:_mgr.1, %15:_exc.0):
+    %17:_tmp.8 = call attr(%14, "__exit__")(positional(%15), positional(%15), positional(%15))
+    condBranch %17 bb4() bb3(%14, %15)
+  bb3(%18:_mgr.2, %19:_exc.1):
+    raise %19
+  bb4():
+    ret

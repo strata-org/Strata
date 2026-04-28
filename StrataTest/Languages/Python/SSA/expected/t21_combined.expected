@@ -45,24 +45,24 @@ func process_items(items: list, manager: ResourceManager):
   bb1(%3:count.1, %4:manager.1, %5:_iterable.0):
     %7:_iter.1 = callQualified builtins.iter [positional(%5)]
     branch bb2(%3, %4, %7)
-  bb2(%8:count.2, %9:manager.2, %10:_iter.2) [except: bb4]:
+  bb2(%8:count.2, %9:manager.2, %10:_iter.2) [except: bb6]:
     %12:_tmp.2 = callQualified builtins.next [positional(%10)]
     %14:key.0 = getItem %12 strLit "key"
     %16:value.0 = getItem %12 strLit "value"
     %18:success.0 = call attr(%9, "add_resource")(positional(%14), positional(%16))
-    condBranch %18 bb8(%8, %9, %10) bb9(%8, %9, %10)
+    condBranch %18 bb3(%8, %9, %10) bb4(%8, %9, %10)
   bb3(%19:count.3, %20:manager.3, %21:_iter.3):
     %23:count.4 = binOp add %19 intLit 1
-    branch bb10(%23, %20, %21)
+    branch bb5(%23, %20, %21)
   bb4(%24:count.5, %25:manager.4, %26:_iter.4):
-    branch bb10(%24, %25, %26)
+    branch bb5(%24, %25, %26)
   bb5(%27:count.6, %28:manager.5, %29:_iter.5):
-    branch bb7(%27, %28, %29)
+    branch bb9(%27, %28, %29)
   bb6(%30:count.7, %31:manager.6, %32:_iter.6, %33:_exc.0):
     %34:KeyError.0 = qualifiedRef builtins.KeyError
     %36:_tmp.11 = callQualified builtins.isinstance [positional(%33), positional(%34)]
       -- where %34 = qualifiedRef builtins.KeyError
-    condBranch %36 bb5(%30, %31, %32, %33) bb6(%30, %31, %32, %33)
+    condBranch %36 bb7(%30, %31, %32, %33) bb8(%30, %31, %32, %33)
   bb7(%37:count.8, %38:manager.7, %39:_iter.7, %40:e.0):
     branch bb2(%37, %38, %39)
   bb8(%41:count.9, %42:manager.8, %43:_iter.8, %44:_exc.2):

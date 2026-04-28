@@ -4,47 +4,46 @@ func @module_init():
   bb0():
     %3:items.0 = mkList [intLit 1, intLit 2, intLit 3]
     %4:total.0 : int = intLit 0
-    %5:even_sum.0 = undef("even_sum")
-    branch bb1(%5, %3, %4, %3)
-  bb1(%6:even_sum.1, %7:items.1, %8:total.1, %9:_iterable.0):
-    %11:_iter.1 = callQualified builtins.iter [positional(%9)]
-    branch bb2(%6, %7, %8, %11)
-  bb2(%12:even_sum.2, %13:items.2, %14:total.2, %15:_iter.2) [except: bb3]:
-    %17:_tmp.6 = callQualified builtins.next [positional(%15)]
-    %18:total.3 = binOp add %14 %17
-    branch bb2(%12, %13, %18, %15)
-  bb3(%19:even_sum.3, %20:items.3):
-    branch bb4(%19, %20, %20)
-  bb4(%21:even_sum.4, %22:items.4, %23:_iterable.1):
-    %25:_iter.4 = callQualified builtins.iter [positional(%23)]
-    branch bb5(%21, %22, %25)
-  bb5(%26:even_sum.5, %27:items.5, %28:_iter.5) [except: bb6]:
-    %30:_tmp.8 = callQualified builtins.next [positional(%28)]
-    %32:_tmp.10 = compareOp eq %30 intLit 2
-    condBranch %32 bb7(%26, %27, %28) bb8(%26, %27, %28)
-  bb6(%33:even_sum.6, %34:items.6, %35:_iter.6):
-    branch bb6(%33, %34, %35)
-  bb7(%36:even_sum.7, %37:items.7, %38:_iter.7):
-    branch bb9(%36, %37, %38)
-  bb8(%39:even_sum.8, %40:items.8, %41:_iter.8):
-    branch bb5(%39, %40, %41)
-  bb9(%42:even_sum.9, %43:items.9):
-    %44:even_sum.10 : int = intLit 0
-    branch bb10(%44, %43)
-  bb10(%45:even_sum.11, %46:_iterable.2):
-    %48:_iter.10 = callQualified builtins.iter [positional(%46)]
-    branch bb11(%45, %48)
-  bb11(%49:even_sum.12, %50:_iter.11) [except: bb12]:
-    %52:_tmp.13 = callQualified builtins.next [positional(%50)]
-    %54:_tmp.15 = binOp mod %52 intLit 2
-    %56:_tmp.17 = compareOp notEq %54 intLit 0
-    condBranch %56 bb13(%49, %52, %50) bb14(%49, %52, %50)
-  bb12(%57:even_sum.13, %58:x.0, %59:_iter.12):
-    branch bb11(%57, %59)
-  bb13(%60:even_sum.14, %61:x.1, %62:_iter.13):
-    branch bb15(%60, %61, %62)
-  bb14(%63:even_sum.15, %64:x.2, %65:_iter.14):
-    %66:even_sum.16 = binOp add %63 %64
-    branch bb11(%66, %65)
+    branch bb1(%3, %4, %3)
+  bb1(%5:items.1, %6:total.1, %7:_iterable.0):
+    %9:_iter.1 = callQualified builtins.iter [positional(%7)]
+    branch bb2(%5, %6, %9)
+  bb2(%10:items.2, %11:total.2, %12:_iter.2) [except: bb3]:
+    %14:_tmp.6 = callQualified builtins.next [positional(%12)]
+    %15:total.3 = binOp add %11 %14
+    branch bb2(%10, %15, %12)
+  bb3(%16:items.3):
+    branch bb4(%16, %16)
+  bb4(%17:items.4, %18:_iterable.1):
+    %20:_iter.4 = callQualified builtins.iter [positional(%18)]
+    branch bb5(%17, %20)
+  bb5(%21:items.5, %22:_iter.5) [except: bb9]:
+    %24:_tmp.8 = callQualified builtins.next [positional(%22)]
+    %26:_tmp.10 = compareOp eq %24 intLit 2
+    condBranch %26 bb6(%21, %22) bb7(%21, %22)
+  bb6(%27:items.6, %28:_iter.6):
+    branch bb9(%27)
+  bb7(%29:items.7, %30:_iter.7):
+    branch bb8(%29, %30)
+  bb8(%31:items.8, %32:_iter.8):
+    branch bb5(%31, %32)
+  bb9(%33:items.9):
+    %34:even_sum.0 : int = intLit 0
+    branch bb10(%34, %33)
+  bb10(%35:even_sum.1, %36:_iterable.2):
+    %38:_iter.10 = callQualified builtins.iter [positional(%36)]
+    branch bb11(%35, %38)
+  bb11(%39:even_sum.2, %40:_iter.11) [except: bb15]:
+    %42:_tmp.13 = callQualified builtins.next [positional(%40)]
+    %44:_tmp.15 = binOp mod %42 intLit 2
+    %46:_tmp.17 = compareOp notEq %44 intLit 0
+    condBranch %46 bb12(%39, %42, %40) bb13(%39, %42, %40)
+  bb12(%47:even_sum.3, %48:x.0, %49:_iter.12):
+    branch bb11(%47, %49)
+  bb13(%50:even_sum.4, %51:x.1, %52:_iter.13):
+    branch bb14(%50, %51, %52)
+  bb14(%53:even_sum.5, %54:x.2, %55:_iter.14):
+    %56:even_sum.6 = binOp add %53 %54
+    branch bb11(%56, %55)
   bb15():
     ret

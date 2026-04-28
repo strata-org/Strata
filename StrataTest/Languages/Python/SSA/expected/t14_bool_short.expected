@@ -12,13 +12,13 @@ func @module_init():
   bb3(%7:a.3, %8:b.3):
     branch bb4(%8, %7, %8)
   bb4(%9:_tmp.3, %10:a.4, %11:b.4):
-    condBranch %10 bb7(%11, %10) bb8(%10, %11, %10)
+    condBranch %10 bb5(%11, %10) bb6(%10, %11, %10)
   bb5(%12:b.5, %13:a.5):
-    branch bb8(%12, %12, %13)
+    branch bb6(%12, %12, %13)
   bb6(%14:_tmp.4, %15:b.6, %16:a.6):
-    condBranch %14 bb6(%14, %16) bb5(%16)
+    condBranch %14 bb8(%14, %16) bb7(%16)
   bb7(%17:a.7):
-    branch bb6(%17, %17)
+    branch bb8(%17, %17)
   bb8(%18:_tmp.5, %19:a.8):
     %20:_tmp.6 = intLit 0
     condBranch %20 bb10(%20) bb9()

@@ -413,12 +413,100 @@ self-review before running tests, restructured the block ordering so the normal
 exit block is the continuation point, and the exception exit block branches
 via `raise` to propagate the exception.
 
+### Phase 14: Performance and Dead Code Cleanup (completed 2026-03-30)
+
+Systematic performance review and dead code elimination.
+
+**Performance optimizations (PythonToSSA.lean):**
+- **Fwd parallel arrays.** Replaced `Fwd = Array (String × SSAVal)` with a struct
+  of two parallel arrays (`names : Array String`, `vals : Array SSAVal`). This
+  makes `zipFwd` O(1) (just replace the vals array) and `fwdVals` O(1) (return
+  vals directly), eliminating ~25 O(n) zip/unzip allocations per function.
+- **valInstrIdx HashMap.** `setValType` previously scanned the entire instruction
+  array O(n) to find the target instruction. Added `valInstrIdx : Std.HashMap Nat Nat`
+  mapping val ID → instruction index, populated by `emitInstr`. Now O(1) per call.
+- **Merged errors into warnings.** The SSAState had separate `errors` and `warnings`
+  fields with identical handling. Consolidated into a single `warnings` array;
+  `ssaError` now calls `ssaWarn` and emits an `unsupported` instruction.
+
+**Demand analysis fixes (Blockify.lean):**
+- **AnnAssign target leak.** `freeVarsStmt` for `AnnAssign` included the target
+  name as a free variable (e.g., `z: int = 10` incorrectly demanded `z`). Fixed
+  by extracting `addTargetReads` which handles each target pattern (Name, Attribute,
+  Subscript, Tuple) correctly — Name produces no reads, Attribute/Subscript read
+  their object/key.
+- **Accumulator-passing pattern.** Replaced `freeVarsStmt`/`freeVarsExpr` (which
+  returned new `HashSet`s, requiring callers to union) with `addFreeVarsStmt`/
+  `addFreeVarsExpr` taking an accumulator set. Eliminated intermediate allocations
+  at all ~20 call sites. `freeVarsExpr` removed as dead code.
+
+**Dead code removal:**
+- Removed `pyBlockify` CLI command from StrataMain (blockify tree output no longer
+  needed — PythonToSSA traverses the raw AST directly).
+- This made `blockifyModule` unreachable, which in turn made the entire blockify
+  machinery dead: `BlockTree`, `ExceptHandlerTree`, `BlockifyResult`, `BlockifyState`,
+  `BlockifyM`, `blockifyStmts`, `blockifyFunc`, `extractParams`, `paramVarName`,
+  `collectModuleGlobals`, `countSliceExprBlocks`, `isTerminatorStmt`, `BlockTreeId`,
+  plus all repr/ToString/Inhabited instances. Removed 533 lines.
+- Made remaining internal-only symbols private: `extractNames`, `addFreeVarsExpr`,
+  `addFreeVarsStmt`, `defsStmt`.
+- Blockify.lean reduced from ~1100 to ~570 lines. Public API is now:
+  `isSimpleStmt`, `countExprBlocks`, `DemandVars`, `demandAnalysis`.
+
+### Phase 15: Strict Block-Argument SSA (completed 2026-03-30)
+
+Replaced the relaxed expression-block model (Phase 12's deliberate relaxation)
+with fully strict block-argument SSA where no value crosses a block boundary
+without being passed as an explicit block parameter.
+
+**Forwarding context (`fwd`).** `translateExpr` takes and returns
+`fwd : Fwd` — a struct of parallel arrays (names + SSAVals) representing
+values that must survive through expression blocks. Block-creating
+expressions (BoolOp, IfExp, chained Compare) thread `fwd` as extra block
+params/branch args. Non-block-creating expressions pass `fwd` through
+unchanged. The mechanism composes: nested expression blocks (e.g.,
+`(a and b) if cond else c`) correctly thread outer values through inner blocks.
+
+**Demand-driven block params.** Statement-level blocks (if/for/while/try/with)
+use demand analysis (`Blockify.demandAnalysis`) to compute exactly which
+variables each block needs as parameters, replacing the conservative `allVars`
+approach. Combined with `fwd`, this eliminates all cross-block references.
+
+**Synthetic variable threading.** `_iter` (for-loop iterator) and `_mgr`
+(with-statement context manager) are threaded via `scopeExtras` — an array
+of (name, SSAVal) pairs appended to every block transition. Break/continue
+handle scope extras correctly via `breakExtrasCount`/`continueExtrasCount`
+on `BodyCtx`, with temporary trimming to match the target block's expected
+extras count.
+
+### Phase 16: Summary-Based Demand Analysis and Block ID Fix (completed 2026-03-31)
+
+Two improvements to the analysis infrastructure.
+
+**Summary-based demand analysis (`demandAnalysis2`).** Replaced the
+double-traversal backward pass with a two-stage approach: (1) a single
+forward AST walk collects per-block summaries (defs, reads, successors),
+(2) an iterative fixpoint solver computes liveIn sets. This eliminates
+the O(depth × body_size) cost of nested loops in the backward pass, where
+each outer loop re-traverses inner loop bodies. The fixpoint solver handles
+cycles naturally — loops converge in 2–3 iterations.
+
+**Block ID remap.** Fixed a fundamental bug where terminator block references
+(freshBlockId allocation order) diverged from block emission order. The
+divergence occurs when inner blocks (e.g., if sub-blocks within a for body)
+are emitted between pre-allocated outer blocks (e.g., endBlock allocated
+early but emitted last). The fix records `blockIdMap[currentBlockId] =
+blocks.size` at each `finishBlock` call, then applies a single remap pass
+over all terminators and except targets at the end of `translateFunc`. This
+replaced an earlier attempt to predict emission order during block setup
+(`buildBlockParamsCtx`), which failed when expression blocks within a body
+shifted emission positions.
+
 ## Tools Built
 
 | Tool | Purpose |
 |------|---------|
 | `strata pyFeatures` | Lean subcommand: AST feature frequency analysis |
-| `strata pyBlockify` | Lean subcommand: Phase 1 block layout summary |
 | `strata pyToSSA` | Lean subcommand: full Python → SSA translation |
 | `tally_features.py` | Python script: aggregate counts across files |
 | `coverage_check.py` | Python script: compute file coverage for feature subsets |
@@ -489,8 +577,8 @@ throughout the debugging phase.
 **Expression-level blocks reveal architectural tensions.** Implementing BoolOp
 and IfExp short-circuit exposed a tension in the strict block-argument SSA model:
 expression blocks need access to values from enclosing blocks, but threading all
-variables through every ternary produces impractical output. The pragmatic
-decision — expression blocks don't thread allVars — is a deliberate relaxation
-that keeps output readable while maintaining the important invariant (variable
-versioning at control-flow joins). This trade-off was not anticipated during IR
-design and emerged only during implementation.
+variables through every ternary produces impractical output. The initial pragmatic
+decision — expression blocks don't thread allVars — was a deliberate relaxation.
+This was later resolved in Phase 15 with the `fwd` context, which threads only
+the values that are actually needed through expression blocks (demand-driven, not
+all variables). The `fwd` mechanism achieves strict SSA without impractical output.

@@ -5,9 +5,9 @@
 -/
 module
 
-import Strata.Languages.Python.Blockify
-public import Strata.Languages.Python.SSA
 public import Strata.Languages.Python.PythonDialect
+import Strata.Languages.Python.SSA.Blockify
+public import Strata.Languages.Python.SSA.IR
 import Strata.Util.DecideProp
 
 /-!
@@ -32,7 +32,7 @@ namespace Strata.Python.PythonToSSA
 open Strata.Python (stmt expr constant operator unaryop boolop cmpop
                     keyword arguments alias excepthandler withitem)
 open Strata.Python.SSA
-open Strata.Python.Blockify (countExprBlocks isSimpleStmt)
+open Strata.Python.Blockify (isSimpleStmt)
 
 /-! ## Module Scanning -/
 
@@ -142,7 +142,11 @@ structure SSAState where
   currentInstrs  : Array NamedInstr := #[]
   /-- Maps SSAVal.id → index in currentInstrs for O(1) type updates. -/
   valInstrIdx    : Std.HashMap Nat Nat := {}
-  -- Block ID is always blocks.size (emission index)
+  /-- freshBlockId of the block currently being built. -/
+  currentBlockId : BlockId := ⟨0⟩
+  /-- Maps freshBlockId → program-order (emission) BlockId.
+      Populated as blocks are finalized. -/
+  blockIdMap     : Array BlockId := #[]
   currentParams  : Array BlockParam := #[]
   currentExcept  : Option ExceptTarget := none
   varEnv         : Std.HashMap String Binding := {}
@@ -230,19 +234,18 @@ def renameVal (val : SSAVal) (newBase : String) : SSAM Unit :=
         nameSuffixes := s.nameSuffixes.insert newBase (suffix + 1) }
     else s
 
--- FIXME: This seems like is hiding bugs potentially.  Issue warning with internal error
--- if invariants are broken.
-def setValType (val : SSAVal) (type : PyType) : SSAM Unit :=
-  modify fun s =>
-    match s.valInstrIdx[val.id]? with
-    | some idx =>
-      if h : idx < s.currentInstrs.size then
-        let ni := s.currentInstrs[idx]
-        if ni.type.isNone then
-          { s with currentInstrs := s.currentInstrs.set idx { ni with type := some type } }
-        else s
-      else s
-    | none => s
+def setValType (val : SSAVal) (type : PyType) : SSAM Unit := do
+  let s ← get
+  match s.valInstrIdx[val.id]? with
+  | some idx =>
+    if h : idx < s.currentInstrs.size then
+      let ni := s.currentInstrs[idx]
+      if ni.type.isNone then
+        set { s with currentInstrs := s.currentInstrs.set idx { ni with type := some type } }
+    else
+      ssaWarn .none s!"internal: setValType index {idx} out of range for val %{val.id}"
+  | none =>
+    ssaWarn .none s!"internal: setValType has no instruction index for val %{val.id}"
 
 def parseTypeAnnotation (e : expr SourceRange) : Option PyType :=
   match e with
@@ -260,6 +263,16 @@ def parseTypeAnnotation (e : expr SourceRange) : Option PyType :=
 
 /-! ## Block Management -/
 
+/-- Record a freshBlockId → emission-order mapping. Extends the array if needed. -/
+private def recordBlockIdMap (map : Array BlockId) (freshId emitId : Nat) : Array BlockId :=
+  if freshId < map.size then
+    map.set! freshId ⟨emitId⟩
+  else Id.run do
+    let mut m := map
+    while m.size <= freshId do
+      m := m.push ⟨0⟩
+    return m.set! freshId ⟨emitId⟩
+
 /-- Allocate a fresh block ID. -/
 def freshBlockId : SSAM BlockId := do
   let s ← get
@@ -274,7 +287,7 @@ def getDemandVars (blockId : BlockId) : SSAM (Array String) := do
   if h : idx < s.demandArr.size then
     return s.demandArr[idx]
   else
-    -- FIXME: This seems like it should trigger an error not silently return empty.
+    ssaWarn .none s!"internal: getDemandVars block bb{blockId.id} out of range (demandArr.size={s.demandArr.size})"
     return #[]
 
 /-! ## Forwarding Context -/
@@ -358,8 +371,10 @@ def finishBlock (term : Terminator) (termSr : SourceRange)
     (nextParams : Array BlockParam)
     (nextExcept : Option ExceptTarget := none) : SSAM Unit := do
   let s ← get
+  let emitId := s.blocks.size
+  let blockIdMap := recordBlockIdMap s.blockIdMap s.currentBlockId.id emitId
   let block : Block := {
-    id := ⟨s.blocks.size⟩
+    id := ⟨emitId⟩
     params := s.currentParams
     instrs := s.currentInstrs
     term, termSr
@@ -367,6 +382,7 @@ def finishBlock (term : Terminator) (termSr : SourceRange)
   }
   set { s with
     blocks := s.blocks.push block
+    blockIdMap
     currentInstrs := #[]
     valInstrIdx := {}
     currentParams := nextParams
@@ -375,14 +391,16 @@ def finishBlock (term : Terminator) (termSr : SourceRange)
 
 def finishBlockWithTerm (term : Terminator) (termSr : SourceRange) : SSAM Unit := do
   let s ← get
+  let emitId := s.blocks.size
+  let blockIdMap := recordBlockIdMap s.blockIdMap s.currentBlockId.id emitId
   let block : Block := {
-    id := ⟨s.blocks.size⟩
+    id := ⟨emitId⟩
     params := s.currentParams
     instrs := s.currentInstrs
     term, termSr
     except := s.currentExcept
   }
-  set { s with blocks := s.blocks.push block, currentInstrs := #[], valInstrIdx := {} }
+  set { s with blocks := s.blocks.push block, blockIdMap, currentInstrs := #[], valInstrIdx := {} }
 
 def startNewBlock (params : Array BlockParam)
     (except : Option ExceptTarget := none) : SSAM Unit :=
@@ -396,19 +414,12 @@ def startNewBlock (params : Array BlockParam)
 def startFirstBlock (params : Array BlockParam)
     (except : Option ExceptTarget := none) : SSAM Unit :=
   modify fun s => { s with
+    currentBlockId := ⟨0⟩
     currentParams := params
     currentExcept := except
   }
 
 /-! ## Forwarding Helpers -/
-
-/-- Check if an expression will create blocks (BoolOp, IfExp, chained Compare). -/
-def exprCreatesBlocks (e : expr SourceRange) : Bool :=
-  countExprBlocks e > 0
-
-/-- Check if any expression in a suffix of an array creates blocks. -/
-def anyRemainingCreatesBlocks (exprs : Array (expr SourceRange)) (fromIdx : Nat) : Bool := Id.run do
-  exprs |>.toSubarray (start := fromIdx) |>.any exprCreatesBlocks
 
 /-! ## Expression Translation with Forwarding -/
 
@@ -432,27 +443,14 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
 
   | .BinOp _ left op right =>
     let opKind := translateBinOp op
-    if exprCreatesBlocks right then
-      -- Left may produce a value needed after right's blocks
-      let (lv, fwdVals1) ← translateExpr left fwd
-      let lName ← valName lv
-      let fwd1 := (zipFwd fwd fwdVals1).push lName lv
-      let (rv, fwdVals2) ← translateExpr right fwd1
-      let lv' := fwdVals2.back!
-      let fwdVals2 := fwdVals2.pop
-      let result ← emitInstr "_tmp" none (.binOp opKind lv' rv) sr
-      return (result, fwdVals2)
-    else if exprCreatesBlocks left then
-      let (lv, fwdVals1) ← translateExpr left fwd
-      let fwd1 := zipFwd fwd fwdVals1
-      let (rv, fwdVals2) ← translateExpr right fwd1
-      let result ← emitInstr "_tmp" none (.binOp opKind lv rv) sr
-      return (result, fwdVals2)
-    else
-      let (lv, _) ← translateExpr left fwd
-      let (rv, _) ← translateExpr right fwd
-      let result ← emitInstr "_tmp" none (.binOp opKind lv rv) sr
-      return (result, passFwd)
+    let (lv, fwdVals1) ← translateExpr left fwd
+    let lName ← valName lv
+    let fwd1 := (zipFwd fwd fwdVals1).push lName lv
+    let (rv, fwdVals2) ← translateExpr right fwd1
+    let lv' := fwdVals2.back!
+    let fwdVals2 := fwdVals2.pop
+    let result ← emitInstr "_tmp" none (.binOp opKind lv' rv) sr
+    return (result, fwdVals2)
 
   | .UnaryOp _ op operand =>
     let opKind := translateUnaryOp op
@@ -475,80 +473,59 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
       return (result, fwdVals2)
 
   | .Call _ f ⟨_, args⟩ ⟨_, kwargs⟩ =>
-    -- Evaluate function and args, forwarding pending values through any
-    -- block-creating sub-expressions.
+    -- Evaluate function and args, threading fwd through any block-creating
+    -- sub-expressions. Always push evaluated values onto fwd' so they survive
+    -- block boundaries, then read back remapped values at the end.
     let (fv, fwdVals1) ← translateExpr f fwd
     let mut fwd' := zipFwd fwd fwdVals1
-    -- Check if any arg (or kwarg) creates blocks
-    let argsCreateBlocks := args.any exprCreatesBlocks
-      || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
-    -- Push funcVal onto fwd if any arg creates blocks
-    if argsCreateBlocks then
-      let fName ← valName fv
-      fwd' := fwd'.push fName fv
-    let mut fv' := fv
-    let mut callArgs : Array CallArg := #[]
+    let origSize := fwd.size
+    -- Push funcVal
+    let fName ← valName fv
+    fwd' := fwd'.push fName fv
+    -- Evaluate and push positional args
+    let mut argKinds : Array CallArg := #[]
     for i in [:args.size] do
       if h : i < args.size then
         let a := args[i]
-        let remaining := anyRemainingCreatesBlocks args (i + 1)
-          || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
         match a with
         | .Starred _ value _ =>
           let (av, fwdVals') ← translateExpr value fwd'
           fwd' := zipFwd fwd' fwdVals'
-          callArgs := callArgs.push (.starArgs av)
-          -- Push argVal if remaining args create blocks
-          if remaining then
-            let aName ← valName av
-            fwd' := fwd'.push aName av
+          argKinds := argKinds.push (.starArgs av)
+          let aName ← valName av
+          fwd' := fwd'.push aName av
         | _ =>
           let (av, fwdVals') ← translateExpr a fwd'
           fwd' := zipFwd fwd' fwdVals'
-          callArgs := callArgs.push (.positional av)
-          if remaining then
-            let aName ← valName av
-            fwd' := fwd'.push aName av
-    -- Evaluate kwargs
+          argKinds := argKinds.push (.positional av)
+          let aName ← valName av
+          fwd' := fwd'.push aName av
+    -- Evaluate and push kwargs
     for kw in kwargs do
       match kw with
       | .mk_keyword _ kwArg kwValue =>
         let (kv, fwdVals') ← translateExpr kwValue fwd'
         fwd' := zipFwd fwd' fwdVals'
         match kwArg.val with
-        | some ⟨_, argName⟩ => callArgs := callArgs.push (.keyword argName kv)
-        | none => callArgs := callArgs.push (.starKwargs kv)
-    -- Pop pushed values: read updated funcVal and argVals from fwd'
-    if argsCreateBlocks then
-      -- Pop all pushed values (args + funcVal) from the end of fwd'
-      -- The original fwd entries are at the beginning
-      let origSize := fwd.size
-      -- funcVal is at index origSize
-      fv' := fwd'.val! origSize
-      -- Arg values that were pushed are after funcVal
-      -- But we already have the argVals in callArgs... we need to update them
-      -- with the remapped values from fwd'
-      let mut pushIdx := origSize + 1
-      let mut updatedCallArgs : Array CallArg := #[]
-      for i in [:callArgs.size] do
-        if h : i < callArgs.size then
-          let ca := callArgs[i]
-          let remaining_i := anyRemainingCreatesBlocks args (i + 1)
-            || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
-          if remaining_i && pushIdx < fwd'.size then
-            -- This arg was pushed; read its remapped value
-            let remapped := fwd'.val! pushIdx
-            match ca with
-            | .positional _ => updatedCallArgs := updatedCallArgs.push (.positional remapped)
-            | .starArgs _ => updatedCallArgs := updatedCallArgs.push (.starArgs remapped)
-            | .keyword n _ => updatedCallArgs := updatedCallArgs.push (.keyword n remapped)
-            | .starKwargs _ => updatedCallArgs := updatedCallArgs.push (.starKwargs remapped)
-            pushIdx := pushIdx + 1
-          else
-            updatedCallArgs := updatedCallArgs.push ca
-      callArgs := updatedCallArgs
-      -- Trim fwd' back to original size
-      fwd' := fwd'.shrink origSize
+        | some ⟨_, argName⟩ => argKinds := argKinds.push (.keyword argName kv)
+        | none => argKinds := argKinds.push (.starKwargs kv)
+        let kName ← valName kv
+        fwd' := fwd'.push kName kv
+    -- Read back remapped values from fwd'
+    let fv' := fwd'.val! origSize
+    let mut callArgs : Array CallArg := #[]
+    let mut pushIdx := origSize + 1
+    for i in [:argKinds.size] do
+      if h : i < argKinds.size then
+        let remapped := fwd'.val! pushIdx
+        match argKinds[i] with
+        | .positional _ => callArgs := callArgs.push (.positional remapped)
+        | .starArgs _ => callArgs := callArgs.push (.starArgs remapped)
+        | .keyword n _ => callArgs := callArgs.push (.keyword n remapped)
+        | .starKwargs _ => callArgs := callArgs.push (.starKwargs remapped)
+        pushIdx := pushIdx + 1
+    -- Trim fwd' back to original size
+    fwd' := fwd'.shrink origSize
     let result ← emitInstr "_tmp" none (.call fv' callArgs) sr
     return (result, fwdVals fwd')
 
@@ -754,12 +731,15 @@ where
     let demandSize := demandFwd.size
     let extFwd := demandFwd ++ fwd
     -- First comparison: leftVal op[0] comparators[0]
+    -- Push leftVal onto fwd to protect it across expression blocks, then
+    -- recover the (possibly remapped) value by index after translation.
     let lvName ← valName leftVal
+    let baseSize := extFwd.size
     let mut fwd' := extFwd.push lvName leftVal
     let (firstRight, fwdVals1) ← translateExpr comparators[0]! fwd'
     fwd' := zipFwd fwd' fwdVals1
-    let leftVal' := fwd'.backVal!
-    fwd' := fwd'.pop
+    let leftVal' := fwd'.val! baseSize
+    fwd' := fwd'.shrink baseSize
     let mut prevRight := firstRight
     let mut cmpResult ← emitInstr "_tmp" none
       (.compareOp (translateCmpOp ops[0]!) leftVal' prevRight) sr
@@ -769,16 +749,18 @@ where
         let evalBlockId := blockIds[i - 1]!
         -- Thread fwd + prevRight through blocks
         let prName ← valName prevRight
+        let fwdBaseSize := fwd'.size
         let fwdWithPrev := fwd'.push prName prevRight
         let fwdArgs := fwdVals fwdWithPrev
-        let joinArgs := #[cmpResult] ++ fwdArgs
+        let joinArgs := #[cmpResult] ++ fwdVals fwd'
         -- short-circuit: false → join, true → continue
         let (evalParams, evalFwd) ← fwdToParams fwdWithPrev sr
         bindDemandFwd evalFwd demandSize
         finishBlock (.condBranch cmpResult evalBlockId fwdArgs joinBlockId joinArgs) sr
           evalParams
-        fwd' := evalFwd.pop  -- pop prevRight, keep the rest
-        prevRight := evalFwd.backVal!
+        modify fun s => { s with currentBlockId := evalBlockId }
+        prevRight := evalFwd.val! fwdBaseSize
+        fwd' := evalFwd.shrink fwdBaseSize
         let (nextRight, fwdVals') ← translateExpr comparators[i] evalFwd
         fwd' := zipFwd fwd' fwdVals'.pop
         prevRight := nextRight
@@ -794,6 +776,7 @@ where
     let allJoinParams := #[joinParam] ++ joinFwdParams
     let joinArgs := #[cmpResult] ++ fwdVals fwd'
     finishBlock (.branch joinBlockId joinArgs) sr allJoinParams
+    modify fun s => { s with currentBlockId := joinBlockId }
     -- Rebind demand vars from join params, then strip demand prefix
     for i in [:demandSize] do
       if h : i < joinFwdParams.size then
@@ -840,6 +823,7 @@ where
           | .Or _ =>
             finishBlock (.condBranch lastVal joinBlockId joinArgs evalBlockId fwdArgs) sr
               evalParams
+          modify fun s => { s with currentBlockId := evalBlockId }
           fwd' := evalFwd
           let (val, fwdVals') ← translateExpr values[i] evalFwd
           fwd' := zipFwd fwd' fwdVals'
@@ -854,6 +838,7 @@ where
       let allJoinParams := #[joinParam] ++ joinFwdParams
       let joinArgs := #[lastVal] ++ fwdVals fwd'
       finishBlock (.branch joinBlockId joinArgs) sr allJoinParams
+      modify fun s => { s with currentBlockId := joinBlockId }
       -- Rebind demand vars from join params, then strip demand prefix
       for i in [:demandSize] do
         if h : i < joinFwdParams.size then
@@ -879,12 +864,14 @@ where
     bindDemandFwd thenFwd demandSize
     finishBlock (.condBranch condVal thenBlockId fwdArgs elseBlockId fwdArgs) sr
       thenParams
+    modify fun s => { s with currentBlockId := thenBlockId }
     -- Then block
     let (bodyVal, thenFwdVals) ← translateExpr body thenFwd
     let thenJoinArgs := #[bodyVal] ++ thenFwdVals
     let (elseParams, elseFwd) ← fwdToParams extFwd sr
     bindDemandFwd elseFwd demandSize
     finishBlock (.branch joinBlockId thenJoinArgs) sr elseParams
+    modify fun s => { s with currentBlockId := elseBlockId }
     -- Else block
     let (orelseVal, elseFwdVals) ← translateExpr orelse elseFwd
     let elseJoinArgs := #[orelseVal] ++ elseFwdVals
@@ -897,6 +884,7 @@ where
     let joinParam : BlockParam := { val := resultVal, type := none, sr }
     let allJoinParams := #[joinParam] ++ joinFwdParams
     finishBlock (.branch joinBlockId elseJoinArgs) sr allJoinParams
+    modify fun s => { s with currentBlockId := joinBlockId }
     -- Rebind demand vars from join params, then strip demand prefix
     for i in [:demandSize] do
       if h : i < joinFwdParams.size then
@@ -910,6 +898,10 @@ structure BodyCtx where
   demandArr : Array Blockify.DemandVars := #[]
   continueTarget : Option BlockId := none
   breakTarget : Option BlockId := none
+  /-- Number of scopeExtras the break target expects. -/
+  breakExtrasCount : Nat := 0
+  /-- Number of scopeExtras the continue target expects. -/
+  continueExtrasCount : Nat := 0
   handlerTarget : Option BlockId := none
 
 /-- Look up demand vars for a given block ID.
@@ -957,7 +949,8 @@ def buildBranchArgsCtx (targetBlock : BlockId) (bodyCtx : BodyCtx)
     Updates scopeExtras in state with fresh SSAVals. -/
 def buildBlockParamsCtx (blockId : BlockId) (bodyCtx : BodyCtx)
     (sr : SourceRange) : SSAM (Array BlockParam) := do
-
+  -- Set currentBlockId so finishBlock records the correct mapping
+  modify fun s => { s with currentBlockId := blockId }
   let .isTrue h := decideProp (blockId.id < bodyCtx.demandArr.size)
     | let _ ← ssaError sr "internal error: Invalid target block index"
       return #[]
@@ -1046,7 +1039,10 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
   | .Break .. =>
     match bodyCtx.breakTarget with
     | some target =>
+      let saved := (← get).scopeExtras
+      modify fun s => { s with scopeExtras := s.scopeExtras.shrink bodyCtx.breakExtrasCount }
       let args ← buildBranchArgsCtx target bodyCtx sr
+      modify fun s => { s with scopeExtras := saved }
       finishBlockWithTerm (.branch target args) sr
     | none =>
       let _ ← ssaError sr "break outside loop"
@@ -1056,7 +1052,10 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
   | .Continue .. =>
     match bodyCtx.continueTarget with
     | some target =>
+      let saved := (← get).scopeExtras
+      modify fun s => { s with scopeExtras := s.scopeExtras.shrink bodyCtx.continueExtrasCount }
       let args ← buildBranchArgsCtx target bodyCtx sr
+      modify fun s => { s with scopeExtras := saved }
       finishBlockWithTerm (.branch target args) sr
     | none =>
       let _ ← ssaError sr "continue outside loop"
@@ -1218,9 +1217,12 @@ where
         (.qualifiedRef (QualifiedName.mk' "builtins" "next")) sr
       let nextVal ← emitInstr "_tmp" none (.call nextRef #[.positional iterVar]) sr
       assignTarget target nextVal
+      let bodyExtrasCount := (← get).scopeExtras.size
       let loopCtx := { bodyCtx with
         continueTarget := some headerBlock
         breakTarget := some endBlock
+        continueExtrasCount := bodyExtrasCount  -- includes _iter
+        breakExtrasCount := savedExtras.size     -- without _iter
       }
       let bodyTerminated ← translateBody body loopCtx
       if !bodyTerminated then
@@ -1254,9 +1256,12 @@ where
       -- Body
       let bodyParams ← buildBlockParamsCtx bodyBlock bodyCtx sr
       modify fun s => { s with currentParams := bodyParams }
+      let extrasCount := (← get).scopeExtras.size
       let loopCtx := { bodyCtx with
         continueTarget := some testBlock
         breakTarget := some endBlock
+        continueExtrasCount := extrasCount
+        breakExtrasCount := extrasCount
       }
       let bodyTerminated ← translateBody body loopCtx
       if !bodyTerminated then
@@ -1457,7 +1462,11 @@ where
             let noneVal ← emitInstr "_tmp" none .noneLit sr
             let _ ← emitInstr "_tmp" none
               (.call exitRef #[.positional noneVal, .positional noneVal, .positional noneVal]) sr
+            -- Restore scopeExtras before branching to normalExitBlock (outside with scope)
+            let withExtras := (← get).scopeExtras
+            modify fun s => { s with scopeExtras := savedExtras }
             let normalArgs ← buildBranchArgsCtx normalExitBlock bodyCtx sr
+            modify fun s => { s with scopeExtras := withExtras }
             finishBlock (.branch normalExitBlock normalArgs) sr #[]
           else
             startNewBlock #[]
@@ -1470,7 +1479,11 @@ where
           let excExitRef ← emitInstr "_tmp" none (.attr excMgrRef "__exit__") sr
           let exitResult ← emitInstr "_tmp" none
             (.call excExitRef #[.positional excVal, .positional excVal, .positional excVal]) sr
+          -- Build suppressArgs with savedExtras (normalExitBlock is outside with scope)
+          let withExtras2 := (← get).scopeExtras
+          modify fun s => { s with scopeExtras := savedExtras }
           let mut suppressArgs ← buildBranchArgsCtx normalExitBlock bodyCtx sr
+          modify fun s => { s with scopeExtras := withExtras2 }
           let mut reraiseArgs ← buildBranchArgsCtx reraiseBlock bodyCtx sr
           reraiseArgs := reraiseArgs.push excVal
           finishBlock (.condBranch exitResult
@@ -1512,6 +1525,20 @@ where
 
 /-! ## Top-Level Translation -/
 
+/-- Remap a BlockId using the freshBlockId → emission-order mapping. -/
+private def remapBlockId (map : Array BlockId) (bid : BlockId) : BlockId :=
+  if h : bid.id < map.size then map[bid.id] else bid
+
+/-- Remap all BlockId references in a terminator. -/
+private def remapTerminator (map : Array BlockId) (term : Terminator) : Terminator :=
+  match term with
+  | .branch target args => .branch (remapBlockId map target) args
+  | .condBranch cond t tArgs f fArgs =>
+    .condBranch cond (remapBlockId map t) tArgs (remapBlockId map f) fArgs
+  | .ret v => .ret v
+  | .raise exc => .raise exc
+  | .unreachable => .unreachable
+
 private def translateFunc (info : FuncInfo) (config : SSAConfig)
     (moduleBindings : Std.HashMap String QualifiedName := {})
     : Func × Array (String × SourceRange) :=
@@ -1540,23 +1567,31 @@ private def translateFunc (info : FuncInfo) (config : SSAConfig)
     startFirstBlock #[]
     let bodyCtx : BodyCtx := { demandArr := da }
     let bodyTerminated ← translateBody info.body bodyCtx
-    let s ← get
     if !bodyTerminated then
+      let s ← get
+      let emitId := s.blocks.size
+      let blockIdMap := recordBlockIdMap s.blockIdMap s.currentBlockId.id emitId
       let block : Block := {
-        id := ⟨s.blocks.size⟩
+        id := ⟨emitId⟩
         params := s.currentParams
         instrs := s.currentInstrs
         term := .ret none
         termSr := SourceRange.none
         except := s.currentExcept
       }
-      set { s with blocks := s.blocks.push block, currentInstrs := #[] }
+      set { s with blocks := s.blocks.push block, blockIdMap, currentInstrs := #[] }
   let ((), finalState) := action config |>.run initState
+  -- Remap all freshBlockId references in terminators and except targets to emission order
+  let map := finalState.blockIdMap
+  let remappedBlocks := finalState.blocks.map fun block =>
+    { block with
+      term := remapTerminator map block.term
+      except := block.except.map fun et => { target := remapBlockId map et.target } }
   let func : Func := {
     name := info.name
     params := finalState.funcParams
     retType := none
-    blocks := finalState.blocks
+    blocks := remappedBlocks
     names := finalState.names
     decorators := #[]
     sr := info.sr
