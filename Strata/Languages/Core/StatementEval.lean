@@ -784,7 +784,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
           else
             let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
               proc.header.outputs.keys.zip proc.header.outputs.values
-              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar Strata.SourceRange.none name none))
             let callEnv : Env := { E with
               exprEnv := { E.exprEnv with
                 state := [formalBindings ++ outputBindings] } }
@@ -823,7 +823,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
                 else
                   let outputVals := proc.header.outputs.keys.map fun name =>
-                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar Strata.SourceRange.none name none)).snd
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
             | _ => CmdEval.updateError E (.Misc "failed to terminate")
