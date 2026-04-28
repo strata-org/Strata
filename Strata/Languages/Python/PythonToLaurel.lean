@@ -669,7 +669,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]])
       -- Wrap in a block if we emitted temp variable declarations
       if tempDecls.isEmpty then
-        return { result with md := md }
+        return { result with source := md }
       else
         return mkStmtExprMdWithLoc (StmtExpr.Block (tempDecls.toList ++ [result]) none) md
 
