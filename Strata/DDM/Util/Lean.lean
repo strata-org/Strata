@@ -7,7 +7,6 @@ module
 
 public import Lean.Expr
 import Lean.Parser.Types
-import Lean.ResolveName
 
 open Lean Parser
 

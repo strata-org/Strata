@@ -7,7 +7,6 @@ module
 
 import Lean.Data.Json.Basic
 
-import Strata.DDM.Util.Array
 import Strata.DDM.Util.Ion.AST
 
 
