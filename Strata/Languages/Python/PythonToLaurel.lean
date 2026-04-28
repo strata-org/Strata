@@ -494,7 +494,7 @@ def ListAny_mk (es: List StmtExprMd) : StmtExprMd := match es with
 
 def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   match exprs with
-  | [] => mkStmtExprMd (.LiteralBool true)
+  | [] => mkStmtExprMd (.LiteralBool false)
   | [expr] => expr
   | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
 
@@ -2194,7 +2194,7 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
       let ret := retParam.map fun (_, tp) =>
         let tys := [getTypeName tp]
         { source := none,
-          laurelType := AnyTy,
+          laurelType := mkHighTypeMd (.UserDefined (mkId (getTypeName tp))),
           typeTesters := pyLauTypeTesters tys : PyRetInfo }
       some {
         name:= proc.header.name.name
