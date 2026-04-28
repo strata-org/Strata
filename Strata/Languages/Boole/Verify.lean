@@ -256,11 +256,11 @@ private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
 
 private def toCoreBvUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let n ← bvWidth m ty
-  return .app () (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) a
+  return .app Strata.SourceRange.none (.op Strata.SourceRange.none ⟨s!"Bv{n}.{op}", ()⟩ none) a
 
 private def toCoreBvBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let n ← bvWidth m ty
-  return mkCoreApp (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) [a, b]
+  return mkCoreApp (.op Strata.SourceRange.none ⟨s!"Bv{n}.{op}", ()⟩ none) [a, b]
 
 private def toCoreExtensionalEq
     (m : SourceRange)
@@ -861,7 +861,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
         let siblingBvars := prevNames.map fun sn =>
-          (.op () (mkIdent sn) none : Core.Expression.Expr)
+          (.op Strata.SourceRange.none (mkIdent sn) none : Core.Expression.Expr)
         let f ← withBVarExprs siblingBvars.toArray
           (lowerPureFuncDef m n tys bs ret pres body false)
         return ({ f with isRecursive := true } :: acc, prevNames ++ [n])
