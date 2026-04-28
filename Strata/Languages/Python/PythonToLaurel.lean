@@ -823,6 +823,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
             return fieldExpr
         | _ =>
           return fieldExpr
+      else if isPackage ctx obj then
+        -- FIXME: Module attribute (e.g., sys.argv): modules are not modeled as
+        -- Laurel values, so return Hole like we do for unmodeled package calls.
+        return mkStmtExprMd .Hole
       else
         -- Regular object.field access
         let objExpr ← translateExpr ctx obj
@@ -1742,7 +1746,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let finalCtx := { bodyCtx with variableTypes := mergedVars }
     return (finalCtx, [tryBlock])
 
-  | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
+  -- FIXME: Placeholder — `raise` is dropped so the Hole type inferrer doesn't
+  -- produce Unknown types. Must be replaced to correctly model exceptions later.
+  | .Raise _ _ _ => return (ctx, [])
 
   -- With statement: with EXPR as VAR: BODY
   -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()

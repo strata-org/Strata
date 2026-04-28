@@ -470,10 +470,11 @@ def buildSpecBody (allArgs : Array Arg)
         reportError .typeError default
           s!"Postcondition expression is not Bool in '{ctx.procName}' (skipping)"
   -- 6. Assume return type postcondition
-  let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
-  if let some retAssertion ← typeAssertion? returnType resultRef source then
-    let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
-    stmts := stmts.push assumeStmt
+  if returnType.asIdent != some .noneType then
+    let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
+    if let some retAssertion ← typeAssertion? returnType resultRef source then
+      let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
+      stmts := stmts.push assumeStmt
   let body := {
       val := .Block stmts.toList none,
       source := fileSource
