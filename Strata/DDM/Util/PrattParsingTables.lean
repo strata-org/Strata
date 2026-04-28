@@ -5,7 +5,7 @@
 -/
 module
 
-public import Lean.Parser.Basic
+import Lean.Parser.Basic
 
 namespace Lean.Parser.PrattParsingTables
 

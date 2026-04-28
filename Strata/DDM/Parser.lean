@@ -7,7 +7,6 @@ module
 
 public import Strata.DDM.Elab.Env
 public import Strata.DDM.Format
-import Strata.DDM.Util.ByteArray
 import Strata.Util.DecideProp
 
 open Lean
