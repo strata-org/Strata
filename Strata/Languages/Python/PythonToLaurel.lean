@@ -363,8 +363,7 @@ def floatToAny (d : Decimal) := mkStmtExprMd (.StaticCall "from_float" [mkStmtEx
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 
 /-- The set of PyLauType names that have runtime type-tester predicates
-    (`Any..isfrom_<type>`). Keep in sync with `PythonIdent.toTypeTester?`
-    in Specs/ToLaurel.lean. -/
+    (`Any..isfrom_<type>`). -/
 private def pyLauTypesWithTesters : List String := ["int", "str", "bool", "float"]
 
 /-- Return the Laurel type-tester predicate name for a Python type annotation, if known.

@@ -48,9 +48,6 @@ private def typeTestersMap : Std.HashMap PythonIdent String :=
     (.builtinsException, "Any..isexception")
   ]
 
-def PythonIdent.toTypeTester? (id : PythonIdent) : Option String :=
-  typeTestersMap[id]?
-
 /-- Fully qualified Laurel name for a `PythonIdent`: module dots become
     underscores. E.g., `"mylib.sub"` / `"Foo"` → `"mylib_sub_Foo"`. -/
 def PythonIdent.toLaurelName (id : PythonIdent) : String :=
