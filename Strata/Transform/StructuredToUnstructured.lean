@@ -121,8 +121,8 @@ match ss with
       let ldec ← StringGenState.gen "measure_decrease$"
       let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
-  -- Body jumps to bodyK (either directly to lentry, or through the decrease block)
-  let (bl, bbs) ← stmtsToBlocks bodyK bss exitConts []
+  -- Body jumps to bodyK (either directly to lentry, or through the decrease block).
+  let (bl, bbs) ← stmtsToBlocks bodyK bss ((.none, kNext) :: exitConts) []
   -- For each invariant, emit an `assert` whose label preserves the source
   -- label when present.  When the source label is empty (frontend did not
   -- supply one), generate a fresh `inv$` label for uniqueness.

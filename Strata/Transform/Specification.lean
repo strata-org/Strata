@@ -570,10 +570,8 @@ theorem sound_id : Sound L L some := by
 
 /-! ## Overapproximate predicate
 
-`Overapproximates L₁ L₂ T` says that (1) any terminal or exiting env reachable
-from `st` in `L₁` is also reachable from `T st` in `L₂`, and (2) if there is
-a state reachable from `st` in `L₁` that fails an assertion, there also is
-a state  reachable from `T st` in `L₂` that fails an assertion.
+`Overapproximates L₁ L₂ T` says that any terminal or exiting env reachable
+from `st` in `L₁` is also reachable from `T st` in `L₂`.
 When `L₁ = L₂`, this specializes to the single-language case. -/
 
 /-- Overapproximation: terminal/exiting envs reachable from the

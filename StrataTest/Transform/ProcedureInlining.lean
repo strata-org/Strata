@@ -87,7 +87,7 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
   | _, _ =>
     .error ".some and .none mismatch"
 
-private def alphaEquivExprsList (l1 l2 : List (String × Expression.Expr)) (map : IdMap)
+private def alphaEquivLoopInvs (l1 l2 : List (String × Expression.Expr)) (map : IdMap)
     : Except Format Bool :=
   if l1.length != l2.length then
     .error "invariant lists have different lengths"
@@ -147,7 +147,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
-    else if ¬ (← alphaEquivExprsList i1 i2 map) then
+    else if ¬ (← alphaEquivLoopInvs i1 i2 map) then
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
