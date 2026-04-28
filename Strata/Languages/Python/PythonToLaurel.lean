@@ -155,6 +155,14 @@ instance : ToString TranslationError where
 def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .none) (msg : String) : m α :=
   throw (.userPythonError range msg)
 
+/-- Runtime assertion that a decidable proposition holds; throws an internal
+    error when it does not.  Used to obtain array-size proofs that Lean cannot
+    infer through mutable `for`-loop state.
+    TODO: This is generically useful — consider moving to `Strata.Util`. -/
+private def guardProp {p : Prop} [Decidable p] (msg : String)
+    : Except TranslationError (PLift p) :=
+  if h : p then .ok ⟨h⟩ else .error (.internalError msg)
+
 /-! ## Helper Functions -/
 
 /-- Create metadata from a SourceRange for attaching to Laurel statements. -/
@@ -311,6 +319,40 @@ def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_str" [mkStmtExprMd (
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
+
+/-- Parse a Python float literal string (e.g. "0.0", "1.5", "1e10") into a Decimal.
+    Returns `none` for formats that cannot be represented (e.g. "inf", "nan").
+    Handles underscores in numeric literals (e.g. "1_000.5") by stripping them.
+    -- TODO: prove round-trip: ∀ s d, parseFloatString s = some d → the Decimal d
+    -- represents the same real number as the Python float literal s. -/
+private def parseFloatString (s : String) : Option Decimal := do
+  -- Non-finite floats cannot be represented as Decimal
+  let lower := s.toLower
+  if lower == "inf" || lower == "-inf" || lower == "nan" then none
+  else
+  -- Strip underscores (Python allows e.g. 1_000.5)
+  let s := s.replace "_" ""
+  -- Split on 'e'/'E' for scientific notation
+  let (coeffStr, expPart) :=
+    match s.splitOn "e" with
+    | [c, e] => (c, (if e.startsWith "+" then e.drop 1 else e).toInt?)
+    | _ => match s.splitOn "E" with
+      | [c, e] => (c, (if e.startsWith "+" then e.drop 1 else e).toInt?)
+      | _ => (s, some 0)
+  let sciExp ← expPart
+  -- Parse the coefficient, which may have a decimal point
+  match coeffStr.splitOn "." with
+  | [intPart, fracPart] =>
+    let digits := intPart ++ fracPart
+    let mantissa ← digits.toInt?
+    let exponent := sciExp - fracPart.length
+    some { mantissa, exponent }
+  | [intPart] =>
+    let mantissa ← intPart.toInt?
+    some { mantissa, exponent := sciExp }
+  | _ => none
+
+def floatToAny (d : Decimal) := mkStmtExprMd (.StaticCall "from_float" [mkStmtExprMd (StmtExpr.LiteralDecimal d)])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 
 /-- The set of PyLauType names that have runtime type-tester predicates
@@ -505,8 +547,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     return mkStmtExprMd .Hole
 
   -- Float literal
-  | .Constant _ (.ConFloat _ _) _ =>
-    return mkStmtExprMd .Hole
+  | .Constant _ (.ConFloat _ f) _ =>
+    match parseFloatString f.val with
+    | some d => return floatToAny d
+    | none => return mkStmtExprMd .Hole
 
   -- Complex literal
   | .Constant _ (.ConComplex _ _ _) _ =>
@@ -544,35 +588,96 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Comparison operations
   | .Compare _ left ops comparators => do
-    -- Python allows chained comparisons: a < b < c
-    -- For now, only support single comparison
-    if h: (ops.val.size != 1 || comparators.val.size != 1) then
-      throw (.unsupportedConstruct "Chained comparisons not yet supported" (toString (repr e)))
+    let n := ops.val.size
+    if h: (n == 0 || comparators.val.size != n) then
+      throw (.internalError "Compare: ops/comparators size mismatch")
     else
-      have hComp : 0 < comparators.val.size := by grind
-      have hOps: 0 < ops.val.size := by grind
+      have ⟨hN, hComp⟩ : 0 < n ∧ comparators.val.size = n := by
+        simp_all [Bool.or_eq_true, beq_iff_eq, bne_iff_ne]; omega
+      -- Translate a single comparison operator to its Laurel prelude name.
+      -- `is`/`is not` are only sound when the RHS is None, because Python's
+      -- `is` checks object identity, not equality (e.g., True == 1 but
+      -- True is not 1). In the Any value model, None is a singleton so
+      -- identity and equality coincide for None comparisons.
+      let cmpopName (i : Nat) (hi : i < n) : Except TranslationError String := do
+        match ops.val[i]'hi with
+          | .Eq _ => .ok "PEq"
+          | .NotEq _ => .ok "PNEq"
+          | .Lt _ => .ok "PLt"
+          | .LtE _ => .ok "PLe"
+          | .Gt _ => .ok "PGt"
+          | .GtE _ => .ok "PGe"
+          | .In _ => .ok "PIn"
+          | .NotIn _ => .ok "PNotIn"
+          | .Is _ => match comparators.val[i]'(by omega) with
+              | .Constant _ (.ConNone _) _ => .ok "PEq"
+              | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
+          | .IsNot _ => match comparators.val[i]'(by omega) with
+              | .Constant _ (.ConNone _) _ => .ok "PNEq"
+              | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      -- Check if a Python expression is simple (no side effects when duplicated).
+      -- Only `Name` and `Constant` are treated as simple. `Subscript` (e.g.,
+      -- `a[0]`) and `Attribute` (e.g., `self.x`) are intentionally non-simple
+      -- because Python's `__getitem__`/`__getattr__` can have side effects.
+      -- Similarly, `BoolOp`, `UnaryOp`, and `BinOp` with simple sub-expressions
+      -- are technically pure, but treating them as non-simple is correct since
+      -- the temp variable overhead is negligible and avoids subtle bugs.
+      let isSimple (pyExpr : Python.expr SourceRange) : Bool :=
+        match pyExpr with
+        | .Name .. | .Constant .. => true
+        | _ => false
+      -- Translate all operands
       let leftExpr ← translateExpr ctx left
-      let rightExpr ← translateExpr ctx (comparators.val[0]'hComp)
-      let preludeOpnames ← match ops.val[0]'hOps with
-        | .Eq _ => .ok "PEq"
-        | .NotEq _ => .ok "PNEq"
-        | .Lt _ => .ok "PLt"
-        | .LtE _ => .ok "PLe"
-        | .Gt _ => .ok "PGt"
-        | .GtE _ => .ok "PGe"
-        | .In _ => .ok "PIn"
-        | .NotIn _ => .ok "PNotIn"
-        -- `is`/`is not` are only sound when the RHS is None, because Python's
-        -- `is` checks object identity, not equality (e.g., True == 1 but
-        -- True is not 1). In the Any value model, None is a singleton so
-        -- identity and equality coincide for None comparisons.
-        | .Is _ => match comparators.val[0]'hComp with
-            | .Constant _ (.ConNone _) _ => .ok "PEq"
-            | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
-        | .IsNot _ => match comparators.val[0]'hComp with
-            | .Constant _ (.ConNone _) _ => .ok "PNEq"
-            | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
-      return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
+      let mut compExprs : Array StmtExprMd := #[]
+      for c in comparators.val do
+        compExprs := compExprs.push (← translateExpr ctx c)
+      let ⟨hCompSize⟩ ← guardProp (p := compExprs.size ≥ n) "compExprs size < n"
+      -- For chained comparisons (n > 1), introduce temp variables for
+      -- intermediate operands that are not simple names/literals.
+      -- This preserves Python's evaluate-once semantics for side-effecting
+      -- intermediate expressions (e.g., `a < f() < b` calls `f()` only once).
+      let mut tempDecls : Array StmtExprMd := #[]
+      let mut operandRefs : Array StmtExprMd := #[leftExpr]
+      for h : i in [:n] do
+        have hi : i < n := Membership.mem.upper h
+        have : i < comparators.val.size := by omega
+        have : i < compExprs.size := by omega
+        let comp := compExprs[i]
+        if n > 1 && i < n - 1 && !isSimple (comparators.val[i]) then
+          -- TODO: Prove that this naming scheme cannot conflict with existing
+          -- user variables. Shadowing is semantically fine, but a formal
+          -- non-collision proof would require threading variable-scope info
+          -- through the translator.
+          let freshVar := s!"$cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
+          let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
+          tempDecls := tempDecls.push varDecl
+          operandRefs := operandRefs.push (mkStmtExprMd (StmtExpr.Identifier freshVar))
+        else
+          operandRefs := operandRefs.push comp
+      let ⟨hOpSize⟩ ← guardProp (p := operandRefs.size ≥ n + 1) "operandRefs size < n+1"
+      -- Build pairwise comparisons and chain with PAnd.
+      -- operandRefs has n+1 elements (leftExpr + n comparators).
+      let mut pairs : Array StmtExprMd := #[]
+      for h : i in [:n] do
+        have hi : i < n := Membership.mem.upper h
+        have : i < operandRefs.size := by omega
+        have : i + 1 < operandRefs.size := by omega
+        let opName ← cmpopName i hi
+        let lhs := operandRefs[i]
+        let rhs := operandRefs[i+1]
+        pairs := pairs.push (mkStmtExprMd (StmtExpr.StaticCall opName [lhs, rhs]))
+      let ⟨hPairsSize⟩ ← guardProp (p := pairs.size ≥ 1) "pairs is empty"
+      -- Fold pairs with PAnd (pairs has n ≥ 1 elements)
+      have : 0 < pairs.size := by omega
+      let mut result := pairs[0]
+      for h : i in [1:pairs.size] do
+        have hi :  i < pairs.size := Membership.mem.upper h
+        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]])
+      -- Wrap in a block if we emitted temp variable declarations
+      if tempDecls.isEmpty then
+        return { result with md := md }
+      else
+        return mkStmtExprMdWithLoc (StmtExpr.Block (tempDecls.toList ++ [result]) none) md
 
   -- Boolean operations
   | .BoolOp _ op values => do
@@ -763,6 +868,7 @@ partial def reMapFunctionName (_ctx: TranslationContext) (fname: String) : Strin
   match fname with
   | "str" => "to_string_any"
   | "int" => "to_int_any"
+  | "bool" => "to_bool_any"
   | "len" => "Any_len_to_Any"
   | "timedelta" => "timedelta_func" -- We handle timedelta as an int, not a class
   | _ => fname
