@@ -38,27 +38,28 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     else match amap.get? name.text with
       | some target => resolveAliasType amap target (visited.insert name.text)
       | none => ty
-  | .TTypedField vt => ⟨.TTypedField (resolveAliasType amap vt visited), ty.source, ty.md⟩
-  | .TSet et => ⟨.TSet (resolveAliasType amap et visited), ty.source, ty.md⟩
+  | .TTypedField vt => { val := .TTypedField (resolveAliasType amap vt visited), source := ty.source }
+  | .TSet et => { val := .TSet (resolveAliasType amap et visited), source := ty.source }
   | .TMap kt vt =>
-    ⟨.TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), ty.source, ty.md⟩
+    { val := .TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), source := ty.source }
   | .Applied base args =>
-    ⟨.Applied (resolveAliasType amap base visited)
-      (args.map (resolveAliasType amap · visited)), ty.source, ty.md⟩
-  | .Pure base => ⟨.Pure (resolveAliasType amap base visited), ty.source, ty.md⟩
+    let base' := resolveAliasType amap base visited
+    let args' := args.map (resolveAliasType amap · visited)
+    { val := .Applied base' args', source := ty.source }
+  | .Pure base => { val := .Pure (resolveAliasType amap base visited), source := ty.source }
   | .Intersection tys =>
-    ⟨.Intersection (tys.map (resolveAliasType amap · visited)), ty.source, ty.md⟩
+    { val := .Intersection (tys.map (resolveAliasType amap · visited)), source := ty.source }
   | _ => ty
 
 /-- Resolve aliases in expression type positions. -/
 def resolveAliasExprNode (amap : AliasMap) (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
   | .LocalVariable n ty init =>
-    ⟨.LocalVariable n (resolveAliasType amap ty) init, expr.source, expr.md⟩
+    { val := .LocalVariable n (resolveAliasType amap ty) init, source := expr.source }
   | .Quantifier mode param trigger body =>
-    ⟨.Quantifier mode { param with type := resolveAliasType amap param.type } trigger body, expr.source, expr.md⟩
-  | .AsType t ty => ⟨.AsType t (resolveAliasType amap ty), expr.source, expr.md⟩
-  | .IsType t ty => ⟨.IsType t (resolveAliasType amap ty), expr.source, expr.md⟩
+    { val := .Quantifier mode { param with type := resolveAliasType amap param.type } trigger body, source := expr.source }
+  | .AsType t ty => { val := .AsType t (resolveAliasType amap ty), source := expr.source }
+  | .IsType t ty => { val := .IsType t (resolveAliasType amap ty), source := expr.source }
   | _ => expr
 
 def resolveAliasInProc (amap : AliasMap) (proc : Procedure) : Procedure :=
