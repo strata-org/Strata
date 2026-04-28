@@ -343,7 +343,7 @@ jobs:
           echo "Build started: $BUILD_ID"
 
           LOG_KEY="logs/${BUILD_ID}.log"
-          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
+          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs-488122404717-us-east-2-an?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
 
           while true; do
             STATUS=$(aws codebuild batch-get-builds \
@@ -359,5 +359,5 @@ jobs:
             esac
           done
 
-          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs?prefix=${LOG_KEY}"
+          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-benchmarks-logs-488122404717-us-east-2-an?prefix=${LOG_KEY}"
           [ "$STATUS" = "SUCCEEDED" ] && exit 0 || exit 1
