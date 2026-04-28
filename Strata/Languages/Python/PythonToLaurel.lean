@@ -2102,8 +2102,8 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
           isMutable := true
         }]
     | .Assign _ targets _ _ =>
-      if targets.val.size == 1 then
-        match targets.val[0]! with
+      if h : targets.val.size == 1 then
+        match targets.val[0]'(by simp_all) with
         | .Attribute _ (.Name _ selfName _) attr _ =>
           if selfName.val == "self" then
             unless fields.any (fun f => f.name.text == attr.val) do
@@ -2584,8 +2584,8 @@ def pythonToLaurel' (info : PreludeInfo)
       --   • Complex type aliases (`MyDict = Dict[str, Any]`) are not detected — the RHS must be
       --     a `.Name` node, not `.Subscript`.
       --   • PEP 695 `type` statements (`type X = int`) are not handled.
-      if targets.val.size == 1 then
-        match targets.val[0]!, value with
+      if h : targets.val.size == 1 then
+        match targets.val[0]'(by simp_all), value with
         | .Name _ lhsName _, .Name _ rhsName _ =>
           if isKnownType ctx rhsName.val then
             let targetTy ← translateType ctx rhsName.val
