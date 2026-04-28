@@ -269,6 +269,8 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     (ctx : Core.SMT.Context)
     (prelude : m Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
+    (varDefinitions : List Core.VarDefinition := [])
+    (varDeclarations : List Core.VarDeclaration := [])
     : m (τ × List String × EncoderState) := do
   solver.setLogic "ALL"
   prelude
@@ -276,17 +278,40 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     let _ ← unwrap "declareSort" (← solver.declareSort s.name s.arity)
   emitDatatypesAbstract solver ctx
   let initState : AbstractEncoderState τ := { base := EncoderState.init }
-  let (_ufs, estate) ← ctx.ufs.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
+  let varDefNames := varDefinitions.map (·.name)
+  let varDeclNames := varDeclarations.map (·.name)
+  let managedNames := varDefNames ++ varDeclNames
+  -- Filter out managed variables from UF declarations (they will be emitted separately)
+  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
+    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
+  -- Pre-populate encoder state with managed variable names so encodeTerm
+  -- recognizes them without emitting declareFun
+  let estate := if managedNames.isEmpty then estate
+    else
+      let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+      managedUfs.foldl (init := estate) fun estate uf =>
+        { estate with base := { estate.base with ufs := estate.base.ufs.insert uf uf.id } }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
     unwrap "assert" (← solver.assert id)
+  -- Emit variable declarations as declareFun
+  for decl in varDeclarations do
+    let sort ← solver.termTypeToSort decl.ty
+    let _ ← unwrap "declareFun" (← solver.declareFun decl.name [] sort)
+  -- Emit variable definitions as defineFun
+  let estate ← varDefinitions.foldlM (init := estate) fun estate def_ => do
+    let (bodyEnc, estate) ← (AbstractEncoder.encodeTerm solver def_.body) |>.run estate
+    let sort ← solver.termTypeToSort def_.ty
+    unwrap "defineFun" (← solver.defineFun def_.name [] sort bodyEnc)
+    pure estate
   let (assumptionIds, estate) ← assumptionTerms.mapM (AbstractEncoder.encodeTerm solver) |>.run estate
   for id in assumptionIds do
     unwrap "assert" (← solver.assert id)
   let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
   let ids := estate.base.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty then some id else none
+    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
   return (obligationId, ids, estate.base)
 
 /-- Encode a verification condition into SMT-LIB format, including check-sat
@@ -481,6 +506,8 @@ def dischargeObligationIncremental
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
   (_label : String)
+  (varDefinitions : List VarDefinition := [])
+  (varDeclarations : List VarDeclaration := [])
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) :=
   open _root_.Strata.SMT.IncrementalSolver in do
   let baseFlags := getSolverFlags options
@@ -518,6 +545,7 @@ def dischargeObligationIncremental
     let (obligationId, ids, estate) ←
       _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract solver ctx prelude
         assumptionTerms obligationTerm
+        (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
     -- Variable terms for getValue
     let varIds := ids.map fun id => Term.var ⟨id, .bool⟩
     -- Helper to get model via solver.getValue and parse it
@@ -1280,6 +1308,7 @@ def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
     if options.incremental && !options.alwaysGenerateSMT then
       SMT.dischargeObligationIncremental options vars md
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
+        (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
     else
       let counterVal ← counter.modifyGet fun n => (n, n + 1)
       let filename := tempDir / s!"{SMT.sanitizeFilename label}_{counterVal}.smt2"
