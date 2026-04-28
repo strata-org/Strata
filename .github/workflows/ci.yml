@@ -320,7 +320,6 @@ jobs:
 
   strata-benchmarks:
     name: Run Benchmarks of Strata
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
