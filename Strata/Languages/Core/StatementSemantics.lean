@@ -57,6 +57,8 @@ instance : HasBool Core.Expression where
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
   boolTy := .forAll [] (.tcons "bool" [])
+  isTrue := Lambda.LExpr.isTrue CoreLParams.mono
+  isFalse := Lambda.LExpr.isFalse CoreLParams.mono
 
 instance : HasNot Core.Expression where
   not

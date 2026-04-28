@@ -61,7 +61,7 @@ def runStep [BEq P.Expr] [HasBool P]
     | .det e =>
       match ops.evalExpr ρ e with
       | some v =>
-        if v == HasBool.tt then .stmts tss ρ
+        if HasBool.isTrue v then .stmts tss ρ
         else .stmts ess ρ
       | none => .terminal (ops.addError ρ "ITE condition did not reduce to bool")
 
@@ -71,7 +71,7 @@ def runStep [BEq P.Expr] [HasBool P]
     | .det g =>
       match ops.evalExpr ρ g with
       | some v =>
-        if v == HasBool.tt then .stmts (body ++ [s]) ρ
+        if HasBool.isTrue v then .stmts (body ++ [s]) ρ
         else .terminal ρ
       | none => .terminal (ops.addError ρ "Loop guard did not reduce to bool")
 
