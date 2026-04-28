@@ -6,7 +6,6 @@ on:
   push:
     branches: [main]
 
-
 jobs:
   strata-benchmarks:
     runs-on: ubuntu-latest
