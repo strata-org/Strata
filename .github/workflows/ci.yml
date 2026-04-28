@@ -321,7 +321,6 @@ jobs:
   strata-benchmarks:
     name: Run Benchmarks of Strata
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     permissions:
       id-token: write
       contents: read
@@ -329,8 +328,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::636399217481:role/github-actions-codebuild-role
-          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::488122404717:role/github-actions-codebuild-role
+          aws-region: us-east-2
 
       - name: Trigger CodeBuild and wait
         shell: bash
@@ -338,7 +337,7 @@ jobs:
           BUILD_ID=$(aws codebuild start-build \
             --project-name strata-benchmarks \
             --query 'build.id' --output text \
-            --region us-east-1)
+            --region us-east-2)
           echo "Build started: $BUILD_ID"
 
           LOG_KEY="logs/${BUILD_ID}.log"
@@ -348,7 +347,7 @@ jobs:
             STATUS=$(aws codebuild batch-get-builds \
               --ids "$BUILD_ID" \
               --query 'builds[0].buildStatus' --output text \
-              --region us-east-1)
+              --region us-east-2)
             echo "Current status: [$STATUS]"
             case "$STATUS" in
               SUCCEEDED) break;;
