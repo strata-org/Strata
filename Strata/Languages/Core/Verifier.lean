@@ -1288,11 +1288,14 @@ abbrev DischargeFn :=
     parallel solver that dispatches obligations concurrently, or an incremental
     solver that shares path-condition state across assertions.
 
-    The solver receives the obligation program (in CoreSMT format after all
-    pipeline transformations) and returns verification results together with
-    statistics. -/
+    The solver receives the factory extensions (custom functions from external
+    phases, e.g. `ReFactory`) and the obligation program (in CoreSMT format
+    after all pipeline transformations), and returns verification results
+    together with statistics. The factory parameter ensures custom solvers
+    can build the environment with the same function definitions as the
+    default solver. -/
 abbrev CoreSMTSolver :=
-  Program → EIO DiagnosticModel (VCResults × Statistics)
+  @Lambda.Factory CoreLParams → Program → EIO DiagnosticModel (VCResults × Statistics)
 
 /-- Factory type for constructing discharge functions. Backends can provide
     their own factory to plug in alternative solvers. -/
@@ -1650,7 +1653,6 @@ def verifySingleEnv (oblProgram : Program)
     by `options.incremental`). This is the standard solver used by `verify`
     when no custom solver is provided. -/
 def mkDefaultCoreSMTSolver
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
@@ -1660,7 +1662,7 @@ def mkDefaultCoreSMTSolver
     (corePhases : List AbstractedPhase := coreAbstractedPhases)
     (mkDischarge : MkDischargeFn := mkDischargeFn) :
     CoreSMTSolver :=
-  fun oblProgram =>
+  fun moreFns oblProgram =>
     verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
       axiomNames axiomProgram externalPhases corePhases mkDischarge
 
@@ -1727,9 +1729,9 @@ def verify (program : Program)
       pure []
     else
       let coreSMTSolver := solver.getD
-        (mkDefaultCoreSMTSolver moreFns options counter tempDir axiomCache?
+        (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
           axiomNames (axiomProgram := program) externalPhases phases)
-      pure [← coreSMTSolver oblProgram]
+      pure [← coreSMTSolver moreFns oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
