@@ -164,6 +164,45 @@ decreasing_by
 
 end
 
+namespace SpecType
+
+theorem sizeOf_atom_lt_of_mem {a : SpecAtomType} {tp : SpecType}
+    (h : a ∈ tp.atoms) : sizeOf a < sizeOf tp := by
+  cases tp
+  decreasing_tactic
+
+end SpecType
+
+mutual
+
+protected def SpecAtomType.toString : SpecAtomType → String
+  | .ident nm args =>
+    if args.size == 0 then s!"{nm}"
+    else s!"{nm}[{", ".intercalate (args.map (fun a => a.toString) |>.toList)}]"
+  | .intLiteral v => s!"Literal[{v}]"
+  | .stringLiteral v => s!"Literal[\"{v}\"]"
+  | .typedDict fields _ _ => s!"TypedDict({", ".intercalate fields.toList})"
+termination_by tp => sizeOf tp
+decreasing_by
+  · rename_i mem
+    decreasing_tactic
+
+protected def SpecType.toString (tp : SpecType) : String :=
+  if h : tp.atoms.size = 1 then
+    tp.atoms[0].toString
+  else
+    s!"Union[{", ".intercalate (tp.atoms.map (fun a => a.toString) |>.toList)}]"
+termination_by sizeOf tp
+decreasing_by
+  · have mem : tp.atoms[0] ∈ tp.atoms := by grind
+    exact SpecType.sizeOf_atom_lt_of_mem mem
+  · rename_i mem
+    exact SpecType.sizeOf_atom_lt_of_mem mem
+end
+
+instance : ToString SpecAtomType where toString := SpecAtomType.toString
+instance : ToString SpecType where toString := SpecType.toString
+
 instance : BEq SpecAtomType where
   beq x y := SpecAtomType.compare x y == .eq
 
@@ -277,26 +316,77 @@ def typedDict (loc : SourceRange) (fields : Array String)
 def unionArray (loc : SourceRange) (elts : Array SpecType) : SpecType :=
   { loc := loc, atoms := elts.foldl (init := #[]) (unionElts · ·.atoms) }
 
-theorem sizeOf_atom_lt_of_mem {a : SpecAtomType} {tp : SpecType}
-    (h : a ∈ tp.atoms) : sizeOf a < sizeOf tp := by
-  cases tp
-  decreasing_tactic
 
-def asSingleton (tp : SpecType) : Option SpecAtomType := do
+private def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then
     for atp in tp.atoms do return atp
   none
 
-private def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
+def asIdent (tp : SpecType) : Option PythonIdent := do
+  let atom ← tp.asSingleton
+  match atom with
+  | .ident id #[] => some id
+  | _ => none
 
--- FIXME: This should also work for int literals
-def isIntType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsInt #[])
+def isIntType (tp : SpecType) : Bool := tp.asIdent == some .builtinsInt
 
-def isFloatType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsFloat #[])
+def isFloatType (tp : SpecType) : Bool := tp.asIdent == some .builtinsFloat
 
-def isStringType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsStr #[])
+def isStringType (tp : SpecType) : Bool := tp.asIdent == some .builtinsStr
 
-def isBoolType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsBool #[])
+def isBoolType (tp : SpecType) : Bool := tp.asIdent == some .builtinsBool
+
+def isTypedDict (tp : SpecType) : Bool :=
+  match tp.asSingleton with
+  | some (.typedDict ..) => true
+  | _ => false
+
+def lookupTypedDictField (tp : SpecType) (field : String) : Option SpecType := do
+  let atom ← tp.asSingleton
+  match atom with
+  | .typedDict fields fieldTypes _ =>
+    for i in [:fields.size] do
+      if fields[i]! == field then return fieldTypes[i]!
+    none
+  | _ => none
+
+def extractElementType (tp : SpecType) : Option SpecType := do
+  let atom ← tp.asSingleton
+  match atom with
+  | .ident pyId args =>
+    if (pyId == .typingList || pyId == .typingSequence) && args.size == 1 then
+      return args[0]!
+    none
+  | _ => none
+
+def extractDictKeyValueTypes (tp : SpecType) : Option (SpecType × SpecType) := do
+  let atom ← tp.asSingleton
+  match atom with
+  | .ident pyId args =>
+    if (pyId == .typingDict || pyId == .typingMapping) && args.size == 2 then
+      return (args[0]!, args[1]!)
+    none
+  | _ => none
+
+def asStringLiteral (tp : SpecType) : Option String := do
+  let atom ← tp.asSingleton
+  match atom with
+  | .stringLiteral v => some v
+  | _ => none
+
+structure DictField where
+  name : String
+  type : SpecType
+  required : Bool
+deriving Inhabited
+
+def asTypedDict (tp : SpecType) : Option (Array DictField) := do
+  let atom ← tp.asSingleton
+  match atom with
+  | .typedDict fields fieldTypes fieldRequired =>
+    some <| fields.mapIdx fun i name =>
+      { name, type := fieldTypes.getD i default, required := fieldRequired.getD i true }
+  | _ => none
 
 end SpecType
 

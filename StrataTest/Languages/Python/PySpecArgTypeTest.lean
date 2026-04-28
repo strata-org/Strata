@@ -7,18 +7,17 @@
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs.DDM
 
-/-! ## Test: specArgToFuncDeclArg preserves original parameter types
+/-! ## Test: specArgToFuncDeclArg preserves parameter type info
 
-Verifies that `buildPySpecLaurel` extracts concrete type names from PySpec
-`SpecType` atoms (builtins.str → "str", builtins.int → "int", etc.)
-instead of hardcoding "Any" for all parameter types.
+Verifies that `buildPySpecLaurel` populates `laurelType` and `typeTesters`
+on `PyArgInfo` from PySpec `SpecType` atoms.
 -/
 
 namespace Strata.Python.PySpecArgTypeTest
 
 open Strata.Python.Specs
 open Strata (buildPySpecLaurel)
-open Strata.Python (OverloadTable PythonFunctionDecl PyArgInfo)
+open Strata.Python (OverloadTable PythonFunctionDecl PyArgInfo highTypeToPyLauType)
 
 private def loc : SourceRange := default
 
@@ -52,10 +51,10 @@ private def unionType (elts : Array SpecType) : SpecType :=
   SpecType.unionArray loc elts
 
 /--
-info: typed_func: x=[int], y=[str], z=[bool], w=[float]
-untyped_func: a=[Any]
-mixed_func: p=[str], q=[Any]
-optional_func: s=[None, str], n=[None, int]
+info: typed_func: x=Any[Any..isfrom_int], y=Any[Any..isfrom_str], z=Any[Any..isfrom_bool], w=Any[Any..isfrom_float]
+untyped_func: a=Any[]
+mixed_func: p=Any[Any..isfrom_str], q=Any[]
+optional_func: s=Any[Any..isfrom_None, Any..isfrom_str], n=Any[Any..isfrom_None, Any..isfrom_int]
 -/
 #guard_msgs in
 #eval do
@@ -79,7 +78,8 @@ optional_func: s=[None, str], n=[None, int]
       (identType .noneType)
   ]
   for f in sigs do
-    let argStrs := ", ".intercalate (f.args.map fun (a : PyArgInfo) => s!"{a.name}={a.tys}")
+    let argStrs := ", ".intercalate (f.args.map fun (a : PyArgInfo) =>
+      s!"{a.name}={highTypeToPyLauType a.laurelType.val}{a.typeTesters.toList}")
     IO.println s!"{f.name}: {argStrs}"
 
 end Strata.Python.PySpecArgTypeTest

@@ -562,14 +562,10 @@ def translateSubscript (paramLoc : SourceRange) (paramType : String)
     specError paramLoc s!"Unknown parameterized type {paramType}."
     return default
   | some (.typeValue tpp) =>
-    let .isTrue tpp_sizep := decideProp (tpp.atoms.size = 1)
+    let some tpId := tpp.asIdent
       | specError paramLoc s!"Expected type name"
         return default
-    let tpa := tpp.atoms[0]
-    let .ident tpId tpParams := tpa
-      | specError paramLoc "Expected an identifier"
-        return default
-    if tpId == .builtinsDict ∧ tpParams.size = 0 then
+    if tpId == .builtinsDict then
         .typeValue <$> (fixedTranslator .typingDict 2 |>.callback paramLoc sargs)
     else
       specError paramLoc s!"Unsupported type {repr tpId}"
@@ -731,8 +727,7 @@ def pySpecArg (usedNames : Std.HashSet String)
 
 structure SpecAssertionContext where
   filePath : System.FilePath
-  kwargsParamName : Option String := none
-  kwargsType : Option SpecType := none
+  kwargs : Option (String × SpecType) := none
   /-- Local variable type bindings (e.g., from for-loop iteration variables). -/
   localTypes : Std.HashMap String SpecType := {}
 
@@ -769,13 +764,14 @@ instance : PySpecMClass SpecAssertionM where
     return (errCnt = s'.errors.size ∧ warnCnt = s'.warnings.size, r)
 
 /-- Match a subscript expression `param["field"]` against the kwargs parameter
-    name from context, returning `(paramName, fieldName)` on success. -/
+    name from context, returning `(paramName, fieldName, kwType)` on success. -/
 def extractKwargsField (ctx : SpecAssertionContext) (e : expr SourceRange)
-    : Option (String × String) := do
+    : Option (String × String × SpecType) := do
   match e with
   | .Subscript _ (.Name _ ⟨_, paramName⟩ (.Load _)) (.Constant _ (.ConString _ ⟨_, fieldName⟩) _) (.Load _) =>
-    if ctx.kwargsParamName = some paramName then
-      some (paramName, fieldName)
+    let (kwName, kwTp) ← ctx.kwargs
+    if kwName == paramName then
+      some (paramName, fieldName, kwTp)
     else
       none
   | _ =>
@@ -792,37 +788,6 @@ def assumeCondition (cond : SpecExpr) (loc : SourceRange) (act : SpecAssertionM 
   let wrapped := newAssertions.map fun a =>
     { a with formula := .implies cond a.formula loc }
   modify fun s => { s with assertions := prevAssertions ++ wrapped }
-
-/-- Look up a field in a TypedDict SpecType, returning its type if found. -/
-def lookupTypedDictField (tp : SpecType) (field : String) : Option SpecType := do
-  for atom in tp.atoms do
-    match atom with
-    | .typedDict fields fieldTypes _ =>
-      for i in [:fields.size] do
-        if fields[i]! == field then return fieldTypes[i]!
-    | _ => pure ()
-  none
-
-/-- Extract the element type from an iterable SpecType (e.g., typing.List(T) → T). -/
-def extractElementType (tp : SpecType) : Option SpecType := do
-  for atom in tp.atoms do
-    match atom with
-    | .ident pyId args =>
-      if (pyId == .typingList || pyId == .typingSequence) && args.size == 1 then
-        return args[0]!
-    | _ => pure ()
-  none
-
-/-- Extract key and value types from a dict SpecType
-    (e.g., typing.Dict(K, V) → (K, V)). -/
-def extractDictKeyValueTypes (tp : SpecType) : Option (SpecType × SpecType) := do
-  for atom in tp.atoms do
-    match atom with
-    | .ident pyId args =>
-      if (pyId == .typingDict || pyId == .typingMapping) && args.size == 2 then
-        return (args[0]!, args[1]!)
-    | _ => pure ()
-  none
 
 /-- Build a comparison expression dispatching to float or int variants based on type. -/
 private def makeComparison
@@ -914,10 +879,11 @@ partial def transExpr (e : expr SourceRange)
   let intType := SpecType.ident loc .builtinsInt
   let floatType := SpecType.ident loc .builtinsFloat
   -- kwargs subscript: kw["field"]
-  if let some (kn, fn) := extractKwargsField (←read) e then
-    let kwTp := (←read).kwargsType
-    let fieldTp := kwTp.bind (lookupTypedDictField · fn) |>.getD anyType
-    return (.getIndex (.var kn (loc := loc)) fn (loc := loc), fieldTp)
+  if let some (kn, fn, kwTp) := extractKwargsField (←read) e then
+    let fieldTp := kwTp.lookupTypedDictField fn
+    if fieldTp.isNone && kwTp.isTypedDict then
+      specWarning loc s!"kwargs field \"{fn}\" not found in TypedDict"
+    return (.getIndex (.var kn (loc := loc)) fn (loc := loc), fieldTp.getD anyType)
 
   let placeholder := (.placeholder (loc := loc), anyType)
   match e with
@@ -930,8 +896,13 @@ partial def transExpr (e : expr SourceRange)
   -- Nested subscript: x["field"]
   | .Subscript _ inner (.Constant _ (.ConString _ ⟨_, fieldName⟩) _) (.Load _) =>
     let (innerExpr, innerTp) ← transExpr inner
-    let fieldTp := (lookupTypedDictField innerTp fieldName).getD anyType
-    return (.getIndex innerExpr fieldName (loc := loc), fieldTp)
+    let fieldTp := innerTp.lookupTypedDictField fieldName
+    if fieldTp.isNone then
+      if innerTp.isTypedDict then
+        specWarning loc s!"field \"{fieldName}\" not found in TypedDict"
+      else
+        specWarning loc s!"subscript subject is not a TypedDict"
+    return (.getIndex innerExpr fieldName (loc := loc), fieldTp.getD anyType)
   -- Integer literal
   | .Constant _ (.ConPos _ ⟨_, n⟩) _ =>
     return (.intLit (Int.ofNat n) (loc := loc), intType)
@@ -1076,18 +1047,20 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     -- for varName in iterable:
     | .Name _ ⟨_, varName⟩ (.Store _), _ =>
       let (clean, (listExpr, iterTp)) ← runNoWarn (transExpr iter)
-      if clean then
-        let elemTp := extractElementType iterTp
-        let prevAssertions := (←get).assertions
-        modify fun s => { s with assertions := #[] }
-        withReader (fun ctx => match elemTp with
-          | some tp => { ctx with localTypes := ctx.localTypes.insert varName tp }
-          | none => ctx) <|
-          blockStmts body
-        let bodyAssertions := (←get).assertions
-        let wrapped := bodyAssertions.map fun a =>
-          { a with formula := .forallList listExpr varName a.formula s.ann }
-        modify fun s => { s with assertions := prevAssertions ++ wrapped }
+      if not clean then
+        return ()
+      let some elemTp := iterTp.extractElementType
+        | specWarning s.ann "For: iterable is not a List/Sequence type"
+          return
+      let prevAssertions := (←get).assertions
+      modify fun s => { s with assertions := #[] }
+      withReader (fun ctx =>
+        { ctx with localTypes := ctx.localTypes.insert varName elemTp }) <|
+        blockStmts body
+      let bodyAssertions := (←get).assertions
+      let wrapped := bodyAssertions.map fun a =>
+        { a with formula := .forallList listExpr varName a.formula s.ann }
+      modify fun s => { s with assertions := prevAssertions ++ wrapped }
     -- for keyVar, valVar in dictExpr.items():
     | .Tuple _ ⟨_, elts⟩ (.Store _),
       .Call _ (.Attribute _ dictExpr ⟨_, "items"⟩ (.Load _)) ⟨_, args⟩ _ =>
@@ -1099,24 +1072,21 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
         match elts[0]!, elts[1]! with
         | .Name _ ⟨_, keyVar⟩ (.Store _), .Name _ ⟨_, valVar⟩ (.Store _) =>
           let (clean, (dictSubj, dictTp)) ← runNoWarn (transExpr dictExpr)
-          if clean then
-            let kvTypes := extractDictKeyValueTypes dictTp
-            if kvTypes.isNone then
-              specWarning s.ann
-                s!"For: .items() subject is not a Dict/Mapping type"
-            let prevAssertions := (←get).assertions
-            modify fun st => { st with assertions := #[] }
-            withReader (fun ctx => match kvTypes with
-              | some (kTp, vTp) =>
-                { ctx with localTypes := ctx.localTypes
-                    |>.insert keyVar kTp
-                    |>.insert valVar vTp }
-              | none => ctx) <|
-              blockStmts body
-            let bodyAssertions := (←get).assertions
-            let wrapped := bodyAssertions.map fun a =>
-              { a with formula := .forallDict dictSubj keyVar valVar a.formula s.ann }
-            modify fun st => { st with assertions := prevAssertions ++ wrapped }
+          if not clean then
+            return ()
+          let some (kTp, vTp) := dictTp.extractDictKeyValueTypes
+            | specWarning s.ann s!"For: .items() subject is not a Dict/Mapping type"
+              return
+          let prevAssertions := (←get).assertions
+          modify fun st => { st with assertions := #[] }
+          withReader (fun ctx => { ctx with
+            localTypes := ctx.localTypes |>.insert keyVar kTp |>.insert valVar vTp
+            })
+            (blockStmts body)
+          let bodyAssertions := (←get).assertions
+          let wrapped := bodyAssertions.map fun a =>
+            { a with formula := .forallDict dictSubj keyVar valVar a.formula s.ann }
+          modify fun st => { st with assertions := prevAssertions ++ wrapped }
         | _, _ =>
           specWarning s.ann "For: dict unpacking requires Name targets"
     | _, _ =>
@@ -1153,8 +1123,7 @@ def collectAssertions (decls : ArgDecls) (_returnType : SpecType)
   let filePath := (←read).pythonFile
   let ctx : SpecAssertionContext :=
     { filePath
-      kwargsParamName := decls.kwargs.map Prod.fst
-      kwargsType := decls.kwargs.map Prod.snd }
+      kwargs := decls.kwargs }
   let ((), as) := action ctx { errors, warnings }
   modify fun s => { s with errors := as.errors, warnings := as.warnings }
   pure as
@@ -1269,10 +1238,10 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
       else
         match ← getNameValue? name with
         | some (.typeValue tp) =>
-          match tp.asSingleton with
-          | some (.ident pyIdent _) =>
+          match tp.asIdent with
+          | some pyIdent =>
             result := result.push pyIdent
-          | _ =>
+          | none =>
             specError base.ann s!"Unknown base class '{name}'"
         | _ =>
           specError base.ann s!"Unknown base class '{name}'"
@@ -1300,8 +1269,7 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
     | .ClassDef innerLoc ⟨_, innerClassName⟩ ⟨_, innerBases⟩ _keywords ⟨_, innerStmts⟩
                 _decorators _typeParams =>
       let innerBaseIdents ← resolveBaseClasses innerBases
-      let innerDef ← pySpecClassBody innerLoc innerClassName
-        innerBaseIdents innerStmts
+      let innerDef ← pySpecClassBody innerLoc innerClassName innerBaseIdents innerStmts
       subclasses := subclasses.push innerDef
     | .Assign _ ⟨_, targets⟩ value _typeAnn =>
       if h : targets.size = 1 then
