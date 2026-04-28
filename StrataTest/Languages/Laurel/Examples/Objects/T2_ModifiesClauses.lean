@@ -107,8 +107,8 @@ procedure newObjectDoNotCountForModifies()
 };
 
 procedure modifiesWildcardBodiless(c: Container, d: Container)
-  modifies *
-;
+  opaque
+  modifies *;
 
 procedure modifiesWildcardBodilessCaller() {
   var c: Container := new Container;
@@ -120,7 +120,7 @@ procedure modifiesWildcardBodilessCaller() {
 };
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
-  ensures true
+  opaque
   modifies *
 {
   c#value := 2;
@@ -128,9 +128,9 @@ procedure modifiesWildcardWithBody(c: Container, d: Container)
 };
 
 procedure modifiesWildcardAndSpecific(c: Container, d: Container)
+  opaque
   modifies c
-  modifies *
-;
+  modifies *;
 
 procedure modifiesWildcardAndSpecificCaller() {
   var c: Container := new Container;
@@ -144,6 +144,7 @@ procedure modifiesWildcardAndSpecificCaller() {
 // Without `ensures`, the body is transparent and `modifies *` is silently dropped.
 // The caller sees through the body, so heap changes are tracked directly. See #969.
 procedure modifiesWildcardTransparent(c: Container, d: Container)
+  opaque
   modifies *
 {
   c#value := 2;
