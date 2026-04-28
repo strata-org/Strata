@@ -10,6 +10,10 @@ public import Strata.Languages.Core.Core
 namespace Strata
 namespace Python
 
+-- sourcerange:file-ok
+-- Function signature helpers synthesize default-value expressions
+-- programmatically; these carry SourceRange.none.
+
 public section
 
 /-- A type identifier in the Strata Core prelude for Python. -/

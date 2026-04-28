@@ -13,6 +13,10 @@ public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
 
+-- sourcerange:file-ok
+-- Synthesized expressions from transforms (fresh variables, old-value snapshots)
+-- have no source location.
+
 public section
 
 namespace Core

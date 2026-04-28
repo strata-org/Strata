@@ -37,6 +37,10 @@ open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp r
 
 namespace Strata.Laurel
 
+-- sourcerange:file-ok
+-- Laurel-to-Core translation synthesizes Core expressions from Laurel AST nodes;
+-- synthesized expressions use SourceRange.none when no source location is available.
+
 open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)

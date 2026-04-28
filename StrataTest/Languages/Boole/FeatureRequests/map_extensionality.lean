@@ -6,6 +6,7 @@
 
 import Strata.MetaVerifier
 import Strata.Languages.Boole.Verify
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 open Strata
 open Lambda

@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.DDMTransform.Translate
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 -- Tests for Core.Program → CST Conversion
 -- This file tests one-direction conversion: AST → CST using the old

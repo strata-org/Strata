@@ -16,6 +16,9 @@ public section
 
 /-! # Procedure Body Verification Correctness Proof -/
 
+-- sourcerange:file-ok
+-- Proof terms must match synthesized expressions that use SourceRange.none.
+
 namespace ProcBodyVerifyCorrect
 
 open Core Core.ProcBodyVerify Imperative Lambda Transform Core.WF

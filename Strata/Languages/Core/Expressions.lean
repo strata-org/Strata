@@ -15,6 +15,9 @@ public import Strata.DDM.Util.SourceRange
 namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
+-- sourcerange:file-ok
+-- Typeclass defaults and operator constructors use SourceRange.none
+-- because they build expressions programmatically, not from parsed source.
 
 public section
 

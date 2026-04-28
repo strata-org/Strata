@@ -34,6 +34,7 @@ import Strata.DL.Util.ListUtils
   Additionally, `callElimBlockNoExcept` shows that the call elimination
   transformation always succeeds on well-formed statements.
 -/
+-- sourcerange:file-ok
 
 namespace CallElimCorrect
 open Core Core.Transform CallElim

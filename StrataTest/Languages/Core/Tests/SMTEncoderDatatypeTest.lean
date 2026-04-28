@@ -17,6 +17,7 @@ import Strata.Languages.Core.Identifiers
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.SMTEncoder
 import Strata.Languages.Core.Verifier
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 /-!
 This file contains unit tests for SMT datatype encoding.

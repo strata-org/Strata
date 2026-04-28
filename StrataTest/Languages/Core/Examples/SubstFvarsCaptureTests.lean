@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Verifier
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 /-! # Simultaneous substitution tests (Issue 653)
 

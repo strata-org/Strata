@@ -16,6 +16,10 @@ public import Strata.Languages.Core.CoreOp
 
 ---------------------------------------------------------------------
 
+-- sourcerange:file-ok
+-- SMT encoding builds intermediate expressions programmatically;
+-- these synthesized terms carry SourceRange.none.
+
 namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder

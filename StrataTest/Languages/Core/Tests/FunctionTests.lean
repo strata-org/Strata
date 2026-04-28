@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Function
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 /-! ## Tests for Core Function -/
 

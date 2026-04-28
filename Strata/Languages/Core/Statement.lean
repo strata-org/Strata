@@ -20,6 +20,10 @@ open Imperative
 open Std (ToFormat Format format)
 open Std.Format
 
+-- sourcerange:file-ok
+-- Typeclass defaults and operator constructors use SourceRange.none
+-- because they build expressions programmatically, not from parsed source.
+
 public section
 
 ---------------------------------------------------------------------

@@ -11,6 +11,10 @@ public meta import Strata.DL.Lambda.LExpr
 public import Strata.DDM.Util.SourceRange
 namespace Core
 
+-- sourcerange:file-ok
+-- Typeclass defaults and identifier constructors use SourceRange.none
+-- because they build expressions programmatically, not from parsed source.
+
 public section
 
 open Std

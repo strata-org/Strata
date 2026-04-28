@@ -21,12 +21,14 @@ import all Strata.DL.Lambda.FactoryWF
 import Strata.DL.Util.BitVec
 ---------------------------------------------------------------------
 
+-- sourcerange:file-ok
+-- Operator constructors and factory helpers use SourceRange.none because
+-- they build expressions programmatically, not from parsed source.
+
 namespace Core
 open Lambda LTy.Syntax LExpr.SyntaxMono Core.Syntax
 
 public section
-
-@[expose, match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
 

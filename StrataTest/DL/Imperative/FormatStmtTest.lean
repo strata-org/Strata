@@ -5,6 +5,7 @@
 -/
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.DDMTransform.FormatCore
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 namespace FormatStmtTest
 open Core

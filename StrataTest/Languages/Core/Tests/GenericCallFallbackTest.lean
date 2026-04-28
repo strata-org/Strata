@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.DDMTransform.ASTtoCST
+-- Test fixtures build Core expressions directly; no source locations. -- sourcerange:file-ok
 
 /-! Tests for the generic call fallback in ASTtoCST.
 

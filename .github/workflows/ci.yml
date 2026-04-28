@@ -206,6 +206,8 @@ jobs:
         run: .github/scripts/check_lean_consistency.sh
       - name: Check for new panic! usage
         run: .github/scripts/checkNoPanic.sh "origin/${{ github.base_ref || 'main' }}"
+      - name: Check for new SourceRange.none usage
+        run: .github/scripts/checkNoSourceRangeNone.sh "origin/${{ github.base_ref || 'main' }}"
 
   build_doc:
     name: Build documentation
