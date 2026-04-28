@@ -1676,6 +1676,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- but havoc maybe_except since the call could throw.
     -- Also havoc the receiver and Any-typed arguments since the unmodeled
     -- call may mutate them and value-typed locals are not reachable via heap havoc.
+    -- Note: composite-typed arguments are NOT havoc'd here. If the unmodeled
+    -- call mutates a composite's fields, the heap should be havoc'd, but that
+    -- requires coordination with HeapParameterization and is out of scope.
     | .Hole =>
       let receiverHavoc := match value with
         | .Call _ (.Attribute _ (.Name _ receiverName _) _ _) _ _ =>
