@@ -83,11 +83,11 @@ def spawn (path : String) (args : Array String) : IO IncrementalSolverState := d
 /-- Shared helper for constructing quantified terms. -/
 private def mkQuantHelper (qk : QuantifierKind)
     (bindings : List (String × TermType))
-    (callback : List Term → Except String (Term × List (List Term)))
+    (callback : List Term → IncrementalSolverM (Except String (Term × List (List Term))))
     : IncrementalSolverM (Except String Term) := do
   let vars := bindings.map fun (name, ty) => TermVar.mk name ty
   let varTerms := vars.map Term.var
-  match callback varTerms with
+  match ← callback varTerms with
   | .error msg => return .error msg
   | .ok (body, triggers) =>
     let tr := match triggers with
