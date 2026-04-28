@@ -250,7 +250,10 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  resolveRef fieldName md
+  -- Fallback: field names that can't be resolved in any type scope are left
+  -- unresolved without error. Heap parameterization will handle them (typically
+  -- replacing with a Hole for dynamic field accesses like session.region_name).
+  return fieldName
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do

@@ -174,4 +174,35 @@ datatype Foo { A }
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "DupCompositeDatatype" dupCompositeDatatype 135 processResolution
 
+/-! ## Field access on non-self object does not produce resolution error
+
+When accessing a field on a non-self object (e.g., `session#region_name`),
+the field name should NOT be treated as a variable reference. Previously,
+`resolveFieldRef` fell back to `resolveRef` which emitted a spurious
+"Resolution failed" error for unknown fields. -/
+
+def fieldAccessKnown := r"
+composite Session { var name: int }
+procedure test(s: Session) {
+  var x: int := s#name
+};
+"
+
+/--
+info: ✓ Test passed: All 0 error(s) matched -/
+#guard_msgs in
+#eval testInputWithOffset "FieldAccessKnown" fieldAccessKnown 0 processResolution
+
+def fieldAccessUnknown := r"
+composite Session { var name: int }
+procedure test(s: Session) {
+  var x: int := s#region_name
+};
+"
+
+/--
+info: ✓ Test passed: All 0 error(s) matched -/
+#guard_msgs in
+#eval testInputWithOffset "FieldAccessUnknown" fieldAccessUnknown 0 processResolution
+
 end Laurel
