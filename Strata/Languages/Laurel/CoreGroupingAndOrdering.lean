@@ -29,15 +29,15 @@ open Lambda (LMonoTy LExpr)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
-  | ⟨.UserDefined name, _, _⟩ => [name.text]
-  | ⟨.TSet elem, _, _⟩ => collectTypeRefs elem
-  | ⟨.TMap k v, _, _⟩ => collectTypeRefs k ++ collectTypeRefs v
-  | ⟨.TTypedField vt, _, _⟩ => collectTypeRefs vt
-  | ⟨.Applied base args, _, _⟩ =>
+  | ⟨.UserDefined name, _⟩ => [name.text]
+  | ⟨.TSet elem, _⟩ => collectTypeRefs elem
+  | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
+  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
+  | ⟨.Applied base args, _⟩ =>
       collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _, _⟩ => collectTypeRefs base
-  | ⟨.Intersection ts, _, _⟩ => ts.flatMap collectTypeRefs
-  | ⟨.TCore name, _, _⟩ => [name]
+  | ⟨.Pure base, _⟩ => collectTypeRefs base
+  | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
+  | ⟨.TCore name, _⟩ => [name]
   | _ => []
 
 /-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
@@ -50,7 +50,7 @@ Used to build the call graph for SCC-based procedure ordering.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match expr with
-  | AstNode.mk val _ _ =>
+  | AstNode.mk val _ =>
   match val with
   | .StaticCall callee args =>
       callee.text :: args.flatMap (fun a => collectStaticCallNames a)

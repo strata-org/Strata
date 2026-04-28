@@ -62,7 +62,7 @@ private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
   -- Fall back to ["Any"] if no atoms were recognized (unknown types
   -- should not generate constraints).
   let tys := if tys.isEmpty then ["Any"] else tys
-  {name := arg.name, md := default, tys := tys, default := arg.default.map specDefaultToExpr}
+  {name := arg.name, source := none, tys := tys, default := arg.default.map specDefaultToExpr}
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
