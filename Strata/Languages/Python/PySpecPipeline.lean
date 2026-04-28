@@ -62,7 +62,7 @@ private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
   -- Fall back to ["Any"] if no atoms were recognized (unknown types
   -- should not generate constraints).
   let tys := if tys.isEmpty then ["Any"] else tys
-  {name := arg.name, md := default, tys := tys, default := arg.default.map specDefaultToExpr}
+  {name := arg.name, source := none, tys := tys, default := arg.default.map specDefaultToExpr}
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
@@ -100,7 +100,10 @@ private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
 
 private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
   new.fold (init := old) fun o name n =>
-    o.alter name fun s => some <| s.getD {} |>.union n
+    o.alter name fun s =>
+      let existing := s.getD {}
+      some { paramName := existing.paramName <|> n.paramName
+             entries := existing.entries.union n.entries }
 
 
 
@@ -188,11 +191,7 @@ public def readDispatchOverloads
     let (overloads, errors) :=
       Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     allWarnings := allWarnings ++ errors
-    for (funcName, fnOverloads) in overloads do
-      let existing := tbl.getD funcName {}
-      tbl := tbl.insert funcName
-        (fnOverloads.fold (init := existing)
-          fun acc k v => acc.insert k v)
+    tbl := mergeOverloads tbl overloads
   return (tbl, allWarnings)
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
@@ -362,8 +361,7 @@ public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, profile } combined
-      (keepAllFilesPrefix := keepAllFilesPrefix)
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, profile } combined
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full

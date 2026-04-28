@@ -23,8 +23,10 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
--- Sequence operations increase the grammar size enough to require a higher recursion limit.
+-- Sequence operations and lambda/application syntax increase the grammar size enough
+-- to require higher recursion and heartbeat limits.
 set_option maxRecDepth 10000
+set_option maxHeartbeats 400000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
 
@@ -208,8 +210,12 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
   triggers group;
 
 // Lambda abstraction
-fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : tp =>
-  "lambda " d " :: " body:3;
+fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
+  "fun " d " => " body:3;
+
+// Application of an expression to an argument
+fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =>
+  "(" f ")" "(" x ")";
 
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>
@@ -269,10 +275,13 @@ op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
   "while " c:0 "\n" m:0 is body:0;
 
-op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call " vs " := " f "(" expr ")" ";";
-op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call " f "(" expr ")" ";";
+category CallArg;
+op callArgExpr (e : Expr) : CallArg => e;
+op callArgOut (v : Ident) : CallArg => "out " v;
+op callArgInout (v : Ident) : CallArg => "inout " v;
+
+op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
+   "call " f "(" args ")" ";";
 
 @[scope(c)]
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
@@ -283,7 +292,6 @@ op exit_unlabeled_statement : Statement => "exit;";
 category SpecElt;
 category Free;
 op free () : Free => "free ";
-op modifies_spec (nms : CommaSepBy Ident) : SpecElt => "modifies " nms ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
@@ -296,6 +304,10 @@ category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
 @[declare(name, tp)]
+op outBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "out " name " : " tp:0;
+@[declare(name, tp)]
+op inoutBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "inout " name " : " tp:0;
+@[declare(name, tp)]
 op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp:0;
 
 category Bindings;
@@ -305,11 +317,10 @@ op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 op command_procedure (name : Ident,
                       typeArgs : Option TypeArgs,
                       @[scope(typeArgs)] b : Bindings,
-                      @[scope(b)] ret : Option MonoDeclList,
-                      @[scope(ret)] s: Option Spec,
-                      @[scope(ret)] body : Option Block) :
+                      @[scope(b)] s: Option Spec,
+                      @[scope(b)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b " returns " "(" ret ")\n"
+  @[prec(10)] "procedure " name typeArgs b "\n"
               s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
@@ -391,10 +402,6 @@ op funcDecl_statement (name : Ident,
 @[declareScopedType(name, some args)]
 op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
   "type " name args ";";
-
-@[scope(b)]
-op command_var (b : Bind) : Command =>
-  @[prec(10)] "var " b ";\n";
 
 op command_axiom (label : Option Label, e : bool) : Command =>
   "axiom " label e ";\n";

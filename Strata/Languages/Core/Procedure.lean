@@ -54,10 +54,10 @@ and an optional implementation body.
 
 ## Syntax
 
+`[]` is an optional keyword.
 ```
-procedure Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) returns (y₁ : U₁, ..., yₘ : Uₘ)
+procedure Name<TypeArgs>([out/inout] x₁ : T₁, ..., [out/inout] xₙ : Tₙ)
 spec {
-  modifies g₁, g₂, ...;
   [free] requires [label] P;
   [free] ensures  [label] Q;
 }
@@ -66,34 +66,29 @@ spec {
 
 ## Parameters
 
-Each procedure has two groups of parameters:
+Each procedure has three kinds of parameters:
 
-- **Input parameters** (`inputs`) are passed by value from the caller to the callee.
+- **Input parameters** (`name : T`) are passed by value from the caller to the callee.
   They are immutable within the procedure body.
-- **Output parameters** (`outputs`) are passed by value from the callee back to the
+- **Output parameters** (`out name : T`) are passed by value from the callee back to the
   caller. They are mutable within the procedure body and their final values are
   returned to the caller.
-
-Input and output parameter names must be disjoint from each other and from the
-`modifies` clause.
+- **Input-output parameters** (`inout name : T`) appear in both input and output roles.
+  The input value is the pre-state and the output value is the post-state. These
+  are not only used to model mutable global variables but also pass mutable
+  "references" to local variables.
 
 ## Specification
 
-A procedure's specification (`Procedure.Spec`) consists of three parts:
-
-- **`modifies` clause**: A list of global variables that the procedure is allowed to
-  modify. Any global variable not listed is guaranteed to retain its pre-call value.
-  Variables in the `modifies` clause must not overlap with input or output parameters.
+A procedure's specification (`Procedure.Spec`) consists of two parts:
 
 - **Preconditions** (`requires`): Boolean expressions that must hold at the call site
   before the procedure is invoked. Their free variables must be a subset of the
-  input parameters and global variables. At a call site, preconditions are checked
-  (asserted) before the call.
+  input parameters.
 
 - **Postconditions** (`ensures`): Boolean expressions that must hold when the procedure
   returns. Their free variables may reference input parameters, output parameters,
-  global variables, and `old(expr)` expressions. At a call site, postconditions are
-  assumed after the call.
+  and `old(expr)` expressions.
 
 ### Free specifications
 
@@ -116,13 +111,10 @@ in verification output and diagnostics.
 
 Postconditions and procedure bodies are *two-state contexts*: they can refer to
 both the pre-state (on entry) and the post-state (on exit) of a procedure
-invocation. The pre-state value of an expression is denoted by `old(expr)`.
+invocation. The pre-state value of a variable `x` is denoted by `old x`.
 
-- Only global variables are affected by `old`. For example, if `g` is a global
-  variable and `x` is a local variable, then `old(g + x)` is equivalent to
-  `old(g) + x`.
-- `old` distributes to the leaves of expressions and is idempotent:
-  `old(old(e))` is equivalent to `old(e)`.
+- `old` applies to parameters that appear in both inputs and outputs (`inout`).
+   For such a parameter `g`, `old g` refers to the input value.
 - `old` is not allowed in preconditions.
 
 See `OldExpressions.lean` for the normalization and substitution implementation.
@@ -132,17 +124,19 @@ See `OldExpressions.lean` for the normalization and substitution implementation.
 A procedure is invoked via the `call` statement:
 
 ```
-call y₁, ..., yₘ := ProcName(e₁, ..., eₙ);
+call ProcName([out/inout] e₁, ..., [out/inout] eₙ);
 ```
+
+Note that `out` and `inout` keywords can only be attached when `e_i` is a variable.
 
 The semantics of a call (see `CallElim` and `StatementSemantics`) are:
 
 1. Evaluate the argument expressions `e₁, ..., eₙ`.
 2. **Assert** each (non-free) precondition, substituting actuals for formals.
-3. **Havoc** the output variables `y₁, ..., yₘ` and the `modifies` variables.
+3. **Havoc** the output variables `y₁, ..., yₘ`.
 4. **Assume** each postcondition, substituting actuals for formals and binding
-   `old(g)` to the value of `g` immediately before the call.
-5. Update the caller's state with the new values of the output and modified variables.
+   `old g` to the value of `g` immediately before the call.
+5. Update the caller's state with the new values of the output variables.
 
 This enables *modular verification*: each procedure is verified against its
 contract independently, and callers reason only about the contract, not the body.
@@ -163,22 +157,17 @@ in the specification and body.
 ## Example
 
 ```
-var g : bool;
-
-procedure Test(x : bool) returns (y : bool)
+procedure Test(x : bool, out y : bool)
 spec {
   ensures (y == x);
-  ensures (g == old(g));
 }
 {
   y := x || x;
 };
 ```
 
-This declares a procedure `Test` with one input `x`, one output `y`, and two
-postconditions: that `y` equals `x`, and that the global variable `g` is
-unchanged (since `g` is not in the `modifies` clause, this is also guaranteed
-by the frame condition, but can be stated explicitly).
+This declares a procedure `Test` with one input `x`, one output `y`, and a
+postcondition that `y` equals `x`.
 -/
 
 /-- The header of a procedure: its name, type parameters, and input/output signatures. -/
@@ -195,7 +184,20 @@ structure Procedure.Header where
   noFilter : Bool := false
   deriving Repr, DecidableEq, Inhabited
 
----------------------------------------------------------------------
+/-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).
+    These are the parameters for which `old x` snapshots are meaningful. -/
+@[expose] def Procedure.Header.getInoutParams (h : Procedure.Header) : @LMonoTySignature Unit :=
+  h.inputs.filter fun (id, _) => (ListMap.keys h.outputs).contains id
+
+/-- Output parameters that do NOT appear in `inputs` (output-only parameters). -/
+@[expose] def Procedure.Header.getOutputOnlyParams (h : Procedure.Header) : @LMonoTySignature Unit :=
+  h.outputs.filter fun (id, _) => !(ListMap.keys h.inputs).contains id
+
+instance : ToFormat Procedure.Header where
+  format p :=
+    let typeArgs := if p.typeArgs.isEmpty then f!"" else f!"∀{Format.joinSep p.typeArgs " "}."
+    f!"procedure {p.name} : {typeArgs} ({Signature.format p.inputs}) → \
+      ({Signature.format p.outputs})"
 
 /--
 Attribute controlling whether a specification clause is checked or free.
@@ -235,17 +237,13 @@ def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
 /--
 The specification (contract) of a procedure.
 
-- `modifies`: Global variables the procedure may modify. Any global not listed
-  is guaranteed unchanged (the *frame condition*).
 - `preconditions`: Labeled boolean expressions that must hold before the procedure
   executes. Checked (asserted) at call sites unless marked `Free`.
 - `postconditions`: Labeled boolean expressions that must hold when the procedure
-  returns. May reference `old(expr)` for pre-state values. Assumed at call sites
+  returns. May reference `old v` for pre-state values. Assumed at call sites
   unless the implementation is being verified.
 -/
 structure Procedure.Spec where
-  /-- Global variables the procedure is allowed to modify. -/
-  modifies       : List Expression.Ident
   /-- Labeled preconditions (`requires` clauses). -/
   preconditions  : ListMap CoreLabel Procedure.Check
   /-- Labeled postconditions (`ensures` clauses). -/
@@ -303,7 +301,7 @@ open Imperative
 
 def Procedure.definedVars (_ : Procedure) : List Expression.Ident := []
 def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
-  p.spec.modifies
+  p.header.outputs.keys
 
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++

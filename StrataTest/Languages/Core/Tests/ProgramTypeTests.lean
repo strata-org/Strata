@@ -28,7 +28,6 @@ def bad_prog : Program := { decls := [
                          inputs := [],
                          outputs := [] },
               spec := {
-                  modifies := [],
                   preconditions := [],
                   postconditions := [] },
               body := [
@@ -59,7 +58,6 @@ def good_prog : Program := { decls := [
                          inputs := [],
                          outputs := [] },
               spec := {
-                  modifies := [],
                   preconditions := [],
                   postconditions := [] },
               body := [
@@ -89,8 +87,6 @@ info: ok: [Error:
  ⏎
  Evaluation Config:
  Eval Depth: 200
- Variable Prefix: $__
- Variable gen count: 0
  Factory Functions:
  func Int.Add :  ((x : int) (y : int)) → int;
  func Int.Sub :  ((x : int) (y : int)) → int;
@@ -475,7 +471,6 @@ def outOfScopeVarProg : Program := { decls := [
                          inputs := [("x", mty[bool])],
                          outputs := [("y", mty[bool])] },
               spec := {
-                  modifies := [],
                   preconditions := [],
                   postconditions := [] },
               body := [
@@ -520,8 +515,7 @@ def polyFuncProg : Program := { decls := [
                       typeArgs := [],
                       inputs := [],
                       outputs := [] },
-          spec := { modifies := [],
-                    preconditions := [],
+          spec := { preconditions := [],
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
@@ -540,7 +534,7 @@ info: ok: program Core;
 
 function identity<$__ty0> (x : $__ty0) : $__ty0;
 function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
-procedure Test () returns ()
+procedure Test ()
 {
   var m : (Map int bool);
   m := makePair(identity(42), identity(true));
@@ -572,7 +566,7 @@ VCs:
 info: ok: program Core;
 
 function intID () : int -> int {
-  lambda __q0 : int :: __q0
+  fun __q0 : int => __q0
 }
 -/
 #guard_msgs in

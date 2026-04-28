@@ -12,7 +12,7 @@ namespace Strata
 def assertionNames :=
 #strata
 program Core;
-procedure Test(x : int) returns ()
+procedure Test(x : int)
 spec {
   requires x == 1;
 }
@@ -33,7 +33,7 @@ info: true
 /--
 info: program Core;
 
-procedure Test (x : int) returns ()
+procedure Test (x : int)
 spec {
   requires [Test_requires_0]: x == 1;
   } {
@@ -51,9 +51,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-Test_requires_0: $__x0 == 1
+Test_requires_0: x@1 == 1
 Obligation:
-$__x0 == 1
+x@1 == 1
 
 ---
 info:

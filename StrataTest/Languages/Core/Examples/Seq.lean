@@ -15,7 +15,7 @@ program Core;
 
 const s : Sequence int;
 
-procedure P() returns ()
+procedure P()
 {
   var t : Sequence int;
 
@@ -41,7 +41,7 @@ procedure P() returns ()
 info: program Core;
 
 function s () : Sequence int;
-procedure P () returns ()
+procedure P ()
 {
   var t : (Sequence int);
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
@@ -131,7 +131,7 @@ program Core;
 
 const s : Sequence int;
 
-procedure SeqOps() returns ()
+procedure SeqOps()
 {
   var t : Sequence int;
   var u : Sequence int;

@@ -21,7 +21,7 @@ def falseInvariantNeverExecuted :=
 #strata
 program Core;
 
-procedure zeroIter() returns (s : int)
+procedure zeroIter(out s : int)
 {
   var n : int;
   n := 0;

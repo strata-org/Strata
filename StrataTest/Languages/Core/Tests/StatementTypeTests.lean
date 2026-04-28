@@ -239,4 +239,45 @@ subst:
 
 end NondetCondTests
 
+section CallOutArgTests
+
+open Std (ToFormat Format format)
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Imperative (ExprOrNondet)
+
+/-- A test procedure: `procedure Foo(inout x: int, out y: int)` -/
+private def testProc : Procedure :=
+  { header := {
+      name := ⟨"Foo", ()⟩,
+      typeArgs := [],
+      inputs := [(⟨"x", ()⟩, .int)],
+      outputs := [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)] },
+    spec := { preconditions := [], postconditions := [] },
+    body := [] }
+
+private def testProgram : Program :=
+  { decls := [.proc testProc .empty] }
+
+-- Passing `x == x` (which contains output variable `x` inside an expression) should fail.
+/--
+info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters appearing in both inputs and outputs) must be simple variable references
+-/
+#guard_msgs in
+#eval do
+  let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
+  let ans ← typeCheck LContext.default env testProgram none
+    [.cmd (.call "Foo" [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+  return format ans
+
+-- Passing a bare variable `x` as an inout argument should succeed.
+/-- info: ok: () -/
+#guard_msgs in
+#eval do
+  let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
+  let _ ← typeCheck LContext.default env testProgram none
+    [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+  return format ()
+
+end CallOutArgTests
+
 end Core

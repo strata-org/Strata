@@ -29,7 +29,7 @@ program Core;
 // Define an enum-style datatype with no fields
 datatype Color () { Red(), Green(), Blue() };
 
-procedure TestEnumTesters() returns ()
+procedure TestEnumTesters()
 spec {
   ensures true;
 }
@@ -85,7 +85,7 @@ program Core;
 
 datatype Color () { Red(), Green(), Blue() };
 
-procedure TestEnumHavoc() returns ()
+procedure TestEnumHavoc()
 spec {
   ensures true;
 }
@@ -140,7 +140,7 @@ program Core;
 
 datatype Color () { Red(), Green(), Blue() };
 
-procedure TestEnumExhaustive() returns ()
+procedure TestEnumExhaustive()
 spec {
   ensures true;
 }

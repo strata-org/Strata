@@ -23,7 +23,7 @@ def measureFailExamplePgm :=
 #strata
 program Core;
 
-procedure countUp(n : int) returns (i : int)
+procedure countUp(n : int, out i : int)
 spec {
   requires (n >= 0);
   ensures (i == n);
@@ -104,7 +104,7 @@ def gaussPgm :=
 #strata
 program Core;
 
-procedure sum(n : int) returns (s : int)
+procedure sum(n : int, out s : int)
 spec {
   requires (n >= 0);
   ensures (s == ((n * (n + 1)) / 2));
@@ -162,126 +162,126 @@ VCs:
 Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: $__n0 >= 0
+sum_requires_0: n@1 >= 0
 Obligation:
 true
 
 Label: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: $__n2 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
 true
 
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-sum_requires_0: $__n2 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
 true
 
 Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-sum_requires_0: $__n2 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
-0 <= $__n2
+0 <= n@2
 
 Label: entry_invariant_0_2
 Property: assert
 Assumptions:
-sum_requires_0: $__n2 >= 0
+sum_requires_0: n@2 >= 0
 Obligation:
 true
 
 Label: measure_lb_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < $__n2
-assume_guard_0: $__i5 < $__n2
-assume_invariant_0_0: 0 <= $__i5
-assume_invariant_0_1: $__i5 <= $__n2
-assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
-assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
-sum_requires_0: $__n2 >= 0
-assume_entry_invariant_0_1: 0 <= $__n2
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
+assume_invariant_0_0: 0 <= i@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-!($__$__loop_measure_07 < 0)
+!($__loop_measure_0 < 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < $__n2
-assume_guard_0: $__i5 < $__n2
-assume_invariant_0_0: 0 <= $__i5
-assume_invariant_0_1: $__i5 <= $__n2
-assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
-assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
-sum_requires_0: $__n2 >= 0
-assume_entry_invariant_0_1: 0 <= $__n2
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
+assume_invariant_0_0: 0 <= i@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-0 <= $__i5 + 1
+0 <= i@1 + 1
 
 Label: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < $__n2
-assume_guard_0: $__i5 < $__n2
-assume_invariant_0_0: 0 <= $__i5
-assume_invariant_0_1: $__i5 <= $__n2
-assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
-assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
-sum_requires_0: $__n2 >= 0
-assume_entry_invariant_0_1: 0 <= $__n2
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
+assume_invariant_0_0: 0 <= i@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-$__i5 + 1 <= $__n2
+i@1 + 1 <= n@2
 
 Label: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < $__n2
-assume_guard_0: $__i5 < $__n2
-assume_invariant_0_0: 0 <= $__i5
-assume_invariant_0_1: $__i5 <= $__n2
-assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
-assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
-sum_requires_0: $__n2 >= 0
-assume_entry_invariant_0_1: 0 <= $__n2
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
+assume_invariant_0_0: 0 <= i@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-$__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
+s@3 + (i@1 + 1) == (i@1 + 1) * (i@1 + 1 + 1) / 2
 
 Label: measure_decrease_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < $__n2
-assume_guard_0: $__i5 < $__n2
-assume_invariant_0_0: 0 <= $__i5
-assume_invariant_0_1: $__i5 <= $__n2
-assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
-assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
-sum_requires_0: $__n2 >= 0
-assume_entry_invariant_0_1: 0 <= $__n2
+<label_ite_cond_true: i < n>: 0 < n@2
+assume_guard_0: i@1 < n@2
+assume_invariant_0_0: 0 <= i@1
+assume_invariant_0_1: i@1 <= n@2
+assume_invariant_0_2: s@3 == i@1 * (i@1 + 1) / 2
+assume_measure_0: $__loop_measure_0 == n@2 - i@1
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
 Obligation:
-$__n2 - ($__i5 + 1) < $__$__loop_measure_07
+n@2 - (i@1 + 1) < $__loop_measure_0
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-sum_requires_0: $__n2 >= 0
-assume_entry_invariant_0_1: 0 <= $__n2
-<label_ite_cond_true: i < n>: if 0 < $__n2 then 0 < $__n2 else true
-assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
-assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
-assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
-assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
-assume_measure_0: if 0 < $__n2 then $__$__loop_measure_07 == $__n2 - $__i5 else true
-not_guard_0: if 0 < $__n2 then !($__i8 < $__n2) else true
-invariant_0_0: if 0 < $__n2 then 0 <= $__i8 else true
-invariant_0_1: if 0 < $__n2 then $__i8 <= $__n2 else true
-invariant_0_2: if 0 < $__n2 then $__s9 == $__i8 * ($__i8 + 1) / 2 else true
-<label_ite_cond_false: !(i < n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
+sum_requires_0: n@2 >= 0
+assume_entry_invariant_0_1: 0 <= n@2
+<label_ite_cond_true: i < n>: if 0 < n@2 then 0 < n@2 else true
+assume_guard_0: if 0 < n@2 then i@1 < n@2 else true
+assume_invariant_0_0: if 0 < n@2 then 0 <= i@1 else true
+assume_invariant_0_1: if 0 < n@2 then i@1 <= n@2 else true
+assume_invariant_0_2: if 0 < n@2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+assume_measure_0: if 0 < n@2 then $__loop_measure_0 == n@2 - i@1 else true
+not_guard_0: if 0 < n@2 then !(i@2 < n@2) else true
+invariant_0_0: if 0 < n@2 then 0 <= i@2 else true
+invariant_0_1: if 0 < n@2 then i@2 <= n@2 else true
+invariant_0_2: if 0 < n@2 then s@4 == i@2 * (i@2 + 1) / 2 else true
+<label_ite_cond_false: !(i < n)>: if if 0 < n@2 then false else true then if 0 < n@2 then false else true else true
 Obligation:
-if 0 < $__n2 then $__s9 else 0 == $__n2 * ($__n2 + 1) / 2
+if 0 < n@2 then s@4 else 0 == n@2 * (n@2 + 1) / 2
 
 ---
 info:
@@ -341,7 +341,7 @@ program Core;
 const top : int;
 axiom [top100]: top == 100;
 
-procedure nested(n : int) returns (s : int)
+procedure nested(n : int, out s : int)
 spec {
   requires [n_pos]: n > 0;
   requires [n_lt_top]: n < top;
@@ -488,7 +488,7 @@ def precondElimInMeasurePgm :=
 #strata
 program Core;
 
-procedure countdownByD(n : int, d : int) returns (i : int)
+procedure countdownByD(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   requires (d > 0);
@@ -548,7 +548,7 @@ Result: ✅ pass
 def precondElimInMeasureBadPgm :=
 #strata
 program Core;
-procedure countdownByDBad(n : int, d : int) returns (i : int)
+procedure countdownByDBad(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   // requires (d > 0); NEED THIS
@@ -616,7 +616,7 @@ def precondElimMeasureBodyMutatesPgm :=
 #strata
 program Core;
 
-procedure countdownMutateD(n : int, d : int) returns (i : int)
+procedure countdownMutateD(n : int, d : int, out i : int)
 spec {
   requires (n >= 0);
   requires (d > 0);

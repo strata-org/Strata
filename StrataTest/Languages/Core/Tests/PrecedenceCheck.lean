@@ -17,7 +17,7 @@ function foo(a : bool, b : bool, c : bool, d : bool) : bool {
   (((!a) || b) && ((!c) || d))
 }
 
-procedure TestFoo () returns () {
+procedure TestFoo () {
   var a : bool, b : bool, c : bool, d : bool, imp_expr : bool, foo_expr : bool;
 
   assert [implies_and_eq_not_or_1]: (((a ==> b) && (c ==> d)) == foo(a, b, c, d));
@@ -41,27 +41,27 @@ VCs:
 Label: implies_and_eq_not_or_1
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a ==> b) && (c ==> d)) == foo(a, b, c, d)
 
 Label: implies_and_eq_not_or_2
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a ==> b) && (c ==> d)) == foo(a, b, c, d)
 
 Label: implies_and_eq_not_or_3
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a ==> b) && (c ==> d)) == foo(a, b, c, d)
 
 Label: implies_and_eq_not_or_4
 Property: assert
 Obligation:
-(($__a0 ==> $__b1) && ($__c2 ==> $__d3)) == foo($__a0, $__b1, $__c2, $__d3)
+((a ==> b) && (c ==> d)) == foo(a, b, c, d)
 
 Label: implies_equiv
 Property: assert
 Obligation:
-$__a0 ==> $__b1 <==> !$__a0 || $__b1
+a ==> b <==> !a || b
 
 ---
 info:

@@ -14,8 +14,7 @@ namespace Strata
 def exitPgm : Program :=
 #strata
 program Core;
-var g : bool;
-procedure Test1(x : bool) returns (y : bool)
+procedure Test1(x : bool, out y : bool)
 {
     l1: {
       assert [a1]: x == x;
@@ -25,7 +24,7 @@ procedure Test1(x : bool) returns (y : bool)
     assert [a3]: x == x;
 };
 
-procedure Test2(x : int) returns (y : bool)
+procedure Test2(x : int, out y : bool)
 {
     l5: {
       l4: {
@@ -76,16 +75,16 @@ true
 Label: a6
 Property: assert
 Assumptions:
-<label_ite_cond_true: x > 0>: $__x3 > 0
+<label_ite_cond_true: x > 0>: x@2 > 0
 Obligation:
-$__x3 * 2 > $__x3
+x@2 * 2 > x@2
 
 Label: a7
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(x > 0)>: if $__x3 > 0 then false else true
+<label_ite_cond_false: !(x > 0)>: if x@2 > 0 then false else true
 Obligation:
-$__x3 <= 0
+x@2 <= 0
 
 ---
 info:
@@ -128,7 +127,7 @@ end$_0:
   finish
 -/
 #guard_msgs in
-#eval (Std.format (singleCFG exitPgm 1))
+#eval (Std.format (singleCFG exitPgm 0))
 
 /--
 info: Entry: l5
@@ -161,4 +160,4 @@ end$_0:
   finish
 -/
 #guard_msgs in
-#eval (Std.format (singleCFG exitPgm 2))
+#eval (Std.format (singleCFG exitPgm 1))

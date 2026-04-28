@@ -1,12 +1,12 @@
 program Core;
 
-procedure Double (n : int) returns (result : int)
+procedure Double (n : int, out result : int)
 spec {
   ensures [double_correct]: result == n * 2;
   } {
   result := n + n;
 };
-procedure TestProc (x : int) returns (output : int)
+procedure TestProc (x : int, out output : int)
 spec {
   ensures [testProc_result]: output == x * 4;
   } {

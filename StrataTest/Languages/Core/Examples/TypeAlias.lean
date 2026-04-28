@@ -25,7 +25,7 @@ const fooVal : FooAlias (Foo int int);
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
-procedure P () returns () {
+procedure P () {
   assume [fooConst1_value]: (fooConst1 == fooVal);
   assume [fooConst2_value]: (fooConst2 == fooVal);
   assert [fooAssertion]: (fooConst1 == fooConst2);
@@ -45,7 +45,7 @@ const fooVal : FooAlias2 (Foo int int);
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
-procedure P () returns () {
+procedure P () {
   assume [fooConst1_value]: (fooConst1 == fooVal);
   assume [fooConst2_value]: (fooConst2 == fooVal);
   assert [fooAssertion]: (fooConst1 == fooConst2);
@@ -67,7 +67,7 @@ type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
 function fooVal () : FooAlias2 (Foo int int);
 function fooConst1 () : Foo int bool;
 function fooConst2 () : Foo int bool;
-procedure P () returns ()
+procedure P ()
 {
   assume [fooConst1_value]: fooConst1 == fooVal;
   assume [fooConst2_value]: fooConst2 == fooVal;
@@ -112,7 +112,7 @@ function MapGetEq (d: MapInt, k: int, v : int) : bool {
   MapInt_get (d, k) == v
 }
 
-procedure test () returns () {
+procedure test () {
   var d : MapInt, k : int, v : int, b : bool;
   b := MapGetEq(d, k, v);
   assume (v == 0);
@@ -128,9 +128,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-assume_0: $__v2 == 0
+assume_0: v == 0
 Obligation:
-MapGetEq($__d0, $__k1, $__v2) == MapGetEq($__d0, $__k1, 0)
+MapGetEq(d, k, v) == MapGetEq(d, k, 0)
 
 ---
 info:

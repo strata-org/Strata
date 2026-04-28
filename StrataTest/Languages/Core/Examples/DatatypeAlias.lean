@@ -23,7 +23,7 @@ type MyInt := int;
 
 datatype Box () { MkBox(value: MyInt) };
 
-procedure TestBoxAlias() returns ()
+procedure TestBoxAlias()
 spec {
   ensures true;
 }

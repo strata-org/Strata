@@ -587,7 +587,7 @@ partial def extractTriggerPatterns {M} [Inhabited M]
     let expr ← lexprToExpr trigger qLevel
     pure #[expr]
 
-/-- Convert a lambda abstraction to a CoreDDM `lambda` expression, reusing the
+/-- Convert a lambda abstraction to a CoreDDM `fun` expression, reusing the
     prettyName stored in the `abs` constructor as the bound variable name. -/
 partial def labsToExpr {M} [Inhabited M]
     (prettyName : String) (ty : Option Lambda.LMonoTy)
@@ -786,15 +786,22 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
       else
         ⟨default, none⟩
     pure (.cover default rcAnn labelAnn exprCST)
-  | .call lhs pname args _md => do
+  | .call pname coreCallArgs _md => do
     let pnameAnn : Ann String M := ⟨default, pname⟩
-    let argsCST ← args.toArray.mapM (fun a => lexprToExpr a 0)
-    let argsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, argsCST⟩
-    if lhs.isEmpty then
-      pure (.call_unit_statement default pnameAnn argsAnn)
-    else
-      let lhsAnn := ⟨default, lhs.toArray.map fun id => ⟨default, id.name⟩⟩
-      pure (.call_statement default lhsAnn pnameAnn argsAnn)
+    let mut callArgs : Array (CoreDDM.CallArg M) := #[]
+    for a in coreCallArgs do
+      match a with
+      | .inArg e =>
+        let exprCST ← lexprToExpr e 0
+        callArgs := callArgs.push (.callArgExpr default exprCST)
+      | .inoutArg id =>
+        let nameAnn : Ann String M := ⟨default, id.name⟩
+        callArgs := callArgs.push (.callArgInout default nameAnn)
+      | .outArg id =>
+        let nameAnn : Ann String M := ⟨default, id.name⟩
+        callArgs := callArgs.push (.callArgOut default nameAnn)
+    let callArgsAnn : Ann (Array (CoreDDM.CallArg M)) M := ⟨default, callArgs⟩
+    pure (.call_statement default pnameAnn callArgsAnn)
   | .block label stmts _md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     let blockCST ← blockToCST stmts
@@ -868,43 +875,36 @@ end
 /-- Convert a procedure to CST
 N.B.: We don't add the procedure name to the freeVars in the context.
 -/
+private inductive FormatParamKind where
+  | inParam | outParam | inoutParam
+
 def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   let typeArgs := mkTypeArgsAnn proc.header.typeArgs
-  let processInput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (Binding M × String) := do
+  let outputSet := proc.header.outputs.toArray.map (·.1)
+  let mkBinding' (id : CoreIdent) (ty : Lambda.LMonoTy) (kind : FormatParamKind) :
+      ToCSTM M (Binding M × String) := do
     let paramName : Ann String M := ⟨default, id.toPretty⟩
     let paramType ← lmonoTyToCoreType ty
-    let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
+    let binding := match kind with
+      | .outParam => Binding.outBinding default paramName (TypeP.expr paramType)
+      | .inoutParam => Binding.inoutBinding default paramName (TypeP.expr paramType)
+      | .inParam => Binding.mkBinding default paramName (TypeP.expr paramType)
     pure (binding, id.toPretty)
-  let inputResults ← proc.header.inputs.toArray.mapM (fun (id, ty) => processInput id ty)
-  let inputBindings := inputResults.map (·.1)
-  let inputNames := inputResults.map (·.2)
-  let inputs : Bindings M := .mkBindings default ⟨default, inputBindings⟩
-  let processOutput (id : CoreIdent) (ty : Lambda.LMonoTy) : ToCSTM M (MonoBind M × String) := do
-    let nameAnn : Ann String M := ⟨default, id.toPretty⟩
-    let tyCST ← lmonoTyToCoreType ty
-    pure (MonoBind.mono_bind_mk default nameAnn tyCST, id.toPretty)
-  let outputResults ← proc.header.outputs.toArray.mapM (fun (id, ty) => processOutput id ty)
-  let outputBinds := outputResults.map (·.1)
-  let outputNames := outputResults.map (·.2)
-  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · outputNames)
-  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · inputNames)
-  let outputs : Ann (Option (MonoDeclList M)) M :=
-    if outputBinds.isEmpty then
-      ⟨default, none⟩
-    else
-      let declList := outputBinds[1:].foldl
-        (fun acc bind => MonoDeclList.monoDeclPush default acc bind)
-        (MonoDeclList.monoDeclAtom default outputBinds[0]!)
-      ⟨default, some declList⟩
+  let mut allBindings : Array (Binding M × String) := #[]
+  for (id, ty) in proc.header.inputs.toArray do
+    let kind := if outputSet.contains id then FormatParamKind.inoutParam else .inParam
+    allBindings := allBindings.push (← mkBinding' id ty kind)
+  let inoutSet := proc.header.inputs.toArray.map (·.1)
+  for (id, ty) in proc.header.outputs.toArray do
+    if !inoutSet.contains id then
+      allBindings := allBindings.push (← mkBinding' id ty .outParam)
+  let allNames := allBindings.map (·.2)
+  modify (ToCSTContext.addScopedBoundVars (reverse? := false) · allNames)
+  let arguments : Bindings M := .mkBindings default ⟨default, allBindings.map (·.1)⟩
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
-  -- Add modifies
-  if !proc.spec.modifies.isEmpty then
-    let ids : Ann (Array (Ann String M)) M :=
-      ⟨default, proc.spec.modifies.toArray.map fun id => ⟨default, id.name⟩⟩
-    specElts := specElts.push (SpecElt.modifies_spec default ids)
   -- Add requires
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M :=
@@ -934,7 +934,7 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   let bodyCST ← blockToCST proc.body
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
-  pure (.command_procedure default name typeArgs inputs outputs spec body)
+  pure (.command_procedure default name typeArgs arguments spec body)
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.

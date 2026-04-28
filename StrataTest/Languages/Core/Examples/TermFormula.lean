@@ -62,7 +62,7 @@ function holds (@[cases] f : Formula) : bool
 
 // --- Concrete evaluation tests ---
 
-procedure TestEval() returns ()
+procedure TestEval()
 spec { ensures true; }
 {
   assert [add_neg]: eval(Add(Lit(3), Neg(Lit(2)))) == 1;
@@ -70,14 +70,14 @@ spec { ensures true; }
   assert [neg_neg]: eval(Neg(Neg(Lit(5)))) == 5;
 };
 
-procedure TestIte() returns ()
+procedure TestIte()
 spec { ensures true; }
 {
   assert [ite_true]: eval(Ite(Lt(Lit(3), Lit(5)), Lit(10), Lit(20))) == 10;
   assert [ite_false]: eval(Ite(Lt(Lit(5), Lit(3)), Lit(10), Lit(20))) == 20;
 };
 
-procedure TestFormula() returns ()
+procedure TestFormula()
 spec { ensures true; }
 {
   assert [eq_true]: holds(Eq(Lit(3), Add(Lit(1), Lit(2))));
@@ -93,7 +93,7 @@ spec { ensures true; }
 // --- Symbolic reasoning ---
 
 // For any term t, eval(Add(t, Neg(t))) == 0
-procedure AddNegCancel(t : Term) returns ()
+procedure AddNegCancel(t : Term)
 spec {
   ensures [cancel]: eval(Add(t, Neg(t))) == 0;
 }
@@ -101,7 +101,7 @@ spec {
 };
 
 // Double negation: eval(Neg(Neg(t))) == eval(t)
-procedure DoubleNeg(t : Term) returns ()
+procedure DoubleNeg(t : Term)
 spec {
   ensures [double_neg]: eval(Neg(Neg(t))) == eval(t);
 }
@@ -109,7 +109,7 @@ spec {
 };
 
 // Ite with a true condition evaluates to the then-branch
-procedure IteTrueBranch(t1 : Term, t2 : Term, phi : Formula) returns ()
+procedure IteTrueBranch(t1 : Term, t2 : Term, phi : Formula)
 spec {
   requires holds(phi);
   ensures [ite_then]: eval(Ite(phi, t1, t2)) == eval(t1);
@@ -118,7 +118,7 @@ spec {
 };
 
 // Ite with a false condition evaluates to the else-branch
-procedure IteFalseBranch(t1 : Term, t2 : Term, phi : Formula) returns ()
+procedure IteFalseBranch(t1 : Term, t2 : Term, phi : Formula)
 spec {
   requires !holds(phi);
   ensures [ite_else]: eval(Ite(phi, t1, t2)) == eval(t2);
@@ -127,7 +127,7 @@ spec {
 };
 
 // holds(FNot(FNot(f))) <==> holds(f)
-procedure DoubleNegFormula(f : Formula) returns ()
+procedure DoubleNegFormula(f : Formula)
 spec {
   ensures [dneg_formula]: holds(FNot(FNot(f))) == holds(f);
 }
@@ -135,7 +135,7 @@ spec {
 };
 
 // De Morgan: not(and(p,q)) <==> or(not p, not q)
-procedure DeMorgan(p : Formula, q : Formula) returns ()
+procedure DeMorgan(p : Formula, q : Formula)
 spec {
   ensures [demorgan]: holds(FNot(FAnd(p, q))) == holds(FOr(FNot(p), FNot(q)));
 }
@@ -143,7 +143,7 @@ spec {
 };
 
 // Eq is reflexive
-procedure EqRefl(t : Term) returns ()
+procedure EqRefl(t : Term)
 spec {
   ensures [eq_refl]: holds(Eq(t, t));
 }

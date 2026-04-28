@@ -1,6 +1,6 @@
 program Core;
 
-procedure TestProc (x : int) returns (output : int)
+procedure TestProc (x : int, out output : int)
 spec {
   ensures [testProc_result]: output == x * 4;
   } {

@@ -19,8 +19,6 @@ namespace Evaluator
 inductive Stats where
   /-- Number of function/operator definitions in the Factory at evaluation start. -/
   | factoryOps
-  /-- Number of global variable declarations in the input program. -/
-  | globalVars
   /-- Number of type declarations in the input program. -/
   | typeDecls
   /-- Number of axiom declarations in the input program. -/

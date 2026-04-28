@@ -24,7 +24,7 @@ def issue436Pgm : Strata.Program :=
 #strata
 program Core;
 
-procedure test(cond : bool, x : int, y : int) returns () {
+procedure test(cond : bool, x : int, y : int) {
   if (cond) {
     function f(a : int) : int { a + x }
     var r1 : int := f(10);
@@ -42,7 +42,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-procedure test (cond : bool, x : int, y : int) returns ()
+procedure test (cond : bool, x : int, y : int)
 {
   if (cond) {
     function f (a : int) : int { a + x }
@@ -68,7 +68,7 @@ def blockScopePgm :=
 #strata
 program Core;
 
-procedure test() returns () {
+procedure test() {
   var x : int;
   x := 1;
   blk: {
@@ -87,7 +87,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-procedure test () returns ()
+procedure test ()
 {
   var x : int;
   x := 1;
@@ -112,7 +112,7 @@ def issue445Pgm :=
 #strata
 program Core;
 
-procedure test() returns ()
+procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
@@ -129,7 +129,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-procedure test () returns ()
+procedure test ()
 {
   var x : int := 1;
   function safeDiv (y : int) : int { y div x }

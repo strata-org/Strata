@@ -13,7 +13,10 @@ public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprT
+public import Strata.DL.Imperative.StmtEval
+public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.CmdEval
 
 ---------------------------------------------------------------------
 
@@ -91,28 +94,6 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   let lhs_post_subst := List.zip lhs_typed lhs_fvars
   (return_lhs_subst, lhs_post_subst, E')
 
-/--
-Create mapping for all globals: fresh variables for modified globals,
-current values for unmodified globals.
--/
-private def mkGlobalSubst (proc : Procedure) (current_globals : VarSubst)
-    (E : Env) : VarSubst × Env :=
-  -- Create fresh variables for modified globals
-  let modifies_tys := proc.spec.modifies.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-  let modifies_typed := proc.spec.modifies.zip modifies_tys
-  let (globals_fvars, E') := E.genFVars modifies_typed
-  let modified_subst := List.zip modifies_typed globals_fvars
-  -- Get current values for unmodified globals
-  let unmodified_subst := current_globals.filter (fun ((id, _), _) =>
-    !proc.spec.modifies.contains id)
-  (modified_subst ++ unmodified_subst, E')
-
-/--
-Get current values of global variables for old expression substitution.
--/
-private def getCurrentGlobals (E : Env) : VarSubst :=
-  E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
@@ -157,36 +138,28 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
   | .error _ => Subst.empty
 
 /--
-Evaluate a procedure call `lhs := pname(args)`.
+Evaluate a procedure call by inlining its contract.
+`args` and `lhs` are matched positionally against
+`proc.header.inputs` and `proc.header.outputs` respectively.
 -/
-def Command.evalCall (E : Env)
+def Command.inlineCallContract (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
-    -- Compute type substitution to instantiate polymorphic type variables.
     let tySubst := computeTypeSubst proc.header.inputs.values
       proc.header.outputs.values args lhs E
 
-    -- (Pre-call) Create formal-to-actual argument mapping.
+    -- positional: formal_arg_subst zips header.inputs.keys with args
     let formal_arg_subst := mkFormalArgSubst proc args E
-    -- (Pre-call) Get current global values for old expression handling.
-    let current_globals := getCurrentGlobals E
-    -- (Post-call) Create return variable mappings and fresh LHS variables.
+    -- positional: return_lhs_subst zips header.outputs.keys with lhs
     let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
-    -- (Post-call) Create global variable mapping: fresh vars for modified,
-    -- current values for unmodified.
-    let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
 
     -- Apply type substitution to preconditions to instantiate type variables.
     let preconditions_typed := proc.spec.preconditions.map
         (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
-    -- Create pre-call substitution for preconditions.
-    let precond_subst := formal_arg_subst ++ current_globals
     -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires preconditions_typed precond_subst
-    -- It's safe to evaluate the preconditions in the current environment
-    -- (pre-call context).
+    let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
     let preconditions := preconditions.map
         (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
@@ -195,30 +168,30 @@ def Command.evalCall (E : Env)
     -- Apply type substitution to postconditions to instantiate type variables.
     let postconditions_typed := proc.spec.postconditions.map
         (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
-    -- Create post-call substitution for postconditions.
-    let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
-    -- Build "old g" substitutions: map "old g" → pre-call value of g
-    let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
-      let oldId : CoreIdent := CoreIdent.mkOld id.name
-      some ((oldId, ty), e)
-    -- Substitute: args/returns with fresh vars, globals with post-call fresh vars, "old g" with pre-call values
-    let postcond_subst_map := postcond_subst_init ++ globals_post_subst ++ old_g_subst
-    let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst_map
+    -- For inout parameters (in both inputs and outputs), the output mapping
+    -- to a fresh post-call variable is the correct one; remove the duplicate
+    -- input mapping so there is no ambiguity.
+    let outputNames := proc.header.outputs.keys
+    let formal_arg_subst_filtered := formal_arg_subst.filter fun ((id, _), _) =>
+      !outputNames.contains id
+    let postcond_subst := return_lhs_subst ++ formal_arg_subst_filtered
+    let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst
 
     -- Add postconditions to path conditions.
     let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
     let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
 
     -- Update environment with post-call state.
-    let post_subst := globals_post_subst ++ lhs_post_subst
-    let post_vars_mdata := post_subst.map
+    let post_vars_mdata := lhs_post_subst.map
         (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
     let md' := md ++ post_vars_mdata.toArray
-    let c' := CmdExt.call lhs pname args md'
-    let E := E.addToContext post_subst
+    let callArgs := args.map .inArg ++ lhs.map .outArg
+    let c' := CmdExt.call pname callArgs md'
+    let E := E.addToContext lhs_post_subst
     (c', E)
   | _ =>
-    let c' := CmdExt.call lhs pname args md
+    let callArgs := args.map .inArg ++ lhs.map .outArg
+    let c' := CmdExt.call pname callArgs md
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
 
@@ -227,8 +200,10 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
   | .cmd c =>
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
-  | .call lhs pname args md =>
-    Command.evalCall E lhs pname args md
+  | .call pname callArgs md =>
+    let lhs := CallArg.getLhs callArgs
+    let inArgs := CallArg.getInputExprs callArgs
+    Command.inlineCallContract E lhs pname inArgs md
 
 ---------------------------------------------------------------------
 
@@ -776,6 +751,91 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match (eval E old_var_subst ss).fst with
   | [E'] => E'
   | _ => ({ E with error := some (.Misc "More than one result environment") })
+
+---------------------------------------------------------------------
+
+mutual
+
+/--
+Interpret a single procedure call.
+
+Importantly, this creates a separate Env to execute the body of the procedure with,
+which initially only contains input/output variables.
+The resulting Env is the original passed in Env with the output variables copied back into it.
+-/
+def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)
+    (fuel : Nat) (E : Env) : Env :=
+    match fuel with
+    | 0 => { E with error := some .OutOfFuel }
+    | fuel' + 1 =>
+    match Program.Procedure.find? E.program ⟨procName, ()⟩ with
+    | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
+    | some proc =>
+      if proc.body.isEmpty then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
+      else
+        match args.mapM (LExpr.run E.exprEnv) with
+        | .error s => CmdEval.updateError E (.Misc s)
+        | .ok argVals =>
+          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
+            |>.map fun ((name, ty), val) => (name, (some ty, val))
+          if argVals.length != proc.header.inputs.keys.length then
+            CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.inputs.keys.length} arguments, got {argVals.length}")
+          else
+            let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+              proc.header.outputs.keys.zip proc.header.outputs.values
+              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+            let callEnv : Env := { E with
+              exprEnv := { E.exprEnv with
+                state := [formalBindings ++ outputBindings] } }
+            let ops : Imperative.RunOps Expression Command Env := {
+              evalExpr := fun E e =>
+                some (e.eval E.exprEnv.config.fuel E.exprEnv)
+              evalCmd := Command.run fuel'
+              extendEval := fun E decl =>
+                match E.addFactoryFunc {
+                  name := decl.name
+                  typeArgs := decl.typeArgs
+                  isConstr := decl.isConstr
+                  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
+                  output := Lambda.LTy.toMonoTypeUnsafe decl.output
+                  body := decl.body
+                  attr := decl.attr
+                  concreteEval := decl.concreteEval
+                  axioms := decl.axioms
+                } with
+                | .ok E' => E'
+                | .error _ => E
+              pushScope := fun E => E.pushEmptyScope
+              popScope := fun E => E.popScope
+              hasError := fun E => E.error.isSome
+              addError := fun E msg => CmdEval.updateError E (.Misc msg)
+            }
+            let config : Imperative.RunConfig Expression Command Env :=
+              .stmts proc.body callEnv
+            let configAfter := Imperative.runStmt ops fuel' config
+            match configAfter with
+            | .terminal callEnv' =>
+              match callEnv'.error with
+              | some _ => { E with error := callEnv'.error }
+              | none =>
+                if lhs.length != proc.header.outputs.keys.length then
+                  CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
+                else
+                  let outputVals := proc.header.outputs.keys.map fun name =>
+                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+                  lhs.zip outputVals |>.foldl (fun env (name, val) =>
+                    env.insertInContext (name, none) val) E
+            | _ => CmdEval.updateError E (.Misc "failed to terminate")
+
+def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
+  match c with
+  | .cmd c =>
+    Imperative.Cmd.run E c
+  | .call pname args _md =>
+    Command.runCall (CallArg.getLhs args) pname (CallArg.getInArgs args) fuel E
+
+end
 
 end Statement
 end Core

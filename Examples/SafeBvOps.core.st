@@ -1,6 +1,6 @@
 program Core;
 
-procedure safe_bv_ops(x: bv32, y: bv32) returns (r: bv32)
+procedure safe_bv_ops(x: bv32, y: bv32, out r: bv32)
 {
     var a: bv32;
     var b: bv32;

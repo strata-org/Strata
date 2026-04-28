@@ -23,7 +23,7 @@ function myFunc (b : bool, x : int) : int {
   if b then 10 else 1 + x
 }
 
-procedure Test() returns ()
+procedure Test()
 spec {
   ensures true;
 }

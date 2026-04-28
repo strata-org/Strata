@@ -70,7 +70,7 @@ def StrataResult.toStr : StrataResult → String
 /-- Build a Core program that asserts str.in.re(testStr, regexExpr). -/
 def mkProgText (testStr : String) (regexStr : String) : String :=
   "program Core;\n" ++
-  "procedure main() returns () {\n" ++
+  "procedure main() {\n" ++
   s!"  assert [match_check]: (str.in.re(\"{escapeForCore testStr}\", {regexStr}));\n" ++
   "};"
 

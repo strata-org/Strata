@@ -145,15 +145,14 @@ program Core;
 
 datatype IntList () { Nil(), Cons(head: int, tail: IntList) };
 
-procedure Test1(x : bool) returns (y : bool)
+procedure Test1(x : bool, out y : bool)
 {
   y := x;
 };
 
 function intId(x : int): int;
-var g : bool;
 
-procedure Test2(x : bool) returns (y : bool)
+procedure Test2(x : bool, g : bool, out y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
@@ -163,9 +162,9 @@ spec {
 } {
   var b0 : bool;
   y := x || x;
-  call b0 := Test1(5);
+  call Test1(5, out b0);
   var b1 : bool;
-  call b1 := Test1(6);
+  call Test1(6, out b1);
 };
 
 function boolId(x : bool): bool;
@@ -178,13 +177,12 @@ datatype IntList {
   Nil(),
   Cons(head : int, tail : IntList)
 };
-procedure Test1 (x : bool) returns (y : bool)
+procedure Test1 (x : bool, out y : bool)
 {
   y := x;
 };
 function intId (x : int) : int;
-var g : bool;
-procedure Test2 (x : bool) returns (y : bool)
+procedure Test2 (x : bool, g : bool, out y : bool)
 spec {
   ensures [Test2_ensures_0]: y == x;
   ensures [Test2_ensures_1]: x == y;
@@ -194,9 +192,9 @@ spec {
   } {
   var b0 : bool;
   y := x || x;
-  call b0 := Test1(5);
+  call Test1(5, out b0);
   var b1 : bool;
-  call b1 := Test1(6);
+  call Test1(6, out b1);
 };
 function boolId (x : bool) : bool;
 -/
@@ -211,7 +209,7 @@ program Core;
 
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
 
-procedure Extract<a>(xs : List a) returns (h : a)
+procedure Extract<a>(xs : List a, out h : a)
 spec { requires List..isCons(xs); } {
 };
 #end
@@ -224,11 +222,11 @@ datatype List (a : Type) {
   Nil(),
   Cons(head : a, tail : List a)
 };
-procedure Extract<a> (xs : List a) returns (h : (a))
+procedure Extract<a> (xs : List a, out h : a)
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
-  
+  ⏎
 };
 -/
 #guard_msgs in
@@ -243,7 +241,7 @@ program Core;
 function identity<a>(x : a) : a;
 function makePair<a, b>(x : a, y : b) : Map a b;
 
-procedure TestDifferentInstantiations() returns ()
+procedure TestDifferentInstantiations()
 {
   var m : Map int bool;
   m := makePair(identity(42), identity(true));
@@ -255,7 +253,7 @@ info: program Core;
 
 function identity<a> (x : a) : a;
 function makePair<a, b> (x : a, y : b) : Map a b;
-procedure TestDifferentInstantiations () returns ()
+procedure TestDifferentInstantiations ()
 {
   var m : (Map int bool);
   m := makePair(identity(42), identity(true));
@@ -270,7 +268,7 @@ private def bitvecPgm :=
 #strata
 program Core;
 
-procedure P(x: bv8, y: bv8, z: bv8) returns () {
+procedure P(x: bv8, y: bv8, z: bv8) {
   assert [add_comm]: x + y == y + x;
   assert [xor_cancel]: x ^ x == bv{8}(0);
   assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
@@ -287,7 +285,7 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 /--
 info: program Core;
 
-procedure P (x : bv8, y : bv8, z : bv8) returns ()
+procedure P (x : bv8, y : bv8, z : bv8)
 {
   assert [add_comm]: x + y == y + x;
   assert [xor_cancel]: x ^ x == bv{8}(0);
@@ -313,7 +311,7 @@ program Core;
   datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) }
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
 
-procedure TestPolyRoseTreeHavoc() returns ()
+procedure TestPolyRoseTreeHavoc()
 spec {
   ensures true;
 }
@@ -340,7 +338,7 @@ datatype Forest (a : Type) {
 datatype RoseTree (a : Type) {
   Node(val : a, children : Forest a)
 };
-procedure TestPolyRoseTreeHavoc () returns ()
+procedure TestPolyRoseTreeHavoc ()
 spec {
   ensures [TestPolyRoseTreeHavoc_ensures_0]: true;
   } {
@@ -364,7 +362,7 @@ private def funcDeclStmtPgm : Program :=
 #strata
 program Core;
 
-procedure testFuncDecl(c: int) returns () {
+procedure testFuncDecl(c: int) {
   function double(x : int) : int { x + x + c }
   var y : int := 5;
   var result : int := double(y);
@@ -376,7 +374,7 @@ procedure testFuncDecl(c: int) returns () {
 /--
 info: program Core;
 
-procedure testFuncDecl (c : int) returns ()
+procedure testFuncDecl (c : int)
 {
   function double (x : int) : int { x + x + c }
   var y : int := 5;
@@ -393,7 +391,7 @@ private def findMaxPgm : Program :=
 #strata
 program Core;
 
-procedure find_max(nums: Map bv64 bv32, nums_len: bv64) returns (ret: bv32)
+procedure find_max(nums: Map bv64 bv32, nums_len: bv64, out ret: bv32)
 spec {
   requires ((nums_len > bv{64}(0)));
   ensures (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) ==> (ret >=s (nums[x0]))));
@@ -424,7 +422,7 @@ spec {
 /--
 info: program Core;
 
-procedure find_max (nums : Map bv64 bv32, nums_len : bv64) returns (ret : bv32)
+procedure find_max (nums : Map bv64 bv32, nums_len : bv64, out ret : bv32)
 spec {
   requires [find_max_requires_0]: nums_len > bv{64}(0);
   ensures [find_max_ensures_1]: forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len ==> ret >=s nums[__q0];
@@ -529,7 +527,7 @@ private def nondetCondPgm : Program :=
 #strata
 program Core;
 
-procedure TestNondetIf() returns ()
+procedure TestNondetIf()
 {
   var x : int := 0;
   if * {
@@ -540,7 +538,7 @@ procedure TestNondetIf() returns ()
   assert [x_pos]: x >= 0;
 };
 
-procedure TestNondetWhile() returns ()
+procedure TestNondetWhile()
 {
   var x : int := 0;
   while *
@@ -555,7 +553,7 @@ procedure TestNondetWhile() returns ()
 /--
 info: program Core;
 
-procedure TestNondetIf () returns ()
+procedure TestNondetIf ()
 {
   var x : int := 0;
   if * {
@@ -565,7 +563,7 @@ procedure TestNondetIf () returns ()
   }
   assert [x_pos]: x >= 0;
 };
-procedure TestNondetWhile () returns ()
+procedure TestNondetWhile ()
 {
   var x : int := 0;
   while *
@@ -578,6 +576,61 @@ procedure TestNondetWhile () returns ()
 -/
 #guard_msgs in
 #eval ASTtoCST nondetCondPgm
+
+-------------------------------------------------------------------------------
+-- Test: call statements with out and inout args (roundtrip formatting)
+-------------------------------------------------------------------------------
+
+private def callArgKindsPgm : Program :=
+#strata
+program Core;
+
+procedure Callee(x : int, inout y : int, out z : int)
+spec {
+  ensures z == x + y;
+  ensures y == old y + 1;
+} {
+  z := x + y;
+  y := y + 1;
+};
+
+procedure UnitCallee(a : int) {
+  assert a > 0;
+};
+
+procedure Caller(inout g : int, out result : int) {
+  var tmp : int := 0;
+  call Callee(42, inout g, out tmp);
+  call Callee(tmp, inout g, out result);
+  call UnitCallee(result);
+};
+#end
+
+/--
+info: program Core;
+
+procedure Callee (x : int, inout y : int, out z : int)
+spec {
+  ensures [Callee_ensures_0]: z == x + y;
+  ensures [Callee_ensures_1]: y == old y + 1;
+  } {
+  z := x + y;
+  y := y + 1;
+};
+procedure UnitCallee (a : int)
+{
+  assert [assert_0]: a > 0;
+};
+procedure Caller (inout g : int, out result : int)
+{
+  var tmp : int := 0;
+  call Callee(42, inout g, out tmp);
+  call Callee(tmp, inout g, out result);
+  call UnitCallee(result);
+};
+-/
+#guard_msgs in
+#eval ASTtoCST callArgKindsPgm
 
 -------------------------------------------------------------------------------
 
@@ -599,7 +652,7 @@ private def lambdaIdentityPgm : Core.Program := { decls := [
 info: program Core;
 
 function intID () : int -> int {
-  lambda __q0 : int :: __q0
+  fun __q0 : int => __q0
 }
 -/
 #guard_msgs in
@@ -616,7 +669,7 @@ private def lambdaNestedPgm : Core.Program := { decls := [
 info: program Core;
 
 function constFn () : int -> int -> int {
-  lambda __q0 : int :: lambda __q1 : int :: __q0
+  fun __q0 : int => fun __q1 : int => __q0
 }
 -/
 #guard_msgs in
@@ -632,10 +685,63 @@ private def lambdaNamedPgm : Core.Program := { decls := [
 info: program Core;
 
 function namedLam () : int -> int {
-  lambda x : int :: x
+  fun x : int => x
 }
 -/
 #guard_msgs in
 #eval formatCore lambdaNamedPgm
+
+-- Lambda applied to an argument (expression application)
+private def lambdaAppliedPgm : Core.Program := { decls := [
+  .func { name := "test", typeArgs := [], inputs := [],
+          output := .int,
+          body := some (.app () (.abs () "x" (.some .int) (.bvar () 0)) (.intConst () 5)) } .empty
+]}
+
+/--
+info: program Core;
+
+function test () : int {
+  (fun x : int => x)(5)
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaAppliedPgm
+
+-- Multi-binding lambda (curried): fun x : int => fun y : int => x + y
+private def lambdaMultiBindPgm : Core.Program := { decls := [
+  .func { name := "add", typeArgs := [], inputs := [],
+          output := .arrow .int (.arrow .int .int),
+          body := some (.abs () "x" (.some .int)
+            (.abs () "y" (.some .int)
+              (.app () (.app () Core.intAddOp (.bvar () 1)) (.bvar () 0)))) } .empty
+]}
+
+/--
+info: program Core;
+
+function add () : int -> int -> int {
+  fun x : int => fun y : int => x + y
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaMultiBindPgm
+
+-- Higher-order lambda: lambda that takes a function argument
+private def lambdaHigherOrderPgm : Core.Program := { decls := [
+  .func { name := "applyFn", typeArgs := [], inputs := [],
+          output := .arrow (.arrow .int .int) (.arrow .int .int),
+          body := some (.abs () "f" (.some (.arrow .int .int))
+            (.abs () "x" (.some .int)
+              (.app () (.bvar () 1) (.bvar () 0)))) } .empty
+]}
+
+/-- info: program Core;
+
+function applyFn () : int -> int -> int -> int {
+  fun f : int -> int => fun x : int => f(x)
+}-/
+#guard_msgs in
+#eval formatCore lambdaHigherOrderPgm
 
 end Strata.Test

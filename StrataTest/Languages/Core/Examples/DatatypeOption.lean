@@ -30,7 +30,7 @@ program Core;
 // Define Option datatype with None() and Some(val: int) constructors
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionTesters() returns ()
+procedure TestOptionTesters()
 spec {
   ensures true;
 }
@@ -99,7 +99,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionHavoc() returns ()
+procedure TestOptionHavoc()
 spec {
   ensures true;
 }
@@ -147,7 +147,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionExhaustive() returns ()
+procedure TestOptionExhaustive()
 spec {
   ensures true;
 }
@@ -192,7 +192,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionMutualExclusion() returns ()
+procedure TestOptionMutualExclusion()
 spec {
   ensures true;
 }
@@ -240,7 +240,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionEquality() returns ()
+procedure TestOptionEquality()
 spec {
   ensures true;
 }
@@ -297,7 +297,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionInequality() returns ()
+procedure TestOptionInequality()
 spec {
   ensures true;
 }
@@ -343,7 +343,7 @@ program Core;
 
 datatype Option () { None(), Some(val: int) };
 
-procedure TestOptionDestructor() returns ()
+procedure TestOptionDestructor()
 spec {
   ensures true;
 }

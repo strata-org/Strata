@@ -86,7 +86,7 @@ open Strata.C_Simp in
 /--
 info: program Core;
 
-procedure linearSearch (arr : intArr, e : int) returns (return : bool)
+procedure linearSearch (arr : intArr, e : int, out return : bool)
 spec {
   requires [pre]: true;
   ensures [post]: true;

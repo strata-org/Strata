@@ -24,7 +24,7 @@ axiom [a2]: y == 2;
 function f(x: int): int;
 axiom [f1]: (forall y : int :: f(y) > y);
 
-procedure P() returns (ret : int)
+procedure P(out ret : int)
   spec {
     ensures [use_f1]: ret > 7;
   }
@@ -33,7 +33,7 @@ procedure P() returns (ret : int)
   ret := f(x + y);
 };
 
-procedure P2() returns ()
+procedure P2()
 {
   assert [use_a1_again]: y == 2;
   assert [use_a2_again]: f(y) > y;
@@ -117,7 +117,7 @@ axiom [f_g_ax]: (forall x : int :: { f(x) } f(x) == g(x) + 1);
 // dependency analysis to include this axiom in all goals involving `f(x)`.
 axiom [g_ax]:   (forall x : int :: { g(x), f(x) } g(x) == x * 2);
 
-procedure main (x : int) returns () {
+procedure main (x : int) {
 
 assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 };
@@ -144,7 +144,7 @@ f_g_ax: forall __q0 : int ::  { f(__q0) }
 g_ax: forall __q0 : int ::  { g(__q0), f(__q0) }
   g(__q0) == __q0 * 2
 Obligation:
-$__x0 >= 0 ==> f($__x0) > $__x0
+x@1 >= 0 ==> f(x@1) > x@1
 
 ---
 info:

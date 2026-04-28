@@ -24,15 +24,9 @@ function is_present(opt : OptionInt) : bool {
     OptionInt..isSome(opt)
 }
 
-// --- Global State ---
-var registry : Map int OptionInt;
-var count : int;
-
 // --- Procedures ---
-procedure Register(id : int, value : int) returns ()
+procedure Register(id : int, value : int, inout registry : Map int OptionInt, inout count : int)
 spec {
-    modifies registry;
-    modifies count;
     requires [id_not_in_registry]: !is_present(registry[id]);
     ensures  [registry_id_eq_val]: registry[id] == Some(value);
     ensures  [count_incremented]:  count == old count + 1;
@@ -42,7 +36,7 @@ spec {
     count := count + 1;
 };
 
-procedure GetValue(id : int) returns (res : OptionInt)
+procedure GetValue(id : int, registry : Map int OptionInt, out res : OptionInt)
 spec {
     requires [id_ge_zero]:  id >= 0;
     ensures [value_for_id]: res == registry[id];
@@ -51,19 +45,17 @@ spec {
     res := registry[id];
 };
 
-procedure Main() returns ()
+procedure Main(inout registry : Map int OptionInt, inout count : int)
 spec {
-    modifies registry;
-    modifies count;
 }
 {
     assume [count_eq_zero]: count == 0;
     assume [registry_empty]: (forall i : int :: {registry[i]} registry[i] == None());
 
-    call Register(101, 500);
+    call Register(101, 500, registry, count, out registry, out count);
 
     var result : OptionInt;
-    call result := GetValue(101);
+    call GetValue(101, registry, out result);
 
     if (OptionInt..isSome(result)) {
         assert [value_of_101]: OptionInt..val(result) == 500;
@@ -89,11 +81,11 @@ Obligation: value_for_id
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_id_not_in_registry_7
+Obligation: callElimAssert_id_not_in_registry_12
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_id_ge_zero_2
+Obligation: callElimAssert_id_ge_zero_3
 Property: assert
 Result: ✅ pass
 

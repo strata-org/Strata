@@ -16,10 +16,7 @@ def oldModifiesPgm :=
 #strata
 program Core;
 
-var g : bool;
-var i : bool;
-
-procedure f(x : bool) returns (z : bool)
+procedure f(x : bool, inout g : bool, out z : bool)
 spec {
   ensures (z == old g);
   // g is not listed in modifies
@@ -28,26 +25,24 @@ spec {
   z := g;
 };
 
-procedure h_correct() returns (r : bool)
+procedure h_correct(inout g : bool, i : bool, out r : bool)
 spec {
   requires (g == false);
   ensures (r == true);
-  modifies g;
 }
 {
   g := true;
-  call r := f(i);
+  call f(i, g, out g, out r);
 };
 
-procedure h_incorrect() returns (r : bool)
+procedure h_incorrect(inout g : bool, i : bool, out r : bool)
 spec {
   requires (g == false);
   ensures (r == false);
-  modifies g;
 }
 {
   g := true;
-  call r := f(i);
+  call f(i, g, out g, out r);
 };
 #end
 

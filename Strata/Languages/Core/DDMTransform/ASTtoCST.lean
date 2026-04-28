@@ -213,24 +213,9 @@ def distinctToCST {M} [Inhabited M] (name : Core.CoreIdent) (es : List (Lambda.L
   let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
   pure (.command_distinct default labelAnn exprsAnn)
 
-/-- Convert a variable declaration to CST -/
-def varToCST {M} [Inhabited M]
-    (name : Core.CoreIdent) (ty : Lambda.LTy) (_e : Imperative.ExprOrNondet Expression)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  -- Register name as free variable
-  modify (·.addGlobalFreeVars #[name.toPretty])
-  let nameAnn : Ann String M := ⟨default, name.toPretty⟩
-  let tyCST ← lTyToCoreType ty
-  let typeArgs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
-  let bind := Bind.bind_mk default nameAnn typeArgs tyCST
-  pure (.command_var default bind)
-
 /-- Convert a `Core.Decl` to a Core `Command` -/
 def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
   match decl with
-  | .var name ty e md => do
-    let cmd ← varToCST name ty e md
-    pure [cmd]
   | .type (.con tcons) md => do
     let cmd ← typeConToCST tcons md
     pure [cmd]

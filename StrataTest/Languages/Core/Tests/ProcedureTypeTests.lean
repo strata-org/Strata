@@ -15,7 +15,7 @@ open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /--
-info: ok: (procedure P (x : int) returns (y : int)
+info: ok: (procedure P (x : int, out y : int)
  spec {
    requires [|0_lt_x|]: 0 < x;
    ensures [ret_y_lt_0]: y < 0;
@@ -34,8 +34,7 @@ info: ok: (procedure P (x : int) returns (y : int)
                                           typeArgs := [],
                                           inputs := [("x", mty[int])],
                                           outputs := [("y", mty[int])] },
-                               spec := { modifies := [],
-                                         preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
+                               spec := { preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                                          postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                                body := [
                                  Statement.set "y" eb[((~Int.Sub #0) x)] .empty

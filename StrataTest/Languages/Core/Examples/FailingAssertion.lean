@@ -16,11 +16,8 @@ program Core;
 
 type MapII := Map int int;
 
-var a : MapII;
-
-procedure P() returns ()
+procedure P(inout a : MapII)
 spec {
-  modifies a;
   requires a[0] == 0;
 }
 {
@@ -40,11 +37,9 @@ info: true
 info: program Core;
 
 type MapII := Map int int;
-var a : MapII;
-procedure P () returns ()
+procedure P (inout a : MapII)
 spec {
-  modifies a;
-  requires [P_requires_1]: a[0] == 0;
+  requires [P_requires_0]: a[0] == 0;
   } {
   assert [assert_0]: a[0] == 1;
 };
@@ -67,7 +62,7 @@ private def failingThrice :=
 #strata
 program Core;
 
-procedure P(x : int) returns ()
+procedure P(x : int)
 spec {
   requires x != 0;
 }

@@ -13,7 +13,7 @@ def procIfPgm : Program :=
 #strata
 program Core;
 
-procedure F(n : int) returns (r : int)
+procedure F(n : int, out r : int)
 spec {
   ensures [n_gt_100_postcond]: 100 < n ==> r == n - 10;
   ensures [n_le_100_postcond]: n <= 100 ==> r == 91;
@@ -25,8 +25,8 @@ spec {
    }
    else
    {
-       call r := F(n + 11);
-       call r := F(r);
+       call F(n + 11, out r);
+       call F(r, out r);
    }
 };
 #end
@@ -39,26 +39,26 @@ VCs:
 Label: n_gt_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: 100 < n>: if 100 < $__n0 then 100 < $__n0 else true
-<label_ite_cond_false: !(100 < n)>: if if 100 < $__n0 then false else true then if 100 < $__n0 then false else true else true
-callElimAssume_n_gt_100_postcond_6: if if 100 < $__n0 then false else true then 100 < $__n0 + 11 ==> $__r2 == $__n0 + 11 - 10 else true
-callElimAssume_n_le_100_postcond_7: if if 100 < $__n0 then false else true then $__n0 + 11 <= 100 ==> $__r2 == 91 else true
-callElimAssume_n_gt_100_postcond_2: if if 100 < $__n0 then false else true then 100 < $__r2 ==> $__r3 == $__r2 - 10 else true
-callElimAssume_n_le_100_postcond_3: if if 100 < $__n0 then false else true then $__r2 <= 100 ==> $__r3 == 91 else true
+<label_ite_cond_true: 100 < n>: if 100 < n@1 then 100 < n@1 else true
+<label_ite_cond_false: !(100 < n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
+callElimAssume_n_gt_100_postcond_6: if if 100 < n@1 then false else true then 100 < n@1 + 11 ==> r@2 == n@1 + 11 - 10 else true
+callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@1 + 11 <= 100 ==> r@2 == 91 else true
+callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
+callElimAssume_n_le_100_postcond_3: if if 100 < n@1 then false else true then r@2 <= 100 ==> r@3 == 91 else true
 Obligation:
-100 < $__n0 ==> if 100 < $__n0 then $__n0 - 10 else $__r3 == $__n0 - 10
+100 < n@1 ==> if 100 < n@1 then n@1 - 10 else r@3 == n@1 - 10
 
 Label: n_le_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: 100 < n>: if 100 < $__n0 then 100 < $__n0 else true
-<label_ite_cond_false: !(100 < n)>: if if 100 < $__n0 then false else true then if 100 < $__n0 then false else true else true
-callElimAssume_n_gt_100_postcond_6: if if 100 < $__n0 then false else true then 100 < $__n0 + 11 ==> $__r2 == $__n0 + 11 - 10 else true
-callElimAssume_n_le_100_postcond_7: if if 100 < $__n0 then false else true then $__n0 + 11 <= 100 ==> $__r2 == 91 else true
-callElimAssume_n_gt_100_postcond_2: if if 100 < $__n0 then false else true then 100 < $__r2 ==> $__r3 == $__r2 - 10 else true
-callElimAssume_n_le_100_postcond_3: if if 100 < $__n0 then false else true then $__r2 <= 100 ==> $__r3 == 91 else true
+<label_ite_cond_true: 100 < n>: if 100 < n@1 then 100 < n@1 else true
+<label_ite_cond_false: !(100 < n)>: if if 100 < n@1 then false else true then if 100 < n@1 then false else true else true
+callElimAssume_n_gt_100_postcond_6: if if 100 < n@1 then false else true then 100 < n@1 + 11 ==> r@2 == n@1 + 11 - 10 else true
+callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@1 + 11 <= 100 ==> r@2 == 91 else true
+callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
+callElimAssume_n_le_100_postcond_3: if if 100 < n@1 then false else true then r@2 <= 100 ==> r@3 == 91 else true
 Obligation:
-$__n0 <= 100 ==> if 100 < $__n0 then $__n0 - 10 else $__r3 == 91
+n@1 <= 100 ==> if 100 < n@1 then n@1 - 10 else r@3 == 91
 
 ---
 info:
