@@ -12,7 +12,7 @@ public import      Strata.DDM.BuiltinDialects.Init -- shake: keep (Generated cod
 public meta import Strata.DDM.BuiltinDialects.Init -- shake: keep
 meta import        Strata.DDM.BuiltinDialects.StrataDDL
 public import      Strata.DDM.HNF  -- shake: keep (Generated ofAst uses ExprF.hnf)
-public meta import Strata.DDM.Integration.Categories --shake: keep (shake bug)
+public meta import Strata.DDM.Integration.Categories -- shake: keep (shake bug)
 public meta import Strata.DDM.Integration.Lean.Env
 public meta import Strata.DDM.Integration.Lean.GenTrace  -- shake: keep (trace option)
 public import      Strata.DDM.Integration.Lean.OfAstM -- shake: keep (Generated ofAst combinators)
