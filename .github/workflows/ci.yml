@@ -319,7 +319,7 @@ jobs:
     uses: ./.github/workflows/cbmc.yml
 
   strata-benchmarks:
-    name: Run Benchmarks of Strata
+    name: Run internal benchmarks of Strata
     runs-on: ubuntu-latest
     permissions:
       id-token: write
