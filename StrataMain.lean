@@ -11,6 +11,8 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.ProgramEval
+import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
@@ -1310,6 +1312,57 @@ def verifyCommand : Command where
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
 
+def pyInterpretCommand : Command where
+  name := "pyInterpret"
+  args := [ "file" ]
+  flags := [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" }]
+            ++ laurelTranslateFlags
+  help := "Interpret a Python Ion program concretely (Python → Laurel → Core → execute)."
+  callback := fun v pflags => do
+    let filePath := v[0]
+    let keepDir := pflags.getString "keep-all-files"
+    let fuel ← match pflags.getString "fuel" with
+      | some s => match s.toNat? with
+        | .some n => pure n
+        | .none => exitFailure s!"Invalid fuel: '{s}'"
+      | none => pure 10000
+
+    let (core, _diags) ←
+      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") |>.toBaseIO with
+      | .ok laurel =>
+        if let some dir := keepDir then
+          IO.FS.createDirAll dir
+          IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))
+        match ← Strata.translateCombinedLaurel laurel with
+        | (some core, diags) => pure (core, diags)
+        | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
+      | .error msg => exitFailure (toString msg)
+    if let some dir := keepDir then
+      IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
+    let core ← match Core.typeCheck Core.VerifyOptions.quiet core
+        (moreFns := Strata.Python.ReFactory) with
+      | .ok prog => pure prog
+      | .error e =>
+        println!  s!"Core type checking failed: {e.message}"
+        IO.Process.exit ExitCode.userError
+    match core.run with
+    | .ok E =>
+      let outputNames := match Core.Program.Procedure.find? core ⟨"__main__", ()⟩ with
+        | some p => p.header.outputs.keys.map (·.name)
+        | none => []
+      let (lhs, exprEnv) := Core.Env.genVars outputNames E.exprEnv
+      let E := { E with exprEnv }
+      let E := Core.Statement.Command.runCall lhs "__main__" [] fuel E
+      match E.error with
+      | none =>
+        IO.println "Execution completed successfully."
+      | some e =>
+          IO.println s!"{Std.format e}"
+          IO.Process.exit ExitCode.failuresFound
+    | .error diag =>
+      IO.eprintln s!"Error: {diag}"
+      IO.Process.exit ExitCode.failuresFound
+
 def commandGroups : List CommandGroup := [
   { name := "Core"
     commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
@@ -1322,7 +1375,8 @@ def commandGroups : List CommandGroup := [
                  pySpecsCommand, pySpecToLaurelCommand,
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
-                 pyTranslateLaurelCommand] },
+                 pyTranslateLaurelCommand,
+                 pyInterpretCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,
