@@ -1777,6 +1777,7 @@ def verify
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (solver : Option Core.CoreSMTSolver := none)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
@@ -1784,7 +1785,8 @@ def verify
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
                   (Core.verify program tempDir proceduresToVerify options moreFns
                     (externalPhases := externalPhases)
-                    (keepAllFilesPrefix := keepAllFilesPrefix))
+                    (keepAllFilesPrefix := keepAllFilesPrefix)
+                    (solver := solver))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner

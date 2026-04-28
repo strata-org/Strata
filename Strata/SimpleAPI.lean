@@ -328,11 +328,13 @@ def Core.verifyProgram
     (externalPhases : List Core.AbstractedPhase := [])
     (prefixPhases : List Core.PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (solver : Option Core.CoreSMTSolver := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
-        (keepAllFilesPrefix := keepAllFilesPrefix))
+        (keepAllFilesPrefix := keepAllFilesPrefix)
+        (solver := solver))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
