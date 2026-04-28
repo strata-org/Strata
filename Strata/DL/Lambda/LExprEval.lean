@@ -316,6 +316,52 @@ end
 instance : Traceable EvalProvenance Unit where
   combine _ := ()
 
+
+/-! ## Expression Evaluation -/
+
+/-- Walk a post-eval expression looking for a stuck redex: a fully-applied
+non-constructor factory function whose arguments are all canonical values.
+Such a call *should* have reduced during `eval` but didn't (e.g. missing `body`
+or `concreteEval`). Returns the stuck subexpression if found.
+
+This helps errors point more precisely to where the interpreter got stuck.
+ -/
+def findStuckRedex (F : @Lambda.Factory TBase) : LExpr TBase.mono → Option (LExpr TBase.mono)
+  | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _ => none
+  | .eq _m e1 e2 =>
+    (findStuckRedex F e1).orElse (fun _ => findStuckRedex F e2)
+  | .ite _m c t f =>
+    (findStuckRedex F c).orElse (fun _ => (findStuckRedex F t).orElse (fun _ => findStuckRedex F f))
+  | e@(.app _m fn arg) =>
+    match Factory.callOfLFunc F e false with
+    | some (_, args, f) =>
+      if !f.isConstr && args.all (LExpr.isCanonicalValue F) then
+        some e
+      else
+        -- Non-stuck call: recurse into fn and arg (structural subterms)
+        (findStuckRedex F fn).orElse (fun _ => findStuckRedex F arg)
+    | none =>
+      (findStuckRedex F fn).orElse (fun _ => findStuckRedex F arg)
+
+/-- Evaluate an expression using the interpreter's environment.
+
+This is the interpreter's own expression evaluator, defined as a separate
+function so that we can later prove it consistent with the small-step
+`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
+
+Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
+If the result contains a stuck redex (a fully-applied function that should
+have reduced but didn't), returns an error.
+-/
+def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBase.mono) :=
+  let v := e.eval σ.config.fuel σ
+  if LExpr.isCanonicalValue σ.config.factory v then
+    .ok v
+  else
+    match findStuckRedex σ.config.factory v with
+    | some _ => .error "expression contains stuck redex"
+    | none => .ok v
+
 end LExpr
 end -- public section
 end Lambda
