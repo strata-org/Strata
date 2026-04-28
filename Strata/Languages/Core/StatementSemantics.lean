@@ -30,6 +30,8 @@ open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
+-- Semantic typeclass instances construct canonical expressions with no source location.
+
 instance : HasFvar Core.Expression where
   mkFvar := (.fvar Strata.SourceRange.none · none)
   getFvar
