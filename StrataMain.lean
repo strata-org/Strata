@@ -28,6 +28,7 @@ import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
+import Strata.Languages.Python.FeatureUsage
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
@@ -425,6 +426,15 @@ def pySpecsCommand : Command where
       match r with
       | .ok () => pure ()
       | .error msg => exitFailure msg
+
+def pyFeaturesCommand : Command where
+  name := "pyFeatures"
+  args := [ "file" ]
+  help := "Analyze a Python Ion program and print feature usage statistics."
+  callback := fun v _ => do
+    let stmts ← readPythonStrata v[0]
+    let result := Strata.Python.FeatureUsage.analyzeFeatures stmts
+    IO.print (Strata.Python.FeatureUsage.formatReport result)
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -1374,7 +1384,8 @@ def commandGroups : List CommandGroup := [
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
                  pyTranslateLaurelCommand,
-                 pyInterpretCommand] },
+                 pyInterpretCommand,
+                 pyFeaturesCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,

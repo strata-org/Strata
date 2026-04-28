@@ -1,0 +1,15 @@
+module "n02_listcomp":
+
+-- WARNING: unsupported ListComp at 5:11-5:35 (replaced with unsupported instruction)
+
+func @module_init():
+  bb0():
+    %0:_tmp.0 = intLit 1
+    %1:_tmp.1 = intLit 2
+    %2:_tmp.2 = intLit 3
+    %3:_tmp.3 = intLit 4
+    %4:_tmp.4 = intLit 5
+    %5:items.0 = mkList [%0, %1, %2, %3, %4]
+    %6:doubled.0 = unsupported "ListComp"
+    %7:total.0 = call @sum(positional(%6))
+    ret

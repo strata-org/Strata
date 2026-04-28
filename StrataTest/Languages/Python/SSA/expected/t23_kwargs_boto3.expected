@@ -1,0 +1,31 @@
+module "t23_kwargs_boto3":
+
+func put_item(client.0, bucket.0: str, key.0: str, data.0: str):
+  bb0(%0:client.0, %1:bucket.0 : str, %2:key.0 : str, %3:data.0 : str):
+    %4 = call attr(%0, "put_item")(keyword("Bucket", %1), keyword("Key", %2), keyword("Data", %3))
+    ret
+
+func put_item_from_dict(client.0, params.0: dict):
+  bb0(%0:client.0, %1:params.0 : dict):
+    %2 = call attr(%0, "put_item")(starKwargs(%1))
+    ret
+
+func build_and_call(client.0, bucket.0: str, key.0: str):
+  bb0(%0:client.0, %1:bucket.0 : str, %2:key.0 : str):
+    %3:_tmp.0 = strLit "Bucket"
+    %4:_tmp.1 = strLit "Key"
+    %5:kwargs.0 = mkDict [%3, %4] [%1, %2]
+    %6:_tmp.2 = strLit "Data"
+    %7:_tmp.3 = strLit "payload"
+    setItem %5 %6 %7
+    %8 = call attr(%0, "put_item")(starKwargs(%5))
+    ret
+
+func @module_init():
+  bb0():
+    -- import boto3 → binding environment
+    -- iam = boto3.client("iam")
+    %0:iam.0 = callQualified boto3.client [positional(strLit "iam")]
+    -- iam.get_role(RoleName="my-role")
+    %1 = call attr(%0, "get_role")(keyword("RoleName", strLit "my-role"))
+    ret

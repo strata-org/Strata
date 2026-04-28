@@ -1,0 +1,78 @@
+module "t10_except_type":
+
+func risky() -> int:
+  bb0():
+    %0:_tmp.0 = callQualified builtins.ValueError [positional(strLit "bad input")]
+    raise %0
+
+func @module_init():
+  -- First try: except ValueError as e
+  bb0() [except: bb1]:
+    %0:result.0 = call @risky()  [exceptArgs: undef("result"), exc]
+    branch bb3(%0)
+
+  -- handler: isinstance check
+  bb1(%1:result.1, %2:_exc):
+    %3:_tmp.0 = callQualified builtins.isinstance [positional(%2), positional(%4)]
+      -- where %4 = qualifiedRef builtins.ValueError
+    condBranch %3 bb2(%2) bb4(%2)
+
+  -- except ValueError as e: result = -1, msg = str(e)
+  bb2(%5:e.0):
+    %6:result.2 = intLit -1
+    %7:msg.0 = callQualified builtins.str [positional(%5)]
+    branch bb3(%6)
+
+  -- after first try
+  bb3(%8:result.3):
+    branch bb5()
+
+  -- re-raise (type didn't match)
+  bb4(%9:_exc):
+    raise %9
+
+  -- Second try: multiple typed except
+  bb5() [except: bb6]:
+    %10:value.0 = call @risky()  [exceptArgs: undef("value"), exc]
+    branch bb10(%10)
+
+  -- handler dispatch: ValueError?
+  bb6(%11:value.1, %12:_exc):
+    %13:_tmp.1 = callQualified builtins.isinstance [positional(%12), positional(%14)]
+      -- where %14 = qualifiedRef builtins.ValueError
+    condBranch %13 bb7(%12) bb8(%11, %12)
+
+  -- except ValueError
+  bb7(%15:e.0):
+    %16:value.2 = intLit 0
+    branch bb10(%16)
+
+  -- KeyError?
+  bb8(%17:value.1, %18:_exc):
+    %19:_tmp.2 = callQualified builtins.isinstance [positional(%18), positional(%20)]
+      -- where %20 = qualifiedRef builtins.KeyError
+    condBranch %19 bb9(%18) bb11(%17, %18)
+
+  -- except KeyError
+  bb9(%21:e.0):
+    %22:value.3 = intLit -1
+    branch bb10(%22)
+
+  -- after second try
+  bb10(%23:value.4):
+    ret
+
+  -- Exception?
+  bb11(%24:value.1, %25:_exc):
+    %26:_tmp.3 = callQualified builtins.isinstance [positional(%25), positional(%27)]
+      -- where %27 = qualifiedRef builtins.Exception
+    condBranch %26 bb12(%25) bb13(%25)
+
+  -- except Exception
+  bb12(%28:e.0):
+    %29:value.5 = intLit -2
+    branch bb10(%29)
+
+  -- no match: re-raise
+  bb13(%30:_exc):
+    raise %30

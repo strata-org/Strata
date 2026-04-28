@@ -1,0 +1,19 @@
+module "t13_fstring":
+
+func @module_init():
+  bb0():
+    %0:name.0 : str = strLit "world"
+    %1:age.0 : int = intLit 30
+    -- f"Hello {name}"
+    %2:_tmp.0 = strLit "Hello "
+    %3:_tmp.1 = fmtValue %0
+    %4:greeting.0 = strConcat [%2, %3]
+    -- f"{name} is {age} years old"
+    %5:_tmp.2 = fmtValue %0
+    %6:_tmp.3 = strLit " is "
+    %7:_tmp.4 = fmtValue %1
+    %8:_tmp.5 = strLit " years old"
+    %9:detail.0 = strConcat [%5, %6, %7, %8]
+    -- plain string
+    %10:plain.0 = strLit "no interpolation"
+    ret

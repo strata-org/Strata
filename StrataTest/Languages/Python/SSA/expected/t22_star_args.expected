@@ -1,0 +1,65 @@
+module "t22_star_args":
+
+func log_all(prefix.0: str, args.0):
+  bb0(%0:prefix.0 : str, %1:args.0):
+    %2:_iter.0 = callQualified builtins.iter [positional(%1)]
+    branch bb1(%0, %2)
+
+  bb1(%3:prefix.0, %4:_iter.0) [except: bb3]:
+    %5:item.0 = callQualified builtins.next [positional(%4)]  [exceptArgs: %3, %4]
+    branch bb2(%3, %4, %5)
+
+  bb2(%6:prefix.0, %7:_iter.0, %8:item.0):
+    %9 = callQualified builtins.print [positional(%6), positional(%8)]
+    branch bb1(%6, %7)
+
+  bb3(%10:prefix.0, %11:_iter.0):
+    ret
+
+func create_config(kwargs.0):
+  bb0(%0:kwargs.0):
+    %1:config.0 = mkDict [] []
+    %2:_iter.0 = callQualified builtins.iter [positional(%0)]
+    branch bb1(%1, %2, %0)
+
+  bb1(%3:config.0, %4:_iter.0, %5:kwargs.0) [except: bb3]:
+    %6:key.0 = callQualified builtins.next [positional(%4)]  [exceptArgs: %3, %4, %5]
+    branch bb2(%3, %4, %5, %6)
+
+  bb2(%7:config.0, %8:_iter.0, %9:kwargs.0, %10:key.0):
+    %11:_tmp.0 = getItem %9 %10
+    setItem %7 %10 %11
+    branch bb1(%7, %8, %9)
+
+  bb3(%12:config.0, %13:_iter.0, %14:kwargs.0):
+    ret %12
+
+func flexible(first.0: int, args.0, kwargs.0):
+  bb0(%0:first.0 : int, %1:args.0, %2:kwargs.0):
+    ret %0
+
+func @module_init():
+  bb0():
+    %0:_tmp.0 = intLit 1
+    %1:_tmp.1 = intLit 2
+    %2:_tmp.2 = intLit 3
+    %3:items.0 = mkList [%0, %1, %2]
+    -- log_all("value:", *items)
+    %4 = call @log_all(positional(strLit "value:"), starArgs(%3))
+    -- params = {"Bucket": "my-bucket", "Key": "my-key"}
+    %5:_tmp.3 = strLit "Bucket"
+    %6:_tmp.4 = strLit "my-bucket"
+    %7:_tmp.5 = strLit "Key"
+    %8:_tmp.6 = strLit "my-key"
+    %9:params.0 = mkDict [%5, %7] [%6, %8]
+    -- create_config(**params)
+    %10 = call @create_config(starKwargs(%9))
+    -- flexible(1, *extra_args, **extra_kwargs)
+    %11:_tmp.7 = intLit 10
+    %12:_tmp.8 = intLit 20
+    %13:extra_args.0 = mkList [%11, %12]
+    %14:_tmp.9 = strLit "debug"
+    %15:_tmp.10 = boolLit true
+    %16:extra_kwargs.0 = mkDict [%14] [%15]
+    %17 = call @flexible(positional(intLit 1), starArgs(%13), starKwargs(%16))
+    ret

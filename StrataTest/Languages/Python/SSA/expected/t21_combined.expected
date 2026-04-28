@@ -1,0 +1,105 @@
+module "t21_combined":
+
+func @ResourceManager_init():
+  bb0():
+    ret
+
+func ResourceManager.__init__(self.0: ResourceManager, name.0: str):
+  bb0(%0:self.0, %1:name.0 : str):
+    setAttr %0 "name" %1
+    %2:_tmp.0 = mkDict [] []
+    setAttr %0 "resources" %2
+    ret
+
+func ResourceManager.add_resource(self.0: ResourceManager, key.0: str, value.0: str) -> bool:
+  bb0(%0:self.0, %1:key.0 : str, %2:value.0 : str):
+    %3:_tmp.0 = attr %0 "resources"
+    %4:_tmp.1 = compareOp in %1 %3
+    condBranch %4 bb1() bb2(%0, %1, %2)
+
+  bb1():
+    %5:_tmp.2 = boolLit false
+    ret %5
+
+  bb2(%6:self.0, %7:key.0, %8:value.0):
+    %9:_tmp.3 = attr %6 "resources"
+    setItem %9 %7 %8
+    %10:_tmp.4 = boolLit true
+    ret %10
+
+func ResourceManager.get_resource(self.0: ResourceManager, key.0: str) -> optional(str):
+  bb0(%0:self.0, %1:key.0 : str):
+    %2:_tmp.0 = attr %0 "resources"
+    %3:_tmp.1 = compareOp in %1 %2
+    condBranch %3 bb1(%0, %1) bb2()
+
+  bb1(%4:self.0, %5:key.0):
+    %6:_tmp.2 = attr %4 "resources"
+    %7:_tmp.3 = getItem %6 %5
+    ret %7
+
+  bb2():
+    %8:_tmp.4 = noneLit
+    ret %8
+
+func process_items(items.0: list, manager.0: ResourceManager) -> int:
+  bb0(%0:items.0, %1:manager.0):
+    %2:count.0 : int = intLit 0
+    %3:_iter.0 = callQualified builtins.iter [positional(%0)]
+    branch bb1(%3, %1, %2)
+
+  -- for loop header
+  bb1(%4:_iter.0, %5:manager.0, %6:count.0) [except: bb6]:
+    %7:item.0 = callQualified builtins.next [positional(%4)]  [exceptArgs: %4, %5, %6]
+    branch bb2(%4, %5, %6, %7)
+
+  -- for body: try block
+  bb2(%8:_iter.0, %9:manager.0, %10:count.0, %11:item.0) [except: bb4]:
+    %12:key.0 = getItem %11 strLit "key"  [exceptArgs: %8, %9, %10, exc]
+    %13:value.0 = getItem %11 strLit "value"  [exceptArgs: %8, %9, %10, exc]
+    %14:success.0 = call attr(%9, "add_resource")(positional(%12), positional(%13))  [exceptArgs: %8, %9, %10, exc]
+    condBranch %14 bb3(%8, %9, %10) bb1(%8, %9, %10)
+
+  -- count += 1
+  bb3(%15:_iter.0, %16:manager.0, %17:count.0):
+    %18:_tmp.0 = intLit 1
+    %19:count.1 = binOp add %17 %18
+    branch bb1(%15, %16, %19)
+
+  -- except KeyError: continue
+  bb4(%20:_iter.0, %21:manager.0, %22:count.0, %23:_exc):
+    %24:_tmp.1 = callQualified builtins.isinstance [positional(%23), positional(%25)]
+      -- where %25 = qualifiedRef builtins.KeyError
+    condBranch %24 bb5(%20, %21, %22) bb7(%23)
+
+  -- continue (back to loop header)
+  bb5(%26:_iter.0, %27:manager.0, %28:count.0):
+    branch bb1(%26, %27, %28)
+
+  -- StopIteration: loop done
+  bb6(%29:_iter.0, %30:manager.0, %31:count.0):
+    ret %31
+
+  -- unmatched exception: re-raise
+  bb7(%32:_exc):
+    raise %32
+
+func @module_init():
+  bb0():
+    %0 = call @ResourceManager_init()
+    %1:mgr.0 = call @ResourceManager(positional(strLit "test"))
+    -- data = [{"key": "a", "value": "1"}, {"key": "b", "value": "2"}]
+    %2:_tmp.0 = strLit "key"
+    %3:_tmp.1 = strLit "a"
+    %4:_tmp.2 = strLit "value"
+    %5:_tmp.3 = strLit "1"
+    %6:_tmp.4 = mkDict [%2, %4] [%3, %5]
+    %7:_tmp.5 = strLit "key"
+    %8:_tmp.6 = strLit "b"
+    %9:_tmp.7 = strLit "value"
+    %10:_tmp.8 = strLit "2"
+    %11:_tmp.9 = mkDict [%7, %9] [%8, %10]
+    %12:data.0 = mkList [%6, %11]
+    %13:total.0 = call @process_items(positional(%12), positional(%1))
+    %14:result.0 = call attr(%1, "get_resource")(positional(strLit "a"))
+    ret
