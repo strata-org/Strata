@@ -124,7 +124,10 @@ private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : Quant
     | .all => solver.mkForall
     | .exist => solver.mkExists
   -- Capture the encoder state so the callback can encode the body and
-  -- triggers with the bound variable handles in scope.
+  -- triggers with the bound variable handles in scope.  The inner state
+  -- is intentionally not propagated back: bound variable handles are scoped
+  -- to the quantifier, and free variables in the body are already declared
+  -- before the quantifier is encoded.
   let st ← get
   liftExcept "mkQuant" (← liftM (mkQuant bindings (fun vars => do
     let stWithVars := { st with
