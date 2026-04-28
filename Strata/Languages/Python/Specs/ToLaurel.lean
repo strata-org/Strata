@@ -169,7 +169,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
 private def atomAssertion? (atom : SpecAtomType) (ty : SpecType)
     (value : StmtExprMd) (source : Option FileRange)
     (isUnion : Bool) : ToLaurelM (Option StmtExprMd) := do
-  let mk (e : StmtExpr) : StmtExprMd := { val := e, source := none }
+  let mk (e : StmtExpr) : StmtExprMd := { val := e, source := source }
   match atom with
   | .ident nm _ =>
     match typeTestersMap[nm]? with
@@ -210,7 +210,7 @@ private def typeAssertion? (ty : SpecType) (value : StmtExprMd)
       match result with
       | none => result := some call
       | some prev =>
-        result := some { val := .PrimitiveOp .Or [prev, call], source := none }
+        result := some { val := .PrimitiveOp .Or [prev, call], source := source }
     | none => pure ()
   return result
 
@@ -417,18 +417,18 @@ def buildSpecBody (allArgs : Array Arg)
   let fileSource ← mkFileSource
   let mut stmts : Array StmtExprMd := #[]
   -- 1. Havoc the result: result := Hole(nondet)
-  let holeExpr : StmtExprMd := { val := .Hole (deterministic := false), source := none }
-  let resultId : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
+  let holeExpr : StmtExprMd := { val := .Hole (deterministic := false), source := source }
+  let resultId : StmtExprMd := { val := .Identifier (mkId "result"), source := source }
   let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
   stmts := stmts.push assignStmt
   -- 2. Assert type / required-param preconditions
   for arg in allArgs do
-    let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := none }
+    let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := source }
     match ← typeAssertion? arg.type paramId source with
     | some assertion =>
       if arg.default.isSome then
-        let noneCheck : StmtExprMd := { val := .StaticCall (mkId "Any..isfrom_None") [paramId], source := none }
-        let orExpr : StmtExprMd := { val := .PrimitiveOp .Or [noneCheck, assertion], source := none }
+        let noneCheck : StmtExprMd := { val := .StaticCall (mkId "Any..isfrom_None") [paramId], source := source }
+        let orExpr : StmtExprMd := { val := .PrimitiveOp .Or [noneCheck, assertion], source := source }
         let assertStmt ← mkStmtWithLoc (.Assert { condition := orExpr, summary := none }) default
         stmts := stmts.push assertStmt
       else
@@ -470,7 +470,7 @@ def buildSpecBody (allArgs : Array Arg)
   -- NOTE. Skip NoneType: generated stubs currently declare `-> None` even for methods
   -- that return values. Assuming isfrom_None would make callers unreachable.
   if returnType.asIdent != some .noneType then
-    let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
+    let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := source }
     if let some retAssertion ← typeAssertion? returnType resultRef source then
       let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
       stmts := stmts.push assumeStmt
