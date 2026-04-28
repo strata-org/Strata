@@ -147,13 +147,14 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
     m (Except String (List (DatatypeInfo τ σ)))
 
   /-- Construct a universally quantified term.
-      Takes name-sort pairs for bound variables and a callback that receives
-      the bound variable terms and returns the body and trigger groups.
-      Bound variables cannot escape the quantifier scope. -/
-  mkForall : List (String × σ) → (List τ → Except String (τ × List (List τ))) → m (Except String τ)
+      Takes name-sort pairs for bound variables and a monadic callback that
+      receives the bound variable terms and returns the body and trigger groups.
+      The callback is monadic so callers can encode sub-terms using the
+      bound variable handles. Bound variables cannot escape the quantifier scope. -/
+  mkForall : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
 
   /-- Construct an existentially quantified term. Same callback pattern as `mkForall`. -/
-  mkExists : List (String × σ) → (List τ → Except String (τ × List (List τ))) → m (Except String τ)
+  mkExists : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
 
   -- Session operations
 

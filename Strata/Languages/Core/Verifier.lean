@@ -112,14 +112,27 @@ private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op)
   -- All other operations (bitvectors, strings, etc.): route through mkAppOp
   | _, _ => liftExcept "mkAppOp" (← liftM (solver.mkAppOp op tEncs retSort))
 
-private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : QuantifierKind) (args : List TermVar) (trEncs : List (List τ)) (bodyEnc : τ) : AbstractEncoderM τ m τ := do
+private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : QuantifierKind)
+    (args : List TermVar)
+    (encodeBody : AbstractEncoderM τ m τ)
+    (encodeTriggers : AbstractEncoderM τ m (List (List τ)))
+    : AbstractEncoderM τ m τ := do
   let bindings ← args.mapM fun v => do
     let s ← liftM (solver.termTypeToSort v.ty)
     return (v.id, s)
   let mkQuant := match qk with
     | .all => solver.mkForall
     | .exist => solver.mkExists
-  liftExcept "mkQuant" (← liftM (mkQuant bindings (fun _vars => .ok (bodyEnc, trEncs))))
+  -- Capture the encoder state so the callback can encode the body and
+  -- triggers with the bound variable handles in scope.
+  let st ← get
+  liftExcept "mkQuant" (← liftM (mkQuant bindings (fun vars => do
+    let stWithVars := { st with
+      varHandles := args.zip vars |>.foldl
+        (fun m (v, h) => m.insert v.id h) st.varHandles }
+    let (bodyEnc, st') ← encodeBody.run stWithVars
+    let (trEncs, _) ← encodeTriggers.run st'
+    return .ok (bodyEnc, trEncs))))
 
 def encodeTerm (solver : AbstractSolver τ σ m) (t : Term) : AbstractEncoderM τ m τ := do
   match t with
@@ -166,9 +179,9 @@ def encodeTerm (solver : AbstractSolver τ σ m) (t : Term) : AbstractEncoderM �
     defineApp solver retSort op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver tᵢ))
   | .quant qk qargs tr body =>
     let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-    let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver ti))
-    let bodyEnc ← encodeTerm solver body
-    defineQuantifierHelper solver qk qargs trEncs bodyEnc
+    defineQuantifierHelper solver qk qargs
+      (encodeTerm solver body)
+      (mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver ti)))
 termination_by sizeOf t
 decreasing_by
   all_goals first
