@@ -9,6 +9,7 @@ import StrataTest.Util.TestDiagnostics
 import StrataTest.Util.Python
 
 /-! ## Tests: None-for-typed-parameter detection
+
 These tests verify that passing `None` where a typed parameter is expected
 is correctly detected as a bug, both for direct assignments and dict unpacking.
 -/
