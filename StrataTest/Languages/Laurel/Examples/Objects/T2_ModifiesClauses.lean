@@ -107,6 +107,7 @@ procedure newObjectDoNotCountForModifies()
 };
 
 procedure modifiesWildcardBodiless(c: Container, d: Container)
+  opaque
   modifies *
 ;
 
@@ -120,6 +121,7 @@ procedure modifiesWildcardBodilessCaller() {
 };
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
+  opaque
   ensures true
   modifies *
 {
@@ -128,6 +130,7 @@ procedure modifiesWildcardWithBody(c: Container, d: Container)
 };
 
 procedure modifiesWildcardAndSpecific(c: Container, d: Container)
+  opaque
   modifies c
   modifies *
 ;
@@ -141,23 +144,6 @@ procedure modifiesWildcardAndSpecificCaller() {
 //^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-// Without `ensures`, the body is transparent and `modifies *` is silently dropped.
-// The caller sees through the body, so heap changes are tracked directly. See #969.
-procedure modifiesWildcardTransparent(c: Container, d: Container)
-  modifies *
-{
-  c#value := 2;
-  d#value := 3
-};
-
-procedure modifiesWildcardTransparentCaller() {
-  var c: Container := new Container;
-  var d: Container := new Container;
-  var x: int := d#value;
-  modifiesWildcardTransparent(c, d);
-  assert x == d#value // fails because the transparent body's heap writes are visible
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-};
 "
 
 #guard_msgs (drop info, error) in
