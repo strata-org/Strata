@@ -687,18 +687,41 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
 
 mutual
 
+/-- Shared binding setup for lambdas and quantifiers: translates the declaration list,
+    creates scoped bound variables, and translates the body in the extended scope. -/
 partial
-def translateQuantifier
-  (qk: QuantifierKind)
+def withScopedBindings
   (p : Program)
-  (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
-  TransM Core.Expression.Expr := do
+  (bindings : TransBindings) (xsa : Arg) (bodya : Arg) :
+  TransM (ListMap Core.Expression.Ident Core.Expression.Ty × TransBindings × Core.Expression.Expr) := do
     let xsArray ← translateDeclList bindings xsa
     let n := xsArray.size
     let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar () (n - 1 - i)))
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
     let b ← translateExpr p xbindings bodya
+    return (xsArray, xbindings, b)
+
+partial
+def translateLambda
+  (p : Program)
+  (bindings : TransBindings) (xsa : Arg) (bodya : Arg) :
+  TransM Core.Expression.Expr := do
+    let (xsArray, _, b) ← withScopedBindings p bindings xsa bodya
+    let buildLambda := fun (name, ty) e =>
+      match ty with
+      | .forAll [] mty =>
+        .abs () name.name (.some mty) e
+      | _ => panic! s!"Expected monomorphic type in lambda, got: {ty}" -- nopanic:ok
+    return xsArray.foldr buildLambda (init := b)
+
+partial
+def translateQuantifier
+  (qk: QuantifierKind)
+  (p : Program)
+  (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
+  TransM Core.Expression.Expr := do
+    let (xsArray, xbindings, b) ← withScopedBindings p bindings xsa bodya
 
     -- Handle triggers if present
     let triggers ← match triggersa with
@@ -957,6 +980,14 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]
+  -- Lambda abstraction
+  | .fn _ q`Core.lambda, [_, xsa, ba] =>
+    translateLambda p bindings xsa ba
+  -- Expression application: (f)(x)
+  | .fn _ q`Core.apply_expr, [_, _, fa, xa] => do
+    let f ← translateExpr p bindings fa
+    let x ← translateExpr p bindings xa
+    return .app () f x
   -- Quantifiers
   | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
