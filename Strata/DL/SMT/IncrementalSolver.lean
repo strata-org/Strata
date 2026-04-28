@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.SMT.AbstractSolver
 public import Strata.DL.SMT.Factory
+import Strata.DDM.Format
 import Std.Data.HashMap
 
 /-!
