@@ -9,45 +9,45 @@ func @module_init():
   bb0():
     %1:result.0 = callQualified t10_except_type.risky []
     branch bb4()
-  bb1(%2:str.0, %3:_exc.0):
-    %4:ValueError.0 = qualifiedRef builtins.ValueError
-    %6:_tmp.2 = callQualified builtins.isinstance [positional(%3), positional(%4)]
-      -- where %4 = qualifiedRef builtins.ValueError
-    condBranch %6 bb2(%2, %3) bb3(%3)
-  bb2(%7:str.1, %8:e.0):
-    %10:result.1 = unaryOp uSub intLit 1
-    %11:msg.0 = call %7(positional(%8))
+  bb1(%2:_exc.0):
+    %3:ValueError.0 = qualifiedRef builtins.ValueError
+    %5:_tmp.2 = callQualified builtins.isinstance [positional(%2), positional(%3)]
+      -- where %3 = qualifiedRef builtins.ValueError
+    condBranch %5 bb2(%2) bb3(%2)
+  bb2(%6:e.0):
+    %8:result.1 = unaryOp uSub intLit 1
+    %10:msg.0 = callQualified builtins.str [positional(%6)]
     branch bb4()
-  bb3(%12:_exc.2):
-    raise %12
+  bb3(%11:_exc.2):
+    raise %11
   bb4():
-    %14:value.0 = callQualified t10_except_type.risky []
+    %13:value.0 = callQualified t10_except_type.risky []
     branch bb12()
-  bb5(%15:_exc.3):
-    %16:ValueError.1 = qualifiedRef builtins.ValueError
-    %18:_tmp.8 = callQualified builtins.isinstance [positional(%15), positional(%16)]
-      -- where %16 = qualifiedRef builtins.ValueError
-    condBranch %18 bb6(%15) bb7(%15)
-  bb6(%19:e.1):
-    %20:value.1 = intLit 0
+  bb5(%14:_exc.3):
+    %15:ValueError.1 = qualifiedRef builtins.ValueError
+    %17:_tmp.8 = callQualified builtins.isinstance [positional(%14), positional(%15)]
+      -- where %15 = qualifiedRef builtins.ValueError
+    condBranch %17 bb6(%14) bb7(%14)
+  bb6(%18:e.1):
+    %19:value.1 = intLit 0
     branch bb12()
-  bb7(%21:_exc.5):
-    %22:KeyError.0 = qualifiedRef builtins.KeyError
-    %24:_tmp.11 = callQualified builtins.isinstance [positional(%21), positional(%22)]
-      -- where %22 = qualifiedRef builtins.KeyError
-    condBranch %24 bb8(%21) bb9(%21)
-  bb8(%25:e.2):
-    %27:value.2 = unaryOp uSub intLit 1
+  bb7(%20:_exc.5):
+    %21:KeyError.0 = qualifiedRef builtins.KeyError
+    %23:_tmp.11 = callQualified builtins.isinstance [positional(%20), positional(%21)]
+      -- where %21 = qualifiedRef builtins.KeyError
+    condBranch %23 bb8(%20) bb9(%20)
+  bb8(%24:e.2):
+    %26:value.2 = unaryOp uSub intLit 1
     branch bb12()
-  bb9(%28:_exc.7):
-    %29:Exception.0 = qualifiedRef builtins.Exception
-    %31:_tmp.15 = callQualified builtins.isinstance [positional(%28), positional(%29)]
-      -- where %29 = qualifiedRef builtins.Exception
-    condBranch %31 bb10(%28) bb11(%28)
-  bb10(%32:e.3):
-    %34:value.3 = unaryOp uSub intLit 2
+  bb9(%27:_exc.7):
+    %28:Exception.0 = qualifiedRef builtins.Exception
+    %30:_tmp.15 = callQualified builtins.isinstance [positional(%27), positional(%28)]
+      -- where %28 = qualifiedRef builtins.Exception
+    condBranch %30 bb10(%27) bb11(%27)
+  bb10(%31:e.3):
+    %33:value.3 = unaryOp uSub intLit 2
     branch bb12()
-  bb11(%35:_exc.9):
-    raise %35
+  bb11(%34:_exc.9):
+    raise %34
   bb12():
     ret

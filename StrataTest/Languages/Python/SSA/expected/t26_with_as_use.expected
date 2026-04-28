@@ -13,17 +13,16 @@ func @module_init():
   bb0():
     %1:_tmp.0 = callQualified t26_with_as_use.MyCtx []
     %3:ctx.0 = call attr(%1, "__enter__")()
-    %4:print.0 = undef("print")
-    branch bb1(%3, %4, %1)
-  bb1(%5:ctx.1, %6:print.1, %7:_mgr.0):
-    %8:_tmp.3 = call %6(positional(%5))
-    %10:_tmp.5 = noneLit
-    %11:_tmp.6 = call attr(%7, "__exit__")(positional(%10), positional(%10), positional(%10))
+    branch bb1(%3, %1)
+  bb1(%4:ctx.1, %5:_mgr.0):
+    %7:_tmp.3 = callQualified builtins.print [positional(%4)]
+    %9:_tmp.5 = noneLit
+    %10:_tmp.6 = call attr(%5, "__exit__")(positional(%9), positional(%9), positional(%9))
     branch bb4()
-  bb2(%12:ctx.2, %13:print.2, %14:_mgr.1, %15:_exc.0):
-    %17:_tmp.8 = call attr(%14, "__exit__")(positional(%15), positional(%15), positional(%15))
-    condBranch %17 bb4() bb3(%14, %15)
-  bb3(%18:_mgr.2, %19:_exc.1):
-    raise %19
+  bb2(%11:ctx.2, %12:_mgr.1, %13:_exc.0):
+    %15:_tmp.8 = call attr(%12, "__exit__")(positional(%13), positional(%13), positional(%13))
+    condBranch %15 bb4() bb3(%12, %13)
+  bb3(%16:_mgr.2, %17:_exc.1):
+    raise %17
   bb4():
     ret

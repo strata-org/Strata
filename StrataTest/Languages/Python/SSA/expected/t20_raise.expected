@@ -1,6 +1,4 @@
 module "t20_raise":
--- WARNING: bare raise not yet supported at 12:8-12:13
-
 
 func fail_hard():
   bb0():
@@ -17,10 +15,9 @@ func reraise_example():
       -- where %3 = qualifiedRef builtins.ValueError
     condBranch %5 bb2(%2) bb3(%2)
   bb2(%6:_exc.1):
-    %7:_err.0 = unsupported "bare raise not yet supported"
-    unreachable
-  bb3(%8:_exc.2):
-    raise %8
+    raise %6
+  bb3(%7:_exc.2):
+    raise %7
   bb4():
     ret
 
@@ -28,3 +25,46 @@ func raise_with_msg(msg: str):
   bb0():
     %2:_tmp.0 = callQualified builtins.RuntimeError [positional(%0)]
     raise %2
+
+func reraise_named():
+  bb0():
+    %1:_tmp.0 = callQualified t20_raise.fail_hard []
+    branch bb4()
+  bb1(%2:_exc.0):
+    %3:ValueError.0 = qualifiedRef builtins.ValueError
+    %5:_tmp.2 = callQualified builtins.isinstance [positional(%2), positional(%3)]
+      -- where %3 = qualifiedRef builtins.ValueError
+    condBranch %5 bb2(%2) bb3(%2)
+  bb2(%6:e.0):
+    %8:_tmp.3 = callQualified builtins.print [positional(%6)]
+    raise %6
+  bb3(%9:_exc.2):
+    raise %9
+  bb4():
+    ret
+
+func reraise_bare():
+  bb0():
+    %1:_tmp.0 = callQualified t20_raise.fail_hard []
+    branch bb2()
+  bb1(%2:_exc.0):
+    raise %2
+  bb2():
+    ret
+
+func reraise_after_work():
+  bb0():
+    %1:x.0 = callQualified t20_raise.fail_hard []
+    branch bb4()
+  bb1(%2:_exc.0):
+    %3:ValueError.0 = qualifiedRef builtins.ValueError
+    %5:_tmp.2 = callQualified builtins.isinstance [positional(%2), positional(%3)]
+      -- where %3 = qualifiedRef builtins.ValueError
+    condBranch %5 bb2(%2) bb3(%2)
+  bb2(%6:_exc.1):
+    %7:y.0 = intLit 1
+    raise %6
+  bb3(%8:_exc.2):
+    raise %8
+  bb4():
+    ret

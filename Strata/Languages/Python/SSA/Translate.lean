@@ -903,6 +903,8 @@ structure BodyCtx where
   /-- Number of scopeExtras the continue target expects. -/
   continueExtrasCount : Nat := 0
   handlerTarget : Option BlockId := none
+  /-- Exception variable in scope for bare `raise` inside an except handler. -/
+  excVar : Option SSAVal := none
 
 /-- Look up demand vars for a given block ID.
     Falls back to allVars if the demand array doesn't cover this block. -/
@@ -1032,8 +1034,12 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
       let (excVal, _) ← translateExpr e fwd
       finishBlockWithTerm (.raise excVal) sr
     | none =>
-      let _ ← ssaError sr "bare raise not yet supported"
-      finishBlockWithTerm .unreachable sr
+      match bodyCtx.excVar with
+      | some ev =>
+        finishBlockWithTerm (.raise ev) sr
+      | none =>
+        let _ ← ssaError sr "bare raise outside except handler"
+        finishBlockWithTerm .unreachable sr
     return true
 
   | .Break .. =>
@@ -1359,7 +1365,7 @@ where
             match handlerName with
             | some name => renameVal bodyExcVal name; bindVar name bodyExcVal
             | none => pure ()
-            let handlerTerminated ← translateBody handlerBody bodyCtx
+            let handlerTerminated ← translateBody handlerBody { bodyCtx with excVar := some bodyExcVal }
             if !handlerTerminated then
               -- Handled exception → afterTarget with undef sentinel if finally present
               let mut args ← buildBranchArgsCtx afterTarget bodyCtx sr
@@ -1372,7 +1378,7 @@ where
             match handlerName with
             | some name => bindVar name excVal
             | none => pure ()
-            let handlerTerminated ← translateBody handlerBody bodyCtx
+            let handlerTerminated ← translateBody handlerBody { bodyCtx with excVar := some excVal }
             if !handlerTerminated then
               -- Handled exception → afterTarget with undef sentinel if finally present
               let mut args ← buildBranchArgsCtx afterTarget bodyCtx sr
@@ -1562,7 +1568,8 @@ private def translateFunc (info : FuncInfo) (config : SSAConfig)
         val, name := varName, type := paramType, default := none, kind
       }}
       bindVar varName val
-    let da := Blockify.demandAnalysis info.body info.globals
+    let preludeGlobals := config.prelude.fold (init := info.globals) fun acc k _ => acc.insert k
+    let da := Blockify.demandAnalysis info.body preludeGlobals
     modify fun s => { s with demandArr := da }
     startFirstBlock #[]
     let bodyCtx : BodyCtx := { demandArr := da }

@@ -1,6 +1,4 @@
 module "t09_nested_try":
--- WARNING: bare raise not yet supported at 14:8-14:13
-
 
 func inner_risky():
   bb0():
@@ -22,38 +20,37 @@ func @module_init():
       -- where %3 = qualifiedRef builtins.ValueError
     condBranch %5 bb2(%2) bb3(%2)
   bb2(%6:_exc.1):
-    %7:_err.0 = unsupported "bare raise not yet supported"
-    unreachable
-  bb3(%8:_exc.2):
-    raise %8
+    raise %6
+  bb3(%7:_exc.2):
+    raise %7
   bb4():
     branch bb6()
-  bb5(%9:_exc.3):
-    %10:y.0 = intLit 0
+  bb5(%8:_exc.3):
+    %9:y.0 = intLit 0
     branch bb6()
   bb6():
-    %12:_tmp.4 = callQualified t09_nested_try.outer_risky []
+    %11:_tmp.4 = callQualified t09_nested_try.outer_risky []
     branch bb14()
-  bb7(%13:_exc.4):
-    %14:TypeError.0 = qualifiedRef builtins.TypeError
-    %16:_tmp.6 = callQualified builtins.isinstance [positional(%13), positional(%14)]
-      -- where %14 = qualifiedRef builtins.TypeError
-    condBranch %16 bb8(%13) bb13(%13)
-  bb8(%17:_exc.5):
-    %19:_tmp.7 = callQualified t09_nested_try.inner_risky []
+  bb7(%12:_exc.4):
+    %13:TypeError.0 = qualifiedRef builtins.TypeError
+    %15:_tmp.6 = callQualified builtins.isinstance [positional(%12), positional(%13)]
+      -- where %13 = qualifiedRef builtins.TypeError
+    condBranch %15 bb8(%12) bb13(%12)
+  bb8(%16:_exc.5):
+    %18:_tmp.7 = callQualified t09_nested_try.inner_risky []
     branch bb12()
-  bb9(%20:_exc.6):
-    %21:ValueError.1 = qualifiedRef builtins.ValueError
-    %23:_tmp.9 = callQualified builtins.isinstance [positional(%20), positional(%21)]
-      -- where %21 = qualifiedRef builtins.ValueError
-    condBranch %23 bb10(%20) bb11(%20)
-  bb10(%24:_exc.7):
+  bb9(%19:_exc.6):
+    %20:ValueError.1 = qualifiedRef builtins.ValueError
+    %22:_tmp.9 = callQualified builtins.isinstance [positional(%19), positional(%20)]
+      -- where %20 = qualifiedRef builtins.ValueError
+    condBranch %22 bb10(%19) bb11(%19)
+  bb10(%23:_exc.7):
     branch bb12()
-  bb11(%25:_exc.8):
-    raise %25
+  bb11(%24:_exc.8):
+    raise %24
   bb12():
     branch bb14()
-  bb13(%26:_exc.9):
-    raise %26
+  bb13(%25:_exc.9):
+    raise %25
   bb14():
     ret
