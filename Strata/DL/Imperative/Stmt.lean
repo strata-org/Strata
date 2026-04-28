@@ -350,7 +350,11 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 by an enclosing `block` — either within `s` itself or with a label in
 `labels` (representing blocks that enclose `s` externally).
 
-When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`. -/
+When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`.
+
+The labels have type `Option String` (not `String`) so that `exit` without
+destination block label can be considered as covered even when it is surrounded
+by unlabeled blocks (`[None]`). -/
 
 @[expose] def Stmt.exitsCoveredByBlocks : List (Option String) → Stmt P CmdT → Prop
   | _, .cmd _ => True

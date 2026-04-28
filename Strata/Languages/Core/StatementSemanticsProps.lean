@@ -2374,108 +2374,37 @@ theorem stmts_allAssert_preserves_store
                   | step h _ => exact nomatch h
         exact (ih ρ₁ (fun s' hs' => h_all s' (.tail _ hs')) h_r).trans h_store₁
 
-/-! ## hasFailure preservation (Core-specific) -/
+/-! ## hasFailure preservation (Core-specific)
 
-/-- Helper: at a reachable `.stmt (.loop ...)` config, if every assert
-    (including loop invariants via `coreIsAtAssert`) evaluates to `tt`,
-    then the loop-step's `hasInvFailure` boolean must be `false`. -/
-private theorem loop_step_hasInvFailure_false_core
-    {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
-    {c : CoreConfig} {ρ : Env Expression}
-    {inv : List (String × Expression.Expr)} {guard : ExprOrNondet Expression}
-    {m : Option Expression.Expr} {body : List Statement} {md : MetaData Expression}
-    {hasInvFailure : Bool}
-    (hv : ∀ (a : AssertId Expression) (cfg : CoreConfig),
-      CoreStepStar π φ c cfg →
-      coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
-    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ inv ∧
-      ρ.eval ρ.store le.snd = some HasBool.ff)
-    (hc_shape : c = .stmt (.loop guard m inv body md) ρ := by rfl) :
-    hasInvFailure = false := by
-  cases hb : hasInvFailure with
-  | false => rfl
-  | true =>
-    exfalso
-    rw [hb] at hff_iff
-    have ⟨⟨lbl, e⟩, hmem, he_ff⟩ := hff_iff.mp rfl
-    have hat : coreIsAtAssert c ⟨lbl, e⟩ := by
-      rw [hc_shape]
-      show (lbl, e) ∈ inv
-      exact hmem
-    have htt := hv ⟨lbl, e⟩ c .refl hat
-    rw [hc_shape] at htt
-    simp only [Imperative.Config.getEval, Imperative.Config.getStore,
-      Imperative.Config.getEnv] at htt
-    rw [he_ff] at htt
-    exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
+    `core_noFailure_preserved` reduces to the abstract Imperative
+    `step_preserves_noFailure` applied to each step of the multi-step
+    derivation, with `coreIsAtAssert` playing the role of the
+    `IsAtAssert` parameter. -/
 
-theorem core_step_preserves_noFailure
-    (c₁ c₂ : CoreConfig)
-    (hv : ∀ (a : AssertId Expression) (cfg : CoreConfig),
-      CoreStepStar π φ c₁ cfg →
-      coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
-    (hnf : c₁.getEnv.hasFailure = Bool.false)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.getEnv.hasFailure = Bool.false := by
-  induction hstep with
-  | step_cmd hcmd =>
-    cases hcmd with
-    | cmd_sem heval =>
-      cases heval with
-      | eval_assert_fail hff _ =>
-        have htt := hv ⟨_, _⟩ _ .refl ⟨rfl, rfl⟩
-        simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
-        rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-      | _ => simp_all [Config.getEnv]
-    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        simp only [Config.getEnv, Bool.or_false]; exact hnf
-  | step_block => simp [Config.getEnv]; exact hnf
-  | step_ite_true _ _ => exact hnf
-  | step_ite_false _ _ => exact hnf
-  | step_loop_enter _ _ hff_iff _ =>
-    simp only [Config.getEnv]
-    have := loop_step_hasInvFailure_false_core hv hff_iff
-    simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or]; exact this
-  | step_loop_exit _ _ hff_iff _ =>
-    simp only [Config.getEnv]
-    have := loop_step_hasInvFailure_false_core hv hff_iff
-    simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or]; exact this
-  | step_ite_nondet_true => exact hnf
-  | step_ite_nondet_false => exact hnf
-  | step_loop_nondet_enter _ hff_iff =>
-    simp only [Config.getEnv]
-    have := loop_step_hasInvFailure_false_core hv hff_iff
-    simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or]; exact this
-  | step_loop_nondet_exit _ hff_iff =>
-    simp only [Config.getEnv]
-    have := loop_step_hasInvFailure_false_core hv hff_iff
-    simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or]; exact this
-  | step_exit => exact hnf
-  | step_funcDecl => simp [Config.getEnv]; exact hnf
-  | step_typeDecl => exact hnf
-  | step_stmts_nil => exact hnf
-  | step_stmts_cons => exact hnf
-  | step_seq_inner h ih =>
-    exact ih
-      (fun a cfg hr hat => hv a (.seq cfg _)
-        (core_seq_inner_star _ _ _ hr) hat) hnf
-  | step_seq_done => exact hnf
-  | step_seq_exit => exact hnf
-  | step_block_body h ih =>
-    exact ih
-      (fun a cfg hr hat => hv a (.block _ cfg)
-        (core_block_inner_star _ _ _ hr) hat) hnf
-  | step_block_done => exact hnf
-  | step_block_exit_none => exact hnf
-  | step_block_exit_match _ => exact hnf
-  | step_block_exit_mismatch _ => exact hnf
+private theorem coreIsAtAssert_of_inv_mem
+    {g m inv body md} {ρ : Env Expression} {lbl e}
+    (hmem : (lbl, e) ∈ inv) :
+    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
+
+private theorem coreIsAtAssert_seq_of_inner
+    {inner : CoreConfig} {ss a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.seq inner ss) a := h
+
+private theorem coreIsAtAssert_block_of_inner
+    {label} {inner : CoreConfig} {a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label inner) a := h
+
+private theorem evalCommand_failure_implies_assert_ff
+    {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
+    {ρ : Env Expression} {c : Command} {σ'}
+    (hcmd : EvalCommand π φ ρ.eval ρ.store c σ' true) :
+    ∃ a : AssertId Expression,
+      coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
+      ρ.eval ρ.store a.expr = some HasBool.ff := by
+  cases hcmd with
+  | cmd_sem heval =>
+    cases heval with
+    | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
 
 theorem core_noFailure_preserved
     (c₁ c₂ : CoreConfig)
@@ -2501,8 +2430,15 @@ theorem core_noFailure_preserved
   | step _ mid _ hstep hrest ih =>
     exact ih
       (fun a cfg h hat => hvalid a _ (.step hstep h) hat)
-      (core_step_preserves_noFailure π φ _ _
-        (fun a cfg hcs hat => hvalid a _ hcs hat)
+      (Imperative.step_preserves_noFailure
+        (P := Expression) (extendEval := EvalPureFunc φ)
+        coreIsAtAssert
+        evalCommand_failure_implies_assert_ff
+        coreIsAtAssert_of_inv_mem
+        coreIsAtAssert_seq_of_inner
+        coreIsAtAssert_block_of_inner
+        _ _
+        (fun a cfg hr hat => hvalid a cfg (StepStmtStar_to_CoreStepStar hr) hat)
         hf₀ hstep)
 
 end Core

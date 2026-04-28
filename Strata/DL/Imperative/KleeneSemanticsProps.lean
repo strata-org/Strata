@@ -68,18 +68,5 @@ theorem kleene_assume_terminal
     .step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond hwfb)) (.refl _)
   rwa [assume_env_eq] at raw
 
-omit [HasVal P] [HasBoolVal P] in
-theorem kleene_assume_then
-    {label : String} {expr : P.Expr} {md : MetaData P}
-    {b : KleeneStmt P (Cmd P)} {ρ₀ : Env P}
-    (h_assume : StepKleeneStar P (EvalCmd P)
-      (.stmt (.cmd (.assume label expr md)) ρ₀) (.terminal ρ₀)) :
-    StepKleeneStar P (EvalCmd P)
-      (.stmt (.seq (.cmd (.assume label expr md)) b) ρ₀) (.stmt b ρ₀) :=
-  .step _ _ _ .step_seq
-    (ReflTrans_Transitive _ _ _ _
-      (kleene_seq_inner_star _ _ b h_assume)
-      (.step _ _ _ .step_seq_done (.refl _)))
-
 end -- public section
 end Imperative

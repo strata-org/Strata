@@ -331,6 +331,20 @@ private theorem stmtsT_append_terminal
 
 /-! ## Loop simulation -/
 
+/-- With an empty invariant list, the `hasInvFailure` flag returned by any
+    `step_loop_*` rule is vacuously `false`: the boolean iff cannot witness
+    an invariant in an empty list. -/
+private theorem empty_inv_no_failure
+    {α : Type} {Q : α → Prop} {hasInvFailure : Bool}
+    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ ([] : List α) ∧ Q le) :
+    hasInvFailure = false := by
+  cases hb : hasInvFailure with
+  | false => rfl
+  | true =>
+    rw [hb] at hff_iff
+    have ⟨_, hmem, _⟩ := hff_iff.mp rfl
+    exact ((List.mem_nil_iff _).mp hmem).elim
+
 /-- Prove that adding the loop guard 'g' as an extra assume statement 'assume g'
     in the beginning of loop body does not reduce the set of possible final
     states. Note that hstarT assumption is using the deterministic
@@ -362,13 +376,7 @@ private def loop_sim
     match hstarT, hlen with
     | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ _ hff_iff _) hrest, hlen =>
-      have h_no : hasInvFailure = false := by
-        cases hb : hasInvFailure with
-        | false => rfl
-        | true =>
-          rw [hb] at hff_iff
-          have ⟨_, hmem, _⟩ := hff_iff.mp rfl
-          exact ((List.mem_nil_iff _).mp hmem).elim
+      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
       have hρ : ({ ρ₀ with hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
         rw [Bool.or_false]
@@ -378,15 +386,8 @@ private def loop_sim
       | .step _ _ _ h _ => exact nomatch h
     | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure hg _ hff_iff hwfb) hrest, hlen =>
-      have h_no : hasInvFailure = false := by
-        cases hb : hasInvFailure with
-        | false => rfl
-        | true =>
-          rw [hb] at hff_iff
-          have ⟨_, hmem, _⟩ := hff_iff.mp rfl
-          exact ((List.mem_nil_iff _).mp hmem).elim
+      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
-      -- post-state env = {ρ₀ with hasFailure := ρ₀.hasFailure || false}.
       let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
       have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', Bool.or_false]
       -- hrest is (.block .none (.stmts (body ++ [loop]) ρ₀')) →*T .terminal ρ'.
@@ -459,13 +460,7 @@ private def loop_sim_kleene
     match hstarT, hlen with
     | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
-      have h_no : hasInvFailure = false := by
-        cases hb : hasInvFailure with
-        | false => rfl
-        | true =>
-          rw [hb] at hff_iff
-          have ⟨_, hmem, _⟩ := hff_iff.mp rfl
-          exact ((List.mem_nil_iff _).mp hmem).elim
+      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
       have hρ : ({ ρ₀ with hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
         rw [Bool.or_false]
@@ -475,13 +470,7 @@ private def loop_sim_kleene
       | .step _ _ _ h _ => exact nomatch h
     | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _
         hasInvFailure _ hff_iff) hrest, hlen =>
-      have h_no : hasInvFailure = false := by
-        cases hb : hasInvFailure with
-        | false => rfl
-        | true =>
-          rw [hb] at hff_iff
-          have ⟨_, hmem, _⟩ := hff_iff.mp rfl
-          exact ((List.mem_nil_iff _).mp hmem).elim
+      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
       let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
       have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', Bool.or_false]
