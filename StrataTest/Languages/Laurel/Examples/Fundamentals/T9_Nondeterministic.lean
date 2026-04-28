@@ -14,6 +14,7 @@ namespace Laurel
 
 def program := r"
 nondet procedure nonDeterministic(x: int): (r: int)
+  opaque
   ensures r > 0
 {
   assumed
