@@ -18,6 +18,7 @@ composite Container {
 }
 
 procedure setAndReturn(c: Container, x: int) returns (r: int)
+  opaque
   ensures r == x
   modifies c
 {
@@ -26,6 +27,7 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
 };
 
 procedure setAndReturnBuggy(c: Container, x: int) returns (r: int)
+  opaque
   ensures r == x + 1
 //        ^^^^^^^^^^ error: assertion does not hold
   modifies c
