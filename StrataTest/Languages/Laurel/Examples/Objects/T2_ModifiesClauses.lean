@@ -108,7 +108,12 @@ procedure newObjectDoNotCountForModifies()
 
 procedure modifiesWildcardBodiless(c: Container, d: Container)
   opaque
+<<<<<<< HEAD
   modifies *;
+=======
+  modifies *
+;
+>>>>>>> 9be587dccaf3a8f74236ad6bb5bbbd0044ce1780
 
 procedure modifiesWildcardBodilessCaller() {
   var c: Container := new Container;
@@ -121,6 +126,10 @@ procedure modifiesWildcardBodilessCaller() {
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
   opaque
+<<<<<<< HEAD
+=======
+  ensures true
+>>>>>>> 9be587dccaf3a8f74236ad6bb5bbbd0044ce1780
   modifies *
 {
   c#value := 2;
