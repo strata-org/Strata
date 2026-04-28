@@ -108,7 +108,16 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .Unknown => throwTypeDiagnostic ty "could not infer type"
+  | .Unknown => do
+    -- Unknown types get a fresh type variable. The Core type checker will
+    -- unify it with the expected type from context. We emit a diagnostic
+    -- but do NOT set coreProgramHasSuperfluousErrors — the program is still
+    -- valid because the type checker can resolve the ftvar.
+    emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic "could not infer type")
+    let s ← get
+    let id := s.nextId
+    set { s with nextId := id + 1 }
+    return .ftvar s!"$__ty_unused_{id}"
   | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
