@@ -11,6 +11,10 @@ public import Strata.Languages.Core.Factory
 namespace Strata
 namespace Python
 
+-- Regex-to-Core translation builds Core expressions from parsed regex AST
+-- nodes. These synthesized expressions carry `SourceRange.none` because
+-- the regex AST has no source range metadata.
+
 public section
 
 -------------------------------------------------------------------------------

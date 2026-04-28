@@ -82,6 +82,7 @@ open Core Imperative Transform
   -- Initialize old variables of in-out parameters (those in both inputs and outputs).
   let oldInoutInits ← proc.header.getInoutParams.mapM fun (id,ty) => do
     let oldG := CoreIdent.mkOld id.name
+    -- Synthesized variable reference for old-value initialization; no source location
     let e : Core.Expression.Expr := .fvar Strata.SourceRange.none id none
     return (Statement.init oldG (Lambda.LTy.forAll [] ty) (.det e) #[])
 

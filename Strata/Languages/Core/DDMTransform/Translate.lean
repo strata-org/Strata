@@ -1173,7 +1173,7 @@ def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBi
     return ((s :: stmts), bindings)
 
 def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
-    (md : MetaData Core.Expression) (sr : SourceRange := Strata.SourceRange.none):
+    (md : MetaData Core.Expression) (sr : SourceRange):
   TransM ((List Core.Statement) × TransBindings) := do
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
@@ -1189,7 +1189,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
     return (stmts, { bindings with boundVars := bbindings })
 
 def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg)
-    (md : MetaData Core.Expression) (sr : SourceRange := Strata.SourceRange.none):
+    (md : MetaData Core.Expression) (sr : SourceRange):
   TransM ((List Core.Statement) × TransBindings) := do
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"

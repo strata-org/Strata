@@ -106,6 +106,7 @@ meta def elabCoreIdent : Syntax → MetaM Expr
 meta instance : MkLExprParams ⟨CoreExprMetadata, Unit⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (mkConst ``Unit)
+  -- Elaborated expressions from syntax have no runtime source range
   defaultMetadata := return mkConst ``Strata.SourceRange.none
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Unit⟩) e

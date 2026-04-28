@@ -75,6 +75,7 @@ private def withTypeBVars (xs : List String) (k : TranslateM α) : TranslateM α
 
 private def withBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
   let old := (← get).bvars
+  -- Synthesized bound variable references; no source location available
   let fresh := xs.toArray.map (fun n => (.fvar Strata.SourceRange.none (mkIdent n) none : Core.Expression.Expr))
   modify fun s => { s with bvars := old ++ fresh }
   try
@@ -458,6 +459,7 @@ private def constructProcArgsPrefix (n : String)
     : TranslateM (List (Core.CallArg Core.Expression)) := do
   let (modifiesTyped, readOnlyGlobals) ← getGlobalParamPrefix n
   let modifiesArgs := modifiesTyped.map fun (id, _) => Core.CallArg.inoutArg id
+  -- Synthesized variable reference for read-only global; no source location
   let readOnlyArgs := readOnlyGlobals.map
     fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar Strata.SourceRange.none id none : Core.Expression.Expr)
   return modifiesArgs ++ readOnlyArgs
@@ -711,7 +713,7 @@ private def lowerPureFuncDef
     let pres := pres.preconditions.map (fun (_, c) =>
       let sr := match Imperative.getFileRange c.md with
         | some fr => fr.range
-        | none => Strata.SourceRange.none
+        | none => Strata.SourceRange.none -- fallback when metadata has no file range
       ⟨c.expr, sr⟩)
     let body ← withBVars inputNames (toCoreExpr body)
     let attr :=

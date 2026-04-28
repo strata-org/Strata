@@ -23,6 +23,8 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
+/-- Translate a C_Simp expression to a Core expression.
+    C_Simp expressions carry `Unit` metadata, so no source range is available. -/
 def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
   | .const _ c => .const Strata.SourceRange.none c
@@ -83,6 +85,9 @@ Assumption that invariant holds on exit
 
 This is suitable for Symbolic Execution, but may not be suitable for
 other analyses.
+
+Synthesized expressions (measure checks, guard negations) use `SourceRange.none`
+because they have no corresponding source location.
 -/
 def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
   match s with

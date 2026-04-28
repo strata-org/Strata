@@ -42,6 +42,7 @@ instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) w
 instance : Inhabited ExpressionMetadata :=
   show Inhabited Strata.SourceRange from inferInstance
 
+-- When combining provenance during evaluation, no single source location applies
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
   combine _ := Strata.SourceRange.none
 
@@ -277,7 +278,7 @@ def Env.genVars (xs : List String) (σ : Lambda.LState CoreLParams) : (List Core
 
 /--
 Generate a fresh variable using the base name and pre-existing type, if any,
-from `xt`.
+from `xt`. Synthesized variable references carry no source location.
 -/
 def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Unit)) :
   Expression.Expr × Env :=
@@ -306,6 +307,7 @@ def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) :
 /--
 Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
 only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
+Synthesized variable references carry no source location.
 -/
 def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) (E : Env) : Env :=
@@ -317,6 +319,7 @@ def Env.insertFreeVarsInOldestScope
   { E with exprEnv := { E.exprEnv with state := state' }}
 
 
+-- Synthesized path condition logic; no source location for generated connectives
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
   let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))

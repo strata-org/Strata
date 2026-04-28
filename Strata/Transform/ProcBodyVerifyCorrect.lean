@@ -300,7 +300,8 @@ private theorem PrefixStepsOK_nondet_init_map
         exact h_nodup.1 (heq ▸ List.mem_map_of_mem (f := Prod.fst) hmem)
 
 /-- For a deterministic init `init oldG ty (.det (fvar id))`, if `id` has a value
-    in the pre-state, `oldG` is none, and `oldG ≠ id`, then it steps correctly. -/
+    in the pre-state, `oldG` is none, and `oldG ≠ id`, then it steps correctly.
+    The `fvar` uses `SourceRange.none` to match the synthesized init from `ProcBodyVerify`. -/
 private theorem PrefixStepsOK_det_init_cons
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (id : Expression.Ident) (oldG : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)

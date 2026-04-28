@@ -636,11 +636,13 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             | some body =>
               -- Substitute the formals in the function body with appropriate
               -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
+              -- Synthesized bound variables for substitution; no source location
               let bvars := (List.range formals.length).map (fun i => LExpr.bvar Strata.SourceRange.none i)
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
               let (term, ctx) ← toSMTTerm E bvs body ctx
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
           -- For recursive functions, generate per-constructor axioms
+          -- Recursive axioms are synthesized; no source location
           let recAxioms ← if func.isRecursive && isNew then
               Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
             else .ok []
@@ -716,8 +718,8 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt
 
-/--
-Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
+/-- Convert an SMT term back to a Core `LExpr` for counterexample display.
+SMT terms have no source location, so all nodes use `SourceRange.none`.
 
 Handles:
 - Primitives: bool, int, real, bitvec, string

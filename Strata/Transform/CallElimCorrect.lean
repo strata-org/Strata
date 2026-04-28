@@ -26,6 +26,9 @@ import Strata.DL.Util.ListUtils
   `Stmt`. This proof will be re-done with a new small-step semantics in the near
   future.
 
+  Variable references in these proofs use `SourceRange.none` to match the
+  synthesized expressions produced by the call elimination transform.
+
   This file contains the main proof that the call elimination transformation is
   semantics preserving (see `callElimStatementCorrect`).
   Additionally, `callElimBlockNoExcept` shows that the call elimination

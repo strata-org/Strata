@@ -21,6 +21,11 @@ import Strata.Languages.Python.FunctionSignatures
 namespace Strata
 open Lambda.LTy.Syntax
 
+-- Python-to-Core translation.
+-- The Python AST does not carry SourceRange metadata, so all synthesized
+-- Core expressions use `SourceRange.none`. Propagating Python source
+-- positions is tracked as future work.
+
 public section
 
 -- Some hard-coded things we'll need to fix later:

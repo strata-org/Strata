@@ -17,7 +17,9 @@ public section
 
 namespace Core
 
-/-- expressions that can't be reduced when evaluating -/
+/-- Expressions that can't be reduced when evaluating.
+    These are canonical forms used in semantic definitions; they carry no source location
+    because they represent abstract values, not parsed source terms. -/
 inductive Value : Core.Expression.Expr → Prop where
   | const :  Value (.const Strata.SourceRange.none _)
   | bvar  :  Value (.bvar Strata.SourceRange.none _)
@@ -187,12 +189,12 @@ def updatedStates
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
-/-- The evaluator handles old expressions correctly
--- It should specify the exact expression form that would map to the old store
--- This can be used to implement more general two-state functions, as in Dafny
--- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
--- where this condition will be asserted at procedures utilizing those two-state functions
--/
+/-- The evaluator handles old expressions correctly.
+It should specify the exact expression form that would map to the old store.
+This can be used to implement more general two-state functions, as in Dafny
+https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
+where this condition will be asserted at procedures utilizing those two-state functions.
+Synthesized `old` variable references carry no source location. -/
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,

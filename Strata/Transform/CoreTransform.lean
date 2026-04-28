@@ -31,6 +31,8 @@ def createHavoc (ident : Expression.Ident)
 def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
   : List Statement := ident.map (createHavoc · md)
 
+/-- Create a free variable reference from an identifier.
+    Synthesized during transforms; no source location available. -/
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
   := Lambda.LExpr.fvar Strata.SourceRange.none ident none
@@ -210,7 +212,8 @@ def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression
   trips.map (createInit · md)
 
 /--
-Generate an init statement with rhs as a free variable reference
+Generate an init statement with rhs as a free variable reference.
+Synthesized during transforms; no source location available.
 -/
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
     (md:Imperative.MetaData Expression)

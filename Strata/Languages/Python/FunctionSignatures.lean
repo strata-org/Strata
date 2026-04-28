@@ -149,6 +149,8 @@ def addCoreDecls : SignatureM Unit := do
 
 end
 
+/-- Build a `None` value expression for a given `OrNone` type.
+    Synthesized expression; no source location available. -/
 def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
   if !ty.endsWith "OrNone" then
     panic! s!"Should only be called for possibly None types. Called for: {ty}"

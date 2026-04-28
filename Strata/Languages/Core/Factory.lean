@@ -907,6 +907,7 @@ end -- public meta section
 
 public section
 
+-- Inhabited defaults; no meaningful source location
 instance : Inhabited CoreLParams.Metadata where
   default := Strata.SourceRange.none
 
@@ -933,6 +934,7 @@ def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
 def emptyTriggerGroupOp : Expression.Expr := emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
+-- Inhabited default; no meaningful source location
 instance : Inhabited (⟨ExpressionMetadata, CoreIdent⟩: LExprParams).Metadata where
   default := Strata.SourceRange.none
 
@@ -996,9 +998,11 @@ def seqContainsOp : Expression.Expr := seqContainsFunc.opExpr
 def seqTakeOp : Expression.Expr := seqTakeFunc.opExpr
 def seqDropOp : Expression.Expr := seqDropFunc.opExpr
 
+/-- Build a trigger group expression. Trigger infrastructure is synthesized with no source location. -/
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
   ts.foldl (fun g t => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerOp t) g) emptyTriggerGroupOp
 
+/-- Build a triggers expression from groups. Trigger infrastructure is synthesized with no source location. -/
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
   groups.foldl (fun gs g => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerGroupOp g) gs) emptyTriggersOp
