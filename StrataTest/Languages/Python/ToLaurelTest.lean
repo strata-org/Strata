@@ -20,24 +20,13 @@ private def assertEq [BEq α] [ToString α] (actual expected : α) : IO Unit := 
 
 private def loc : SourceRange := default
 
-private def wrapAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType :=
-  match atom with
-  | .ident nm args => .ident loc nm args
-  | .intLiteral v => .intLiteral loc v
-  | .stringLiteral v => .stringLiteral loc v
-  | .typedDict fields types req => .typedDict loc fields types req
-
-private def mkType (atom : SpecAtomType) : SpecType :=
-  wrapAtom default atom
-
-private def mkUnion (atoms : Array SpecAtomType) : SpecType :=
-  SpecType.unionArray default (atoms.map (wrapAtom default))
-
-private def identAtom (nm : PythonIdent) : SpecAtomType :=
-  .ident nm #[]
-
 private def identType (nm : PythonIdent) : SpecType :=
   SpecType.ident default nm
+
+private def noneType : SpecType := SpecType.noneType default
+
+private def mkUnion (types : Array SpecType) : SpecType :=
+  SpecType.unionArray default types
 
 private def mkArg (name : String) (type : SpecType) (default : Option SpecDefault := none) : Arg :=
   { name, type, default := default }
@@ -136,7 +125,6 @@ private def mkFuncSigWithPostcond (name : String) (returnType : SpecType)
     preconditions := #[], postconditions := postconditions
   }
 
-private def noneAtom := SpecAtomType.noneType
 
 /-! ## All function params and returns map to Any -/
 
@@ -177,10 +165,10 @@ procedure typed_dict() returns(result:UserDefined(Any))
     (args := #[mkArg "items" (identType .typingList)]),
   mkFuncSig "returns_dict" (identType .typingDict),
   mkFuncSig "typed_list"
-    (mkType (.ident .typingList #[identType .builtinsStr])),
+    (SpecType.ident loc .typingList #[identType .builtinsStr]),
   mkFuncSig "typed_dict"
-    (mkType (.ident .typingDict
-      #[identType .builtinsStr, identType .builtinsInt]))
+    (SpecType.ident loc .typingDict
+      #[identType .builtinsStr, identType .builtinsInt])
 ]
 
 /-! ## Literal types, TypedDict, and string-literal unions → Any -/
@@ -193,15 +181,15 @@ procedure str_enum() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
-  mkFuncSig "int_literal_ret" (mkType (.intLiteral 42)),
+  mkFuncSig "int_literal_ret" (SpecType.intLiteral loc 42),
   mkFuncSig "str_literal_ret"
-    (mkType (.stringLiteral "hello")),
+    (SpecType.stringLiteral loc "hello"),
   mkFuncSig "typed_dict_ret"
-    (mkType (.typedDict #["f"]
-      #[identType .builtinsStr] #[true])),
+    (SpecType.typedDict loc #["f"]
+      #[identType .builtinsStr] #[true]),
   mkFuncSig "str_enum"
-    (mkUnion #[.stringLiteral "A", .stringLiteral "B",
-               .stringLiteral "C"])
+    (mkUnion #[SpecType.stringLiteral loc "A", SpecType.stringLiteral loc "B",
+               SpecType.stringLiteral loc "C"])
 ]
 
 /-! ## Optional type patterns (Union[None, T]) → Any -/
@@ -217,21 +205,21 @@ procedure opt_int_enum() returns(result:UserDefined(Any))
 #guard_msgs in
 #eval runTest #[
   mkFuncSig "opt_str"
-    (mkUnion #[noneAtom, identAtom .builtinsStr]),
+    (mkUnion #[noneType, identType .builtinsStr]),
   mkFuncSig "opt_int"
-    (mkUnion #[noneAtom, identAtom .builtinsInt]),
+    (mkUnion #[noneType, identType .builtinsInt]),
   mkFuncSig "opt_bool"
-    (mkUnion #[noneAtom, identAtom .builtinsBool])
+    (mkUnion #[noneType, identType .builtinsBool])
     (args := #[mkArg "x"
-      (mkUnion #[noneAtom, identAtom .builtinsStr])]),
+      (mkUnion #[noneType, identType .builtinsStr])]),
   mkFuncSig "opt_typed_dict"
-    (mkUnion #[noneAtom,
-      .typedDict #["x"] #[identType .builtinsStr] #[true]]),
+    (mkUnion #[noneType,
+      SpecType.typedDict loc #["x"] #[identType .builtinsStr] #[true]]),
   mkFuncSig "opt_str_enum"
-    (mkUnion #[noneAtom, .stringLiteral "A",
-               .stringLiteral "B"]),
+    (mkUnion #[noneType, SpecType.stringLiteral loc "A",
+               SpecType.stringLiteral loc "B"]),
   mkFuncSig "opt_int_enum"
-    (mkUnion #[noneAtom, .intLiteral 1, .intLiteral 2])
+    (mkUnion #[noneType, SpecType.intLiteral loc 1, SpecType.intLiteral loc 2])
 ]
 
 /-! ## Error cases (updated to verify WarningKind) -/
@@ -252,8 +240,8 @@ info: procedure f() returns(result:UserDefined(Any))
 #guard_msgs in
 #eval runTest
   #[mkFuncSig "f"
-    (mkUnion #[identAtom .builtinsStr,
-               identAtom .builtinsInt])]
+    (mkUnion #[identType .builtinsStr,
+               identType .builtinsInt])]
 
 /--
 info: procedure f() returns(result:UserDefined(Any))
@@ -261,8 +249,8 @@ info: procedure f() returns(result:UserDefined(Any))
 #guard_msgs in
 #eval runTest
   #[mkFuncSig "f"
-    (mkUnion #[noneAtom,
-      identAtom (PythonIdent.mk "foo" "Bar")])]
+    (mkUnion #[noneType,
+      identType (PythonIdent.mk "foo" "Bar")])]
 
 /-! ## Class and type definitions -/
 
@@ -303,9 +291,9 @@ procedure takes_none(x:UserDefined(Any)) returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
-  mkFuncSig "returns_none" (mkType .noneType),
-  mkFuncSig "takes_none" (identType .noneType)
-    (args := #[mkArg "x" (mkType .noneType)])
+  mkFuncSig "returns_none" noneType,
+  mkFuncSig "takes_none" noneType
+    (args := #[mkArg "x" noneType])
 ]
 
 /-! ## Class types as UserDefined -/
@@ -320,8 +308,8 @@ procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Any))
     loc := loc, name := "Foo"
     methods := #[]
   },
-  mkFuncSig "uses_class" (mkType (.ident (PythonIdent.mk "" "Foo") #[]))
-    (args := #[mkArg "x" (mkType (.ident (PythonIdent.mk "" "Foo") #[]))])
+  mkFuncSig "uses_class" (identType (PythonIdent.mk "" "Foo"))
+    (args := #[mkArg "x" (identType (PythonIdent.mk "" "Foo"))])
 ]
 
 /-! ## Empty input -/
@@ -391,11 +379,11 @@ dispatch create_client:
   .externTypeDecl "SvcClient" (PythonIdent.mk "mod.client" "SvcClient"),
   .externTypeDecl "OtherClient" (PythonIdent.mk "mod.other" "OtherClient"),
   mkOverload "create_client"
-    (mkType (.ident (PythonIdent.mk "mod.client" "SvcClient") #[]))
-    (args := #[mkArg "name" (mkType (.stringLiteral "svc_a"))]),
+    (identType (PythonIdent.mk "mod.client" "SvcClient"))
+    (args := #[mkArg "name" (SpecType.stringLiteral loc "svc_a")]),
   mkOverload "create_client"
-    (mkType (.ident (PythonIdent.mk "mod.other" "OtherClient") #[]))
-    (args := #[mkArg "name" (mkType (.stringLiteral "svc_b"))]),
+    (identType (PythonIdent.mk "mod.other" "OtherClient"))
+    (args := #[mkArg "name" (SpecType.stringLiteral loc "svc_b")]),
   .classDef {
     loc := loc, name := "SvcClient"
     methods := #[
@@ -422,10 +410,10 @@ dispatch make:
 #eval runFullTest #[
   .classDef { loc := loc, name := "Alpha", methods := #[] },
   .classDef { loc := loc, name := "Beta", methods := #[] },
-  mkOverload "make" (mkType (.ident (PythonIdent.mk "" "Alpha") #[]))
-    (args := #[mkArg "kind" (mkType (.stringLiteral "a"))]),
-  mkOverload "make" (mkType (.ident (PythonIdent.mk "" "Beta") #[]))
-    (args := #[mkArg "kind" (mkType (.stringLiteral "b"))])
+  mkOverload "make" (identType (PythonIdent.mk "" "Alpha"))
+    (args := #[mkArg "kind" (SpecType.stringLiteral loc "a")]),
+  mkOverload "make" (identType (PythonIdent.mk "" "Beta"))
+    (args := #[mkArg "kind" (SpecType.stringLiteral loc "b")])
 ]
 
 -- extractOverloads only processes externTypeDecl and @overload functions,
@@ -438,8 +426,8 @@ info: dispatch factory:
 #eval runDispatchTest #[
   .externTypeDecl "Foo" (PythonIdent.mk "pkg" "Foo"),
   mkOverload "factory"
-    (mkType (.ident (PythonIdent.mk "pkg" "Foo") #[]))
-    (args := #[mkArg "k" (mkType (.stringLiteral "x"))]),
+    (identType (PythonIdent.mk "pkg" "Foo"))
+    (args := #[mkArg "k" (SpecType.stringLiteral loc "x")]),
   .classDef { loc := loc, name := "Ignored", methods := #[] },
   mkFuncSig "also_ignored" (identType .builtinsInt),
   .typeDef { loc := loc, nameLoc := loc,
@@ -533,35 +521,35 @@ info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
-  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .builtinsFloat])]
+  #[mkFuncSig "f" (mkUnion #[noneType, identType .builtinsFloat])]
 
 /--
 info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
-  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .typingList])]
+  #[mkFuncSig "f" (mkUnion #[noneType, identType .typingList])]
 
 /--
 info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
-  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .typingDict])]
+  #[mkFuncSig "f" (mkUnion #[noneType, identType .typingDict])]
 
 /--
 info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
-  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .typingAny])]
+  #[mkFuncSig "f" (mkUnion #[noneType, identType .typingAny])]
 
 /--
 info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
-  #[mkFuncSig "f" (mkUnion #[noneAtom, identAtom .builtinsBytes])]
+  #[mkFuncSig "f" (mkUnion #[noneType, identType .builtinsBytes])]
 
 -- Precondition: placeholderExpr
 /--
@@ -664,7 +652,7 @@ info: pySpecToLaurel.overloadArgNotStringLiteral: Overloaded function 'bad': fir
 #guard_msgs in
 #eval runTestWarningKinds
   #[mkOverload "bad" (identType .builtinsStr)
-    (args := #[mkArg "x" (mkUnion #[.stringLiteral "a", .stringLiteral "b"])])]
+    (args := #[mkArg "x" (mkUnion #[SpecType.stringLiteral loc "a", SpecType.stringLiteral loc "b"])])]
 
 -- Overload: overloadArgNotStringLiteral
 /--
@@ -682,8 +670,8 @@ info: pySpecToLaurel.overloadReturnNotClass: Overloaded function 'bad': return t
 #guard_msgs in
 #eval runTestWarningKinds
   #[mkOverload "bad"
-    (mkUnion #[identAtom .builtinsStr, identAtom .builtinsInt])
-    (args := #[mkArg "x" (mkType (.stringLiteral "a"))])]
+    (mkUnion #[identType .builtinsStr, identType .builtinsInt])
+    (args := #[mkArg "x" (SpecType.stringLiteral loc "a")])]
 
 -- Overload: overloadReturnNotClass
 /--
@@ -692,8 +680,8 @@ info: pySpecToLaurel.overloadReturnNotClass: Overloaded function 'bad': return t
 #guard_msgs in
 #eval runTestWarningKinds
   #[mkOverload "bad"
-    (mkType (.stringLiteral "hello"))
-    (args := #[mkArg "x" (mkType (.stringLiteral "a"))])]
+    (SpecType.stringLiteral loc "hello")
+    (args := #[mkArg "x" (SpecType.stringLiteral loc "a")])]
 
 /-! ## Precondition integration tests
 
@@ -833,14 +821,13 @@ private def translateFunc (args : Array Arg := #[])
   assert! body.contains "result := <??>"
   assert! body.contains "assume Any..isfrom_str(result)"
 
--- Int arg with no default: type assert + required-param assert
+-- Int arg with no default: type assert (implies not-None, so no separate check)
 #eval do
   let (body, errs) := translateFunc
     (args := #[mkArg "x" (identType .builtinsInt)])
   assert! errs == 0
   assert! body.contains "assert Any..isfrom_int(x)"
-  assert! body.contains "assert !Any..isfrom_None(x)"
-  assert! body.contains "summary \"'x' is required\""
+  assert! !body.contains "isfrom_None"
 
 -- Optional bool arg (has default): type assert uses Or, no required-param assert
 #eval do
@@ -882,10 +869,9 @@ private def translateFunc (args : Array Arg := #[])
     (preconditions := #[pre])
     (postconditions := #[geZero "result"])
   assert! errs == 0
-  -- type assert for n
+  -- type assert for n (implies not-None, so no separate check)
   assert! body.contains "assert Any..isfrom_int(n)"
-  -- required-param assert for n
-  assert! body.contains "assert !Any..isfrom_None(n)"
+  assert! !body.contains "isfrom_None(n)"
   -- user precondition
   assert! body.contains "assert" && body.contains "summary \"n >= 0\""
   -- postcondition as assume

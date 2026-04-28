@@ -158,6 +158,14 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     return mkTy (.UserDefined { text := nm.toLaurelName })
   | none => return tyAny
 
+-- FIXME: typeTester? seems buggy It seems like it should build a disjunction
+-- over atoms.  This doesn't distinguish between types and could hide errors.
+-- I think it should be converted to take specType and value and return
+-- ToLaurelM (Option StmtExprMd) with None meaning no assertion needed
+-- (e.g., ty is Any or a user-defined type).  If a type exists that is not
+-- supported it should raise a warning.
+
+
 /-- Map a SpecType to its `Any..isfrom_X` tester name, if applicable. -/
 private def typeTester? (ty : SpecType) : Option String :=
   match ty.asIdent with
@@ -376,10 +384,11 @@ def buildSpecBody (allArgs : Array Arg)
   let resultId : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
   let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
   stmts := stmts.push assignStmt
-  -- 2. Assert type preconditions for each typed parameter
+  -- 2. Assert type / required-param preconditions
   for arg in allArgs do
-    if let some testerName := typeTester? arg.type then
-      let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := none }
+    let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := none }
+    match typeTester? arg.type with
+    | some testerName =>
       let testerCall : StmtExprMd := { val := .StaticCall (mkId testerName) [paramId], source := none }
       if arg.default.isSome then
         let noneCheck : StmtExprMd := { val := .StaticCall (mkId "Any..isfrom_None") [paramId], source := none }
@@ -389,13 +398,12 @@ def buildSpecBody (allArgs : Array Arg)
       else
         let assertStmt ← mkStmtWithLoc (.Assert { condition := testerCall, summary := none }) default
         stmts := stmts.push assertStmt
-  -- 3. Assert required-param checks (not None)
-  for arg in allArgs do
-    if arg.default.isNone then
-      let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier arg.name Laurel.tyAny))
-      let msg := SpecAssertMsg.requiredParam arg.name |>.render
-      let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
-      stmts := stmts.push assertStmt
+    | none =>
+      if arg.default.isNone then
+        let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier arg.name Laurel.tyAny))
+        let msg := SpecAssertMsg.requiredParam arg.name |>.render
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
+        stmts := stmts.push assertStmt
   -- 4. Assert user pyspec preconditions
   let mut idx := 0
   for assertion in preconditions do

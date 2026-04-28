@@ -62,11 +62,16 @@ structure PyArgInfo where
   typeTesters : Array String
   default : Option (Python.expr SourceRange)
 
+structure PyRetInfo where
+  source : Option FileRange
+  laurelType : HighTypeMd
+  typeTesters : Array String
+
 structure PythonFunctionDecl where
   name : String
   args : List PyArgInfo
   kwargsName: Option String
-  ret : Option (List String × Option FileRange)
+  ret : Option PyRetInfo
 deriving Inhabited
 
 /-- A symbol imported from a PySpec module, carrying its Laurel-internal
@@ -937,8 +942,8 @@ partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr 
     match ctx.functionSignatures.find? (λ f => f.name == fname) with
       | some funcDecl =>
         match funcDecl.ret with
-        | some ([ty], _) => return ty
-        | _ => return PyLauType.Any
+        | some retInfo => return highTypeToPyLauType retInfo.laurelType.val
+        | none => return PyLauType.Any
       | _ => return PyLauType.Any
 
 
@@ -1224,22 +1229,24 @@ partial def translateCall (ctx : TranslationContext)
     -- Emit type assertions: if a key is present in the dict, its value
     -- must match the declared parameter type. This catches {"key": None}
     -- where the parameter type is str/int/bool/float.
-    let mut typeAsserts : List StmtExprMd := []
+    let mut typeAsserts : Array StmtExprMd := #[]
     let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
     for arg in remainingParams do
       if arg.typeTesters.size > 0 then
         let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
           [dictExpr, mkStmtExprMd (.LiteralString arg.name)])
         let val := DictStrAny_get_param trans_dict arg.name true
-        let checks := arg.typeTesters.toList.map fun callee =>
+        let checks := arg.typeTesters.map fun callee =>
           mkStmtExprMd (.StaticCall (mkId callee) [val])
-        let isCorrectType := createBoolOrExpr checks
+        let isCorrectType := createBoolOrExpr checks.toList
         let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
-        typeAsserts := mkStmtExprMd (.Assert { condition := cond }) :: typeAsserts
-    let typeAssertsOrdered := typeAsserts.reverse
+        typeAsserts := typeAsserts.push (mkStmtExprMd (.Assert { condition := cond }))
+    let typeAssertsOrdered := typeAsserts.toList
     let call ← emitCall (allArgs ++ kwargsArg)
-    if typeAssertsOrdered.isEmpty then return call
-    else return mkStmtExprMd (.Block (typeAssertsOrdered ++ [call]) none)
+    if typeAssertsOrdered.isEmpty then
+      return call
+    else
+      return mkStmtExprMd (.Block (typeAsserts.toList ++ [call]) none)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
@@ -1911,6 +1918,7 @@ def getUnionTypes (arg: Python.expr SourceRange) : List (Python.expr SourceRange
   | .BinOp _ left _ right => getUnionTypes left ++ getUnionTypes right
   | _ => [arg]
 
+-- Could
 def checkValidInputTypeList (ctx : TranslationContext) (tys: List String) : Except TranslationError (List String) := do
   for ty in tys do
     let _ ← translateType ctx ty
@@ -1961,7 +1969,6 @@ def unpackPyArguments (ctx : TranslationContext) (args: Python.arguments SourceR
                         ++ defaults.val.toList.map (λ x => some x)
       let argsinfo := args.val.toList.zip listdefaults
       let mut argtypes : Array PyArgInfo := #[]
-      let mut tys : List String := []
       for (arg, default) in argsinfo do
         match arg with
           | .mk_arg sr name oty _ =>
@@ -1969,23 +1976,26 @@ def unpackPyArguments (ctx : TranslationContext) (args: Python.arguments SourceR
             let defaultType := match default.mapM (inferExprType ctx) with
                   | .ok (some ty) => some ty
                   | _ => none
+            let mut tys : List String := []
             tys ← match oty.val with
               | .some ty => getArgumentTypes ty
               | _ => pure [PyLauType.Any]
             match defaultType with
-              | .some "None" => --Only None is allowed to add to type list
-                  if tys != [PyLauType.Any] then
-                    tys:= (PyLauType.None::tys).dedup
-              | .some defaultType =>
-                  if isOfAnyType defaultType && tys != [PyLauType.Any] && defaultType ∉ tys then
-                    throw (.unsupportedConstruct "Default value type is invalid" (toString (repr arg)))
-              | _ => pure ()
+            | .some "None" => --Only None is allowed to add to type list
+              if tys != [PyLauType.Any] then
+                tys:= (PyLauType.None::tys).dedup
+            | .some defaultType =>
+              if isOfAnyType defaultType && tys != [PyLauType.Any] && defaultType ∉ tys then
+                throw (.unsupportedConstruct "Default value type is invalid" (toString (repr arg)))
+            | _ =>
+              pure ()
             tys ← checkValidInputTypeList ctx tys
             argtypes := argtypes.push {
               name:= name.val,
               source := md,
               laurelType := pyArgLaurelType ctx tys,
-              typeTesters := pyLauTypeTesters tys, default:= default
+              typeTesters := pyLauTypeTesters tys,
+              default:= default
             }
       let kwargsName := kwargs.val.map (λ kwarg => match kwarg with | .mk_arg _ name _ _ => name.val)
       return (argtypes.toList, kwargsName)
@@ -1997,14 +2007,24 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
     let args_trans ← unpackPyArguments ctx args
     let args := if ctx.currentClassName.isSome then args_trans.fst.tail else args_trans.fst
     let ret ←  if name.endsWith "@__init__" then
-          let retMd := sourceRangeToSource ctx.filePath f.ann
-          pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
+          let retSource := sourceRangeToSource ctx.filePath f.ann
+          let className := (name.dropEnd "@__init__".length).toString
+          pure $ some {
+            source := retSource,
+            laurelType := mkHighTypeMd (.UserDefined { text := className }),
+            typeTesters := #[]
+          }
         else
         match returns.val with
           | some retTy =>
-              let retMd := sourceRangeToSource ctx.filePath retTy.ann
+              let retSource := sourceRangeToSource ctx.filePath retTy.ann
               match checkValidInputTypeList ctx (← getArgumentTypes retTy) with
-              | .ok tys => pure (tys, retMd)
+              | .ok tys =>
+                pure $ some {
+                  source := retSource,
+                  laurelType := pyArgLaurelType ctx tys,
+                  typeTesters := pyLauTypeTesters tys
+                }
               | _ => pure none
           | none => pure none
     let kwargsName := args_trans.snd
@@ -2093,8 +2113,11 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       (fun arg => getTypeConstraint (paramInputPrefix ++ arg.name) arg.source arg.typeTesters funcDecl.name arg.name)
     let typeConstraintPostcondition :=
       if funcDecl.name.endsWith "@__init__" then [] else
-      match funcDecl.ret.map fun (tys, source) => getReturnTypeEnsure source (pyLauTypeTesters tys) funcDecl.name with
-        | some (some constraint) => [constraint]
+      match funcDecl.ret with
+        | some retInfo =>
+          match getReturnTypeEnsure retInfo.source retInfo.typeTesters funcDecl.name with
+          | some constraint => [constraint]
+          | none => []
         | _ => []
 
     -- Translate return type
@@ -2161,9 +2184,13 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
   prelude.decls.filterMap fun decl =>
     match Core.Program.Procedure.find? prelude decl.name with
     | some proc =>
-      -- FIXME:
-      let outputtypes := proc.header.outputs.values.map getTypeName
       let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
+      let retParam := proc.header.outputs.head?
+      let ret := retParam.map fun (_, tp) =>
+        let tys := [getTypeName tp]
+        { source := none,
+          laurelType := AnyTy,
+          typeTesters := pyLauTypeTesters tys : PyRetInfo }
       some {
         name:= proc.header.name.name
         args:=  proc.header.inputs |>.map λ(nm,tp) =>
@@ -2175,7 +2202,7 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
           default:= noneexpr
         }
         kwargsName := none
-        ret := if outputtypes.length == 0 then none else some ([outputtypes[0]!], none)
+        ret
       }
     | none => none
 /-- Extract field declarations from class body (annotated assignments at class level) -/
@@ -2285,7 +2312,9 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     -- where `self` is stripped via `.tail` for methods inside a class.
     args := []
     kwargsName := none
-    ret := some ([className], none)
+    ret := some { source := none,
+                  laurelType := mkHighTypeMd (.UserDefined { text := className }),
+                  typeTesters := #[] }
   }
   -- Derive the procedure from the decl, mirroring translateMethod's convention
   let selfParam : Parameter := {
@@ -2426,7 +2455,7 @@ def getPreludeProcedures (prelude: Core.Program) : List String :=
         |.proc => some decl.name.name
         | _ => none)
 
-/-- Information extracted from the prelude that `pythonToLaurel'` needs.
+/-- Information extracted from the prelude that `pythonToLaurel` needs.
     This decouples the translation from a specific `Core.Program` representation,
     allowing the caller to supply prelude info from Laurel-level declarations. -/
 structure PreludeInfo where
@@ -2510,7 +2539,10 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
             (param.name.text.drop paramInputPrefix.length).toString
           else param.name.text
           {name:= argName, source := none, laurelType := param.type, typeTesters := pyLauTypeTesters [getHighTypeName param.type.val], default:= some noneexpr}
-        let ret := p.outputs.head?.map fun param => ([getHighTypeName param.type.val], none)
+        let ret := p.outputs.head?.map fun param =>
+          let tys := [getHighTypeName param.type.val]
+          { source := none, laurelType := param.type,
+            typeTesters := pyLauTypeTesters tys : PyRetInfo }
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
     let funcNames := prog.staticProcedures.filterMap fun p =>
@@ -2549,7 +2581,7 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   importedSymbols := b.importedSymbols.fold (init := a.importedSymbols) fun m k v => m.insert k v
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
-def pythonToLaurel' (info : PreludeInfo)
+def pythonToLaurel (info : PreludeInfo)
     (body : Array (stmt SourceRange))
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
@@ -2752,18 +2784,6 @@ def pythonToLaurel' (info : PreludeInfo)
   }
 
   return (program, ctx)
-
-/-- Translate Python module to Laurel Program.
-    Delegates to `pythonToLaurel'` after extracting prelude info,
-    then prepends External stubs so the Laurel resolve pass can
-    see prelude names. -/
-def pythonToLaurel (prelude: Core.Program)
-    (pyCommands : Array (stmt SourceRange))
-    (filePath : String := "")
-    (overloadTable : OverloadTable := {})
-    : Except TranslationError (Laurel.Program × TranslationContext) := do
-  let info := PreludeInfo.ofCoreProgram prelude
-  pythonToLaurel' info pyCommands filePath overloadTable
 
 end -- public section
 end Strata.Python

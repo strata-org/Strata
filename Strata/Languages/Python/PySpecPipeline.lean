@@ -65,22 +65,15 @@ private def specArgLaurelType (arg : Python.Specs.Arg) : Laurel.HighTypeMd :=
       Python.mkHighTypeMd (.UserDefined { text := id.toLaurelName })
   | none => Python.AnyTy
 
-/-- Compute `typeTesters` for a pyspec parameter by mapping each atom's
-    `PythonIdent` directly to its tester predicate name. -/
-private def specArgTypeTesters (arg : Python.Specs.Arg) : Array String :=
-  arg.type.atoms.toList.foldl (init := #[]) fun acc a =>
-    match a with
-    | .ident nm _ => match nm.toTypeTester? with
-      | some t => acc.push t
-      | none => acc
-    | _ => acc
-
-/-- Convert a pyspec Arg to a PythonFunctionDecl arg info. -/
+/-- Convert a pyspec Arg to a PythonFunctionDecl arg info.
+    `typeTesters` is empty because `buildSpecBody` already generates type
+    assertions in the procedure body — call-site preconditions would be
+    redundant. -/
 private def specArgToFuncDeclArg (arg : Python.Specs.Arg) : Python.PyArgInfo :=
   { name := arg.name,
     source := none,
     laurelType := specArgLaurelType arg,
-    typeTesters := specArgTypeTesters arg,
+    typeTesters := #[],
     default := arg.default.map specDefaultToExpr
   }
 
@@ -477,7 +470,7 @@ public def pythonAndSpecToLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
-    match Python.pythonToLaurel' preludeInfo stmts metadataPath result.overloads with
+    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
         throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")

@@ -316,7 +316,6 @@ def typedDict (loc : SourceRange) (fields : Array String)
 def unionArray (loc : SourceRange) (elts : Array SpecType) : SpecType :=
   { loc := loc, atoms := elts.foldl (init := #[]) (unionElts · ·.atoms) }
 
-
 private def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then
     for atp in tp.atoms do return atp
