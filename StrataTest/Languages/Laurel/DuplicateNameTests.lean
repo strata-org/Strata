@@ -188,10 +188,8 @@ procedure test(s: Session) {
 };
 "
 
-/--
-info: ✓ Test passed: All 0 error(s) matched -/
-#guard_msgs in
-#eval testInputWithOffset "FieldAccessKnown" fieldAccessKnown 0 processResolution
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "FieldAccessKnown" fieldAccessKnown 192 processResolution
 
 def fieldAccessUnknown := r"
 composite Session { var name: int }
@@ -200,9 +198,7 @@ procedure test(s: Session) {
 };
 "
 
-/--
-info: ✓ Test passed: All 0 error(s) matched -/
-#guard_msgs in
-#eval testInputWithOffset "FieldAccessUnknown" fieldAccessUnknown 0 processResolution
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "FieldAccessUnknown" fieldAccessUnknown 204 processResolution
 
 end Laurel

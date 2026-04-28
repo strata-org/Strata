@@ -240,7 +240,7 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
     Falls back to the instance type name (for `self.field` in instance methods),
     then to unqualified lookup if the target type cannot be determined. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
+    (_md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -252,7 +252,7 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
       return resolved
   -- Fallback: field names that can't be resolved in any type scope are left
   -- unresolved without error. Heap parameterization will handle them (typically
-  -- replacing with a Hole for dynamic field accesses like session.region_name).
+  -- replacing with a Hole for dynamic field accesses like s#region_name).
   return fieldName
 
 /-- Save and restore scope around a block (for lexical scoping). -/
