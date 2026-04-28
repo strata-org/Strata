@@ -1342,9 +1342,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
-/-- Data needed to dispatch a single obligation to the solver. Produced by
-    the sequential preprocessing phase and consumed by the (potentially
-    parallel) solver dispatch phase. -/
+/-- Data needed to dispatch a single obligation to the solver. Produced by the
+    sequential preprocessing phase and consumed by the (potentially parallel)
+    solver dispatch phase. -/
 private structure SolverJob where
   obligation : ProofObligation Expression
   assumptionTerms : List Term
