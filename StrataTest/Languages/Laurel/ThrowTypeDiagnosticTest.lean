@@ -60,7 +60,9 @@ def test_ftvar_unifies : IO Unit := do
   | .error e => throw (IO.userError s!"  ✗ ftvar should unify with int: {e}")
 
 /-- Test: tcons "Error" does NOT unify with int — type checking fails.
-    This documents the bug that the ftvar fix solves. -/
+    This documents the bug that the ftvar fix solves. The Error type
+    is intentionally not registered; any concrete type constructor
+    (registered or not) fails to unify with int. -/
 def test_error_does_not_unify : IO Unit := do
   let pgm := mkTestProgram (.tcons "Error" [])
   match typeCheckProgram pgm with

@@ -77,6 +77,7 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
     which is the correct semantics for "type unknown". -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
   emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic msg)
+  -- Inline freshId logic (freshId is defined later in the file)
   let s ← get
   let id := s.nextId
   set { s with coreProgramHasSuperfluousErrors := true, nextId := id + 1 }
@@ -454,6 +455,13 @@ def translateStmt (stmt : StmtExprMd)
               return [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) (astNodeToCoreMd value)]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
+              let havocStmts := targets.filterMap fun t =>
+                match t.val with
+                | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
+                | _ => none
+              return (havocStmts)
+          | .Hole _ _ =>
+              -- Nondet hole: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
                 match t.val with
                 | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
