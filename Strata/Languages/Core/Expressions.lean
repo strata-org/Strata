@@ -37,7 +37,7 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
 instance : Inhabited Expression.Expr where
   default := .intConst Strata.SourceRange.none 0
 
-/-- Build an `LExpr.op` node from a structured `CoreOp`. -/
+/-- Build an `LExpr.op` node from a structured `CoreOp` with no source location. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
   .op Strata.SourceRange.none op.toString ty
 

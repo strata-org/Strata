@@ -94,9 +94,6 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   let lhs_post_subst := List.zip lhs_typed lhs_fvars
   (return_lhs_subst, lhs_post_subst, E')
 
-
-
-
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
 `.fvar` and `.op` nodes have their types stored in the `Option LMonoTy` field).

@@ -153,14 +153,16 @@ def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
   if !ty.endsWith "OrNone" then
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else
+    let mkNoneExpr (ty : String) : Core.Expression.Expr :=
+      .app Strata.SourceRange.none (.op Strata.SourceRange.none (ty ++ "_mk_none") none) (.op Strata.SourceRange.none "None_none" none)
     match ty with
-    | "StrOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "StrOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
-    | "BoolOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "BoolOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
-    | "BoolOrStrOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "BoolOrStrOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
-    | "AnyOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "AnyOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
-    | "IntOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "IntOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
-    | "BytesOrStrOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "BytesOrStrOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
-    | "DictStrStrOrNone" => .app Strata.SourceRange.none (.op Strata.SourceRange.none "DictStrStrOrNone_mk_none" none) (.op Strata.SourceRange.none "None_none" none)
+    | "StrOrNone" => mkNoneExpr "StrOrNone"
+    | "BoolOrNone" => mkNoneExpr "BoolOrNone"
+    | "BoolOrStrOrNone" => mkNoneExpr "BoolOrStrOrNone"
+    | "AnyOrNone" => mkNoneExpr "AnyOrNone"
+    | "IntOrNone" => mkNoneExpr "IntOrNone"
+    | "BytesOrStrOrNone" => mkNoneExpr "BytesOrStrOrNone"
+    | "DictStrStrOrNone" => mkNoneExpr "DictStrStrOrNone"
     | _ => panic! s!"unsupported type: {ty}"
 
 end -- public section
