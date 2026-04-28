@@ -41,23 +41,18 @@ function MS(x1: int, x2: int, g1: int, g2: int, g1': int, g2': int, r1: int, r2:
 function Foo1_token(x1: int, g1: int, g1': int, r1: int) : bool;
 function Foo2_token(x2: int, g2: int, g2': int, r2: int) : bool;
 
-var g: int;
-
-procedure Foo1(x1: int) returns (r1: int)
+procedure Foo1(x1: int, g: int, out r1: int, out g': int)
   spec {
-
-    modifies g;
     // Template: <f>.token(inputs, old globals, globals, returns);
-    free ensures Foo1_token(x1,old g,g,r1);
+    free ensures Foo1_token(x1,g,g',r1);
   };
 
-procedure Foo2(x2: int) returns (r2: int)
+procedure Foo2(x2: int, g: int, out r2: int, out g': int)
   spec {
-    modifies g;
-    free ensures Foo2_token(x2,old g,g,r2);
+    free ensures Foo2_token(x2,g,g',r2);
   };
 
-procedure MS_check (x1: int, x2: int) returns (r1: int, r2: int)
+procedure MS_check (x1: int, x2: int, g: int, out r1: int, out r2: int, out g': int)
   spec {
 
   // mutual summary axiom
@@ -66,29 +61,32 @@ procedure MS_check (x1: int, x2: int) returns (r1: int, r2: int)
     Foo1_token(x1, g1, g1', r1) && Foo2_token(x2, g2, g2', r2) ==>
       MS(x1, x2, g1, g2, g1', g2', r1, r2));
 
-  modifies g;
   }
 {
   var g1: int; var g1': int; var g2: int; var g2': int;
+  var g_cur: int;
 
-  g1 := g;
+  g_cur := g;
+  g1 := g_cur;
 
   // inline Foo1:
   if (x1 < 100) {
-    g := g + x1;
-    call r1 := Foo1(x1 + 1);
+    g_cur := g_cur + x1;
+    call Foo1(x1 + 1, g_cur, out r1, out g_cur);
   }
-  g1' := g;
+  g1' := g_cur;
 
-  havoc g;
-  g2 := g;
+  havoc g_cur;
+  g2 := g_cur;
 
   // inline Foo2:
   if (x2 < 100) {
-    g := g + 2 * x2;
-    call r2 := Foo2(x2 + 1);
+    g_cur := g_cur + 2 * x2;
+    call Foo2(x2 + 1, g_cur, out r2, out g_cur);
   }
-  g2' := g;
+  g2' := g_cur;
+
+  g' := g_cur;
 
   // mutual summary assertion
   assert MS(x1, x2, g1, g2, g1', g2', r1, r2);

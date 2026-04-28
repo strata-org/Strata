@@ -594,7 +594,7 @@ partial def initTmpParam (translation_ctx: TranslationContext) (p: Python.expr S
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (.det (.strConst Strata.SourceRange.none "")) md), .call [p.snd, "maybe_except"] "json_dumps" [(.app Strata.SourceRange.none (.op Strata.SourceRange.none "DictStrAny_mk" none) (.strConst Strata.SourceRange.none "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")] md]
+      | "json_dumps" => [(.init p.snd t[string] (.det (.strConst Strata.SourceRange.none "")) md), .call "json_dumps" ([.inArg (.app Strata.SourceRange.none (.op Strata.SourceRange.none "DictStrAny_mk" none) (.strConst Strata.SourceRange.none "DefaultDict")), .inArg (Strata.Python.TypeStrToCoreExpr "IntOrNone")] ++ [.outArg p.snd, .outArg "maybe_except"]) md]
       | "str" =>
         assert! args.val.size == 1
         [(.init p.snd t[string] (.det (.strConst Strata.SourceRange.none "")) md), .set p.snd (.app Strata.SourceRange.none (.op Strata.SourceRange.none "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr)) md]
@@ -654,7 +654,7 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
   let res := argsAndKWordsToCanonicalList translation_ctx fname args.val kwords.val substitution_records
   args_calls_to_tmps.toList.flatMap (initTmpParam translation_ctx) ++
     kwords_calls_to_tmps.toList.flatMap (initTmpParam translation_ctx) ++
-    res.snd ++ [.call lhs fname res.fst md]
+    res.snd ++ [.call fname (res.fst.map .inArg ++ lhs.map .outArg) md]
 
 partial def handleComprehension (translation_ctx: TranslationContext) (lhs: Python.expr SourceRange) (gen: Array (Python.comprehension SourceRange)) : List Core.Statement :=
   assert! gen.size == 1
@@ -672,7 +672,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
   let md := sourceRangeToMetaData translation_ctx.filePath s.toAst.ann
   let non_throw : List Core.Statement × Option (String × Lambda.LMonoTy) := match s with
     | .Import _ names =>
-      ([.call [] "import" [PyListStrToCore names.val] md], none)
+      ([.call "import" [.inArg (PyListStrToCore names.val)] md], none)
     | .ImportFrom _ s names i =>
       let n := match s.val with
       | some s => [strToCoreExpr s.val]
@@ -680,7 +680,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       let i := match i.val with
       | some i => [intToCoreExpr (PyIntToInt i)]
       | none => []
-      ([.call [] "importFrom" (n ++ [PyListStrToCore names.val] ++ i) md], none)
+      ([.call "importFrom" ((n ++ [PyListStrToCore names.val] ++ i).map .inArg) md], none)
     | .Expr _ (.Call _ func args kwords) =>
       let fname := PyExprToString func
       if callCanThrow translation_ctx.func_infos s then
@@ -878,7 +878,7 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (.det (.strConst Strata.SourceRange.none "__main__")) .empty)]
+
 
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)
@@ -906,7 +906,7 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
-  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++
+  {decls := class_ty_decls ++ func_defs ++ class_defs ++
     [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos) .empty]}
 
 end -- public section

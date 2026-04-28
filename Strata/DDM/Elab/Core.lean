@@ -490,8 +490,16 @@ partial def unifyTypes
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
       pure args
     | .tvar _ _ =>
-      -- tvar inferred types are passed through; type inference will catch mismatches
-      pure args
+      -- When the inferred type is a type variable (e.g., from a polymorphic context)
+      -- and the expected type is an arrow, propagate the tvar into the arrow's
+      -- sub-components. This ensures that type parameters referenced by the domain
+      -- and codomain (e.g., inTp/outTp in apply_expr) get populated rather than
+      -- left as `none`. This is safe because setting a type parameter slot to a
+      -- tvar acts as a placeholder, not a constraint: checkExpressionType treats
+      -- tvars as matching any type, so a later argument with a concrete type will
+      -- pass the compatibility check and the concrete type will take precedence.
+      let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax inferredType args
+      unifyTypes isTypeP argLevel0 er tctx exprSyntax inferredType res
     | .arrow _ ia ir =>
       let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax ia args
       unifyTypes isTypeP argLevel0 er tctx exprSyntax ir res

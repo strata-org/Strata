@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
+public import Strata.Util.Name
 
 public section
 
@@ -139,6 +140,7 @@ structure Env where
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
+  pathCap : Option Nat := .none
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -151,7 +153,8 @@ def Env.init (empty_factory:=false): Env :=
     distinct := [],
     pathConditions := [],
     warnings := []
-    deferred := ∅ }
+    deferred := ∅
+    pathCap := .none }
 
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
@@ -161,7 +164,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
@@ -171,14 +174,14 @@ instance : ToFormat Env where
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
-Create a substitution map from all non-global variables to their values.
+Create a substitution map from all variables to their values.
 -/
 def oldLocalVarSubst (E : Env) : SubstMap :=
   let m := (E.exprEnv.state.dropOldest).toSingleMap
   m.map (fun (i, _, e) => (i, e))
 
 /--
-Append `subst` map to a non-global substitution map.
+Append `subst` map to a substitution map.
 -/
 def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E
@@ -242,23 +245,21 @@ def Env.addToContext
     : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
--- TODO: prove uniqueness, add different prefix
+-- TODO: prove uniqueness
 def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × Lambda.EvalConfig CoreLParams :=
-  let new_idx := c.gen
-  let c := c.incGen
-  let new_var := c.varPrefix ++ x ++ toString new_idx
+  let (new_var, c) := c.genSym x
   (⟨new_var, ()⟩, c)
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
-  let (new_var, config) := Env.genSym x σ.config
+  -- If `x` is already bound in the state, mark it used so that findUnique
+  -- skips the bare name and avoids self-referential substitutions
+  -- (e.g. havoc x generating fvar "x" when x is in scope).
+  let config := if σ.state.find? (⟨x, ()⟩ : CoreIdent) |>.isSome
+    then { σ.config with usedNames := σ.config.usedNames.insert x }
+    else σ.config
+  let (new_var, config) := Env.genSym x config
   let σ : Lambda.LState CoreLParams := { σ with config := config }
-  -- let known_vars := Lambda.LState.knownVars σ
-  -- if new_var ∈ known_vars then
-  --   panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
-  --            Known variables: {Std.format σ.knownVars}"
-  -- else
-  --   (new_var, σ)
   (new_var, σ)
 
 def Env.genVar (x : Expression.Ident) (E : Env) : Expression.Ident × Env :=

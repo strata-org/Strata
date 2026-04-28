@@ -505,6 +505,6 @@ info: [LExpr.quant { start := { byteIdx := 0 },
          "v"]])) (LExpr.bvar { start := { byteIdx := 0 },
    stop := { byteIdx := 0 } } 3)) (LExpr.bvar { start := { byteIdx := 0 }, stop := { byteIdx := 0 } } 2))))))]
 -/
-
+#guard_msgs in
 #eval
   extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]

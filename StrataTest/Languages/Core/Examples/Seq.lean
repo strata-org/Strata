@@ -15,7 +15,7 @@ program Core;
 
 const s : Sequence int;
 
-procedure P() returns ()
+procedure P()
 {
   var t : Sequence int;
 
@@ -41,7 +41,7 @@ procedure P() returns ()
 info: program Core;
 
 function s () : Sequence int;
-procedure P () returns ()
+procedure P ()
 {
   var t : (Sequence int);
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
@@ -51,7 +51,7 @@ procedure P () returns ()
   assert [t_1]: Sequence.select(t, 1) == 20;
   assert [t_2]: Sequence.select(t, 2) == 30;
   assert [t_length_wrong]: Sequence.length(t) == 0;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram seqPgm) |>.fst
@@ -131,7 +131,7 @@ program Core;
 
 const s : Sequence int;
 
-procedure SeqOps() returns ()
+procedure SeqOps()
 {
   var t : Sequence int;
   var u : Sequence int;

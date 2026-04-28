@@ -1,3 +1,2 @@
-test_class_field_init.py(19, 0): ✔️ always true if reached - ite_cond_calls_Any_to_bool_0
-DETAIL: 1 passed, 0 failed, 0 inconclusive
+DETAIL: 0 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

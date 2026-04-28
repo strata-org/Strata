@@ -114,6 +114,20 @@ private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List 
       (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
     { name := c.name.name, args := fields }
 
+/-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
+  constructor arguments-/
+private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+    (seenDatatypes : Std.HashSet String) : Except Format Unit := do
+  for block in typeFactory.toList do
+    for d in block do
+      if !seenDatatypes.contains d.name then continue
+      for c in d.constrs do
+        for (fieldName, fieldTy) in c.args do
+          if fieldTy.containsArrow then
+            throw f!"Cannot encode datatype '{d.name}' to SMT: \
+                     constructor '{c.name.name}' has function-typed field '{fieldName.name}' of type '{fieldTy}'. \
+                     Function types cannot be represented in SMT-LIB datatypes."
+
 /--
 Emit datatype declarations to the solver.
 Uses the TypeFactory ordering (already topologically sorted).
@@ -121,6 +135,9 @@ Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+  | .error msg => throw (IO.userError (toString msg))
+  | .ok () => pure ()
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
@@ -270,27 +287,28 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
-  | .abs _ _ ty e => .error f!"Cannot encode lambda abstraction {e}"
+  | .abs _ _ _ _ =>
+    .error f!"Cannot encode lambda expression to SMT. \
+              Lambda abstractions must be eliminated (e.g., by beta-reduction) \
+              before SMT encoding.\n\
+              Lambda: {e}"
 
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
     let fvarNames := (e.collectFvarNames.map (·.name)).toArray
     -- Generate base name using global counter to ensure uniqueness across terms.
     -- The `$__` prefix is reserved for internal use and cannot appear in user
-    -- identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
+    -- identifiers.
     let (baseName, startSuffix) :=
       if ctx.uniqueBoundNames || name.isEmpty then
         (s!"$__bv{ctx.bvCounter}", 1)
       else
-        Encoder.breakDisambiguatedName name
+        let (b, s) := Strata.Name.breakDisambiguated name
+        (Encoder.sanitizeSmtName b, s)
     let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
-    let isUsed := fun candidate =>
-      bvs.any (fun (n, _) => n == candidate) ||
-      ctx.ufs.any (fun uf => uf.id == candidate) ||
-      fvarNames.contains candidate
-    let limit := bvs.length + ctx.ufs.size + fvarNames.size
-    let x := Encoder.findUniqueName baseName startSuffix isUsed limit
+    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList)
+    let x := Strata.Name.findUnique baseName startSuffix usedNames
     let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
@@ -590,48 +608,68 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
         let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
         let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
-        let (ctx, isNew) ←
-          if func.isRecursive then
-            .ok (ctx.addUF uf, !ctx.ufs.contains uf)
-          else match func.body with
-          | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
-          | some body =>
-            -- Substitute the formals in the function body with appropriate
-            -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
-            let bvars := (List.range formals.length).map (fun i => LExpr.bvar Strata.SourceRange.none i)
-            let body := LExpr.substFvarsLifting body (formals.zip bvars)
-            let (term, ctx) ← toSMTTerm E bvs body ctx
-            .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
-        -- For recursive functions, generate per-constructor axioms
-        let recAxioms ← if func.isRecursive && isNew then
-            Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
-          else .ok []
-        let allAxioms := func.axioms ++ recAxioms
-        if isNew then
-          -- To ensure termination, we add the axioms only for new functions
-          -- Get the function's type patterns (input types + output type)
-          let inputPatterns := func.inputs.values
-          let outputPattern := func.output
-          let allPatterns := inputPatterns ++ [outputPattern]
-
-          -- Extract type instantiations by matching patterns against concrete types
-          let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
-          let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
-            .ok (acc_map.insert tyVar smtTy)
-          ) Map.empty
-          -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-          -- Save the original tySubst to restore after processing axioms
-          let savedSubst := ctx.tySubst
-          let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
-            let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
-              let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
-              .ok (new_ctx.addAxiom axiom_term)
-          ) ctx
-          let ctx := ctx.restoreSubst savedSubst
-          .ok (.app (Op.uf uf), smt_outty, ctx)
+        let arrowParams := func.inputs.toList.filter (fun (_, ty) => ty.containsArrow)
+        if !arrowParams.isEmpty then
+          let names := arrowParams.map (fun (n, _) => toString (format n))
+          .error f!"Cannot encode function '{func.name}' to SMT: \
+                    it has function-typed parameter(s) {names}. \
+                    Higher-order functions cannot be encoded to SMT. \
+                    Consider marking the function as `inline`."
+        else if func.output.containsArrow then
+          .error f!"Cannot encode function '{func.name}' to SMT: \
+                    it returns a function type '{func.output}'. \
+                    Higher-order functions cannot be encoded to SMT. \
+                    Consider marking the function as `inline`."
+        -- Note: hasAbs does not special-case directly-applied lambdas (let expressions)
+        -- because the partial evaluator beta-reduces those before SMT encoding.
+        else if func.body.any LExpr.hasAbs then
+          .error f!"Cannot encode function '{func.name}' to SMT: \
+                    its body contains a lambda expression. \
+                    Lambda abstractions cannot be encoded to SMT. \
+                    Consider marking the function as `inline`."
         else
-          .ok (.app (Op.uf uf), smt_outty, ctx)
+          let (ctx, isNew) ←
+            if func.isRecursive then
+              .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            else match func.body with
+            | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            | some body =>
+              -- Substitute the formals in the function body with appropriate
+              -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
+              let bvars := (List.range formals.length).map (fun i => LExpr.bvar Strata.SourceRange.none i)
+              let body := LExpr.substFvarsLifting body (formals.zip bvars)
+              let (term, ctx) ← toSMTTerm E bvs body ctx
+              .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+          -- For recursive functions, generate per-constructor axioms
+          let recAxioms ← if func.isRecursive && isNew then
+              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
+            else .ok []
+          let allAxioms := func.axioms ++ recAxioms
+          if isNew then
+            -- To ensure termination, we add the axioms only for new functions
+            -- Get the function's type patterns (input types + output type)
+            let inputPatterns := func.inputs.values
+            let outputPattern := func.output
+            let allPatterns := inputPatterns ++ [outputPattern]
+
+            -- Extract type instantiations by matching patterns against concrete types
+            let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
+            let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
+              let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
+              .ok (acc_map.insert tyVar smtTy)
+            ) Map.empty
+            -- Add all axioms for this function to the context, with types binding for the type variables in the expr
+            -- Save the original tySubst to restore after processing axioms
+            let savedSubst := ctx.tySubst
+            let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
+              let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
+                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+                .ok (new_ctx.addAxiom axiom_term)
+            ) ctx
+            let ctx := ctx.restoreSubst savedSubst
+            .ok (.app (Op.uf uf), smt_outty, ctx)
+          else
+            .ok (.app (Op.uf uf), smt_outty, ctx)
 
 end
 

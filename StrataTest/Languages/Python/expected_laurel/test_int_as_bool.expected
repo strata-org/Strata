@@ -1,0 +1,6 @@
+test_int_as_bool.py(2, 4): ✅ pass - assert(16)
+test_int_as_bool.py(3, 14): ✅ pass - Check PNot exception
+test_int_as_bool.py(3, 4): ✅ pass - assert(31)
+test_int_as_bool.py(4, 4): ✅ pass - int as bool
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

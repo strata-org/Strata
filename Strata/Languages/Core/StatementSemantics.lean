@@ -292,41 +292,42 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
 
-  | call_sem {δ σ₀ σ args vals oVals σA σAO n p modvals lhs σ' ρ' md} :
+  /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
+      aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
+      with `p.header.outputs`. -/
+  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' ρ' md} :
     π n = .some p →
-    EvalExpressions (P:=Expression) δ σ args vals →
+    -- inArg exprs + fvar refs for inoutArg ids
+    CallArg.getInputExprs callArgs = inArgs →
+    -- caller-side output variables (inout + out);
+    -- used by ReadValues and UpdateStates below
+    CallArg.getLhs callArgs = lhs →
+    EvalExpressions (P:=Expression) δ σ inArgs vals →
+    -- pre-call values of lhs, needed to init callee output params
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ →
     WellFormedCoreEvalTwoState δ σ₀ σ →
-
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args md) →
-
-    -- Note: this puts caller and callee names in the same store. If the program is type correct, however,
-    -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
-    -- names that overlap with callee names will be replaced.
+    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call n callArgs md) →
+    -- positional: vals[i] initializes p.header.inputs[i]
     InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
-
-    -- need to initialize to the values of lhs, due to output variables possibly occuring in preconditions
+    -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-
-    -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
     CoreStepStar π φ
       (.stmts p.body ⟨σAO, δ, false⟩)
       (.terminal ρ') →
-    -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δ ρ'.store post = .some HasBool.tt) →
-
-    ReadValues ρ'.store (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
-    UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
+    ReadValues ρ'.store (ListMap.keys (p.header.outputs)) modvals →
+    -- positional: modvals[i] written back to lhs[i]
+    UpdateStates σ lhs modvals σ' →
     ----
-    EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' false
+    EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false
 
 end
 
@@ -397,39 +398,36 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ----
     EvalCommandContract π δ σ (CmdExt.cmd c) σ' f
 
-  | call_sem {π δ σ σ₀ args oVals vals σA σAO σO σR n p modvals lhs σ' md} :
+  /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
+      body execution with havoc + postcondition check.
+      Same positional matching as `EvalCommand.call_sem`. -/
+  | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md} :
     π n = .some p →
-    EvalExpressions (P:=Core.Expression) δ σ args vals →
+    CallArg.getInputExprs callArgs = inArgs →
+    CallArg.getLhs callArgs = lhs →
+    EvalExpressions (P:=Core.Expression) δ σ inArgs vals →
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ →
     WellFormedCoreEvalTwoState δ σ₀ σ →
-
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args md) →
-
-    -- Note: this puts caller and callee names in the same store. If the program is type correct, however,
-    -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
-    -- names that overlap with callee names will be replaced.
+    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call n callArgs md) →
+    -- positional: vals[i] initializes p.header.inputs[i]
     InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
-
-    -- need to initialize to the values of lhs, due to output variables possibly occuring in preconditions
+    -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-
-    -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
-    HavocVars σO p.spec.modifies σR →
-    -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ σR post = .some HasBool.tt) →
-    ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
-    UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
+      δ σO post = .some HasBool.tt) →
+    ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
+    -- positional: modvals[i] written back to lhs[i]
+    UpdateStates σ lhs modvals σ' →
     ----
-    EvalCommandContract π δ σ (.call lhs n args md) σ' false
+    EvalCommandContract π δ σ (.call n callArgs md) σ' false
 
 @[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
