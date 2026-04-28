@@ -335,6 +335,29 @@ inductive SpecExpr where
 | forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
 deriving Inhabited
 
+/-- Generate a human-readable message from a SpecExpr.
+    Handles operator precedence to insert parentheses where needed.
+    Used for assertion failure messages and postcondition labels. -/
+def SpecExpr.toMessage : SpecExpr → String :=
+  go 0
+where
+  go (prec : Nat) : SpecExpr → String
+    | .var name _ => name
+    | .intLit v _ => toString v
+    | .floatLit v _ => v
+    | .getIndex s f _ => s!"{go 0 s}[{f}]"
+    | .len e _ => s!"len({go 0 e})"
+    | .not e _ => s!"not ({go 0 e})"
+    | .intGe a b _ => paren prec 10 s!"{go 11 a} >= {go 11 b}"
+    | .intLe a b _ => paren prec 10 s!"{go 11 a} <= {go 11 b}"
+    | .implies c b _ => paren prec 5 s!"{go 6 c} ==> {go 5 b}"
+    | .containsKey _ k _ => s!"\"{k}\" in <container>"
+    | .enumMember s vals _ => s!"{go 0 s} in {vals}"
+    | .regexMatch s p _ => s!"re.search(\"{p}\", {go 0 s})"
+    | _ => "<expr>"
+  paren (parentPrec opPrec : Nat) (s : String) : String :=
+    if parentPrec > opPrec then s!"({s})" else s
+
 inductive MessagePart where
 | str (s : String)
 | expr (e : SpecExpr)
