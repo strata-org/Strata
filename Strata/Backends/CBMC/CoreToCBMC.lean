@@ -9,6 +9,7 @@ public import Strata.Backends.CBMC.Common
 public import Strata.Languages.Core.Procedure
 
 import Lean.Data.Json
+import Lean.Parser.Types
 import Strata.DDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.DDMTransform.Grammar
