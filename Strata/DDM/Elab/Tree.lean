@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DDM.AST
 public import Strata.DDM.Format
 set_option autoImplicit false
 

@@ -4,15 +4,18 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Strata.DDM.Elab.DeclM
-public import Strata.DDM.Ion
 
-import Strata.DDM.Elab.DialectM
 import Strata.DDM.BuiltinDialects
+public import Strata.DDM.Elab.DeclM
+public import Strata.DDM.Elab.DialectM
+public import Strata.DDM.Ion
 import Strata.DDM.Util.Ion.Serialize
 
 import all Strata.DDM.Util.ByteArray
 import all Strata.DDM.Util.Lean
+public import Strata.DDM.BuiltinDialects.Init
+public import Strata.DDM.BuiltinDialects.StrataDDL
+public import Strata.DDM.Util.Lean
 
 open Lean (Message)
 open Strata.Parser (InputContext)
