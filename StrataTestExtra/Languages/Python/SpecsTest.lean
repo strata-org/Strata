@@ -275,7 +275,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
           throw <| IO.userError "Expected warnings from warnings.py but got none"
         -- Check for specific expected warning substrings
         let expectedWarnings := #[
-          "unrecognized assert pattern",       -- assert kw["x"] == 1
+          "unsupported comparison",               -- assert kw["x"] == 1
           "unsupported __init__ assignment",   -- self.name = "hello"
           "skipped Assign in function body",   -- x = kw["a"]
           "For: else clause not supported",    -- for/else loop
