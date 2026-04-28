@@ -440,7 +440,7 @@ def buildSpecBody (allArgs : Array Arg)
         let msg := SpecAssertMsg.requiredParam arg.name |>.render
         let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
         stmts := stmts.push assertStmt
-  -- 4. Assert user pyspec preconditions
+  -- 3. Assert user pyspec preconditions
   let mut idx := 0
   for assertion in preconditions do
     let formattedMsg := formatAssertionMessage assertion.message
@@ -456,7 +456,7 @@ def buildSpecBody (allArgs : Array Arg)
         reportError .typeError default
           s!"Precondition expression is not Bool in '{ctx.procName}' (skipping): {msg}"
     idx := idx + 1
-  -- 5. Assert user pyspec postconditions
+  -- 4. Assert user pyspec postconditions
   for postExpr in postconditions do
     let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel postExpr source ctx
     if success then
@@ -466,7 +466,9 @@ def buildSpecBody (allArgs : Array Arg)
       else
         reportError .typeError default
           s!"Postcondition expression is not Bool in '{ctx.procName}' (skipping)"
-  -- 6. Assume return type postcondition
+  -- 5. Assume return type postcondition
+  -- NOTE. Skip NoneType: generated stubs currently declare `-> None` even for methods
+  -- that return values. Assuming isfrom_None would make callers unreachable.
   if returnType.asIdent != some .noneType then
     let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := none }
     if let some retAssertion ← typeAssertion? returnType resultRef source then
