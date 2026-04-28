@@ -24,7 +24,9 @@ These tests verify:
 
 open Strata
 
-/-- Build a minimal Core program:
+/-- Build a minimal Core program directly (not via DDM syntax) to precisely
+    control the placeholder type used for `x`. DDM parsing would infer types,
+    defeating the purpose of testing type-checker behavior on specific types.
     `procedure main() { var x : <placeholderTy> := 0; var y : int := x; }`
     The placeholder type of `x` must unify with `int` when `x` is assigned to `y`. -/
 private def mkTestProgram (placeholderTy : Lambda.LMonoTy) : Core.Program :=

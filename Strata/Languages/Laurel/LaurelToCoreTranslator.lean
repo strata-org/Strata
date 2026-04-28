@@ -72,16 +72,22 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-/-- Emit a diagnostic and return a fresh type variable as a placeholder.
-    A fresh type variable lets the unifier assign any concrete type,
-    which is the correct semantics for "type unknown". -/
-private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
-  emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic msg)
-  -- Inline freshId logic (freshId is defined later in the file)
+/-- Allocate a fresh type variable placeholder. The ftvar lets the
+    Core unifier assign any concrete type, which is the correct
+    semantics for "type unknown". -/
+private def freshTypePlaceholder : TranslateM LMonoTy := do
   let s ← get
   let id := s.nextId
-  set { s with coreProgramHasSuperfluousErrors := true, nextId := id + 1 }
+  set { s with nextId := id + 1 }
   return .ftvar s!"$__ty_unused_{id}"
+
+/-- Emit a diagnostic and return a fresh type variable as a placeholder.
+    Sets `coreProgramHasSuperfluousErrors` to signal that the Core program
+    may contain type errors that should prevent verification. -/
+private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
+  emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic msg)
+  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  freshTypePlaceholder
 
 /-
 Translate Laurel HighType to Core Type
@@ -109,15 +115,15 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
   | .Unknown => do
-    -- Unknown types get a fresh type variable. The Core type checker will
-    -- unify it with the expected type from context. We emit a diagnostic
-    -- but do NOT set coreProgramHasSuperfluousErrors — the program is still
-    -- valid because the type checker can resolve the ftvar.
+    -- Unknown types get a fresh type variable that the Core HM type checker
+    -- will unify with the expected type from context. This is the correct
+    -- semantics for all front-ends: "type not determined" delegates to
+    -- inference, and the ftvar unifies with anything the context requires.
+    -- We do NOT set coreProgramHasSuperfluousErrors — the program is still
+    -- valid because unconstrained ftvars are harmless (they remain free,
+    -- which is sound for unknown types).
     emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic "could not infer type")
-    let s ← get
-    let id := s.nextId
-    set { s with nextId := id + 1 }
-    return .ftvar s!"$__ty_unused_{id}"
+    freshTypePlaceholder
   | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -462,15 +468,8 @@ def translateStmt (stmt : StmtExprMd)
                 | _ => none
               let outArgs : List (Core.CallArg Core.Expression) := lhsIdents.map .outArg
               return [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) (astNodeToCoreMd value)]
-          | .InstanceCall .. =>
-              -- Instance method call: havoc all target variables
-              let havocStmts := targets.filterMap fun t =>
-                match t.val with
-                | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
-                | _ => none
-              return (havocStmts)
-          | .Hole _ _ =>
-              -- Nondet hole: havoc all target variables
+          | .InstanceCall .. | .Hole _ _ =>
+              -- Unmodeled call or hole: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
                 match t.val with
                 | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
