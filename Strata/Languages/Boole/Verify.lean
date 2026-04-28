@@ -322,6 +322,9 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
     else
       return .fvar () id none
   | .bvar m i => getBVarExpr m i
+  | .let_in_expr _ _bind value body =>
+    let value' ← toCoreExpr value
+    withBVarExprs #[value'] (toCoreExpr body)
   | .app _ f a => return .app () (← toCoreExpr f) (← toCoreExpr a)
   | .not _ a => return .app () Core.boolNotOp (← toCoreExpr a)
   | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst () 1 n

@@ -70,6 +70,11 @@ fn forall_unicodeT (d : DeclList, @[scope(d)] triggers : Triggers, @[scope(d)] b
 fn exists_unicodeT (d : DeclList, @[scope(d)] triggers : Triggers, @[scope(d)] b : bool) : bool =>
   "∃ " d " :: " triggers indent(2, b:3);
 
+// Let-expression in spec/ensures context: `let v := value in body`.
+// Lowers by substituting the value for the bound variable in the body expression.
+fn let_in_expr (v : MonoBind, value : Expr, @[scope(v)] body : bool) : bool =>
+  @[prec(2)] "let " v " := " value " in " body:2;
+
 category Step;
 op step(e: Expr) : Step =>
   " by " e;
