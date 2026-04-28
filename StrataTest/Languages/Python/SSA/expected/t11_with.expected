@@ -1,76 +1,47 @@
 module "t11_with":
 
-func MyCtx.__enter__(self.0: MyCtx):
-  bb0(%0:self.0):
+func MyCtx.__enter__(self):
+  bb0():
     ret %0
 
-func MyCtx.__exit__(self.0: MyCtx, exc_type.0, exc_val.0, exc_tb.0):
-  bb0(%0:self.0, %1:exc_type.0, %2:exc_val.0, %3:exc_tb.0):
+func MyCtx.__exit__(self, exc_type, exc_val, exc_tb):
+  bb0():
     %4:_tmp.0 = boolLit false
     ret %4
 
 func risky():
   bb0():
-    %0:_tmp.0 = callQualified builtins.ValueError [positional(strLit "fail")]
-    raise %0
+    %2:_tmp.1 = callQualified builtins.ValueError [positional(strLit "fail")]
+    raise %2
 
 func @module_init():
-  -- First with: with MyCtx() as ctx: x = 1
   bb0():
-    %0:_mgr.0 = call @MyCtx()
-    %1:ctx.0 = call attr(%0, "__enter__")()
-    branch bb1(%0, %1)
-
-  -- with body
-  bb1(%2:_mgr.0, %3:ctx.0) [except: bb2]:
-    %4:x.0 = intLit 1
-    branch bb3(%2)
-
-  -- with exception path: __exit__(exc_type, exc_val, exc_tb)
-  bb2(%5:_mgr.0, %6:ctx.0, %7:_exc):
-    %8:_suppress.0 = call attr(%5, "__exit__")(%7, %7, %7)
-    condBranch %8 bb4() bb5(%7)
-
-  -- with normal exit: __exit__(None, None, None)
-  bb3(%9:_mgr.0):
-    %10:_tmp.1 = noneLit
-    %11 = call attr(%9, "__exit__")(%10, %10, %10)
-    branch bb4()
-
-  -- after first with
+    %1:_tmp.0 = callQualified t11_with.MyCtx []
+    %3:ctx.0 = call attr(%1, "__enter__")()
+    branch bb1(%1)
+  bb1(%4:_mgr.0):
+    %5:x.0 = intLit 1
+    %7:_tmp.5 = noneLit
+    %8:_tmp.6 = call attr(%4, "__exit__")(positional(%7), positional(%7), positional(%7))
+    branch bb4(%4)
+  bb2(%9:_mgr.1, %10:_exc.0):
+    %12:_tmp.8 = call attr(%9, "__exit__")(positional(%10), positional(%10), positional(%10))
+    condBranch %12 bb4(%9) bb3(%9, %10)
+  bb3(%13:_mgr.2, %14:_exc.1):
+    raise %14
   bb4():
-    branch bb6()
-
-  -- re-raise (suppression returned False)
-  bb5(%12:_exc):
-    raise %12
-
-  -- Second with: with MyCtx() as ctx: risky()
-  bb6():
-    %13:_mgr.1 = call @MyCtx()
-    %14:ctx.1 = call attr(%13, "__enter__")()
-    branch bb7(%13, %14)
-
-  -- with body: risky()
-  bb7(%15:_mgr.1, %16:ctx.1) [except: bb8]:
-    %17 = call @risky()  [exceptArgs: %15, %16, exc]
-    branch bb9(%15)
-
-  -- with exception path
-  bb8(%18:_mgr.1, %19:ctx.1, %20:_exc):
-    %21:_suppress.1 = call attr(%18, "__exit__")(%20, %20, %20)
-    condBranch %21 bb10() bb11(%20)
-
-  -- with normal exit
-  bb9(%22:_mgr.1):
-    %23:_tmp.2 = noneLit
-    %24 = call attr(%22, "__exit__")(%23, %23, %23)
-    branch bb10()
-
-  -- after second with
-  bb10():
+    %16:_tmp.9 = callQualified t11_with.MyCtx []
+    %18:ctx.1 = call attr(%16, "__enter__")()
+    branch bb5(%16)
+  bb5(%19:_mgr.3):
+    %21:_tmp.12 = callQualified t11_with.risky []
+    %23:_tmp.14 = noneLit
+    %24:_tmp.15 = call attr(%19, "__exit__")(positional(%23), positional(%23), positional(%23))
+    branch bb8(%19)
+  bb6(%25:_mgr.4, %26:_exc.2):
+    %28:_tmp.17 = call attr(%25, "__exit__")(positional(%26), positional(%26), positional(%26))
+    condBranch %28 bb8(%25) bb7(%25, %26)
+  bb7(%29:_mgr.5, %30:_exc.3):
+    raise %30
+  bb8():
     ret
-
-  -- re-raise
-  bb11(%25:_exc):
-    raise %25

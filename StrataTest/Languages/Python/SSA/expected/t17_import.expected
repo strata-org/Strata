@@ -2,13 +2,8 @@ module "t17_import":
 
 func @module_init():
   bb0():
-    -- import os → binding environment updated (no SSA instruction)
-    -- from os.path import join, exists → binding environment updated
-    -- from typing import Optional → binding environment updated
-    -- cwd = os.getcwd() → callQualified
-    %0:cwd.0 = callQualified os.getcwd []
-    -- full_path = join("/tmp", "file.txt") → callQualified os.path.join
-    %1:full_path.0 = callQualified os.path.join [positional(strLit "/tmp"), positional(strLit "file.txt")]
-    -- check = exists(full_path)
-    %2:check.0 = callQualified os.path.exists [positional(%1)]
+    %0:os.0 = qualifiedRef os.os
+    %2:cwd.0 = call attr(%0, "getcwd")()
+    %6:full_path.0 = callQualified os.path.join [positional(strLit "/tmp"), positional(strLit "file.txt")]
+    %8:check.0 = callQualified os.path.exists [positional(%6)]
     ret

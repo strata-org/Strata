@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Python.SSA
+import Lean.Data.Position
 
 /-!
 # PythonSSA Pretty-Printer
@@ -156,9 +157,24 @@ structure BlockCtx where
   defMap     : Std.HashMap Nat NamedInstr
   /-- Set of SSA val IDs that appear as the `func` argument of a `.call`. -/
   callTargets : Std.HashSet Nat
+  /-- Set of SSA val IDs that appear in the block's terminator.
+      Literals used in terminators cannot be inlined (terminators use bare refs). -/
+  termUses : Std.HashSet Nat
+
+private def collectTermUses (term : Terminator) : Std.HashSet Nat :=
+  let addVal (s : Std.HashSet Nat) (v : SSAVal) := s.insert v.id
+  match term with
+  | .branch _ args => args.foldl addVal {}
+  | .condBranch c _ ta _ ea =>
+    let s := addVal {} c
+    let s := ta.foldl addVal s
+    ea.foldl addVal s
+  | .ret (some v) => addVal {} v
+  | .raise v => addVal {} v
+  | _ => {}
 
 def buildBlockCtx (names : Array SSAName) (useCounts : Std.HashMap Nat Nat)
-    (instrs : Array NamedInstr) : BlockCtx :=
+    (instrs : Array NamedInstr) (term : Terminator) : BlockCtx :=
   let defMap : Std.HashMap Nat NamedInstr := instrs.foldl (init := {}) fun m ni =>
     match ni.result with
     | some v => m.insert v.id ni
@@ -167,7 +183,8 @@ def buildBlockCtx (names : Array SSAName) (useCounts : Std.HashMap Nat Nat)
     match ni.instr with
     | .call func _ => s.insert func.id
     | _ => s
-  { names, useCounts, defMap, callTargets }
+  let termUses := collectTermUses term
+  { names, useCounts, defMap, callTargets, termUses }
 
 /-- Use count for an SSA value. Returns 0 for unknown IDs, which is sound:
     a value not in the map was never referenced, so inlining/skipping decisions
@@ -184,9 +201,9 @@ def resolveVal (ctx : BlockCtx) (v : SSAVal) : String :=
   match findDef ctx v with
   | some ni =>
     if isLiteral ni.instr && useCount ctx v == 1 then
-      s!"({fmtLiteralInline ni.instr})"
-    else fmtVal ctx.names v
-  | none => fmtVal ctx.names v
+      fmtLiteralInline ni.instr
+    else fmtValBare v
+  | none => fmtValBare v
 
 /-! ## CallArg Formatting -/
 
@@ -198,11 +215,11 @@ def fmtCallArg (ctx : BlockCtx) (arg : CallArg) : String :=
   | .starArgs v   => s!"starArgs({rv v})"
   | .starKwargs v => s!"starKwargs({rv v})"
 
-def fmtExceptArgs (names : Array SSAName) (args : Array ExceptArgVal) : String :=
-  let parts := args.toList.map fun ea => match ea with
-    | .val v => fmtVal names v
+def fmtExceptArgs (args : Array ExceptArgVal) : String :=
+  let parts := args.map fun ea => match ea with
+    | .val v => fmtValBare v
     | .exc   => "exc"
-  s!"  [exceptArgs: {", ".intercalate parts}]"
+  s!"  [exceptArgs: {", ".intercalate parts.toList}]"
 
 /-! ## Instruction Formatting -/
 
@@ -211,6 +228,9 @@ def shouldSkipInstr (ctx : BlockCtx) (ni : NamedInstr) : Bool :=
   | none => false
   | some v =>
     let vid := v.id
+    -- Never skip values used in terminators (terminators use bare refs, not inlined)
+    if vid ∈ ctx.termUses then false
+    else
     let uses := useCount ctx v
     if uses != 1 then false
     else if isLiteral ni.instr then true
@@ -223,7 +243,7 @@ def fmtNamedInstr (ctx : BlockCtx) (ni : NamedInstr) : Array String :=
   else
     let rv := resolveVal ctx
     let fmtArgs' (args : Array CallArg) :=
-      ", ".intercalate (args.toList.map (fmtCallArg ctx))
+      ", ".intercalate (args.map (fmtCallArg ctx) |>.toList)
     let fmtLhs : String :=
       match ni.result with
       | some val =>
@@ -231,7 +251,7 @@ def fmtNamedInstr (ctx : BlockCtx) (ni : NamedInstr) : Array String :=
         s!"{fmtVal ctx.names val}{typeStr} = "
       | none => ""
     let exceptStr := match ni.exceptArgs with
-      | some eargs => fmtExceptArgs ctx.names eargs
+      | some eargs => fmtExceptArgs eargs
       | none => ""
     match ni.instr with
     | .call func args =>
@@ -298,17 +318,17 @@ def fmtNamedInstr (ctx : BlockCtx) (ni : NamedInstr) : Array String :=
 
 /-! ## Terminator Formatting -/
 
-def fmtTerminator (names : Array SSAName) (t : Terminator) : String :=
+def fmtTerminator (t : Terminator) : String :=
   match t with
   | .branch target args =>
-    s!"    branch {fmtBlockId target}({", ".intercalate (args.toList.map (fmtVal names))})"
+    s!"    branch {fmtBlockId target}({", ".intercalate (args.toList.map fmtValBare)})"
   | .condBranch cond thenB thenArgs elseB elseArgs =>
-    let thenStr := ", ".intercalate (thenArgs.toList.map (fmtVal names))
-    let elseStr := ", ".intercalate (elseArgs.toList.map (fmtVal names))
-    s!"    condBranch {fmtVal names cond} {fmtBlockId thenB}({thenStr}) {fmtBlockId elseB}({elseStr})"
-  | .ret (some v) => s!"    ret {fmtVal names v}"
+    let thenStr := ", ".intercalate (thenArgs.toList.map fmtValBare)
+    let elseStr := ", ".intercalate (elseArgs.toList.map fmtValBare)
+    s!"    condBranch {fmtValBare cond} {fmtBlockId thenB}({thenStr}) {fmtBlockId elseB}({elseStr})"
+  | .ret (some v) => s!"    ret {fmtValBare v}"
   | .ret none     => "    ret"
-  | .raise exc    => s!"    raise {fmtVal names exc}"
+  | .raise exc    => s!"    raise {fmtValBare exc}"
   | .unreachable  => "    unreachable"
 
 /-! ## Block and Function Formatting -/
@@ -319,14 +339,14 @@ def fmtBlockParam (names : Array SSAName) (bp : BlockParam) : String :=
 
 def fmtBlock (names : Array SSAName) (useCounts : Std.HashMap Nat Nat)
     (block : Block) : Array String :=
-  let ctx := buildBlockCtx names useCounts block.instrs
+  let ctx := buildBlockCtx names useCounts block.instrs block.term
   let paramsStr := ", ".intercalate (block.params.toList.map (fmtBlockParam names))
   let exceptStr := match block.except with
     | some et => s!" [except: {fmtBlockId et.target}]"
     | none => ""
   let header := s!"  {fmtBlockId block.id}({paramsStr}){exceptStr}:"
   let instrLines := block.instrs.flatMap (fmtNamedInstr ctx)
-  let termLine := fmtTerminator names block.term
+  let termLine := fmtTerminator block.term
   #[header] ++ instrLines ++ #[termLine]
 
 def fmtFuncParam (fp : FuncParam) : String :=
@@ -343,8 +363,37 @@ public def fmtFunc (func : Func) : String :=
   let blockLines := func.blocks.flatMap (fmtBlock func.names useCounts)
   "\n".intercalate (#[header] ++ blockLines).toList
 
+/-- Format a source range using an optional FileMap for line:col positions. -/
+def fmtSourceRange (sr : SourceRange) (fileMap : Option Lean.FileMap) : String :=
+  if sr.isNone then ""
+  else match fileMap with
+  | some fm =>
+    let startPos := fm.toPosition sr.start
+    let endPos := fm.toPosition sr.stop
+    s!"{startPos.line}:{startPos.column}-{endPos.line}:{endPos.column}"
+  | none => s!"{sr.start}-{sr.stop}"
+
+/-- Format a single diagnostic (warning or error) as a comment line. -/
+def fmtDiagnostic (prefix_ : String) (msg : String) (sr : SourceRange)
+    (fileMap : Option Lean.FileMap) : String :=
+  if sr.isNone then s!"-- {prefix_}: {msg}"
+  else s!"-- {prefix_}: {msg} at {fmtSourceRange sr fileMap}"
+
+/-- Format an array of diagnostics as comment lines. -/
+public def fmtDiagnostics (prefix_ : String) (diags : Array (String × SourceRange))
+    (fileMap : Option Lean.FileMap) : Array String :=
+  diags.map fun (msg, sr) => fmtDiagnostic prefix_ msg sr fileMap
+
 /-- Format a complete SSA module. -/
 public def fmtModule (mod : Module) : String :=
   let header := s!"module \"{mod.name}\":"
   let funcStrs := mod.funcs.map fmtFunc
   s!"{header}\n\n{"\n\n".intercalate funcStrs.toList}\n"
+
+/-- Format warnings as comment lines suitable for prepending to SSA output. -/
+public def fmtWarnings (warnings : Array (String × SourceRange))
+    (fileMap : Option Lean.FileMap := none) : String :=
+  if warnings.isEmpty then ""
+  else
+    let lines := fmtDiagnostics "WARNING" warnings fileMap
+    "\n".intercalate lines.toList ++ "\n"

@@ -1,15 +1,9 @@
 module "n07_walrus":
+-- WARNING: unsupported ListComp at 5:11-5:48
 
--- WARNING: unsupported NamedExpr at 5:36-5:46 (replaced with unsupported instruction)
--- WARNING: unsupported ListComp at 5:13-5:51 (replaced with unsupported instruction)
 
 func @module_init():
   bb0():
-    %0:_tmp.0 = intLit 1
-    %1:_tmp.1 = intLit 2
-    %2:_tmp.2 = intLit 3
-    %3:_tmp.3 = intLit 4
-    %4:_tmp.4 = intLit 5
-    %5:data.0 = mkList [%0, %1, %2, %3, %4]
+    %5:data.0 = mkList [intLit 1, intLit 2, intLit 3, intLit 4, intLit 5]
     %6:filtered.0 = unsupported "ListComp"
     ret

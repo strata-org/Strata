@@ -1,29 +1,30 @@
 module "t20_raise":
+-- WARNING: bare raise not yet supported at 12:8-12:13
+
 
 func fail_hard():
   bb0():
-    %0:_tmp.0 = callQualified builtins.ValueError [positional(strLit "bad input")]
-    raise %0
+    %2:_tmp.1 = callQualified builtins.ValueError [positional(strLit "bad input")]
+    raise %2
 
 func reraise_example():
-  bb0() [except: bb1]:
-    %0 = call @fail_hard()  [exceptArgs: exc]
+  bb0():
+    %1:_tmp.0 = callQualified t20_raise.fail_hard []
+    branch bb4()
+  bb1(%2:_exc.0):
+    %3:ValueError.0 = qualifiedRef builtins.ValueError
+    %5:_tmp.2 = callQualified builtins.isinstance [positional(%2), positional(%3)]
+      -- where %3 = qualifiedRef builtins.ValueError
+    condBranch %5 bb2(%2) bb3(%2)
+  bb2(%6:_exc.1):
+    %7:_err.0 = unsupported "bare raise not yet supported"
+    unreachable
+  bb3(%8:_exc.2):
+    raise %8
+  bb4():
     ret
 
-  -- except ValueError: bare raise
-  bb1(%1:_exc):
-    %2:_tmp.0 = callQualified builtins.isinstance [positional(%1), positional(%3)]
-      -- where %3 = qualifiedRef builtins.ValueError
-    condBranch %2 bb2(%1) bb3(%1)
-
-  bb2(%4:_exc):
-    raise %4
-
-  -- no match: re-raise anyway
-  bb3(%5:_exc):
-    raise %5
-
-func raise_with_msg(msg.0: str):
-  bb0(%0:msg.0 : str):
-    %1:_tmp.0 = callQualified builtins.RuntimeError [positional(%0)]
-    raise %1
+func raise_with_msg(msg: str):
+  bb0():
+    %2:_tmp.0 = callQualified builtins.RuntimeError [positional(%0)]
+    raise %2

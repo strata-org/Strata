@@ -10,5 +10,4 @@ func @module_init():
     %5:pi.0 : float = floatLit "3.14"
     %6:data.0 : bytes = bytesLit "raw"
     %7:a.0 = intLit 100
-    -- b.0 = %7
     ret

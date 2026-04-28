@@ -229,11 +229,197 @@ section`, types defined in SSA.lean were inaccessible for field projection
 The fix was straightforward once identified: `public section` in SSA.lean,
 `public` only on `fmtFunc`/`fmtModule` in SSAFormat.lean.
 
+### Phase 10: Two-Phase Translator Architecture (completed 2026-03-29)
+
+Designed and implemented a two-phase translation pipeline.
+
+**Architecture decision.** The human proposed replacing the initially planned flat
+`PreBlock` graph with a tree structure (`BlockTree`). This was a significant
+simplification: the tree preserves statement nesting while pre-allocating all
+block IDs, eliminating the need for explicit successor edges, graph traversal,
+and visited sets. Phase 2 uses structural recursion over the tree.
+
+**Phase 1: Blockify.lean (~540 lines).** Recursive descent over `Array stmt`
+producing `Array BlockTree`:
+- `BlockTree` and `ExceptHandlerTree` as `mutual` inductives
+- Six constructors: `stmts` (simple statement slice), `ifStmt`, `forLoop`,
+  `whileLoop`, `tryExcept`, `withStmt`
+- `Subarray` for zero-copy statement slicing
+- `exprBlockStart`/`exprBlockCount` on compound constructors for BoolOp/IfExp
+- Minimal state: `nextBlockId : Nat`, `allVars : Std.HashSet String`, `warnings`
+- Validated on 52/52 corpus files with zero warnings
+
+**Phase 2: PythonToSSA.lean (~800 lines).** DFS over `BlockTree` emitting SSA:
+- `SSAM := ReaderT SSAConfig (StateM SSAState)` — pure monad (no IO)
+- Expression block counter moved from `IO.Ref` to `SSAState` fields, keeping
+  the entire translation pure. Human caught the IO.Ref anti-pattern and directed
+  the fix.
+- Binding environment: `Std.HashMap String Binding` where `Binding` is either
+  `.local SSAVal` or `.qualified QualifiedName`
+- Conservative join-point params: all `allVars` become block params (dead param
+  elimination deferred)
+- Covers all expression types (constants, operators, calls, subscripts, f-strings)
+  and most statement types. Stubs for try/except, with, BoolOp/IfExp short-circuit.
+
+**Test automation: SSATest.lean.** Following the `AnalyzeLaurelTest.lean` pattern:
+compile `.py` → Ion via `strata.gen`, run `translateModule` + `fmtModule`, compare
+against hand-written `.expected` files. All 33 tests (25 positive, 8 negative) run
+concurrently via `IO.asTask`. Currently 0/33 passing — expected, as the translator
+is a first pass with known gaps.
+
+**Commands wired up.** `strata pyBlockify <file>` for Phase 1 summary,
+`strata pyToSSA <file>` for full SSA output. Spot-checked on 3 corpus files —
+translator runs without crashes, produces readable SSA with correct sugar
+(`callQualified`, `call attr()`, inline literals).
+
+**Lean 4.27 visibility surprise.** Non-public import of a module does not expose
+its `mutual` inductive constructors for dot-notation matching in the importing
+module, even within the same file. The fix required `public section` around the
+mutual inductives in Blockify.lean and making the import public. This was
+counter-intuitive — the human expected non-public import to give full internal
+access while only restricting re-export.
+
+### Phase 11: TDD Debugging — 0/33 to 33/33 (completed 2026-03-29)
+
+Iterative debugging of the translator output against hand-written expected files.
+This was the most interaction-intensive phase, with frequent human intervention
+correcting architectural decisions.
+
+**Starting point.** Phase 10 produced a compiling translator with 0/33 tests
+passing. The expected files (hand-written in Phase 5) served as the specification;
+the translator had to produce output matching them exactly.
+
+**Progression.** The first test (t01_assign) exposed multiple issues at once:
+bare `%N:name.suffix` in value references (should be `%N`), block ID collisions
+(entry block bb0 conflicted with Phase 1 allocations), and missing variable names
+on SSA values. Each fix unblocked multiple tests. The progression was roughly:
+1/33 → 8/33 → 15/33 → 25/33 → 33/33 over several conversation rounds.
+
+**Human-directed design corrections.** Several times the AI proposed designs that
+the human redirected:
+
+- *Warning/error architecture.* The AI initially put warnings on the `Module`
+  struct. The human found this "odd" — warnings are a translation artifact, not
+  part of the IR. This led to `TranslateResult` returning Module + warnings +
+  errors separately, and a standalone `fmtWarnings` function.
+
+- *Source range conventions.* The AI initially used a default `SourceRange.none`
+  parameter on `ssaWarn`. The human requested SourceRange as the first argument
+  with no default, matching codebase conventions. This forced every warning call
+  site to provide an explicit location — better for diagnostics.
+
+- *`fmtWarnings` vs `fmtTranslateResult`.* The AI proposed a combined formatting
+  function. The human preferred separate `fmtModule` + `fmtWarnings` functions,
+  keeping the pretty-printer composable.
+
+**Code review via agents.** After reaching 33/33, the human asked for a systematic
+review of all expected files. Parallel agents diffed each expected file against
+the test source, identifying 3 real bugs:
+
+1. *Duplicate block labels.* Break/continue/return inside loop bodies called
+   `finishBlockWithTerm` which finalized the current block, but the loop's
+   back-edge code then created another block with the same ID. Fix:
+   `translateBody` returns a `Bool` (terminated flag); parent handlers check it
+   before emitting continuation branches, using `startNewBlock` to skip the
+   redundant finalization.
+
+2. *Star-args at call sites.* `f(*args)` produced `positional()` instead of
+   `starArgs()` because the `Starred` AST node was unwrapped before the Call
+   handler could see it. Fix: match on `Starred` inside the Call handler's arg
+   loop.
+
+3. *While loop `+1000` hack.* The while loop body used `testBlock + 1000` as a
+   placeholder block ID because Phase 1 only allocated `testBlock` and `endBlock`.
+   Fix: added `bodyBlock` to `BlockTree.whileLoop` and allocated it in Phase 1.
+
+**Missing trailing blocks.** A subtler bug emerged during expression-level block
+implementation: functions ending with a compound statement (if/for/while) would
+not emit the final join/end block if it had no instructions. These blocks are
+branch targets and must be defined — without them, the SSA output references
+undefined blocks. The fix was to always emit the trailing block with `ret none`
+when the body doesn't terminate on all paths. This affected 14 expected files.
+
+### Phase 12: Expression-Level Control Flow (completed 2026-03-29)
+
+Implemented proper short-circuit semantics for BoolOp, IfExp, and chained
+comparisons, replacing the evaluation stubs from Phase 10.
+
+**IfExp** (`x = 1 if cond else 2`): Creates 3 expression blocks (then, else,
+join). The then and else blocks each evaluate one branch and branch to the join.
+The join block has a single parameter for the result value. The condBranch in
+the enclosing block dispatches to then/else based on the test.
+
+**BoolOp** (`a and b`, `a or b`): Creates n blocks for n operands (n-1
+short-circuit eval blocks + 1 join). For `and`, each condBranch goes to the
+next eval block on true, or short-circuits to the join with the current value
+on false. For `or`, the direction is reversed. Handles arbitrary chains
+(`a and b and c and d`).
+
+**Chained comparisons** (`a < b < c`): Desugars to `(a < b) and (b < c)` with
+short-circuit, but evaluates each intermediate value once. Uses the same
+condBranch-to-join pattern as BoolOp. Required adding block allocation in
+`countExprBlocks` for the Compare case (n blocks for n comparators when n > 1).
+
+**Expression blocks don't thread allVars.** A deliberate simplification: the
+then/else/eval blocks for expressions have no block parameters (except the join
+block's single result param). This means they reference values from the
+enclosing block via cross-block references — technically a violation of strict
+block-argument SSA. The rationale: expression blocks don't modify the variable
+environment, and threading all allVars through every ternary would produce
+extremely verbose output for minimal correctness benefit. The well-formedness
+checker (Step 9) can optionally flag or accept this pattern.
+
+**Block allocation budget.** Phase 1 (`countExprBlocks`) pre-allocates the exact
+number of expression blocks each compound statement needs. Phase 2 consumes them
+via `allocExprBlock`. The budget is: BoolOp = n (operands), IfExp = 3,
+chained Compare = n (comparators, when n > 1). If Phase 2 over-allocates, a
+warning is emitted but translation continues.
+
+### Phase 13: Exception Handling and With Statement (completed 2026-03-29)
+
+Implemented the remaining stub features: try/except/finally and with statement.
+
+**try/except.** The try body's blocks get `except := some { target := firstHandlerBlock }`.
+Each handler block receives `allVars + _exc` as parameters. Handler bodies are
+translated normally and branch to the join block (or finally, if present). Multiple
+handlers chain linearly — each handler's "next block" is the following handler.
+
+Simplifications for v1:
+- No `isinstance`-based type dispatch. All exceptions route to the first handler.
+  This is structurally complete (correct block structure, handler params, exception
+  target) but not semantically precise for typed `except` clauses.
+- No instruction-level `exceptArgs`. The block-level `except` target is set, but
+  individual raising instructions don't carry per-instruction variable snapshots.
+  This means the handler sees variables from the block entry, not from the exact
+  raise point.
+- The orelse clause (try..else) is translated in-place after the try body in the
+  normal path, before branching to finally/join.
+
+**with statement.** Desugars to `__enter__`/`__exit__` calls with an exception
+handler for the body:
+1. Evaluate context expression, call `__enter__()`, bind `as` variable
+2. Body runs in a block with `except := excExitBlock`
+3. Normal path: call `__exit__(None, None, None)`, branch to continue
+4. Exception path: call `__exit__(exc, exc, exc)`, re-raise
+
+The context manager is stored as a synthetic `_mgr` binding in `varEnv`. This
+persists across blocks via the mutable state (a cross-block reference, like `_iter`
+in for-loops).
+
+**Interaction pattern.** The AI implemented the with statement with a bug where
+the exception exit block was the last block, making the entire with statement
+"terminated" and treating subsequent code as dead. The AI caught this during
+self-review before running tests, restructured the block ordering so the normal
+exit block is the continuation point, and the exception exit block branches
+via `raise` to propagate the exception.
+
 ## Tools Built
 
 | Tool | Purpose |
 |------|---------|
 | `strata pyFeatures` | Lean subcommand: AST feature frequency analysis |
+| `strata pyBlockify` | Lean subcommand: Phase 1 block layout summary |
+| `strata pyToSSA` | Lean subcommand: full Python → SSA translation |
 | `tally_features.py` | Python script: aggregate counts across files |
 | `coverage_check.py` | Python script: compute file coverage for feature subsets |
 
@@ -258,3 +444,53 @@ making aesthetic/philosophical choices (precision over simplicity, single-sorted
 **Incremental commitment.** The design evolved over multiple rounds rather than being
 specified upfront. Each decision was made with full context from prior decisions,
 allowing later insights (like `undef`) to simplify earlier designs (like trampolines).
+
+**Human architectural interventions improve AI code.** The human proposed the
+BlockTree architecture as a replacement for the AI's initial flat PreBlock design.
+The tree structure was a strict improvement: simpler state, no graph traversal,
+structural recursion. Similarly, the human caught the `IO.Ref` usage inside a
+pure `StateM` monad and directed it to be replaced with state fields — a cleaner
+Lean design that eliminated an unnecessary IO dependency. These interventions
+suggest that the human's role shifts from writing code to reviewing architectural
+choices, where domain expertise (Lean idioms, SSA compiler design) has high leverage.
+
+**Test-driven development with expected output files works well for IR design.**
+Writing expected SSA output by hand before implementing the translator forced
+design decisions to be resolved early (naming conventions, block parameter
+strategy, sugar rules). The expected output files serve as both a specification
+and a regression suite. The TDD harness (`SSATest.lean`) provides immediate
+feedback on every `lake build` — each failing test shows the first differing line,
+making it easy to prioritize fixes.
+
+**Lean 4.27 module visibility is a recurring friction point.** Multiple issues
+arose from Lean's `module` keyword and visibility defaults: types needing
+`public section`, mutual inductives requiring explicit export, non-public imports
+not exposing constructors for pattern matching. Each issue was straightforward
+once diagnosed, but diagnosis required understanding Lean-specific semantics that
+the AI could not predict from first principles. The human's Lean expertise was
+essential for resolving these quickly.
+
+**TDD with expected output files catches real bugs.** The code review phase
+(diffing expected vs actual across all 33 tests) surfaced 3 bugs that the tests
+themselves couldn't catch because expected files had been updated to match actual
+output. The most important — duplicate block labels from break/continue — was a
+genuine SSA well-formedness violation that would have caused problems for
+downstream analysis. This suggests that periodic manual review of expected files
+is valuable even when all tests pass.
+
+**Human questioning surfaces general principles.** When the AI implemented a
+specific fix for missing trailing blocks (checking `currentParams.isEmpty`), the
+human asked "is there a more general principle?" This led to the simpler and
+correct rule: always emit the trailing block when the body doesn't terminate.
+The specific fix was a band-aid; the general principle was the right answer. This
+pattern — human pushes for generality, AI provides the implementation — recurred
+throughout the debugging phase.
+
+**Expression-level blocks reveal architectural tensions.** Implementing BoolOp
+and IfExp short-circuit exposed a tension in the strict block-argument SSA model:
+expression blocks need access to values from enclosing blocks, but threading all
+variables through every ternary produces impractical output. The pragmatic
+decision — expression blocks don't thread allVars — is a deliberate relaxation
+that keeps output readable while maintaining the important invariant (variable
+versioning at control-flow joins). This trade-off was not anticipated during IR
+design and emerged only during implementation.

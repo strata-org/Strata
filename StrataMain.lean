@@ -29,6 +29,9 @@ import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
 import Strata.Languages.Python.FeatureUsage
+import Strata.Languages.Python.Blockify
+import Strata.Languages.Python.PythonToSSA
+import Strata.Languages.Python.SSAFormat
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
@@ -435,6 +438,48 @@ def pyFeaturesCommand : Command where
     let stmts ← readPythonStrata v[0]
     let result := Strata.Python.FeatureUsage.analyzeFeatures stmts
     IO.print (Strata.Python.FeatureUsage.formatReport result)
+
+def pyBlockifyCommand : Command where
+  name := "pyBlockify"
+  args := [ "file" ]
+  help := "Run Phase 1 (block layout) on a Python Ion program and print summary."
+  callback := fun v _ => do
+    let stmts ← readPythonStrata v[0]
+    let results := Strata.Python.Blockify.blockifyModule stmts
+    for r in results do
+      IO.println s!"func {r.name}: {r.totalBlocks} blocks, {r.allVars.size} vars"
+      IO.println s!"  allVars: {r.allVars.toArray}"
+      for node in r.body do
+        IO.println s!"  body: {node}"
+      for w in r.warnings do
+        IO.println s!"  warning: {w}"
+
+def pyToSSACommand : Command where
+  name := "pyToSSA"
+  args := [ "file" ]
+  help := "Translate a Python Ion program to SSA IR and print it."
+  callback := fun v _ => do
+    let stmts ← readPythonStrata v[0]
+    let result := Strata.Python.PythonToSSA.translateModule "module" stmts
+    -- Try to build a FileMap from the original Python source for line:col positions
+    let ionPath : String := v[0]
+    let fileMap ← do
+      let pyPath := if ionPath.endsWith ".python.st.ion" then
+          some ((ionPath.dropEnd ".python.st.ion".length).toString ++ ".py")
+        else none
+      match pyPath with
+      | some p => try pure (some (Lean.FileMap.ofString (← IO.FS.readFile p)))
+                  catch _ => pure none
+      | none => pure none
+    let warnStr := Strata.Python.SSAFormat.fmtWarnings result.warnings fileMap
+    let modStr := Strata.Python.SSAFormat.fmtModule result.module
+    -- Insert warnings after the module header line
+    let lines := modStr.splitOn "\n"
+    match lines with
+    | hdr :: rest =>
+      let warningBlock := if warnStr.isEmpty then "" else "\n" ++ warnStr
+      IO.print (hdr ++ warningBlock ++ "\n" ++ "\n".intercalate rest)
+    | [] => IO.print (warnStr ++ modStr)
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -1385,7 +1430,9 @@ def commandGroups : List CommandGroup := [
                  pyAnalyzeToGotoCommand,
                  pyTranslateLaurelCommand,
                  pyInterpretCommand,
-                 pyFeaturesCommand] },
+                 pyFeaturesCommand,
+                 pyBlockifyCommand,
+                 pyToSSACommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,

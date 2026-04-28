@@ -1,23 +1,22 @@
 module "n08_mixed":
+-- WARNING: unsupported AsyncFunctionDef 'async_fetch' at 10:0-11:33
+-- WARNING: unsupported Await at 11:11-11:33
+-- WARNING: unsupported ListComp at 14:10-14:32
 
--- WARNING: unsupported AsyncFunctionDef 'async_fetch' at 10:1-11:35 (stub generated)
--- WARNING: unsupported ListComp at 14:11-14:35 (replaced with unsupported instruction)
 
-func sync_add(a.0: int, b.0: int) -> int:
-  bb0(%0:a.0 : int, %1:b.0 : int):
+func sync_add(a: int, b: int):
+  bb0():
     %2:_tmp.0 = binOp add %0 %1
     ret %2
 
-func async_fetch(url.0: str) -> str:
-  bb0(%0:url.0 : str):
-    unreachable
+func async_fetch(url: str):
+  bb0():
+    %1:_tmp.0 = unsupported "Await"
+    ret %1
 
 func @module_init():
   bb0():
-    %0:_tmp.0 = intLit 1
-    %1:_tmp.1 = intLit 2
-    %2:_tmp.2 = intLit 3
-    %3:items.0 = mkList [%0, %1, %2]
+    %3:items.0 = mkList [intLit 1, intLit 2, intLit 3]
     %4:doubled.0 = unsupported "ListComp"
-    %5:result.0 = call @sync_add(positional(intLit 1), positional(intLit 2))
+    %8:result.0 = callQualified n08_mixed.sync_add [positional(intLit 1), positional(intLit 2)]
     ret
