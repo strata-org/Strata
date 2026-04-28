@@ -434,7 +434,9 @@ def pyFeaturesCommand : Command where
   args := [ "file" ]
   help := "Analyze a Python Ion program and print feature usage statistics."
   callback := fun v _ => do
-    let stmts ← readPythonStrata v[0]
+    let stmts ← match ← Python.readPythonStrata v[0] |>.toBaseIO with
+      | .ok s => pure s
+      | .error msg => exitFailure msg
     let result := Strata.Python.FeatureUsage.analyzeFeatures stmts
     IO.print (Strata.Python.FeatureUsage.formatReport result)
 
@@ -443,7 +445,9 @@ def pyToSSACommand : Command where
   args := [ "file" ]
   help := "Translate a Python Ion program to SSA IR and print it."
   callback := fun v _ => do
-    let stmts ← readPythonStrata v[0]
+    let stmts ← match ← Python.readPythonStrata v[0] |>.toBaseIO with
+      | .ok s => pure s
+      | .error msg => exitFailure msg
     let result := Strata.Python.PythonToSSA.translateModule "module" stmts
     -- Try to build a FileMap from the original Python source for line:col positions
     let ionPath : String := v[0]
