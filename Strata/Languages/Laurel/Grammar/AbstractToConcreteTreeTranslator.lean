@@ -78,7 +78,8 @@ private def operationName : Operation → String
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
 -- Internal-only: public because `partial` prevents `private` in this section
-partial def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
+partial def stmtExprToArg (s : StmtExprMd) : Arg :=
+  stmtExprValToArg s.val
 where
   variableToArg : Variable → Arg
     | .Local name => laurelOp "identifier" #[ident name.text]
@@ -104,7 +105,7 @@ where
       let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
       let initOpt := optionArg none
       laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
-    | .Assign [⟨.Declare param, _, _⟩] value =>
+    | .Assign [⟨.Declare param, _⟩] value =>
       let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
       let initOpt := optionArg (some (laurelOp "initializer" #[stmtExprToArg value]))
       laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
@@ -358,7 +359,7 @@ private def formatOp (o : Strata.Operation) : Format :=
 def formatHighType (t : HighTypeMd) : Format := formatArg (highTypeToArg t)
 def formatHighTypeVal (t : HighType) : Format := formatArg (highTypeValToArg t)
 def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
-def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg ⟨s, none, {}⟩)
+def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg { val := s, source := none })
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)
@@ -374,10 +375,10 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
 
 def formatVariable (v : Variable) : Format :=
-  formatArg (stmtExprToArg ⟨.Var v, none, {}⟩)
+  formatArg (stmtExprToArg ⟨.Var v, none⟩)
 
 def formatVariableMd (v : VariableMd) : Format :=
-  formatArg (stmtExprToArg ⟨.Var v.val, v.source, v.md⟩)
+  formatArg (stmtExprToArg ⟨.Var v.val, v.source⟩)
 
 def formatConstant (c : Constant) : Format :=
   "const " ++ format c.name ++ ": " ++ formatHighType c.type ++

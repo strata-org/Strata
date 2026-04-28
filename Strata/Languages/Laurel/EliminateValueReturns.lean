@@ -27,10 +27,10 @@ private def eliminateValueReturnNode (outParam : Identifier) (stmt : StmtExprMd)
   match stmt.val with
   | .Return (some value) =>
     -- Synthesized nodes use default metadata since no diagnostics should be reported on them
-    let target : VariableMd := ⟨.Local outParam, none, .empty⟩
-    let assign : StmtExprMd := ⟨.Assign [target] value, none, .empty⟩
-    let ret : StmtExprMd := ⟨.Return none, stmt.source, stmt.md⟩
-    ⟨.Block [assign, ret] none, none, .empty⟩
+    let target : VariableMd := { val := .Local outParam, source := none }
+    let assign : StmtExprMd := { val := .Assign [target] value, source := none }
+    let ret : StmtExprMd := { val := .Return none, source := stmt.source }
+    { val := .Block [assign, ret] none, source := none }
   | _ => stmt
 
 /-- Check whether a statement tree contains any `Return (some _)`. -/
@@ -74,7 +74,7 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure × Array Diagnost
         "Valued return is not supported for procedures with no output parameters"
       else
         "Valued return is not supported for procedures with multiple output parameters"
-      (proc, #[proc.name.md.toDiagnostic msg DiagnosticType.UserError])
+      (proc, #[diagnosticFromSource proc.name.source msg DiagnosticType.UserError])
     else (proc, #[])
 
 public section

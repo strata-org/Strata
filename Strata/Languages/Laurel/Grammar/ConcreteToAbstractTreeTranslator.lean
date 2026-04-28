@@ -64,8 +64,8 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  let md ← getArgMetaData arg
-  return { text := id, md := md }
+  let source ← getArgFileRange arg
+  return { text := id, source := source }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -154,7 +154,7 @@ instance : Inhabited Procedure where
     decreases := none
     isFunctional := false
     invokeOn := none
-    body := .Transparent ⟨.LiteralBool true, none, #[]⟩
+    body := .Transparent { val := .LiteralBool true, source := none }
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -241,7 +241,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | .option _ none => pure none
         | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
       match value with
-      | some init => return mkStmtExprMd (.Assign [⟨.Declare ⟨name, varType⟩, src, #[]⟩] init) src
+      | some init => return mkStmtExprMd (.Assign [⟨.Declare ⟨name, varType⟩, src⟩] init) src
       | none => return mkStmtExprMd (.Var (.Declare ⟨name, varType⟩)) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
@@ -250,7 +250,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.assign, #[arg0, arg1] =>
       let target ← translateStmtExpr arg0
       let targetVar : VariableMd ← match target.val with
-        | .Var v => pure ⟨v, target.source, target.md⟩
+        | .Var v => pure ⟨v, target.source⟩
         | _ => TransM.error s!"assign target must be a variable or field access"
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [targetVar] value) src
@@ -264,14 +264,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | q`Laurel.assignTargetDecl, #[nameArg, typeArg] =>
             let name ← translateIdent nameArg
             let ty ← translateHighType typeArg
-            pure (⟨.Declare ⟨name, ty⟩, tSrc, #[]⟩ : VariableMd)
+            pure (⟨.Declare ⟨name, ty⟩, tSrc⟩ : VariableMd)
           | q`Laurel.assignTargetVar, #[nameArg] =>
             let name ← translateIdent nameArg
-            pure (⟨.Local name, tSrc, #[]⟩ : VariableMd)
+            pure (⟨.Local name, tSrc⟩ : VariableMd)
           | q`Laurel.assignTargetField, #[objArg, fieldArg] =>
             let obj ← translateIdent objArg
             let field ← translateIdent fieldArg
-            pure (⟨.Field ⟨.Var (.Local obj), tSrc, #[]⟩ field, tSrc, #[]⟩ : VariableMd)
+            pure (⟨.Field ⟨.Var (.Local obj), tSrc⟩ field, tSrc⟩ : VariableMd)
           | _, _ => TransM.error s!"multiAssign: unexpected target {repr top.name}"
         | _ => pure []
       let value ← translateStmtExpr valueArg
