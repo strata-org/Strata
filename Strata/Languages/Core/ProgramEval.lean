@@ -5,8 +5,15 @@
 -/
 module
 
+public import Strata.Languages.Core.Env
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.ProcedureEval
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.StatementEval
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Imperative.StmtEval
+public import Strata.DL.Imperative.CmdEval
 
 ---------------------------------------------------------------------
 
@@ -15,9 +22,12 @@ namespace Core
 open Std (ToFormat Format format)
 
 namespace Program
+open Lambda LExpr
 open Lambda.LTy Lambda.LExpr Statement Procedure Program
+open Strata (DiagnosticModel DiagnosticType FileRange)
 
 public section
+
 
 def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
   -- Push a path condition scope to store axioms
@@ -63,6 +73,31 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
 
 --------------------------------------------------------------------
+
+def Decl.run (d : Decl) (E : Env) : Except DiagnosticModel Env :=
+  match d with
+  | .type t _md =>
+    match t with
+    | .data d => E.addMutualDatatype d
+    | _ => .ok E
+  | .func f _md =>
+    E.addFactoryFunc f
+  | .recFuncBlock fs _md =>
+    fs.foldlM (fun E f => E.addFactoryFunc f) E
+  | .ax a _md =>
+    -- Not strictly necessary for concrete execution
+    .ok { E with pathConditions := E.pathConditions.addInNewest [(toString a.name, a.e)] }
+  | _ => .ok E
+
+/--
+Initialize an environment and evaluate all of the declarations
+from a type-checked program.
+-/
+def run (prog : Program) : Except DiagnosticModel Env := do
+  let factory ← Core.Factory.addFactory Lambda.Factory.default
+  let σ ← Lambda.LState.init.addFactory factory
+  let E: Env := { Env.init with exprEnv := σ, program := prog }
+  prog.decls.foldlM (fun E d => Decl.run d E) E
 
 end -- public section
 

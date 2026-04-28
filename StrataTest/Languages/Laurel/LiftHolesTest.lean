@@ -43,7 +43,8 @@ private def parseElimAndPrint (input : String) : IO Unit := do
 -- Hole in Add arg inside typed local variable → int.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { var x: int := 1 + $hole_0() };
 -/
@@ -55,7 +56,8 @@ procedure test() { var x: int := 1 + <?> };
 -- Bare Hole as Assign Declare initializer → replaced with call (no longer preserved as havoc).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { var x: int := $hole_0() };
 -/
@@ -67,7 +69,8 @@ procedure test() { var x: int := <?> };
 -- Hole in comparison arg inside assert → int (inferred from sibling literal).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { assert $hole_0() > 0 };
 -/
@@ -79,7 +82,8 @@ procedure test() { assert <?> > 0 };
 -- Hole directly as assert condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { assert $hole_0() };
 -/
@@ -91,7 +95,8 @@ procedure test() { assert <?> };
 -- Hole directly as assume condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { assume $hole_0() };
 -/
@@ -103,7 +108,8 @@ procedure test() { assume <?> };
 -- Hole as if-then-else condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { if $hole_0() then { assert true } };
 -/
@@ -115,7 +121,8 @@ procedure test() { if <?> then { assert true } };
 -- Hole in then-branch of if-then-else inside typed local variable → int.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { var x: int := if true then $hole_0() else 0 };
 -/
@@ -127,7 +134,8 @@ procedure test() { var x: int := if true then <?> else 0 };
 -- Hole as while-loop condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { while($hole_0()) {  } };
 -/
@@ -139,7 +147,8 @@ procedure test() { while(<?>) {} };
 -- Hole as while-loop invariant → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { while(true)
   invariant $hole_0() {  } };
@@ -154,7 +163,8 @@ procedure test() { while(true) invariant <?> {} };
 -- Hole in And arg inside assert → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { assert true && $hole_0() };
 -/
@@ -166,7 +176,8 @@ procedure test() { assert true && <?> };
 -- Hole in Neg inside typed local variable → int.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { var x: int := -$hole_0() };
 -/
@@ -178,7 +189,8 @@ procedure test() { var x: int := -<?> };
 -- Hole in StrConcat inside typed local variable → string.
 /--
 info: function $hole_0()
-  returns ($result: string);
+  returns ($result: string)
+  opaque;
 procedure test()
 { var s: string := "hello" ++ $hole_0() };
 -/
@@ -191,9 +203,11 @@ procedure test()
 -- Two holes in Add → both int, separate functions.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 function $hole_1()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { var x: int := $hole_0() + $hole_1() };
 -/
@@ -205,9 +219,11 @@ procedure test() { var x: int := <?> + <?> };
 -- Holes across statements: Mul arg (int) then assert condition (bool).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 function $hole_1()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { var x: int := 2 * $hole_0(); assert $hole_1() };
 -/
@@ -221,7 +237,8 @@ procedure test() { var x: int := 2 * <?>; assert <?> };
 -- Hole in Add inside Gt inside if condition → int (inferred from sibling literal 0).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { if 1 + $hole_0() > 0 then { assert true } };
 -/
@@ -233,7 +250,8 @@ procedure test() { if 1 + <?> > 0 then { assert true } };
 -- Hole in Implies inside while invariant → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
 { var p: bool; while(true)
   invariant p ==> $hole_0() {  } };
@@ -246,7 +264,8 @@ procedure test() { var p: bool; while(true) invariant p ==> <?> {} };
 -- Hole in Mul inside typed local variable with real type → real.
 /--
 info: function $hole_0()
-  returns ($result: real);
+  returns ($result: real)
+  opaque;
 procedure test()
 { var r: real := 3.14 * $hole_0() };
 -/
@@ -260,7 +279,8 @@ procedure test() { var r: real := 3.14 * <?> };
 -- Hole in comparison with variable sibling → hole function takes the procedure's params.
 /--
 info: function $hole_0(n: int)
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test(n: int)
 { assert n > $hole_0(n) };
 -/
@@ -274,7 +294,8 @@ procedure test(n: int) { assert n > <?> };
 -- Hole in function body → same treatment as procedures.
 /--
 info: function $hole_0(x: int)
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 function test(x: int): int
 { $hole_0(x) };
 -/
@@ -298,7 +319,8 @@ procedure test() { assert <??> };
 -- Mixed: det hole eliminated, nondet hole preserved.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
 { var x: int := $hole_0(); assert <??> };
 -/

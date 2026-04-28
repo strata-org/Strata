@@ -566,7 +566,7 @@ VCs:
 info: ok: program Core;
 
 function intID () : int -> int {
-  lambda __q0 : int :: __q0
+  fun __q0 : int => __q0
 }
 -/
 #guard_msgs in

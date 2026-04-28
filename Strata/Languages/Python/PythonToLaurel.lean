@@ -329,6 +329,40 @@ def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_str" [mkStmtExprMd (
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
+
+/-- Parse a Python float literal string (e.g. "0.0", "1.5", "1e10") into a Decimal.
+    Returns `none` for formats that cannot be represented (e.g. "inf", "nan").
+    Handles underscores in numeric literals (e.g. "1_000.5") by stripping them.
+    -- TODO: prove round-trip: ∀ s d, parseFloatString s = some d → the Decimal d
+    -- represents the same real number as the Python float literal s. -/
+private def parseFloatString (s : String) : Option Decimal := do
+  -- Non-finite floats cannot be represented as Decimal
+  let lower := s.toLower
+  if lower == "inf" || lower == "-inf" || lower == "nan" then none
+  else
+  -- Strip underscores (Python allows e.g. 1_000.5)
+  let s := s.replace "_" ""
+  -- Split on 'e'/'E' for scientific notation
+  let (coeffStr, expPart) :=
+    match s.splitOn "e" with
+    | [c, e] => (c, (if e.startsWith "+" then e.drop 1 else e).toInt?)
+    | _ => match s.splitOn "E" with
+      | [c, e] => (c, (if e.startsWith "+" then e.drop 1 else e).toInt?)
+      | _ => (s, some 0)
+  let sciExp ← expPart
+  -- Parse the coefficient, which may have a decimal point
+  match coeffStr.splitOn "." with
+  | [intPart, fracPart] =>
+    let digits := intPart ++ fracPart
+    let mantissa ← digits.toInt?
+    let exponent := sciExp - fracPart.length
+    some { mantissa, exponent }
+  | [intPart] =>
+    let mantissa ← intPart.toInt?
+    some { mantissa, exponent := sciExp }
+  | _ => none
+
+def floatToAny (d : Decimal) := mkStmtExprMd (.StaticCall "from_float" [mkStmtExprMd (StmtExpr.LiteralDecimal d)])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 
 /-- The set of PyLauType names that have runtime type-tester predicates
@@ -523,8 +557,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     return mkStmtExprMd .Hole
 
   -- Float literal
-  | .Constant _ (.ConFloat _ _) _ =>
-    return mkStmtExprMd .Hole
+  | .Constant _ (.ConFloat _ f) _ =>
+    match parseFloatString f.val with
+    | some d => return floatToAny d
+    | none => return mkStmtExprMd .Hole
 
   -- Complex literal
   | .Constant _ (.ConComplex _ _ _) _ =>
@@ -781,6 +817,7 @@ partial def reMapFunctionName (_ctx: TranslationContext) (fname: String) : Strin
   match fname with
   | "str" => "to_string_any"
   | "int" => "to_int_any"
+  | "bool" => "to_bool_any"
   | "len" => "Any_len_to_Any"
   | "timedelta" => "timedelta_func" -- We handle timedelta as an int, not a class
   | _ => fname
