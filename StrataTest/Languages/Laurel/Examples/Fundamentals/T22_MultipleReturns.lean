@@ -14,6 +14,7 @@ namespace Strata.Laurel
 
 def program := r"
 procedure multipleReturns() returns (x: int, y: int, z: int)
+  opaque
   ensures x == 1 && y == 2 && z == 3;
 
 procedure caller() {
