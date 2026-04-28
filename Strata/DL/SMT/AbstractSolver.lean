@@ -174,8 +174,9 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   /-- Get values of specific terms in the current model. -/
   getValue : List τ → m (Except String (List (τ × τ)))
 
-  /-- Convert a term to its string representation, making model values inspectable. -/
-  termToString : τ → m (Except String String)
+  /-- Convert a term to its SMT-LIB string representation, making model values inspectable.
+      The returned string must be valid SMT-LIB syntax. -/
+  termToSMTLibString : τ → m (Except String String)
 
   /-- Reset the solver session to its initial state. -/
   reset : m Unit

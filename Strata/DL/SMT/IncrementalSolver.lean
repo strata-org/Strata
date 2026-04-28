@@ -354,7 +354,7 @@ def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
     -- Return the raw output as a single pair (the verifier parses it)
     return .ok [(Term.string modelOutput, Term.string modelOutput)]
 
-  termToString t := termToStr t
+  termToSMTLibString t := termToStr t
 
   reset := emitln "(reset)"
 
