@@ -336,6 +336,8 @@ jobs:
         run: |
           BUILD_ID=$(aws codebuild start-build \
             --project-name strata-benchmarks \
+            --source-type-override GITHUB \
+            --source-location-override https://github.com/aqjune-aws/Strata.git \
             --query 'build.id' --output text \
             --region us-east-2)
           echo "Build started: $BUILD_ID"
