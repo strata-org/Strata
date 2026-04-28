@@ -325,7 +325,6 @@ jobs:
   strata-benchmarks:
     name: Run internal benchmarks of Strata
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     permissions:
       id-token: write
       contents: read
