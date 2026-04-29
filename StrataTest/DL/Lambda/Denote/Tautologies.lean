@@ -18,8 +18,7 @@ over `IntBoolFactory`. Each formula is a closed, well-typed `LExpr` of type
 interpretation, type-variable valuation, and free-variable valuation.
 
 Because HashMaps do not reduce well in the kernel, this file uses
-`native_decide` and several `sorrys` for simplifying the `Factory`
-`concreteEval`.
+`native_decide` for simplifying the `Factory` `concreteEval`.
 -/
 
 namespace Lambda
@@ -205,8 +204,6 @@ strategy is:
 4. Instantiate with concrete boolean constant expressions
 5. Since `substReduce` reduces definitionally on ground types, typing proofs (`.const`) work directly
 6. Use `change` to normalize the goal (substReduce is defeq but not syntactically reduced)
-7. The remaining `sorry` is the `h_eval` step: proving `ceval` computes the right result,
-   blocked by Factory HashMap lookups not reducing in the kernel (TODO)
 -/
 
 private abbrev boolBinSort : LSort :=
@@ -232,24 +229,30 @@ private theorem bool_and_interp (I : Interp F) :
   rw [bool_and_input_tys, bool_and_output, bool_and_name] at h_ic
   -- Now h_ic uses substReduce which reduces definitionally on ground types
   funext p q
-  have h_eval : ceval () [.const () (.boolConst p), .const () (.boolConst q)]
-      = some (.const () (.boolConst (p && q))) := by
-    -- ceval comes from F["Bool.And"].concreteEval. Use simp to reduce the HashMap lookup.
-    -- Blocked: Factory HashMap lookup doesn't reduce. TODO.
-    sorry
+  have h_eval : ceval () [.boolConst () p, .boolConst () q]
+      = some (.boolConst () (p && q)) := by
+    have h_concrete :
+        ∀ (b1 b2 : Bool),
+          (F["Bool.And"]'bool_and_mem).concreteEval.bind
+            (fun f => f () [.boolConst () b1, .boolConst () b2])
+          = some (.boolConst () (b1 && b2)) := by
+      intro b1 b2; cases b1 <;> cases b2 <;> native_decide
+    have h_inst_concrete := h_concrete p q
+    rw [h_ceval_eq] at h_inst_concrete
+    simpa using h_inst_concrete
   have h_vt : TyVarVal := fun _ => .tcons "bool" []
   have h_fv : FreeVarVal TP I.tcInterp := fun _ s =>
     @default _ (@SortDenote.instInhabited I.tcInterp I.allInhabited s)
   have h_inst := h_ic h_vt h_fv () Subst.empty
-      [.const () (.boolConst p), .const () (.boolConst q)]
-      (.const () (.boolConst (p && q)))
+      [.boolConst () p, .boolConst () q]
+      (.boolConst () (p && q))
       h_eval
   -- substReduce reduces definitionally on ground types. Provide typing proofs.
   have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
-      [.const () (.boolConst p), .const () (.boolConst q)]
+      [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
-  have h_result : LExpr.HasTypeA (T := TP) [] (.const () (.boolConst (p && q))) (.tcons "bool" []) := .const
+  have h_result : LExpr.HasTypeA (T := TP) [] (.boolConst () (p && q)) (.tcons "bool" []) := .const
   have h_eq := h_inst h_args h_result
   -- substReduce reduces definitionally but Lean displays it unreduced.
   -- Use change to normalize the type in h_eq.
@@ -271,22 +274,29 @@ private theorem bool_implies_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEvalReduce at h_ic
   rw [bool_implies_input_tys, bool_implies_output, bool_implies_name] at h_ic
   funext p q
-  have h_eval : ceval () [.const () (.boolConst p), .const () (.boolConst q)]
-      = some (.const () (.boolConst (!p || q))) := by
-    -- Blocked: Factory HashMap lookup doesn't reduce. TODO.
-    sorry
+  have h_eval : ceval () [.boolConst () p, .boolConst () q]
+      = some (.boolConst () (!p || q)) := by
+    have h_concrete :
+        ∀ (b1 b2 : Bool),
+          (F["Bool.Implies"]'bool_implies_mem).concreteEval.bind
+            (fun f => f () [.boolConst () b1, .boolConst () b2])
+          = some (.boolConst () (!b1 || b2)) := by
+      intro b1 b2; cases b1 <;> cases b2 <;> native_decide
+    have h_inst_concrete := h_concrete p q
+    rw [h_ceval_eq] at h_inst_concrete
+    simpa using h_inst_concrete
   have h_vt : TyVarVal := fun _ => .tcons "bool" []
   have h_fv : FreeVarVal TP I.tcInterp := fun _ s =>
     @default _ (@SortDenote.instInhabited I.tcInterp I.allInhabited s)
   have h_inst := h_ic h_vt h_fv () Subst.empty
-      [.const () (.boolConst p), .const () (.boolConst q)]
-      (.const () (.boolConst (!p || q)))
+      [.boolConst () p, .boolConst () q]
+      (.boolConst () (!p || q))
       h_eval
   have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
-      [.const () (.boolConst p), .const () (.boolConst q)]
+      [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
-  have h_result : LExpr.HasTypeA (T := TP) [] (.const () (.boolConst (!p || q))) (.tcons "bool" []) := .const
+  have h_result : LExpr.HasTypeA (T := TP) [] (.boolConst () (!p || q)) (.tcons "bool" []) := .const
   have h_eq := h_inst h_args h_result
   change (!p || q) = I.opInterp "Bool.Implies" boolBinSort p q at h_eq
   exact h_eq.symm
@@ -306,21 +316,29 @@ private theorem bool_or_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEvalReduce at h_ic
   rw [bool_or_input_tys, bool_or_output, bool_or_name] at h_ic
   funext p q
-  have h_eval : ceval () [.const () (.boolConst p), .const () (.boolConst q)]
-      = some (.const () (.boolConst (p || q))) := by
-    sorry
+  have h_eval : ceval () [.boolConst () p, .boolConst () q]
+      = some (.boolConst () (p || q)) := by
+    have h_concrete :
+        ∀ (b1 b2 : Bool),
+          (F["Bool.Or"]'bool_or_mem).concreteEval.bind
+            (fun f => f () [.boolConst () b1, .boolConst () b2])
+          = some (.boolConst () (b1 || b2)) := by
+      intro b1 b2; cases b1 <;> cases b2 <;> native_decide
+    have h_inst_concrete := h_concrete p q
+    rw [h_ceval_eq] at h_inst_concrete
+    simpa using h_inst_concrete
   have h_vt : TyVarVal := fun _ => .tcons "bool" []
   have h_fv : FreeVarVal TP I.tcInterp := fun _ s =>
     @default _ (@SortDenote.instInhabited I.tcInterp I.allInhabited s)
   have h_inst := h_ic h_vt h_fv () Subst.empty
-      [.const () (.boolConst p), .const () (.boolConst q)]
-      (.const () (.boolConst (p || q)))
+      [.boolConst () p, .boolConst () q]
+      (.boolConst () (p || q))
       h_eval
   have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
-      [.const () (.boolConst p), .const () (.boolConst q)]
+      [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
-  have h_result : LExpr.HasTypeA (T := TP) [] (.const () (.boolConst (p || q))) (.tcons "bool" []) := .const
+  have h_result : LExpr.HasTypeA (T := TP) [] (.boolConst () (p || q)) (.tcons "bool" []) := .const
   have h_eq := h_inst h_args h_result
   change (p || q) = I.opInterp "Bool.Or" boolBinSort p q at h_eq
   exact h_eq.symm
@@ -340,21 +358,29 @@ private theorem bool_not_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEvalReduce at h_ic
   rw [bool_not_input_tys, bool_not_output, bool_not_name] at h_ic
   funext p
-  have h_eval : ceval () [.const () (.boolConst p)]
-      = some (.const () (.boolConst (!p))) := by
-    sorry
+  have h_eval : ceval () [.boolConst () p]
+      = some (.boolConst () (!p)) := by
+    have h_concrete :
+        ∀ (b : Bool),
+          (F["Bool.Not"]'bool_not_mem).concreteEval.bind
+            (fun f => f () [.boolConst () b])
+          = some (.boolConst () (!b)) := by
+      intro b; cases b <;> native_decide
+    have h_inst_concrete := h_concrete p
+    rw [h_ceval_eq] at h_inst_concrete
+    simpa using h_inst_concrete
   have h_vt : TyVarVal := fun _ => .tcons "bool" []
   have h_fv : FreeVarVal TP I.tcInterp := fun _ s =>
     @default _ (@SortDenote.instInhabited I.tcInterp I.allInhabited s)
   have h_inst := h_ic h_vt h_fv () Subst.empty
-      [.const () (.boolConst p)]
-      (.const () (.boolConst (!p)))
+      [.boolConst () p]
+      (.boolConst () (!p))
       h_eval
   have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
-      [.const () (.boolConst p)]
+      [.boolConst () p]
       [.tcons "bool" []] :=
     .cons .const .nil
-  have h_result : LExpr.HasTypeA (T := TP) [] (.const () (.boolConst (!p))) (.tcons "bool" []) := .const
+  have h_result : LExpr.HasTypeA (T := TP) [] (.boolConst () (!p)) (.tcons "bool" []) := .const
   have h_eq := h_inst h_args h_result
   change (!p) = I.opInterp "Bool.Not" boolUnSort p at h_eq
   exact h_eq.symm

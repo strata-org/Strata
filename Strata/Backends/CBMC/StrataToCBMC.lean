@@ -6,6 +6,7 @@
 module
 
 import Lean.Data.Json
+import Lean.Parser.Types
 import Strata.DL.Util.Map
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.C_Simp.Verify

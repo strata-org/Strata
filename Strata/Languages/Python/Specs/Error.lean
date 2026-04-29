@@ -27,7 +27,6 @@ instance (a b : WarningKind) : Decidable (a < b) :=
 namespace WarningKind
 
 -- Type translation warnings
-def emptyType : WarningKind := { phase := "pySpecToLaurel", category := "emptyType" }
 def unsupportedUnion : WarningKind := { phase := "pySpecToLaurel", category := "unsupportedUnion" }
 
 -- Unsupported Optional patterns
