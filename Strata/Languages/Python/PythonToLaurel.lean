@@ -1526,13 +1526,15 @@ partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) :
       ([cond, thenBranch] ++ elseBranch.toList).flatMap $ getMaybeExceptionExprs ctx
   | _ => []
 
+/-- Build a single exception-check assert: `assert !Any..isexception(e)`. -/
+def mkExceptionCheckAssert (e : StmtExprMd) (summary : String) : StmtExprMd :=
+  let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [e]])
+  mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some summary }) e.source
+
 partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) : List StmtExprMd :=
-  let maybeExceptExprs := getMaybeExceptionExprs ctx e
-  maybeExceptExprs.map fun mbe =>
+  (getMaybeExceptionExprs ctx e).map fun mbe =>
     let funcName := match mbe.val with | .StaticCall f _ => f.text | _ => "expression"
-    let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [mbe]])
-    let cond : Condition := { condition := condExpr, summary := some s!"Check {funcName} exception" }
-    mkStmtExprMdWithLoc (.Assert cond) mbe.source
+    mkExceptionCheckAssert mbe s!"Check {funcName} exception"
 
 /-- Check whether an expression tree contains a `StaticCall` to a user-defined
     function (procedure).  Such calls are disallowed in pure contexts (e.g.
@@ -1556,15 +1558,14 @@ partial def containsUserCall (ctx : TranslationContext) (e : StmtExprMd) : Bool 
     See issue #1000. -/
 def getExceptionCheckPreamble (ctx : TranslationContext) (e : StmtExprMd) (varName : String)
     : List StmtExprMd × StmtExprMd :=
-  let exceptionAsserts := getExceptionAssertions ctx e
-  if !exceptionAsserts.isEmpty && containsUserCall ctx e then
+  if (getMaybeExceptionExprs ctx e).isEmpty then
+    ([], e)
+  else if containsUserCall ctx e then
     let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some e))
     let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-    let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-    let assert := mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some "Check exception" }) e.source
-    ([varDecl, assert], varRef)
+    ([varDecl, mkExceptionCheckAssert varRef "Check exception"], varRef)
   else
-    (exceptionAsserts, e)
+    (getExceptionAssertions ctx e, e)
 
 def withExceptionChecks (ctx : TranslationContext)
     (result : TranslationContext × List StmtExprMd)
