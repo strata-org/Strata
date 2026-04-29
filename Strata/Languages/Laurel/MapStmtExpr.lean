@@ -67,11 +67,8 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
   | .InstanceCall target callee args =>
     pure ⟨.InstanceCall (← mapStmtExprM f target) callee
       (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source, md⟩
-  | .Forall param trigger body =>
-    pure ⟨.Forall param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source, md⟩
-  | .Exists param trigger body =>
-    pure ⟨.Exists param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
+  | .Quantifier mode param trigger body =>
+    pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
       (← mapStmtExprM f body), source, md⟩
   | .Assigned name =>
     pure ⟨.Assigned (← mapStmtExprM f name), source, md⟩
@@ -80,7 +77,7 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
   | .Fresh value =>
     pure ⟨.Fresh (← mapStmtExprM f value), source, md⟩
   | .Assert cond =>
-    pure ⟨.Assert (← mapStmtExprM f cond), source, md⟩
+    pure ⟨.Assert { cond with condition := ← mapStmtExprM f cond.condition }, source, md⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprM f cond), source, md⟩
   | .ProveBy value proof =>
@@ -98,6 +95,7 @@ termination_by sizeOf expr
 decreasing_by
   all_goals simp_wf
   all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
   all_goals (try term_by_mem)
   all_goals omega
 
@@ -110,8 +108,8 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }
   | .Opaque posts impl mods =>
-    return { proc with body := .Opaque (← posts.mapM f) (← impl.mapM f) (← mods.mapM f) }
-  | .Abstract posts => return { proc with body := .Abstract (← posts.mapM f) }
+    return { proc with body := .Opaque (← posts.mapM (·.mapM f)) (← impl.mapM f) (← mods.mapM f) }
+  | .Abstract posts => return { proc with body := .Abstract (← posts.mapM (·.mapM f)) }
   | .External => return proc
 
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
@@ -119,7 +117,7 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
   return { proc with
-    preconditions := ← proc.preconditions.mapM f
+    preconditions := ← proc.preconditions.mapM (·.mapM f)
     decreases := ← proc.decreases.mapM f
     invokeOn := ← proc.invokeOn.mapM f }
 

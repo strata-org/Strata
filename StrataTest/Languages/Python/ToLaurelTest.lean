@@ -82,6 +82,7 @@ private def fmtTypeDef : TypeDefinition → String
   | .Composite ty => s!"type {ty.name}"
   | .Constrained ty => s!"constrained {ty.name}"
   | .Datatype ty => s!"datatype {ty.name}"
+  | .Alias ty => s!"alias {ty.name}"
 
 /-- Run signaturesToLaurel and print formatted output. Asserts no errors. -/
 private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
@@ -156,10 +157,10 @@ procedure with_kwonly(x:TInt, verbose:TBool) returns(result:TString)
 
 /--
 info: procedure takes_any(x:UserDefined(Any)) returns(result:TInt)
-procedure takes_list(items:UserDefined(ListStr)) returns(result:TBool)
-procedure returns_dict() returns(result:UserDefined(DictStrAny))
-procedure typed_list() returns(result:UserDefined(ListStr))
-procedure typed_dict() returns(result:UserDefined(DictStrAny))
+procedure takes_list(items:UserDefined(Any)) returns(result:TBool)
+procedure returns_dict() returns(result:UserDefined(Any))
+procedure typed_list() returns(result:UserDefined(Any))
+procedure typed_dict() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -229,10 +230,10 @@ procedure opt_int_enum() returns(result:UserDefined(IntOrNone))
 /-! ## Error cases (updated to verify WarningKind) -/
 
 /--
-info: pySpecToLaurel.unknownType: Unknown type 'foo.Bar' mapped to TString
+info: procedure f() returns(result:UserDefined(Bar))
 -/
 #guard_msgs in
-#eval runTestWarningKinds
+#eval runTest
   #[mkFuncSig "f"
     (identType (PythonIdent.mk "foo" "Bar"))]
 
@@ -317,8 +318,8 @@ procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Foo))
     loc := loc, name := "Foo"
     methods := #[]
   },
-  mkFuncSig "uses_class" (.pyClass loc "Foo" #[])
-    (args := #[mkArg "x" (.pyClass loc "Foo" #[])])
+  mkFuncSig "uses_class" (mkType (.ident (PythonIdent.mk "" "Foo") #[]))
+    (args := #[mkArg "x" (mkType (.ident (PythonIdent.mk "" "Foo") #[]))])
 ]
 
 /-! ## Empty input -/
@@ -354,7 +355,7 @@ private def runFullTest (sigs : Array Signature) (modulePrefix : String := "") :
   let overloadEntries := result.overloads.toArray.qsort (·.1 < ·.1)
   for (funcName, fnOverloads) in overloadEntries do
     IO.println s!"dispatch {funcName}:"
-    let sorted := fnOverloads.toArray.qsort (·.1 < ·.1)
+    let sorted := fnOverloads.entries.toArray.qsort (·.1 < ·.1)
     for (litVal, retType) in sorted do
       IO.println s!"  \"{litVal}\" -> {retType}"
 
@@ -368,7 +369,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
   let entries := overloads.toArray.qsort (·.1 < ·.1)
   for (funcName, fnOverloads) in entries do
     IO.println s!"dispatch {funcName}:"
-    let sorted := fnOverloads.toArray.qsort (·.1 < ·.1)
+    let sorted := fnOverloads.entries.toArray.qsort (·.1 < ·.1)
     for (litVal, retType) in sorted do
       IO.println s!"  \"{litVal}\" -> {retType}"
 
@@ -407,7 +408,7 @@ dispatch create_client:
   mkFuncSig "helper" (identType .builtinsBool)
 ]
 
--- Overloads with locally-defined class return types (.pyClass).
+-- Overloads with locally-defined class return types.
 /--
 info: type Alpha
 type Beta
@@ -419,9 +420,9 @@ dispatch make:
 #eval runFullTest #[
   .classDef { loc := loc, name := "Alpha", methods := #[] },
   .classDef { loc := loc, name := "Beta", methods := #[] },
-  mkOverload "make" (.pyClass loc "Alpha" #[])
+  mkOverload "make" (mkType (.ident (PythonIdent.mk "" "Alpha") #[]))
     (args := #[mkArg "kind" (mkType (.stringLiteral "a"))]),
-  mkOverload "make" (.pyClass loc "Beta" #[])
+  mkOverload "make" (mkType (.ident (PythonIdent.mk "" "Beta") #[]))
     (args := #[mkArg "kind" (mkType (.stringLiteral "b"))])
 ]
 
@@ -502,36 +503,26 @@ body contains FieldSelect: false
 
 /-! ## Warning kind tests -/
 
--- Type translation: unsupportedGenericClass
+-- bytes, bytearray, complex now map to Any (matching PythonToLaurel)
 /--
-info: pySpecToLaurel.unsupportedGenericClass: Generic class 'Foo' with type args unsupported
+info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
-#eval runTestWarningKinds
-  #[mkFuncSig "f" (mkType (.pyClass "Foo" #[identType .builtinsInt]))]
-
--- Type translation: bytesToString
-/--
-info: pySpecToLaurel.bytesToString: 'builtins.bytes' mapped to TString (bytes have different semantics)
--/
-#guard_msgs in
-#eval runTestWarningKinds
+#eval runTest
   #[mkFuncSig "f" (identType .builtinsBytes)]
 
--- Type translation: bytesToString (bytearray variant)
 /--
-info: pySpecToLaurel.bytesToString: 'builtins.bytearray' mapped to TString (bytes have different semantics)
+info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
-#eval runTestWarningKinds
+#eval runTest
   #[mkFuncSig "f" (identType .builtinsBytearray)]
 
--- Type translation: complexToReal
 /--
-info: pySpecToLaurel.complexToReal: 'builtins.complex' mapped to TReal (complex loses imaginary component)
+info: procedure f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
-#eval runTestWarningKinds
+#eval runTest
   #[mkFuncSig "f" (identType .builtinsComplex)]
 
 -- Unsupported Optional patterns
@@ -783,7 +774,7 @@ private def translatePrecond (preconditions : Array Assertion)
       postconditions := #[] }] ""
   let body := getBody result |>.getD ""
   assertEq result.errors.size 0
-  assertEq body "{ assert !Any..isfrom_None(key) }"
+  assertEq body "{ assert !Any..isfrom_None(key) summary \"precondition 0\" }"
 
 -- containsKey on a non-kwargs dict: DictStrAny_contains in an assert
 -- (would have been silently dropped before fix #2)

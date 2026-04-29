@@ -307,16 +307,15 @@ function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
   if (Any..isfrom_None(v)) then false else
   if (Any..isfrom_str(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  if (Any..isfrom_float(v)) then !(Any..as_float!(v) == 0.0) else
   if (Any..isfrom_DictStrAny(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
   if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil()) else
-  false
-  //WILL BE ADDED
+  <?>
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -539,6 +538,19 @@ function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
     Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
 
+function Any_len (v: Any) : int;
+
+function Any_len_to_Any (v: Any) : Any {
+  from_int(Any_len(v))
+};
+
+procedure Any_len_pos(v: Any)
+  invokeOn Any_len(v)
+  opaque
+  ensures Any_len(v) >= 0;
+
+function Any_iter_index(iter: Any, index: int) : Any;
+
 function PIn (v: Any, dictOrList: Any) : Any
   requires (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(v)) || Any..isfrom_ListAny(dictOrList)
 {
@@ -626,18 +638,7 @@ function PBitNot (v: Any) : Any
 function PNot (v: Any) : Any
 {
   if Any..isexception(v) then v
-  else if Any..isfrom_bool(v) then
-    from_bool(!(Any..as_bool!(v)))
-  else if Any..isfrom_int(v) then
-    from_bool(!(Any..as_int!(v) == 0))
-  else if Any..isfrom_float(v) then
-    from_bool(!(Any..as_float!(v) == 0.0))
-  else if Any..isfrom_str(v) then
-    from_bool(!(Any..as_string!(v) == ""))
-  else if Any..isfrom_ListAny(v) then
-    from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
-  else
-    exception(UndefinedError ("Operand Type is not defined"))
+  else from_bool(!(Any_to_bool(v)))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -909,14 +910,12 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
   if ! Any_to_bool (v1) then v1 else v2
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
   if Any_to_bool (v1) then v1 else v2
@@ -1081,7 +1080,7 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
 };
 
-procedure print(msg : Any, sep : Any, end : Any, file : Any, flush : Any) returns ();
+procedure print(msg : Any, opt : Any, sep : Any, end : Any, file : Any, flush : Any) returns ();
 
 #end
 
@@ -1099,7 +1098,7 @@ public def pythonRuntimeLaurelPart : Laurel.Program :=
   | .ok p =>
     let addExceptionMd := p.staticProcedures.map (λ f =>
       if f.name.text ∈ AnyMaybeExceptionList then
-        {f with name := {f.name with md := f.name.md.withPropertySummary "AnyMaybeExcept" }}
+        {f with name := {f.name with md := f.name.md.pushElem (.label "maybeException") (.switch true) }}
       else f)
     {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default

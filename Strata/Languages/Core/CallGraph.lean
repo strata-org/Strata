@@ -232,7 +232,7 @@ mutual
 /-- Extract procedure calls from a single statement -/
 def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
-  | .cmd (.call _ procName _ _) => [procName]
+  | .cmd (.call procName _ _) => [procName]
   | .cmd _ => []
   | .block _ body _ => extractCallsFromStatements body
   | .ite _ thenBody elseBody _ =>

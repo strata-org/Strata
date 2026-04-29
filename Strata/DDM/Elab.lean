@@ -511,7 +511,7 @@ def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : Dialect
   let originalInput := input
   let input := normalizeInputContext input
 
-  let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
+  let isTrue mem := (inferInstance : Decidable (dialect ∈ dialects.dialects))
     | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
 
   let strataProgram ←

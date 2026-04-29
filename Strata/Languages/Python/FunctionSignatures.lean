@@ -57,7 +57,9 @@ instance : Inhabited FuncDecl where
 /-- A collection of function signatures. -/
 class Signatures where
   functions : Std.HashMap FuncName FuncDecl := {}
-deriving Inhabited
+
+instance : Inhabited Signatures where
+  default := {}
 
 namespace Signatures
 
@@ -86,7 +88,7 @@ deriving Monad, MonadState Signatures
 
 namespace SignatureM
 
-def run (m : SignatureM Unit) (init : Signatures := {}) : Signatures := m init |>.snd
+@[reducible] def run (m : SignatureM Unit) (init : Signatures := {}) : Signatures := m init |>.snd
 
 def decl (name : FuncName) (args : List ArgDecl)
          (posOnlyCount : Nat := 0)
@@ -102,9 +104,9 @@ def decl (name : FuncName) (args : List ArgDecl)
       assert! a.name ∉ m
       m.insert a.name i
 
-  let .isTrue posOnlyBound := inferInstanceAs (Decidable (posOnlyCount <= keywordOnly))
+  let .isTrue posOnlyBound := (inferInstance : Decidable (posOnlyCount <= keywordOnly))
     | return panic! "Invalid number of position-only parameters."
-  let .isTrue keywordBound := inferInstanceAs (Decidable (keywordOnly <= args.size))
+  let .isTrue keywordBound := (inferInstance : Decidable (keywordOnly <= args.size))
     | return panic! "Invalid start for keyword only parameters."
 
   let decl : FuncDecl := {
@@ -143,7 +145,7 @@ def addCoreDecls : SignatureM Unit := do
   decl "datetime_strptime" [time :< string, format :< string]
   decl "str_to_float" [s :< string]
 
-def coreSignatures : Signatures := addCoreDecls |>.run
+@[reducible] def coreSignatures : Signatures := addCoreDecls |>.run
 
 end
 

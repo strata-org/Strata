@@ -25,6 +25,7 @@ def builtinsStr := mk "builtins" "str"
 def noneType := mk "_types" "NoneType"
 
 def typingAny := mk "typing" "Any"
+def typingBinaryIO := mk "typing" "BinaryIO"
 def typingDict := mk "typing" "Dict"
 def typingGenerator := mk "typing" "Generator"
 def typingList := mk "typing" "List"
@@ -77,7 +78,6 @@ An atomic type in the PySpec language
 -/
 inductive SpecAtomType where
 | ident (nm : PythonIdent) (args : Array SpecType)
-| pyClass (name : String) (args : Array SpecType)
 /- An integer literal -/
 | intLiteral (value : Int)
 /-- A string literal -/
@@ -127,7 +127,7 @@ termination_by a₁.size - i
 mutual
 
 /-- Compare two atom types by structure, ignoring `loc` in nested `SpecType`
-    values. Variants are ordered: ident < pyClass < intLiteral < stringLiteral
+    values. Variants are ordered: ident < intLiteral < stringLiteral
     < typedDict. -/
 protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
   match x, y with
@@ -136,12 +136,6 @@ protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
       compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
   | .ident .., _ => .lt
   | _, .ident .. => .gt
-
-  | .pyClass xname xargs, .pyClass yname yargs =>
-    compare xname yname |>.then $
-      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
-  | .pyClass .., _ => .lt
-  | _, .pyClass .. => .gt
 
   | .intLiteral xval, .intLiteral yval => compare xval yval
   | .intLiteral .., _ => .lt
@@ -256,14 +250,11 @@ private def removeAdjDups {α} [BEq α] (a : Array α) : Array α :=
 /-- Construct a `SpecType` from an array of atoms by sorting and
     removing duplicates to produce a canonical representation. -/
 protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
-  let elts := atoms.qsort (· < ·)
+  let elts := atoms.qsort (compare · · == .lt)
   { loc := loc, atoms := removeAdjDups elts }
 
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
   ofAtom loc (.ident i args)
-
-def pyClass (loc : SourceRange) (name : String) (params : Array SpecType) : SpecType :=
-  ofAtom loc (.pyClass name params)
 
 def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then
@@ -271,13 +262,6 @@ def asSingleton (tp : SpecType) : Option SpecAtomType := do
   none
 
 def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
-
-instance : Membership SpecAtomType SpecType where
-  mem a e := private a.atoms.binSearchContains e (· < ·) = true
-
-@[instance]
-def instDecidableMem (e : SpecAtomType) (tp : SpecType) : Decidable (e ∈ tp) :=
-  inferInstanceAs (Decidable (_ = _))
 
 end SpecType
 

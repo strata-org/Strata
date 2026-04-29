@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.InstToJson
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+public import Strata.Backends.CBMC.GOTO.InstToJson
+public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 import Strata.DL.Lambda.TypeConstructor
 import Strata.DL.Lambda.TypeFactory
-import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Program
 
 namespace Strata
+
+public section
 
 private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
     (mutualNames : List String := [dt.name]) :
@@ -114,43 +117,11 @@ private def collectDatatypeSymbols (pgm : Core.Program) :
     | _ => pure ()
   return syms
 
-/-- Collect global variable declarations and emit GOTO symbol table entries. -/
-private def collectGlobalSymbols (pgm : Core.Program) :
-    Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
-  let mut syms : List (String × CProverGOTO.CBMCSymbol) := []
-  for decl in pgm.decls do
-    match decl with
-    | .var name ty e _md =>
-      let gname := Core.CoreIdent.toPretty name
-      let gty ← Lambda.LMonoTy.toGotoType ty.toMonoTypeUnsafe
-      let tyJson := CProverGOTO.tyToJson gty
-      let valueJson ← match e with
-        | .det expr =>
-          let gotoExpr ← Lambda.LExpr.toGotoExprCtx
-            (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] expr
-          (CProverGOTO.exprToJson gotoExpr).mapError (fun e => f!"{e}")
-        | .nondet => pure (Lean.Json.mkObj [("id", "nil")])
-      syms := syms ++ [(gname, {
-        baseName := gname
-        isLvalue := true
-        isStaticLifetime := true
-        mode := "C"
-        module := ""
-        name := gname
-        prettyName := gname
-        type := tyJson
-        value := valueJson
-      })]
-    | _ => pure ()
-  return syms
-
-
-/-- Collect all extra symbol table entries (datatypes, type constructors, globals). -/
+/-- Collect all extra symbol table entries (datatypes, type constructors). -/
 def collectExtraSymbols (pgm : Core.Program) :
     Except Std.Format (Map String CProverGOTO.CBMCSymbol) := do
-  let typeSyms ← collectDatatypeSymbols pgm
-  let globalSyms ← collectGlobalSymbols pgm
-  return typeSyms ++ globalSyms
+  collectDatatypeSymbols pgm
 
+end -- public section
 
 end Strata

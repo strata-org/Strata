@@ -79,7 +79,7 @@ open Strata.C_Simp in
 /--
 info: program Core;
 
-procedure loopTrivial (n : int) returns (return : int)
+procedure loopTrivial (n : int, out return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;
@@ -90,31 +90,31 @@ spec {
     first_iter_asserts: {
       assert [entry_invariant_0]: i <= n;
       assert [assert_measure_pos]: n - i >= 0;
-      }
+    }
     |arbitrary iter facts|: {
       |loop havoc|: {
         havoc i;
-        }
+      }
       arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant_0]: i <= n;
         assume [assume_measure_pos]: n - i >= 0;
-        }
+      }
       var |special-name-for-old-measure-value| : int := n - i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
       assert [arbitrary_iter_maintain_invariant_0]: i <= n;
-      }
+    }
     |loop havoc|: {
       havoc i;
-      }
+    }
     assume [not_guard]: !(i < n);
     assume [invariant_0]: i <= n;
-    }
+  }
   assert [i_eq_n]: i == n;
   return := i;
-  };
+};
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program LoopTrivialPgm)
@@ -127,77 +127,77 @@ VCs:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+pre: n@1 >= 0
 Obligation:
-0 <= $__n0
+0 <= n@1
 
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+pre: n@1 >= 0
 Obligation:
-$__n0 - 0 >= 0
+n@1 - 0 >= 0
 
 Label: measure_decreases
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant_0: $__i3 <= $__n0
-assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+assume_guard: i@1 < n@1
+assume_invariant_0: i@1 <= n@1
+assume_measure_pos: n@1 - i@1 >= 0
+pre: n@1 >= 0
 Obligation:
-$__n0 - ($__i3 + 1) < $__n0 - $__i3
+n@1 - (i@1 + 1) < n@1 - i@1
 
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant_0: $__i3 <= $__n0
-assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+assume_guard: i@1 < n@1
+assume_invariant_0: i@1 <= n@1
+assume_measure_pos: n@1 - i@1 >= 0
+pre: n@1 >= 0
 Obligation:
-if $__n0 - ($__i3 + 1) <= 0 then !($__i3 + 1 < $__n0) else true
+if n@1 - (i@1 + 1) <= 0 then !(i@1 + 1 < n@1) else true
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i3 < $__n0
-assume_invariant_0: $__i3 <= $__n0
-assume_measure_pos: $__n0 - $__i3 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+assume_guard: i@1 < n@1
+assume_invariant_0: i@1 <= n@1
+assume_measure_pos: n@1 - i@1 >= 0
+pre: n@1 >= 0
 Obligation:
-$__i3 + 1 <= $__n0
+i@1 + 1 <= n@1
 
 Label: i_eq_n
 Property: assert
 Assumptions:
-pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i3 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i3 <= $__n0 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i3 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i4 <= $__n0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+pre: n@1 >= 0
+<label_ite_cond_true: i < n>: if 0 < n@1 then 0 < n@1 else true
+assume_guard: if 0 < n@1 then i@1 < n@1 else true
+assume_invariant_0: if 0 < n@1 then i@1 <= n@1 else true
+assume_measure_pos: if 0 < n@1 then n@1 - i@1 >= 0 else true
+not_guard: if 0 < n@1 then !(i@2 < n@1) else true
+invariant_0: if 0 < n@1 then i@2 <= n@1 else true
+<label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
 Obligation:
-if 0 < $__n0 then $__i4 else 0 == $__n0
+if 0 < n@1 then i@2 else 0 == n@1
 
 Label: post
 Property: assert
 Assumptions:
-pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i3 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i3 <= $__n0 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i3 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i4 <= $__n0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+pre: n@1 >= 0
+<label_ite_cond_true: i < n>: if 0 < n@1 then 0 < n@1 else true
+assume_guard: if 0 < n@1 then i@1 < n@1 else true
+assume_invariant_0: if 0 < n@1 then i@1 <= n@1 else true
+assume_measure_pos: if 0 < n@1 then n@1 - i@1 >= 0 else true
+not_guard: if 0 < n@1 then !(i@2 < n@1) else true
+invariant_0: if 0 < n@1 then i@2 <= n@1 else true
+<label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
 Obligation:
 true
 

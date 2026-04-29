@@ -460,7 +460,7 @@ partial def unifyTypes
       logErrorMF exprLoc mf!"Encountered {ih} expression when {expectedType} expected."
       return args
   | .bvar _ idx =>
-    let .isTrue idxP := inferInstanceAs (Decidable (idx < argLevel))
+    let .isTrue idxP := decideProp (idx < argLevel)
       | return panic! "Invalid index"
     let typeLevel := argLevel - (idx + 1)
     -- Verify type level is a type parameter.
@@ -490,8 +490,16 @@ partial def unifyTypes
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
       pure args
     | .tvar _ _ =>
-      -- tvar inferred types are passed through; type inference will catch mismatches
-      pure args
+      -- When the inferred type is a type variable (e.g., from a polymorphic context)
+      -- and the expected type is an arrow, propagate the tvar into the arrow's
+      -- sub-components. This ensures that type parameters referenced by the domain
+      -- and codomain (e.g., inTp/outTp in apply_expr) get populated rather than
+      -- left as `none`. This is safe because setting a type parameter slot to a
+      -- tvar acts as a placeholder, not a constraint: checkExpressionType treats
+      -- tvars as matching any type, so a later argument with a concrete type will
+      -- pass the compatibility check and the concrete type will take precedence.
+      let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax inferredType args
+      unifyTypes isTypeP argLevel0 er tctx exprSyntax inferredType res
     | .arrow _ ia ir =>
       let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax ia args
       unifyTypes isTypeP argLevel0 er tctx exprSyntax ir res
@@ -677,7 +685,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
   let op := opInfo.op.name
   match op with
   | q`Init.TypeIdent => do
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 1))
+    let isTrue p := decideProp (argChildren.size = 1)
       | return panic! "Invalid arguments to Init.TypeIdent"
     let ident := argChildren[0]
     let tpId := translateQualifiedIdent ident
@@ -692,7 +700,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
     | _ =>
       logError ident.info.loc s!"Expected type"; pure default
   | q`Init.TypeArrow => do
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+    let isTrue p := decideProp (argChildren.size = 2)
       | return panic! "Invalid arguments to Init.TypeArrow"
     let aTree := argChildren[0]
     let rTree := argChildren[1]
@@ -953,7 +961,7 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
   let ⟨f, a⟩ := e.hnf
   match f with
   | .bvar _ idx => do
-    let .isTrue idxP := inferInstanceAs (Decidable (idx < tctx.bindings.size))
+    let .isTrue idxP := decideProp (idx < tctx.bindings.size)
       | return panic! "Invalid index {idx}"
     let lvl := tctx.bindings.size - 1 - idx
     let b := tctx.bindings[lvl]
@@ -1029,7 +1037,7 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
   let some loc := mkSourceRange? stx
     | panic! s!"elabOperation missing source location {repr stx}"
   let stxArgs := stx.getArgs
-  let .isTrue stxArgP := inferInstanceAs (Decidable (stxArgs.size = expected))
+  let .isTrue stxArgP := decideProp (stxArgs.size = expected)
     | logInternalError loc s!"{ident} expected {expected} arguments when {stxArgs.size} seen.\n  {repr stxArgs[0]!}"
       return default
   return ⟨stxArgs, stxArgP⟩
@@ -1084,7 +1092,7 @@ private def resultContext {argc : Nat}
   match se.resultScope with
   | none => tctx0
   | some idx => Id.run do
-    let .isTrue p := inferInstanceAs (Decidable (idx < argc))
+    let .isTrue p := decideProp (idx < argc)
       | return panic! "Invalid index"
     trees[idx].resultContext
 
@@ -1201,7 +1209,7 @@ partial def runSyntaxElaborator
   let mut trees : Vector (Option Tree) argc := .replicate argc none
   for ⟨ae, sp⟩ in se.argElaborators do
     let argLevel := ae.argLevel
-    let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
+    let .isTrue argLevelP := decideProp (argLevel < argc)
         | return panic! "Invalid argLevel"
     -- Skip pre-elaborated args
     if trees[argLevel].isSome then continue
@@ -1273,11 +1281,11 @@ partial def elaborateWithPreRegistrationCore
   let some scopeSyntaxLevel := argSyntaxLevel? se scopeArgLevel
     | logInternalError fallbackLoc s!"{label}: no syntax level for scope arg"
       return default
-  let .isTrue scopeSLBound := inferInstanceAs (Decidable (scopeSyntaxLevel < se.syntaxCount))
+  let .isTrue scopeSLBound := decideProp (scopeSyntaxLevel < se.syntaxCount)
     | logInternalError fallbackLoc s!"{label}: scope syntax level out of bounds"
       return default
   let scopeStx := stxArgs[scopeSyntaxLevel]
-  let .isTrue scopeALBound := inferInstanceAs (Decidable (scopeArgLevel < argc))
+  let .isTrue scopeALBound := decideProp (scopeArgLevel < argc)
     | logInternalError fallbackLoc s!"{label}: scope arg level out of bounds"
       return default
   let scopeArgDecl := argDecls[scopeArgLevel]

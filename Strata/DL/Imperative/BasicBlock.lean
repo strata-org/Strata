@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.MetaData
+public import Strata.DL.Imperative.PureExpr
+
+public section
 
 namespace Imperative
 
@@ -61,12 +64,12 @@ structure BasicBlock (TransferCmd Cmd : Type) where
 
 /-- A deterministic basic block is a basic block parameterized by deterministic
 commands. -/
-def DetBlock (Label Cmd : Type) (P : PureExpr) :=
+@[expose] def DetBlock (Label Cmd : Type) (P : PureExpr) :=
   BasicBlock (DetTransferCmd Label P) Cmd
 
 /-- A non-deterministic basic block is a basic block parameterized by
 non-deterministic commands. -/
-def NondetBlock (Label Cmd : Type) (P : PureExpr) :=
+@[expose] def NondetBlock (Label Cmd : Type) (P : PureExpr) :=
   BasicBlock (NondetTransferCmd Label P) Cmd
 
 /-- A control flow graph is a list of blocks paired with a label indicating

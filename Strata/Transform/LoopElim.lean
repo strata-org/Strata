@@ -26,7 +26,7 @@ inductive Stats where
   | erasedLoops
   | insertedAssertAssumes
 
-derive_prefixed_toString Stats "LoopElim"
+#derive_prefixed_toString Stats "LoopElim"
 
 end LoopElim
 

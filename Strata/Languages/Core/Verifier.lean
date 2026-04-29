@@ -1088,7 +1088,8 @@ def verify (program : Program)
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
-  .ok (VCss.map (·.fst)).toArray.flatten
+  let results : VCResults := (VCss.map (·.fst)).toArray.flatten
+  .ok results.mergeByAssertion
 
 end -- public section
 end Core

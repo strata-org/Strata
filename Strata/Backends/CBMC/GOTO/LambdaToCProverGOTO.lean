@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Lambda
-import Strata.Backends.CBMC.GOTO.Expr
+public import Strata.DL.Lambda.Lambda
+public import Strata.Backends.CBMC.GOTO.Expr
 import Strata.Languages.Core.CoreOp
+
+public section
 namespace Lambda
 
 /-! # Lambda-to-GOTO expression and type translation

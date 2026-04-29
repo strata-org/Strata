@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Boole.Grammar
+public import Strata.Languages.Boole.Grammar
+meta import Strata.DDM.Integration.Lean
+
+public section
 
 namespace Strata.BooleDDM
 
+set_option maxHeartbeats 400000 in
 -- set_option trace.Strata.generator true in
 #strata_gen Boole
 

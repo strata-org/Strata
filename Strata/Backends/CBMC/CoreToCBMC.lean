@@ -3,26 +3,32 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+public import Strata.Backends.CBMC.Common
+public import Strata.Languages.Core.Procedure
 
 import Lean.Data.Json
+import Strata.DDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.DDMTransform.Grammar
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.DL.Util.Map
 import Strata.Languages.Core.Core
-import Strata.Backends.CBMC.Common
 import Strata.Util.Tactics
+
+public section
 
 open Lean
 open Strata.CBMC
 
 namespace Core
 -- Our test program
-def SimpleTestEnv :=
+private def SimpleTestEnv :=
 #strata
 program Core;
 
-procedure simpleTest(x : int, y : int) returns (ret : int)
+procedure simpleTest(x : int, y : int, out ret : int)
 spec {
   requires [x_positive]:    (x > 0);
 }
@@ -36,9 +42,9 @@ spec {
 #end
 
 open Core in
-def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
+private def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
 
-def myProc : Except String Core.Procedure := do
+private def myProc : Except String Core.Procedure := do
   match SimpleTestEnvAST.fst.decls.head!.getProc? with
   | .some p => return p
   | .none => throw "Expected procedure"
@@ -83,7 +89,7 @@ def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)
 
 def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
   match e with
-  | .call _ _ _ _ => throw "cmdToJson: call not supported"
+  | .call _ _ _ => throw "cmdToJson: call not supported"
   | .cmd c =>
     match c with
     | .init name _ _ _ =>

@@ -9,6 +9,7 @@ public import Strata.DDM.AST
 public import Strata.DDM.Elab.Core
 
 import Std.Data.HashMap
+import Strata.Util.DecideProp
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
 
@@ -132,7 +133,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
         | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
   match opInfo.op.name with
   | q`Init.TypeIdent => do
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 1))
+    let isTrue p := decideProp (argChildren.size = 1)
       | return panic! "Invalid arguments to Init.TypeIdent"
     let ident := argChildren[0]
     let tpId := translateQualifiedIdent ident
@@ -149,7 +150,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     | _ =>
       logError ident.info.loc s!"Expected type"; pure default
   | q`Init.TypeArrow => do
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+    let isTrue p := decideProp (argChildren.size = 2)
       | return panic! "Invalid arguments to Init.TypeArrow"
     let aTree := argChildren[0]
     let rTree := argChildren[1]
@@ -158,7 +159,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     return .arrow opInfo.loc aType rType
 
   | q`StrataDDL.TypeFn =>
-    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+    let isTrue p := decideProp (argChildren.size = 2)
       | return panic! "Invalid arguments to Init.TypeArrow"
     let bindingsTree := argChildren[0]
     let valTree := argChildren[1]

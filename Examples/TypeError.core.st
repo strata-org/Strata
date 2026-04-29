@@ -15,12 +15,10 @@ program Core;
 //  limitations under the License.
 //
 
-var g : int;
+procedure foo(out y : Map int int) {};
 
-procedure foo() returns (y : Map int int) {};
-
-procedure TestLambdaTypeCheck() returns (y : Map int (Map bool bool))
+procedure TestLambdaTypeCheck(out y : Map int (Map bool bool))
 {
   var x : Map int (Map int bool);
-  call y := foo();
+  call foo(out y);
 };

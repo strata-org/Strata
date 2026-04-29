@@ -8,6 +8,7 @@ module
 public import Strata.DDM.Elab.Env
 public import Strata.DDM.Format
 import Strata.DDM.Util.ByteArray
+import Strata.Util.DecideProp
 
 open Lean
 open Parser (
@@ -122,7 +123,7 @@ private def strataIsIdFirst (c : Char) : Bool :=
   c.isAlpha || c == '_' || c == '$'
 
 private def strataIsIdRest (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '$'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '$' || c == '@'
 
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
   strataIsIdFirst c || isIdBeginEscape c
@@ -767,7 +768,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
   | .str _ :: _ =>
     .isLeading as
   | .ident v argPrec :: rest => Id.run do
-    let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
+    let .isTrue lt := decideProp (v < argDecls.size)
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
     let isListCategory := cat.name == q`Init.CommaSepBy ||
@@ -803,10 +804,13 @@ structure DeclParser where
 
 class ParsingContext where
   fixedParsers : Std.HashMap QualifiedIdent Parser := {}
-  deriving Inhabited
+
+instance : Inhabited ParsingContext where
+  default := {}
 
 namespace ParsingContext
 
+@[reducible]
 def add (ctx : ParsingContext) (cat : QualifiedIdent) (p : Parser) : ParsingContext :=
   assert! cat ∉ ctx.fixedParsers
   { fixedParsers := ctx.fixedParsers.insert cat p }
@@ -933,7 +937,7 @@ the first symbol.
 private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDecls) (o : SyntaxDefAtom) (r : Parser) : Parser :=
   match o with
   | .ident v prec => Id.run do
-    let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
+    let .isTrue lt := decideProp (v < argDecls.size)
       | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
@@ -967,7 +971,7 @@ def opSyntaxParser (ctx : ParsingContext)
     -- `checkLeftRec` logic: if the argument's category matches the
     -- op's own category it would be trailing (left-recursive), but a
     -- single-argument trailing op is degenerate, so we reject it.
-    let .isTrue lt := inferInstanceAs (Decidable (0 < argDecls.size))
+    let .isTrue lt := decideProp (0 < argDecls.size)
       | throw mf!"Passthrough syntax requires at least one argument"
     let cat := argDecls[0].kind.categoryOf
     if cat.name == category then

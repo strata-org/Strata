@@ -29,7 +29,7 @@ inductive Stats where
   | visitedCalls
   | inlinedCalls
 
-derive_prefixed_toString Stats "ProcedureInlining"
+#derive_prefixed_toString Stats "ProcedureInlining"
 
 -- Gathers all labels including those in assert and assume.
 mutual
@@ -209,7 +209,9 @@ def inlineCallCmd
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
-      | .call lhs procName args md =>
+      | .call procName callArgs md =>
+        let lhs := CallArg.getLhs callArgs
+        let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
         let st ← get

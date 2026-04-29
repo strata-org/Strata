@@ -79,11 +79,6 @@ def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
-/-- Checks whether a variable `ident` can be found in program `p` -/
-@[expose]
-def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
-  (p.find? .var ident).isSome
-
 
 /-- Cached results of program analyses that are helpful for program
     transformation.
@@ -172,24 +167,6 @@ def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
   modify fun σ => { σ with statistics := σ.statistics.increment key n }
 
-@[expose]
-def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
-
-@[expose]
-def getIdentTy! (p : Program) (id : Expression.Ident)
-  : CoreTransformM (Expression.Ty) := do
-  match getIdentTy? p id with
-  | none => throw s!"failed to find type for {Std.format id}"
-  | some ty => return ty
-
-@[expose]
-def getIdentTys! (p : Program) (ids : List Expression.Ident)
-  : CoreTransformM (List Expression.Ty) := do
-  match ids with
-  | [] => return []
-  | id :: rest =>
-    let ty ← getIdentTy! p id
-    return ty :: (← getIdentTys! p rest)
 
 /--
 returned list has the shape
@@ -217,18 +194,6 @@ def genOutExprIdentsTrip
   if outputs.length ≠ lhs.length then throw "output length and lhs length mismatch"
   else let gen_idents ← genOutExprIdents lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
-
-/--
-returned list has the shape
-`((generated_name, ty), original_name)`
--/
-def genOldExprIdentsTrip
-  (p : Program)
-  (ids : List Expression.Ident)
-  : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
-  let gen_idents ← genOldExprIdents ids
-  let tys ← getIdentTys! p ids
-  return (gen_idents.zip tys).zip ids
 
 /--
 Generate an init statement with rhs as expression

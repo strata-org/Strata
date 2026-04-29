@@ -1,31 +1,20 @@
 test_while_loop.py(2, 4): ✅ pass - assert(39)
 test_while_loop.py(3, 4): ✅ pass - assert(54)
 test_while_loop.py(4, 10): ✅ pass - Check PGt exception
-test_while_loop.py(4, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(5, 16): ❓ unknown - Check PAdd exception
-test_while_loop.py(6, 12): ✅ pass - Check PSub exception
-test_while_loop.py(4, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
-test_while_loop.py(7, 4): ✅ pass - assert_assert(134)_calls_Any_to_bool_0
+test_while_loop.py(6, 12): ❓ unknown - Check PSub exception
 test_while_loop.py(7, 4): ❓ unknown - countdown sum should be 15
 test_while_loop.py(1, 30): ❓ unknown - (test_while_countdown ensures) Return type constraint
 test_while_loop.py(11, 4): ✅ pass - assert(241)
-test_while_loop.py(12, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(13, 16): ❓ unknown - Check PAdd exception
-test_while_loop.py(14, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_while_loop.py(16, 4): ✅ pass - assert_assert(344)_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - should have counted to 10
 test_while_loop.py(10, 31): ❓ unknown (pass on 1 path, unknown on 1 path) - (test_while_true_break ensures) Return type constraint
-test_while_loop.py(12, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(20, 4): ✅ pass - assert(453)
 test_while_loop.py(21, 4): ✅ pass - assert(468)
 test_while_loop.py(22, 10): ✅ pass - Check PLt exception
-test_while_loop.py(22, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
-test_while_loop.py(23, 12): ✅ pass - Check PAdd exception
-test_while_loop.py(24, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_while_loop.py(22, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
-test_while_loop.py(27, 4): ✅ pass - assert_assert(589)_calls_Any_to_bool_0
+test_while_loop.py(23, 12): ❓ unknown - Check PAdd exception
 test_while_loop.py(27, 4): ❓ unknown - sum excluding 5 should be 50
 test_while_loop.py(19, 34): ❓ unknown - (test_while_with_continue ensures) Return type constraint
 test_while_loop.py(26, 16): ❓ unknown - Check PAdd exception
-DETAIL: 21 passed, 0 failed, 8 inconclusive
+DETAIL: 8 passed, 0 failed, 10 inconclusive
 RESULT: Inconclusive

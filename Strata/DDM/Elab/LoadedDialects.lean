@@ -41,6 +41,7 @@ structure LoadedDialects where
   syntaxElabMap : SyntaxElabMap
 deriving Inhabited
 
+@[reducible]
 def initParsers : Parser.ParsingContext where
   fixedParsers := .ofList [
     (q`Init.Ident, Parser.identifier),

@@ -266,6 +266,7 @@ def LExpr.sizeOf: LExpr T → Nat
 /--
 Get type of a constant `c`
 -/
+@[expose]
 def LConst.ty (c: LConst) : LMonoTy :=
   match c with
   | .intConst _ => .int
@@ -338,6 +339,18 @@ def collectFvarNames {T : LExprParamsT} : LExpr T → List (Identifier T.base.ID
   | .ite _ c t e => collectFvarNames c ++ collectFvarNames t ++ collectFvarNames e
   | .eq _ e1 e2 => collectFvarNames e1 ++ collectFvarNames e2
   | _ => []
+
+/-- Checks if the expression contains a lambda abstraction anywhere. -/
+def hasAbs {T : LExprParamsT} : LExpr T → Bool
+  | .abs _ _ _ _ => true
+  | .app _ e1 e2 => hasAbs e1 || hasAbs e2
+  | .quant _ _ _ _ tr e => hasAbs tr || hasAbs e
+  | .ite _ c t e => hasAbs c || hasAbs t || hasAbs e
+  | .eq _ e1 e2 => hasAbs e1 || hasAbs e2
+  | .const _ _ => false
+  | .op _ _ _ => false
+  | .bvar _ _ => false
+  | .fvar _ _ _ => false
 
 def isConst {T : LExprParamsT} (e : LExpr T) : Bool :=
   match e with
@@ -505,6 +518,7 @@ def size (T : LExprParamsT) (e : LExpr T) : Nat :=
 Erase all type annotations from `e` except the bound variables of abstractions
 and quantified expressions.
 -/
+@[expose]
 def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
   match e with
   | .const m c => .const m c

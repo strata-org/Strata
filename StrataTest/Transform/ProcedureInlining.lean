@@ -61,7 +61,7 @@ private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
   | .some x => x == to
 
 
-private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: Bool) :=
+private def substExpr (e1:Expression.Expr) (map:Map String String) :=
   map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
@@ -74,8 +74,8 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
 
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst) false).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd) true).eraseTypes == e1.eraseTypes
+  (substExpr e1 (map.vars.fst)).eraseTypes == e2.eraseTypes &&
+  (substExpr e2 (map.vars.snd)).eraseTypes == e1.eraseTypes
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=
@@ -158,7 +158,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
-    | .call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _ =>
+    | .call procName1 callArgs1 _, .call procName2 callArgs2 _ =>
+      let lhs1 := Core.CallArg.getLhs callArgs1
+      let lhs2 := Core.CallArg.getLhs callArgs2
+      let args1 := Core.CallArg.getInArgs callArgs1
+      let args2 := Core.CallArg.getInArgs callArgs2
       if procName1 ≠ procName2 then
         .error "Procedure name does not match"
       else if lhs1.length ≠ lhs2.length then
@@ -181,8 +185,8 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     | .cmd (.set n1 (.det e1) _), .cmd (.set n2 (.det e2) _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
-        \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
-        \n(subst of e2: {repr (substExpr e2 map.vars.snd true)})\n(e1: {repr e1})"
+        \n(subst of e1: {repr (substExpr e1 map.vars.fst)})\n(e2: {repr e2})
+        \n(subst of e2: {repr (substExpr e2 map.vars.snd)})\n(e1: {repr e1})"
       else if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of sets do not match"
       else
@@ -255,25 +259,25 @@ def checkInlining (prog : Core.Program) (progAns : Core.Program)
 def Test1 :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   y := !x;
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
-  call b_out := f(b_in);
+  call f(b_in, out b_out);
 };
 #end
 
 def Test1Ans :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   y := !x;
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
   inlined: {
@@ -286,14 +290,16 @@ procedure h() returns () {
 
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test1) (translate Test1Ans)
 
 def Test2 :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   body: {
     if (x) {
       exit body;
@@ -302,10 +308,10 @@ procedure f(x : bool) returns (y : bool) {
   }
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
-  call b_out := f(b_in);
+  call f(b_in, out b_out);
   _exit: {}
 };
 #end
@@ -313,7 +319,7 @@ procedure h() returns () {
 def Test2Ans :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   body: {
     if (x) {
       exit body;
@@ -322,7 +328,7 @@ procedure f(x : bool) returns (y : bool) {
   }
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
   inlined: {
@@ -342,7 +348,9 @@ procedure h() returns () {
 
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test2) (translate Test2Ans)
 
@@ -352,16 +360,16 @@ procedure h() returns () {
 def Test3 :=
 #strata
 program Core;
-procedure f(x : int) returns (y : int) {
+procedure f(x : int, out y : int) {
   y := x;
 };
 
-procedure g() returns () {
+procedure g() {
   var f_out : int;
   if (true) {
-    call f_out := f(1);
+    call f(1, out f_out);
   } else {
-    call f_out := f(2);
+    call f(2, out f_out);
   }
 };
 #end
@@ -369,11 +377,11 @@ procedure g() returns () {
 def Test3Ans :=
 #strata
 program Core;
-procedure f(x : int) returns (y : int) {
+procedure f(x : int, out y : int) {
   y := x;
 };
 
-procedure g() returns () {
+procedure g() {
   var f_out : int;
   if (true) {
     inlined1: {
@@ -393,7 +401,9 @@ procedure g() returns () {
 };
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test3) (translate Test3Ans)
 
@@ -401,12 +411,12 @@ procedure g() returns () {
 def TestRecursiveCall :=
 #strata
 program Core;
-procedure a1() returns () {
+procedure a1() {
 };
-procedure a2() returns () {
+procedure a2() {
 };
 
-procedure f() returns () {
+procedure f() {
   call a1();
   call a2();
   call f();
@@ -445,14 +455,14 @@ info: true, some CallGraph(callees: [("a1", []),
 def TestThreeChain :=
 #strata
 program Core;
-procedure leaf(x : int) returns (y : int) {
+procedure leaf(x : int, out y : int) {
   y := x + 1;
 };
-procedure mid(a : int) returns (b : int) {
-  call b := leaf(a);
+procedure mid(a : int, out b : int) {
+  call leaf(a, out b);
 };
-procedure top(n : int) returns (r : int) {
-  call r := mid(n);
+procedure top(n : int, out r : int) {
+  call mid(n, out r);
 };
 #end
 

@@ -13,7 +13,7 @@ def typeDeclStmt1 : Program :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T;
   var a : T;
   var b : T;
@@ -24,7 +24,9 @@ procedure P () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt1) |>.snd
 
@@ -36,10 +38,10 @@ VCs:
 Label: trans
 Property: assert
 Assumptions:
-ab: $__a0 == $__b1
-bc: $__b1 == $__c2
+ab: a == b
+bc: b == c
 Obligation:
-$__a0 == $__c2
+a == c
 
 ---
 info:
@@ -55,18 +57,20 @@ def typeDeclStmt2 : Program :=
 #strata
 program Core;
 
-procedure P1 () returns () {
+procedure P1 () {
   type T;
   var x : T;
 };
 
-procedure P2 () returns () {
+procedure P2 () {
   type T;
   var y : T;
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt2) |>.snd
 
@@ -75,7 +79,7 @@ def typeDeclStmt3 : Program :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T;
   type U;
   var x : T;
@@ -86,7 +90,9 @@ procedure P () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt3) |>.snd
 
@@ -98,7 +104,7 @@ VCs:
 Label: reflexive
 Property: assert
 Assumptions:
-x_eq_z: $__x0 == $__z2
+x_eq_z: x == z
 Obligation:
 true
 
@@ -116,7 +122,7 @@ def typeDeclStmt4 : Program :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T (a : Type, b : Type);
   var x : T int bool;
   var y : T int bool;
@@ -125,7 +131,9 @@ procedure P () returns () {
 };
 #end
 
-/-- info: #[] -/
+/--
+info: #[]
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram typeDeclStmt4) |>.snd
 
@@ -137,9 +145,9 @@ VCs:
 Label: neq
 Property: assert
 Assumptions:
-diff: !($__x0 == $__y1)
+diff: !(x == y)
 Obligation:
-!($__x0 == $__y1)
+!(x == y)
 
 ---
 info:
@@ -155,7 +163,7 @@ def shadowTopLevelType : Program :=
 #strata
 program Core;
 type T;
-procedure P () returns () {
+procedure P () {
   type T;
   var x : T;
 };
@@ -176,11 +184,11 @@ error: Undeclared type or category T.
 def typeScopeError :=
 #strata
 program Core;
-procedure P1 () returns () {
+procedure P1 () {
   type T;
   var x : T;
 };
-procedure P2 () returns () {
+procedure P2 () {
   var y : T;
 };
 #end
@@ -194,7 +202,7 @@ def typeDeclStmtError1 :=
 #strata
 program Core;
 
-procedure P () returns () {
+procedure P () {
   type T (a : Type, b : Type);
   var p1 : T int bool;
   var p2 : T bool int;

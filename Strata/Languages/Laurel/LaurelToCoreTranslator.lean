@@ -240,24 +240,19 @@ def translateExpr (expr : StmtExprMd)
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
-  | .Forall ⟨ name, ty ⟩ trigger body =>
+  | .Quantifier mode ⟨ name, ty ⟩ trigger body =>
       let coreTy ← translateType ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
       match _: trigger with
       | some trig =>
         let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
-        return LExpr.allTr () name.text (some coreTy) coreTrig coreBody
+        match mode with
+        | .Forall => return LExpr.allTr () name.text (some coreTy) coreTrig coreBody
+        | .Exists => return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
       | none =>
-        return LExpr.all () name.text (some coreTy) coreBody
-  | .Exists ⟨ name, ty ⟩ trigger body =>
-      let coreTy ← translateType ty
-      let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      match _: trigger with
-      | some trig =>
-        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
-        return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
-      | none =>
-        return LExpr.exist () name.text (some coreTy) coreBody
+        match mode with
+        | .Forall => return LExpr.all () name.text (some coreTy) coreBody
+        | .Exists => return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole _ _ =>
       -- Holes should have been eliminated before translation.
       disallowed md "holes should have been eliminated before translation"
@@ -280,10 +275,8 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
-      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
-      -- This doesn't work because of a limitation in Core.
-      -- let coreMonoType := translateType ty
-      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
+      let coreMonoType ← translateType ty
+      return .app () (.abs () name.text (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
     disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
@@ -360,8 +353,11 @@ def translateStmt (stmt : StmtExprMd)
   match _h : stmt.val with
   | .Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
-      let coreExpr ← translateExpr cond [] (isPureContext := true)
-      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
+      let coreExpr ← translateExpr cond.condition [] (isPureContext := true)
+      let md' := match cond.summary with
+        | some msg => md.pushElem Imperative.MetaData.propertySummary (.msg msg)
+        | none => md
+      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md']
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
@@ -386,7 +382,7 @@ def translateStmt (stmt : StmtExprMd)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr ← defaultExprForType ty
             let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
+            let callStmt := Core.Statement.call callee.text (coreArgs.map .inArg ++ [.outArg ident]) md
             return [initStmt, callStmt]
       | some (⟨ .InstanceCall .., _, _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
@@ -429,7 +425,8 @@ def translateStmt (stmt : StmtExprMd)
                   let coreType := LTy.forAll [] (← translateType out.type)
                   inits := inits ++ [Core.Statement.init unusedIdent coreType .nondet md]
                   lhs := lhs ++ [unusedIdent]
-                return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
+                let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
+                return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
@@ -446,7 +443,8 @@ def translateStmt (stmt : StmtExprMd)
                 match t.val with
                 | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return [Core.Statement.call lhsIdents callee.text coreArgs (astNodeToCoreMd value)]
+              let outArgs : List (Core.CallArg Core.Expression) := lhsIdents.map .outArg
+              return [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) (astNodeToCoreMd value)]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
@@ -485,7 +483,8 @@ def translateStmt (stmt : StmtExprMd)
           let coreType := LTy.forAll [] (← translateType out.type)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           lhs := lhs ++ [ident]
-        return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
+        let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
+        return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
@@ -518,12 +517,16 @@ def translateStmt (stmt : StmtExprMd)
 Translate a list of checks (preconditions or postconditions) to Core checks.
 Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
-private def translateChecks (checks : List StmtExprMd) (labelBase : String)
+private def translateChecks (checks : List Condition) (labelBase : String)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   checks.mapIdxM (fun i check => do
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
-    let checkExpr ← translateExpr check [] (isPureContext := true)
-    let c : Core.Procedure.Check := { expr := checkExpr, md := astNodeToCoreMd check }
+    let checkExpr ← translateExpr check.condition [] (isPureContext := true)
+    let baseMd := astNodeToCoreMd check.condition
+    let md := match check.summary with
+      | some msg => baseMd.pushElem Imperative.MetaData.propertySummary (.msg msg)
+      | none => baseMd
+    let c : Core.Procedure.Check := { expr := checkExpr, md }
     return (label, c))
 
 /--
@@ -558,7 +561,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds "postcondition"
     | _ => pure []
-  let modifies : List Core.Expression.Ident := []
   let bodyStmts : List Core.Statement ←
     match proc.body with
     | .Transparent bodyExpr => translateStmt bodyExpr
@@ -571,7 +573,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         Core.Statement.assume label check.expr mdWithUnknownLoc)
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
-  let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
+  let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body }
 
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
@@ -587,7 +589,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- (i.e. reversed) so that pn → 0, ..., p1 → n-1.
   let boundVars := proc.inputs.reverse.map (·.name)
   -- Translate postconditions and trigger with the full bound-var context
-  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
+  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
     | [] => .const () (.boolConst true)
     | [e] => e
@@ -614,6 +616,14 @@ structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
+  keepAllFilesPrefix : Option String := none
+  profile : Bool := false
+  deriving Inhabited
+
+structure LaurelVerifyOptions where
+  translateOptions : LaurelTranslateOptions := {}
+  verifyOptions : Core.VerifyOptions := .default
+  deriving Inhabited
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
@@ -626,7 +636,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | none => pure LMonoTy.int
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
-    let checkExpr ← translateExpr precondition [] true
+    let checkExpr ← translateExpr precondition.condition [] true
     return { expr := checkExpr, md := () })
 
   -- For recursive functions, infer the @[cases] parameter index: the first input

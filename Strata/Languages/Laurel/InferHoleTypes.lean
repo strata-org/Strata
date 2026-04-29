@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Util.Statistics
 
 /-!
 # Hole Type Inference
@@ -44,9 +45,18 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
   | .staticProcedure proc => some (proc.inputs.map (·.type))
   | _ => none
 
+inductive InferHoleTypesStats where
+  /-- Number of holes successfully annotated with an inferred type. -/
+  | holesAnnotated
+  /-- Number of holes left with `Unknown` type (context could not determine type). -/
+  | holesLeftUnknown
+
+#derive_prefixed_toString InferHoleTypesStats "InferHoleTypes"
+
 structure InferHoleState where
   model : SemanticModel
   currentOutputType : HighTypeMd := ⟨.Unknown, none, #[]⟩
+  statistics : Statistics := {}
 
 private abbrev InferHoleM := StateM InferHoleState
 
@@ -80,8 +90,10 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   match val with
   | .Hole det _ =>
       if expectedType.val == .Unknown then
+        modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}" }
         return expr
       else
+        modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source, md⟩
   | .PrimitiveOp op args =>
       let argType := match op with
@@ -126,7 +138,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | some d => pure (some (← inferExpr d (bareType .TInt)))
         | none => pure none
       return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), source, md⟩
-  | .Assert cond => return ⟨.Assert (← inferExpr cond (bareType .TBool)), source, md⟩
+  | .Assert ⟨condExpr, summary⟩ =>
+      return ⟨.Assert { condition := ← inferExpr condExpr (bareType .TBool), summary }, source, md⟩
   | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), source, md⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source, md⟩
@@ -135,16 +148,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | .Assigned n => return ⟨.Assigned (← inferExpr n defaultHoleType), source, md⟩
   | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p defaultHoleType), source, md⟩
   | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f defaultHoleType), source, md⟩
-  | .Forall p trigger b =>
+  | .Quantifier mode p trigger b =>
       let trigger' ← match trigger with
         | some t => pure (some (← inferExpr t defaultHoleType))
         | none => pure none
-      return ⟨.Forall p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
-  | .Exists p trigger b =>
-      let trigger' ← match trigger with
-        | some t => pure (some (← inferExpr t defaultHoleType))
-        | none => pure none
-      return ⟨.Exists p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
+      return ⟨.Quantifier mode p trigger' (← inferExpr b (bareType .TBool)), source, md⟩
   | _ => return expr
 end
 
@@ -162,10 +170,10 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 /--
 Annotate every `.Hole` in the program with a type inferred from context.
 -/
-def inferHoleTypes (model : SemanticModel) (program : Program) : Program :=
+def inferHoleTypes (model : SemanticModel) (program : Program) : Program × Statistics :=
   let initState : InferHoleState := { model := model }
-  let (procs, _) := (program.staticProcedures.mapM inferProcedure).run initState
-  { program with staticProcedures := procs }
+  let (procs, finalState) := (program.staticProcedures.mapM inferProcedure).run initState
+  ({ program with staticProcedures := procs }, finalState.statistics)
 
 end -- public section
 end Laurel

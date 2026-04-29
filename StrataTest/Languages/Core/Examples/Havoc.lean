@@ -12,7 +12,7 @@ namespace Strata
 def havocPgm : Program :=
 #strata
 program Core;
-procedure S() returns ()
+procedure S()
 {
   var x : int;
   x := 1;
@@ -29,13 +29,13 @@ procedure S() returns ()
 /--
 info: (program Core;
 
-procedure S () returns ()
+procedure S ()
 {
   var x : int;
   x := 1;
   havoc x;
   assert [x_eq_1]: x == 1;
-  };
+};
 , #[])
 -/
 #guard_msgs in
@@ -49,7 +49,7 @@ VCs:
 Label: x_eq_1
 Property: assert
 Obligation:
-$__x1 == 1
+x@1 == 1
 
 ---
 info:
@@ -57,7 +57,7 @@ Obligation: x_eq_1
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, 0)
+(x@1, 0)
 -/
 #guard_msgs in
 #eval verify havocPgm
