@@ -410,7 +410,7 @@ def Statement.substFvar (s : Core.Statement)
   | .loop guard measure invariant body metadata =>
     .loop (guard.map (Lambda.LExpr.substFvar · fr to))
           (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (invariant.map (Lambda.LExpr.substFvar · fr to))
+          (invariant.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
           (Block.substFvar body fr to)
           metadata
   | .exit _ _ => s
