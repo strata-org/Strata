@@ -8,6 +8,7 @@ module
 public import Strata.DL.SMT.TermType
 public meta import Lean.Elab.Command
 public meta import Init.Data.String.Legacy
+import Lean.Message
 
 public section
 /-!

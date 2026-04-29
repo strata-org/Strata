@@ -5,9 +5,8 @@
 -/
 module
 
-public import Strata.DL.Util.Map
 import Strata.Util.Tactics
-public meta import Lean.Elab.Term
+public import Lean.Elab.Term.TermElabM
 
 /-! ## Formalization of Mono- and Poly- Types in Lambda
 

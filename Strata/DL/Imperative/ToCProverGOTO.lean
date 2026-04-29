@@ -5,10 +5,9 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.Program
-public import Strata.DL.Imperative.Imperative
 import all Strata.DL.Imperative.Stmt
-import Strata.Util.FileRange
+public import Strata.Backends.CBMC.GOTO.Instruction
+public import Strata.DL.Imperative.Stmt
 
 open Std (ToFormat Format format)
 

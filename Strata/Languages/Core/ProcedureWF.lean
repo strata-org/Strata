@@ -5,11 +5,7 @@
 -/
 module
 
-public import Strata.DL.Util.ListUtils
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.ProcedureType
-public import Strata.Languages.Core.WF
-public import Strata.Languages.Core.StatementWF
+public import Strata.Languages.Core.Procedure
 
 public section
 

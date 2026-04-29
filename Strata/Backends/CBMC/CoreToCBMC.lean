@@ -8,15 +8,9 @@ module
 public import Strata.Backends.CBMC.Common
 public import Strata.Languages.Core.Procedure
 
-import Lean.Data.Json
-import Lean.Parser.Types
-import Strata.DDM.Integration.Lean.HashCommands
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.DDMTransform.Grammar
+import Strata.DDM.Integration.Lean.HashCommands --shake: keep
 import Strata.Languages.Core.DDMTransform.Translate
-import Strata.DL.Util.Map
-import Strata.Languages.Core.Core
-import Strata.Util.Tactics
+public import Strata.DDM.AST
 
 public section
 

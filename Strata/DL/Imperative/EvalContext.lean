@@ -7,9 +7,7 @@ module
 
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.EvalError
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Util.ListMap
-public import Strata.DL.Util.Maps
+public import Strata.DL.Util.Map
 
 namespace Imperative
 open Std (ToFormat Format format)

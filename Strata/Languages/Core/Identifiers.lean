@@ -5,9 +5,9 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprTypeEnv
-public import Strata.DL.Lambda.Factory
 public meta import Strata.DL.Lambda.LExpr
+public meta import Std.Do.Triple.SpecLemmas
+public import Strata.DL.Lambda.LExpr
 namespace Core
 
 public section

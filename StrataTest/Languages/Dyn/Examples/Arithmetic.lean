@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Dyn.Dyn
+import Strata.Languages.Dyn
 
 namespace Strata
 namespace Dyn

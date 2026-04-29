@@ -5,7 +5,9 @@
 -/
 module
 
-public meta import Lean.Elab.Tactic
+public meta import Lean.Elab.Tactic.Basic
+public meta import Lean.Meta.Tactic.Generalize
+import Lean.Exception
 
 public section
 /-!

@@ -5,13 +5,11 @@
 -/
 module
 
-public meta import Strata.DL.Lambda.LExpr
-public meta import Strata.DL.Lambda.LState
-public meta import Strata.DL.Lambda.LTy
-public meta import Strata.DL.Lambda.LExprTypeEnv
-public meta import Lean.Elab.Term
-public meta import Lean.Meta
-public meta import Strata.DL.Lambda.Identifiers
+public meta import Std.Do.Triple.SpecLemmas
+public import Strata.DL.Lambda.LExpr
+public meta import Strata.DL.Lambda.LExprWF
+import Lean.Meta.AppBuilder
+import Strata.DL.Util.Map
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic

@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.SMTEncoder
+import Std.Tactic.BVDecide.Normalize.Prop
 
 public section
 

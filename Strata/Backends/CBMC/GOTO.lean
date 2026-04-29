@@ -5,7 +5,7 @@
 -/
 module
 
-import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
-import Strata.Backends.CBMC.GOTO.DefaultSymbols
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+-- Aggregator: re-exports GOTO submodules
+public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO -- shake: keep
+public import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline -- shake: keep
+public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO -- shake: keep

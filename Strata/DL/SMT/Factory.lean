@@ -7,9 +7,7 @@ module
 
 import all Strata.DL.Util.BitVec
 public import Strata.DL.SMT.Function
-public import Strata.DL.SMT.Op
 public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
 
 
 public section

@@ -5,12 +5,10 @@
 -/
 module
 
-public import Strata.Languages.C_Simp.DDMTransform.Parse
+public import Strata.Languages.C_Simp.DDMTransform.Parse -- shake: keep (registers C_Simp dialect)
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Lambda.Lambda
-public import Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.Identifiers
+public import Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.LState
 
 public section
 

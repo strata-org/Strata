@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.B3.Verifier.Expression
-public import Strata.Languages.B3.DDMTransform.DefinitionAST
 public import Strata.DL.SMT.Solver
 import Strata.DL.SMT.Factory
 

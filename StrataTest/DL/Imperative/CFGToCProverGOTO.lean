@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Imperative.CFGToCProverGOTO
+import Strata.DL.Lambda.LState
 import Strata.Transform.StructuredToUnstructured
 import StrataTest.Backends.CBMC.GOTO.LambdaToCProverGOTO
 

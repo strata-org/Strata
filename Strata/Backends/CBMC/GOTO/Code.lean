@@ -6,7 +6,6 @@
 module
 
 public import Strata.Backends.CBMC.GOTO.Expr
-public import Strata.Backends.CBMC.GOTO.SourceLocation
 import Strata.Util.Tactics
 
 namespace CProverGOTO

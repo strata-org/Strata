@@ -5,11 +5,12 @@
 -/
 module
 
+meta import Lean.Meta.AppBuilder
+
 public import Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Identifiers
-public import Strata.DL.Lambda.MetaData
-public import Strata.DL.Util.DecidableEq
-public meta import Lean.Elab.Term
+import Strata.DL.Util.DecidableEq
+
 
 /-! ## Lambda Expressions with Quantifiers
 

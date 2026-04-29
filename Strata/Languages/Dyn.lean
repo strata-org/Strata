@@ -5,11 +5,11 @@
 -/
 module
 
--- Main Dyn dialect definition
+-- Aggregator: re-exports Dyn dialect submodules
 -- TODO: Implement AST structure for dynamic Python-like language
 
-public import Strata.Languages.Dyn.DDMTransform.Parse
-public import Strata.Languages.Dyn.DDMTransform.Translate
+public import Strata.Languages.Dyn.DDMTransform.Parse -- shake: keep
+public import Strata.Languages.Dyn.DDMTransform.Translate -- shake: keep
 
 public section
 

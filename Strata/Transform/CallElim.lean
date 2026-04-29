@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.Transform.CoreTransform
 public import Strata.Languages.Core.PipelinePhase
 
 /-! # Call Elimination Transformation -/

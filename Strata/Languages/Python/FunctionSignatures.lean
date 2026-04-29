@@ -5,7 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Core
+public import Strata.Languages.Core.Expressions
+import Strata.Languages.Core.Env
 
 namespace Strata
 namespace Python

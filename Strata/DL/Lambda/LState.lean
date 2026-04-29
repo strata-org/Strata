@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.Scopes
-public import Strata.Util.Name
+import Strata.Util.Name
 
 /-! ## State for (Partial) Evaluation of Lambda Expressions
 

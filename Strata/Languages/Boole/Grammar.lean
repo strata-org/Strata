@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.Grammar
-meta import Strata.DDM.Integration.Lean
+import Strata.DDM.Integration.Lean.HashCommands -- shake: keep (for command)
+public import Strata.Languages.Core.DDMTransform.Grammar -- shake: keep (for Core)
+import Strata.DDM.BuiltinDialects.Init
 
 ---------------------------------------------------------------------
 

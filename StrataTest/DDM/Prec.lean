@@ -5,8 +5,8 @@
 -/
 module
 
-import Strata.DDM.Integration.Lean
 import Strata.DDM.Format
+import Strata.DDM.Integration.Lean
 
 #dialect
 dialect TestPrec;

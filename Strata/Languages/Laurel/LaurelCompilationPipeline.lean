@@ -5,15 +5,22 @@
 -/
 module
 
+public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
-import Strata.Languages.Core.Verifier
 import Strata.Util.Profile
-import Strata.Util.Statistics
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.InferHoleTypes
+import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.TypeHierarchy
 
 /-!
 ## Laurel Compilation Pipeline

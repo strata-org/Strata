@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 

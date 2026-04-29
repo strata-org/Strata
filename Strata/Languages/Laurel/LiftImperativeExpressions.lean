@@ -5,12 +5,9 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Core.Verifier
-public import Strata.DL.Util.Map
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.LaurelTypes
 
 namespace Strata
 namespace Laurel

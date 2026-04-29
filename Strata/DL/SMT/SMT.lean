@@ -5,10 +5,5 @@
 -/
 module
 
-public import Strata.DL.SMT.Encoder
-public import Strata.DL.SMT.Factory
-public import Strata.DL.SMT.Function
-public import Strata.DL.SMT.Op
-public import Strata.DL.SMT.Solver
-public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
+public import Strata.DL.SMT.Encoder -- shake: keep
+public import Strata.DL.SMT.Factory -- shake: keep

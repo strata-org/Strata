@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.ProcedureInlining
 

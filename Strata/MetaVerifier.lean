@@ -5,16 +5,27 @@
 -/
 module
 
-import Lean.Meta
-import Lean.Elab.Tactic
 
-import Strata.Languages.Core.Verifier
+meta import Lean.Meta.Tactic.Rewrite -- shake requested (bug?)
+import Lean.Meta.Tactic.Rewrite -- shake: keep
+meta import Lean.Meta.Tactic.Unfold -- shake requested (bug?)
+import Lean.Meta.Tactic.Unfold -- shake: keep
+meta import Lean.Meta.Eval -- shake requested (bug?)
+import Lean.Meta.Eval -- shake: keep
+
+public import Strata.Languages.Core.SMTEncoder -- shake requested (bug?)
+import Strata.DL.Lambda.Denote.LExprAnnotated -- shake requested (bug?)
+import Strata.DL.SMT.Denote
+import Strata.DL.SMT.Translate -- shake: keep
+public import Strata.Languages.Boole.Boole
+import Strata.Languages.Boole.Verify
+import Strata.Languages.Core.DDMTransform.Translate
+public import Strata.Languages.C_Simp.C_Simp
+import Strata.Languages.C_Simp.DDMTransform.Translate
+import Strata.Languages.C_Simp.Verify
 import Strata.Transform.LoopElim
-public import Strata.Languages.C_Simp.Verify
-public import Strata.Languages.Boole.Verify
-import Strata.DL.Imperative.SMTUtils
-public import Strata.DL.SMT.Denote
-public import Strata.DL.SMT.Translate
+
+public meta import Strata.DL.SMT.Translate
 
 open Lean hiding Options
 

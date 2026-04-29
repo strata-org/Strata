@@ -5,14 +5,14 @@
 -/
 module
 
-public import Strata.Languages.Core.Core
-public import Strata.DL.SMT.SMT
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Lambda.RecursiveAxioms
-import Init.Data.String.Extra
-public import Strata.DDM.Util.DecimalRat
-import Strata.DL.Imperative.SMTUtils
-public import Strata.Languages.Core.CoreOp
+public import Strata.DL.SMT.Factory
+import Strata.DL.SMT.DDMTransform.Translate
+import Strata.Languages.Core.Statistics
+public import Strata.Languages.Core.Env
+public import Strata.Util.Name
+public import Strata.Util.Statistics
 
 ---------------------------------------------------------------------
 

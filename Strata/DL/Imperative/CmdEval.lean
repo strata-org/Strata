@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.EvalContext
 
 namespace Imperative

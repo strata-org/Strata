@@ -5,9 +5,7 @@
 -/
 module
 
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Imperative.Cmd
 
 ---------------------------------------------------------------------
 

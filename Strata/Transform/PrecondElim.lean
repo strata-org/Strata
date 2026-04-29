@@ -5,13 +5,12 @@
 -/
 module
 
-public import Strata.Transform.CoreTransform
-public import Strata.DL.Lambda.Preconditions
-public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
-public import Strata.Languages.Core.CoreOp
 import all Strata.DL.Imperative.Stmt
-import Strata.Util.DecideProp
+public import Strata.Util.DecideProp
+import Strata.DL.Lambda.Preconditions
+import Strata.Languages.Core.Factory
+import Strata.Util.Tactics
 
 /-! # Partial Function Precondition Elimination
 

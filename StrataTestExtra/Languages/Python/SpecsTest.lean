@@ -6,6 +6,7 @@
 module
 meta import Strata.Languages.Python.Specs
 meta import Strata.Languages.Python.Specs.DDM
+import Strata.DDM.Integration.Lean.HashCommands
 import Strata.DDM.Ion
 import Strata.Languages.Python.PythonDialect
 meta import StrataTest.Util.Python

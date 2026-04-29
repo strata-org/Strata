@@ -6,8 +6,6 @@
 module
 
 public import Strata.DL.Lambda.IntBoolFactory
-public import Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.LExprWF
 
 /-! # Function Precondition Obligation Collection
 

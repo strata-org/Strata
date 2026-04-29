@@ -11,9 +11,8 @@
 -/
 module
 
-public import Strata.DDM.AST
 public import Strata.DDM.HNF
-import Strata.DDM.Integration.Lean
+import Strata.DDM.Integration.Lean -- shake: keep (bug?)
 public import Strata.DDM.Integration.Lean.OfAstM
 
 ---------------------------------------------------------------------

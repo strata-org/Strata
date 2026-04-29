@@ -7,7 +7,6 @@ module
 
 -- TODO: Verification integration for Dyn language
 
-public import Strata.Languages.Dyn.Dyn
 
 public section
 

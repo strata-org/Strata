@@ -5,10 +5,8 @@
 -/
 module
 
-public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.KleeneStmt
-public import Strata.Languages.Core.StatementType
 
 /-! # Deterministic-to-Kleene Transformation
 

@@ -4,7 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.SourceRange
 public import Strata.Languages.Python.OverloadTable
 

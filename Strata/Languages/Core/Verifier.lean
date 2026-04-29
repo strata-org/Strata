@@ -5,15 +5,11 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.Translate
-public import Strata.Languages.Core.DDMTransform.ASTtoCST
-public import Strata.Languages.Core.Options
-public import Strata.Languages.Core.CallGraph
-public import Strata.Languages.Core.SMTEncoder
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.SMTUtils
-public import Strata.DDM.AST
+public import Strata.Languages.Core.Core -- shake: keep (Core.typeCheck, Core.typeCheckAndEval)
+import Strata.Languages.Core.DDMTransform.Translate
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.SMTEncoder
+import Strata.Languages.Core.Statistics
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim

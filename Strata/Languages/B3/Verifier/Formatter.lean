@@ -5,7 +5,8 @@
 -/
 module
 
-public import Strata.DL.SMT.DDMTransform.Translate
+public import Strata.DL.SMT.Term
+import Strata.DL.SMT.DDMTransform.Translate
 
 public section
 

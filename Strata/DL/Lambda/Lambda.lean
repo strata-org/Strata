@@ -5,13 +5,13 @@
 -/
 module
 
-public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Lambda.LExprType
-public import Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.Semantics
-public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
-public import Strata.DL.Lambda.TypeFactory
-public import Strata.DL.Lambda.Reflect
+-- Re-exports the public API of the Lambda dialect: expressions, types,
+-- type inference, partial evaluation, denotational semantics, and test support.
+public import Strata.DL.Lambda.LExprType -- shake: keep
+public import Strata.DL.Lambda.Semantics -- shake: keep
+public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent -- shake: keep
+public import Strata.DL.Lambda.Reflect -- shake: keep
+
 
 namespace Lambda
 open Strata

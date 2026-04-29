@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.SMT.Term
+public import Strata.DL.SMT.Op
 
 public section
 /-!

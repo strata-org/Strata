@@ -5,8 +5,6 @@
 -/
 module
 
-public import Strata.Languages.B3.Verifier.State
-public import Strata.Languages.B3.Verifier.Expression
 public import Strata.Languages.B3.Verifier.Statements
 
 public section

@@ -5,10 +5,6 @@
 -/
 module
 
-public import Strata.DL.Util.ListUtils
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.WF
-public import Strata.Languages.Core.StatementType
 import all Strata.Languages.Core.StatementType
 import all Strata.DL.Util.ListMap
 import all Strata.DL.Imperative.CmdType

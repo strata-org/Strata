@@ -10,7 +10,6 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.PythonRuntimeLaurelPart
-import Strata.Util.DecideProp
 
 /-!
 # Python to Laurel Translation

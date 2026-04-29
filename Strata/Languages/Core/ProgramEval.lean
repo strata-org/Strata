@@ -6,14 +6,8 @@
 module
 
 public import Strata.Languages.Core.Env
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.ProcedureEval
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.StatementEval
-public import Strata.Languages.Core.StatementSemantics
-public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Imperative.StmtEval
-public import Strata.DL.Imperative.CmdEval
+public import Strata.Util.Statistics
+import Strata.Languages.Core.ProcedureEval
 
 ---------------------------------------------------------------------
 

@@ -11,9 +11,8 @@ is the identity: applying it to a parsed program produces identical output.
 
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.Resolution
 

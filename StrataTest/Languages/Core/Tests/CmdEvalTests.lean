@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Imperative.CmdEval
 import Strata.Languages.Core.CmdEval
 
 /-! ## Tests for CmdEval -/

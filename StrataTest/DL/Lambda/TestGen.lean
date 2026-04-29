@@ -5,20 +5,26 @@
 -/
 module
 
-import Plausible.Arbitrary
 public import Plausible.ArbitraryFueled
-import Plausible.Gen
+public meta import Plausible.ArbitraryFueled
+meta import Plausible.DeriveArbitrary -- shake: keep (req building with lake)
+public import Plausible.Sampleable
 
-public meta import Strata.DL.Lambda.Factory
-public meta import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.IntBoolFactory
-public meta import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprT
 public meta import Strata.DL.Lambda.LExprTypeEnv
-public meta import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LExprTypeEnv
 public meta import Strata.DL.Lambda.MetaData
 
 public import StrataTest.DL.Lambda.PlausibleHelpers
+
+-- Shake
+--public meta import Std.Do.Triple.SpecLemmas
+
+-- Command line
+
+
 
 -- -- Add these if depending on Chamelean for instance generation.
 -- import Plausible.Chamelean.ArbitrarySizedSuchThat

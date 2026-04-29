@@ -5,8 +5,9 @@
 -/
 module
 
-import Strata.Languages.B3.DDMTransform.Conversion
-import Strata.Languages.B3.DDMTransform.DefinitionAST
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.Transform.FunctionToAxiom
-import Strata.Languages.B3.Verifier
+-- Aggregator: re-exports B3 language submodules
+import Strata.Languages.B3.DDMTransform.Conversion -- shake: keep
+import Strata.Languages.B3.DDMTransform.DefinitionAST -- shake: keep
+import Strata.Languages.B3.DDMTransform.ParseCST -- shake: keep
+import Strata.Languages.B3.Transform.FunctionToAxiom -- shake: keep
+import Strata.Languages.B3.Verifier -- shake: keep

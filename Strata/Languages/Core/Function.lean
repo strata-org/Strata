@@ -6,7 +6,7 @@
 module
 
 
-public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
 
 ---------------------------------------------------------------------
 
