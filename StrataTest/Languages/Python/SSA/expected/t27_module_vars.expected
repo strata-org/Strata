@@ -47,6 +47,29 @@ func mixed_imports_and_vars():
     %7:_tmp.5 = call attr(%4, "setLevel")(positional(%6))
     ret
 
+func ifexp_assignment(x):
+  bb0():
+    %1:_tmp.0 = strLit "Assignment target should not be demanded by IfExp sub-blocks."
+    condBranch %0 bb1() bb2()
+  bb1():
+    %2:_tmp.1 = strLit "yes"
+    branch bb3(%2)
+  bb2():
+    %3:_tmp.2 = strLit "no"
+    branch bb3(%3)
+  bb3(%4:_tmp.3):
+    ret %4
+
+func boolop_assignment(x):
+  bb0():
+    %1:_tmp.0 = strLit "Assignment target should not be demanded by BoolOp sub-blocks."
+    condBranch %0 bb2(%0) bb1()
+  bb1():
+    %2:_tmp.1 = strLit "default"
+    branch bb2(%2)
+  bb2(%3:_tmp.2):
+    ret %3
+
 func @module_init():
   bb0():
     %0:MAX_RETRIES.0 = intLit 3

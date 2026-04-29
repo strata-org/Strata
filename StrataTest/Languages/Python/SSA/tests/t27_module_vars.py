@@ -31,3 +31,13 @@ def mixed_imports_and_vars():
     """Function uses both imports and module-level vars."""
     new_logger = logging.getLogger("other")
     new_logger.setLevel(MAX_RETRIES)
+
+def ifexp_assignment(x):
+    """Assignment target should not be demanded by IfExp sub-blocks."""
+    result = "yes" if x else "no"
+    return result
+
+def boolop_assignment(x):
+    """Assignment target should not be demanded by BoolOp sub-blocks."""
+    value = x or "default"
+    return value

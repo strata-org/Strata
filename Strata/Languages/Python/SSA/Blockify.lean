@@ -318,12 +318,12 @@ private partial def processSimpleStmt (s : stmt SourceRange)
     -- Two-pass ensures reads win: live = (liveAfter \ allDefs) ∪ allReads.
     let live := targets.foldl (init := liveAfter) fun acc t => removeTargetDefs acc t
     let live := targets.foldl (init := live) fun acc t => addTargetReads acc t
-    backwardExprBlocks value liveAfter live da
+    backwardExprBlocks value live live da
   | .AnnAssign _ target _ ⟨_, value⟩ _ =>
     let live := removeTargetDefs liveAfter target
     let live := addTargetReads live target
     match value with
-    | some v => backwardExprBlocks v liveAfter live da
+    | some v => backwardExprBlocks v live live da
     | none => (live, da)
   | .AugAssign _ target _ value =>
     -- AugAssign reads both target and value; reads win over writes
