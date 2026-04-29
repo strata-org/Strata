@@ -24,6 +24,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
+
 /-- Convert C_Simp expression metadata (Unit) to Core expression metadata (SourceRange).
     C_Simp does not track source locations, so we use SourceRange.none. -/
 private def csimpMetaToCore (_ : C_Simp.CSimpLParams.mono.base.Metadata) : Core.CoreLParams.mono.base.Metadata :=
@@ -99,8 +100,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
-      -- Synthesized Core expressions have no C_Simp source location; SourceRange.none is used.
-      let measure_pos := (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Ge" none) (translate_expr measure)) (.intConst Strata.SourceRange.none 0))
+      let measure_pos := (.app Strata.SourceRange.none (.app Strata.SourceRange.none (coreOpExpr (.numeric ⟨.int, .Ge⟩)) (translate_expr measure)) (.intConst Strata.SourceRange.none 0))
 
       let entry_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
@@ -113,17 +113,17 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes ++
          [Core.Statement.assume "assume_measure_pos" measure_pos {}]) {}
       let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (.det (translate_expr measure)) {}
-      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Lt" none) (translate_expr measure)) (.fvar Strata.SourceRange.none "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Le" none) (translate_expr measure)) (.intConst Strata.SourceRange.none 0)) (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (translate_expr guard_expr)) (.true Strata.SourceRange.none)) {}
-      let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app Strata.SourceRange.none (.app Strata.SourceRange.none (coreOpExpr (.numeric ⟨.int, .Lt⟩)) (translate_expr measure)) (.fvar Strata.SourceRange.none "special-name-for-old-measure-value" none)) {}
+      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (coreOpExpr (.numeric ⟨.int, .Le⟩)) (translate_expr measure)) (.intConst Strata.SourceRange.none 0)) (.app Strata.SourceRange.none (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) (.true Strata.SourceRange.none)) {}
+      let maintain_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
         ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++
          [measure_decreases, measure_imp_not_guard] ++ maintain_invariants) {}
 
-      let not_guard : Core.Statement := .assume "not_guard" (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (translate_expr guard_expr)) {}
-      let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let not_guard : Core.Statement := .assume "not_guard" (.app Strata.SourceRange.none (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
+      let invariant_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
@@ -142,8 +142,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
         ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
-      let not_guard : Core.Statement := .assume "not_guard" (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (translate_expr guard_expr)) {}
-      let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let not_guard : Core.Statement := .assume "not_guard" (.app Strata.SourceRange.none (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
+      let invariant_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
     | .nondet, _, _ =>
