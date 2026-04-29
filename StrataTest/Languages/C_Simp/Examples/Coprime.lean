@@ -75,7 +75,7 @@ info: function coprime {
   while
     (~Int.Gt i #1)
     (some i)
-    [#true]
+    [[coprime_invariant_388_405]: #true]
   {
     if (~Bool.And ((~Int.Mod b i) == #0) ((~Int.Mod a i) == #0)) {
       return := #false
