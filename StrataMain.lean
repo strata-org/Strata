@@ -1351,15 +1351,7 @@ def pyInterpretCommand : Command where
         | none => []
       let (lhs, exprEnv) := Core.Env.genVars outputNames E.exprEnv
       let E := { E with exprEnv }
-      -- Generate fresh variables for each input parameter (e.g. $heap_in added
-      -- by HeapParameterization) so the argument count matches the procedure
-      -- signature.
-      let inputIdents : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-        match mainProc with
-        | some p => p.header.inputs.map fun (name, ty) => (name, some ty)
-        | none => []
-      let (inputArgs, E) := E.genFVars inputIdents
-      let E := Core.Statement.Command.runCall lhs "__main__" inputArgs fuel E
+      let E := Core.Statement.Command.runCall lhs "__main__" [] fuel E
       match E.error with
       | none =>
         IO.println "Execution completed successfully."
