@@ -70,70 +70,82 @@ private def extractParams (args : arguments SourceRange)
     | none => pure ()
     return result
 
-/-- Collect module-level global names (function defs, class defs, imports). -/
-private def collectModuleGlobals (stmts : Array (stmt SourceRange))
-    : Std.HashSet String := Id.run do
-  let mut globals : Std.HashSet String := {}
+/-- Module-level name information collected in a single pass. -/
+private structure ModuleInfo where
+  baseGlobals    : Std.HashSet String
+  assignmentVars : Std.HashSet String
+  importBindings : Std.HashMap String QualifiedName
+
+/-- Collect module-level names: base globals (functions/classes/imports for demand
+    analysis), assignment variables (recursive — Python has no block scoping),
+    and import bindings (for qualified refs). -/
+private def collectModuleInfo (stmts : Array (stmt SourceRange))
+    : ModuleInfo := Id.run do
+  let mut baseGlobals : Std.HashSet String := {}
+  let mut assignmentVars : Std.HashSet String := {}
+  let mut importBindings : Std.HashMap String QualifiedName := {}
+  -- Top-level scan for functions, classes, imports
   for s in stmts do
     match s with
     | .FunctionDef _ ⟨_, name⟩ .. | .AsyncFunctionDef _ ⟨_, name⟩ .. =>
-      globals := globals.insert name
+      baseGlobals := baseGlobals.insert name
     | .ClassDef _ ⟨_, name⟩ .. =>
-      globals := globals.insert name
+      baseGlobals := baseGlobals.insert name
     | .Import _ ⟨_, aliases⟩ =>
       for a in aliases do
-        globals := globals.insert (a.asname.getD a.name)
-    | .ImportFrom _ _ ⟨_, aliases⟩ _ =>
-      for a in aliases do
-        globals := globals.insert (a.asname.getD a.name)
-    | _ => pure ()
-  return globals
-
-/-- Collect import bindings from top-level statements. -/
-private def collectImportBindings (stmts : Array (stmt SourceRange))
-    : Std.HashMap String QualifiedName := Id.run do
-  let mut bindings : Std.HashMap String QualifiedName := {}
-  for s in stmts do
-    match s with
-    | .Import _ ⟨_, aliases⟩ =>
-      for a in aliases do
+        baseGlobals := baseGlobals.insert (a.asname.getD a.name)
         let modName := a.name
         let localName := a.asname.getD modName
-        bindings := bindings.insert localName (QualifiedName.mk' modName modName)
+        importBindings := importBindings.insert localName (QualifiedName.mk' modName modName)
     | .ImportFrom _ ⟨_, modOpt⟩ ⟨_, aliases⟩ _ =>
       let modName := match modOpt with
         | some ⟨_, m⟩ => m | none => "unknown"
       for a in aliases do
+        baseGlobals := baseGlobals.insert (a.asname.getD a.name)
         let localName := a.asname.getD a.name
-        bindings := bindings.insert localName (QualifiedName.mk' modName a.name)
+        importBindings := importBindings.insert localName (QualifiedName.mk' modName a.name)
     | _ => pure ()
-  return bindings
-
-/-- Collect module-level assignment target names. -/
-private def collectModuleAssignments (stmts : Array (stmt SourceRange))
-    : Std.HashSet String := Id.run do
-  let mut vars : Std.HashSet String := {}
-  for s in stmts do
-    match s with
-    | .Assign _ ⟨_, targets⟩ _ _ =>
-      for t in targets do
-        match t with
-        | .Name _ ⟨_, name⟩ _ => vars := vars.insert name
+  -- Recursive scan for assignment targets (Python has no block scoping)
+  let mut worklist : Array (Array (stmt SourceRange)) := #[stmts]
+  while h : worklist.size > 0 do
+    let cur := worklist[worklist.size - 1]'(by omega)
+    worklist := worklist.pop
+    for s in cur do
+      match s with
+      | .Assign _ ⟨_, targets⟩ _ _ =>
+        for t in targets do
+          match t with
+          | .Name _ ⟨_, name⟩ _ => assignmentVars := assignmentVars.insert name
+          | _ => pure ()
+      | .AnnAssign _ (.Name _ ⟨_, name⟩ _) _ _ _ =>
+        assignmentVars := assignmentVars.insert name
+      | .AugAssign _ (.Name _ ⟨_, name⟩ _) _ _ =>
+        assignmentVars := assignmentVars.insert name
+      | .For _ target _ ⟨_, body⟩ ⟨_, orelse⟩ _ =>
+        match target with
+        | .Name _ ⟨_, name⟩ _ => assignmentVars := assignmentVars.insert name
         | _ => pure ()
-    | .AnnAssign _ (.Name _ ⟨_, name⟩ _) _ _ _ =>
-      vars := vars.insert name
-    | .AugAssign _ (.Name _ ⟨_, name⟩ _) _ _ =>
-      vars := vars.insert name
-    | _ => pure ()
-  return vars
+        worklist := worklist.push body |>.push orelse
+      | .While _ _ ⟨_, body⟩ ⟨_, orelse⟩ =>
+        worklist := worklist.push body |>.push orelse
+      | .If _ _ ⟨_, body⟩ ⟨_, orelse⟩ =>
+        worklist := worklist.push body |>.push orelse
+      | .With _ _ ⟨_, body⟩ _ =>
+        worklist := worklist.push body
+      | .Try _ ⟨_, body⟩ ⟨_, handlers⟩ ⟨_, orelse⟩ ⟨_, finalbody⟩ =>
+        worklist := worklist.push body |>.push orelse |>.push finalbody
+        for handler in handlers do
+          match handler with
+          | .ExceptHandler _ _ _ ⟨_, hbody⟩ =>
+            worklist := worklist.push hbody
+      | _ => pure ()
+  return { baseGlobals, assignmentVars, importBindings }
 
 /-- Scan a module's top-level statements into `FuncInfo` records. -/
 private def scanModule (stmts : Array (stmt SourceRange))
+    (initGlobals : Std.HashSet String)
+    (funcGlobals : Std.HashSet String)
     : Array FuncInfo := Id.run do
-  let globals := collectModuleGlobals stmts
-  -- Functions/methods see module-level assignments as globals too
-  let funcGlobals := (collectModuleAssignments stmts).fold (init := globals) fun acc name =>
-    acc.insert name
   let mut results : Array FuncInfo := #[]
   for s in stmts do
     match s with
@@ -159,7 +171,7 @@ private def scanModule (stmts : Array (stmt SourceRange))
     match s with | .FunctionDef .. | .AsyncFunctionDef .. | .ClassDef .. => false | _ => true
   if !moduleStmts.isEmpty then
     results := results.push { name := "@module_init", params := #[]
-                              body := moduleStmts, sr := SourceRange.none, globals }
+                              body := moduleStmts, sr := SourceRange.none, globals := initGlobals }
   return results
 
 /-! ## Binding Environment -/
@@ -1659,15 +1671,18 @@ public def translateModule (moduleName : String)
     prelude := pythonPrelude
     moduleName
   }
-  let results := scanModule stmts
+  let info := collectModuleInfo stmts
+  -- @module_init: assignments are local (need block param threading)
+  -- Other functions: assignments are globals (resolve via qualifiedRef)
+  let funcGlobals := info.assignmentVars.fold (init := info.baseGlobals) fun acc name =>
+    acc.insert name
+  let results := scanModule stmts info.baseGlobals funcGlobals
   -- Build moduleBindings: implicit attrs < assignments < imports < functions/classes
   let moduleBindings : Std.HashMap String QualifiedName :=
     .ofList [("__name__", QualifiedName.mk' moduleName "__name__")]
-  let moduleAssigns := collectModuleAssignments stmts
-  let moduleBindings := moduleAssigns.fold (init := moduleBindings)
-    fun acc name => acc.insert name (QualifiedName.mk' moduleName name)
-  let importBindings := collectImportBindings stmts
-  let moduleBindings := importBindings.fold (init := moduleBindings) fun acc k v =>
+  let moduleBindings := info.assignmentVars.fold (init := moduleBindings) fun acc name =>
+    acc.insert name (QualifiedName.mk' moduleName name)
+  let moduleBindings := info.importBindings.fold (init := moduleBindings) fun acc k v =>
     acc.insert k v
   let moduleBindings := results.foldl (init := moduleBindings) fun bindings r =>
     if r.name == "@module_init" then bindings
