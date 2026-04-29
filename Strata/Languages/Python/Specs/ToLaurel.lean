@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
+import Strata.DDM.Format
 import Strata.Languages.Python.OverloadTable
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
@@ -33,17 +34,26 @@ namespace Strata.Python
 
 public section
 
-/-- Map a PythonIdent to its PyLauType string name, if it's a recognized
-    builtin type. This is the single source of truth for which Python builtins
-    map to PyLauType names. Used by PySpecPipeline (for type extraction).
-    Keep in sync with `pyLauTypesWithTesters` in PythonToLaurel.lean. -/
-def PythonIdent.toPyLauType? (id : PythonIdent) : Option String :=
-  if id == PythonIdent.builtinsInt then some "int"
-  else if id == PythonIdent.builtinsStr then some "str"
-  else if id == PythonIdent.builtinsBool then some "bool"
-  else if id == PythonIdent.builtinsFloat then some "float"
-  else if id == PythonIdent.noneType then some "None"
-  else none
+private def typeTestersMap : Std.HashMap PythonIdent String :=
+  .ofList [
+    (.builtinsInt,       "Any..isfrom_int"),
+    (.builtinsStr,       "Any..isfrom_str"),
+    (.builtinsBool,      "Any..isfrom_bool"),
+    (.builtinsFloat,     "Any..isfrom_float"),
+    (.noneType,          "Any..isfrom_None"),
+    (.builtinsBytes,     "Any..isfrom_bytes"),
+    (.typingList,        "Any..isfrom_ListAny"),
+    (.typingSequence,    "Any..isfrom_ListAny"),
+    (.typingDict,        "Any..isfrom_DictStrAny"),
+    (.typingMapping,     "Any..isfrom_DictStrAny"),
+    (.builtinsException, "Any..isexception")
+  ]
+
+/-- Fully qualified Laurel name for a `PythonIdent`: module dots become
+    underscores. E.g., `"mylib.sub"` / `"Foo"` → `"mylib_sub_Foo"`. -/
+def PythonIdent.toLaurelName (id : PythonIdent) : String :=
+  let pfx := "_".intercalate (id.pythonModule.splitOn ".")
+  if pfx.isEmpty then id.name else pfx ++ "_" ++ id.name
 
 end -- public section
 end Strata.Python
@@ -128,192 +138,82 @@ private def mkTy (ty : HighType) : HighTypeMd :=
 private def mkUserDefined (s : String) : HighTypeMd :=
   { val := .UserDefined (mkId s), source := none }
 
-/-- Placeholder for types not yet supported in CorePrelude.
-    Returns TString so translation can proceed. Callers should
-    report a warning via `reportError` so the gap is visible. -/
-private def unsupportedType : HighTypeMd :=
-  { val := .TString, source := none }
-
-/-! ### Laurel type constants
-
-Named constants for Laurel `HighTypeMd` values used in type translation.
-Prelude types (`Any`, `Error`, `DictStrAny`, etc.) use `UserDefined` so
-they participate in Laurel resolution. -/
-
-private def tyBool     : HighTypeMd := mkTy .TBool
-private def tyInt      : HighTypeMd := mkTy .TInt
-private def tyReal     : HighTypeMd := mkTy .TReal
-private def tyString   : HighTypeMd := mkTy .TString
-private def tyVoid     : HighTypeMd := mkTy .TVoid
+/-! ### Laurel type constants -/
 
 private def tyAny         : HighTypeMd := mkUserDefined "Any"
 private def tyDictStrAny  : HighTypeMd := mkUserDefined "DictStrAny"
-private def tyError       : HighTypeMd := mkUserDefined "Error"
-private def tyListStr     : HighTypeMd := mkUserDefined "ListStr"
-private def tyStrOrNone   : HighTypeMd := mkUserDefined "StrOrNone"
-private def tyIntOrNone   : HighTypeMd := mkUserDefined "IntOrNone"
-private def tyBoolOrNone  : HighTypeMd := mkUserDefined "BoolOrNone"
-
-mutual
-
-/-- Convert a SpecAtomType to a string for error messages. -/
-def atomTypeToString (a : SpecAtomType) : String :=
-  match a with
-  | .ident nm args =>
-    if nm == PythonIdent.noneType && args.isEmpty then "None"
-    else if args.isEmpty then toString nm
-    else
-      let argStrs := args.map specTypeToString
-      s!"{nm}[{String.intercalate ", " argStrs.toList}]"
-  | .intLiteral v => s!"Literal[{v}]"
-  | .stringLiteral v => s!"Literal[\"{v}\"]"
-  | .typedDict _ _ _ => "TypedDict"
-termination_by sizeOf a
-
-/-- Convert a SpecType to a string for error messages. -/
-def specTypeToString (t : SpecType) : String :=
-  if h : t.atoms.size = 1 then
-    atomTypeToString t.atoms[0]
-  else
-    let strs := t.atoms.map atomTypeToString
-    String.intercalate " | " strs.toList
-termination_by sizeOf t
-decreasing_by
-  · cases t
-    decreasing_tactic
-  · cases t
-    decreasing_tactic
-
-end
-
-/-- Pretty print a union type. -/
-def formatUnionType (atoms : Array SpecAtomType) : String :=
-  let strs := atoms.map atomTypeToString
-  String.intercalate " | " strs.toList
 
 /-! ## Type Translation -/
 
-/--
-Detect if a SpecType is a Union[None, T] pattern and return the appropriate Laurel type.
-Handles:
-- Union[None, str] → UserDefined "StrOrNone"
-- Union[None, int] → UserDefined "IntOrNone"
-- Union[None, bool] → UserDefined "BoolOrNone"
-- Union[None, Literal["A"], ...] → UserDefined "StrOrNone"
-- Union[None, Literal[1], ...] → UserDefined "IntOrNone"
-- Union[None, TypedDict] → UserDefined "DictStrAny"
-- Union[None, float/List/Dict/Any/bytes] → TString (unsupported, pending CorePrelude)
--/
-def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
-  let isNoneType (atom : SpecAtomType) : Bool :=
-    match atom with
-    | .ident nm args => nm == PythonIdent.noneType && args.isEmpty
-    | _ => false
-
-  if !ty.atoms.any isNoneType then
-    return none
-
-  let otherAtoms := ty.atoms.filter (fun a => !isNoneType a)
-
-  -- All non-None string literals → StrOrNone
-  if otherAtoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
-    return some tyStrOrNone
-
-  -- All non-None int literals → IntOrNone
-  if otherAtoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
-    return some tyIntOrNone
-
-  -- All non-None TypedDicts → DictStrAny
-  if otherAtoms.all (fun a => match a with | .typedDict _ _ _ => true | _ => false) then
-    return some tyDictStrAny
-
-  if otherAtoms.size == 1 then
-    match otherAtoms[0]! with
-    | .ident nm _ =>
-      if nm == PythonIdent.builtinsStr then return some tyStrOrNone
-      else if nm == PythonIdent.builtinsInt then return some tyIntOrNone
-      else if nm == PythonIdent.builtinsBool then return some tyBoolOrNone
-      -- TODO: add CorePrelude types for these Optional patterns
-      else if nm == PythonIdent.builtinsFloat then
-        reportError .unsupportedOptionalFloat default s!"Optional[float] mapped to TString"
-        return some unsupportedType
-      else if nm == PythonIdent.typingList then
-        reportError .unsupportedOptionalList default s!"Optional[List] mapped to TString"
-        return some unsupportedType
-      else if nm == PythonIdent.typingDict then
-        reportError .unsupportedOptionalDict default s!"Optional[Dict] mapped to TString"
-        return some unsupportedType
-      else if nm == PythonIdent.typingAny then
-        reportError .unsupportedOptionalAny default s!"Optional[Any] mapped to TString"
-        return some unsupportedType
-      else if nm == PythonIdent.builtinsBytes then
-        reportError .unsupportedOptionalBytes default s!"Optional[bytes] mapped to TString"
-        return some unsupportedType
-      else return none
-    | .typedDict _ _ _ => return some tyDictStrAny
-    | .intLiteral _ => return some tyIntOrNone
-    | _ => return none
-  else
-    return none
-
-/-- Known PythonIdent → Laurel type mappings for single-atom ident types.
-    Matches PythonToLaurel's type mapping: only int, str, bool, float get
-    concrete Laurel types; everything else maps to Any. -/
-private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
+public def builtinIdents : Std.HashSet PythonIdent :=
   .ofList [
-    (.builtinsBool,      tyBool),
-    (.builtinsBytearray, tyAny),
-    (.builtinsBytes,     tyAny),
-    (.builtinsComplex,   tyAny),
-    (.builtinsDict,      tyAny),
-    (.builtinsException, tyAny),
-    (.builtinsFloat,     tyReal),
-    (.builtinsInt,       tyInt),
-    (.builtinsStr,       tyString),
-    (.noneType,          tyVoid),
-    (.typingAny,         tyAny),
-    (.typingBinaryIO,    tyAny),
-    (.typingDict,        tyAny),
-    (.typingList,        tyAny),
+    .builtinsBool, .builtinsBytearray, .builtinsBytes, .builtinsComplex,
+    .builtinsDict, .builtinsException, .builtinsFloat, .builtinsInt,
+    .builtinsStr, .noneType, .typingAny, .typingBinaryIO, .typingDict,
+    .typingList
   ]
 
-/-- Convert a SpecType to a Laurel HighTypeMd. -/
+/-- Convert a SpecType to a Laurel HighTypeMd.
+    Composites → `UserDefined`, everything else → `Any`. -/
 def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
-  match ty.atoms.size with
-  | 0 =>
-    reportError .emptyType default "Empty type (no atoms) encountered in Laurel conversion"
-    return tyString
-  | _ =>
-    -- Check for union types
-    if ty.atoms.size > 1 then
-      -- All string literals → TString
-      if ty.atoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
-        return tyString
-      -- All int literals → TInt
-      if ty.atoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
-        return tyInt
-      -- All TypedDicts → DictStrAny
-      if ty.atoms.all (fun a => match a with | .typedDict _ _ _ => true | _ => false) then
-        return tyDictStrAny
-      -- Check Union[None, T] patterns
-      match ← detectOptionalType ty with
-      | some laurelType => return laurelType
-      | none =>
-        let unionStr := formatUnionType ty.atoms
-        reportError .unsupportedUnion default s!"Union type ({unionStr}) not yet supported in Laurel"
-        return tyString
-    else
-      pure ()
-    -- Single atom type
-    match ty.atoms[0]! with
-    | .ident nm _args =>
-      if let some ty := knownIdentTypes[nm]? then
-        return ty
-      let prefixed ← prefixName nm.name
-      return mkTy (.UserDefined { text := prefixed })
-    | .intLiteral _ => return tyInt
-    | .stringLiteral _ => return tyString
-    | .typedDict _ _ _ => return tyDictStrAny
+  match ty.asIdent with
+  | some nm =>
+    if nm ∈ builtinIdents then
+      return tyAny
+    return mkTy (.UserDefined { text := nm.toLaurelName })
+  | none => return tyAny
+
+/-- Build the assertion for a single atom: type tester for idents,
+    `isfrom_X(v) && as_X!(v) == literal` for literals.
+    When `isUnion` is true, warns on ident atoms that lack testers.
+    Always warns on TypedDict (needs a dedicated checker). -/
+private def atomAssertion? (atom : SpecAtomType) (ty : SpecType)
+    (value : StmtExprMd) (source : Option FileRange)
+    (isUnion : Bool) : ToLaurelM (Option StmtExprMd) := do
+  let mk (e : StmtExpr) : StmtExprMd := { val := e, source := source }
+  match atom with
+  | .ident nm _ =>
+    match typeTestersMap[nm]? with
+    | some testerName =>
+      return some <| mk (.StaticCall (mkId testerName) [value])
+    | none =>
+      if nm != .typingAny && isUnion then
+        reportError .unsupportedUnion ty.loc s!"No type tester for '{nm}' in type '{ty}'"
+      return none
+  | .intLiteral v =>
+    let typeCheck := mk (.StaticCall (mkId "Any..isfrom_int") [value])
+    let unwrap := mk (.StaticCall (mkId "Any..as_int!") [value])
+    let eqCheck := mk (.PrimitiveOp .Eq [unwrap, mk (.LiteralInt v)])
+    return some <| mk (.PrimitiveOp .And [typeCheck, eqCheck])
+  | .stringLiteral v =>
+    let typeCheck := mk (.StaticCall (mkId "Any..isfrom_str") [value])
+    let unwrap := mk (.StaticCall (mkId "Any..as_string!") [value])
+    let eqCheck := mk (.PrimitiveOp .Eq [unwrap, mk (.LiteralString v)])
+    return some <| mk (.PrimitiveOp .And [typeCheck, eqCheck])
+  | .typedDict .. =>
+    reportError .unsupportedUnion ty.loc s!"TypedDict '{atom}' approximated as DictStrAny in type '{ty}'"
+    return some <| mk (.StaticCall (mkId "Any..isfrom_DictStrAny") [value])
+
+/-- Build a type-assertion expression for `value` given its declared `SpecType`.
+    Returns `none` when no assertion is needed (all atoms are Any/composites).
+    For union types, builds a disjunction over per-atom assertions. -/
+private def typeAssertion? (ty : SpecType) (value : StmtExprMd)
+    (source : Option FileRange) : ToLaurelM (Option StmtExprMd) := do
+  let mut result : Option StmtExprMd := none
+  for atom in ty.atoms do
+    match atom with
+    | .ident nm _ =>
+      if nm = .typingAny then
+        return none
+    | _ => pure ()
+    match ← atomAssertion? atom ty value source (ty.atoms.size > 1) with
+    | some call =>
+      match result with
+      | none => result := some call
+      | some prev =>
+        result := some { val := .PrimitiveOp .Or [prev, call], source := source }
+    | none => pure ()
+  return result
 
 /-! ## SpecExpr to Laurel Translation -/
 
@@ -426,7 +326,7 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
   | .isInstanceOf _ typeName loc => do
     reportError .isinstanceUnsupported loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return default
-  | .len subject loc => do
+  | .stringLen subject loc => do
     let src ← nodeSource loc
     let s ← asAny loc <| specExprToLaurel subject src
     return .mkSome <| .fromInt (.strLength (.anyAsString s))
@@ -470,7 +370,6 @@ def specExprToLaurel (e : SpecExpr) (source : Option FileRange)
     let src ← nodeSource loc
     match container with
     | .var "kwargs" .. =>
-      -- FIXME: Check this.  We may want to move this up
       let keyAny ← asAny loc <| lookupIdentifier key loc src
       return .mkSome <| .not (.anyIsfromNone keyAny)
     | _ =>
@@ -507,23 +406,43 @@ def SpecAssertMsg.render : SpecAssertMsg → String
   | .userAssertion text  => text
   | .unnamed index       => s!"precondition {index}"
 
-/-- Build a procedure body that asserts preconditions.
-    Outputs are already initialized non-deterministically. -/
-def buildSpecBody (preconditions : Array Assertion)
+/-- Build a Transparent procedure body with havoc, type assertions,
+    required-param checks, user preconditions, and return-type assumption. -/
+def buildSpecBody (allArgs : Array Arg)
+    (preconditions : Array Assertion)
+    (postconditions : Array SpecExpr)
+    (returnType : SpecType)
     (source : Option FileRange)
     (ctx : SpecExprContext)
-    (requiredParams : Array String := #[])
     : ToLaurelM Body := do
   let fileSource ← mkFileSource
   let mut stmts : Array StmtExprMd := #[]
+  -- 1. Havoc the result: result := Hole(nondet)
+  let holeExpr : StmtExprMd := { val := .Hole (deterministic := false), source := source }
+  let resultId : StmtExprMd := { val := .Identifier (mkId "result"), source := source }
+  let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
+  stmts := stmts.push assignStmt
+  -- 2. Assert type / required-param preconditions
+  for arg in allArgs do
+    let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := source }
+    match ← typeAssertion? arg.type paramId source with
+    | some assertion =>
+      if arg.default.isSome then
+        let noneCheck : StmtExprMd := { val := .StaticCall (mkId "Any..isfrom_None") [paramId], source := source }
+        let orExpr : StmtExprMd := { val := .PrimitiveOp .Or [noneCheck, assertion], source := source }
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := orExpr, summary := none }) default
+        stmts := stmts.push assertStmt
+      else
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := assertion, summary := none }) default
+        stmts := stmts.push assertStmt
+    | none =>
+      if arg.default.isNone then
+        let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier arg.name Laurel.tyAny))
+        let msg := SpecAssertMsg.requiredParam arg.name |>.render
+        let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
+        stmts := stmts.push assertStmt
+  -- 3. Assert user pyspec preconditions
   let mut idx := 0
-  -- Assert that required parameters are provided (not None)
-  for param in requiredParams do
-    let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier param Laurel.tyAny))
-    let msg := SpecAssertMsg.requiredParam param |>.render
-    let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
-    stmts := stmts.push assertStmt
-    idx := idx + 1
   for assertion in preconditions do
     let formattedMsg := formatAssertionMessage assertion.message
     let msg := if formattedMsg.isEmpty
@@ -538,6 +457,24 @@ def buildSpecBody (preconditions : Array Assertion)
         reportError .typeError default
           s!"Precondition expression is not Bool in '{ctx.procName}' (skipping): {msg}"
     idx := idx + 1
+  -- 4. Assert user pyspec postconditions
+  for postExpr in postconditions do
+    let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel postExpr source ctx
+    if success then
+      if let .TBool := condType then
+        let assumeStmt ← mkStmtWithLoc (.Assume condExpr.stmt) default
+        stmts := stmts.push assumeStmt
+      else
+        reportError .typeError default
+          s!"Postcondition expression is not Bool in '{ctx.procName}' (skipping)"
+  -- 5. Assume return type postcondition
+  -- NOTE. Skip NoneType: generated stubs currently declare `-> None` even for methods
+  -- that return values. Assuming isfrom_None would make callers unreachable.
+  if returnType.asIdent != some .noneType then
+    let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := source }
+    if let some retAssertion ← typeAssertion? returnType resultRef source then
+      let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
+      stmts := stmts.push assumeStmt
   let body := {
       val := .Block stmts.toList none,
       source := fileSource
@@ -546,11 +483,6 @@ def buildSpecBody (preconditions : Array Assertion)
 
 /-! ## Declaration Translation -/
 
-/-- Convert an Arg to a Laurel Parameter. -/
-def argToParameter (arg : Arg) : ToLaurelM Parameter := do
-  let ty ← specTypeToLaurelType arg.type
-  return { name := arg.name, type := ty }
-
 /-- Expand a `**kwargs: Unpack[TypedDict]` into individual `Arg` entries.
     Returns an error if kwargs is present but not a TypedDict. -/
 public def expandKwargsArgs (kwargs : Option (String × SpecType))
@@ -558,13 +490,13 @@ public def expandKwargsArgs (kwargs : Option (String × SpecType))
   match kwargs with
   | none => .ok #[]
   | some (name, specType) =>
-    match specType.atoms.find? fun a => match a with | .typedDict .. => true | _ => false with
-    | some (.typedDict fields fieldTypes fieldRequired) =>
-      .ok <| fields.mapIdx fun i name =>
-        { name := name
-          type := fieldTypes.getD i default
-          default := if fieldRequired.getD i true then none else some .none }
-    | _ => .error s!"**{name} has non-TypedDict type; kwargs not expanded"
+    match specType.asTypedDict with
+    | some fields =>
+      .ok <| fields.map fun f =>
+        { name := f.name
+          type := f.type
+          default := if f.required then none else some .none }
+    | none => .error s!"**{name} has non-TypedDict type; kwargs not expanded"
 
 /-- Convert a function declaration to a Laurel Procedure.
     When `isMethod` is true, the first positional arg (`self`) is stripped. -/
@@ -579,30 +511,16 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     | .ok args => pure args
     | .error msg => do reportError .kwargsExpansionError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
-  let inputs ← allArgs.mapM argToParameter
-  let retType ← specTypeToLaurelType func.returnType
-  let outputs : List Parameter :=
-    [{ name := "result", type := match retType.val with
-      | .TVoid => tyAny
-      | _ => retType }]
-  if func.postconditions.size > 0 then
-    reportError .postconditionUnsupported func.loc "Postconditions not yet supported"
-  -- When preconditions exist, use TCore "Any" for all parameters and outputs
-  -- to match the Python→Laurel pipeline's Any-wrapping convention.
-  let (inputs, outputs, body) ←
-    if func.preconditions.size > 0 then do
-      let anyTy : HighTypeMd := tyAny
-      let anyInputs := inputs.map fun p => { p with type := anyTy }
-      let anyOutputs := outputs.map fun p => { p with type := anyTy }
-      let argTypes := allArgs.foldl (init := {}) fun m a =>
-        m.insert a.name Laurel.tyAny
-      let specCtx : SpecExprContext := { procName, argTypes }
-      let body ← buildSpecBody func.preconditions none specCtx
-        (requiredParams := allArgs.filterMap fun a =>
-          if a.default.isNone then some a.name else none)
-      pure (anyInputs, anyOutputs, body)
-    else
-      pure (inputs, outputs, Body.Opaque [] none [])
+  let inputs ← allArgs.mapM fun a => do
+    let ty ← specTypeToLaurelType a.type
+    return ({ name := a.name, type := ty } : Parameter)
+  let outputs : List Parameter := [{ name := "result", type := tyAny }]
+  let argTypes : Std.HashMap String HighType :=
+    inputs.foldl (init := ({} : Std.HashMap String HighType).insert "result" Laurel.tyAny) fun m p =>
+      m.insert p.name.text p.type.val
+  let specCtx : SpecExprContext := { procName, argTypes }
+  let body ← buildSpecBody allArgs func.preconditions func.postconditions
+    func.returnType none specCtx
   let src ← mkSourceWithFileRange func.loc
   return {
     name := { text := procName, source := src }
@@ -625,11 +543,8 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   let laurelFields ← cls.fields.toList.mapM fun f => do
     let ty ← specTypeToLaurelType f.type
     pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
-  let prefixedBases ← cls.bases.toList.mapM fun cd => do
-    -- Local bases (empty pythonModule) get prefixed; external ones don't
-    let baseName ← if cd.pythonModule.isEmpty then prefixName cd.name
-                    else pure (toString cd)
-    return mkId baseName
+  let prefixedBases := cls.bases.toList.map fun cd =>
+    mkId cd.toLaurelName
   pushType (.Composite {
     name := prefixedName
     extending := prefixedBases
@@ -665,33 +580,23 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
         s!"Overloaded function '{func.name}' has no arguments"
       return
   let firstArgType := args[0].type
-  let .isTrue _ := decideProp (firstArgType.atoms.size = 1)
-    | reportError .overloadArgArity func.loc
-        s!"Overloaded function '{func.name}': first argument \
-          has {firstArgType.atoms.size} type atoms, expected 1"
-      return
   let literalValue ←
-        match firstArgType.atoms[0] with
-        | .stringLiteral v => pure v
-        | _ =>
+        match firstArgType.asStringLiteral with
+        | some v => pure v
+        | none =>
           reportError .overloadArgNotStringLiteral func.loc
             s!"Overloaded function '{func.name}': first argument \
-              type '{specTypeToString firstArgType}' is not a \
+              type '{firstArgType}' is not a \
               string literal (only string literal dispatch is \
               currently supported)"
           return
-  let .isTrue _ := decideProp (func.returnType.atoms.size = 1)
-    | reportError .overloadReturnArity func.loc
-        s!"Overloaded function '{func.name}': return type \
-        has {func.returnType.atoms.size} type atoms, expected 1"
-      return
   let retType ←
-        match func.returnType.atoms[0] with
-        | .ident nm _ => pure nm
-        | _ =>
+        match func.returnType.asIdent with
+        | some nm => pure nm
+        | none =>
           reportError .overloadReturnNotClass func.loc
             s!"Overloaded function '{func.name}': return type \
-              '{specTypeToString func.returnType}' is not a \
+              '{func.returnType}' is not a \
               class type"
           return
   -- args[0].name is the formal parameter name from the PySpec (not a call-site argument)

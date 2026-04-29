@@ -5,5 +5,6 @@
 -/
 module
 
-import Strata.DDM.AST.Lemmas
-import Strata.DDM.Integration.Java
+-- Aggregator: re-exports DDM submodules
+import Strata.DDM.AST.Lemmas -- shake: keep
+import Strata.DDM.Integration.Java -- shake: keep

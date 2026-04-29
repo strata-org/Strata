@@ -63,6 +63,39 @@ public section
 
 /-! ## ResolvedNode — the target of a resolved reference -/
 
+/-- The kind (constructor tag) of a `ResolvedNode`, used to assert that a reference
+    resolves to the expected sort of definition. -/
+inductive ResolvedNodeKind where
+  | var
+  | parameter
+  | staticProcedure
+  | instanceProcedure
+  | field
+  | compositeType
+  | constrainedType
+  | datatypeDefinition
+  | datatypeConstructor
+  | typeAlias
+  | constant
+  | quantifierVar
+  | unresolved
+  deriving Repr, BEq
+
+def ResolvedNodeKind.name : ResolvedNodeKind → String
+  | .var               => "variable"
+  | .parameter         => "parameter"
+  | .staticProcedure   => "static procedure"
+  | .instanceProcedure => "instance procedure"
+  | .field             => "field"
+  | .compositeType     => "composite type"
+  | .constrainedType   => "constrained type"
+  | .datatypeDefinition => "datatype definition"
+  | .datatypeConstructor => "datatype constructor"
+  | .typeAlias         => "type alias"
+  | .constant          => "constant"
+  | .quantifierVar     => "quantifier variable"
+  | .unresolved        => "unresolved"
+
 /-- A definition-site AST node that a reference can resolve to. -/
 inductive ResolvedNode where
   /-- A local variable declaration. -/
@@ -94,6 +127,22 @@ inductive ResolvedNode where
 
 instance : Inhabited ResolvedNode where
   default := ResolvedNode.unresolved
+
+/-- Return the constructor tag of a `ResolvedNode`. -/
+def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
+  | .var ..               => .var
+  | .parameter ..         => .parameter
+  | .staticProcedure ..   => .staticProcedure
+  | .instanceProcedure .. => .instanceProcedure
+  | .field ..             => .field
+  | .compositeType ..     => .compositeType
+  | .constrainedType ..   => .constrainedType
+  | .datatypeDefinition .. => .datatypeDefinition
+  | .datatypeConstructor .. => .datatypeConstructor
+  | .typeAlias ..         => .typeAlias
+  | .constant ..          => .constant
+  | .quantifierVar ..     => .quantifierVar
+  | .unresolved           => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
@@ -201,12 +250,20 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
     defineName iden node overrideResolutionName
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
-    Returns the identifier with its ID filled in. -/
-def resolveRef (name : Identifier) (source : Option FileRange := none) : ResolveM Identifier := do
+    Returns the identifier with its ID filled in.
+    When `expected` is provided, emits a diagnostic if the resolved node's kind is not
+    in the list of expected kinds. -/
+def resolveRef (name : Identifier) (source : Option FileRange := none)
+    (expected : Array ResolvedNodeKind := #[]) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.text with
-  | some (defId, _) =>
+  | some (defId, node) =>
     let name' := { name with uniqueId := some defId }
+    if expected.size > 0 && node.kind != .unresolved && !expected.contains node.kind then
+      let expectedStr := ", ".intercalate (expected.toList.map ResolvedNodeKind.name)
+      let diag := diagnosticFromSource (source.orElse fun _ => name.source)
+        s!"'{name}' resolves to {node.kind.name}, but expected {expectedStr}"
+      modify fun s => { s with errors := s.errors.push diag }
     return name'
   | none =>
     let diag := diagnosticFromSource (source.orElse fun _ => name.source) s!"Resolution failed: '{name}' is not defined"
@@ -270,6 +327,7 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   let val' ← match val with
   | .UserDefined ref =>
     let ref' ← resolveRef ref ty.source
+      (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
     pure (.UserDefined ref')
   | .TTypedField vt =>
     let vt' ← resolveHighType vt
@@ -385,6 +443,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
+      (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
     let args' ← args.mapM resolveStmtExpr
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
@@ -392,6 +451,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.PrimitiveOp op args')
   | .New ref =>
     let ref' ← resolveRef ref source
+      (expected := #[.compositeType, .datatypeDefinition])
     pure (.New ref')
   | .This => pure .This
   | .ReferenceEquals lhs rhs =>
@@ -409,6 +469,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
     let callee' ← resolveRef callee source
+      (expected := #[.instanceProcedure, .staticProcedure])
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
   | .Quantifier mode param trigger body =>
@@ -520,7 +581,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← defineName ct.name (.compositeType ct)
-    let extending' ← ct.extending.mapM (resolveRef · none)
+    let extending' ← ct.extending.mapM (resolveRef · none (expected := #[.compositeType]))
     let fields' ← ct.fields.mapM (resolveField ctName')
     -- Build per-type scope BEFORE resolving instance procedures, so that
     -- field references (e.g. self.field) inside methods can be resolved.
