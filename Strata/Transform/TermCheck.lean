@@ -50,19 +50,25 @@ def termProcName (name : String) : String := s!"{name}{termSuffix}"
 private def getDecreasesIdx (func : Function) : Option Nat :=
   FuncAttr.findInlineIfConstr func.attr
 
+/-- Extract the datatype name from a monomorphic type. -/
+private def dtNameOf (ty : LMonoTy) : String :=
+  match ty with
+  | .tcons n _ => n
+  | _ => ""
+
 /-- Build the `dtRank(callArg) < dtRank(callerParam)` expression. -/
 private def mkDtRankLt
     (callArg : Expression.Expr)
     (callerParam : Expression.Ident)
-    (callerDtName calleeDtName : String)
+    (callerDtTy calleeDtTy : LMonoTy)
     : Expression.Expr :=
-  let callerRankTy : LMonoTy := LMonoTy.arrow (.tcons callerDtName []) .int
-  let calleeRankTy : LMonoTy := LMonoTy.arrow (.tcons calleeDtName []) .int
+  let callerRankTy : LMonoTy := LMonoTy.arrow callerDtTy .int
+  let calleeRankTy : LMonoTy := LMonoTy.arrow calleeDtTy .int
   let callerRank : Expression.Expr :=
-    .app () (.op () (↑(dtRankFuncName callerDtName)) (.some callerRankTy))
-      (.fvar () callerParam (.some (.tcons callerDtName [])))
+    .app () (.op () (↑(dtRankFuncName (dtNameOf callerDtTy))) (.some callerRankTy))
+      (.fvar () callerParam (.some callerDtTy))
   let calleeRank : Expression.Expr :=
-    .app () (.op () (↑(dtRankFuncName calleeDtName)) (.some calleeRankTy))
+    .app () (.op () (↑(dtRankFuncName (dtNameOf calleeDtTy))) (.some calleeRankTy))
       callArg
   let ltTy : LMonoTy := LMonoTy.arrow .int (LMonoTy.arrow .int .bool)
   .app () (.app () (.op () (↑"Int.Lt") (.some ltTy)) calleeRank) callerRank
@@ -84,8 +90,8 @@ private def extractTermObligations
     (body : Expression.Expr)
     (recFuncNames : List String)
     (callerParam : Expression.Ident)
-    (callerDtName : String)
-    (funcDecreasesMap : List (String × Nat × String))
+    (callerDtTy : LMonoTy)
+    (funcDecreasesMap : List (String × Nat × LMonoTy))
     : List Expression.Expr :=
   go body []
 where
@@ -107,10 +113,10 @@ where
           | .op _ opName _ =>
             if opName.name ∈ recFuncNames then
               match funcDecreasesMap.find? (fun (n, _, _) => n == opName.name) with
-              | some (_, calleeIdx, calleeDtName) =>
+              | some (_, calleeIdx, calleeDtTy) =>
                 match args[calleeIdx]? with
                 | some callArg =>
-                  let ltExpr := mkDtRankLt callArg callerParam callerDtName calleeDtName
+                  let ltExpr := mkDtRankLt callArg callerParam callerDtTy calleeDtTy
                   [wrapImplications implications ltExpr]
                 | none => []
               | none => []
@@ -130,31 +136,51 @@ where
     subst_vars
     simp_all
 
+/-- Build a type substitution that specializes a polymorphic datatype's type
+    variables to the concrete type arguments used at a call site.
+    E.g., for `MyList` with `typeArgs = ["a"]` and concrete type `MyList int`,
+    produces `[("a", int)]`. -/
+private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
+  match concreteTy with
+  | .tcons dtName concreteArgs =>
+    if concreteArgs.isEmpty then []
+    else match tf.getType dtName with
+      | some dt => [dt.typeArgs.zip concreteArgs]
+      | none => []
+  | _ => []
+
 /-- Generate a termination-checking procedure for a single function.
     Returns `none` if the function has no recursive calls or no valid
-    decreasing parameter. -/
+    decreasing parameter. The polymorphic `dtRankAxioms` are specialized
+    to the function's concrete decreasing-parameter type before being
+    embedded as preconditions. -/
 private def mkTermCheckProc
     (func : Function)
     (recFuncNames : List String)
-    (funcDecreasesMap : List (String × Nat × String))
+    (funcDecreasesMap : List (String × Nat × LMonoTy))
     (dtRankAxioms : List (String × Expression.Expr))
+    (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
     : Option (Decl × Nat) := do
   let decrIdx ← getDecreasesIdx func
   let inputTys := func.inputs.values
   let decrTy ← inputTys[decrIdx]?
   let decrParam ← func.inputs.keys[decrIdx]?
-  let decrDtName ← match decrTy with
-    | .tcons n _ => some n
+  let _ ← match decrTy with
+    | .tcons _ _ => some ()
     | _ => none
   let body ← func.body
-  let obligations := extractTermObligations body recFuncNames decrParam decrDtName
+  let obligations := extractTermObligations body recFuncNames decrParam decrTy
     funcDecreasesMap
   if obligations.isEmpty then none
   let stmts := obligations.mapIdx fun i ob =>
     Statement.assert s!"{func.name.name}_terminates_{i}" ob md
   let paramInits := func.inputs.toList.map fun (name, ty) =>
     Statement.init name (LTy.forAll [] ty) .nondet md
+  -- Specialize polymorphic axioms to the concrete decreasing-parameter type
+  let tySubst := mkTySubst tf decrTy
+  let specializedAxioms := dtRankAxioms.map fun (name, e) =>
+    (name, e.applySubst tySubst)
   some (.proc {
     header := {
       name := ⟨termProcName func.name.name, ()⟩
@@ -163,7 +189,7 @@ private def mkTermCheckProc
       outputs := []
       noFilter := true
     }
-    spec := { preconditions := dtRankAxioms.map fun (name, e) =>
+    spec := { preconditions := specializedAxioms.map fun (name, e) =>
                  (name, { expr := e, attr := .Free }),
                postconditions := [] }
     body := paramInits ++ stmts
@@ -230,11 +256,11 @@ where
           if !func.typeArgs.isEmpty then none
           let idx ← getDecreasesIdx func
           let ty ← func.inputs.values[idx]?
-          let dtName ← match ty with
+          let _ ← match ty with
             | .tcons n _ => some n
             | _ => none
-          pure (func.name.name, idx, dtName)
-        let allDtNames := funcDecreasesMap.map (·.2.2) |>.eraseDups
+          pure (func.name.name, idx, ty)
+        let allDtNames := funcDecreasesMap.map (fun (_, _, ty) => dtNameOf ty) |>.eraseDups
         let newDtNames := allDtNames.filter (fun n => !emittedDtRank.contains n)
         let (dtRankFuncDecls, _, emittedBlockNames) :=
           newDtNames.foldl (init := ([], [], [])) fun (decls, axioms, names) dtName =>
@@ -252,7 +278,7 @@ where
         incrementStat s!"{Stats.dtRankAxiomsGenerated}" dtRankAxioms.length
         let recNames := funcs.map (·.name.name)
         let termDecls ← funcs.filterMapM fun func => do
-          match mkTermCheckProc func recNames funcDecreasesMap dtRankAxioms md with
+          match mkTermCheckProc func recNames funcDecreasesMap dtRankAxioms tf md with
           | some (decl, numAsserts) => do
             incrementStat s!"{Stats.termCheckProcsGenerated}"
             incrementStat s!"{Stats.termCheckAssertsEmitted}" numAsserts

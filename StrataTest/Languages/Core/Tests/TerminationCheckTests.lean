@@ -57,12 +57,12 @@ IntList..dtRank_0: forall __q0 : IntList ::  { IntList..dtRank(__q0) }
 IntList..dtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..dtRank(Cons(__q0, __q1)) }
   IntList..dtRank(__q1) < IntList..dtRank(Cons(__q0, __q1))
 Obligation:
-!(IntList..isNil($__xs0)) ==> IntList..dtRank(IntList..tl($__xs0)) < IntList..dtRank($__xs0)
+!(IntList..isNil(xs)) ==> IntList..dtRank(IntList..tl(xs)) < IntList..dtRank(xs)
 
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
-!(IntList..isNil($__xs1)) ==> IntList..isCons($__xs1)
+!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
 
 Label: nilLen
 Property: assert
@@ -391,7 +391,7 @@ Tree..dtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Bran
 Tree..dtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..dtRank(Chain(__q0, __q1)) }
   Tree..dtRank(__q1) < Tree..dtRank(Chain(__q0, __q1))
 Obligation:
-Tree..isBranch($__t0) ==> !(Tree..isLeaf($__t0)) ==> Tree..dtRank(Tree..left($__t0)) < Tree..dtRank($__t0)
+Tree..isBranch(t) ==> !(Tree..isLeaf(t)) ==> Tree..dtRank(Tree..left(t)) < Tree..dtRank(t)
 
 Label: treeSize_terminates_1
 Property: assert
@@ -405,7 +405,7 @@ Tree..dtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Bran
 Tree..dtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..dtRank(Chain(__q0, __q1)) }
   Tree..dtRank(__q1) < Tree..dtRank(Chain(__q0, __q1))
 Obligation:
-Tree..isBranch($__t0) ==> !(Tree..isLeaf($__t0)) ==> Tree..dtRank(Tree..right($__t0)) < Tree..dtRank($__t0)
+Tree..isBranch(t) ==> !(Tree..isLeaf(t)) ==> Tree..dtRank(Tree..right(t)) < Tree..dtRank(t)
 
 Label: treeSize_terminates_2
 Property: assert
@@ -419,22 +419,22 @@ Tree..dtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Bran
 Tree..dtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..dtRank(Chain(__q0, __q1)) }
   Tree..dtRank(__q1) < Tree..dtRank(Chain(__q0, __q1))
 Obligation:
-!(Tree..isBranch($__t0)) ==> !(Tree..isLeaf($__t0)) ==> Tree..dtRank(Tree..tail($__t0)) < Tree..dtRank($__t0)
+!(Tree..isBranch(t)) ==> !(Tree..isLeaf(t)) ==> Tree..dtRank(Tree..tail(t)) < Tree..dtRank(t)
 
 Label: treeSize_body_calls_Tree..left_0
 Property: assert
 Obligation:
-Tree..isBranch($__t1) ==> !(Tree..isLeaf($__t1)) ==> Tree..isBranch($__t1)
+Tree..isBranch(t@1) ==> !(Tree..isLeaf(t@1)) ==> Tree..isBranch(t@1)
 
 Label: treeSize_body_calls_Tree..right_1
 Property: assert
 Obligation:
-Tree..isBranch($__t1) ==> !(Tree..isLeaf($__t1)) ==> Tree..isBranch($__t1)
+Tree..isBranch(t@1) ==> !(Tree..isLeaf(t@1)) ==> Tree..isBranch(t@1)
 
 Label: treeSize_body_calls_Tree..tail_2
 Property: assert
 Obligation:
-!(Tree..isBranch($__t1)) ==> !(Tree..isLeaf($__t1)) ==> Tree..isChain($__t1)
+!(Tree..isBranch(t@1)) ==> !(Tree..isLeaf(t@1)) ==> Tree..isChain(t@1)
 
 Label: leaf
 Property: assert
@@ -499,5 +499,53 @@ Property: assert
 Result: ✅ pass -/
 #guard_msgs in
 #eval verify treeSizePgm (options := .default)
+
+---------------------------------------------------------------------
+-- Test 9: polymorphic datatype specialized in monomorphic recursive function
+-- MyList(a) instantiated as MyList int — axioms must be specialized
+---------------------------------------------------------------------
+
+def polyDtTermPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function intListLen (@[cases] xs : MyList int) : int
+{
+  if MyList..isNil(xs) then 0 else 1 + intListLen(MyList..tl(xs))
+};
+#end
+
+/-- info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: intListLen_terminates_0
+Property: assert
+Assumptions:
+MyList..dtRank_0: forall __q0 : (MyList int) ::  { MyList..dtRank(__q0) }
+  MyList..dtRank(__q0) >= 0
+MyList..dtRank_1: forall __q0 : int :: forall __q1 : (MyList int) ::  { MyList..dtRank(Cons(__q0, __q1)) }
+  MyList..dtRank(__q1) < MyList..dtRank(Cons(__q0, __q1))
+Obligation:
+!(MyList..isNil(xs)) ==> MyList..dtRank(MyList..tl(xs)) < MyList..dtRank(xs)
+
+Label: intListLen_body_calls_MyList..tl_0
+Property: assert
+Obligation:
+!(MyList..isNil(xs@1)) ==> MyList..isCons(xs@1)
+
+---
+info:
+Obligation: intListLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify polyDtTermPgm (options := .default)
 
 end Strata.TerminationCheckTest
