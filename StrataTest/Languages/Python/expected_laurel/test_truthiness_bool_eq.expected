@@ -1,0 +1,19 @@
+test_truthiness_bool_eq.py(5, 4): ✅ pass - assert(151)
+test_truthiness_bool_eq.py(8, 4): ✅ pass - assert(205)
+test_truthiness_bool_eq.py(9, 4): ✅ pass - assert(235)
+test_truthiness_bool_eq.py(12, 4): ✅ pass - assert(289)
+test_truthiness_bool_eq.py(13, 4): ✅ pass - assert(317)
+test_truthiness_bool_eq.py(14, 16): ✅ pass - Check PNeg exception
+test_truthiness_bool_eq.py(14, 4): ✅ pass - assert(344)
+test_truthiness_bool_eq.py(17, 4): ✅ pass - assert(394)
+test_truthiness_bool_eq.py(18, 4): ✅ pass - assert(423)
+test_truthiness_bool_eq.py(21, 4): ✅ pass - assert(475)
+test_truthiness_bool_eq.py(22, 4): ✅ pass - assert(504)
+test_truthiness_bool_eq.py(25, 4): ✅ pass - assert(556)
+test_truthiness_bool_eq.py(26, 4): ✅ pass - assert(585)
+test_truthiness_bool_eq.py(29, 4): ✅ pass - assert(643)
+test_truthiness_bool_eq.py(30, 4): ✅ pass - assert(673)
+test_truthiness_bool_eq.py(31, 16): ✅ pass - Check PNeg exception
+test_truthiness_bool_eq.py(31, 4): ✅ pass - assert(702)
+DETAIL: 17 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

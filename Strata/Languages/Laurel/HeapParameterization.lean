@@ -203,18 +203,18 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
   match ty with
-  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, none, #[]⟩ }] }
-  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, none, #[]⟩ }] }
-  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, none, #[]⟩ }] }
-  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, none, #[]⟩ }] }
-  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, none, #[]⟩ }] }
+  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, none⟩ }] }
+  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, none⟩ }] }
+  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, none⟩ }] }
+  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, none⟩ }] }
+  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, none⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
-        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none, #[]⟩ }] }
+        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none⟩ }] }
       else
-        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none, #[]⟩ }] }
+        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
   | .TCore name =>
-        some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none, #[]⟩ }] }
+        some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -261,14 +261,14 @@ def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : Stmt
   recurse expr valueUsed
 where
   recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
-    let ⟨expr, source, md⟩ := exprMd
+    let ⟨expr, source⟩ := exprMd
     match _h : expr with
     | .FieldSelect selectTarget fieldName => do
         let some qualifiedName := resolveQualifiedFieldName model fieldName
-          | return ⟨ .Hole, source, md ⟩
+          | return ⟨ .Hole, source ⟩
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source, md ⟩
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]
@@ -282,21 +282,21 @@ where
             let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
             let callWithHeap := ⟨ .Assign
               [mkMd (.Identifier heapVar), mkMd (.Identifier freshVar)]
-              (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩), source, md ⟩
-            return ⟨ .Block [varDecl, callWithHeap, mkMd (.Identifier freshVar)] none, source, md ⟩
+              (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source ⟩), source ⟩
+            return ⟨ .Block [varDecl, callWithHeap, mkMd (.Identifier freshVar)] none, source ⟩
           else
-            return ⟨ .Assign [mkMd (.Identifier heapVar)] (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩), source, md ⟩
+            return ⟨ .Assign [mkMd (.Identifier heapVar)] (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source ⟩), source ⟩
         else if calleeReadsHeap then
-          return ⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩
+          return ⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source ⟩
         else
-          return ⟨ .StaticCall callee args', source, md ⟩
+          return ⟨ .StaticCall callee args', source ⟩
     | .InstanceCall callTarget callee args =>
         let t ← recurse callTarget
         let args' ← args.mapM (recurse ·)
-        return ⟨ .InstanceCall t callee args', source, md ⟩
+        return ⟨ .InstanceCall t callee args', source ⟩
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
-        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', source, md ⟩
+        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', source ⟩
     | .Block stmts label =>
         let n := stmts.length
         let rec processStmts (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
@@ -309,21 +309,21 @@ where
               pure (s' :: rest')
           termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
-        return ⟨ .Block stmts' label, source, md ⟩
+        return ⟨ .Block stmts' label, source ⟩
     | .LocalVariable n ty i =>
         let i' ← match i with | some x => some <$> recurse x | none => pure none
-        return ⟨ .LocalVariable n ty i', source, md ⟩
+        return ⟨ .LocalVariable n ty i', source ⟩
     | .While c invs d b =>
         let invs' ← invs.mapM (recurse ·)
-        return ⟨ .While (← recurse c) invs' d (← recurse b false), source, md ⟩
+        return ⟨ .While (← recurse c) invs' d (← recurse b false), source ⟩
     | .Return v =>
         let v' ← match v with | some x => some <$> recurse x | none => pure none
-        return ⟨ .Return v', source, md ⟩
+        return ⟨ .Return v', source ⟩
     | .Assign targets v =>
         match targets with
-        | [⟨.FieldSelect target fieldName, _, _fieldSelectMd⟩] =>
+        | [⟨.FieldSelect target fieldName, _⟩] =>
             let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | return ⟨ .Hole, source, md ⟩
+              | return ⟨ .Hole, source ⟩
             let valTy := (model.get fieldName).getType
             let target' ← recurse target
             let v' ← recurse v
@@ -331,21 +331,21 @@ where
             recordBoxConstructor model valTy.val
             let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source, md ⟩
+              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source ⟩
             if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, source, md ⟩
+              return ⟨ .Block [heapAssign, v'] none, source ⟩
             else
               return heapAssign
         | [fieldSelectMd] =>
           let tgt' ← recurse fieldSelectMd
-          return ⟨ .Assign [tgt'] (← recurse v), source, md ⟩
+          return ⟨ .Assign [tgt'] (← recurse v), source ⟩
         | [] =>
-            return ⟨ .Assign [] (← recurse v), source, md ⟩
+            return ⟨ .Assign [] (← recurse v), source ⟩
         | tgt :: rest =>
             let tgt' ← recurse tgt
             let targets' ← rest.mapM (recurse ·)
-            return ⟨ .Assign (tgt' :: targets') (← recurse v), source, md ⟩
-    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source, md ⟩
+            return ⟨ .Assign (tgt' :: targets') (← recurse v), source ⟩
+    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source ⟩
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
       -- For == and != on Composite types, compare refs instead
@@ -356,36 +356,36 @@ where
         | .UserDefined _ =>
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
-          return ⟨ .PrimitiveOp .Eq [ref1, ref2], source, md ⟩
-        | _ => return ⟨ .PrimitiveOp op args', source, md ⟩
+          return ⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩
+        | _ => return ⟨ .PrimitiveOp op args', source ⟩
       | .Neq, [e1, _e2] =>
         let ty := (computeExprType model e1).val
         match ty with
         | .UserDefined _ =>
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
-          return ⟨ .PrimitiveOp .Neq [ref1, ref2], source, md ⟩
-        | _ => return ⟨ .PrimitiveOp op args', source, md ⟩
-      | _, _ => return ⟨ .PrimitiveOp op args', source, md ⟩
+          return ⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩
+        | _ => return ⟨ .PrimitiveOp op args', source ⟩
+      | _, _ => return ⟨ .PrimitiveOp op args', source ⟩
     | .New _ => return exprMd
-    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), source, md ⟩
+    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), source ⟩
     | .AsType t ty =>
         let t' ← recurse t valueUsed
-        let isCheck := ⟨ .IsType t' ty, source, md ⟩
-        let assertStmt := ⟨ .Assert { condition := isCheck }, source, md ⟩
-        return ⟨ .Block [assertStmt, t'] none, source, md ⟩
-    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, source, md ⟩
+        let isCheck := ⟨ .IsType t' ty, source ⟩
+        let assertStmt := ⟨ .Assert { condition := isCheck }, source ⟩
+        return ⟨ .Block [assertStmt, t'] none, source ⟩
+    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, source ⟩
     | .Quantifier mode p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Quantifier mode p trigger' (← recurse b), source, md⟩
-    | .Assigned n => return ⟨ .Assigned (← recurse n), source, md ⟩
-    | .Old v => return ⟨ .Old (← recurse v), source, md ⟩
-    | .Fresh v => return ⟨ .Fresh (← recurse v), source, md ⟩
+      return ⟨.Quantifier mode p trigger' (← recurse b), source⟩
+    | .Assigned n => return ⟨ .Assigned (← recurse n), source ⟩
+    | .Old v => return ⟨ .Old (← recurse v), source ⟩
+    | .Fresh v => return ⟨ .Fresh (← recurse v), source ⟩
     | .Assert ⟨condExpr, summary⟩ =>
-        return ⟨ .Assert { condition := ← recurse condExpr, summary }, source, md ⟩
-    | .Assume c => return ⟨ .Assume (← recurse c), source, md ⟩
-    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), source, md ⟩
-    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), source, md ⟩
+        return ⟨ .Assert { condition := ← recurse condExpr, summary }, source ⟩
+    | .Assume c => return ⟨ .Assume (← recurse c), source ⟩
+    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), source ⟩
+    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), source ⟩
     | _ => return exprMd
     termination_by sizeOf exprMd
 
@@ -398,8 +398,8 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   if writesHeap then
     -- This procedure writes the heap - add $heap_in as input and $heap as output
     -- At the start, assign $heap_in to $heap, then use $heap throughout
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none, #[]⟩ }
-    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none, #[]⟩ }
+    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none⟩ }
+    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
 
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
@@ -438,7 +438,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
 
   else if readsHeap then
     -- This procedure only reads the heap - add $heap as input only
-    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none, #[]⟩ }
+    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
     let inputs' := heapParam :: proc.inputs
 
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
