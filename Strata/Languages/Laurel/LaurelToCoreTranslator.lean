@@ -430,6 +430,9 @@ def translateStmt (stmt : StmtExprMd)
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
+          | .Hole _ _ =>
+              -- Hole RHS: havoc the target (unmodeled call side-effect).
+              return [Core.Statement.havoc ident md]
           | _ =>
               let coreExpr ← translateExpr value
               return [Core.Statement.set ident coreExpr md]
