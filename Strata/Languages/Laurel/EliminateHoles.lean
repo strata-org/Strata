@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+public import Strata.Util.Statistics
 
 /-!
 # Deterministic Hole Elimination
@@ -25,8 +26,7 @@ namespace Laurel
 
 public section
 
-private def emptyMd : Imperative.MetaData Core.Expression := #[]
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
+private def bare (v : StmtExpr) : StmtExprMd := { val := v, source := none }
 
 structure ElimHoleState where
   counter : Nat := 0
@@ -59,13 +59,19 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
 private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr.val with
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Unknown, expr.md⟩
+  | .Hole true none => mkHoleCall { val := .Unknown, source := expr.source }
   | .Hole false _ => return expr -- Non-deterministic holes are preserved
   | _ => return expr
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   modify fun s => { s with currentInputs := proc.inputs }
   mapProcedureBodiesM (mapStmtExprM elimHoleNode) proc
+
+inductive ElimHoleStats where
+  /-- Number of deterministic holes replaced with calls to uninterpreted functions. -/
+  | holesEliminated
+
+#derive_prefixed_toString ElimHoleStats "EliminateHoles"
 
 /--
 Replace every deterministic `.Hole` in the program with a call to a freshly
@@ -75,10 +81,12 @@ After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/
-def eliminateHoles (program : Program) : Program :=
+def eliminateHoles (program : Program) : Program × Statistics :=
   let initState : ElimHoleState := {}
   let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
-  { program with staticProcedures := finalState.generatedFunctions ++ procs }
+  let stats := ({} : Statistics)
+    |>.increment s!"{ElimHoleStats.holesEliminated}" finalState.counter
+  ({ program with staticProcedures := finalState.generatedFunctions ++ procs }, stats)
 
 end -- public section
 end Laurel

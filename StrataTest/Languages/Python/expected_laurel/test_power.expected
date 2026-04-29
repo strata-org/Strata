@@ -1,19 +1,18 @@
 test_power.py(3, 13): ✅ pass - Check PPow exception
-test_power.py(4, 4): ✅ pass - 8 ** 2 should be 64
+test_power.py(3, 4): ✅ pass - assert(45)
 test_power.py(4, 4): ✅ pass - 8 ** 2 should be 64
 test_power.py(6, 13): ✅ pass - Check PPow exception
-test_power.py(7, 4): ✅ pass - 2 ** 10 should be 1024
+test_power.py(6, 4): ✅ pass - assert(108)
 test_power.py(7, 4): ✅ pass - 2 ** 10 should be 1024
 test_power.py(10, 13): ✅ pass - Check PPow exception
-test_power.py(11, 4): ✅ pass - True ** 5 should be 1
+test_power.py(10, 4): ✅ pass - assert(211)
 test_power.py(11, 4): ✅ pass - True ** 5 should be 1
 test_power.py(13, 13): ✅ pass - Check PPow exception
-test_power.py(14, 4): ✅ pass - False ** 3 should be 0
+test_power.py(13, 4): ✅ pass - assert(278)
 test_power.py(14, 4): ✅ pass - False ** 3 should be 0
 test_power.py(17, 15): ✅ pass - Check PPow exception
+test_power.py(17, 4): ✅ pass - assert(417)
 test_power.py(18, 11): ✅ pass - Check PGt exception
-test_power.py(18, 4): ✅ pass - 2 ** -1 should be positive
 test_power.py(18, 4): ❓ unknown - 2 ** -1 should be positive
-test_power.py(20, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 16 passed, 0 failed, 1 inconclusive
+DETAIL: 15 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

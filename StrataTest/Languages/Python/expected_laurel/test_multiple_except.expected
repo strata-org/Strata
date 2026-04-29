@@ -1,8 +1,5 @@
-test_multiple_except.py(8, 4): ✅ pass - except as should have caught exception
 test_multiple_except.py(8, 4): ❓ unknown - except as should have caught exception
-test_multiple_except.py(21, 4): ✅ pass - bare raise should have re-raised
 test_multiple_except.py(21, 4): ❓ unknown - bare raise should have re-raised
 test_multiple_except.py(31, 4): ✅ pass - x should be set from try body
-test_multiple_except.py(31, 4): ✅ pass - x should be set from try body
-DETAIL: 4 passed, 0 failed, 2 inconclusive
+DETAIL: 1 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

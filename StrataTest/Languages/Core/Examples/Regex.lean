@@ -30,7 +30,7 @@ function ok_chars_regex () : regex {
         1, 10)
 }
 
-procedure main() returns () {
+procedure main() {
 
     assert [hello_dot_ends_with_period]:    (!(str.in.re("hello.", cannot_end_with_period())));
     assert [dot_ends_with_period]:          (!(str.in.re(".",      cannot_end_with_period())));
@@ -148,7 +148,7 @@ function bad_re_loop (n : int) : regex {
     re.loop(re.range("a", "z"), 1, n)
 }
 
-procedure main(n : int) returns () {
+procedure main(n : int) {
 
     var n1 : int;
     n1 := 1;
@@ -171,60 +171,12 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re("0123456789a", bad_re_loop($__n0)))
+!(str.in.re("0123456789a", bad_re_loop(n@1)))
 
 Label: assert_1
 Property: assert
 Obligation:
 str.in.re("a", bad_re_loop(1))
-
-
-
-Result: Obligation: assert_0
-Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
-Original expression: re.loop(re.range("a", "z"), 1, bvar!0)
--- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0
-Context: Global scope:
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-function bad_re_loop (n : int) : regex {
-  re.loop(re.range("a", "z"), 1, n)
-}
-procedure main (n : int) returns ()
-{
-  var n1 : int;
-  n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
-  assert [assert_1]: str.in.re("a", bad_re_loop(1));
-  };
-
-
-
-Result: Obligation: assert_1
-Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
-Original expression: re.loop(re.range("a", "z"), 1, bvar!0)
--- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0
-Context: Global scope:
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-function bad_re_loop (n : int) : regex {
-  re.loop(re.range("a", "z"), 1, n)
-}
-procedure main (n : int) returns ()
-{
-  var n1 : int;
-  n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
-  assert [assert_1]: str.in.re("a", bad_re_loop(1));
-  };
 
 ---
 info:
@@ -251,7 +203,7 @@ def regexPgm3 :=
 #strata
 program Core;
 
-procedure main(n : int) returns () {
+procedure main(n : int) {
 
     var s : string;
     assert (!(str.in.re(s, re.none())));
@@ -267,7 +219,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re($__s1, re.none()))
+!(str.in.re(s, re.none()))
 
 ---
 info:

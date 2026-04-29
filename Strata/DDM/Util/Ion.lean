@@ -12,7 +12,6 @@ public import Strata.DDM.Util.Ion.SymbolTable
 
 import all Strata.DDM.Util.ByteArray
 import all Strata.DDM.Util.Fin
-import Strata.DDM.Util.Ion.Deserialize
 import Strata.DDM.Util.Ion.JSON
 
 public section
@@ -60,7 +59,7 @@ def ofLocalSymbolTable (v : Ion SymbolId) : Except (Position × String) SymbolTa
   let throwAt {α : Type} p s : Except _ α := throw (p, s)
   let .annotation as s := v.app
     | throwAt .root "Expected annotation."
-  let .isTrue asz := inferInstanceAs (Decidable (as.size = 1))
+  let .isTrue asz := (inferInstance : Decidable (as.size = 1))
     | throwAt .root "Expected single element"
   let a := as[0]
   if a ≠ SymbolId.ionsymboltable then

@@ -694,24 +694,13 @@ private theorem getLFuncCall_go_substFvars
 
 ---------------------------------------------------------------------
 -- Helper: callOfLFunc decomposes via getLFuncCall with an .op head.
-
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem callOfLFunc_getLFuncCall
+private theorem callOfLFunc_getLFuncCall_op
     {F : @Factory Tbase} {e : LExpr Tbase.mono}
     {op_expr : LExpr Tbase.mono} {args : List (LExpr Tbase.mono)} {lfunc : LFunc Tbase}
     (h : F.callOfLFunc e = some (op_expr, args, lfunc)) :
-    getLFuncCall e = (op_expr, args) ∧ ∃ m name ty, op_expr = .op m name ty := by
-  -- Follow the pattern from callOfLFunc_smaller
-  simp [Factory.callOfLFunc] at h
-  cases h_lfc : getLFuncCall e with | mk op' args' =>
-  simp only [h_lfc] at h
-  cases op' <;> simp at h
-  rename_i m_op name_op ty_op
-  split at h
-  · simp at h
-  · split at h
-    · simp at h; obtain ⟨rfl, rfl, _⟩ := h; exact ⟨rfl, _, _, _, rfl⟩
-    · simp at h
+    getLFuncCall e = (op_expr, args) ∧ ∃ m name ty, op_expr = .op m name ty :=
+  ⟨callOfLFunc_getLFuncCall h, Factory.callOfLFunc_getElem? h |>.elim fun m ⟨name, ty, h_eq, _⟩ => ⟨m, name, ty, h_eq⟩⟩
 
 ---------------------------------------------------------------------
 -- Step args within the actual expression structure from getLFuncCall.go.
@@ -1391,7 +1380,7 @@ private theorem eval_StepStar_factory_terminal
       StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
       e'.eraseMetadata =
         (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ))).eraseMetadata := by
-  obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall h_call
+  obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
   -- Per-arg IH: e'_i is what arg_i steps to, with e'_i.eraseMetadata = (eval arg_i).eraseMetadata
   let stepped_args := args.map (fun a => (ih a).choose)
   have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
@@ -2472,20 +2461,14 @@ private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
       else match Constraints.unify allCs SubstInfo.empty with
         | .ok s => some s.subst
         | .error _ => none
-  -- Show computeTypeSubst factors through computePure
-  have h_factor : ∀ (e : LExpr T.mono) (as : List (LExpr T.mono)),
-      LFunc.computeTypeSubst fn e as =
-      computePure (opTyField e)
-        ((as.zip fn.inputs.values).filterMap
-          (fun (arg, formal) => arg.typeOf.map (·, formal))) := by
-    intro e as
-    simp only [LFunc.computeTypeSubst, computePure, opTyField]
-    split
-    · rfl
-    · cases e with
-      | op m o ty => cases ty <;> rfl
-      | _ => rfl
-  rw [h_factor, h_factor, h_opTyField, h_argC]
+  -- opTypeSubst only depends on the type annotation of the callee
+  have h_opTS : fn.opTypeSubst op₁ = fn.opTypeSubst op₂ := by
+    simp only [LFunc.opTypeSubst]
+    cases op₁ <;> cases op₂ <;>
+      simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_op ⊢
+    rename_i ty
+    cases ty <;> grind
+  simp only [LFunc.computeTypeSubst, h_opTS, h_argC]
 
 ---------------------------------------------------------------------
 
@@ -2868,7 +2851,7 @@ private theorem eval_StepStar_factory_ceval
     ∃ (e' : LExpr Tbase.mono),
       StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
       e'.eraseMetadata = (LExpr.eval n σ e'_ceval).eraseMetadata := by
-  obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall h_call
+  obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
 
   let stepped_args := args.map (fun a => (ih a).choose)
   have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
@@ -2985,7 +2968,7 @@ theorem eval_StepStar
           split
           · -- computeTypeSubst = some tySubst
             rename_i tySubst h_tySubst
-            obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall h_call
+            obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
             let stepped_args := args.map (fun a => (ih a).choose)
             have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
             have h_per_step : ∀ i (hi : i < args.length),

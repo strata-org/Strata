@@ -113,66 +113,124 @@ spec
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
+info:
+
+[DEBUG] Boole program:
+ type Array := Map int int;
+ var S : Array;
+ var n : int;
+ var top : int;
+ procedure StackInit (cap : int) returns ()
+spec {
+  requires cap >= 0;
+  modifies n;
+  modifies top;
+  ensures n == cap;
+  ensures top == 0;
+  } {
+  n := cap;
+  top := 0;
+};
+ procedure StackEmpty () returns (b : bool)
+spec {
+  ensures b ==> top == 0;
+  ensures top == 0 ==> b;
+  } {
+  if (top == 0) {
+    b := true;
+  } else {
+    b := false;
+  }
+};
+ procedure Push (x : int) returns ()
+spec {
+  requires top < n;
+  modifies S;
+  modifies top;
+  ensures top == old top + 1;
+  ensures S[top] == x;
+  ensures ∀ i : int :: 1 <= i && i <= old top ==> S[i] == old (S[i]);
+  } {
+  top := top + 1;
+  S := S[top:=x];
+};
+ procedure Pop () returns (x : int)
+spec {
+  requires top > 0;
+  modifies top;
+  ensures top == old top - 1;
+  ensures x == old (S[old top]);
+  } {
+  x := S[top];
+  top := top - 1;
+};
+
+[Strata.Core] Type checking succeeded.
 
 
 VCs:
 Label: StackInit_ensures_1_1066
 Property: assert
 Assumptions:
-StackInit_requires_0_1015: $__cap2 >= 0
+StackInit_requires_0_1015: cap@1 >= 0
 Obligation:
 true
 
 Label: StackInit_ensures_2_1086
 Property: assert
 Assumptions:
-StackInit_requires_0_1015: $__cap2 >= 0
+StackInit_requires_0_1015: cap@1 >= 0
 Obligation:
 true
 
 Label: StackEmpty_ensures_3_1205
 Property: assert
+Assumptions:
+<label_ite_cond_true: top == 0>: if top@3 == 0 then top@3 == 0 else true
+<label_ite_cond_false: !(top == 0)>: if if top@3 == 0 then false else true then if top@3 == 0 then false else true else true
 Obligation:
-true
+if top@3 == 0 then true else false ==> top@3 == 0
 
 Label: StackEmpty_ensures_4_1233
 Property: assert
+Assumptions:
+<label_ite_cond_true: top == 0>: if top@3 == 0 then top@3 == 0 else true
+<label_ite_cond_false: !(top == 0)>: if if top@3 == 0 then false else true then if top@3 == 0 then false else true else true
 Obligation:
-true
+top@3 == 0 ==> if top@3 == 0 then true else false
 
 Label: Push_ensures_6_1494
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: top@4 < n@4
 Obligation:
 true
 
 Label: Push_ensures_7_1525
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: top@4 < n@4
 Obligation:
-($__S4[$__top5 + 1:=$__x6])[$__top5 + 1] == $__x6
+(S@3[top@4 + 1:=x@1])[top@4 + 1] == x@1
 
 Label: Push_ensures_8_1583
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: top@4 < n@4
 Obligation:
-forall __q0 : int :: 1 <= __q0 && __q0 <= $__top5 ==> ($__S4[$__top5 + 1:=$__x6])[__q0] == $__S4[__q0]
+forall __q0 : int :: 1 <= __q0 && __q0 <= top@4 ==> (S@3[top@4 + 1:=x@1])[__q0] == S@3[__q0]
 
 Label: Pop_ensures_10_1840
 Property: assert
 Assumptions:
-Pop_requires_9_1803: $__top7 > 0
+Pop_requires_9_1803: top@6 > 0
 Obligation:
 true
 
 Label: Pop_ensures_11_1871
 Property: assert
 Assumptions:
-Pop_requires_9_1803: $__top7 > 0
+Pop_requires_9_1803: top@6 > 0
 Obligation:
 true
 

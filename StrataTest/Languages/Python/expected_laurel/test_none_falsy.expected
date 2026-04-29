@@ -1,5 +1,4 @@
-test_none_falsy.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_none_falsy.py(3, 4): ✅ pass - assert(40)
 test_none_falsy.py(6, 4): ✅ pass - None is falsy
-test_none_falsy.py(6, 4): ✅ pass - None is falsy
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -257,7 +257,7 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     let (_, prog) ← (Core.procedureInliningPipelinePhase opts).transform program
     return prog
   | .loopElim =>
-    pure (Core.loopElim program)
+    pure (Core.loopElim program).fst
   | .callElim =>
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
     return prog
@@ -289,7 +289,7 @@ Transform a Core program to replace each loop with assertions and assumptions ab
 its invariants.
 -/
 def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  Core.loopElim p
+  (Core.loopElim p).fst
 
 /--
 Transform a Core program to replace each procedure call with assertions and
@@ -349,7 +349,7 @@ def Laurel.verifyProgram
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Option Core.VCResults × List DiagnosticModel) :=
-  Strata.Laurel.verifyToVcResults program options
+  Strata.Laurel.verifyToVcResults program { verifyOptions := options }
 
 /--
 Analyze a Laurel program and return structured diagnostic models
@@ -359,7 +359,7 @@ def Laurel.analyzeToDiagnosticModels
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Array DiagnosticModel) :=
-  Strata.Laurel.verifyToDiagnosticModels program options
+  Strata.Laurel.verifyToDiagnosticModels program { verifyOptions := options }
 
 /-! ### Python direct-to-Core pipeline -/
 

@@ -1,6 +1,4 @@
 test_class_no_init.py(5, 4): ✅ pass - callElimAssert_requires_2
-test_class_no_init.py(6, 4): ✅ pass - class without __init__
 test_class_no_init.py(6, 4): ❓ unknown - class without __init__
-test_class_no_init.py(4, 0): ✅ pass - postcondition
-DETAIL: 3 passed, 0 failed, 1 inconclusive
+DETAIL: 1 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

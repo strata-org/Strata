@@ -11,6 +11,7 @@ public import Strata.DDM.AST
 public import Strata.Languages.Core.DDMTransform.Grammar
 
 public import Strata.Languages.Core.Core
+public import Strata.Languages.Core.CoreOp
 public import Strata.Languages.Python.PythonDialect
 public import Strata.Languages.Python.FunctionSignatures
 import Strata.Languages.Python.Regex.ReToCore
@@ -140,7 +141,7 @@ def handleAdd (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Ex
     let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
     match l_ty, r_ty with
     | some (_, .tcons "int" []), some (_, .tcons "int" []) =>
-      .app () (.app () (.op () "Int.Add" mty[int → (int → int)]) lhs) rhs
+      .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Add⟩) (some mty[int → (int → int)])) lhs) rhs
     | some (_, .tcons "string" []), some (_, .tcons "string" []) =>
       .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
     | _, _ => panic! s!"Unsupported types for +. Exprs: {lhs} and {rhs}"
@@ -154,7 +155,7 @@ def handleSub (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Ex
     let r_ty := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
     match l_ty, r_ty with
     | some (_, .tcons "int" []), some (_, .tcons "int" []) =>
-      .app () (.app () (.op () "Int.Sub" mty[int → (int → int)]) lhs) rhs
+      .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Sub⟩) (some mty[int → (int → int)])) lhs) rhs
     | some (_, .tcons "Datetime" []), some (_, .tcons "int" []) =>
       .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
     | some (_, .tcons "Datetime" []), some (_, .tcons "Timedelta" []) =>
@@ -172,13 +173,13 @@ def handleMult (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.E
     match l, r with
     | .some lty, .some rty =>
       match lty.snd, rty.snd with
-      | .tcons "int" [], .tcons "int" [] => .app () (.app () (.op () "Int.Mul" mty[int → (int → int)]) lhs) rhs
+      | .tcons "int" [], .tcons "int" [] => .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Mul⟩) (some mty[int → (int → int)])) lhs) rhs
       | _, _ => panic! s!"Unsupported types for fvar *. Types: {lty} and {rty}"
     | _, _ => panic! s!"Missing needed type information for *. Exprs: {lhs} and {rhs}"
   | _ , _ => panic! s!"Unsupported args for * . Got: {lhs} and {rhs}"
 
 def handleFloorDiv (_translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs) rhs
+  .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Div⟩) (some mty[int → (int → int)])) lhs) rhs
 
 def handleNot (arg: Core.Expression.Expr) : Core.Expression.Expr :=
   let ty : Lambda.LMonoTy := (.tcons "ListStr" [])
@@ -194,8 +195,8 @@ def handleLt (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Exp
     match l_ty, r_ty with
     | some (_, .tcons "Datetime" []), some (_, .tcons "Datetime" []) =>
       .app () (.app () (.op () "Datetime_lt" none) lhs) rhs
-    | _, _ => .app () (.app () (.op () "Int.Lt" mty[int → (int → bool)]) lhs) rhs
-  | _, _ => .app () (.app () (.op () "Int.Lt" mty[int → (int → bool)]) lhs) rhs
+    | _, _ => .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Lt⟩) (some mty[int → (int → bool)])) lhs) rhs
+  | _, _ => .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Lt⟩) (some mty[int → (int → bool)])) lhs) rhs
 
 def handleLtE (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
   match lhs, rhs with
@@ -206,15 +207,15 @@ def handleLtE (translation_ctx: TranslationContext) (lhs rhs: Core.Expression.Ex
     | some (_, .tcons "Datetime" []), some (_, .tcons "Datetime" []) =>
       let eq := (.eq () lhs rhs)
       let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
-      (.app () (.app () (.op () "Bool.Or" none) eq) lt)
-    | _, _ => .app () (.app () (.op () "Int.Le" mty[int → (int → bool)]) lhs) rhs
-  | _, _ => .app () (.app () (.op () "Int.Le" mty[int → (int → bool)]) lhs) rhs
+      (.app () (.app () (Core.coreOpExpr (.bool .Or)) eq) lt)
+    | _, _ => .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Le⟩) (some mty[int → (int → bool)])) lhs) rhs
+  | _, _ => .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Le⟩) (some mty[int → (int → bool)])) lhs) rhs
 
 def handleGt (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () (.op () "Int.Gt" mty[int → (int → bool)]) lhs) rhs
+  .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Gt⟩) (some mty[int → (int → bool)])) lhs) rhs
 
 def handleGtE (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () (.op () "Int.Ge" mty[int → (int → bool)]) lhs) rhs
+  .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Ge⟩) (some mty[int → (int → bool)])) lhs) rhs
 
 structure SubstitutionRecord where
   pyExpr : Python.expr SourceRange
@@ -510,7 +511,7 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
         | .some p =>
           if translation_ctx.expectedType == some (.tcons "bool" []) && p.snd == (.tcons "DictStrAny" []) then
             let a := .fvar () n.val none
-            let e := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) a) (.intConst () 0))
+            let e := .app () (Core.coreOpExpr (.bool .Not)) (.eq () (.app () (.op () "dict_str_any_length" none) a) (.intConst () 0))
             {stmts := [], expr := e}
           else
             {stmts := [], expr := .fvar () n.val none}
@@ -595,7 +596,7 @@ partial def initTmpParam (translation_ctx: TranslationContext) (p: Python.expr S
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (.det (.strConst () "")) md), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")] md]
+      | "json_dumps" => [(.init p.snd t[string] (.det (.strConst () "")) md), .call "json_dumps" ([.inArg (.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), .inArg (Strata.Python.TypeStrToCoreExpr "IntOrNone")] ++ [.outArg p.snd, .outArg "maybe_except"]) md]
       | "str" =>
         assert! args.val.size == 1
         [(.init p.snd t[string] (.det (.strConst () "")) md), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr)) md]
@@ -655,7 +656,7 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
   let res := argsAndKWordsToCanonicalList translation_ctx fname args.val kwords.val substitution_records
   args_calls_to_tmps.toList.flatMap (initTmpParam translation_ctx) ++
     kwords_calls_to_tmps.toList.flatMap (initTmpParam translation_ctx) ++
-    res.snd ++ [.call lhs fname res.fst md]
+    res.snd ++ [.call fname (res.fst.map .inArg ++ lhs.map .outArg) md]
 
 partial def handleComprehension (translation_ctx: TranslationContext) (lhs: Python.expr SourceRange) (gen: Array (Python.comprehension SourceRange)) : List Core.Statement :=
   assert! gen.size == 1
@@ -663,7 +664,7 @@ partial def handleComprehension (translation_ctx: TranslationContext) (lhs: Pyth
   | .mk_comprehension sr _ itr _ _ =>
     let md := sourceRangeToMetaData translation_ctx.filePath sr
     let res := PyExprToCore default itr
-    let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
+    let guard := .app () (Core.coreOpExpr (.bool .Not)) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
     let then_ss: List Core.Statement := [.havoc (PyExprToString lhs) md]
     let else_ss: List Core.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none) md]
     res.stmts ++ [.ite (.det guard) then_ss else_ss md]
@@ -673,7 +674,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
   let md := sourceRangeToMetaData translation_ctx.filePath s.toAst.ann
   let non_throw : List Core.Statement × Option (String × Lambda.LMonoTy) := match s with
     | .Import _ names =>
-      ([.call [] "import" [PyListStrToCore names.val] md], none)
+      ([.call "import" [.inArg (PyListStrToCore names.val)] md], none)
     | .ImportFrom _ s names i =>
       let n := match s.val with
       | some s => [strToCoreExpr s.val]
@@ -681,7 +682,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       let i := match i.val with
       | some i => [intToCoreExpr (PyIntToInt i)]
       | none => []
-      ([.call [] "importFrom" (n ++ [PyListStrToCore names.val] ++ i) md], none)
+      ([.call "importFrom" ((n ++ [PyListStrToCore names.val] ++ i).map .inArg) md], none)
     | .Expr _ (.Call _ func args kwords) =>
       let fname := PyExprToString func
       if callCanThrow translation_ctx.func_infos s then
@@ -726,7 +727,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       | .none => ([.exit (some jmp_targets[0]!) md], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst () 0))
+      let guard := .app () (Core.coreOpExpr (.bool .Not)) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst () 0))
       match tgt with
       | .Name _ n _ =>
         let assign_tgt := [(.init n.val dictStrAnyType (.det dummyDictStrAny) md)]
@@ -735,7 +736,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       -- TODO: missing havoc
     | .While _ test body _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default test).expr) (.intConst () 0))
+      let guard := .app () (Core.coreOpExpr (.bool .Not)) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default test).expr) (.intConst () 0))
       ([.ite (.det guard) (ArrPyStmtToCore translation_ctx body.val).fst [] md], none)
       -- TODO: missing havoc
     | .Assert sr a _ =>
@@ -756,7 +757,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
         | .Name _ n _ =>
           let lhs := PyExprToCore translation_ctx lhs
           let rhs := PyExprToCore translation_ctx rhs
-          let new_lhs := .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs.expr) rhs.expr
+          let new_lhs := .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Div⟩) (some mty[int → (int → int)])) lhs.expr) rhs.expr
           (rhs.stmts ++ [.set n.val new_lhs md], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | _ => panic! s!"Unsupported AugAssign op: {repr op}"
@@ -879,8 +880,6 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (.det (.strConst () "__main__")) .empty)]
-
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)
                (acc : TranslationContext) :
@@ -907,7 +906,7 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
-  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++
+  {decls := class_ty_decls ++ func_defs ++ class_defs ++
     [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos) .empty]}
 
 end -- public section

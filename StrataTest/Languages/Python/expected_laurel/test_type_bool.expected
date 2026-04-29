@@ -1,4 +1,5 @@
+test_type_bool.py(2, 4): ✅ pass - assert(26)
+test_type_bool.py(3, 4): ✅ pass - assert(45)
 test_type_bool.py(4, 4): ✅ pass - bool type annotation
-test_type_bool.py(4, 4): ✅ pass - bool type annotation
-DETAIL: 2 passed, 0 failed, 0 inconclusive
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

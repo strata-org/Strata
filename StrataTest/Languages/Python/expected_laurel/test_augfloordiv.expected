@@ -1,7 +1,7 @@
-test_augfloordiv.py(3, 4): ✅ pass - Check PFloorDiv exception
+test_augfloordiv.py(2, 4): ✅ pass - assert(28)
+test_augfloordiv.py(3, 4): ✅ pass - assert_assert(44)_calls_PFloorDiv_0
 test_augfloordiv.py(3, 4): ✅ pass - Check PFloorDiv exception
 test_augfloordiv.py(3, 4): ✅ pass - set_x_calls_PFloorDiv_0
-test_augfloordiv.py(4, 4): ✅ pass - augmented floordiv
 test_augfloordiv.py(4, 4): ✅ pass - augmented floordiv
 DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

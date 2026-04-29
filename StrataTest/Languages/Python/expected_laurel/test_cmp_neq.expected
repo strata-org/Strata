@@ -1,7 +1,7 @@
-test_cmp_neq.py(4, 4): ✅ pass - not equal
+test_cmp_neq.py(2, 4): ✅ pass - assert(24)
+test_cmp_neq.py(3, 4): ✅ pass - assert(39)
 test_cmp_neq.py(4, 4): ✅ pass - not equal
 test_cmp_neq.py(5, 11): ✅ pass - Check PNot exception
-test_cmp_neq.py(5, 4): ✅ pass - equal
 test_cmp_neq.py(5, 4): ✅ pass - equal
 DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

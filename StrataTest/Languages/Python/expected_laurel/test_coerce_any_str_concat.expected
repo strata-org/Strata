@@ -1,5 +1,5 @@
+test_coerce_any_str_concat.py(5, 4): ✅ pass - assert(83)
 test_coerce_any_str_concat.py(6, 8): ✅ pass - Check PAdd exception
-test_coerce_any_str_concat.py(7, 4): ✅ pass - Any str concat
 test_coerce_any_str_concat.py(7, 4): ✅ pass - Any str concat
 DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

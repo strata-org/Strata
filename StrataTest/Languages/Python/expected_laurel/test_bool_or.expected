@@ -1,12 +1,8 @@
+test_bool_or.py(2, 4): ✅ pass - assert(24)
+test_bool_or.py(3, 4): ✅ pass - assert(43)
 test_bool_or.py(4, 11): ✅ pass - Check POr exception
-test_bool_or.py(4, 11): ✅ pass - Check POr exception
-test_bool_or.py(4, 4): ✅ pass - true or false
-test_bool_or.py(4, 4): ✅ pass - true or false
 test_bool_or.py(4, 4): ✅ pass - true or false
 test_bool_or.py(5, 11): ✅ pass - Check PNot exception
-test_bool_or.py(5, 11): ✅ pass - Check PNot exception
 test_bool_or.py(5, 4): ✅ pass - false or false
-test_bool_or.py(5, 4): ✅ pass - false or false
-test_bool_or.py(5, 4): ✅ pass - false or false
-DETAIL: 10 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

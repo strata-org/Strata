@@ -1,18 +1,16 @@
-test_is_none.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_is_none.py(2, 4): ✅ pass - assert(24)
+test_is_none.py(3, 4): ✅ pass - assert(39)
 test_is_none.py(6, 4): ✅ pass - x is not None
-test_is_none.py(6, 4): ✅ pass - x is not None
-test_is_none.py(12, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_is_none.py(14, 4): ✅ pass - y is not None
+test_is_none.py(10, 4): ✅ pass - assert(158)
+test_is_none.py(11, 4): ✅ pass - assert(173)
 test_is_none.py(14, 4): ✅ pass - y is not None
 test_is_none.py(19, 4): ✅ pass - z should be None
-test_is_none.py(19, 4): ✅ pass - z should be None
+test_is_none.py(22, 4): ✅ pass - assert(386)
 test_is_none.py(23, 4): ✅ pass - w should not be None
-test_is_none.py(23, 4): ✅ pass - w should not be None
+test_is_none.py(26, 4): ✅ pass - assert(488)
 test_is_none.py(27, 11): ✅ pass - Check PNot exception
-test_is_none.py(27, 4): ✅ pass - int is not None
 test_is_none.py(27, 4): ✅ pass - int is not None
 test_is_none.py(31, 11): ✅ pass - Check PNot exception
 test_is_none.py(31, 4): ✅ pass - None is not 'not None'
-test_is_none.py(31, 4): ✅ pass - None is not 'not None'
-DETAIL: 16 passed, 0 failed, 0 inconclusive
+DETAIL: 14 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

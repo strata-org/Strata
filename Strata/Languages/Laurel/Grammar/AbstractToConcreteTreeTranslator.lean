@@ -77,7 +77,8 @@ private def operationName : Operation → String
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
 -- Internal-only: public because `partial` prevents `private` in this section
-partial def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
+partial def stmtExprToArg (s : StmtExprMd) : Arg :=
+  stmtExprValToArg s.val
 where
   stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
@@ -128,7 +129,10 @@ where
     | .Return (some value) => laurelOp "return" #[stmtExprToArg value]
     | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
     | .Exit label => laurelOp "exit" #[ident label]
-    | .Assert cond => laurelOp "assert" #[stmtExprToArg cond, optionArg none]
+    | .Assert cond =>
+      let errOpt := optionArg (cond.summary.map fun msg =>
+        laurelOp "errorSummary" #[.strlit sr msg])
+      laurelOp "assert" #[stmtExprToArg cond.condition, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
@@ -145,12 +149,10 @@ where
       let calleeExpr := laurelOp "fieldAccess" #[stmtExprToArg target, ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp "call" #[calleeExpr, commaSep argsArr]
-    | .Forall param trigger body =>
+    | .Quantifier mode param trigger body =>
       let trigOpt := optionArg (trigger.map fun t => laurelOp "trigger" #[stmtExprToArg t])
-      laurelOp "forallExpr" #[ident param.name.text, highTypeToArg param.type, trigOpt, stmtExprToArg body]
-    | .Exists param trigger body =>
-      let trigOpt := optionArg (trigger.map fun t => laurelOp "trigger" #[stmtExprToArg t])
-      laurelOp "existsExpr" #[ident param.name.text, highTypeToArg param.type, trigOpt, stmtExprToArg body]
+      let opName := match mode with | .Forall => "forallExpr" | .Exists => "existsExpr"
+      laurelOp opName #[ident param.name.text, highTypeToArg param.type, trigOpt, stmtExprToArg body]
     | .ReferenceEquals lhs rhs =>
       laurelOp "eq" #[stmtExprToArg lhs, stmtExprToArg rhs]
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
@@ -176,15 +178,15 @@ private def fieldToArg (f : Field) : Arg :=
   else
     laurelOp "immutableField" #[ident f.name.text, highTypeToArg f.type]
 
-private def requiresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.md.getPropertySummary.map fun msg =>
+private def requiresClauseToArg (c : Condition) : Arg :=
+  let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "requiresClause" #[stmtExprToArg e, errOpt]
+  laurelOp "requiresClause" #[stmtExprToArg c.condition, errOpt]
 
-private def ensuresClauseToArg (e : StmtExprMd) : Arg :=
-  let errOpt := optionArg (e.md.getPropertySummary.map fun msg =>
+private def ensuresClauseToArg (c : Condition) : Arg :=
+  let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "ensuresClause" #[stmtExprToArg e, errOpt]
+  laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
 private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
   let refs := modifies.map stmtExprToArg |>.toArray
@@ -212,19 +214,19 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
-  let (ensuresArgs, modifiesArgs, bodyArg) := match proc.body with
+  let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      (#[], #[], optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else #[modifiesClauseToArg modifies]
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
-      (ens, mods, body)
+      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg mods])), body)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      (ens, #[], optionArg none)
+      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg #[]])), optionArg none)
     | .External =>
-      (#[], #[], optionArg (some (laurelOp "externalBody")))
+      (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr
     name := { dialect := "Laurel", name := opName }
     args := #[
@@ -234,8 +236,7 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       returnParamsArg,
       seqArg requiresArgs,
       invokeOnArg,
-      seqArg ensuresArgs,
-      seqArg modifiesArgs,
+      opaqueSpecArg,
       bodyArg
     ] }
 
@@ -294,6 +295,8 @@ private def typeDefinitionToOp : TypeDefinition → Strata.Operation
   | .Composite ct => compositeToOp ct
   | .Constrained ct => constrainedTypeToOp ct
   | .Datatype dt => datatypeToOp dt
+  -- Placeholder: aliases are eliminated before CST serialization
+  | .Alias _ => { ann := sr, name := { dialect := "Laurel", name := "typeAlias" }, args := #[] }
 
 private def procedureCommandOp (proc : Procedure) : Strata.Operation :=
   { ann := sr
@@ -337,7 +340,7 @@ private def formatOp (o : Strata.Operation) : Format :=
 def formatHighType (t : HighTypeMd) : Format := formatArg (highTypeToArg t)
 def formatHighTypeVal (t : HighType) : Format := formatArg (highTypeValToArg t)
 def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
-def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg ⟨s, {}⟩)
+def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg { val := s, source := none })
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)
@@ -350,6 +353,7 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
   | .Datatype ty => formatDatatypeDefinition ty
+  | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
 
 def formatConstant (c : Constant) : Format :=
   "const " ++ format c.name ++ ": " ++ formatHighType c.type ++

@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Program
-import Strata.Backends.CBMC.Common
+public import Strata.Backends.CBMC.Common
+public import Strata.Util.Json
+public import Strata.Backends.CBMC.GOTO.Program
+
 import Strata.Util.Tactics
-import Strata.Util.Json
+
+public section
 
 namespace CProverGOTO
 open Lean

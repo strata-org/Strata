@@ -1,5 +1,6 @@
+test_int_mul_zero.py(2, 4): ✅ pass - assert(29)
+test_int_mul_zero.py(3, 4): ✅ pass - assert(46)
 test_int_mul_zero.py(4, 11): ✅ pass - Check PMul exception
 test_int_mul_zero.py(4, 4): ✅ pass - multiply by zero
-test_int_mul_zero.py(4, 4): ✅ pass - multiply by zero
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

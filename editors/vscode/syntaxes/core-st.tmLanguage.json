@@ -57,7 +57,7 @@
     },
     "keyword": {
       "name": "keyword.core-st",
-      "match": "\\b(var|assume|assert|cover|if|else|havoc|invariant|decreases|while|call|exit|free|modifies|ensures|requires|spec|procedure|returns|type|const|function|inline|rec|axiom|distinct|datatype|old|forall|exists|program)\\b"
+      "match": "\\b(var|assume|assert|cover|if|else|havoc|invariant|decreases|while|out|inout|call|exit|free|ensures|requires|spec|procedure|type|const|function|inline|rec|axiom|distinct|datatype|old|forall|exists|program)\\b"
     },
     "type": {
       "name": "support.type.core-st",
@@ -75,11 +75,11 @@
         },
         {
           "name": "keyword.operator.word.core-st",
-          "match": "\\b(div|mod|sdiv|smod)\\b"
+          "match": "\\b(div|mod|sdiv|smod|safesdiv|safesmod)\\b"
         },
         {
           "name": "keyword.operator.symbol.core-st",
-          "match": "(<==>|==>|>=s|>>s|<=s|>=|==|!=|<=|>>|/t|%t|<<|<s|&&|\\|\\||>s|!|>|~|&|\\||\\^|-|\\+|\\*|/|%|<)"
+          "match": "(safe_neg|safe-|safe\\+|safe\\*|<==>|>=s|==>|>>s|<=s|/t|\\|\\||>=|%t|<<|>>|&&|<=|==|!=|<s|>s|>|\\^|\\+|\\*|/|%|!|-|~|&|<|\\|)"
         }
       ]
     },

@@ -78,7 +78,7 @@ op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
   @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
   "isinstance" "(" subject ", " typeName ")";
-op lenExpr(subject : SpecExprDecl) : SpecExprDecl =>
+op stringLenExpr(subject : SpecExprDecl) : SpecExprDecl =>
   "len" "(" subject ")";
 op intExpr(value : Int) : SpecExprDecl => value;
 op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
@@ -205,11 +205,6 @@ private def SpecAtomType.toDDM (d : SpecAtomType)
       .typeIdentNoArgs loc nm.toDDM
     else
       .typeIdent loc nm.toDDM ⟨.none, args.map (·.toDDM)⟩
-  | .pyClass name args =>
-    if args.isEmpty then
-      .typeClassNoArgs loc ⟨.none, name⟩
-    else
-      .typeClass loc ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
   | .intLiteral i => .typeIntLiteral loc (toDDMInt .none i)
   | .stringLiteral v => .typeStringLiteral loc ⟨.none, v⟩
   | .typedDict fields types fieldRequired =>
@@ -228,10 +223,10 @@ private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
     .typeUnion d.loc ⟨.none, d.atoms.map (·.toDDM)⟩
 termination_by sizeOf d
 decreasing_by
-  all_goals {
-    cases d
-    decreasing_tactic
-  }
+  · have mem : d.atoms[0] ∈ d.atoms := by grind
+    exact SpecType.sizeOf_atom_lt_of_mem mem
+  · rename_i a mem
+    exact SpecType.sizeOf_atom_lt_of_mem mem
 
 end
 
@@ -247,7 +242,7 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .var name loc => .varExpr loc ⟨loc, name⟩
   | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
   | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
-  | .len subj loc => .lenExpr loc subj.toDDM
+  | .stringLen subj loc => .stringLenExpr loc subj.toDDM
   | .intLit v loc => .intExpr loc (toDDMInt loc v)
   | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
   | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
@@ -331,10 +326,10 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
 private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
   | .typeClassNoArgs loc ⟨_, cl⟩ =>
-    .ofAtom loc <| .pyClass cl #[]
+    .ident loc { pythonModule := "", name := cl } #[]
   | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
-    .ofAtom loc <| .pyClass cl a
+    .ident loc { pythonModule := "", name := cl } a
   | .typeIdentNoArgs loc ⟨_, ident⟩ =>
     if let some pyIdent := PythonIdent.ofString ident then
       .ident loc pyIdent #[]
@@ -346,13 +341,13 @@ private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType
       .ident loc pyIdent a
     else
       panic! "Bad identifier"
-  | .typeIntLiteral loc i => .ofAtom loc <| .intLiteral i.ofDDM
-  | .typeStringLiteral loc ⟨_, s⟩ => .ofAtom loc <| .stringLiteral s
+  | .typeIntLiteral loc i => .intLiteral loc i.ofDDM
+  | .typeStringLiteral loc ⟨_, s⟩ => .stringLiteral loc s
   | .typeTypedDict loc ⟨_, fields⟩ =>
     let names := fields.map fun (.mkDictFieldDecl _ ⟨_, name⟩ _ _) => name
     let types := fields.attach.map fun ⟨.mkDictFieldDecl _ _ tp _, mem⟩ => tp.fromDDM
     let required := fields.map fun (.mkDictFieldDecl _ _ _ ⟨_, r⟩) => r
-    .ofAtom loc <| .typedDict names types required
+    .typedDict loc names types required
   | .typeUnion loc ⟨_, args⟩ =>
     if p : args.size > 0 then
       args.attach.foldl (init := args[0].fromDDM) (start := 1)
@@ -387,7 +382,7 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .varExpr loc ⟨_, name⟩ => .var name loc
   | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
   | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
-  | .lenExpr loc subj => .len subj.fromDDM loc
+  | .stringLenExpr loc subj => .stringLen subj.fromDDM loc
   | .intExpr loc i => .intLit i.ofDDM loc
   | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc
   | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM loc

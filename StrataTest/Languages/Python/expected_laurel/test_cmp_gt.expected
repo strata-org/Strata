@@ -1,8 +1,6 @@
 test_cmp_gt.py(2, 11): ✅ pass - Check PGt exception
 test_cmp_gt.py(2, 4): ✅ pass - greater than
-test_cmp_gt.py(2, 4): ✅ pass - greater than
 test_cmp_gt.py(3, 11): ✅ pass - Check PNot exception
 test_cmp_gt.py(3, 4): ✅ pass - not greater than
-test_cmp_gt.py(3, 4): ✅ pass - not greater than
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

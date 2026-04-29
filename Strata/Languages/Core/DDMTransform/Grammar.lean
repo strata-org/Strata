@@ -23,8 +23,10 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
--- Sequence operations increase the grammar size enough to require a higher recursion limit.
+-- Sequence operations and lambda/application syntax increase the grammar size enough
+-- to require higher recursion and heartbeat limits.
 set_option maxRecDepth 10000
+set_option maxHeartbeats 400000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
 
@@ -68,7 +70,7 @@ category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl:0 ", " b:0;
 
 category MonoBind;
 @[declare(v, tp)]
@@ -80,7 +82,7 @@ category MonoDeclList;
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl ", " b;
+  dl:0 ", " b:0;
 
 fn not (b : bool) : bool => "!" b;
 
@@ -173,6 +175,12 @@ fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
 fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
 fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
 fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
+fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe+ " b;
+fn safesub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe- " b;
+fn safemul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " safe* " b;
+fn safeneg_expr (tp : Type, a : tp) : tp => "safe_neg " a;
+fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesdiv " b;
+fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesmod " b;
 fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
@@ -201,6 +209,14 @@ op triggersAtom (group : TriggerGroup) : Triggers =>
 op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
   triggers group;
 
+// Lambda abstraction
+fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
+  "fun " d " => " body:3;
+
+// Application of an expression to an argument
+fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =>
+  "(" f ")" "(" x ")";
+
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>
   "forall " d " :: " b:3;
@@ -227,23 +243,23 @@ op label (l : Ident) : Label => "[" l "]: ";
 op reachCheck () : ReachCheck => "@[reachCheck] ";
 
 @[scope(dl)]
-op varStatement (dl : DeclList) : Statement => "var " dl ";\n";
+op varStatement (dl : DeclList) : Statement => "var " dl ";";
 @[declare(v, tp)]
-op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";\n";
-op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";\n";
-op assume (label : Option Label, c : bool) : Statement => "assume " label c ";\n";
+op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";";
+op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";";
+op assume (label : Option Label, c : bool) : Statement => "assume " label c ";";
 op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
-  reachCheck?:0 "assert " label c ";\n";
+  reachCheck?:0 "assert " label c ";";
 op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
-  reachCheck?:0 "cover " label c ";\n";
+  reachCheck?:0 "cover " label c ";";
 category ExprOrNondet;
 op condDet (c : bool) : ExprOrNondet => "(" c ")";
 op condNondet : ExprOrNondet => "*";
 
-op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0 "\n";
+op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0;
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
-op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
+op havoc_statement (v : Ident) : Statement => "havoc " v ";";
 
 category Invariant;
 op invariant (e : Expr) : Invariant => "invariant" e ";";
@@ -257,23 +273,25 @@ category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
 op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
-  "while " c:0 "\n" m:0 is body "\n";
+  "while " c:0 "\n" m:0 is body:0;
 
-op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call " vs " := " f "(" expr ")" ";\n";
-op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
-   "call " f "(" expr ")" ";\n";
+category CallArg;
+op callArgExpr (e : Expr) : CallArg => e;
+op callArgOut (v : Ident) : CallArg => "out " v;
+op callArgInout (v : Ident) : CallArg => "inout " v;
+
+op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
+   "call " f "(" args ")" ";";
 
 @[scope(c)]
-op block (c : Seq Statement) : Block => "{\n  " indent(2, c) "}";
-op block_statement (label : Ident, b : Block) : Statement => label ": " b:0 "\n";
-op exit_statement (label : Ident) : Statement => "exit " label ";\n";
-op exit_unlabeled_statement : Statement => "exit;\n";
+op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
+op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
+op exit_statement (label : Ident) : Statement => "exit " label ";";
+op exit_unlabeled_statement : Statement => "exit;";
 
 category SpecElt;
 category Free;
 op free () : Free => "free ";
-op modifies_spec (nms : CommaSepBy Ident) : SpecElt => "modifies " nms ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
@@ -286,6 +304,10 @@ category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
 @[declare(name, tp)]
+op outBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "out " name " : " tp:0;
+@[declare(name, tp)]
+op inoutBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "inout " name " : " tp:0;
+@[declare(name, tp)]
 op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp:0;
 
 category Bindings;
@@ -295,11 +317,10 @@ op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 op command_procedure (name : Ident,
                       typeArgs : Option TypeArgs,
                       @[scope(typeArgs)] b : Bindings,
-                      @[scope(b)] ret : Option MonoDeclList,
-                      @[scope(ret)] s: Option Spec,
-                      @[scope(ret)] body : Option Block) :
+                      @[scope(b)] s: Option Spec,
+                      @[scope(b)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b " returns " "(" ret ")\n"
+  @[prec(10)] "procedure " name typeArgs b "\n"
               s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
@@ -341,7 +362,7 @@ op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
                   @[scope(typeArgs)] b : Bindings,
                   @[scope(typeArgs)] r : Type,
-                  @[scope(b)] preconds : Seq SpecElt,
+                  @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                   @[scope(b)] c : r,
                   // Prefer adding the inline attribute here so
                   // that the order of the arguments in the fndecl and fndef
@@ -358,7 +379,7 @@ op recfn_decl (name : Ident,
                typeArgs : Option TypeArgs,
                @[scope(typeArgs)] b : Bindings,
                @[scope(typeArgs)] r : Type,
-               @[scope(b)] preconds : Seq SpecElt,
+               @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                @[scope(b)] c : r) : RecFnDecl =>
   "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
 
@@ -372,19 +393,15 @@ op funcDecl_statement (name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
                        @[scope(typeArgs)] r : Type,
-                       @[scope(b)] preconds : Seq SpecElt,
+                       @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
-  inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }\n";
+  inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }";
 
 // Type declaration statement
 @[declareScopedType(name, some args)]
 op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
-  "type " name args ";\n";
-
-@[scope(b)]
-op command_var (b : Bind) : Command =>
-  @[prec(10)] "var " b ";\n";
+  "type " name args ";";
 
 op command_axiom (label : Option Label, e : bool) : Command =>
   "axiom " label e ";\n";

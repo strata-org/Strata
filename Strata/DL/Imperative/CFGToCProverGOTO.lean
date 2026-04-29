@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.BasicBlock
-import Strata.DL.Imperative.ToCProverGOTO
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.ToCProverGOTO
+
+public section
 
 /-! # CFG to CProverGOTO Translation
 

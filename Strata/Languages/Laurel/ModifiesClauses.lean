@@ -37,7 +37,7 @@ namespace Strata.Laurel
 
 public section
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
 
 /--
 A single entry in a modifies clause, either a single Composite expression
@@ -125,8 +125,8 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) ⟩ none implBody
-  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined "Composite", .empty ⟩) ⟩ none innerForall, proc.name.md ⟩
+  let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .TTypedField { val := .TInt, source := none }, source := none } ⟩ none implBody
+  let outerForall : StmtExprMd := { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := proc.name.source }
   some outerForall
 
 /--
@@ -154,7 +154,7 @@ def transformModifiesClauses (model: SemanticModel)
         let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
-          | some frame => postconds ++ [frame]
+          | some frame => postconds ++ [{ condition := frame : Condition }]
           | none => postconds
         .ok { proc with body := .Opaque postconds' impl [] }
       else
@@ -174,7 +174,8 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
     let (kept, diags) := mods.foldl (fun (acc, ds) e =>
       let ty := (computeExprType model e).val
       if isHeapRelevantType ty then (acc ++ [e], ds)
-      else (acc, ds ++ [e.md.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+      else
+        (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
     ) ([], [])
     (.Opaque posts impl kept, diags)
   | other => (other, [])

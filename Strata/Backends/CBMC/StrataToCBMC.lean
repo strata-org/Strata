@@ -3,18 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Lean.Data.Json
+import Lean.Parser.Types
 import Strata.DL.Util.Map
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
-import Strata.Backends.CBMC.Common
+public import Strata.Languages.C_Simp.C_Simp
+public import Strata.Languages.C_Simp.Verify
+public import Strata.Backends.CBMC.Common
 import Strata.Util.Tactics
 
 open Lean
 open Strata.CBMC
 
 namespace CSimp
+
+public section
 
 -- Our test program
 def SimpleTestEnv :=
@@ -399,5 +403,7 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : Except String String := do
   m := m.insert s!"{myFunc.name}::1::z" zSymbol
 
   return toString (toJson m)
+
+end -- public section
 
 end CSimp

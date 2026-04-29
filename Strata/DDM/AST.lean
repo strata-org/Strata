@@ -5,16 +5,15 @@
 -/
 module
 
-public import Std.Data.HashMap.Basic
+import Std.Data.HashMap.Lemmas
+
 public import Strata.DDM.AST.Datatype
+import all Strata.DDM.Util.Array
 public import Strata.DDM.Util.ByteArray
+import all Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
 public import Strata.DDM.Util.SourceRange
-
-import Std.Data.HashMap
-import all Strata.DDM.Util.Array
 import Strata.Util.DecideProp
-import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
 
@@ -485,7 +484,6 @@ deriving BEq, Inhabited, Repr
 
 namespace MetadataArg
 
-@[instance]
 protected def instDecidableEq (x y : MetadataArg) : Decidable (x = y) :=
   match x with
   | .bool x =>
@@ -532,6 +530,8 @@ protected def instDecidableEq (x y : MetadataArg) : Decidable (x = y) :=
         .isFalse (by intro h; injection h; contradiction)
     | .bool _ | .catbvar _ | .num _ | .option _ => .isFalse (by grind)
 
+instance : DecidableEq MetadataArg := MetadataArg.instDecidableEq
+
 end MetadataArg
 
 structure MetadataAttr where
@@ -576,9 +576,8 @@ def toList (m : Metadata) : List MetadataAttr := m.toArray.toList
 instance : Membership QualifiedIdent Metadata where
   mem md x := private md.toArray.any fun a => a.ident = x
 
-@[instance]
-def instDecidableMem (x : QualifiedIdent) (md : Metadata) : Decidable (x ∈ md) := by
-  apply instDecidableEqBool
+instance instDecidableMem (x : QualifiedIdent) (md : Metadata) : Decidable (x ∈ md) :=
+  (inferInstance : Decidable (_ = _))
 
 instance : GetElem? Metadata QualifiedIdent (Array MetadataArg) (fun md i => i ∈ md) where
   getElem md i _p := private
@@ -1033,25 +1032,25 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
         | q`StrataDDL.declare => do
           let #[.catbvar nameIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declare expects 2 arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < argDecls.size))
+          let .isTrue typeP := decideProp (typeIndex < argDecls.size)
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec argDecls ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
         | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
-          let .isTrue argsP := inferInstanceAs (Decidable (argsIndex < argDecls.size))
+          let .isTrue argsP := decideProp (argsIndex < argDecls.size)
             | return panic! "Invalid arg index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < argDecls.size))
+          let .isTrue typeP := decideProp (typeIndex < argDecls.size)
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec argDecls ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
         | q`StrataDDL.declareType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareType has bad arguments {repr attr.args}."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
           checkNameIndexIsIdent argDecls nameIndex
@@ -1059,7 +1058,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
+                  let .isTrue argsP := decideProp (idx < argDecls.size)
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
@@ -1067,7 +1066,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
         | q`StrataDDL.declareScopedType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareScopedType has bad arguments {repr attr.args}."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
           checkNameIndexIsIdent argDecls nameIndex
@@ -1075,7 +1074,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
+                  let .isTrue argsP := decideProp (idx < argDecls.size)
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareScopedType args invalid."; return none
@@ -1083,7 +1082,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
           checkNameIndexIsIdent argDecls nameIndex
@@ -1091,11 +1090,11 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
+                  let .isTrue argsP := decideProp (idx < argDecls.size)
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "aliasType args invalid."; return none
-          let .isTrue defP := inferInstanceAs (Decidable (defIndex < argDecls.size))
+          let .isTrue defP := decideProp (defIndex < argDecls.size)
             | return panic! "Invalid def index"
           let defBinding := argDecls[argDecls.size - (defIndex+1)]
           match defBinding.kind with
@@ -1123,11 +1122,11 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             | newBindingErr "declareDatatype: invalid typeParams index"; return none
           let .catbvar constructorsIndex := args[2]!
             | newBindingErr "declareDatatype: invalid constructors index"; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
-          let .isTrue typeParamsP := inferInstanceAs (Decidable (typeParamsIndex < argDecls.size))
+          let .isTrue typeParamsP := decideProp (typeParamsIndex < argDecls.size)
             | return panic! "Invalid typeParams index"
-          let .isTrue constructorsP := inferInstanceAs (Decidable (constructorsIndex < argDecls.size))
+          let .isTrue constructorsP := decideProp (constructorsIndex < argDecls.size)
             | return panic! "Invalid constructors index"
           -- Parse and validate function templates from remaining arguments (args[3..])
           let functionTemplates ← parseFunctionTemplates (args.extract 3 args.size)
@@ -1140,7 +1139,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
         | q`StrataDDL.declareTVar => do
           let #[.catbvar nameIndex] := attr.args
             | newBindingErr "declareTVar expects 1 argument."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
             | return panic! "Invalid name index"
           some <$> .tvar <$> pure { nameIndex := ⟨nameIndex, nameP⟩ }
         | _ =>
@@ -1295,31 +1294,6 @@ private def Mem.inCache {α} {c : Collection α} {nm} : Mem c nm → nm ∈ c.ca
 instance {α} : Membership String (Collection α) where
   mem := private Mem
 
-def decideMap {α} (nm : String) (c : Collection α) : Decidable (nm ∈ c) :=
-  match p : c.cache[nm]? with
-  | none => isFalse fun (.intro inCache _ _) => by
-    simp [getElem?_def] at p
-    contradiction
-  | some d =>
-    match q: c.proj d with
-    | none => isFalse fun (.intro inCache z z_eq) => by
-      simp [getElem?_def] at p
-      match p with
-      | .intro _ eq =>
-        simp only [eq, q] at z_eq
-        contradiction
-    | some z =>
-      have inCache : nm ∈ c.cache := by
-        simp [getElem?_def] at p
-        match p with
-        | Exists.intro i _ => exact i
-      have val_eq : c.proj c.cache[nm] = some z := by
-        simp [getElem?_def] at p
-        match p with
-        | Exists.intro h eq => simp only [eq, q]
-      isTrue (Mem.intro inCache z val_eq)
-
-@[instance]
 def instDecidableMem {α} (nm : String) (c : Collection α) : Decidable (nm ∈ c) :=
   match p : c.cache[nm]? with
   | none => isFalse fun (.intro inCache _ _) => by
@@ -1343,6 +1317,8 @@ def instDecidableMem {α} (nm : String) (c : Collection α) : Decidable (nm ∈ 
         match p with
         | Exists.intro h eq => simp only [eq, q]
       isTrue (Mem.intro inCache z val_eq)
+
+instance {α} (nm : String) (c : Collection α) : Decidable (nm ∈ c) := instDecidableMem nm c
 
 instance {α} : GetElem? (Collection α) String α (fun c nm => nm ∈ c) where
   getElem c nm p := private
@@ -1448,12 +1424,13 @@ def addDecl (d : Dialect) (decl : Decl) : Dialect :=
       cache := d.cache.insert name decl
       }
 
-instance : Membership String Dialect where
-  mem d nm := private nm ∈ d.cache
+protected def mem (d : Dialect) (name : String) : Bool := name ∈ d.cache
 
-@[instance]
-def instDecidableMem (nm : String) (d : Dialect) : Decidable (nm ∈ d) :=
-  inferInstanceAs (Decidable (nm ∈ d.cache))
+instance : Membership String Dialect where
+  mem d nm := d.mem nm
+
+instance instDecidableMem (nm : String) (d : Dialect) : Decidable (nm ∈ d) :=
+  (inferInstance : Decidable (_ = _))
 
 end Dialect
 
@@ -1487,15 +1464,20 @@ instance : EmptyCollection DialectMap where
 instance : Inhabited DialectMap where
   default := private .empty
 
-instance : Membership DialectName DialectMap where
-  mem m d := private d ∈ m.map
+protected def mem (m : DialectMap) (name : DialectName) : Bool := name ∈ m.map
 
-@[instance]
-def instDecidableMem (d : DialectName) (m : DialectMap) : Decidable (d ∈ m) :=
-  inferInstanceAs (Decidable (d ∈ m.map))
+instance instMembership : Membership DialectName DialectMap where
+  mem m name := m.mem name
+
+instance instDecidableMembership (d : DialectName) (m : DialectMap) : Decidable (d ∈ m) :=
+  (inferInstance : Decidable (_ = _))
+
+private theorem memImpliesMapMem {d : DialectName} {m : DialectMap} (h : d ∈ m) : d ∈ m.map := by
+  simp +instances [instMembership, DialectMap.mem] at h
+  exact h
 
 instance : GetElem? DialectMap DialectName Dialect (fun m d => d ∈ m) where
-  getElem m d p := private m.map[d]
+  getElem m d p := private m.map[d]'(memImpliesMapMem p)
   getElem? m d := private m.map[d]?
   getElem! m d := private m.map[d]!
 
@@ -1526,9 +1508,13 @@ This inserts a new dialect into the dialect map.
 This requires propositions to ensure we do not change the semantics
 of dialects and imports are already in dialect.
 -/
-def insert (m : DialectMap) (d : Dialect) (_d_new : d.name ∉ m) (d_imports_ok : d.imports.all (· ∈ m)) : DialectMap :=
+opaque insert (m : DialectMap) (d : Dialect) (_d_new : d.name ∉ m) (d_imports_ok : d.imports.all (· ∈ m)) : DialectMap :=
   { map := m.map.insert d.name d
-    closed := insert_preserves_closed m.map m.closed d d_imports_ok
+    closed := insert_preserves_closed m.map m.closed d (by
+      simp only [Array.all_eq_true, decide_eq_true_eq]
+      intro i ilt
+      apply memImpliesMapMem
+      grind)
   }
 
 /--
@@ -1538,10 +1524,10 @@ It panics if a dialect with the same name is already in the map
 or if the dialect imports a dialect not already in the map.
 -/
 def insert! (m : DialectMap) (d : Dialect) : DialectMap :=
-  if d_new : d.name ∈ m.map then
+  if d_new : d.name ∈ m then
     panic! s!"{d.name} already in map."
   else
-    if d_imports_ok : d.imports.all (· ∈ m.map) then
+    if d_imports_ok : d.imports.all (· ∈ m) then
       m.insert d d_new d_imports_ok
     else
       panic! s!"Missing import."
@@ -1641,7 +1627,7 @@ Return set of all dialects that are imported by `dialect`.
 This includes transitive imports.
 -/
 partial def importedDialects (dm : DialectMap) (dialect : DialectName) (p : dialect ∈ dm) : DialectMap :=
-  importedDialectsAux dm.map dm.closed dialect p
+  importedDialectsAux dm.map dm.closed dialect (memImpliesMapMem p)
 
 /--
 Look up an operation's metadata in the dialect.
@@ -1952,9 +1938,8 @@ instance : Inhabited GlobalContext where
 instance : Membership Var GlobalContext where
   mem ctx v := v ∈ ctx.nameMap
 
-@[instance]
-def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
-  inferInstanceAs (Decidable (v ∈ ctx.nameMap))
+instance instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
+  (inferInstance : Decidable (v ∈ ctx.nameMap))
 
 /-- Define a symbol. Caller must prove `v ∉ ctx`. -/
 def define (ctx : GlobalContext) (v : Var) (k : GlobalKind) (_ : v ∉ ctx) : GlobalContext :=

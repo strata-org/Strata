@@ -14,7 +14,7 @@ private def callElimBugExample : Program :=
 #strata
 program Core;
 
-procedure Double(n : int) returns (result : int)
+procedure Double(n : int, out result : int)
 spec {
   ensures [double_correct]: (result == n * 2);
 }
@@ -22,13 +22,13 @@ spec {
   result := n + n;
 };
 
-procedure TestProc(x : int) returns (output : int)
+procedure TestProc(x : int, out output : int)
 spec {
   ensures [testProc_result]: (output == x * 4);
 }
 {
-  call output := Double(x);      // First call: output = x * 2
-  call output := Double(output); // Second call: output = (x * 2) * 2 = x * 4
+  call Double(x, out output);      // First call: output = x * 2
+  call Double(output, out output); // Second call: output = (x * 2) * 2 = x * 4
 
 };
 #end
@@ -60,13 +60,13 @@ private def testCallElim
 info: New Program:
 program Core;
 
-procedure Double (n : int) returns (result : int)
+procedure Double (n : int, out result : int)
 spec {
   ensures [double_correct]: result == n * 2;
   } {
   result := n + n;
-  };
-procedure TestProc (x : int) returns (output : int)
+};
+procedure TestProc (x : int, out output : int)
 spec {
   ensures [testProc_result]: output == x * 4;
   } {
@@ -78,7 +78,7 @@ spec {
   var tmp_output_1 : int := output;
   havoc output;
   assume [callElimAssume_double_correct_2]: output == tmp_arg_0 * 2;
-  };
+};
 
 ---
 info:

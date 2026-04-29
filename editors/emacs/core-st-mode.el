@@ -6,9 +6,9 @@
 ;; Keywords
 (defvar core-st-keywords
   '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
-    "decreases" "while" "call" "exit" "free" "modifies" "ensures"
-    "requires" "spec" "procedure" "returns" "type" "const" "function"
-    "inline" "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
+    "decreases" "while" "out" "inout" "call" "exit" "free" "ensures"
+    "requires" "spec" "procedure" "type" "const" "function" "inline"
+    "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
     "program"))
 
 (defvar core-st-types
@@ -19,7 +19,7 @@
   '(    "true" "false" "null"))
 
 (defvar core-st-operators
-  '(    "div" "mod" "sdiv" "smod"))
+  '(    "div" "mod" "sdiv" "smod" "safesdiv" "safesmod"))
 
 (defvar core-st-builtins
   '(    "Sequence.length" "Sequence.select" "Sequence.append"

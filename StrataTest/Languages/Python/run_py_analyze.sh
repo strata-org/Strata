@@ -126,7 +126,7 @@ if [ $pending -eq 1 ]; then
         if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
             echo "Pending (analysis error): $base_name"
             pending_error=$((pending_error + 1))
-        elif echo "$output" | grep -q "inconclusive\|failed"; then
+        elif echo "$output" | grep -qE '[1-9][0-9]* (failed|inconclusive)'; then
             echo "Pending (imprecise):      $base_name"
             pending_imprecise=$((pending_imprecise + 1))
         else

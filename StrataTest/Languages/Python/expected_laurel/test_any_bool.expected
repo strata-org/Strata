@@ -1,4 +1,3 @@
 test_any_bool.py(5, 4): ✅ pass - Any holds bool
-test_any_bool.py(5, 4): ✅ pass - Any holds bool
-DETAIL: 2 passed, 0 failed, 0 inconclusive
+DETAIL: 1 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -1,5 +1,4 @@
-test_coerce_any_to_bool_truthy.py(6, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_coerce_any_to_bool_truthy.py(5, 4): ✅ pass - assert(81)
 test_coerce_any_to_bool_truthy.py(8, 4): ✅ pass - Any int truthy
-test_coerce_any_to_bool_truthy.py(8, 4): ✅ pass - Any int truthy
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

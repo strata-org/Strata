@@ -301,7 +301,7 @@ private theorem stmtsT_append_terminal
       match h2 with
       | .step _ _ _ .step_stmts_nil (.refl _) => rfl
     subst hρ
-    exact ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), h1, by omega⟩
+    exact ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), h1, by grind⟩
   | cons s' rest' ih =>
     -- Note: (s' :: rest') ++ [s] = s' :: (rest' ++ [s]) by definitional reduction
     have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal extendEval hstar
@@ -310,7 +310,7 @@ private theorem stmtsT_append_terminal
       ReflTrans_Transitive _ _ _ _
         (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
         h_rest',
-      h_s, by omega⟩
+      h_s, by grind⟩
 
 /-! ## Loop simulation -/
 

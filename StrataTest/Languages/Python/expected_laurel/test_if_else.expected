@@ -1,6 +1,6 @@
+test_if_else.py(2, 4): ✅ pass - assert(24)
+test_if_else.py(3, 4): ✅ pass - assert(39)
 test_if_else.py(4, 7): ✅ pass - Check PGt exception
-test_if_else.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_if_else.py(8, 4): ✅ pass - if else
 test_if_else.py(8, 4): ✅ pass - if else
 DETAIL: 4 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

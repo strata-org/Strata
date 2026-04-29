@@ -23,7 +23,7 @@ type MyInt := int;
 
 datatype Box () { MkBox(value: MyInt) };
 
-procedure TestBoxAlias() returns ()
+procedure TestBoxAlias()
 spec {
   ensures true;
 }
@@ -39,7 +39,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram datatypeAliasPgm) |>.snd |>.isEmpty
 

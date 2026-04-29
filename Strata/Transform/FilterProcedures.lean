@@ -17,6 +17,13 @@ namespace FilterProcedures
 
 open Transform
 
+/-- Statistics keys tracked by the filter procedures transformation. -/
+inductive Stats where
+  | visitedProcedures
+  | erasedProcedures
+
+#derive_prefixed_toString Stats "FilterProcedures"
+
 /--
 Filter program to keep only target procedures, applying the specified transform
 to them and pruning away all other procedures.
@@ -39,10 +46,14 @@ def run (prog : Program) (targetProcs : List String)
     neededProcsSet.binSearch procName (· < ·) |>.isSome
 
   -- Create a program with target procedures + dependencies.
+  let numProcsBefore := prog.decls.countP (fun | .proc _ _ => true | _ => false)
   let prunedDecls := prog.decls.filter (fun decl =>
     match decl with
     | .proc p _ => (respectNoFilter && p.header.noFilter) || isNeededProc (CoreIdent.toPretty p.header.name)
     | _ => true) -- Keep all non-procedure declarations
+  let numProcsAfter := prunedDecls.countP (fun | .proc _ _ => true | _ => false)
+  incrementStat s!"{Stats.visitedProcedures}" numProcsBefore
+  incrementStat s!"{Stats.erasedProcedures}" (numProcsBefore - numProcsAfter)
 
   -- Update CallGraph so that filtered out procedures do not appear anymore
   let filter_cg (m : Std.HashMap String (Std.HashMap String Nat)) :=
