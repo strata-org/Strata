@@ -66,7 +66,7 @@ info: function linearSearch {
   while
     (~Int.Lt idx (~Array.Len arr))
     (some (~Int.Sub (~Array.Len arr) idx))
-    [#true]
+    [[linearSearch_invariant_381_398]: #true]
   {
     if (e == (~Array.Get arr idx)) {
       return := #true

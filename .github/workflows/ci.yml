@@ -338,13 +338,16 @@ jobs:
       - name: Trigger CodeBuild and wait
         shell: bash
         run: |
+          aws --version
           BUILD_ID=$(aws codebuild start-build \
             --project-name strata-benchmarks \
             --source-type-override GITHUB \
             --source-location-override https://github.com/strata-org/Strata.git \
+            --source-version ${{ github.event.pull_request.head.sha || github.sha }} \
             --query 'build.id' --output text \
             --region us-east-2)
           echo "Build started: $BUILD_ID"
+          echo "CodeBuild console: https://us-east-2.console.aws.amazon.com/codesuite/codebuild/projects/strata-benchmarks/build/${BUILD_ID}/?region=us-east-2"
 
           LOG_KEY="logs/${BUILD_ID}.log"
           echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
