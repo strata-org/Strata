@@ -1,0 +1,26 @@
+module "tc10_class_method":
+
+func f():
+  bb0():
+    %0:myservice.0 = qualifiedRef myservice.myservice
+    %2:client.0 = call attr(%0, "Client")()
+    %5:result.0 = call attr(%2, "get_item")(keyword("key", "abc"))
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc10_class_method":
+
+func f:
+  %0:myservice.0 : myservice
+  %1:_tmp.0 : Callable(myservice.Client)
+  %2:client.0 : myservice.Client
+  %3:_tmp.2 : Callable(myservice.Client.get_item)
+  %4:_tmp.3 : Literal("abc")
+  %5:result.0 : builtins.dict
+
+func @module_init:

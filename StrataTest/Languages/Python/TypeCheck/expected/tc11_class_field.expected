@@ -1,0 +1,24 @@
+module "tc11_class_field":
+
+func f():
+  bb0():
+    %0:myservice.0 = qualifiedRef myservice.myservice
+    %2:client.0 = call attr(%0, "Client")()
+    %3:name.0 = attr %2 "service_name"
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc11_class_field":
+
+func f:
+  %0:myservice.0 : myservice
+  %1:_tmp.0 : Callable(myservice.Client)
+  %2:client.0 : myservice.Client
+  %3:name.0 : str
+
+func @module_init:

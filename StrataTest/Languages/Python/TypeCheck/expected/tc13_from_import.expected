@@ -1,0 +1,23 @@
+module "tc13_from_import":
+
+func f():
+  bb0():
+    %2:x.0 = callQualified math.sqrt [positional(4.0)]
+    %3:y.0 = qualifiedRef math.pi
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc13_from_import":
+
+func f:
+  %0:sqrt.0 : Callable(math.sqrt)
+  %1:_tmp.0 : Literal(4.0)
+  %2:x.0 : float
+  %3:y.0 : float
+
+func @module_init:

@@ -128,8 +128,9 @@ private def resolveQualifiedRef (_sr : SourceRange) (qn : QualifiedName)
     match ms.exports.get? qn.name with
     | some (.classDef _) => return .callable s!"{modName}.{qn.name}"
     | some (.functionDecl _) => return .callable s!"{modName}.{qn.name}"
-    | some (.typeDef _) | some (.externType _) =>
-      return .instance_ s!"{modName}.{qn.name}"
+    | some (.typeDef st) => return specTypeToAbstract st
+    | some (.externType source) =>
+      return .instance_ s!"{source.pythonModule}.{source.name}"
     | none => return .any (.unknown s!"{qn.name} not found in {modName}")
 
 /-- Look up an attribute in a module's exports. -/

@@ -142,6 +142,30 @@ private meta def buildTestSpecs (dir : System.FilePath) : IO Unit := do
     definition := .ident default .builtinsFloat
   }
   writeSpecFile dir "math" #[.functionDecl mathSqrt, .typeDef mathPi]
+  -- myservice spec: a Client class with methods, fields, and exhaustive flag
+  let keyArg : Strata.Python.Specs.Arg :=
+    { name := "key", type := .ident default .builtinsStr }
+  let getItemMethod : Strata.Python.Specs.FunctionDecl := {
+    loc := default, nameLoc := default
+    name := "get_item"
+    args := { args := #[keyArg], kwonly := #[] }
+    returnType := .ident default .builtinsDict
+    isOverload := false
+    preconditions := #[]
+    postconditions := #[]
+  }
+  let serviceNameField : Strata.Python.Specs.ClassField := {
+    name := "service_name"
+    type := .ident default .builtinsStr
+  }
+  let clientClass : Strata.Python.Specs.ClassDef := {
+    loc := default
+    name := "Client"
+    fields := #[serviceNameField]
+    methods := #[getItemMethod]
+    exhaustive := true
+  }
+  writeSpecFile dir "myservice" #[.classDef clientClass]
 
 /-- Run a test case that uses spec loading. -/
 private meta def runSpecTestCase
@@ -189,7 +213,11 @@ private meta def positiveTests : List String := [
 ]
 
 private meta def specTests : List String := [
-  "tc09_import"
+  "tc09_import",
+  "tc10_class_method",
+  "tc11_class_field",
+  "tc12_exhaustive",
+  "tc13_from_import"
 ]
 
 #eval withPython fun pythonCmd => do
