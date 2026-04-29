@@ -7,12 +7,12 @@ Each benchmark is a real exec function with `requires`/`ensures`. The goal: run 
 
 ## Why these benchmarks
 
-The five benchmarks are the core operations of two widely deployed cryptographic protocols: X25519 key exchange and Ed25519 signatures. 
+The five benchmarks are the core operations of three widely deployed cryptographic systems: X25519 key exchange, Ed25519 signatures, and Ristretto255 (the prime-order group used in zero-knowledge proof frameworks).
 
 - Field multiplication (`FieldElement51::mul`) is the arithmetic foundation of Curve25519 — every higher-level operation, from key exchange to signature verification, ultimately reduces to repeated calls to it.
 - Scalar reduction (`from_bytes_mod_order`) enforces a security property called canonical encoding, whose absence caused signature malleability vulnerabilities in several widely-used libraries including OpenSSL and tinyssh (RFC 8032 §5.1.7).
 - Point decompression (`CompressedEdwardsY::decompress`) and Ristretto compression (`RistrettoPoint::compress`) are the serialization steps that happen at every signature verification and every zero-knowledge proof respectively. 
-- `MontgomeryPoint::mul_clamped` is X25519 itself — the key exchange that establishes encrypted sessions in TLS 1.3, Signal, WireGuard, and SSH.
+- `MontgomeryPoint::mul_clamped` is the core scalar multiplication step of X25519 — the key exchange used in TLS 1.3, Signal, WireGuard, and SSH.
 
 ## Overview
 
@@ -113,7 +113,7 @@ u1 = (Z+Y)(Z−Y),  u2 = X·Y,  invsqrt = 1/√(u1·u2²)
 ```
 
 - Ristretto255 is the prime-order group used in **Bulletproofs**, **Pedersen commitments**, and **range proof systems**. It eliminates the cofactor-8 problem of raw Curve25519, which would otherwise allow forged ZK proofs. `compress` is called every time a group element is serialised — i.e., in every proof.
-- The postcondition is a functional-correctness theorem linking imperative Rust to the [RISTRETTO RFC](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-ristretto255-decaf448) mathematical spec.
+- The postcondition is a functional-correctness theorem linking imperative Rust to the [RISTRETTO RFC (RFC 9496)](https://datatracker.ietf.org/doc/html/rfc9496) mathematical spec.
 - Builds directly on Benchmark 1: once `mul` is axiomatized, all remaining field ops follow the same pattern.
 
 ---
@@ -134,9 +134,9 @@ pub fn mul_clamped(self, bytes: [u8; 32]) -> (result: Self)
     }),
 ```
 
-- This is X25519: the key exchange used in TLS 1.3, Signal, WireGuard, and SSH.
-- The postcondition directly states protocol correctness: the output u-coordinate equals `[n]P` on the Montgomery curve.
-- Verifying this in Boole would be a mechanically checked proof of X25519 correctness end-to-end.
+- This is the core scalar multiplication step of X25519, the key exchange used in TLS 1.3, Signal, WireGuard, and SSH.
+- The postcondition states functional correctness of this step: the output u-coordinate equals `[n]P` on the Montgomery curve.
+- Verifying this in Boole would give a mechanically checked proof that the arithmetic core of X25519 is correct.
 
 ---
 
