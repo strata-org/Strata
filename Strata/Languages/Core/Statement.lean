@@ -472,9 +472,9 @@ def Statement.mapExprs (f : Expression.Expr → Expression.Expr) : Statement →
   | .ite .nondet tss ess md =>
     .ite .nondet (tss.map (Statement.mapExprs f)) (ess.map (Statement.mapExprs f)) md
   | .loop (.det g) measure inv body md =>
-    .loop (.det (f g)) (measure.map f) (inv.map f) (body.map (Statement.mapExprs f)) md
+    .loop (.det (f g)) (measure.map f) (inv.map fun (l, e) => (l, f e)) (body.map (Statement.mapExprs f)) md
   | .loop .nondet measure inv body md =>
-    .loop .nondet (measure.map f) (inv.map f) (body.map (Statement.mapExprs f)) md
+    .loop .nondet (measure.map f) (inv.map fun (l, e) => (l, f e)) (body.map (Statement.mapExprs f)) md
   | .cmd (.cmd (.init n ty .nondet md)) => .cmd (.cmd (.init n ty .nondet md))
   | .cmd (.cmd (.set n .nondet md)) => .cmd (.cmd (.set n .nondet md))
   | .exit l md => .exit l md
@@ -506,10 +506,10 @@ def Statement.collectExprs :
     ess.flatMap Statement.collectExprs
   | .loop (.det g) measure inv body _ =>
     [g] ++ measure.toList ++
-    inv ++ body.flatMap Statement.collectExprs
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .loop .nondet measure inv body _ =>
     measure.toList ++
-    inv ++ body.flatMap Statement.collectExprs
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []
   | .exit _ _ => []
