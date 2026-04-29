@@ -1219,12 +1219,8 @@ partial def elabSyntaxArg
     : ElabM (Vector (Option Tree) argc) := do
   match getKind argIdx with
   | .preType expectedType =>
-    let (tree, success) ← runChecked <| elabExpr tctx astx
+    let ((tree, inferredType), success) ← runChecked <| elabExprAndType tctx astx
     if success then
-      let exprInfo := tree.info.asExpr!
-      let inferredType ← match exprInfo.resolvedType with
-        | some t => pure t
-        | none => inferType tctx exprInfo.expr
       let dialects := (← read).dialects
       let resolveArg (i : Nat) : Option Arg := do
           assert! i < argIdx.val
@@ -1240,12 +1236,8 @@ partial def elabSyntaxArg
     else
       return trees
   | .typeExpr expectedType =>
-    let (tree, success) ← runChecked <| elabExpr tctx astx
+    let ((tree, inferredType), success) ← runChecked <| elabExprAndType tctx astx
     if success then
-      let exprInfo := tree.info.asExpr!
-      let inferredType ← match exprInfo.resolvedType with
-        | some t => pure t
-        | none => inferType tctx exprInfo.expr
       let trees ← unifyTypes isTypeP argIdx
         expectedType tctx astx inferredType trees
       assert! trees[argIdx].isNone
@@ -1722,10 +1714,10 @@ where
       let info : SeqInfo := { inputCtx := tctx, loc := loc, sep := sep, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSeqInfo info) args
 
-partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
+partial def elabExprAndType (tctx : TypingContext) (stx : Syntax) : ElabM (Tree × TypeExpr) := do
   match stx.getKind with
   | `Init.exprParen =>
-    elabExpr tctx stx[1]
+    elabExprAndType tctx stx[1]
   | `Init.exprIdent =>
     let some loc := mkSourceRange? stx
       | panic! "exprIdent missing source location"
@@ -1739,7 +1731,8 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
       match k with
       | .expr _ =>
         let info : ExprInfo := { toElabInfo := einfo, expr := .bvar loc idx }
-        return .node (.ofExprInfo info) #[]
+        let tree := .node (.ofExprInfo info) #[]
+        return (tree, ← inferType tctx info.expr)
       | .type _ _params _ =>
         logErrorMF loc mf!"{name} is a type when an expression is required."
         return default
@@ -1754,7 +1747,8 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
         | logError loc s!"{name} is a type when expression required."
           return default
       let info : ExprInfo := { toElabInfo := einfo, expr := .fvar loc idx }
-      return .node (.ofExprInfo info) #[]
+      let tree := .node (.ofExprInfo info) #[]
+      return (tree, ← inferType tctx info.expr)
   | `Init.exprApp => do
     let some loc := mkSourceRange? stx
       | panic! "exprApp missing source location"
@@ -1807,8 +1801,8 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let resolvedReturnType ← resolveUVars r
     let e := args.toArray.foldl (init := fvar) fun e t =>
       .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
-    let info : ExprInfo := { toElabInfo := einfo, expr := e, resolvedType := some resolvedReturnType }
-    return .node (.ofExprInfo info) args.toArray
+    let info : ExprInfo := { toElabInfo := einfo, expr := e }
+    return (.node (.ofExprInfo info) args.toArray, resolvedReturnType)
   | _ => do
     let some loc := mkSourceRange? stx
       | panic! "evalExpr missing source location"
@@ -1834,7 +1828,11 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     -- N.B. Every subterm gets the function location.
     let e := args.toArray.foldl (init := ExprF.fn loc i) fun e t => .app loc e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
-    return .node (.ofExprInfo info) args.toArray
+    let tree := .node (.ofExprInfo info) args.toArray
+    return (tree, ← inferType tctx info.expr)
+
+partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
+  Prod.fst <$> elabExprAndType tctx stx
 
 end
 

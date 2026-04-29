@@ -224,10 +224,6 @@ deriving Inhabited, Repr
 
 structure ExprInfo extends ElabInfo where
   expr : Expr
-  /-- Resolved return type for generic function calls. Stored by Init.exprApp
-      after solving fresh unification variables; used by elabSyntaxArg instead
-      of calling inferType, which would return raw tvar nodes. -/
-  resolvedType : Option TypeExpr := none
 deriving Inhabited, Repr
 
 structure TypeInfo extends ElabInfo where
