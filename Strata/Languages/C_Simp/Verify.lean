@@ -65,7 +65,8 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   | .ite cond thenb elseb _md =>
     .ite (cond.map translate_expr) (thenb.map translate_stmt) (elseb.map translate_stmt) {}
   | .loop guard measure invariant body _md =>
-    .loop (guard.map translate_expr) (translate_opt_expr measure) (invariant.map translate_expr) (body.map translate_stmt) {}
+    .loop (guard.map translate_expr) (translate_opt_expr measure)
+      (invariant.map (fun (l, e) => (l, translate_expr e))) (body.map translate_stmt) {}
   | .funcDecl _ _ => panic! "C_Simp does not support function declarations"
   | .typeDecl _ _ => panic! "C_Simp does not support type declarations"
   | .exit label _md => .exit label {}
@@ -101,12 +102,12 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       -- Synthesized Core expressions have no C_Simp source location; SourceRange.none is used.
       let measure_pos := (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Ge" none) (translate_expr measure)) (.intConst Strata.SourceRange.none 0))
 
-      let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+      let entry_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
       let assert_measure_positive : Core.Statement := .assert "assert_measure_pos" measure_pos {}
       let first_iter_facts : Core.Statement := .block "first_iter_asserts" (entry_invariants ++ [assert_measure_positive]) {}
 
-      let inv_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let inv_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         Core.Statement.assume s!"assume_invariant_{i}" (translate_expr inv) {}
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes"
         ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes ++
@@ -129,14 +130,14 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
     | .det guard_expr, .none, _ =>
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
-      let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+      let entry_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
       let first_iter_facts : Core.Statement := .block "first_iter_asserts" entry_invariants {}
-      let inv_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let inv_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         Core.Statement.assume s!"assume_invariant_{i}" (translate_expr inv) {}
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes"
         ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes) {}
-      let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+      let maintain_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
@@ -148,20 +149,20 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
     | .nondet, _, _ =>
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
-      let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+      let entry_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
-      let entry_invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let entry_invariant_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"assume_entry_invariant_{i}" (translate_expr inv) {}
       let first_iter_facts : Core.Statement := .block "first_iter_asserts" (entry_invariants ++ entry_invariant_assumes) {}
-      let inv_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let inv_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"assume_invariant_{i}" (translate_expr inv) {}
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" inv_assumes {}
-      let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+      let maintain_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
         ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
-      let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+      let invariant_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
       let exit_state_assumes := [havocd] ++ invariant_assumes
       let loop_passive := .ite .nondet (arbitrary_iter_facts :: exit_state_assumes) [] {}

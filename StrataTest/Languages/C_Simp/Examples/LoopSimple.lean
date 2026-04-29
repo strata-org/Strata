@@ -68,7 +68,7 @@ info: function loopSimple {
   while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
-    [(~Bool.And (~Int.Le i n) ((~Int.Div (~Int.Mul i (~Int.Sub i #1)) #2) == sum))]
+    [[loopSimple_invariant_370_417]: (~Bool.And (~Int.Le i n) ((~Int.Div (~Int.Mul i (~Int.Sub i #1)) #2) == sum))]
   {
     sum := (~Int.Add sum i)
     i := (~Int.Add i #1)
