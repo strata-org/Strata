@@ -639,3 +639,69 @@ the 6 with structural warnings are exactly the comprehension-heavy files identif
 in Phase 1. The `bare raise` pattern was not flagged in Phase 1's scoping because
 it was expected to be straightforward — it uses only in-scope constructs (raise,
 exception variables) and was simply deferred during initial implementation.
+
+### Phase 18: Module-Level Name Resolution (completed 2026-04-29)
+
+Resolved three categories of previously-unresolved names: imports, module-level
+variable assignments, and `__name__`.
+
+**Design insight from Python semantics.** A small test case (A.py/B.py)
+demonstrated Python's actual module variable semantics: `x = 1` at module level
+in module M creates `M.x`, and functions reading `x` are really reading `M.x`
+at call time. External code can mutate `M.x` and the function sees the change.
+This led to the design: module-level assignments resolve to
+`qualifiedRef M.name` in functions — semantically accurate and useful for
+downstream analysis (the qualified name tells you where to look for type info).
+
+**Import propagation.** Added `collectImportBindings` to scan top-level `Import`
+and `ImportFrom` statements and build a `HashMap String QualifiedName`. These
+bindings are merged into `moduleBindings` so every function sees imported names
+as `qualifiedRef` (e.g., `boto3` → `qualifiedRef boto3.boto3`, `ClientError` →
+`qualifiedRef botocore.exceptions.ClientError`).
+
+**Module-level assignments.** Added `collectModuleAssignments` to scan `Assign`,
+`AnnAssign`, and `AugAssign` targets. These are merged into `moduleBindings`
+with lower precedence than imports: if a name is both imported and assigned,
+the import wins (matching Python's runtime shadowing order for the common case).
+
+**Precedence chain.** The `moduleBindings` merge order ensures correct shadowing:
+implicit attrs (`__name__`) < assignments < imports < function/class definitions.
+Functions/classes always win, matching Python semantics.
+
+**`__name__` as module attribute.** Initially added `__name__` to the prelude as
+`qualifiedRef builtins.__name__`, but the human corrected this: `__name__` is a
+module attribute (`M.__name__`), not a builtin. In Python, `import json;
+json.__name__` returns `'json'`. Fixed to resolve as `qualifiedRef M.__name__`.
+
+**Demand analysis split.** A subtle issue arose: `collectModuleGlobals` (which
+feeds demand analysis) must NOT include assignment targets for `@module_init`,
+because those variables are genuinely local to the init function and need to be
+threaded through blocks. But other functions should exclude them (they resolve
+via `moduleBindings`). The fix: `scanModule` computes two globals sets —
+`globals` (original: functions + classes + imports) for `@module_init`, and
+`funcGlobals` (adds assignment targets) for all other functions and methods.
+
+**Prelude additions.** Added `any`, `all`, `IndexError`, `FileNotFoundError`,
+`ProcessLookupError` — builtins found in the corpus but missing from the prelude.
+
+**Test: t27_module_vars.py.** Four functions testing:
+- `use_module_vars`: imports and assignments resolve to qualifiedRef
+- `param_shadows_module_var`: function parameter shadows module var
+- `local_shadows_module_var`: local assignment shadows module var
+- `mixed_imports_and_vars`: both imports and module vars in one function
+
+**Corpus results.** Warnings dropped from 289 to 49 (83% reduction):
+
+| Category | Count | Notes |
+|----------|-------|-------|
+| unsupported ListComp | 16 | Comprehension — out of scope |
+| unsupported GeneratorExp | 8 | Comprehension — out of scope |
+| unsupported DictComp | 3 | Comprehension — out of scope |
+| unsupported SetComp | 2 | Comprehension — out of scope |
+| Unresolved local variables | 20 | Function-local vars in conditional branches |
+
+The 29 comprehension warnings are expected (out of scope). The 20 unresolved
+local variables are genuinely ambiguous names — variables assigned inside `if`
+or `try` blocks that may not be defined on all control flow paths. These are
+correct warnings: the code would raise `NameError` at runtime if the variable's
+branch wasn't taken.

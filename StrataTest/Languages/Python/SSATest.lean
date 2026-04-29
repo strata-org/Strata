@@ -154,7 +154,8 @@ private meta def positiveTests : List String := [
   "t23_kwargs_boto3",
   "t24_assert",
   "t25_tuple_unpack",
-  "t26_with_as_use"
+  "t26_with_as_use",
+  "t27_module_vars"
 ]
 
 private meta def negativeTests : List String := [

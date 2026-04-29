@@ -285,9 +285,10 @@ def pythonPrelude : Std.HashMap String QualifiedName :=
     mk "print", mk "len", mk "str", mk "open", mk "input",
     mk "enumerate", mk "int", mk "list", mk "range", mk "set",
     mk "sum", mk "isinstance", mk "abs", mk "float", mk "iter",
-    mk "next",
+    mk "next", mk "any", mk "all",
     -- Exceptions/Types
     mk "Exception", mk "ValueError", mk "KeyboardInterrupt",
     mk "TypeError", mk "KeyError", mk "RuntimeError",
-    mk "StopIteration", mk "AssertionError"
+    mk "StopIteration", mk "AssertionError",
+    mk "IndexError", mk "FileNotFoundError", mk "ProcessLookupError"
   ]

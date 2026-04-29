@@ -89,30 +89,71 @@ private def collectModuleGlobals (stmts : Array (stmt SourceRange))
     | _ => pure ()
   return globals
 
+/-- Collect import bindings from top-level statements. -/
+private def collectImportBindings (stmts : Array (stmt SourceRange))
+    : Std.HashMap String QualifiedName := Id.run do
+  let mut bindings : Std.HashMap String QualifiedName := {}
+  for s in stmts do
+    match s with
+    | .Import _ ⟨_, aliases⟩ =>
+      for a in aliases do
+        let modName := a.name
+        let localName := a.asname.getD modName
+        bindings := bindings.insert localName (QualifiedName.mk' modName modName)
+    | .ImportFrom _ ⟨_, modOpt⟩ ⟨_, aliases⟩ _ =>
+      let modName := match modOpt with
+        | some ⟨_, m⟩ => m | none => "unknown"
+      for a in aliases do
+        let localName := a.asname.getD a.name
+        bindings := bindings.insert localName (QualifiedName.mk' modName a.name)
+    | _ => pure ()
+  return bindings
+
+/-- Collect module-level assignment target names. -/
+private def collectModuleAssignments (stmts : Array (stmt SourceRange))
+    : Std.HashSet String := Id.run do
+  let mut vars : Std.HashSet String := {}
+  for s in stmts do
+    match s with
+    | .Assign _ ⟨_, targets⟩ _ _ =>
+      for t in targets do
+        match t with
+        | .Name _ ⟨_, name⟩ _ => vars := vars.insert name
+        | _ => pure ()
+    | .AnnAssign _ (.Name _ ⟨_, name⟩ _) _ _ _ =>
+      vars := vars.insert name
+    | .AugAssign _ (.Name _ ⟨_, name⟩ _) _ _ =>
+      vars := vars.insert name
+    | _ => pure ()
+  return vars
+
 /-- Scan a module's top-level statements into `FuncInfo` records. -/
 private def scanModule (stmts : Array (stmt SourceRange))
     : Array FuncInfo := Id.run do
   let globals := collectModuleGlobals stmts
+  -- Functions/methods see module-level assignments as globals too
+  let funcGlobals := (collectModuleAssignments stmts).fold (init := globals) fun acc name =>
+    acc.insert name
   let mut results : Array FuncInfo := #[]
   for s in stmts do
     match s with
     | .FunctionDef sr ⟨_, name⟩ args ⟨_, body⟩ _ _ _ _ =>
-      results := results.push { name, params := extractParams args, body, sr, globals }
+      results := results.push { name, params := extractParams args, body, sr, globals := funcGlobals }
     | .AsyncFunctionDef sr ⟨_, name⟩ args ⟨_, body⟩ _ _ _ _ =>
-      results := results.push { name, params := extractParams args, body, sr, globals, isAsync := true }
+      results := results.push { name, params := extractParams args, body, sr, globals := funcGlobals, isAsync := true }
     | .ClassDef sr ⟨_, className⟩ _ _ ⟨_, classBody⟩ _ _ =>
       for cs in classBody do
         match cs with
         | .FunctionDef methodSr ⟨_, methodName⟩ args ⟨_, methodBody⟩ _ _ _ _ =>
           results := results.push { name := s!"{className}.{methodName}"
                                     params := extractParams args
-                                    body := methodBody, sr := methodSr, globals }
+                                    body := methodBody, sr := methodSr, globals := funcGlobals }
         | _ => pure ()
       let initStmts := classBody.filter fun cs =>
         match cs with | .FunctionDef .. => false | _ => true
       if !initStmts.isEmpty then
         results := results.push { name := s!"@{className}_init", params := #[]
-                                  body := initStmts, sr, globals }
+                                  body := initStmts, sr, globals := funcGlobals }
     | _ => pure ()
   let moduleStmts := stmts.filter fun s =>
     match s with | .FunctionDef .. | .AsyncFunctionDef .. | .ClassDef .. => false | _ => true
@@ -1619,7 +1660,16 @@ public def translateModule (moduleName : String)
     moduleName
   }
   let results := scanModule stmts
-  let moduleBindings := results.foldl (init := {}) fun bindings r =>
+  -- Build moduleBindings: implicit attrs < assignments < imports < functions/classes
+  let moduleBindings : Std.HashMap String QualifiedName :=
+    .ofList [("__name__", QualifiedName.mk' moduleName "__name__")]
+  let moduleAssigns := collectModuleAssignments stmts
+  let moduleBindings := moduleAssigns.fold (init := moduleBindings)
+    fun acc name => acc.insert name (QualifiedName.mk' moduleName name)
+  let importBindings := collectImportBindings stmts
+  let moduleBindings := importBindings.fold (init := moduleBindings) fun acc k v =>
+    acc.insert k v
+  let moduleBindings := results.foldl (init := moduleBindings) fun bindings r =>
     if r.name == "@module_init" then bindings
     else if r.name.any (· == '.') then
       let className := r.name.takeWhile (· != '.') |>.toString
