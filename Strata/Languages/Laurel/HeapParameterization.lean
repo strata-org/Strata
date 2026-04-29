@@ -98,7 +98,7 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
     | .Transparent b => (collectExprMd b).run {} |>.2
     | .Opaque postconds impl modif =>
-        if !modif.isEmpty then
+        if impl.isNone && !modif.isEmpty then
           { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
         else
           let r1 := postconds.foldl (fun (acc : AnalysisResult) (pc : Condition) =>
