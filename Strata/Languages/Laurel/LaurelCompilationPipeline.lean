@@ -12,6 +12,7 @@ import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Laurel.SubscriptElim
+import Strata.Languages.Laurel.ValidateSubscriptUsage
 import Strata.Languages.Core.Verifier
 import Strata.Util.Profile
 import Strata.Util.Statistics
@@ -171,10 +172,11 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   emit "TypeAliasElim" "laurel.st" program
 
   let diamondErrors := validateDiamondFieldAccesses model program
+  let subscriptErrors := validateSubscriptUsage model program
 
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := resolutionErrors ++ diamondErrors
+  let mut allDiags : List DiagnosticModel := resolutionErrors ++ diamondErrors ++ subscriptErrors
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do

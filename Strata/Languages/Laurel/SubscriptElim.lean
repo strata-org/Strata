@@ -239,10 +239,17 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     ⟨.Assign targets' (elimExpr model value), src⟩
   | .StaticCall callee args =>
     let args' := args.attach.map fun ⟨a, _⟩ => elimExpr model a
-    -- `Array.length(a)` → `Sequence.length(a#$data)`
+    -- `Array.length(a)` → `Sequence.length(a#$data)` — only when `a` is an Array<T>.
+    -- When the argument is not an Array (a user error caught by the validator),
+    -- replace the call with `0` so downstream Core type checking doesn't emit
+    -- confusing unification errors on top of the validator's helpful message.
     if callee.text == arrayLengthName then
       match args' with
-      | [a] => mkCall SeqOp.length [mkFieldExpr a SeqOp.dataField src] src
+      | [a] =>
+        if isArrayType model a then
+          mkCall SeqOp.length [mkFieldExpr a SeqOp.dataField src] src
+        else
+          ⟨.LiteralInt 0, src⟩
       | _ =>
         -- Wrong arity — leave alone (validator/resolver will flag).
         ⟨.StaticCall callee args', src⟩
