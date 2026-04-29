@@ -549,7 +549,6 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
-oops
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
