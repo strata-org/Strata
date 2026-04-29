@@ -65,7 +65,7 @@ pub fn from_bytes_mod_order(bytes: [u8; 32]) -> (result: Scalar)
 ```
 
 - Every Ed25519 signature passes scalars through this function. Non-canonical encodings cause **signature malleability**: two valid signatures for the same message.
-- `is_canonical_scalar` is a deployed security property — several Bitcoin and TLS libraries were found vulnerable when they did not enforce it (RFC 8032 §5.2.6).
+- `is_canonical_scalar` is a deployed security property — several widely-used libraries including OpenSSL and tinyssh were found vulnerable when they did not enforce it (RFC 8032 §5.1.7).
 - The body is three lines; the interesting claim is entirely in the postcondition.
 
 ---
