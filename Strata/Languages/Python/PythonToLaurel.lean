@@ -1393,6 +1393,24 @@ partial def containsUserCall (ctx : TranslationContext) (e : StmtExprMd) : Bool 
       elseBranch.any (containsUserCall ctx)
   | _ => false
 
+/-- Generate exception-check assertions for an expression, extracting it into a
+    temporary variable when the expression contains a user-defined procedure
+    call.  Returns `(preamble, exprRef)` where `preamble` is the list of
+    statements to emit before the use site and `exprRef` is the expression to
+    use in place of the original (either the original or a variable reference).
+    See issue #1000. -/
+def getExceptionCheckPreamble (ctx : TranslationContext) (e : StmtExprMd) (varName : String)
+    : List StmtExprMd × StmtExprMd :=
+  let exceptionAsserts := getExceptionAssertions ctx e
+  if !exceptionAsserts.isEmpty && containsUserCall ctx e then
+    let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some e))
+    let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
+    let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
+    let assert := mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some "Check exception" }) e.md
+    ([varDecl, assert], varRef)
+  else
+    (exceptionAsserts, e)
+
 def withExceptionChecks (ctx : TranslationContext)
     (result : TranslationContext × List StmtExprMd)
     : TranslationContext × List StmtExprMd :=
@@ -1473,24 +1491,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    -- When the condition contains a user-defined procedure call AND exception
-    -- assertions are needed, extract the condition into a temporary variable
-    -- so the procedure call appears only in the variable initializer (a
-    -- statement context) rather than being duplicated into the assert (a pure
-    -- context where procedure calls are disallowed).  See issue #1000.
-    let exceptionAsserts := getExceptionAssertions ctx condExpr
-    let needsExtraction := !exceptionAsserts.isEmpty && containsUserCall ctx condExpr
-    let (preamble, condRef) :=
-      if needsExtraction then
-        let varName := s!"$if_cond_{test.toAst.ann.start.byteIdx}"
-        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some condExpr))
-        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-        let asserts := (getMaybeExceptionExprs ctx condExpr).map fun mbe =>
-          let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-          mkStmtExprMdWithLoc (.Assert { condition := condExpr }) mbe.md
-        ([varDecl] ++ asserts, varRef)
-      else
-        (exceptionAsserts, condExpr)
+    let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$if_cond_{test.toAst.ann.start.byteIdx}"
     let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condRef) bodyBlock elseBlock) md
 
     return (bodyCtx, preamble ++ [ifStmt])
@@ -1504,22 +1505,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let loopCtx := { ctx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
     let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
-    -- Same fix as the If case: extract condition into a variable when
-    -- exception assertions are needed and the expression contains a user
-    -- procedure call.  See issue #1000.
-    let exceptionAsserts := getExceptionAssertions ctx condExpr
-    let needsExtraction := !exceptionAsserts.isEmpty && containsUserCall ctx condExpr
-    let (preamble, condRef) :=
-      if needsExtraction then
-        let varName := s!"$while_cond_{test.toAst.ann.start.byteIdx}"
-        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some condExpr))
-        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-        let asserts := (getMaybeExceptionExprs ctx condExpr).map fun mbe =>
-          let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-          mkStmtExprMdWithLoc (.Assert { condition := condExpr }) mbe.md
-        ([varDecl] ++ asserts, varRef)
-      else
-        (exceptionAsserts, condExpr)
+    let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$while_cond_{test.toAst.ann.start.byteIdx}"
     let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, preamble ++ [whileWrapped])
@@ -1529,22 +1515,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
-        -- Same fix as the If case: extract return value into a variable when
-        -- exception assertions are needed and the expression contains a user
-        -- procedure call.  See issue #1000.
-        let exceptionAsserts := getExceptionAssertions ctx e
-        let needsExtraction := !exceptionAsserts.isEmpty && containsUserCall ctx e
-        let (preamble, eRef) :=
-          if needsExtraction then
-            let varName := s!"$ret_exc_{expr.toAst.ann.start.byteIdx}"
-            let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some e))
-            let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-            let asserts := (getMaybeExceptionExprs ctx e).map fun mbe =>
-              let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-              mkStmtExprMdWithLoc (.Assert { condition := condExpr }) mbe.md
-            ([varDecl] ++ asserts, varRef)
-          else
-            (exceptionAsserts, e)
+        let (preamble, eRef) := getExceptionCheckPreamble ctx e s!"$ret_exc_{expr.toAst.ann.start.byteIdx}"
         -- Coerce Composite return values to Any for LaurelResult : Any
         let eRef ← coerceToAny ctx expr eRef
         let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] eRef) md
@@ -1578,22 +1549,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else
       mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
 
-    -- Same fix as the If case: extract condition into a variable when
-    -- exception assertions are needed and the expression contains a user
-    -- procedure call.  See issue #1000.
-    let exceptionAsserts := getExceptionAssertions ctx condExpr
-    let needsExtraction := !exceptionAsserts.isEmpty && containsUserCall ctx condExpr
-    let preamble :=
-      if needsExtraction then
-        let varName := s!"$assert_exc_{test.toAst.ann.start.byteIdx}"
-        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some condExpr))
-        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-        let asserts := (getMaybeExceptionExprs ctx condExpr).map fun mbe =>
-          let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-          mkStmtExprMdWithLoc (.Assert { condition := condExpr }) mbe.md
-        [varDecl] ++ asserts
-      else
-        exceptionAsserts
+    let (preamble, _) := getExceptionCheckPreamble ctx condExpr s!"$assert_exc_{test.toAst.ann.start.byteIdx}"
 
     return (condCtx, preamble ++ [result])
 
@@ -1780,22 +1736,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
-    -- Same fix as the If case: extract iter into a variable when
-    -- exception assertions are needed and the expression contains a user
-    -- procedure call.  See issue #1000.
-    let exceptionAsserts := getExceptionAssertions ctx iterExpr
-    let needsExtraction := !exceptionAsserts.isEmpty && containsUserCall ctx iterExpr
-    let preamble :=
-      if needsExtraction then
-        let varName := s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
-        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some iterExpr))
-        let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-        let asserts := (getMaybeExceptionExprs ctx iterExpr).map fun mbe =>
-          let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-          mkStmtExprMdWithLoc (.Assert { condition := condExpr }) mbe.md
-        [varDecl] ++ asserts
-      else
-        exceptionAsserts
+    let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
     return (finalCtx, preamble ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
