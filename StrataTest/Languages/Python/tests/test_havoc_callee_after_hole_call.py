@@ -27,4 +27,4 @@ assert a.val == 1, "composite arg: heap not havocked (out of scope)"
 xs2: list[int] = [1, 2]
 ys2: list[int] = []
 xs2.unknown_method_that_may_modify_arguments(ys2)
-assert ys2 == [], "argument not havocked (type system cannot distinguish mutable from immutable)"
+assert ys2 == [], "expected unknown because argument locals should be havocked"
