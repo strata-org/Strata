@@ -504,6 +504,10 @@ def translateStmt (stmt : StmtExprMd)
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
       return [Imperative.Stmt.exit (some target) md]
+  | .Hole _ _ =>
+      -- Hole in statement position: treat as havoc (no-op).
+      -- This can occur when an unmodeled call's Block is flattened.
+      return []
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
