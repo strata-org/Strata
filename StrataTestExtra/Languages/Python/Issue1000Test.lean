@@ -35,8 +35,7 @@ def main() -> None:
         return
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  for d in diags do
-    if stringContains d.message "calls to procedures are not supported" then
-      throw <| .userError s!"Unexpected error: {d.message}"
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
 end Strata.Python.Issue1000
