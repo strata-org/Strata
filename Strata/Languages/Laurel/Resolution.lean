@@ -63,6 +63,39 @@ public section
 
 /-! ## ResolvedNode — the target of a resolved reference -/
 
+/-- The kind (constructor tag) of a `ResolvedNode`, used to assert that a reference
+    resolves to the expected sort of definition. -/
+inductive ResolvedNodeKind where
+  | var
+  | parameter
+  | staticProcedure
+  | instanceProcedure
+  | field
+  | compositeType
+  | constrainedType
+  | datatypeDefinition
+  | datatypeConstructor
+  | typeAlias
+  | constant
+  | quantifierVar
+  | unresolved
+  deriving Repr, BEq
+
+def ResolvedNodeKind.name : ResolvedNodeKind → String
+  | .var               => "variable"
+  | .parameter         => "parameter"
+  | .staticProcedure   => "static procedure"
+  | .instanceProcedure => "instance procedure"
+  | .field             => "field"
+  | .compositeType     => "composite type"
+  | .constrainedType   => "constrained type"
+  | .datatypeDefinition => "datatype definition"
+  | .datatypeConstructor => "datatype constructor"
+  | .typeAlias         => "type alias"
+  | .constant          => "constant"
+  | .quantifierVar     => "quantifier variable"
+  | .unresolved        => "unresolved"
+
 /-- A definition-site AST node that a reference can resolve to. -/
 inductive ResolvedNode where
   /-- A local variable declaration. -/
@@ -95,17 +128,33 @@ inductive ResolvedNode where
 instance : Inhabited ResolvedNode where
   default := ResolvedNode.unresolved
 
+/-- Return the constructor tag of a `ResolvedNode`. -/
+def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
+  | .var ..               => .var
+  | .parameter ..         => .parameter
+  | .staticProcedure ..   => .staticProcedure
+  | .instanceProcedure .. => .instanceProcedure
+  | .field ..             => .field
+  | .compositeType ..     => .compositeType
+  | .constrainedType ..   => .constrainedType
+  | .datatypeDefinition .. => .datatypeDefinition
+  | .datatypeConstructor .. => .datatypeConstructor
+  | .typeAlias ..         => .typeAlias
+  | .constant ..          => .constant
+  | .quantifierVar ..     => .quantifierVar
+  | .unresolved           => .unresolved
+
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, none, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", none, default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none, default ⟩
+    ⟨ .UserDefined "dummyName", none ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none ⟩
 
 /-! ## Resolution result -/
 
@@ -194,22 +243,30 @@ def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName
 def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
   if (← get).currentScopeNames.contains resolutionName then
-    let diag := iden.md.toDiagnostic s!"Duplicate definition '{resolutionName}' is already defined in this scope"
+    let diag := diagnosticFromSource iden.source s!"Duplicate definition '{resolutionName}' is already defined in this scope"
     modify fun s => { s with errors := s.errors.push diag }
     defineName iden .unresolved overrideResolutionName
   else
     defineName iden node overrideResolutionName
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
-    Returns the identifier with its ID filled in. -/
-def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := .empty) : ResolveM Identifier := do
+    Returns the identifier with its ID filled in.
+    When `expected` is provided, emits a diagnostic if the resolved node's kind is not
+    in the list of expected kinds. -/
+def resolveRef (name : Identifier) (source : Option FileRange := none)
+    (expected : Array ResolvedNodeKind := #[]) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.text with
-  | some (defId, _) =>
+  | some (defId, node) =>
     let name' := { name with uniqueId := some defId }
+    if expected.size > 0 && node.kind != .unresolved && !expected.contains node.kind then
+      let expectedStr := ", ".intercalate (expected.toList.map ResolvedNodeKind.name)
+      let diag := diagnosticFromSource (source.orElse fun _ => name.source)
+        s!"'{name}' resolves to {node.kind.name}, but expected {expectedStr}"
+      modify fun s => { s with errors := s.errors.push diag }
     return name'
   | none =>
-    let diag := md.toDiagnostic s!"Resolution failed: '{name}' is not defined"
+    let diag := diagnosticFromSource (source.orElse fun _ => name.source) s!"Resolution failed: '{name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 
@@ -240,7 +297,7 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
     Falls back to the instance type name (for `self.field` in instance methods),
     then to unqualified lookup if the target type cannot be determined. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
+    (source : Option FileRange) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -250,7 +307,7 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  resolveRef fieldName md
+  resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -266,11 +323,11 @@ def withScope (action : ResolveM α) : ResolveM α := do
 
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
-  | AstNode.mk val _ _ =>
-  let coreMd := fileRangeToCoreMd ty.source ty.md
+  | AstNode.mk val _ =>
   let val' ← match val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref coreMd
+    let ref' ← resolveRef ref ty.source
+      (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
     pure (.UserDefined ref')
   | .TTypedField vt =>
     let vt' ← resolveHighType vt
@@ -293,12 +350,11 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
   | other => pure other
-  return ⟨val', ty.source, ty.md⟩
+  return { val := val', source := ty.source }
 
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
-  | AstNode.mk expr source md =>
-  let coreMd := fileRangeToCoreMd source md
+  | AstNode.mk expr source =>
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond
@@ -329,7 +385,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralString v => pure (.LiteralString v)
   | .LiteralDecimal v => pure (.LiteralDecimal v)
   | .Identifier ref =>
-    let ref' ← resolveRef ref coreMd
+    let ref' ← resolveRef ref source
     pure (.Identifier ref')
   | .Assign targets value =>
     let targets' ← targets.mapM resolveStmtExpr
@@ -337,22 +393,24 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .FieldSelect target fieldName =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName coreMd
+    let fieldName' ← resolveFieldRef target' fieldName source
     pure (.FieldSelect target' fieldName')
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName coreMd
+    let fieldName' ← resolveFieldRef target' fieldName source
     let newVal' ← resolveStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
-    let callee' ← resolveRef callee coreMd
+    let callee' ← resolveRef callee source
+      (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
     let args' ← args.mapM resolveStmtExpr
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
     let args' ← args.mapM resolveStmtExpr
     pure (.PrimitiveOp op args')
   | .New ref =>
-    let ref' ← resolveRef ref coreMd
+    let ref' ← resolveRef ref source
+      (expected := #[.compositeType, .datatypeDefinition])
     pure (.New ref')
   | .This => pure .This
   | .ReferenceEquals lhs rhs =>
@@ -369,7 +427,8 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.IsType target' ty')
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
-    let callee' ← resolveRef callee coreMd
+    let callee' ← resolveRef callee source
+      (expected := #[.instanceProcedure, .staticProcedure])
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
   | .Quantifier mode param trigger body =>
@@ -408,7 +467,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let ty' ← resolveHighType ty
       pure (.Hole det ty')
     | none => pure (.Hole det none)
-  return ⟨val', source, md⟩
+  return { val := val', source := source }
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 
@@ -481,7 +540,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← defineName ct.name (.compositeType ct)
-    let extending' ← ct.extending.mapM (resolveRef · .empty)
+    let extending' ← ct.extending.mapM (resolveRef · none (expected := #[.compositeType]))
     let fields' ← ct.fields.mapM (resolveField ctName')
     -- Build per-type scope BEFORE resolving instance procedures, so that
     -- field references (e.g. self.field) inside methods can be resolved.
@@ -552,7 +611,7 @@ private def register (map : Std.HashMap Nat ResolvedNode) (iden : Identifier) (n
 private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeMd)
     : Std.HashMap Nat ResolvedNode :=
   match ty with
-  | AstNode.mk val _ _ =>
+  | AstNode.mk val _ =>
   match val with
   | .TTypedField vt => collectHighType map vt
   | .TSet et => collectHighType map et
@@ -569,7 +628,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
     : Std.HashMap Nat ResolvedNode :=
   match expr with
-  | AstNode.mk val _ _ =>
+  | AstNode.mk val _ =>
   match val with
   | .IfThenElse cond thenBr elseBr =>
     let map := collectStmtExpr map cond
@@ -704,7 +763,7 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
 
 /-- A default ResolvedNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
-private def placeholderNode : ResolvedNode := .var "$placeholder" ⟨.TVoid, none, #[]⟩
+private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:

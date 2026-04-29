@@ -64,8 +64,8 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  let md ← getArgMetaData arg
-  return { text := id, md := md }
+  let source ← getArgFileRange arg
+  return { text := id, source := source }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -154,7 +154,7 @@ instance : Inhabited Procedure where
     decreases := none
     isFunctional := false
     invokeOn := none
-    body := .Transparent ⟨.LiteralBool true, none, #[]⟩
+    body := .Transparent { val := .LiteralBool true, source := none }
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -378,6 +378,11 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
         | q`Laurel.modifiesClause, #[refsArg] =>
           let refs ← translateModifiesExprs refsArg
           allModifies := allModifies ++ refs
+        | q`Laurel.modifiesWildcard, #[] =>
+          let src ← match (← get).uri with
+            | some uri => pure (some (SourceRange.toFileRange uri clauseOp.ann))
+            | none => pure none
+          allModifies := allModifies ++ [mkStmtExprMd .All src]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
     pure allModifies
