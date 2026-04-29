@@ -178,6 +178,45 @@ The `Sequence` namespace exposes the following operations:
 `Array.length(a)` returns the length of an array. It is internally desugared to
 `Sequence.length(a#$data)` and requires its argument to be of type `Array<T>`.
 
+## Common mistakes
+
+A pre-pass validator flags four common misuses with helpful messages:
+
+- Using `a[i := v]` (functional update) on an `Array<T>`:
+
+  ```
+  var a: Array<int> := [1, 2, 3];
+  var b: Array<int> := a[0 := 99];
+  //                   ~~~~~~~~~~
+  // error: `a[i := v]` is not supported on `Array<T>`: arrays are mutable.
+  ```
+
+- Using `s[i] := v` (destructive update) on a `Seq<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  s[0] := 42;
+  // ~~~~
+  // error: `s[i] := v` is not allowed: sequences (`Seq<T>`) are immutable.
+  ```
+
+- Calling `Array.length` on something that is not an `Array<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  assert Array.length(s) == 3;
+  //     ~~~~~~~~~~~~~~~
+  // error: `Array.length` requires an argument of type `Array<T>`, got `Seq<int>`.
+  ```
+
+- Declaring `Array<T>` with a `T` other than `int` (current SMT limitation):
+
+  ```
+  var a: Array<bool> := [true, false];
+  //     ~~~~~~~~~~~
+  // error: `Array<T>` is currently only supported for `T = int`.
+  ```
+
 ## Internal representation
 
 Arrays are represented internally by a synthetic `$Array` composite with a single

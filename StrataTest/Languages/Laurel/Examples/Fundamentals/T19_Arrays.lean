@@ -96,5 +96,42 @@ procedure callSetFirst() {
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "Arrays" arrayProgram 14 processLaurelFile
 
+-- Negative cases: misuses of Array<T> flagged by ValidateSubscriptUsage.
+
+def arrayFuncUpdateProgram := r"
+// Diagnostic 1: functional update on Array<T>
+procedure arrayFuncUpdate() {
+  var a: Array<int> := [1, 2, 3];
+  var b: Array<int> := a[0 := 99]
+//                     ^^^^^^^^^^ error: not supported on `Array
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArrayFuncUpdate" arrayFuncUpdateProgram 14 processLaurelFile
+
+def arrayLengthWrongArgProgram := r"
+// Diagnostic 3: Array.length on a non-Array argument
+procedure arrayLengthWrongArg() {
+  var s: Seq<int> := [1, 2, 3];
+  assert Array.length(s) == 3
+//       ^^^^^^^^^^^^^^^ error: requires an argument of type
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArrayLengthWrongArg" arrayLengthWrongArgProgram 14 processLaurelFile
+
+def arrayNonIntElementProgram := r"
+// Diagnostic 4: Array<T> with T other than int
+procedure arrayNonIntElement() {
+  var a: Array<bool> := [true, false]
+//       ^^^^^^^^^^^ error: currently only supported
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArrayNonIntElement" arrayNonIntElementProgram 14 processLaurelFile
+
 end Laurel
 end Strata

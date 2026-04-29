@@ -199,26 +199,34 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     ⟨.Block expanded label, src⟩
   | .Assign [⟨.Subscript target index none, ssrc⟩] value =>
     -- `target[index] := value`: on Array<T>, rewrite to `target#$data := Sequence.update(...)`.
-    -- On Seq<T> this is a user error; preserve shape so validator can emit a diagnostic.
-    let target' := elimExpr model target
-    let index' := elimExpr model index
-    let value' := elimExpr model value
+    -- On Seq<T> this is a user error; `ValidateSubscriptUsage` has already
+    -- reported the helpful message. We replace the statement with an empty
+    -- block so downstream passes don't additionally complain about the
+    -- now-ill-shaped assign.
     if isArrayType model target then
+      let target' := elimExpr model target
+      let index' := elimExpr model index
+      let value' := elimExpr model value
       let data := mkFieldSelect target' SeqOp.dataField ssrc
       ⟨.Assign [mkFieldSelect target' SeqOp.dataField ssrc]
         (mkCall SeqOp.update [data, index', value'] ssrc), src⟩
     else
-      -- Seq is immutable — leave as an Assign onto a Sequence.select, which
-      -- downstream will reject. Validator (commit 2) emits the helpful message.
-      ⟨.Assign [mkCall SeqOp.select [target', index'] ssrc] value', src⟩
+      ⟨.Block [] none, src⟩
   | .Assign targets value =>
     ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => elimExpr model t) (elimExpr model value), src⟩
   | .StaticCall callee args =>
     let args' := args.attach.map fun ⟨a, _⟩ => elimExpr model a
-    -- `Array.length(a)` → `Sequence.length(a#$data)`
+    -- `Array.length(a)` → `Sequence.length(a#$data)` — only when `a` is an Array<T>.
+    -- When the argument is not an Array (a user error caught by the validator),
+    -- replace the call with `0` so downstream Core type checking doesn't emit
+    -- confusing unification errors on top of the validator's helpful message.
     if callee.text == arrayLengthName then
       match args' with
-      | [a] => mkCall SeqOp.length [mkFieldSelect a SeqOp.dataField src] src
+      | [a] =>
+        if isArrayType model a then
+          mkCall SeqOp.length [mkFieldSelect a SeqOp.dataField src] src
+        else
+          ⟨.LiteralInt 0, src⟩
       | _ =>
         -- Wrong arity — leave alone (validator/resolver will flag).
         ⟨.StaticCall callee args', src⟩

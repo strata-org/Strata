@@ -150,5 +150,19 @@ procedure dropSelect() {
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "Sequences" seqProgram 14 processLaurelFile
 
+-- Negative cases: misuses of Seq<T> flagged by ValidateSubscriptUsage.
+
+def seqNegativeProgram := r"
+// Diagnostic 2: destructive update on Seq<T>
+procedure seqDestructiveUpdate() {
+  var s: Seq<int> := [1, 2, 3];
+  s[0] := 42
+//^^^^ error: immutable
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "SeqNegatives" seqNegativeProgram 14 processLaurelFile
+
 end Laurel
 end Strata
