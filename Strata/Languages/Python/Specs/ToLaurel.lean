@@ -419,12 +419,12 @@ def buildSpecBody (allArgs : Array Arg)
   let mut stmts : Array StmtExprMd := #[]
   -- 1. Havoc the result: result := Hole(nondet)
   let holeExpr : StmtExprMd := { val := .Hole (deterministic := false), source := source }
-  let resultId : StmtExprMd := { val := .Identifier (mkId "result"), source := source }
+  let resultId : AstNode Variable := { val := Variable.Local (mkId "result"), source := source }
   let assignStmt ← mkStmtWithLoc (.Assign [resultId] holeExpr) default
   stmts := stmts.push assignStmt
   -- 2. Assert type / required-param preconditions
   for arg in allArgs do
-    let paramId : StmtExprMd := { val := .Identifier (mkId arg.name), source := source }
+    let paramId : StmtExprMd := { val := .Var $ Variable.Local (mkId arg.name), source := source }
     match ← typeAssertion? arg.type paramId source with
     | some assertion =>
       if arg.default.isSome then
@@ -471,7 +471,7 @@ def buildSpecBody (allArgs : Array Arg)
   -- NOTE. Skip NoneType: generated stubs currently declare `-> None` even for methods
   -- that return values. Assuming isfrom_None would make callers unreachable.
   if returnType.asIdent != some .noneType then
-    let resultRef : StmtExprMd := { val := .Identifier (mkId "result"), source := source }
+    let resultRef : StmtExprMd := { val := .Var $ Variable.Local (mkId "result"), source := source }
     if let some retAssertion ← typeAssertion? returnType resultRef source then
       let assumeStmt ← mkStmtWithLoc (.Assume retAssertion) default
       stmts := stmts.push assumeStmt
