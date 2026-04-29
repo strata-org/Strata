@@ -529,10 +529,14 @@ def pyBenchSSACommand : Command where
 def pyTypeCheckCommand : Command where
   name := "pyTypeCheck"
   args := [ "file" ]
-  flags := [{ name := "profile", help := "Print elapsed time for each step." }]
+  flags := [
+    { name := "profile", help := "Print elapsed time for each step." },
+    { name := "spec-dir", help := "Directory containing .pyspec.st.ion files for import resolution." }
+  ]
   help := "Run forward type analysis on a Python Ion program and print inferred types."
   callback := fun v pflags => do
     let profile := pflags.getBool "profile"
+    let specDir := pflags.getString "spec-dir" |>.map (⟨·⟩ : String → System.FilePath)
     let stmts ← profileStep profile "File loading" do
       match ← Python.readPythonStrata v[0] |>.toBaseIO with
       | .ok s => pure s
@@ -540,7 +544,7 @@ def pyTypeCheckCommand : Command where
     let result ← profileStep profile "SSA conversion" do
       pure (Strata.Python.PythonToSSA.translateModule "module" stmts)
     let tcResult ← profileStep profile "Type checking" do
-      let cfg : Strata.Python.TypeCheck.TypeCheckConfig := { moduleName := "module" }
+      let cfg : Strata.Python.TypeCheck.TypeCheckConfig := { moduleName := "module", specDir }
       let (r, _) ← Strata.Python.TypeCheck.TypeCheckM.run cfg
         (Strata.Python.TypeCheck.typeCheckModule result.module)
       pure r

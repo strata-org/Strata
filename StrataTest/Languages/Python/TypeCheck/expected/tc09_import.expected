@@ -1,0 +1,27 @@
+module "tc09_import":
+
+func f():
+  bb0():
+    %0:math.0 = qualifiedRef math.math
+    %3:x.0 = call attr(%0, "sqrt")(positional(4.0))
+    %4:math.1 = qualifiedRef math.math
+    %5:y.0 = attr %4 "pi"
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc09_import":
+
+func f:
+  %0:math.0 : math
+  %1:_tmp.0 : Callable(math.sqrt)
+  %2:_tmp.1 : Literal(4.0)
+  %3:x.0 : float
+  %4:math.1 : math
+  %5:y.0 : float
+
+func @module_init:
