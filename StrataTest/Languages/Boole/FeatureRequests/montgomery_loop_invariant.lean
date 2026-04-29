@@ -17,11 +17,10 @@ Near-upstream anchor:
     x0 == scalar_mul(base, bits_above(n, 254 - i))
     x1 == scalar_mul(base, bits_above(n, 254 - i) + 1)
   where `bits_above(n, k)` is the integer formed by the top k bits of n.
-- Remaining gap (axioms): cvc5 cannot discharge the group-law invariant from scratch.
-  The fix is "manual induction": supply the ladder-step lemma explicitly as a
-  Boole axiom so that cvc5 only needs quantifier instantiation, not induction.
-  The remaining open question is whether cvc5's E-matching saturates on the
-  quantified ladder-step axiom within the solver's resource limits.
+- Remaining gap (axioms): the group-law invariant requires the Montgomery curve
+  differential addition law (Costello-Smith 2017, eq. 4) as a Boole axiom —
+  `double([q]P) = [2q]P` and `differential_add([q]P, [q+1]P, P) = [2q+1]P`.
+  With those axioms in place, whether cvc5 can close the invariant is untested.
 -/
 
 -- Baseline: single-variable for-loop invariant — works in Boole.
@@ -63,7 +62,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: sum_to_n_ensures_1_1230
+Obligation: sum_to_n_ensures_1_1157
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -129,7 +128,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: linear_ladder_ensures_1_2507
+Obligation: linear_ladder_ensures_1_2434
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -163,10 +162,9 @@ example : Strata.smtVCsCorrect relationalInvariantSeed := by
 --   bit = 1: x0 = differential_add(x0, x1, P); x1 = double(x1)
 -- preserving the invariant that x1 - x0 = P (projective differential relation).
 --
--- Gap: cvc5 cannot discharge the group-law invariant from scratch.
--- The fix is "manual induction": supply the ladder-step lemma as a Boole axiom
--- so cvc5 only needs quantifier instantiation. The remaining open question is
--- whether cvc5's E-matching saturates on the quantified axiom within resource limits.
+-- Gap: the group-law invariant requires the Montgomery curve differential addition
+-- law (Costello-Smith 2017, eq. 4) as Boole axioms. With those axioms supplied,
+-- whether cvc5 can close the invariant is untested.
 --
 -- program Boole;
 --

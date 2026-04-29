@@ -36,7 +36,7 @@ fn mul(self, _rhs: &'a FieldElement51) -> (output: FieldElement51)
 
 - Every Curve25519 operation — X25519, Ed25519, Ristretto — reduces to repeated calls to `mul`.
 - Proving `mul` correct verifies the arithmetic foundation every higher-level proof depends on.
-- No recursion, no loops, no sequences: the postcondition is a bounded-integer arithmetic claim cvc5 can discharge directly.
+- The postcondition is a bounded-integer arithmetic claim.
 
 ---
 
@@ -163,5 +163,5 @@ seeds live in
 | 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support |
 | 4 | Field op axioms | — | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
 | 5 | Inline `let`-block postcondition | — | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) and BooleFeatureRequests.md |
-| 5 | Montgomery ladder invariant | — | ○ open | Non-linear group-law axioms required; [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) covers the relational loop pattern |
+| 5 | Montgomery ladder invariant | — | ○ open | Requires group-law axioms (Costello-Smith 2017, eq. 4); [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) covers the relational loop pattern |
 
