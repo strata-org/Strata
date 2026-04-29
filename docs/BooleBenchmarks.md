@@ -133,48 +133,35 @@ pub fn mul_clamped(self, bytes: [u8; 32]) -> (result: Self)
 
 ## Gap status
 
-Legend: ✓ done · ○ open
+Legend: ○ open · ✓ done
+
+Language feature implementations are tracked in
+[`BooleFeatureRequests.md`](BooleFeatureRequests.md).
+This table tracks benchmark-specific gaps. A full benchmark seed is added to
+[`StrataTest/Languages/Boole/Benchmarks/`](../StrataTest/Languages/Boole/Benchmarks/)
+only once all gaps for that benchmark are closed. Until then, gap-specific small
+seeds live in
+[`StrataTest/Languages/Boole/FeatureRequests/`](../StrataTest/Languages/Boole/FeatureRequests/).
 
 **Shared by all five benchmarks:**
 
-| Gap | FR# | Status | Description |
-|-----|-----|--------|-------------|
-| Struct/record field access | — | ○ open | Every function operates on `FieldElement51`, `Scalar`, `EdwardsPoint`, or `MontgomeryPoint` — all structs with named fields. |
-| Native `nat` support | #10 | ○ open | Postconditions are stated in terms of mathematical integers (`fe51_as_canonical_nat`, `scalar_as_canonical`, `montgomery_point_as_nat`). |
+| Gap | FR# | Status | Gap seed |
+|-----|-----|--------|----------|
+| Struct/record field access | #13 | ○ open | [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) |
+| Native `nat` support | #10 | ○ open | [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) |
+| Recursive spec functions over sequences | #11 | ○ open | [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) — basic ops (`Sequence.skip`, `Sequence.subrange`, `Sequence.take`, etc.) are implemented; remaining gap is recursive spec functions (`bytes_seq_as_nat`, `seq_as_nat_52`) that underlie `u8_32_as_group_canonical` (B2), `u8_32_as_nat` (B5), and `field_element_from_bytes` (B3, B4); these need int-based termination proofs (blocked on `@[cases]`-free recursion over `int`) |
 
 **Additional gaps per benchmark:**
 
-| # | Gap | FR# | Status | Description |
-|---|-----|-----|--------|-------------|
-| 1 | `u128` as `int` | — | ○ open | 25 cross-limb products accumulate into 128-bit intermediates. Model as `int` — postcondition is in `nat`, no new language feature needed. |
-| 2 | `[u8; 32]` byte arrays | — | ○ open | Model as a struct with 32 `bv8` fields. |
-| 2 | `reduce()` axiom | — | ○ open | Axiomatize `reduce` as a spec function: `scalar_as_canonical(reduce(s)) == u8_32_as_nat(s.bytes) mod ℓ`. |
-| 3 | `Option<T>` return | #11 | ○ open | `decompress` returns `Option<EdwardsPoint>`. Boole needs `Option` as a built-in or two-variant datatype. |
-| 3 | `field_square` / `sqrt_ratio_i` axioms | — | ○ open | Axiomatize as Boole spec functions — same pattern as `mul`. |
-| 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`. Model as a two-field struct. |
-| 4 | Field op axioms | — | ○ open | `add`, `sub`, `square`, `invsqrt`, `is_negative`, `conditional_negate`, `as_bytes` — each a Boole spec function with a mathematical axiom. |
-| 5 | Inline `let`-block postcondition | — | ✓ done | `let v := value in body` is now first-class Boole syntax, lowers by substitution in `toCoreExpr`. |
-| 5 | Montgomery ladder invariant | — | ○ open | Boole while-loop relational invariants work today (verified with `gen_smt_vcs` + `grind`). Remaining gap: `grind` cannot discharge non-linear group-law axioms for the elliptic curve case — requires induction over the bit structure of the scalar. |
+| # | Gap | FR# | Status | Notes |
+|---|-----|-----|--------|-------|
+| 1 | `u128` as `int` | — | ○ open | 25 cross-limb products; no new language feature needed once struct access lands — model `u64`/`u128` limbs as `int` |
+| 2 | `[u8; 32]` byte arrays | — | ○ open | Model as `Map int bv8`; pattern demonstrated in [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) |
+| 2 | `reduce()` spec function | — | ✓ done | Axiom seed [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) verifies with abstract `ByteArray32`/`Scalar` types; `u8_32_as_group_canonical` stays abstract — spelling it out recursively requires int-based termination over sequences (open gap) |
+| 3 | `Option<EdwardsPoint>` return | — | ○ open | Encoding pattern demonstrated in [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) and [`datatypes_and_selectors.lean`](../StrataTest/Languages/Boole/FeatureRequests/datatypes_and_selectors.lean) |
+| 3 | `field_square` / `sqrt_ratio_i` axioms | — | ○ open | Needed for the full decompress body |
+| 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support |
+| 4 | Field op axioms | — | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
+| 5 | Inline `let`-block postcondition | — | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/FeatureRequests/embedded_postcondition.lean) and BooleFeatureRequests.md |
+| 5 | Montgomery ladder invariant | — | ○ open | Non-linear group-law axioms required; [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) covers the relational loop pattern |
 
-**Summary:**
-
-| Benchmark | Total gaps | ✓ Done | ○ Open |
-|-----------|:----------:|:------:|:------:|
-| 1 — `FieldElement51::mul` | 3 | 0 | 3 |
-| 2 — `Scalar::from_bytes_mod_order` | 3 | 0 | 3 |
-| 3 — `CompressedEdwardsY::decompress` | 4 | 0 | 4 |
-| 4 — `RistrettoPoint::compress` | 4 | 0 | 4 |
-| 5 — `MontgomeryPoint::mul_clamped` | 4 | 1 | 3 |
-| **Shared** | **2** | **0** | **2** |
-
-**Roadmap:**
-
-```
-Close struct/record + nat (#10)
-        │
-        ├── Benchmark 1  (+u128 modeling)
-        ├── Benchmark 2  (+bv8 arrays, +reduce axiom)
-        ├── Benchmark 3  (+Option<T>, +field axioms)
-        ├── Benchmark 4  (+pair return, +field axioms)
-        └── Benchmark 5  (+group-law verifier reasoning)
-```

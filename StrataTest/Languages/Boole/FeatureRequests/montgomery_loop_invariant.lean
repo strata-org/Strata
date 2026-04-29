@@ -27,7 +27,7 @@ Near-upstream anchor:
   quantified ladder-step axiom within the solver's resource limits.
 -/
 
--- Baseline: single-variable for-loop invariant — works today in Boole.
+-- Baseline: single-variable for-loop invariant — works in Boole.
 private def simpleInvariantSeed : Strata.Program :=
 #strata
 program Boole;
@@ -49,14 +49,34 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
+/-- info:
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: sum_to_n_ensures_1_1444
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" simpleInvariantSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect simpleInvariantSeed := by
   gen_smt_vcs
   all_goals (try grind)
 
--- Relational while-loop invariant — works today in Boole.
+-- Relational while-loop invariant — works in Boole.
 -- Models the structural pattern of the Montgomery ladder using linear arithmetic:
 -- x0 tracks i * step, x1 tracks (i + 1) * step.
 -- The relational invariant `x1 == x0 + step` mirrors the elliptic-curve identity
@@ -90,12 +110,40 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
+/-- info:
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: linear_ladder_ensures_1_2905
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" relationalInvariantSeed (options := .quiet)
 
--- example : Strata.smtVCsCorrect relationalInvariantSeed := by
---   gen_smt_vcs
---   all_goals (try grind)
+example : Strata.smtVCsCorrect relationalInvariantSeed := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 -- Target shape — verbatim dalek-lite structure.
 --
@@ -121,17 +169,10 @@ spec {
 --   bit = 1: x0 = differential_add(x0, x1, P); x1 = double(x1)
 -- preserving the invariant that x1 - x0 = P (projective differential relation).
 --
--- Why this cannot be discharged automatically by cvc5 or grind:
---   The invariant links x0 and x1 through the elliptic curve group law.
---   Proving it is maintained across each iteration requires reasoning of the form:
---     double([q]P) = [2q]P
---     differential_add([q]P, [q+1]P, P) = [2q+1]P
---   These are consequences of the Montgomery curve differential addition law
---   (Costello-Smith 2017, equation 4). SMT solvers do not have this law built in;
---   it must be supplied as an axiom. Even with the axiom, cvc5's E-matching
---   saturates before instantiating the quantified group-law axiom at each step.
---   Discharging the full invariant requires induction over the 255-bit scalar,
---   which is outside the decidable fragment of first-order logic that cvc5 handles.
+-- Gap: cvc5 cannot discharge the group-law invariant from scratch.
+-- The fix is "manual induction": supply the ladder-step lemma as a Boole axiom
+-- so cvc5 only needs quantifier instantiation. The remaining open question is
+-- whether cvc5's E-matching saturates on the quantified axiom within resource limits.
 --
 -- program Boole;
 --

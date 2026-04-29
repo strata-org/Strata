@@ -296,6 +296,8 @@ op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt 
   free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free?:0 "requires " label b ";\n";
+op decreases_spec (e : Expr) : SpecElt =>
+  "decreases " e ";\n";
 
 category Spec;
 op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");

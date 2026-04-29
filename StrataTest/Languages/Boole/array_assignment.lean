@@ -33,8 +33,9 @@ procedure matrix_transpose (A: Matrix, m: int, n: int) returns (B: Matrix)
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" matrix_transpose_example
+/-- info: -/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" matrix_transpose_example (options := .quiet)
 
 theorem matrix_transpose_smt_vcs_correct : Strata.smtVCsCorrect matrix_transpose_example := by
   gen_smt_vcs

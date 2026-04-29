@@ -48,8 +48,16 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" natIntBoundarySeed
+/-- info:
+Obligation: assert_4_1350
+Property: assert
+Result: ✅ pass
+
+Obligation: nat_int_boundary_seed_ensures_2_1275
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" natIntBoundarySeed (options := .quiet)
 
 example : Strata.smtVCsCorrect natIntBoundarySeed := by
   gen_smt_vcs

@@ -49,7 +49,11 @@ spec {
 { r := (n * base) mod 101; };
 #end
 
-#guard_msgs (drop info) in
+/-- info:
+Obligation: scale_mod_p_ensures_2_1499
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" embeddedPostconditionSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect embeddedPostconditionSeed := by
