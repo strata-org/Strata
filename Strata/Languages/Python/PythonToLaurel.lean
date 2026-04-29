@@ -1156,11 +1156,8 @@ partial def translateCall (ctx : TranslationContext)
           | .Attribute range _ attr _ => (attr.val, range)
           | _ => (funcName, .none)
         throwUserError range s!"Unknown method '{methodName}'"
-    -- Havoc the receiver and Any-typed arguments since the unmodeled call
-    -- may mutate them and value-typed locals are not reachable via heap havoc.
-    -- Note: composite-typed arguments are NOT havoc'd here. If the unmodeled
-    -- call mutates a composite's fields, the heap should be havoc'd, but that
-    -- requires coordination with HeapParameterization and is out of scope.
+    -- Havoc the receiver since the unmodeled call may mutate it and
+    -- value-typed locals are not reachable via heap havoc.
     let receiverHavoc := match f with
       | .Attribute _ (.Name _ receiverName _) _ _ =>
         if receiverName.val ∈ ctx.variableTypes.unzip.1 then
@@ -1169,18 +1166,7 @@ partial def translateCall (ctx : TranslationContext)
             (mkStmtExprMd .Hole))]
         else []
       | _ => []
-    let argHavoc := args.flatMap fun arg =>
-      if let .Name _ n _ := arg then
-        match ctx.variableTypes.find? (λ v => Prod.fst v == n.val) with
-        | some (varName, ty) =>
-          if ty == PyLauType.Any then
-            [mkStmtExprMd (StmtExpr.Assign
-              [mkStmtExprMd (StmtExpr.Identifier varName)]
-              (mkStmtExprMd (.Hole false none)))]
-          else []
-        | _ => []
-      else []
-    let havocStmts := receiverHavoc ++ argHavoc
+    let havocStmts := receiverHavoc
     if havocStmts.isEmpty then
       return mkStmtExprMd .Hole
     else
