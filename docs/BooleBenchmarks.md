@@ -10,7 +10,7 @@ Each benchmark is a real exec function with `requires`/`ensures`. The goal: run 
 The five benchmarks are the core operations of two widely deployed cryptographic protocols: X25519 key exchange and Ed25519 signatures. 
 
 - Field multiplication (`FieldElement51::mul`) is the arithmetic foundation of Curve25519 — every higher-level operation, from key exchange to signature verification, ultimately reduces to repeated calls to it.
-- Scalar reduction (`from_bytes_mod_order`) enforces a security property called canonical encoding, whose absence caused signature malleability vulnerabilities in Bitcoin and TLS libraries. 
+- Scalar reduction (`from_bytes_mod_order`) enforces a security property called canonical encoding, whose absence caused signature malleability vulnerabilities in several widely-used libraries including OpenSSL and tinyssh (RFC 8032 §5.1.7).
 - Point decompression (`CompressedEdwardsY::decompress`) and Ristretto compression (`RistrettoPoint::compress`) are the serialization steps that happen at every signature verification and every zero-knowledge proof respectively. 
 - `MontgomeryPoint::mul_clamped` is X25519 itself — the key exchange that establishes encrypted sessions in TLS 1.3, Signal, WireGuard, and SSH.
 
