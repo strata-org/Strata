@@ -13,4 +13,3 @@ vcs/*.smt2
 *.py.ion.core.st
 
 Strata.code-workspace
-Build/
