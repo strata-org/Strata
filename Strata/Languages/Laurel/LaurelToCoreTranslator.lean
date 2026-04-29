@@ -83,7 +83,9 @@ private def freshTypePlaceholder : TranslateM LMonoTy := do
 
 /-- Emit a diagnostic and return a fresh type variable as a placeholder.
     Sets `coreProgramHasSuperfluousErrors` to signal that the Core program
-    may contain type errors that should prevent verification. -/
+    should not be verified. The placeholder is still needed so that
+    translation can continue building the Core AST and collect further
+    diagnostics (rather than aborting on the first type error). -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
   emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic msg)
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
@@ -115,14 +117,12 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
   | .Unknown => do
-    -- Unknown types get a fresh type variable that the Core HM type checker
-    -- will unify with the expected type from context. This is the correct
-    -- semantics for all front-ends: "type not determined" delegates to
-    -- inference, and the ftvar unifies with anything the context requires.
-    -- We do NOT set coreProgramHasSuperfluousErrors — the program is still
-    -- valid because unconstrained ftvars are harmless (they remain free,
-    -- which is sound for unknown types).
+    -- Unknown types indicate a type error in the Laurel front-end.
+    -- We use a fresh type variable as placeholder (so translation can
+    -- continue and collect further diagnostics) but set the error flag
+    -- to prevent the Core program from being verified.
     emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic "could not infer type")
+    modify fun s => { s with coreProgramHasSuperfluousErrors := true }
     freshTypePlaceholder
   | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
 termination_by ty.val
@@ -468,8 +468,8 @@ def translateStmt (stmt : StmtExprMd)
                 | _ => none
               let outArgs : List (Core.CallArg Core.Expression) := lhsIdents.map .outArg
               return [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) (astNodeToCoreMd value)]
-          | .InstanceCall .. | .Hole _ _ =>
-              -- Unmodeled call or hole: havoc all target variables
+          | .InstanceCall .. =>
+              -- Unmodeled instance call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
                 match t.val with
                 | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
