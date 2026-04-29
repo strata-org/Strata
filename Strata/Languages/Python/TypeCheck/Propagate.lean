@@ -5,8 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Python.TypeCheck.AbstractType
-public import Strata.Languages.Python.SSA.IR
+public import Strata.Languages.Python.TypeCheck.Transfer
 
 /-!
 # Forward Type Propagation over SSA IR
@@ -57,72 +56,8 @@ def init (numVals : Nat) : TypeState :=
 
 end TypeState
 
-/-- Try constant-folding a binary operation on two literal values. -/
-private def foldBinOp (op : BinOpKind) (lv rv : LitValue) : Option AbstractType :=
-  match op, lv, rv with
-  | .add,  .int a,  .int b  => some (.literal (.int (a + b)))
-  | .sub,  .int a,  .int b  => some (.literal (.int (a - b)))
-  | .mult, .int a,  .int b  => some (.literal (.int (a * b)))
-  | .add,  .str a,  .str b  => some (.literal (.str (a ++ b)))
-  | .mult, .str s,  .int n  =>
-    if n ≥ 0 then some (.literal (.str ("".intercalate (List.replicate n.toNat s))))
-    else some (.literal (.str ""))
-  | .mult, .int n,  .str s  =>
-    if n ≥ 0 then some (.literal (.str ("".intercalate (List.replicate n.toNat s))))
-    else some (.literal (.str ""))
-  | _, _, _ => none
-
-/-- Transfer function for binary operators. -/
-private def binOpType (op : BinOpKind) (lhs rhs : AbstractType) : AbstractType :=
-  match lhs, rhs with
-  | .literal lv, .literal rv =>
-    if let some result := foldBinOp op lv rv then
-      result
-    else
-      binOpTypeWidened op lhs.widenLiteral rhs.widenLiteral
-  | _, _ => binOpTypeWidened op lhs.widenLiteral rhs.widenLiteral
-where
-  binOpTypeWidened (op : BinOpKind) (l r : AbstractType) : AbstractType :=
-    match l, r with
-    | .any blame, _ | _, .any blame => .any blame
-    | .int, .int =>
-      match op with
-      | .div => .float
-      | _ => .int
-    | .float, _ | _, .float => .float
-    | .str, .str =>
-      match op with
-      | .add | .mult => .str
-      | _ => .any (.unknown "unsupported op on str")
-    | .str, .int | .int, .str =>
-      match op with
-      | .mult => .str
-      | _ => .any (.unknown "unsupported op on str*int")
-    | _, _ => .any (.unknown "binOp on unknown types")
-
-/-- Transfer function for unary operators. -/
-private def unaryOpType (op : UnaryOpKind) (operand : AbstractType) : AbstractType :=
-  match op with
-  | .not_ =>
-    match operand with
-    | .literal (.bool b) => .literal (.bool !b)
-    | _ => .bool
-  | .uSub =>
-    match operand with
-    | .literal (.int v) => .literal (.int (-v))
-    | _ =>
-      match operand.widenLiteral with
-      | .int => .int
-      | .float => .float
-      | .any blame => .any blame
-      | _ => .any (.unknown "unary minus on non-numeric")
-
-/-- Transfer function for comparison operators. -/
-private def compareOpType (_op : CmpOpKind) (_lhs _rhs : AbstractType) : AbstractType :=
-  .bool
-
 /-- Process a single instruction and return its result type. -/
-private def instrType (s : TypeState) (instr : Instruction) : AbstractType :=
+private def instrType (table : TransferTable) (s : TypeState) (instr : Instruction) : AbstractType :=
   match instr with
   | .intLit v => .literal (.int v)
   | .floatLit v => .literal (.float v)
@@ -143,9 +78,15 @@ private def instrType (s : TypeState) (instr : Instruction) : AbstractType :=
     match funcType with
     | .any blame => .any blame
     | _ => .any (.unknown s!"call on {funcType}")
-  | .binOp op lhs rhs => binOpType op (s.getType lhs) (s.getType rhs)
-  | .unaryOp op operand => unaryOpType op (s.getType operand)
-  | .compareOp op lhs rhs => compareOpType op (s.getType lhs) (s.getType rhs)
+  | .binOp op lhs rhs =>
+    table.lookupBinOp op (s.getType lhs) (s.getType rhs)
+      |>.getD (.any (.unknown s!"unsupported binOp"))
+  | .unaryOp op operand =>
+    table.lookupUnaryOp op (s.getType operand)
+      |>.getD (.any (.unknown s!"unsupported unaryOp"))
+  | .compareOp op lhs rhs =>
+    table.lookupCmpOp op (s.getType lhs) (s.getType rhs)
+      |>.getD (.any (.unknown s!"unsupported compareOp"))
   | .mkList elems =>
     if elems.isEmpty then .instance_ "list"
     else .instance_ "list"
@@ -221,7 +162,7 @@ private def topoOrder (blocks : Array Block) : Array Nat := Id.run do
   return order
 
 /-- Run forward type propagation on a single function. -/
-def propagateFunc (func : Func) : TypeState := Id.run do
+def propagateFunc (table : TransferTable) (func : Func) : TypeState := Id.run do
   let numVals := func.names.size
   let mut s := TypeState.init numVals
   for p in func.params do
@@ -244,7 +185,7 @@ def propagateFunc (func : Func) : TypeState := Id.run do
                 else acc
             s := s.setType param.val joinedType
       for ni in block.instrs do
-        let resultType := instrType s ni.instr
+        let resultType := instrType table s ni.instr
         if let some v := ni.result then
           s := s.setType v resultType
   return s
@@ -258,7 +199,7 @@ deriving Inhabited
 /-- Configuration for the type check pipeline. -/
 structure TypeCheckConfig where
   moduleName : String := ""
-deriving Inhabited
+  transferTable : TransferTable := defaultTransferTable
 
 /-- Mutable state for the type check pipeline. -/
 structure TypeCheckState where
@@ -284,8 +225,9 @@ end TypeCheckM
 
 /-- Run type checking on an entire module. -/
 def typeCheckModule (mod : Module) : TypeCheckM TypeCheckResult := do
+  let table := (← read).transferTable
   for func in mod.funcs do
-    let state := propagateFunc func
+    let state := propagateFunc table func
     TypeCheckM.addFuncResult func.name state
   let s ← get
   return { funcResults := s.funcResults, diagnostics := s.diagnostics }
