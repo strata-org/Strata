@@ -17,10 +17,7 @@ Near-upstream anchor:
     x0 == scalar_mul(base, bits_above(n, 254 - i))
     x1 == scalar_mul(base, bits_above(n, 254 - i) + 1)
   where `bits_above(n, k)` is the integer formed by the top k bits of n.
-- Gap 1 (verification): `gen_smt_vcs` / `smtVCsCorrect` has a known type-mismatch
-  bug for while-loop programs with local `var` declarations. While-loop programs
-  must be verified via `#eval Strata.Boole.verify "cvc5"`.
-- Gap 2 (axioms): cvc5 cannot discharge the group-law invariant from scratch.
+- Remaining gap (axioms): cvc5 cannot discharge the group-law invariant from scratch.
   The fix is "manual induction": supply the ladder-step lemma explicitly as a
   Boole axiom so that cvc5 only needs quantifier instantiation, not induction.
   The remaining open question is whether cvc5's E-matching saturates on the
@@ -66,7 +63,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: sum_to_n_ensures_1_1444
+Obligation: sum_to_n_ensures_1_1230
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -76,14 +73,11 @@ example : Strata.smtVCsCorrect simpleInvariantSeed := by
   gen_smt_vcs
   all_goals (try grind)
 
--- Relational while-loop invariant — works in Boole.
+-- Relational while-loop invariant.
 -- Models the structural pattern of the Montgomery ladder using linear arithmetic:
 -- x0 tracks i * step, x1 tracks (i + 1) * step.
 -- The relational invariant `x1 == x0 + step` mirrors the elliptic-curve identity
 -- [q+1]P = [q]P + P (i.e. x1 - x0 = P = base in the scalar-multiplication loop).
---
--- Note: `smtVCsCorrect` / `gen_smt_vcs` has a known type-mismatch bug for
--- while-loop programs with local `var` declarations. Verification uses cvc5 directly.
 private def relationalInvariantSeed : Strata.Program :=
 #strata
 program Boole;
@@ -135,7 +129,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: linear_ladder_ensures_1_2905
+Obligation: linear_ladder_ensures_1_2507
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

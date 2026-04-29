@@ -156,12 +156,12 @@ seeds live in
 | # | Gap | FR# | Status | Notes |
 |---|-----|-----|--------|-------|
 | 1 | `u128` as `int` | — | ○ open | 25 cross-limb products; no new language feature needed once struct access lands — model `u64`/`u128` limbs as `int` |
-| 2 | `[u8; 32]` byte arrays | — | ○ open | Model as `Map int bv8`; pattern demonstrated in [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) |
+| 2 | `[u8; 32]` byte arrays | — | ○ open | Model as `Map int bv8`; pattern demonstrated in [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) |
 | 2 | `reduce()` spec function | — | ✓ done | Axiom seed [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) verifies with abstract `ByteArray32`/`Scalar` types; `u8_32_as_group_canonical` stays abstract — spelling it out recursively requires int-based termination over sequences (open gap) |
 | 3 | `Option<EdwardsPoint>` return | — | ○ open | Encoding pattern demonstrated in [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) and [`datatypes_and_selectors.lean`](../StrataTest/Languages/Boole/FeatureRequests/datatypes_and_selectors.lean) |
 | 3 | `field_square` / `sqrt_ratio_i` axioms | — | ○ open | Needed for the full decompress body |
 | 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support |
 | 4 | Field op axioms | — | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
-| 5 | Inline `let`-block postcondition | — | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/FeatureRequests/embedded_postcondition.lean) and BooleFeatureRequests.md |
+| 5 | Inline `let`-block postcondition | — | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) and BooleFeatureRequests.md |
 | 5 | Montgomery ladder invariant | — | ○ open | Non-linear group-law axioms required; [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) covers the relational loop pattern |
 

@@ -29,7 +29,7 @@ This document tracks the selected Boole feature-request seeds kept under
 - **Bitwise operators on `bvN` types** (#970)
   - `&`, `|`, `^`, `>>` (UShr), `>>s` (SShr), `<<`, `~` lower to `Bv{N}.And/Or/Xor/UShr/SShr/Shl/Not` Core ops.
   - `bvWidth` helper extracts the bit-width from the Boole type and dispatches to the right-sized op.
-  - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
+  - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
 - **Mutual recursion over datatypes** (#599)
   - `rec function ... ;` blocks work end-to-end; two `Verify.lean` fixes: `lowerPureFuncDef` propagates `@[cases]` to `FuncAttr.inlineIfConstr`, and `toCoreDecls` injects preceding sibling op-exprs as De Bruijn bvars so cross-sibling calls resolve.
   - Remaining gap: mutual recursion over `int` still needs function-level `decreases` (not yet implemented).
@@ -37,7 +37,7 @@ This document tracks the selected Boole feature-request seeds kept under
 - **`choose` syntax**
   - `w := choose z : T :: pred(z)` desugars to `havoc w; assume pred[z/w]` in `toCoreStmt`.
   - Grammar op `choose_assign` added to `Boole/Grammar.lean`; `" :: "` separator avoids dot-access ambiguity.
-  - Benchmark: [`choose_operator.lean`](../StrataTest/Languages/Boole/FeatureRequests/choose_operator.lean).
+  - Benchmark: [`choose_operator.lean`](../StrataTest/Languages/Boole/choose_operator.lean).
 - **`decreases` annotation on functions and procedures**
   - `decreases e;` is now a `SpecElt` in Core grammar; parses in function `preconds` and `spec {}` blocks. Silently dropped by `toCoreSpecElts`.
   - `boole_procedure` accepts an optional `Measure` (`decreases e`) before the spec block. Dropped by the lowering.
@@ -53,7 +53,7 @@ This document tracks the selected Boole feature-request seeds kept under
 - **Inline `let`-block postconditions**
   - `ensures ({ let x = e; ... })` — postconditions whose body is a `let`-binding block — now lower correctly. Each `let` binding is translated to a Core local definition before the postcondition expression is evaluated.
   - Enables encoding of dalek-lite's `mul_clamped` postcondition style directly.
-  - Benchmark: [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/FeatureRequests/embedded_postcondition.lean).
+  - Benchmark: [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean).
 - **Lambda abstraction and application**
   - `fun x : T => body` (Core's `lambda` op) now lowers to a Core `.abs` node: `toCoreExpr` handles `.lambda _ _ decls body` by building nested `.abs` nodes via the same `declListToList` / `withBVarExprs` / `foldr` pattern used for quantifiers.
   - `(f)(x)` (Core's `apply_expr` op) lowers to `.app () f x`.
@@ -113,17 +113,17 @@ These are the curated one-gap Boole seeds.
 | [`overflow_guard.lean`](../StrataTest/Languages/Boole/FeatureRequests/overflow_guard.lean) | Overflow guards | Verus `guide/overflow`, `overflow` | Lower priority |
 | [`opaque_reveal_hide.lean`](../StrataTest/Languages/Boole/FeatureRequests/opaque_reveal_hide.lean) | `opaque`, `reveal`, `hide`, `closed` visibility | Verus `generics`, `test_expand_errors`, `debug_expand`, `modules` | Lower priority |
 | [`reveal_with_fuel.lean`](../StrataTest/Languages/Boole/FeatureRequests/reveal_with_fuel.lean) | `reveal_with_fuel` | Verus `test_expand_errors`, `recursion` | Lower priority |
-| [`early_return.lean`](../StrataTest/Languages/Boole/FeatureRequests/early_return.lean) | Early return | Verus SST `return` translation gap from `differential_status.md` | Implemented (#871) |
+| [`early_return.lean`](../StrataTest/Languages/Boole/early_return.lean) | Early return | Verus SST `return` translation gap from `differential_status.md` | Implemented (#871) |
 | [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean) | Widening casts in quantifiers/comparisons | Verus `guide/integers`, `quantifiers`, `statements` | Active |
-| [`choose_operator.lean`](../StrataTest/Languages/Boole/FeatureRequests/choose_operator.lean) | `choose` | Verus `trigger_loops` (`choose_example`, `quantifier_example`) | Implemented (#TODO) |
+| [`choose_operator.lean`](../StrataTest/Languages/Boole/choose_operator.lean) | `choose` | Verus `trigger_loops` (`choose_example`, `quantifier_example`) | Implemented (#TODO) |
 | [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order values via first-order `apply` encoding | Verus `fun_ext`, `trait_for_fn` | Active |
 | [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean) | Direct lambda / closure syntax | Local reduced Rust/Verus-style lambda example | Implemented (#TODO); remaining gap: first-class function values as procedure parameters/variables |
 | [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) | Mutual recursion / forward references | Verus `guide/recursion`; VLIR `mutual_recursion`, `recursion` | Implemented for datatypes (#599); mutual recursion over `int` still open |
 | [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation | Verus `proposal-rw2022`, `rw2022_script`, `recursion`; VLIR `LoopSimpleWithSpec` | Implemented (#TODO); remaining gap: int-based termination for recursive functions |
 | [`horner_poly_eval.lean`](../StrataTest/Languages/Boole/FeatureRequests/horner_poly_eval.lean) | Reusable math/power/summation support for richer functional specs | CLRS Horner’s rule, Exercise 2.3 | Type-checks; full math spec still open |
-| [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/FeatureRequests/embedded_postcondition.lean) | Inline `let`-binding blocks in `ensures` clauses | dalek-lite `montgomery.rs` `mul_clamped`, `mul_bits_be` | Implemented (#TODO) |
+| [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) | Inline `let`-binding blocks in `ensures` clauses | dalek-lite `montgomery.rs` `mul_clamped`, `mul_bits_be` | Implemented (#TODO) |
 | [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) | Relational loop invariants over two co-evolving variables | dalek-lite `montgomery.rs` `mul_bits_be` (Montgomery ladder) | Linear arithmetic case: implemented (#TODO); elliptic curve case: open — cvc5 cannot discharge group-law axioms without induction |
-| [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) | Bitwise operators on `bvN` types | dalek-lite `scalar_specs.rs` | Implemented (#970) |
+| [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) | Bitwise operators on `bvN` types | dalek-lite `scalar_specs.rs` | Implemented (#970) |
 | [`bitvector_proof_mode.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_proof_mode.lean) | `by (bit_vector)` proof mode | VeruSAGE-Bench Vest `leb128` | Active |
 | [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) | Sequence slicing (`subrange`, `skip`, `take`, `drop_first`) and all 8 Core `Sequence.*` ops | dalek-lite `scalar_specs.rs`, `core_specs.rs`; Vest `leb128`, `repetition` | Implemented (#TODO); remaining gap: recursive spec functions over sequences need int-based termination proofs |
 | [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) | `reduce()` spec axiom for B2 (`Scalar::from_bytes_mod_order`) | dalek-lite `scalar.rs` | Implemented (#TODO); `u8_32_as_group_canonical` stays abstract pending int-based termination for recursive seq spec functions |
