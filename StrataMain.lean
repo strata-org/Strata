@@ -443,13 +443,16 @@ def pyFeaturesCommand : Command where
 def pyToSSACommand : Command where
   name := "pyToSSA"
   args := [ "file" ]
+  flags := [{ name := "profile", help := "Print elapsed time for file loading and SSA conversion." }]
   help := "Translate a Python Ion program to SSA IR and print it."
-  callback := fun v _ => do
-    let stmts ← match ← Python.readPythonStrata v[0] |>.toBaseIO with
+  callback := fun v pflags => do
+    let profile := pflags.getBool "profile"
+    let stmts ← profileStep profile "File loading" do
+      match ← Python.readPythonStrata v[0] |>.toBaseIO with
       | .ok s => pure s
       | .error msg => exitFailure msg
-    let result := Strata.Python.PythonToSSA.translateModule "module" stmts
-    -- Try to build a FileMap from the original Python source for line:col positions
+    let result ← profileStep profile "SSA conversion" do
+      pure (Strata.Python.PythonToSSA.translateModule "module" stmts)
     let ionPath : String := v[0]
     let fileMap ← do
       let pyPath := if ionPath.endsWith ".python.st.ion" then
@@ -461,13 +464,65 @@ def pyToSSACommand : Command where
       | none => pure none
     let warnStr := Strata.Python.SSAFormat.fmtWarnings result.warnings fileMap
     let modStr := Strata.Python.SSAFormat.fmtModule result.module
-    -- Insert warnings after the module header line
     let lines := modStr.splitOn "\n"
     match lines with
     | hdr :: rest =>
       let warningBlock := if warnStr.isEmpty then "" else "\n" ++ warnStr
       IO.print (hdr ++ warningBlock ++ "\n" ++ "\n".intercalate rest)
     | [] => IO.print (warnStr ++ modStr)
+
+private def percentile (sorted : Array Nat) (p : Nat) : Nat :=
+  if sorted.isEmpty then 0
+  else
+    let idx := (sorted.size * p + 99) / 100 - 1
+    let idx := min idx (sorted.size - 1)
+    sorted[idx]!
+
+def pyBenchSSACommand : Command where
+  name := "pyBenchSSA"
+  args := [ "dir" ]
+  help := "Benchmark SSA conversion on all .python.st.ion files in a directory. Reports average and P90 timings."
+  callback := fun v _ => do
+    let dir : System.FilePath := v[0]
+    let entries ← dir.readDir
+    let ionFiles := entries.filter (·.fileName.endsWith ".python.st.ion")
+                    |>.qsort (·.fileName < ·.fileName)
+    if ionFiles.isEmpty then
+      IO.eprintln s!"No .python.st.ion files found in {dir}"
+      IO.Process.exit 1
+    let mut loadTimes : Array Nat := #[]
+    let mut convTimes : Array Nat := #[]
+    let mut failures : Nat := 0
+    for entry in ionFiles do
+      let path := entry.path.toString
+      let loadStart ← IO.monoNanosNow
+      let stmtsOpt ← Python.readPythonStrata path |>.toBaseIO
+      let loadElapsed := (← IO.monoNanosNow) - loadStart
+      match stmtsOpt with
+      | .error msg =>
+        IO.eprintln s!"  SKIP {entry.fileName}: {msg}"
+        failures := failures + 1
+      | .ok stmts =>
+        loadTimes := loadTimes.push loadElapsed
+        let convStart ← IO.monoNanosNow
+        let _ := Strata.Python.PythonToSSA.translateModule "module" stmts
+        let convElapsed := (← IO.monoNanosNow) - convStart
+        convTimes := convTimes.push convElapsed
+    let n := loadTimes.size
+    if n == 0 then
+      IO.eprintln "No files successfully processed."
+      IO.Process.exit 1
+    let loadSorted := loadTimes.qsort (· < ·)
+    let convSorted := convTimes.qsort (· < ·)
+    let loadTotal := loadTimes.foldl (· + ·) 0
+    let convTotal := convTimes.foldl (· + ·) 0
+    let loadAvg := nsToMs (loadTotal / n)
+    let convAvg := nsToMs (convTotal / n)
+    let loadP90 := nsToMs (percentile loadSorted 90)
+    let convP90 := nsToMs (percentile convSorted 90)
+    IO.println s!"Files processed: {n}{if failures > 0 then s!" ({failures} skipped)" else ""}"
+    IO.println s!"File loading  — avg: {loadAvg}ms, P90: {loadP90}ms"
+    IO.println s!"SSA conversion — avg: {convAvg}ms, P90: {convP90}ms"
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -1419,7 +1474,8 @@ def commandGroups : List CommandGroup := [
                  pyTranslateLaurelCommand,
                  pyInterpretCommand,
                  pyFeaturesCommand,
-                 pyToSSACommand] },
+                 pyToSSACommand,
+                 pyBenchSSACommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,
