@@ -5,16 +5,15 @@
 -/
 module
 
-public import Std.Data.HashMap.Basic
+import Std.Data.HashMap.Lemmas
+
 public import Strata.DDM.AST.Datatype
+import all Strata.DDM.Util.Array
 public import Strata.DDM.Util.ByteArray
+import all Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
 public import Strata.DDM.Util.SourceRange
-
-import Std.Data.HashMap
-import all Strata.DDM.Util.Array
 import Strata.Util.DecideProp
-import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
 
