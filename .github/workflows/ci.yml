@@ -347,6 +347,7 @@ jobs:
             --query 'build.id' --output text \
             --region us-east-2)
           echo "Build started: $BUILD_ID"
+          echo "CodeBuild console: https://us-east-2.console.aws.amazon.com/codesuite/codebuild/projects/strata-benchmarks/build/${BUILD_ID}/?region=us-east-2"
 
           LOG_KEY="logs/${BUILD_ID}.log"
           echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
