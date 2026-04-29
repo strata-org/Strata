@@ -2,9 +2,9 @@ module "t27_module_vars":
 
 func use_module_vars():
   bb0():
-    %0:_tmp.0 = strLit "Functions see module-level vars as qualifiedRef."
+    %0:_tmp.0 = "Functions see module-level vars as qualifiedRef."
     %1:logger.0 = qualifiedRef t27_module_vars.logger
-    %4:_tmp.3 = call attr(%1, "info")(positional(strLit "starting"))
+    %4:_tmp.3 = call attr(%1, "info")(positional("starting"))
     %6:MAX_RETRIES.0 = qualifiedRef t27_module_vars.MAX_RETRIES
     %7:_tmp.4 = callQualified builtins.range [positional(%6)]
       -- where %6 = qualifiedRef t27_module_vars.MAX_RETRIES
@@ -28,53 +28,53 @@ func use_module_vars():
 
 func param_shadows_module_var(logger):
   bb0():
-    %1:_tmp.0 = strLit "Function parameter shadows module-level var of same name."
-    %4:_tmp.3 = call attr(%0, "info")(positional(strLit "param wins"))
+    %1:_tmp.0 = "Function parameter shadows module-level var of same name."
+    %4:_tmp.3 = call attr(%0, "info")(positional("param wins"))
     ret
 
 func local_shadows_module_var():
   bb0():
-    %0:_tmp.0 = strLit "Local assignment shadows module-level var after the assignment."
-    %1:MAX_RETRIES.0 = intLit 10
+    %0:_tmp.0 = "Local assignment shadows module-level var after the assignment."
+    %1:MAX_RETRIES.0 = 10
     ret %1
 
 func mixed_imports_and_vars():
   bb0():
-    %0:_tmp.0 = strLit "Function uses both imports and module-level vars."
+    %0:_tmp.0 = "Function uses both imports and module-level vars."
     %1:logging.0 = qualifiedRef logging.logging
-    %4:new_logger.0 = call attr(%1, "getLogger")(positional(strLit "other"))
+    %4:new_logger.0 = call attr(%1, "getLogger")(positional("other"))
     %6:MAX_RETRIES.0 = qualifiedRef t27_module_vars.MAX_RETRIES
     %7:_tmp.5 = call attr(%4, "setLevel")(positional(%6))
     ret
 
 func ifexp_assignment(x):
   bb0():
-    %1:_tmp.0 = strLit "Assignment target should not be demanded by IfExp sub-blocks."
+    %1:_tmp.0 = "Assignment target should not be demanded by IfExp sub-blocks."
     condBranch %0 bb1() bb2()
   bb1():
-    %2:_tmp.1 = strLit "yes"
+    %2:_tmp.1 = "yes"
     branch bb3(%2)
   bb2():
-    %3:_tmp.2 = strLit "no"
+    %3:_tmp.2 = "no"
     branch bb3(%3)
   bb3(%4:_tmp.3):
     ret %4
 
 func boolop_assignment(x):
   bb0():
-    %1:_tmp.0 = strLit "Assignment target should not be demanded by BoolOp sub-blocks."
+    %1:_tmp.0 = "Assignment target should not be demanded by BoolOp sub-blocks."
     condBranch %0 bb2(%0) bb1()
   bb1():
-    %2:_tmp.1 = strLit "default"
+    %2:_tmp.1 = "default"
     branch bb2(%2)
   bb2(%3:_tmp.2):
     ret %3
 
 func @module_init():
   bb0():
-    %0:MAX_RETRIES.0 = intLit 3
+    %0:MAX_RETRIES.0 = 3
     %1:logging.0 = qualifiedRef logging.logging
     %3:__name__.0 = qualifiedRef t27_module_vars.__name__
     %4:logger.0 = call attr(%1, "getLogger")(positional(%3))
-    %5:threshold.0 : float = floatLit "0.5"
+    %5:threshold.0 : float = 0.5
     ret

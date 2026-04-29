@@ -1,0 +1,31 @@
+module "tc02_arithmetic":
+
+func f():
+  bb0():
+    %2:a.0 = binOp add 1 2
+    %5:b.0 = binOp add 1.0 2
+    %8:c.0 = binOp div 1 2
+    %11:d.0 = binOp mult 1 2
+    %14:e.0 = binOp mult 3.0 2.0
+    ret
+
+--- type check ---
+
+module "tc02_arithmetic":
+
+func f:
+  %0:_tmp.0 : Literal(1)
+  %1:_tmp.1 : Literal(2)
+  %2:a.0 : Literal(3)
+  %3:_tmp.3 : Literal(1.0)
+  %4:_tmp.4 : Literal(2)
+  %5:b.0 : float
+  %6:_tmp.6 : Literal(1)
+  %7:_tmp.7 : Literal(2)
+  %8:c.0 : float
+  %9:_tmp.9 : Literal(1)
+  %10:_tmp.10 : Literal(2)
+  %11:d.0 : Literal(2)
+  %12:_tmp.12 : Literal(3.0)
+  %13:_tmp.13 : Literal(2.0)
+  %14:e.0 : float

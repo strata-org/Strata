@@ -1,0 +1,26 @@
+module "tc06_collections":
+
+func f():
+  bb0():
+    %3:a.0 = mkList [1, 2, 3]
+    %4:b.0 = mkList []
+    %7:c.0 = mkDict ["key"] ["val"]
+    %10:d.0 = mkTuple [1, 2]
+    ret
+
+--- type check ---
+
+module "tc06_collections":
+
+func f:
+  %0:_tmp.0 : Literal(1)
+  %1:_tmp.1 : Literal(2)
+  %2:_tmp.2 : Literal(3)
+  %3:a.0 : list
+  %4:b.0 : list
+  %5:_tmp.5 : Literal("key")
+  %6:_tmp.6 : Literal("val")
+  %7:c.0 : dict
+  %8:_tmp.8 : Literal(1)
+  %9:_tmp.9 : Literal(2)
+  %10:d.0 : tuple

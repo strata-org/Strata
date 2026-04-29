@@ -2,7 +2,7 @@ module "t07_try_except":
 
 func risky():
   bb0():
-    %2:_tmp.1 = callQualified builtins.ValueError [positional(strLit "bad")]
+    %2:_tmp.1 = callQualified builtins.ValueError [positional("bad")]
     raise %2
 
 func @module_init():
@@ -10,7 +10,7 @@ func @module_init():
     %1:x.0 = callQualified t07_try_except.risky []
     branch bb2()
   bb1(%2:_exc.0):
-    %3:x.1 = intLit 0
+    %3:x.1 = 0
     branch bb2()
   bb2():
     %5:a.0 = callQualified t07_try_except.risky []
@@ -27,7 +27,7 @@ func @module_init():
       -- where %12 = qualifiedRef builtins.ValueError
     condBranch %14 bb6(%11) bb7(%11)
   bb6(%15:_exc.3):
-    %17:c.1 = unaryOp uSub intLit 1
+    %17:c.1 = unaryOp uSub 1
     branch bb10()
   bb7(%18:_exc.4):
     %19:TypeError.0 = qualifiedRef builtins.TypeError
@@ -35,7 +35,7 @@ func @module_init():
       -- where %19 = qualifiedRef builtins.TypeError
     condBranch %21 bb8(%18) bb9(%18)
   bb8(%22:_exc.5):
-    %24:c.2 = unaryOp uSub intLit 2
+    %24:c.2 = unaryOp uSub 2
     branch bb10()
   bb9(%25:_exc.6):
     raise %25

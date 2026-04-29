@@ -19,11 +19,11 @@ func @module_init():
   bb2(%6:_exc.2):
     raise %6
   bb3():
-    %7:x.0 = intLit 1
+    %7:x.0 = 1
     %8:_exc.3 = undef("_exc")
     branch bb5(%8)
   bb4(%9:_exc.4):
-    %10:x.1 = intLit 0
+    %10:x.1 = 0
     %11:_exc.5 = undef("_exc")
     branch bb5(%11)
   bb5(%12:_exc.6):

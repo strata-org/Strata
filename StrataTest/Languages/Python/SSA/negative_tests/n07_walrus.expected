@@ -4,6 +4,6 @@ module "n07_walrus":
 
 func @module_init():
   bb0():
-    %5:data.0 = mkList [intLit 1, intLit 2, intLit 3, intLit 4, intLit 5]
+    %5:data.0 = mkList [1, 2, 3, 4, 5]
     %6:filtered.0 = unsupported "ListComp"
     ret

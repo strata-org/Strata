@@ -15,11 +15,11 @@ func Point.distance(self):
 
 func @Point_init():
   bb0():
-    %0:dimensions.0 : int = intLit 2
+    %0:dimensions.0 : int = 2
     ret
 
 func @module_init():
   bb0():
-    %3:p.0 = callQualified t12_class.Point [positional(intLit 3), positional(intLit 4)]
+    %3:p.0 = callQualified t12_class.Point [positional(3), positional(4)]
     %5:d.0 = call attr(%3, "distance")()
     ret

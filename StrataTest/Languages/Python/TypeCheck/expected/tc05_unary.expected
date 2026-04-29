@@ -1,0 +1,20 @@
+module "tc05_unary":
+
+func f():
+  bb0():
+    %1:a.0 = unaryOp not true
+    %3:b.0 = unaryOp uSub 42
+    %5:c.0 = unaryOp uSub 3.14
+    ret
+
+--- type check ---
+
+module "tc05_unary":
+
+func f:
+  %0:_tmp.0 : Literal(true)
+  %1:a.0 : Literal(false)
+  %2:_tmp.2 : Literal(42)
+  %3:b.0 : Literal(-42)
+  %4:_tmp.4 : Literal(3.14)
+  %5:c.0 : float

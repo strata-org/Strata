@@ -2,7 +2,7 @@ module "t20_raise":
 
 func fail_hard():
   bb0():
-    %2:_tmp.1 = callQualified builtins.ValueError [positional(strLit "bad input")]
+    %2:_tmp.1 = callQualified builtins.ValueError [positional("bad input")]
     raise %2
 
 func reraise_example():
@@ -62,7 +62,7 @@ func reraise_after_work():
       -- where %3 = qualifiedRef builtins.ValueError
     condBranch %5 bb2(%2) bb3(%2)
   bb2(%6:_exc.1):
-    %7:y.0 = intLit 1
+    %7:y.0 = 1
     raise %6
   bb3(%8:_exc.2):
     raise %8

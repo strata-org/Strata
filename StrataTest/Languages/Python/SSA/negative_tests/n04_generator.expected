@@ -4,7 +4,7 @@ module "n04_generator":
 
 func @module_init():
   bb0():
-    %3:nums.0 = mkList [intLit 1, intLit 2, intLit 3]
+    %3:nums.0 = mkList [1, 2, 3]
     %5:_tmp.4 = unsupported "GeneratorExp"
     %6:total.0 = callQualified builtins.sum [positional(%5)]
     ret

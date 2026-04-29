@@ -1,0 +1,24 @@
+module "tc07_if_else":
+
+func f():
+  bb0():
+    %0:_tmp.0 = true
+    condBranch %0 bb1() bb2()
+  bb1():
+    %1:x.0 = 1
+    branch bb3(%1)
+  bb2():
+    %2:x.1 = "hello"
+    branch bb3(%2)
+  bb3(%3:x.2):
+    ret
+
+--- type check ---
+
+module "tc07_if_else":
+
+func f:
+  %0:_tmp.0 : Literal(true)
+  %1:x.0 : Literal(1)
+  %2:x.1 : Literal("hello")
+  %3:x.2 : Literal(1) | Literal("hello")

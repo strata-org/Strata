@@ -2,27 +2,27 @@ module "t23_kwargs_boto3":
 
 func put_item(client, bucket: str, key: str, data: str):
   bb0():
-    %4:_tmp.0 = strLit "Direct keyword args - the common boto3 pattern."
+    %4:_tmp.0 = "Direct keyword args - the common boto3 pattern."
     %6:_tmp.2 = call attr(%0, "put_item")(keyword("Bucket", %1), keyword("Key", %2), keyword("Data", %3))
     ret
 
 func put_item_from_dict(client, params: dict):
   bb0():
-    %2:_tmp.0 = strLit "Unpacking a dict as kwargs."
+    %2:_tmp.0 = "Unpacking a dict as kwargs."
     %4:_tmp.2 = call attr(%0, "put_item")(starKwargs(%1))
     ret
 
 func build_and_call(client, bucket: str, key: str):
   bb0():
-    %3:_tmp.0 = strLit "Build kwargs dict incrementally then unpack."
-    %6:kwargs.0 = mkDict [strLit "Bucket", strLit "Key"] [%1, %2]
-    setItem %6 strLit "Data" strLit "payload"
+    %3:_tmp.0 = "Build kwargs dict incrementally then unpack."
+    %6:kwargs.0 = mkDict ["Bucket", "Key"] [%1, %2]
+    setItem %6 "Data" "payload"
     %10:_tmp.7 = call attr(%0, "put_item")(starKwargs(%6))
     ret
 
 func @module_init():
   bb0():
     %0:boto3.0 = qualifiedRef boto3.boto3
-    %3:iam.0 = call attr(%0, "client")(positional(strLit "iam"))
-    %6:_tmp.5 = call attr(%3, "get_role")(keyword("RoleName", strLit "my-role"))
+    %3:iam.0 = call attr(%0, "client")(positional("iam"))
+    %6:_tmp.5 = call attr(%3, "get_role")(keyword("RoleName", "my-role"))
     ret

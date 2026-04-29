@@ -4,6 +4,6 @@ module "n03_dictcomp":
 
 func @module_init():
   bb0():
-    %3:keys.0 = mkList [strLit "a", strLit "b", strLit "c"]
+    %3:keys.0 = mkList ["a", "b", "c"]
     %4:d.0 = unsupported "DictComp"
     ret

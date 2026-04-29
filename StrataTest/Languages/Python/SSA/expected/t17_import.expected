@@ -4,6 +4,6 @@ func @module_init():
   bb0():
     %0:os.0 = qualifiedRef os.os
     %2:cwd.0 = call attr(%0, "getcwd")()
-    %6:full_path.0 = callQualified os.path.join [positional(strLit "/tmp"), positional(strLit "file.txt")]
+    %6:full_path.0 = callQualified os.path.join [positional("/tmp"), positional("file.txt")]
     %8:check.0 = callQualified os.path.exists [positional(%6)]
     ret

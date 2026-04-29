@@ -2,13 +2,13 @@ module "t19_attribute":
 
 func Config.__init__(self):
   bb0():
-    setAttr %0 "debug" boolLit false
-    setAttr %0 "level" intLit 0
+    setAttr %0 "debug" false
+    setAttr %0 "level" 0
     ret
 
 func Inner.__init__(self):
   bb0():
-    setAttr %0 "value" intLit 42
+    setAttr %0 "value" 42
     ret
 
 func Outer.__init__(self):
@@ -21,8 +21,8 @@ func @module_init():
   bb0():
     %1:c.0 = callQualified t19_attribute.Config []
     %2:flag.0 = attr %1 "debug"
-    setAttr %1 "debug" boolLit true
-    setAttr %1 "level" intLit 5
+    setAttr %1 "debug" true
+    setAttr %1 "level" 5
     %6:o.0 = callQualified t19_attribute.Outer []
     %7:_tmp.5 = attr %6 "inner"
     %8:v.0 = attr %7 "value"

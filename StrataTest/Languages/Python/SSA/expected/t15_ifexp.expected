@@ -2,37 +2,37 @@ module "t15_ifexp":
 
 func @module_init():
   bb0():
-    %0:cond.0 : bool = boolLit true
+    %0:cond.0 : bool = true
     condBranch %0 bb1(%0) bb2(%0)
   bb1(%1:cond.1):
-    %2:_tmp.1 = intLit 1
+    %2:_tmp.1 = 1
     branch bb3(%2, %1)
   bb2(%3:cond.2):
-    %4:_tmp.2 = intLit 2
+    %4:_tmp.2 = 2
     branch bb3(%4, %3)
   bb3(%5:_tmp.3, %6:cond.3):
     condBranch %6 bb4(%6) bb5(%6)
   bb4(%7:cond.4):
-    %8:_tmp.4 = strLit "a"
+    %8:_tmp.4 = "a"
     branch bb9(%8, %7)
   bb5(%9:cond.5):
     %10:_tmp.5 = unaryOp not %9
     condBranch %10 bb6(%9, %9) bb7(%9, %9)
   bb6(%11:cond.6, %12:cond.7):
-    %13:_tmp.6 = strLit "b"
+    %13:_tmp.6 = "b"
     branch bb8(%13, %11, %12)
   bb7(%14:cond.8, %15:cond.9):
-    %16:_tmp.7 = strLit "c"
+    %16:_tmp.7 = "c"
     branch bb8(%16, %14, %15)
   bb8(%17:_tmp.8, %18:cond.10, %19:cond.11):
     branch bb9(%17, %19)
   bb9(%20:_tmp.9, %21:cond.12):
     condBranch %21 bb10() bb11()
   bb10():
-    %22:_tmp.10 = intLit 10
+    %22:_tmp.10 = 10
     branch bb12(%22)
   bb11():
-    %23:_tmp.11 = intLit 20
+    %23:_tmp.11 = 20
     branch bb12(%23)
   bb12(%24:_tmp.12):
     ret

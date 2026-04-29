@@ -2,14 +2,14 @@ module "t18_data_struct":
 
 func @module_init():
   bb0():
-    %5:nums.0 = mkList [intLit 1, intLit 2, intLit 3, intLit 4, intLit 5]
-    %7:first.0 = getItem %5 intLit 0
-    setItem %5 intLit 0 intLit 10
-    %12:sliced.0 = getSlice %5 (some intLit 1) (some intLit 3) none
-    %17:d.0 = mkDict [strLit "a", strLit "b"] [intLit 1, intLit 2]
-    %19:val.0 = getItem %17 strLit "a"
-    setItem %17 strLit "c" intLit 3
-    %25:t.0 = mkTuple [intLit 1, strLit "two", floatLit "3.0"]
-    %27:elem.0 = getItem %25 intLit 0
-    %29:every_other.0 = getSlice %5 none none (some intLit 2)
+    %5:nums.0 = mkList [1, 2, 3, 4, 5]
+    %7:first.0 = getItem %5 0
+    setItem %5 0 10
+    %12:sliced.0 = getSlice %5 (some 1) (some 3) none
+    %17:d.0 = mkDict ["a", "b"] [1, 2]
+    %19:val.0 = getItem %17 "a"
+    setItem %17 "c" 3
+    %25:t.0 = mkTuple [1, "two", 3.0]
+    %27:elem.0 = getItem %25 0
+    %29:every_other.0 = getSlice %5 none none (some 2)
     ret

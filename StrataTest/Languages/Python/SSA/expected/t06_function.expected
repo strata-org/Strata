@@ -7,7 +7,7 @@ func add(a: int, b: int):
 
 func greet(name: str, greeting: str):
   bb0():
-    %3:_tmp.1 = binOp add %1 strLit " "
+    %3:_tmp.1 = binOp add %1 " "
     %4:_tmp.2 = binOp add %3 %0
     ret %4
 
@@ -17,8 +17,8 @@ func do_nothing():
 
 func @module_init():
   bb0():
-    %3:result.0 = callQualified t06_function.add [positional(intLit 1), positional(intLit 2)]
-    %6:msg.0 = callQualified t06_function.greet [positional(strLit "world")]
-    %10:msg2.0 = callQualified t06_function.greet [positional(strLit "world"), keyword("greeting", strLit "Hi")]
+    %3:result.0 = callQualified t06_function.add [positional(1), positional(2)]
+    %6:msg.0 = callQualified t06_function.greet [positional("world")]
+    %10:msg2.0 = callQualified t06_function.greet [positional("world"), keyword("greeting", "Hi")]
     %12:_tmp.8 = callQualified t06_function.do_nothing []
     ret

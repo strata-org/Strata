@@ -1,0 +1,23 @@
+module "tc01_literals":
+
+func f():
+  bb0():
+    %0:x.0 = 42
+    %1:y.0 = "hello"
+    %2:z.0 = true
+    %3:w.0 = 3.14
+    %4:n.0 = None
+    %5:b.0 = b"raw"
+    ret
+
+--- type check ---
+
+module "tc01_literals":
+
+func f:
+  %0:x.0 : Literal(42)
+  %1:y.0 : Literal("hello")
+  %2:z.0 : Literal(true)
+  %3:w.0 : Literal(3.14)
+  %4:n.0 : Literal(None)
+  %5:b.0 : bytes

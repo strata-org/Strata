@@ -31,6 +31,8 @@ import Strata.Util.IO
 import Strata.Languages.Python.FeatureUsage
 import Strata.Languages.Python.SSA.Translate
 import Strata.Languages.Python.SSA.Format
+import Strata.Languages.Python.TypeCheck.Propagate
+import Strata.Languages.Python.TypeCheck.Format
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
@@ -523,6 +525,27 @@ def pyBenchSSACommand : Command where
     IO.println s!"Files processed: {n}{if failures > 0 then s!" ({failures} skipped)" else ""}"
     IO.println s!"File loading  — avg: {loadAvg}ms, P90: {loadP90}ms"
     IO.println s!"SSA conversion — avg: {convAvg}ms, P90: {convP90}ms"
+
+def pyTypeCheckCommand : Command where
+  name := "pyTypeCheck"
+  args := [ "file" ]
+  flags := [{ name := "profile", help := "Print elapsed time for each step." }]
+  help := "Run forward type analysis on a Python Ion program and print inferred types."
+  callback := fun v pflags => do
+    let profile := pflags.getBool "profile"
+    let stmts ← profileStep profile "File loading" do
+      match ← Python.readPythonStrata v[0] |>.toBaseIO with
+      | .ok s => pure s
+      | .error msg => exitFailure msg
+    let result ← profileStep profile "SSA conversion" do
+      pure (Strata.Python.PythonToSSA.translateModule "module" stmts)
+    let tcResult ← profileStep profile "Type checking" do
+      let cfg : Strata.Python.TypeCheck.TypeCheckConfig := { moduleName := "module" }
+      let (r, _) ← Strata.Python.TypeCheck.TypeCheckM.run cfg
+        (Strata.Python.TypeCheck.typeCheckModule result.module)
+      pure r
+    let output := Strata.Python.TypeCheck.fmtTypeCheckResult result.module tcResult
+    IO.print output
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -1475,7 +1498,8 @@ def commandGroups : List CommandGroup := [
                  pyInterpretCommand,
                  pyFeaturesCommand,
                  pyToSSACommand,
-                 pyBenchSSACommand] },
+                 pyBenchSSACommand,
+                 pyTypeCheckCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,

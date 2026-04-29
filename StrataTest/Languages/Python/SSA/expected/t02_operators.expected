@@ -2,8 +2,8 @@ module "t02_operators":
 
 func @module_init():
   bb0():
-    %0:x.0 : int = intLit 10
-    %1:y.0 : int = intLit 3
+    %0:x.0 : int = 10
+    %1:y.0 : int = 3
     %2:a.0 = binOp add %0 %1
     %3:b.0 = binOp sub %0 %1
     %4:c.0 = binOp mult %0 %1
@@ -12,20 +12,20 @@ func @module_init():
     %7:f.0 = binOp mod %0 %1
     %8:g.0 = binOp pow %0 %1
     %9:neg.0 = unaryOp uSub %0
-    %11:flip.0 = unaryOp not boolLit true
+    %11:flip.0 = unaryOp not true
     %12:eq.0 = compareOp eq %0 %1
     %13:ne.0 = compareOp notEq %0 %1
     %14:lt.0 = compareOp lt %0 %1
     %15:le.0 = compareOp ltE %0 %1
     %16:gt.0 = compareOp gt %0 %1
     %17:ge.0 = compareOp gtE %0 %1
-    %19:is_none.0 = compareOp is %0 noneLit
-    %21:is_not_none.0 = compareOp isNot %0 noneLit
-    %25:_tmp.25 = mkList [intLit 1, intLit 2, intLit 3]
+    %19:is_none.0 = compareOp is %0 None
+    %21:is_not_none.0 = compareOp isNot %0 None
+    %25:_tmp.25 = mkList [1, 2, 3]
     %26:in_list.0 = compareOp in %0 %25
-    %30:_tmp.30 = mkList [intLit 1, intLit 2, intLit 3]
+    %30:_tmp.30 = mkList [1, 2, 3]
     %31:not_in_list.0 = compareOp notIn %0 %30
-    %33:x.1 = binOp add %0 intLit 1
-    %35:x.2 = binOp sub %33 intLit 2
-    %37:x.3 = binOp mult %35 intLit 3
+    %33:x.1 = binOp add %0 1
+    %35:x.2 = binOp sub %33 2
+    %37:x.3 = binOp mult %35 3
     ret

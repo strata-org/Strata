@@ -1,0 +1,23 @@
+module "tc03_string_ops":
+
+func f():
+  bb0():
+    %2:a.0 = binOp add "hello" " world"
+    %5:b.0 = binOp mult "ha" 3
+    %8:c.0 = binOp mult 3 "ha"
+    ret
+
+--- type check ---
+
+module "tc03_string_ops":
+
+func f:
+  %0:_tmp.0 : Literal("hello")
+  %1:_tmp.1 : Literal(" world")
+  %2:a.0 : Literal("hello world")
+  %3:_tmp.3 : Literal("ha")
+  %4:_tmp.4 : Literal(3)
+  %5:b.0 : Literal("hahaha")
+  %6:_tmp.6 : Literal(3)
+  %7:_tmp.7 : Literal("ha")
+  %8:c.0 : Literal("hahaha")

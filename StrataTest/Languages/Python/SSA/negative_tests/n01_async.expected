@@ -10,7 +10,7 @@ func fetch_data(url: str):
 
 func sync_helper(x: int):
   bb0():
-    %2:_tmp.1 = binOp add %0 intLit 1
+    %2:_tmp.1 = binOp add %0 1
     ret %2
 
 func @module_init():

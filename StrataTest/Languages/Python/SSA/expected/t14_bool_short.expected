@@ -2,8 +2,8 @@ module "t14_bool_short":
 
 func @module_init():
   bb0():
-    %0:a.0 : bool = boolLit true
-    %1:b.0 : bool = boolLit false
+    %0:a.0 : bool = true
+    %1:b.0 : bool = false
     condBranch %0 bb1(%0, %1) bb2(%0, %0, %1)
   bb1(%2:a.1, %3:b.1):
     branch bb2(%3, %2, %3)
@@ -20,16 +20,16 @@ func @module_init():
   bb7(%17:a.7):
     branch bb8(%17, %17)
   bb8(%18:_tmp.5, %19:a.8):
-    %20:_tmp.6 = intLit 0
+    %20:_tmp.6 = 0
     condBranch %20 bb10(%20) bb9()
   bb9():
-    %21:_tmp.7 = intLit 42
+    %21:_tmp.7 = 42
     branch bb10(%21)
   bb10(%22:_tmp.8):
-    %23:_tmp.9 = strLit "hello"
+    %23:_tmp.9 = "hello"
     condBranch %23 bb11() bb12(%23)
   bb11():
-    %24:_tmp.10 = strLit "world"
+    %24:_tmp.10 = "world"
     branch bb12(%24)
   bb12(%25:_tmp.11):
     ret

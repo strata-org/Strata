@@ -1,0 +1,23 @@
+module "tc04_comparisons":
+
+func f():
+  bb0():
+    %2:a.0 = compareOp lt 1 2
+    %5:b.0 = compareOp eq "x" "y"
+    %8:c.0 = compareOp gtE 3.0 1.0
+    ret
+
+--- type check ---
+
+module "tc04_comparisons":
+
+func f:
+  %0:_tmp.0 : Literal(1)
+  %1:_tmp.1 : Literal(2)
+  %2:a.0 : bool
+  %3:_tmp.3 : Literal("x")
+  %4:_tmp.4 : Literal("y")
+  %5:b.0 : bool
+  %6:_tmp.6 : Literal(3.0)
+  %7:_tmp.7 : Literal(1.0)
+  %8:c.0 : bool

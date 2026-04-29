@@ -6,7 +6,7 @@ func MyCtx.__enter__(self):
 
 func MyCtx.__exit__(self, exc_type, exc_val, exc_tb):
   bb0():
-    %4:_tmp.0 = boolLit false
+    %4:_tmp.0 = false
     ret %4
 
 func @module_init():
@@ -16,7 +16,7 @@ func @module_init():
     branch bb1(%3, %1)
   bb1(%4:ctx.1, %5:_mgr.0):
     %7:_tmp.3 = callQualified builtins.print [positional(%4)]
-    %9:_tmp.5 = noneLit
+    %9:_tmp.5 = None
     %10:_tmp.6 = call attr(%5, "__exit__")(positional(%9), positional(%9), positional(%9))
     branch bb4()
   bb2(%11:ctx.2, %12:_mgr.1, %13:_exc.0):

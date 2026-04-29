@@ -34,11 +34,11 @@ func flexible(first: int, args, kwargs):
 
 func @module_init():
   bb0():
-    %3:items.0 = mkList [intLit 1, intLit 2, intLit 3]
-    %6:_tmp.5 = callQualified t22_star_args.log_all [positional(strLit "value:"), starArgs(%3)]
-    %11:params.0 = mkDict [strLit "Bucket", strLit "Key"] [strLit "my-bucket", strLit "my-key"]
+    %3:items.0 = mkList [1, 2, 3]
+    %6:_tmp.5 = callQualified t22_star_args.log_all [positional("value:"), starArgs(%3)]
+    %11:params.0 = mkDict ["Bucket", "Key"] ["my-bucket", "my-key"]
     %13:_tmp.11 = callQualified t22_star_args.create_config [starKwargs(%11)]
-    %16:extra_args.0 = mkList [intLit 10, intLit 20]
-    %19:extra_kwargs.0 = mkDict [strLit "debug"] [boolLit true]
-    %22:_tmp.19 = callQualified t22_star_args.flexible [positional(intLit 1), starArgs(%16), starKwargs(%19)]
+    %16:extra_args.0 = mkList [10, 20]
+    %19:extra_kwargs.0 = mkDict ["debug"] [true]
+    %22:_tmp.19 = callQualified t22_star_args.flexible [positional(1), starArgs(%16), starKwargs(%19)]
     ret

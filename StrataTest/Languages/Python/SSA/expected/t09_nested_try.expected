@@ -2,12 +2,12 @@ module "t09_nested_try":
 
 func inner_risky():
   bb0():
-    %2:_tmp.1 = callQualified builtins.ValueError [positional(strLit "inner")]
+    %2:_tmp.1 = callQualified builtins.ValueError [positional("inner")]
     raise %2
 
 func outer_risky():
   bb0():
-    %2:_tmp.1 = callQualified builtins.TypeError [positional(strLit "outer")]
+    %2:_tmp.1 = callQualified builtins.TypeError [positional("outer")]
     raise %2
 
 func @module_init():
@@ -26,7 +26,7 @@ func @module_init():
   bb4():
     branch bb6()
   bb5(%8:_exc.3):
-    %9:y.0 = intLit 0
+    %9:y.0 = 0
     branch bb6()
   bb6():
     %11:_tmp.4 = callQualified t09_nested_try.outer_risky []

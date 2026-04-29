@@ -2,11 +2,11 @@ module "t13_fstring":
 
 func @module_init():
   bb0():
-    %0:name.0 : str = strLit "world"
+    %0:name.0 : str = "world"
     %3:_tmp.3 = fmtValue %0
-    %4:greeting.0 = strConcat [strLit "Hello ", %3]
+    %4:greeting.0 = strConcat ["Hello ", %3]
     %5:_tmp.5 = fmtValue %0
-    %7:_tmp.7 = fmtValue intLit 30
-    %9:detail.0 = strConcat [%5, strLit " is ", %7, strLit " years old"]
-    %10:plain.0 = strLit "no interpolation"
+    %7:_tmp.7 = fmtValue 30
+    %9:detail.0 = strConcat [%5, " is ", %7, " years old"]
+    %10:plain.0 = "no interpolation"
     ret

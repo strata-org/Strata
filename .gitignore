@@ -13,3 +13,6 @@ vcs/*.smt2
 *.py.ion.core.st
 
 Strata.code-workspace
+
+# Reference implementations for design study
+/third-party/

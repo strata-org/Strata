@@ -2,16 +2,16 @@ module "t16_chained_cmp":
 
 func @module_init():
   bb0():
-    %0:x.0 : int = intLit 5
-    %1:y.0 : int = intLit 10
-    %2:z.0 : int = intLit 15
+    %0:x.0 : int = 5
+    %1:y.0 : int = 10
+    %2:z.0 : int = 15
     %3:_tmp.3 = compareOp lt %0 %1
     condBranch %3 bb1(%0, %1, %2, %1) bb2(%3, %0, %1, %2)
   bb1(%4:x.1, %5:y.1, %6:z.1, %7:y.2):
     %8:_tmp.4 = compareOp lt %7 %6
     branch bb2(%8, %4, %5, %6)
   bb2(%9:_tmp.5, %10:x.2, %11:y.3, %12:z.2):
-    %14:_tmp.7 = compareOp lt intLit 0 %10
+    %14:_tmp.7 = compareOp lt 0 %10
     condBranch %14 bb3(%10, %11, %12, %10) bb5(%14, %10, %11, %12)
   bb3(%15:x.3, %16:y.4, %17:z.3, %18:x.4):
     %19:_tmp.8 = compareOp lt %18 %16

@@ -1,0 +1,17 @@
+module "tc08_fstring":
+
+func f():
+  bb0():
+    %2:_tmp.2 = fmtValue 42
+    %3:s.0 = strConcat ["value is ", %2]
+    ret
+
+--- type check ---
+
+module "tc08_fstring":
+
+func f:
+  %0:x.0 : Literal(42)
+  %1:_tmp.1 : Literal("value is ")
+  %2:_tmp.2 : str
+  %3:s.0 : str

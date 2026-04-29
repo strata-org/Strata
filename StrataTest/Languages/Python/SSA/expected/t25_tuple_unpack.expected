@@ -8,8 +8,8 @@ func process_pairs(items: list):
     branch bb2(%3)
   bb2(%4:_iter.2) [except: bb3]:
     %6:_tmp.1 = callQualified builtins.next [positional(%4)]
-    %8:_tmp.3 = getItem %6 intLit 0
-    %10:_tmp.5 = getItem %6 intLit 1
+    %8:_tmp.3 = getItem %6 0
+    %10:_tmp.5 = getItem %6 1
     %12:_tmp.6 = callQualified builtins.print [positional(%8), positional(%10)]
     branch bb2(%4)
   bb3():
@@ -24,8 +24,8 @@ func use_enumerate(names: list):
     branch bb2(%5)
   bb2(%6:_iter.2) [except: bb3]:
     %8:_tmp.2 = callQualified builtins.next [positional(%6)]
-    %10:_tmp.4 = getItem %8 intLit 0
-    %12:_tmp.6 = getItem %8 intLit 1
+    %10:_tmp.4 = getItem %8 0
+    %12:_tmp.6 = getItem %8 1
     %14:_tmp.7 = callQualified builtins.print [positional(%10), positional(%12)]
     branch bb2(%6)
   bb3():
@@ -40,8 +40,8 @@ func dict_iteration(d: dict):
     branch bb2(%5)
   bb2(%6:_iter.2) [except: bb3]:
     %8:_tmp.3 = callQualified builtins.next [positional(%6)]
-    %10:_tmp.5 = getItem %8 intLit 0
-    %12:_tmp.7 = getItem %8 intLit 1
+    %10:_tmp.5 = getItem %8 0
+    %12:_tmp.7 = getItem %8 1
     %14:_tmp.8 = callQualified builtins.print [positional(%10), positional(%12)]
     branch bb2(%6)
   bb3():
@@ -49,13 +49,13 @@ func dict_iteration(d: dict):
 
 func tuple_assign():
   bb0():
-    %2:_tmp.2 = mkTuple [intLit 1, intLit 2]
-    %4:_tmp.4 = getItem %2 intLit 0
-    %6:_tmp.6 = getItem %2 intLit 1
+    %2:_tmp.2 = mkTuple [1, 2]
+    %4:_tmp.4 = getItem %2 0
+    %6:_tmp.6 = getItem %2 1
     %7:_tmp.7 = binOp add %4 %6
     %8:_tmp.8 = mkTuple [%4, %6, %7]
-    %10:_tmp.10 = getItem %8 intLit 0
-    %12:_tmp.12 = getItem %8 intLit 1
-    %14:_tmp.14 = getItem %8 intLit 2
+    %10:_tmp.10 = getItem %8 0
+    %12:_tmp.12 = getItem %8 1
+    %14:_tmp.14 = getItem %8 2
     %16:_tmp.15 = callQualified builtins.print [positional(%10), positional(%12), positional(%14)]
     ret

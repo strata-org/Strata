@@ -16,7 +16,7 @@ func async_fetch(url: str):
 
 func @module_init():
   bb0():
-    %3:items.0 = mkList [intLit 1, intLit 2, intLit 3]
+    %3:items.0 = mkList [1, 2, 3]
     %4:doubled.0 = unsupported "ListComp"
-    %8:result.0 = callQualified n08_mixed.sync_add [positional(intLit 1), positional(intLit 2)]
+    %8:result.0 = callQualified n08_mixed.sync_add [positional(1), positional(2)]
     ret

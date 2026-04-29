@@ -84,13 +84,13 @@ def isLiteral (i : Instruction) : Bool :=
 
 def fmtLiteralInline (i : Instruction) : String :=
   match i with
-  | .intLit v      => s!"intLit {v}"
-  | .floatLit v    => s!"floatLit \"{v}\""
-  | .strLit v      => s!"strLit \"{v}\""
-  | .boolLit true  => "boolLit true"
-  | .boolLit false => "boolLit false"
-  | .noneLit       => "noneLit"
-  | .bytesLit v    => s!"bytesLit \"{v}\""
+  | .intLit v      => s!"{v}"
+  | .floatLit v    => s!"{v}"
+  | .strLit v      => s!"\"{v}\""
+  | .boolLit true  => "true"
+  | .boolLit false => "false"
+  | .noneLit       => "None"
+  | .bytesLit v    => s!"b\"{v}\""
   | _              => panic! "fmtLiteralInline called on non-literal"
 
 /-! ## Use Count Analysis -/
@@ -285,13 +285,13 @@ def fmtNamedInstr (ctx : BlockCtx) (ni : NamedInstr) : Array String :=
       let instrStr := match ni.instr with
         | .undef name     => s!"undef(\"{name}\")"
         | .isDefined v    => s!"isDefined {rv v}"
-        | .intLit v       => s!"intLit {v}"
-        | .floatLit v     => s!"floatLit \"{v}\""
-        | .strLit v       => s!"strLit \"{v}\""
-        | .boolLit true   => "boolLit true"
-        | .boolLit false  => "boolLit false"
-        | .noneLit        => "noneLit"
-        | .bytesLit v     => s!"bytesLit \"{v}\""
+        | .intLit v       => s!"{v}"
+        | .floatLit v     => s!"{v}"
+        | .strLit v       => s!"\"{v}\""
+        | .boolLit true   => "true"
+        | .boolLit false  => "false"
+        | .noneLit        => "None"
+        | .bytesLit v     => s!"b\"{v}\""
         | .qualifiedRef qn => s!"qualifiedRef {qn}"
         | .attr obj name  => s!"attr {rv obj} \"{name}\""
         | .setAttr obj name val => s!"setAttr {rv obj} \"{name}\" {rv val}"
