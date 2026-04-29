@@ -123,13 +123,19 @@ structure TransBindings where
   boundTypeVars : Array String := #[]
   boundVars : Array (LExpr CSimpLParams.mono) := #[]
   freeVars  : Array String := #["return"] -- There's a global variable "return" for return values
+  /-- Name of the function whose body is currently being translated, used for
+      generating readable labels (e.g. for loop invariants). Empty if we are
+      not inside a function body. -/
+  currentFunction : String := ""
 
 instance : ToFormat TransBindings where
   format b := f!"BoundTypeVars: {b.boundTypeVars}\
                 {Format.line}\
                 BoundVars: {b.boundVars}\
                 {Format.line}\
-                FreeVars: {b.freeVars}"
+                FreeVars: {b.freeVars}\
+                {Format.line}\
+                CurrentFunction: {b.currentFunction}"
 
 instance : Inhabited (List Statement × TransBindings) where
   default := ([], {})
@@ -283,7 +289,12 @@ def translateInvariant (bindings : TransBindings) (arg : Arg) :
                     | some a =>
                       let e ← checkOpArg a q`C_Simp.invariant 1
                       assert! e.size == 1
-                      return [("", ← translateExpr bindings e[0]!)])
+                      let fname :=
+                        if bindings.currentFunction.isEmpty then "anon"
+                        else bindings.currentFunction
+                      let sr := a.ann
+                      let label := s!"{fname}_invariant_{sr.start}_{sr.stop}"
+                      return [(label, ← translateExpr bindings e[0]!)])
                   arg
 
 ---------------------------------------------------------------------
@@ -471,7 +482,8 @@ def translateProcedure (bindings : TransBindings) (op : Operation) :
   let paramBindings := (sig.keys.map (fun v => (LExpr.fvar () v none))).toArray
   let extendedBindings := { bindings with
                             boundVars := bindings.boundVars ++ paramBindings,
-                            freeVars := bindings.freeVars ++ sig.keys.toArray.map Identifier.name }
+                            freeVars := bindings.freeVars ++ sig.keys.toArray.map Identifier.name,
+                            currentFunction := pname }
 
   let pre ← translateExpr extendedBindings op.args[4]!
   let post ← translateExpr extendedBindings op.args[5]!
