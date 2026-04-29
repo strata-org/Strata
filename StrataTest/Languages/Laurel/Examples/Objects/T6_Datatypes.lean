@@ -108,7 +108,7 @@ procedure testMutualConstruction()
 };
 
 datatype RootBeforeLeaf { RootBeforeLeaf(leaf: LeafAfterRoot) }
-datatype LeafAfterRoot { LeafAfterRoot }
+datatype LeafAfterRoot { LeafAfterRootC }
 "
 
 #guard_msgs (error, drop all) in
