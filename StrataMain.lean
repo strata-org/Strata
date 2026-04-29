@@ -587,7 +587,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     let dispatchModules := pflags.getRepeated "dispatch"
     let pyspecModules := pflags.getRepeated "pyspec"
-    let specDir := pflags.getString "spec-dir" |>.getD "."
+    let specDir := "" -- pflags.getString "spec-dir" |>.getD "."
     unless ← System.FilePath.isDir specDir do
       exitFailure s!"spec-dir '{specDir}' does not exist or is not a directory"
     let sourcePath := pySourceOpt.map (·.1)

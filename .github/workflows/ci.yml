@@ -338,10 +338,12 @@ jobs:
       - name: Trigger CodeBuild and wait
         shell: bash
         run: |
+          aws --version
           BUILD_ID=$(aws codebuild start-build \
             --project-name strata-benchmarks \
             --source-type-override GITHUB \
             --source-location-override https://github.com/strata-org/Strata.git \
+            --source-version ${{ github.event.pull_request.head.sha || github.sha }} \
             --query 'build.id' --output text \
             --region us-east-2)
           echo "Build started: $BUILD_ID"
