@@ -120,6 +120,7 @@ procedure modifiesWildcardBodiless(c: Container, d: Container)
 
 procedure modifiesWildcardBodilessCaller()
   opaque
+  modifies *
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -144,6 +145,7 @@ procedure modifiesWildcardAndSpecific(c: Container, d: Container)
 
 procedure modifiesWildcardAndSpecificCaller()
   opaque
+  modifies *
 {
   var c: Container := new Container;
   var d: Container := new Container;

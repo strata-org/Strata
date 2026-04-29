@@ -98,12 +98,7 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
     | .Transparent b => (collectExprMd b).run {} |>.2
     | .Opaque postconds impl modif =>
-        -- A non-empty modifies clause (excluding wildcard `*`) implies the procedure
-        -- reads and writes the heap; no need to inspect the body further in that case.
-        -- Wildcard modifies does not imply heap access — it only suppresses the frame condition.
-        let isWildcard (e : StmtExprMd) : Bool := match e.1 with | .All => true | _ => false
-        let concreteModifies := modif.filter (fun e => !isWildcard e)
-        if !concreteModifies.isEmpty then
+        if !modif.isEmpty then
           { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
         else
           let r1 := postconds.foldl (fun (acc : AnalysisResult) (pc : Condition) =>
