@@ -91,3 +91,54 @@ partial def deserializeTree : ByteArray → Except Std.Format Tree :=
 #check (deserializeMeasurement : ByteArray → Except Std.Format Measurement)
 #check (deserializeLine : ByteArray → Except Std.Format Line)
 #check (deserializeTree : ByteArray → Except Std.Format Tree)
+
+-- Test structure with List fields
+structure Polygon where
+  vertices : List Point
+deriving Repr, BEq
+
+partial def deserializePolygon : ByteArray → Except Std.Format Polygon :=
+  getIonDeserializer% Polygon
+
+#check (deserializePolygon : ByteArray → Except Std.Format Polygon)
+
+-- Test structure with Option fields
+structure Config where
+  name : String
+  timeout : Option Nat
+deriving Repr, BEq
+
+def deserializeConfig : ByteArray → Except Std.Format Config :=
+  getIonDeserializer% Config
+
+#check (deserializeConfig : ByteArray → Except Std.Format Config)
+
+-- Test structure with Decimal fields
+structure Price where
+  amount : Strata.Decimal
+deriving Repr, BEq
+
+def deserializePrice : ByteArray → Except Std.Format Price :=
+  getIonDeserializer% Price
+
+#check (deserializePrice : ByteArray → Except Std.Format Price)
+
+-- Test structure with List of leaf types
+structure Numbers where
+  values : List Nat
+deriving Repr, BEq
+
+def deserializeNumbers : ByteArray → Except Std.Format Numbers :=
+  getIonDeserializer% Numbers
+
+#check (deserializeNumbers : ByteArray → Except Std.Format Numbers)
+
+-- Test structure with Option of compound type
+structure MaybeLine where
+  line : Option Line
+deriving Repr, BEq
+
+partial def deserializeMaybeLine : ByteArray → Except Std.Format MaybeLine :=
+  getIonDeserializer% MaybeLine
+
+#check (deserializeMaybeLine : ByteArray → Except Std.Format MaybeLine)

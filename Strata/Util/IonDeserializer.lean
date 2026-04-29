@@ -7,6 +7,7 @@ module
 
 public meta import Lean.Elab.Term.TermElabM
 public import Strata.DDM.Util.Ion
+public import Strata.DDM.Util.Decimal
 
 open Lean Meta Elab Term
 open Ion
@@ -27,7 +28,8 @@ values of that type.
   field names `_0`, `_1`, …
 - **Multi-constructor inductives** are encoded as Ion s-expressions
   `(ConstructorName arg₁ arg₂ …)`.
-- **Supported leaf types**: `Nat`, `Int`, `String`, `Bool`, `Float`.
+- **Supported leaf types**: `Nat`, `Int`, `String`, `Bool`, `Float`, `Decimal`.
+- **Container types**: `List α`, `Option α`.
 - **Nested/recursive types** are supported. Recursive types require the
   enclosing definition to be marked `partial`.
 
@@ -71,6 +73,29 @@ def readFloat (v : Ion SymbolId) : Except Std.Format Float :=
   | .float f => .ok f
   | .int i => .ok (Float.ofInt i)
   | _ => .error f!"Expected float, got {repr v}"
+
+def readDecimal (v : Ion SymbolId) : Except Std.Format Strata.Decimal :=
+  match v.app with
+  | .decimal d => .ok d
+  | .int i => .ok (Strata.Decimal.ofInt i)
+  | _ => .error f!"Expected decimal, got {repr v}"
+
+def readList (readElem : Ion SymbolId → SymbolTable → Except Std.Format α)
+    (v : Ion SymbolId) (tbl : SymbolTable) : Except Std.Format (List α) := do
+  let elems ← match v.app with
+    | .list a => .ok a
+    | .sexp a => .ok a
+    | _ => .error f!"Expected list, got {repr v}"
+  let mut result : List α := []
+  for elem in elems.reverse do
+    result := (← readElem elem tbl) :: result
+  .ok result
+
+def readOption (readElem : Ion SymbolId → SymbolTable → Except Std.Format α)
+    (v : Ion SymbolId) (tbl : SymbolTable) : Except Std.Format (Option α) :=
+  match v.app with
+  | .null _ => .ok none
+  | _ => (readElem v tbl).map some
 
 def resolveSymbol (tbl : SymbolTable) (sym : SymbolId) : Except Std.Format String :=
   match tbl[sym]? with
@@ -118,7 +143,8 @@ end -- public section
 
 /-- Leaf type names that should not be treated as nested inductives. -/
 private meta def isLeafTypeName (name : Name) : Bool :=
-  name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float
+  name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
+  name == ``Strata.Decimal
 
 /-- Generate a unique reader function name for a type. -/
 private meta def readerName (typeName : Name) : Name :=
@@ -132,39 +158,53 @@ private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
       match env.find? name with | some (.inductInfo _) => true | _ => false)
 
 /--
+Generate a read expression for a value of the given type.
+`valExpr` is the syntax for the Ion value to read.
+Returns syntax of type `Except Std.Format T`.
+-/
+private meta partial def mkValueRead (fieldType : Expr) (valExpr : TSyntax `term) :
+    TermElabM (TSyntax `term) := do
+  let origName := fieldType.getAppFn.constName?
+  let fieldType' ← whnf fieldType
+  let name := origName <|> fieldType'.getAppFn.constName?
+  match name with
+  | some ``Nat => `(Strata.Util.IonDeserializer.readNat $valExpr)
+  | some ``Int => `(Strata.Util.IonDeserializer.readInt $valExpr)
+  | some ``String => `(Strata.Util.IonDeserializer.readString $valExpr tbl)
+  | some ``Bool => `(Strata.Util.IonDeserializer.readBool $valExpr)
+  | some ``Float => `(Strata.Util.IonDeserializer.readFloat $valExpr)
+  | some ``Strata.Decimal => `(Strata.Util.IonDeserializer.readDecimal $valExpr)
+  | some ``List =>
+    let args := fieldType'.getAppArgs
+    if h : args.size > 0 then
+      let elemType := args[0]
+      let elemReader ← mkValueRead elemType (← `(_elemVal))
+      `(Strata.Util.IonDeserializer.readList (fun _elemVal tbl => $elemReader) $valExpr tbl)
+    else throwError "getIonDeserializer%: List without type argument"
+  | some ``Option =>
+    let args := fieldType'.getAppArgs
+    if h : args.size > 0 then
+      let elemType := args[0]
+      let elemReader ← mkValueRead elemType (← `(_elemVal))
+      `(Strata.Util.IonDeserializer.readOption (fun _elemVal tbl => $elemReader) $valExpr tbl)
+    else throwError "getIonDeserializer%: Option without type argument"
+  | some n =>
+    if isCompoundType (← getEnv) n then
+      let readerId := mkIdent (readerName n)
+      `($readerId $valExpr tbl)
+    else
+      throwError "getIonDeserializer%: unsupported field type {fieldType}"
+  | _ => throwError "getIonDeserializer%: unsupported field type {fieldType}"
+
+/--
 Generate a read expression for a field accessed via `lookupField` (struct context).
 Supports leaf types and nested inductive/structure types.
 -/
 private meta def mkFieldRead (fieldType : Expr) (fieldNameLit : TSyntax `str) :
     TermElabM (TSyntax `term) := do
-  -- Check the un-reduced type first (Float reduces away under whnf)
-  let origName := fieldType.getAppFn.constName?
-  let fieldType ← whnf fieldType
-  let name := origName <|> fieldType.getAppFn.constName?
-  match name with
-  | some ``Nat =>
-    `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>=
-      Strata.Util.IonDeserializer.readNat)
-  | some ``Int =>
-    `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>=
-      Strata.Util.IonDeserializer.readInt)
-  | some ``String =>
-    `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>=
-      (Strata.Util.IonDeserializer.readString · tbl))
-  | some ``Bool =>
-    `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>=
-      Strata.Util.IonDeserializer.readBool)
-  | some ``Float =>
-    `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>=
-      Strata.Util.IonDeserializer.readFloat)
-  | some name =>
-    if isCompoundType (← getEnv) name then
-      let readerId := mkIdent (readerName name)
-      `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>=
-        (fun v => $readerId v tbl))
-    else
-      throwError "getIonDeserializer%: unsupported field type {fieldType}"
-  | _ => throwError "getIonDeserializer%: unsupported field type {fieldType}"
+  let valExpr ← `(_fv)
+  let readExpr ← mkValueRead fieldType valExpr
+  `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>= (fun _fv => $readExpr))
 
 /--
 Generate a read expression for a field accessed by index (sexp context).
@@ -172,40 +212,12 @@ Supports leaf types and nested inductive/structure types.
 -/
 private meta def mkIndexRead (fieldType : Expr) (idx : Nat) :
     TermElabM (TSyntax `term) := do
-  let origName := fieldType.getAppFn.constName?
-  let fieldType ← whnf fieldType
-  let name := origName <|> fieldType.getAppFn.constName?
   let idxLit := quote idx
-  match name with
-  | some ``Nat =>
-    `(if h : $(idxLit) < args.size
-      then Strata.Util.IonDeserializer.readNat args[$(idxLit)]
-      else .error f!"Missing argument at index {$(idxLit)}")
-  | some ``Int =>
-    `(if h : $(idxLit) < args.size
-      then Strata.Util.IonDeserializer.readInt args[$(idxLit)]
-      else .error f!"Missing argument at index {$(idxLit)}")
-  | some ``String =>
-    `(if h : $(idxLit) < args.size
-      then Strata.Util.IonDeserializer.readString args[$(idxLit)] tbl
-      else .error f!"Missing argument at index {$(idxLit)}")
-  | some ``Bool =>
-    `(if h : $(idxLit) < args.size
-      then Strata.Util.IonDeserializer.readBool args[$(idxLit)]
-      else .error f!"Missing argument at index {$(idxLit)}")
-  | some ``Float =>
-    `(if h : $(idxLit) < args.size
-      then Strata.Util.IonDeserializer.readFloat args[$(idxLit)]
-      else .error f!"Missing argument at index {$(idxLit)}")
-  | some name =>
-    if isCompoundType (← getEnv) name then
-      let readerId := mkIdent (readerName name)
-      `(if h : $(idxLit) < args.size
-        then $readerId args[$(idxLit)] tbl
-        else .error f!"Missing argument at index {$(idxLit)}")
-    else
-      throwError "getIonDeserializer%: unsupported field type {fieldType}"
-  | _ => throwError "getIonDeserializer%: unsupported field type {fieldType}"
+  let valExpr ← `(_iv)
+  let readExpr ← mkValueRead fieldType valExpr
+  `(if h : $(idxLit) < args.size
+    then (fun _iv => $readExpr) args[$(idxLit)]
+    else .error f!"Missing argument at index {$(idxLit)}")
 
 private meta def getCtorFieldTypes (env : Environment) (ctorName : Name) :
     TermElabM (Nat × Nat × Array Expr) := do
@@ -308,6 +320,19 @@ private meta def mkReaderBody (env : Environment) (typeName : Name) :
     else
       mkMultiCtorReaderBody typeName indInfo.ctors
 
+/-- Extract compound type names from a type expression, looking through List/Option. -/
+private meta partial def extractCompoundNames (env : Environment) (t : Expr) : TermElabM (Array Name) := do
+  let t ← whnf t
+  let name := t.getAppFn.constName?
+  match name with
+  | some ``List | some ``Option =>
+    let args := t.getAppArgs
+    if h : args.size > 0 then extractCompoundNames env args[0]
+    else return #[]
+  | some n =>
+    if isCompoundType env n then return #[n] else return #[]
+  | none => return #[]
+
 /-- Collect all nested inductive/structure type names reachable from a type's fields. -/
 private meta def collectNestedTypes (env : Environment) (rootName : Name) :
     TermElabM (Array Name) := do
@@ -333,10 +358,8 @@ private meta def collectNestedTypes (env : Environment) (rootName : Name) :
       for _ in List.range ci.numFields do
         match ty with
         | .forallE _ t b _ =>
-          let t ← whnf t
-          if let some fieldTypeName := t.getAppFn.constName? then
-            if !visited.contains fieldTypeName && isCompoundType env fieldTypeName then
-              queue := queue.push fieldTypeName
+          for n in ← extractCompoundNames env t do
+            if !visited.contains n then queue := queue.push n
           ty := b
         | _ => break
   return result

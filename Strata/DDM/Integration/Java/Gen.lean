@@ -7,6 +7,7 @@ module
 
 public meta import Lean.Elab.Term.TermElabM
 public meta import Init.Data.String.Legacy
+public import Strata.DDM.Util.Decimal
 
 open Lean Meta Elab Term
 
@@ -30,7 +31,11 @@ structure types at compile time and generates Java source code consisting of:
 
 ## Supported leaf types
 
-`Nat`, `Int`, `Float`, `String`, `Bool`
+`Nat`, `Int`, `Float`, `String`, `Bool`, `Decimal`
+
+## Container types
+
+`List α` → `java.util.List<T>`, `Option α` → nullable `T`
 -/
 
 namespace Strata.Java
@@ -82,7 +87,8 @@ private meta def toPascalCase (s : String) : String :=
 /-! ## Leaf type detection and mapping -/
 
 private meta def isLeafTypeName (name : Name) : Bool :=
-  name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float
+  name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
+  name == ``Strata.Decimal
 
 private meta def leafJavaType (name : Name) : Option String :=
   match name with
@@ -91,6 +97,7 @@ private meta def leafJavaType (name : Name) : Option String :=
   | ``Float => some "double"
   | ``String => some "java.lang.String"
   | ``Bool => some "boolean"
+  | ``Strata.Decimal => some "java.math.BigDecimal"
   | _ => none
 
 private meta def leafSerializeExpr (name : Name) (accessor : String) : Option String :=
@@ -100,16 +107,22 @@ private meta def leafSerializeExpr (name : Name) (accessor : String) : Option St
   | ``Float => some s!"ion.newFloat({accessor})"
   | ``String => some s!"ion.newString({accessor})"
   | ``Bool => some s!"ion.newBool({accessor})"
+  | ``Strata.Decimal => some s!"ion.newDecimal({accessor})"
   | _ => none
 
 /-! ## Type info extraction -/
 
+private inductive FieldTypeInfo where
+  | leaf (name : Name)
+  | compound (name : Name)
+  | list (elem : FieldTypeInfo)
+  | option (elem : FieldTypeInfo)
+
 private structure FieldInfo where
   name : String
-  typeName : Name
-  isCompound : Bool
+  typeInfo : FieldTypeInfo
 
-private meta instance : Inhabited FieldInfo := ⟨{ name := "", typeName := `unknown, isCompound := false }⟩
+private meta instance : Inhabited FieldInfo := ⟨{ name := "", typeInfo := .leaf `unknown }⟩
 
 private structure CtorInfo' where
   name : Name
@@ -128,11 +141,23 @@ private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
     ((getStructureInfo? env name).isSome ||
       match env.find? name with | some (.inductInfo _) => true | _ => false)
 
-private meta def getFieldTypeName (ty : Expr) : MetaM Name := do
+private meta partial def classifyFieldType (env : Environment) (ty : Expr) : MetaM FieldTypeInfo := do
   let origName := ty.getAppFn.constName?
   let ty ← whnf ty
   let name := origName <|> ty.getAppFn.constName?
-  return name.getD `unknown
+  match name with
+  | some ``List =>
+    let args := ty.getAppArgs
+    if h : args.size > 0 then return .list (← classifyFieldType env args[0])
+    else return .leaf `unknown
+  | some ``Option =>
+    let args := ty.getAppArgs
+    if h : args.size > 0 then return .option (← classifyFieldType env args[0])
+    else return .leaf `unknown
+  | some n =>
+    if isCompoundType env n then return .compound n
+    else return .leaf n
+  | none => return .leaf `unknown
 
 private meta def extractCtorFields (env : Environment) (ctorName : Name)
     (fieldNames? : Option (Array Name) := none) : MetaM (Array FieldInfo) := do
@@ -145,14 +170,13 @@ private meta def extractCtorFields (env : Environment) (ctorName : Name)
   for i in List.range ci.numFields do
     match ty with
     | .forallE n t b _ =>
-      let typeName ← getFieldTypeName t
+      let typeInfo ← classifyFieldType env t
       let name := match fieldNames? with
         | some names => names[i]!.toString (escape := false)
         | none =>
-          -- Use actual binder name for Java record fields
           let s := n.toString (escape := false)
           if s.startsWith "_" && s.length > 1 then s!"field{i}" else s
-      fields := fields.push { name, typeName, isCompound := isCompoundType env typeName }
+      fields := fields.push { name, typeInfo }
       ty := b
     | _ => break
   return fields
@@ -170,6 +194,18 @@ private meta def analyzeType (env : Environment) (typeName : Name) : MetaM TypeS
   if ctors.size == 1 then
     return .singleCtor typeName javaName ctors[0]!
   return .multiCtor typeName javaName ctors
+
+private meta partial def extractCompoundNamesFromExpr (env : Environment) (t : Expr) : MetaM (Array Name) := do
+  let t ← whnf t
+  let name := t.getAppFn.constName?
+  match name with
+  | some ``List | some ``Option =>
+    let args := t.getAppArgs
+    if h : args.size > 0 then extractCompoundNamesFromExpr env args[0]
+    else return #[]
+  | some n =>
+    if isCompoundType env n then return #[n] else return #[]
+  | none => return #[]
 
 private meta def collectNestedTypes (env : Environment) (rootName : Name) : MetaM (Array Name) := do
   let mut visited : Std.HashSet Name := {}
@@ -194,54 +230,91 @@ private meta def collectNestedTypes (env : Environment) (rootName : Name) : Meta
       for _ in List.range ci.numFields do
         match ty with
         | .forallE _ t b _ =>
-          let t ← whnf t
-          if let some fieldTypeName := t.getAppFn.constName? then
-            if !visited.contains fieldTypeName && isCompoundType env fieldTypeName then
-              queue := queue.push fieldTypeName
+          for n in ← extractCompoundNamesFromExpr env t do
+            if !visited.contains n then queue := queue.push n
           ty := b
         | _ => break
   return result
 
 /-! ## Java Code Generation -/
 
-private meta def javaTypeFor (f : FieldInfo) : String :=
-  if f.isCompound then escapeJavaName (toPascalCase (f.typeName.getString!))
-  else (leafJavaType f.typeName).getD "java.lang.Object"
+private meta def javaTypeForInfo : FieldTypeInfo → String
+  | .leaf name => (leafJavaType name).getD "java.lang.Object"
+  | .compound name => escapeJavaName (toPascalCase (name.getString!))
+  | .list elem => s!"java.util.List<{javaBoxedTypeForInfo elem}>"
+  | .option elem => javaBoxedTypeForInfo elem
+where
+  javaBoxedTypeForInfo : FieldTypeInfo → String
+    | .leaf ``Nat | .leaf ``Int => "Long"
+    | .leaf ``Float => "Double"
+    | .leaf ``Bool => "Boolean"
+    | .leaf ``Strata.Decimal => "java.math.BigDecimal"
+    | .leaf ``String => "java.lang.String"
+    | other => javaTypeForInfo other
+
+private meta def javaTypeFor (f : FieldInfo) : String := javaTypeForInfo f.typeInfo
+
+private meta partial def serializeExprForInfo (ti : FieldTypeInfo) (accessor : String) : String :=
+  match ti with
+  | .leaf name => (leafSerializeExpr name accessor).getD "ion.newNull()"
+  | .compound _ => s!"{accessor}.toIon(ion)"
+  | .list _ =>
+    -- List serialization requires multiple statements; handled by toIon body generators.
+    -- This branch is used for inner elements of containers (e.g., Option (List T)).
+    s!"{accessor}.toIon(ion)"
+  | .option elem =>
+    let inner := serializeExprForInfo elem accessor
+    s!"({accessor} != null ? {inner} : ion.newNull())"
 
 private meta def serializeExprFor (f : FieldInfo) (accessor : String) : String :=
-  if f.isCompound then s!"{accessor}.toIon(ion)"
-  else (leafSerializeExpr f.typeName accessor).getD s!"ion.newNull()"
+  serializeExprForInfo f.typeInfo accessor
 
 private meta def recordParams (fields : Array FieldInfo) : String :=
   ", ".intercalate (fields.toList.map fun f => s!"{javaTypeFor f} {escapeJavaName f.name}")
 
 /-- Generate the toIon method body for a struct (Ion struct with field name keys). -/
 private meta def structToIonBody (fields : Array FieldInfo) : String :=
-  let fieldLines := fields.toList.map fun f =>
+  let fieldLines := (List.range fields.size).flatMap fun i =>
+    let f := fields[i]!
     let accessor := s!"{escapeJavaName f.name}()"
-    s!"        s.put(\"{f.name}\", {serializeExprFor f accessor});"
-  s!"        var s = ion.newEmptyStruct();
-{"\n".intercalate fieldLines}
-        return s;"
+    match f.typeInfo with
+    | .list elem =>
+      let inner := serializeExprForInfo elem "e"
+      [s!"        var _l_{escapeJavaName f.name} = ion.newEmptyList();",
+       s!"        for (var e : {accessor}) _l_{escapeJavaName f.name}.add({inner});",
+       s!"        s.put(\"{f.name}\", _l_{escapeJavaName f.name});"]
+    | _ =>
+      [s!"        s.put(\"{f.name}\", {serializeExprFor f accessor});"]
+  s!"        var s = ion.newEmptyStruct();\n{"\n".intercalate fieldLines}\n        return s;"
 
 /-- Generate the toIon method body for a single-ctor inductive (Ion struct with _0, _1, ... keys). -/
 private meta def singleCtorToIonBody (fields : Array FieldInfo) : String :=
-  let fieldLines := (List.range fields.size).map fun i =>
+  let fieldLines := (List.range fields.size).flatMap fun i =>
     let f := fields[i]!
     let accessor := s!"{escapeJavaName f.name}()"
-    s!"        s.put(\"_{i}\", {serializeExprFor f accessor});"
-  s!"        var s = ion.newEmptyStruct();
-{"\n".intercalate fieldLines}
-        return s;"
+    match f.typeInfo with
+    | .list elem =>
+      let inner := serializeExprForInfo elem "e"
+      [s!"        var _l{i} = ion.newEmptyList();",
+       s!"        for (var e : {accessor}) _l{i}.add({inner});",
+       s!"        s.put(\"_{i}\", _l{i});"]
+    | _ =>
+      [s!"        s.put(\"_{i}\", {serializeExprFor f accessor});"]
+  s!"        var s = ion.newEmptyStruct();\n{"\n".intercalate fieldLines}\n        return s;"
 
 private meta def multiCtorToIonBody (shortName : String) (fields : Array FieldInfo) : String :=
-  let fieldLines := fields.toList.map fun f =>
+  let fieldLines := (List.range fields.size).flatMap fun i =>
+    let f := fields[i]!
     let accessor := s!"{escapeJavaName f.name}()"
-    s!"        sexp.add({serializeExprFor f accessor});"
-  s!"        var sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"{shortName}\"));
-{"\n".intercalate fieldLines}
-        return sexp;"
+    match f.typeInfo with
+    | .list elem =>
+      let inner := serializeExprForInfo elem "e"
+      [s!"        var _l{i} = ion.newEmptyList();",
+       s!"        for (var e : {accessor}) _l{i}.add({inner});",
+       s!"        sexp.add(_l{i});"]
+    | _ =>
+      [s!"        sexp.add({serializeExprFor f accessor});"]
+  s!"        var sexp = ion.newEmptySexp();\n        sexp.add(ion.newSymbol(\"{shortName}\"));\n{"\n".intercalate fieldLines}\n        return sexp;"
 
 private meta def generateRecord (interfaceName : String) (recordName : String)
     (fields : Array FieldInfo) (toIonBody : String) : String :=
