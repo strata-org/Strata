@@ -1345,12 +1345,21 @@ def pyInterpretCommand : Command where
         IO.Process.exit ExitCode.userError
     match core.run with
     | .ok E =>
-      let outputNames := match Core.Program.Procedure.find? core ⟨"__main__", ()⟩ with
+      let mainProc := Core.Program.Procedure.find? core ⟨"__main__", ()⟩
+      let outputNames := match mainProc with
         | some p => p.header.outputs.keys.map (·.name)
         | none => []
       let (lhs, exprEnv) := Core.Env.genVars outputNames E.exprEnv
       let E := { E with exprEnv }
-      let E := Core.Statement.Command.runCall lhs "__main__" [] fuel E
+      -- Generate fresh variables for each input parameter (e.g. $heap_in added
+      -- by HeapParameterization) so the argument count matches the procedure
+      -- signature.
+      let inputIdents : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
+        match mainProc with
+        | some p => p.header.inputs.map fun (name, ty) => (name, some ty)
+        | none => []
+      let (inputArgs, E) := E.genFVars inputIdents
+      let E := Core.Statement.Command.runCall lhs "__main__" inputArgs fuel E
       match E.error with
       | none =>
         IO.println "Execution completed successfully."
