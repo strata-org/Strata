@@ -68,14 +68,14 @@ procedure modifyContainerWildcard(c: Container) returns (i: int)
 };
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
   opaque
 {
     var i: int := modifyContainerWildcard(c)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   opaque
   modifies d
 {
@@ -83,7 +83,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   opaque
   modifies d
 {
