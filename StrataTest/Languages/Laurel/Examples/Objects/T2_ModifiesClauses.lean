@@ -113,6 +113,41 @@ procedure newObjectDoNotCountForModifies()
   var c: Container := new Container;
   c#value := 1
 };
+
+procedure modifiesWildcardBodiless(c: Container, d: Container)
+  opaque
+  modifies *;
+
+procedure modifiesWildcardBodilessCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardBodiless(c, d);
+  assert x == d#value // this should fail because modifies * means anything can change
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure modifiesWildcardWithBody(c: Container, d: Container)
+  opaque
+  modifies *
+{
+  c#value := 2;
+  d#value := 3
+};
+
+procedure modifiesWildcardAndSpecific(c: Container, d: Container)
+  opaque
+  modifies c
+  modifies *;
+
+procedure modifiesWildcardAndSpecificCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardAndSpecific(c, d);
+  assert x == d#value // fails because modifies * subsumes modifies c
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
 "
 
 #guard_msgs (drop info, error) in

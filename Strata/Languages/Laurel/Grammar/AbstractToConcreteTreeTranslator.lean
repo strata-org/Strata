@@ -188,12 +188,12 @@ private def ensuresClauseToArg (c : Condition) : Arg :=
     laurelOp "errorSummary" #[.strlit sr msg])
   laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
-private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
-  if modifies.any (fun e => match e.val with | .All => true | _ => false) then
-    laurelOp "modifiesWildcard" #[]
-  else
-    let refs := modifies.map stmtExprToArg |>.toArray
-    laurelOp "modifiesClause" #[commaSep refs]
+private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
+  let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
+  let wildcardArgs := wildcards.map (fun _ => laurelOp "modifiesWildcard" #[]) |>.toArray
+  let specificArgs := if specific.isEmpty then #[]
+    else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
+  wildcardArgs ++ specificArgs
 
 private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let opName := if proc.isFunctional then "function" else "procedure"
@@ -222,7 +222,7 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      let mods := if modifies.isEmpty then #[] else #[modifiesClauseToArg modifies]
+      let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
       (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg mods])), body)
     | .Abstract postconds =>

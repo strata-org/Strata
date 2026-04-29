@@ -379,7 +379,10 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
           let refs ← translateModifiesExprs refsArg
           allModifies := allModifies ++ refs
         | q`Laurel.modifiesWildcard, #[] =>
-          allModifies := allModifies ++ [{ val := .All, source := none }]
+          let src ← match (← get).uri with
+            | some uri => pure (some (SourceRange.toFileRange uri clauseOp.ann))
+            | none => pure none
+          allModifies := allModifies ++ [mkStmtExprMd .All src]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
     pure allModifies
