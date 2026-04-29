@@ -25,7 +25,7 @@ LiftExpressionAssignments pass.
 
 -- Minimal reproduction from issue #1000.
 #guard_msgs in
-#eval withPython (warnOnSkip := false) fun pythonCmd => do
+#eval withPython fun pythonCmd => do
   let program :=
 "def ensure_exists() -> bool:
     return True

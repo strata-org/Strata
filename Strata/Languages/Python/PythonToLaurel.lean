@@ -1561,7 +1561,7 @@ def getExceptionCheckPreamble (ctx : TranslationContext) (e : StmtExprMd) (varNa
     let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some e))
     let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
     let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [varRef]])
-    let assert := mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some "Check exception" }) e.md
+    let assert := mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some "Check exception" }) e.source
     ([varDecl, assert], varRef)
   else
     (exceptionAsserts, e)
