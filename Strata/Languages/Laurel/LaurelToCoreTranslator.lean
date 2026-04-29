@@ -618,12 +618,16 @@ structure LaurelTranslateOptions where
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
   profile : Bool := false
-  deriving Inhabited
+
+instance : Inhabited LaurelTranslateOptions where
+  default := {}
 
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}
   verifyOptions : Core.VerifyOptions := .default
-  deriving Inhabited
+
+instance : Inhabited LaurelVerifyOptions where
+  default := {}
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.

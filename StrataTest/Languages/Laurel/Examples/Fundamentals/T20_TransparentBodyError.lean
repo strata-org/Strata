@@ -14,7 +14,7 @@ namespace Laurel
 
 def transparentBodyProgram := r"
 procedure transparentBody()
-//        ^^^^^^^^^^^^^^^ error: transparent statement bodies are not supported
+//        ^^^^^^^^^^^^^^^ error: transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque
 {
   assert true
 };
