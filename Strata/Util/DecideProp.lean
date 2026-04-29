@@ -5,6 +5,8 @@
 -/
 module
 
+oops
+
 /--
  Extract `Decidable` instance from typeclass inference. -/
 public def Strata.decideProp (p : Prop) [h : Decidable p] : Decidable p := h
