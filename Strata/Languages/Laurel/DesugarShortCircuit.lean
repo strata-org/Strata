@@ -5,9 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Util.Tactics
 
 /-!
 # Desugar Short-Circuit Operators
@@ -24,58 +23,32 @@ namespace Strata.Laurel
 
 public section
 
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, default⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
 
-/-- Desugar short-circuit operators to IfThenElse when the second operand is imperative. -/
-def desugarShortCircuitExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
-  let md := expr.md
-  match expr with
-  | WithMetadata.mk val _ =>
-  match val with
+/-- Local rewrite of a single short-circuit node. Recursion is handled by `mapStmtExpr`. -/
+private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
+  let source := expr.source
+  match expr.val with
   | .PrimitiveOp op args =>
-    let args' := args.attach.map fun ⟨a, _⟩ => desugarShortCircuitExpr model a
     match op, args with
-    | .AndThen, [_, b] | .Implies, [_, b] =>
+    -- With bottom-up traversal, `a` and `b` are already desugared (nested
+    -- short-circuits converted to IfThenElse). The check still works because
+    -- `containsAssignmentOrImperativeCall` recurses into IfThenElse.
+    | .AndThen, [a, b] | .Implies, [a, b] =>
       if containsAssignmentOrImperativeCall model b then
         let elseVal := match op with | .AndThen => false | _ => true
-        ⟨.IfThenElse args'[0]! args'[1]! (some (bare (.LiteralBool elseVal))), md⟩
-      else ⟨.PrimitiveOp op args', md⟩
-    | .OrElse, [_, b] =>
+        ⟨.IfThenElse a b (some (bare (.LiteralBool elseVal))), source⟩
+      else expr
+    | .OrElse, [a, b] =>
       if containsAssignmentOrImperativeCall model b then
-        ⟨.IfThenElse args'[0]! (bare (.LiteralBool true)) (some args'[1]!), md⟩
-      else ⟨.PrimitiveOp op args', md⟩
-    | _, _ => ⟨.PrimitiveOp op args', md⟩
-  | .IfThenElse cond th el =>
-    ⟨.IfThenElse (desugarShortCircuitExpr model cond) (desugarShortCircuitExpr model th)
-      (match el with | some e => some (desugarShortCircuitExpr model e) | none => none), md⟩
-  | .Block stmts label =>
-    ⟨.Block (stmts.attach.map fun ⟨s, _⟩ => desugarShortCircuitExpr model s) label, md⟩
-  | .While c invs dec body =>
-    ⟨.While (desugarShortCircuitExpr model c)
-      (invs.attach.map fun ⟨i, _⟩ => desugarShortCircuitExpr model i)
-      (match dec with | some d => some (desugarShortCircuitExpr model d) | none => none)
-      (desugarShortCircuitExpr model body), md⟩
-  | .LocalVariable name ty init =>
-    ⟨.LocalVariable name ty (match init with | some i => some (desugarShortCircuitExpr model i) | none => none), md⟩
-  | .Assign targets value =>
-    ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => desugarShortCircuitExpr model t) (desugarShortCircuitExpr model value), md⟩
-  | .StaticCall callee args =>
-    ⟨.StaticCall callee (args.attach.map fun ⟨a, _⟩ => desugarShortCircuitExpr model a), md⟩
-  | .Return v =>
-    ⟨.Return (match v with | some v' => some (desugarShortCircuitExpr model v') | none => none), md⟩
+        ⟨.IfThenElse a (bare (.LiteralBool true)) (some b), source⟩
+      else expr
+    | _, _ => expr
   | _ => expr
-termination_by expr
-decreasing_by all_goals ((try cases x); simp_all; try term_by_mem)
-
-private def desugarShortCircuitProcedure (model : SemanticModel) (proc : Procedure) : Procedure :=
-  { proc with body := match proc.body with
-    | .Transparent b => .Transparent (desugarShortCircuitExpr model b)
-    | .Opaque posts impl mods => .Opaque (posts.map (desugarShortCircuitExpr model)) (impl.map (desugarShortCircuitExpr model)) mods
-    | other => other }
 
 /-- Desugar short-circuit operators in a program. -/
 def desugarShortCircuit (model : SemanticModel) (program : Program) : Program :=
-  { program with staticProcedures := program.staticProcedures.map (desugarShortCircuitProcedure model) }
+  mapProgram (mapStmtExpr (desugarShortCircuitNode model)) program
 
 end -- public section
 end Strata.Laurel

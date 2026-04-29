@@ -87,10 +87,8 @@ theorem Subst.freeVars_cons (S : Subst) :
 theorem Subst.freeVars_of_find_subset (S : Subst) (hi : Maps.find? S i = some sty) :
     LMonoTy.freeVars sty ⊆ Subst.freeVars S := by
   have h_sty_map_value := @Maps.find?_mem_values _ _ i sty _ S hi
-  simp [List.instHasSubset, List.Subset, Subst.freeVars]
-  intro x hx
-  apply Exists.intro sty
-  simp_all
+  simp only [Subst.freeVars]
+  grind
 
 /--
 A substitution map `S` is well-formed if no key appears in the free type
@@ -165,7 +163,7 @@ mutual
 /--
 Apply substitution `S` to monotype `mty`.
 -/
-def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
+@[expose] def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
   if Subst.hasEmptyScopes S then mty else
   match mty with
   | .ftvar x => match S.find? x with
@@ -176,7 +174,7 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 /--
 Apply substitution `S` to monotypes `mtys`.
 -/
-def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+@[expose] def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
   if Subst.hasEmptyScopes S then mtys else substAux S mtys []
 where
   substAux S mtys acc : LMonoTys :=
@@ -238,11 +236,170 @@ theorem LMonoTy.subst_tcons (S : Subst) (name : String) (args : LMonoTys) :
   · simp [LMonoTys.subst, *]
   · rfl
 
+theorem LMonoTys.subst_nil (S : Subst) : LMonoTys.subst S [] = [] := by
+  unfold LMonoTys.subst
+  split <;> simp [LMonoTys.subst.substAux]
+
+theorem LMonoTy.subst_bitvec (S : Subst) (n : Nat) : LMonoTy.subst S (.bitvec n) = .bitvec n := by
+  unfold LMonoTy.subst
+  split <;> rfl
+
 theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
   (Maps.keys S) = [] := by
   induction S <;> simp_all [Maps.keys, Subst.hasEmptyScopes, Map.isEmpty]
   split at h <;> simp_all [Map.keys]
   done
+
+theorem Subst.hasEmptyScopes_false_of_find
+    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h : Maps.find? S a = some t) : Subst.hasEmptyScopes S = false := by
+  cases h_eq : Subst.hasEmptyScopes S with
+  | false => rfl
+  | true => exact absurd (Subst.isEmpty_implies_keys_empty h_eq ▸ Maps.find?_mem_keys S h)
+                         (by simp_all)
+
+theorem Subst.find?_none_of_hasEmptyScopes (h : Subst.hasEmptyScopes S) (x : TyIdentifier) : Maps.find? S x = none := by
+  match h_find : Maps.find? S x with
+  | some t => exact absurd h (by rw [Subst.hasEmptyScopes_false_of_find S x t h_find]; decide)
+  | none => rfl
+
+theorem LMonoTy.subst_unfold (S : Subst) (ty : LMonoTy) :
+    LMonoTy.subst S ty = match ty with
+      | .ftvar x => match S.find? x with | some sty => sty | none => .ftvar x
+      | .bitvec n => .bitvec n
+      | .tcons name args => .tcons name (args.map (LMonoTy.subst S)) := by
+  conv => lhs; unfold LMonoTy.subst
+  split <;> rename_i h
+  · cases ty with
+    | ftvar x => simp [Subst.find?_none_of_hasEmptyScopes h]
+    | bitvec => rfl
+    | tcons name args =>
+      simp
+      induction args with
+      | nil => rfl
+      | cons a as ih =>
+        simp; constructor
+        . simp [LMonoTy.subst_emptyS h]
+        . assumption
+  · induction ty with
+    | ftvar x => rfl
+    | bitvec => simp
+    | tcons name args =>
+      -- rw [LMonoTy.subst_tcons]
+      simp
+      congr 1
+      rw [LMonoTys.subst_eq_substLogic]
+      induction args with
+      | nil =>
+        unfold LMonoTys.substLogic
+        split <;> grind
+      | cons a as ih =>
+        unfold LMonoTys.substLogic
+        split <;> try contradiction
+        simp; grind
+
+/-- `subst` distributes over `mkArrow'`. -/
+theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
+    LMonoTy.subst S (LMonoTy.mkArrow' ret ins) =
+    LMonoTy.mkArrow' (LMonoTy.subst S ret) (ins.map (LMonoTy.subst S)) := by
+  induction ins with
+  | nil => rfl
+  | cons t ts ih =>
+    simp only [LMonoTy.mkArrow'_cons, List.map]
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.arrow, List.map]
+    rw [ih]
+
+/-- Like `LMonoTy.subst` but without the `hasEmptyScopes` short-circuit,
+so it reduces definitionally on ground types.
+Uses structural recursion (no well-founded recursion) so it unfolds in the kernel. -/
+@[expose] def LMonoTy.substReduce (S : Subst) : LMonoTy → LMonoTy
+  | .ftvar x => match S.find? x with | some sty => sty | none => .ftvar x
+  | .bitvec n => .bitvec n
+  | .tcons name ltys => .tcons name (substReduceList S ltys)
+where substReduceList (S : Subst) : List LMonoTy → List LMonoTy
+  | [] => []
+  | ty :: tys => substReduce S ty :: substReduceList S tys
+
+theorem LMonoTy.substReduceList_eq_map (S : Subst) (ltys : List LMonoTy) :
+    LMonoTy.substReduce.substReduceList S ltys = ltys.map (substReduce S) := by
+  induction ltys with
+  | nil => rfl
+  | cons hd tl ih => simp [substReduce.substReduceList, ih]
+
+theorem LMonoTy.subst_eq_substReduce (S : Subst) (ty : LMonoTy) :
+    LMonoTy.subst S ty = LMonoTy.substReduce S ty := by
+  induction ty with
+  | ftvar x => rw [subst_unfold]; simp [substReduce]
+  | bitvec n => rw [subst_unfold]; simp [substReduce]
+  | tcons name ltys ih =>
+    rw [subst_unfold]; simp only [substReduce, substReduceList_eq_map]
+    congr 1
+    exact List.map_congr_left ih
+
+/-! ## Type substitution agreement lemmas
+
+These lemmas establish that if two substitutions produce the same result on a
+type, they must agree on all free variables of that type — and conversely, if
+they agree on all free variables, they produce the same result. -/
+
+/-- If two substitutions produce the same result on a type `ty`, then they
+agree on every free variable of `ty` (in the sense of producing the same
+substitution result on that variable). -/
+theorem subst_eq_implies_agree_on_freeVars
+    {S₁ S₂ : Subst}
+    {ty : LMonoTy}
+    (h : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty)
+    (v : TyIdentifier)
+    (hv : v ∈ LMonoTy.freeVars ty)
+    : LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v) := by
+  induction ty with
+  | ftvar x =>
+    simp only [LMonoTy.freeVars, List.mem_singleton] at hv
+    subst hv; exact h
+  | bitvec n =>
+    simp [LMonoTy.freeVars] at hv
+  | tcons name args ih =>
+    simp only [LMonoTy.subst_unfold] at h
+    simp only [LMonoTy.freeVars] at hv
+    have h_args := LMonoTy.tcons.inj h |>.2
+    -- v ∈ freeVars of some ty ∈ args; find it and apply IH
+    have h_map_eq := List.map_eq_map_iff.mp h_args
+    have ⟨ty, ht, hv_ty⟩ := LMonoTys.freeVars_exists hv
+    exact ih ty ht (h_map_eq ty ht) hv_ty
+
+/-- If two substitutions agree on all free variables of `ty` (in the sense of
+producing the same substitution result), then they produce the same result
+on `ty`. -/
+theorem agree_on_freeVars_implies_subst_eq
+    {S₁ S₂ : Subst}
+    {ty : LMonoTy}
+    (h : ∀ v, v ∈ LMonoTy.freeVars ty →
+      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
+    : LMonoTy.subst S₁ ty = LMonoTy.subst S₂ ty := by
+  induction ty with
+  | ftvar v =>
+    exact h v (by simp [LMonoTy.freeVars])
+  | bitvec n =>
+    simp only [LMonoTy.subst_unfold]
+  | tcons name args ih =>
+    simp only [LMonoTy.subst_unfold]
+    congr 1
+    simp only [LMonoTy.freeVars] at h
+    exact List.map_eq_map_iff.mpr fun ty ht =>
+      ih ty ht fun v hv => h v (LMonoTys.freeVars_mem_subset ht hv)
+
+/-- List version: if two substitutions agree on all free variables of every
+type in a list, then mapping `subst` over the list produces the same result. -/
+theorem agree_on_freeVars_implies_subst_eq_list
+    {S₁ S₂ : Subst}
+    {tys : List LMonoTy}
+    (h : ∀ v, v ∈ LMonoTys.freeVars tys →
+      LMonoTy.subst S₁ (.ftvar v) = LMonoTy.subst S₂ (.ftvar v))
+    : tys.map (LMonoTy.subst S₁) = tys.map (LMonoTy.subst S₂) :=
+  List.map_eq_map_iff.mpr fun _ ht =>
+    agree_on_freeVars_implies_subst_eq fun v hv =>
+      h v (LMonoTys.freeVars_mem_subset ht hv)
 
 /--
 No key (i.e., type identifier) in a well-formed substitution `S` can appear as a
@@ -1367,15 +1524,6 @@ def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
     Except UnifyError SubstInfo := do
     let relS ← Constraints.unifyCore constraints S
     .ok relS.newS
-
-
-theorem Subst.hasEmptyScopes_false_of_find
-    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
-    (h : Maps.find? S a = some t) : Subst.hasEmptyScopes S = false := by
-  cases h_eq : Subst.hasEmptyScopes S with
-  | false => rfl
-  | true => exact absurd (Subst.isEmpty_implies_keys_empty h_eq ▸ Maps.find?_mem_keys S h)
-                         (by simp_all)
 
 /-- A key in a well-formed substitution does not appear in its own image. -/
 theorem SubstWF.not_mem_freeVars_of_find (S : Subst) (a : TyIdentifier) (t : LMonoTy)

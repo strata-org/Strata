@@ -12,7 +12,13 @@ open Strata
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:guide/overflow`
 - `verus-examples:overflow`
+- Verus links:
+  `guide/overflow`: https://github.com/verus-lang/verus/blob/main/examples/guide/overflow.rs
+  `overflow`: https://github.com/verus-lang/verus/blob/main/examples/overflow.rs
 - Gap: `HasType` overflow guards dropped
+- Current status: the seed verifies with explicit `fits_u32` predicates
+- Remaining gap: deciding whether Verus-specific `HasType` checks should be
+  modeled directly
 -/
 
 private def overflowGuardSeed : Strata.Program :=
@@ -21,14 +27,11 @@ program Boole;
 
 // Target shape: these `fits_u32` conditions stand in for the dropped
 // `HasType(U32, e)` overflow checks that should survive translation.
-//
-// This is currently lower priority because `HasType` is Verus-specific
-// rather than a core Boole feature.
 
 function fits_u32(i: int) : bool;
 
-axiom (forall i: int :: fits_u32(i) ==> 0 <= i);
-axiom (forall i: int :: fits_u32(i) ==> i < 4294967296);
+axiom (∀ i: int . fits_u32(i) ==> 0 <= i);
+axiom (∀ i: int . fits_u32(i) ==> i < 4294967296);
 
 procedure overflow_guard_seed(x: int) returns (y: int)
 spec {
@@ -44,15 +47,15 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_6_937
+Obligation: assert_6_1175
 Property: assert
 Result: ✅ pass
 
-Obligation: overflow_guard_seed_ensures_4_874
+Obligation: overflow_guard_seed_ensures_4_1112
 Property: assert
 Result: ✅ pass
 
-Obligation: overflow_guard_seed_ensures_5_896
+Obligation: overflow_guard_seed_ensures_5_1134
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

@@ -125,7 +125,7 @@ on the initial environment.  `AssertValid` is `AssertValidWhen (fun _ => True)`.
 /-- Assert `a` is *valid* in statement `s` when `Pre` holds on the initial
     environment.  This is the general form; `AssertValid` is the special case
     with `Pre = fun _ => True`. -/
-def AssertValidWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
+@[expose] def AssertValidWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
   ∀ (ρ₀ : Env P) (cfg : L.CfgT),
     Pre ρ₀ →
     L.star (L.stmtCfg s ρ₀) cfg →
@@ -137,11 +137,11 @@ def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
   ∀ (a : AssertId P), AssertValidWhen L Pre s a
 
 /-- Assert `a` is *valid* in statement `s` (for all initial environments). -/
-def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
+@[expose] def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
   AssertValidWhen L (fun _ => True) s a
 
 /-- All asserts are valid in statement `s`. -/
-def AllAssertsValid (s : L.StmtT) : Prop :=
+@[expose] def AllAssertsValid (s : L.StmtT) : Prop :=
   ∀ (a : AssertId P), AssertValid L s a
 
 

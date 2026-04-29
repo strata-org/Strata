@@ -71,6 +71,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Restore lake cache
+        # Only use the caches on PRs because there is a risk of stale results:
+        # https://github.com/strata-org/Strata/issues/952
+        if: github.event_name == 'pull_request'
         uses: actions/cache/restore@v5
         with:
           path: .lake
@@ -80,11 +83,14 @@ jobs:
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
       - name: Download ion-java jar for Java codegen test
-        run: wget -q -O StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+        run: wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
+          test: false
+      - name: Run tests (excluding Python)
+        run: lake test -- --exclude Languages.Python
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
@@ -92,8 +98,12 @@ jobs:
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Verify Java testdata is up to date
         run: |
-          StrataTest/DDM/Integration/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTest/DDM/Integration/Java/testdata/
+          StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh
+          git diff --exit-code StrataTestExtra/DDM/Integration/Java/testdata/
+      - name: Verify generated editor syntax files are up to date
+        run: |
+          lake env lean --run editors/GenSyntax.lean all
+          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
       - name: Build and run strata verify
         run: lake exe strata verify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
@@ -112,15 +122,64 @@ jobs:
       - name: Build using pip
         run: pip install .
         working-directory: Tools/Python
-      - name: Run pyAnalyze tests
+      - name: Run pyInterpret golden-file tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: |
-          ./run_py_analyze.sh
-          python run_py_analyze_sarif.py --laurel
+        run: ./run_py_interpret.sh
+      - name: Run pyAnalyze SARIF tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: python run_py_analyze_sarif.py --laurel
+      - name: Run pyAnalyze golden-file tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
+
+  check_pending_python:
+    needs: build_and_test_lean
+    name: Check pending Python tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Build using pip
+      run: pip install .
+      working-directory: Tools/Python
+    - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in the build_and_test_lean job
+      # https://github.com/strata-org/Strata/issues/952
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
+    - name: Install Lean
+      uses: leanprover/lean-action@v1
+      with:
+        auto-config: false
+        build: false
+    - name: Install cvc5
+      shell: bash
+      run: |
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "x86_64" ]; then ARCH_NAME="x86_64"
+            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then ARCH_NAME="arm64"
+            else echo "Unsupported architecture: $ARCH"; exit 1; fi
+            wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+            unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
+            sudo cp cvc5-Linux-${ARCH_NAME}-static/bin/cvc5 /usr/local/bin/
+    - name: Check pending tests for newly passing
+      working-directory: StrataTest/Languages/Python
+      shell: bash
+      run: ./run_py_analyze.sh --check-pending
 
   lint_checks:
     name: Run lint checks
@@ -192,6 +251,7 @@ jobs:
           fail: true
 
   build_python:
+    needs: build_and_test_lean
     name: Build and test Python
     runs-on: ubuntu-latest
     permissions:
@@ -207,12 +267,21 @@ jobs:
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
-    - name: Build Lean strata executable for testing purposes.
+    - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in the build_and_test_lean job from ci.yml
+      # https://github.com/strata-org/Strata/issues/952
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
+    - name: Install Lean (for lake env)
       uses: leanprover/lean-action@v1
       with:
         auto-config: false
-        build: true
-        build-args: "strata:exe"
+        build: false
+        use-github-cache: false
     - name: Install cvc5
       shell: bash
       run: |
@@ -242,7 +311,7 @@ jobs:
               sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
             fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest StrataTest.Languages.Python.VerifyPythonTest StrataTest.Languages.Python.PropertySummaryTest
+      run: PYTHON=python lake test -- Languages.Python
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
@@ -252,3 +321,48 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/cbmc.yml
+
+  strata-benchmarks:
+    name: Run internal benchmarks of Strata
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{secrets.AWS_BENCHMARK_ACCOUNT}}:role/github-actions-codebuild-role
+          aws-region: us-east-2
+
+      - name: Trigger CodeBuild and wait
+        shell: bash
+        run: |
+          BUILD_ID=$(aws codebuild start-build \
+            --project-name strata-benchmarks \
+            --source-type-override GITHUB \
+            --source-location-override https://github.com/strata-org/Strata.git \
+            --query 'build.id' --output text \
+            --region us-east-2)
+          echo "Build started: $BUILD_ID"
+
+          LOG_KEY="logs/${BUILD_ID}.log"
+          echo "[View build log in S3](https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY})" >> $GITHUB_STEP_SUMMARY
+
+          while true; do
+            STATUS=$(aws codebuild batch-get-builds \
+              --ids "$BUILD_ID" \
+              --query 'builds[0].buildStatus' --output text \
+              --region us-east-2)
+            echo "Current status: [$STATUS]"
+            case "$STATUS" in
+              SUCCEEDED) break;;
+              FAILED|FAULT|TIMED_OUT|STOPPED) echo "Build failed: $STATUS" ; break ;;
+              IN_PROGRESS) sleep 30 ;;
+              *) echo "Unexpected status: $STATUS"; sleep 10 ; break ;;
+            esac
+          done
+
+          echo "View build log in S3: https://s3.console.aws.amazon.com/s3/object/strata-internal-benchmarks-logs?prefix=${LOG_KEY}"
+          
+          test "$STATUS" = "SUCCEEDED"

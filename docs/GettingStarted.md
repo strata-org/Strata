@@ -99,10 +99,10 @@ abbrev Arith.Commands := Imperative.Cmds Arith.PureExpr
 Translation from the DDM-generated types to this abstract syntax is
 done [here](../StrataTest/DL/Imperative/DDMTranslate.lean).
 
-### 3. Instantiate `Imperative`'s type checker and partial evaluator
+### 3. Instantiate `Imperative`'s type checker and symbolic evaluator
 
 `Imperative` comes with an implementation of a [type
-checker](../Strata/DL/Imperative/CmdType.lean) and a [partial
+checker](../Strata/DL/Imperative/CmdType.lean) and a [symbolic
 evaluator](../Strata/DL/Imperative/CmdEval.lean), parameterized by
 the [`TypeContext`](../Strata/DL/Imperative/TypeContext.lean) and
 [`EvalContext`](../Strata/DL/Imperative/EvalContext.lean)
@@ -124,7 +124,7 @@ def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :
       .error f!"Types {t1} and {t2} cannot be unified!"
 ```
 
-Analogously, the partial evaluator for expressions in the `EvalContext` class is
+Analogously, the symbolic evaluator for expressions in the `EvalContext` class is
 instantiated by the following straightforward function:
 ```bash
 def eval (s : State) (e : Expr) : Expr :=
@@ -149,7 +149,7 @@ def eval (s : State) (e : Expr) : Expr :=
 
 At this point, we can type-check `ArithPrograms` and generate
 verification conditions for well-typed `ArithPrograms`. Here's an
-example of a small program that is verified by the partial evaluator
+example of a small program that is verified by the symbolic evaluator
 itself:
 ```bash
 private def testProgram1 : Commands :=
@@ -256,7 +256,7 @@ def toSMTTerm (E : Env) (e : Arith.Expr) : Except Format Term := do
 
 We now have all the pieces in place to build an end-to-end verifier
 for `ArithPrograms`. We hook up the DDM translator with the type
-checker + partial evaluator, followed by the SMT encoder. We then
+checker + symbolic simulator, followed by the SMT encoder. We then
 write some basic functions to invoke an SMT solver on every deferred
 VC [here](../StrataTest/DL/Imperative/Verify.lean).
 

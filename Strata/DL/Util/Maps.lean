@@ -630,7 +630,6 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
   induction ms with
   | nil =>
     show Map.find? ([] : Maps α β).flatten x = none
-    rw [List.flatten_nil]
     rfl
   | cons m rest ih =>
     simp only [Maps.find?] at h
@@ -643,8 +642,20 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
       have hr_not_mem := Map.findNone_eq_notmem_mapfst.mpr ih_rest
       apply Map.findNone_eq_notmem_mapfst.mp
       show ¬ x ∈ List.map Prod.fst ((m :: rest : Maps α β).flatten)
-      rw [List.flatten_cons, List.map_append, List.mem_append]
-      exact fun hor => hor.elim hm_not_mem hr_not_mem
+      grind
+
+theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
+    Map.find? ms.toSingleMap x = Maps.find? ms x := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    unfold Map at m
+    show Map.find? ((m ++ rest.flatten)) x = _
+    rw [Map.find?_append]
+    simp only [Maps.find?]
+    cases Map.find? m x with
+    | none => exact ih
+    | some v => rfl
 
 ---------------------------------------------------------------------
 end

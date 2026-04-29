@@ -3,19 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Lean.Meta
 import Lean.Elab.Tactic
 
 import Strata.Languages.Core.Verifier
 import Strata.Transform.LoopElim
-import Strata.Languages.C_Simp.Verify
-import Strata.Languages.Boole.Verify
+public import Strata.Languages.C_Simp.Verify
+public import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
-import Strata.DL.SMT.Denote
-import Strata.DL.SMT.Translate
+public import Strata.DL.SMT.Denote
+public import Strata.DL.SMT.Translate
 
 open Lean hiding Options
+
+public section
 
 namespace Strata.SMT
 
@@ -50,17 +53,16 @@ namespace Core
 abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
-def genVCsSingleENV (pE : Program × Env) : Option coreVCs := do
-  let (_, E) := pE
+def genVCsSingleENV (E : Env) : Option coreVCs := do
   match E.error with
   | some _ => none
   | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := loopElim program
-  match Core.typeCheckAndPartialEval options program with
+  let program := (loopElim program).fst
+  match Core.typeCheckAndEval options program with
   | .error _ => none
-  | .ok pEs =>
+  | .ok (pEs, _stats) =>
     let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs
     return VCss.flatten.reverse
 
@@ -118,7 +120,7 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     let maybeTerms := Core.ProofObligation.toSMTTerms E ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, t, ctx) =>
+    | .ok (ts, t, ctx, _stats) =>
       (ob.label, sanitizeSMTContext ctx, ts, t)
 
 /--
@@ -250,6 +252,14 @@ def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
 
 end SMT
 
+end Strata
+
+end -- public section
+
+namespace Strata
+
+public section
+
 namespace Meta
 
 def andN (ps : List Lean.Expr) : Lean.Expr :=
@@ -290,7 +300,7 @@ where
     addAndCompile decl
     pure auxName
 
-unsafe def genSMTVCs (mv : MVarId) : MetaM (List MVarId) := do
+private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   let type ← mv.getType
   let some program := type.app1? ``Strata.smtVCsCorrect | throwError "Expected a Strata.smtVCsCorrect goal"
   trace[debug] m!"Generating SMT VCs for {program}"
@@ -312,7 +322,14 @@ unsafe def genSMTVCs (mv : MVarId) : MetaM (List MVarId) := do
   mv.assign hP
   return mvs
 
+@[implemented_by genSMTVCsUnsafe]
+meta opaque genSMTVCs (mv : MVarId) : MetaM (List MVarId)
+
 end Meta
+
+end -- public section
+
+public section
 
 namespace Tactic
 
@@ -323,7 +340,7 @@ Generate one Lean goal per SMT verification condition in a goal of the form
 syntax (name := genSMTVCs) "gen_smt_vcs" : tactic
 
 open Lean Elab Tactic in
-@[tactic genSMTVCs] unsafe def evalGenSMTVCs : Tactic := fun stx => do
+@[tactic genSMTVCs] meta def evalGenSMTVCs : Tactic := fun stx => do
   match stx with
   | `(tactic| gen_smt_vcs) =>
     let mvs ← Meta.genSMTVCs (← Tactic.getMainGoal)
@@ -331,5 +348,7 @@ open Lean Elab Tactic in
   | _ => throwUnsupportedSyntax
 
 end Tactic
+
+end -- public section
 
 end Strata

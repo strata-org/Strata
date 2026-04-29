@@ -84,7 +84,7 @@ info: function loopSimple {
 /--
 info: program Core;
 
-procedure loopSimple (n : int) returns (return : int)
+procedure loopSimple (n : int, out return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;
@@ -97,34 +97,34 @@ spec {
     first_iter_asserts: {
       assert [entry_invariant_0]: i <= n && i * (i - 1) div 2 == sum;
       assert [assert_measure_pos]: n - i >= 0;
-      }
+    }
     |arbitrary iter facts|: {
       |loop havoc|: {
         havoc sum;
         havoc i;
-        }
+      }
       arbitrary_iter_assumes: {
         assume [assume_guard]: i < n;
         assume [assume_invariant_0]: i <= n && i * (i - 1) div 2 == sum;
         assume [assume_measure_pos]: n - i >= 0;
-        }
+      }
       var |special-name-for-old-measure-value| : int := n - i;
       sum := sum + i;
       i := i + 1;
       assert [measure_decreases]: n - i < special-name-for-old-measure-value;
       assert [measure_imp_not_guard]: if n - i <= 0 then !(i < n) else true;
       assert [arbitrary_iter_maintain_invariant_0]: i <= n && i * (i - 1) div 2 == sum;
-      }
+    }
     |loop havoc|: {
       havoc sum;
       havoc i;
-      }
+    }
     assume [not_guard]: !(i < n);
     assume [invariant_0]: i <= n && i * (i - 1) div 2 == sum;
-    }
+  }
   assert [sum_assert]: n * (n - 1) div 2 == sum;
   return := sum;
-  };
+};
 -/
 #guard_msgs in
 #eval Strata.to_core (Strata.C_Simp.get_program LoopSimplePgm)
@@ -137,77 +137,77 @@ VCs:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+pre: n@1 >= 0
 Obligation:
-0 <= $__n0 && true
+0 <= n@1 && true
 
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+pre: n@1 >= 0
 Obligation:
-$__n0 - 0 >= 0
+n@1 - 0 >= 0
 
 Label: measure_decreases
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i5 < $__n0
-assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
-assume_measure_pos: $__n0 - $__i5 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+assume_guard: i@1 < n@1
+assume_invariant_0: i@1 <= n@1 && i@1 * (i@1 - 1) div 2 == sum@1
+assume_measure_pos: n@1 - i@1 >= 0
+pre: n@1 >= 0
 Obligation:
-$__n0 - ($__i5 + 1) < $__n0 - $__i5
+n@1 - (i@1 + 1) < n@1 - i@1
 
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i5 < $__n0
-assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
-assume_measure_pos: $__n0 - $__i5 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+assume_guard: i@1 < n@1
+assume_invariant_0: i@1 <= n@1 && i@1 * (i@1 - 1) div 2 == sum@1
+assume_measure_pos: n@1 - i@1 >= 0
+pre: n@1 >= 0
 Obligation:
-if $__n0 - ($__i5 + 1) <= 0 then !($__i5 + 1 < $__n0) else true
+if n@1 - (i@1 + 1) <= 0 then !(i@1 + 1 < n@1) else true
 
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
-assume_guard: $__i5 < $__n0
-assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
-assume_measure_pos: $__n0 - $__i5 >= 0
-pre: $__n0 >= 0
+<label_ite_cond_true: i < n>: 0 < n@1
+assume_guard: i@1 < n@1
+assume_invariant_0: i@1 <= n@1 && i@1 * (i@1 - 1) div 2 == sum@1
+assume_measure_pos: n@1 - i@1 >= 0
+pre: n@1 >= 0
 Obligation:
-$__i5 + 1 <= $__n0 && ($__i5 + 1) * ($__i5 + 1 - 1) div 2 == $__sum4 + $__i5
+i@1 + 1 <= n@1 && (i@1 + 1) * (i@1 + 1 - 1) div 2 == sum@1 + i@1
 
 Label: sum_assert
 Property: assert
 Assumptions:
-pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i5 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+pre: n@1 >= 0
+<label_ite_cond_true: i < n>: if 0 < n@1 then 0 < n@1 else true
+assume_guard: if 0 < n@1 then i@1 < n@1 else true
+assume_invariant_0: if 0 < n@1 then i@1 <= n@1 && i@1 * (i@1 - 1) div 2 == sum@1 else true
+assume_measure_pos: if 0 < n@1 then n@1 - i@1 >= 0 else true
+not_guard: if 0 < n@1 then !(i@2 < n@1) else true
+invariant_0: if 0 < n@1 then i@2 <= n@1 && i@2 * (i@2 - 1) div 2 == sum@2 else true
+<label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
 Obligation:
-$__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum6 else 0
+n@1 * (n@1 - 1) div 2 == if 0 < n@1 then sum@2 else 0
 
 Label: post
 Property: assert
 Assumptions:
-pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i5 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+pre: n@1 >= 0
+<label_ite_cond_true: i < n>: if 0 < n@1 then 0 < n@1 else true
+assume_guard: if 0 < n@1 then i@1 < n@1 else true
+assume_invariant_0: if 0 < n@1 then i@1 <= n@1 && i@1 * (i@1 - 1) div 2 == sum@1 else true
+assume_measure_pos: if 0 < n@1 then n@1 - i@1 >= 0 else true
+not_guard: if 0 < n@1 then !(i@2 < n@1) else true
+invariant_0: if 0 < n@1 then i@2 <= n@1 && i@2 * (i@2 - 1) div 2 == sum@2 else true
+<label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
 Obligation:
 true
 

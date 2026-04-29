@@ -5,10 +5,10 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.DL.Imperative.MetaData
-public import Strata.Util.Tactics
+import Strata.Util.Tactics
 
 public section
 
@@ -37,7 +37,7 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
     if seen.contains ct.name then (acc, seen)
     else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, none⟩
 
 /--
 Generate Laurel constant definitions for the type hierarchy:
@@ -54,10 +54,10 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     | .Composite ct => some ct
     | _ => none
   if composites.isEmpty then [] else
-  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
-  let boolTy : HighTypeMd := ⟨.TBool, #[]⟩
-  let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, #[]⟩
-  let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none⟩
+  let boolTy : HighTypeMd := ⟨.TBool, none⟩
+  let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, none⟩
+  let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, none⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
   -- Start with const(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
@@ -127,7 +127,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let fieldError := match (computeExprType model target).val with
       | .UserDefined typeName =>
         if isDiamondInheritedField model typeName fieldName then
-          let fileRange := (Imperative.getFileRange expr.md).getD FileRange.unknown
+          let fileRange := expr.source.getD FileRange.unknown
           [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
         else []
       | _ => []
@@ -149,7 +149,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond
+  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
@@ -158,7 +158,12 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
   termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try have := AstNode.sizeOf_val_lt expr)
+    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+    all_goals (try term_by_mem)
+    all_goals omega
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
@@ -169,12 +174,12 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
     let bodyErrors := match proc.body with
       | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
       | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc) []
+        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
         let implErrors := match impl with
           | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
           | none => []
         postErrors ++ implErrors
-      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
+      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
       | .External => []
     acc ++ bodyErrors) []
   errors
@@ -183,15 +188,15 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
 Lower `IsType target ty` to Laurel-level map lookups:
   `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
 -/
-def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
+def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange) : StmtExprMd :=
   match ty.val with
     | .UserDefined name => let typeName := name.text
         let typeTag := mkMd (.StaticCall "Composite..typeTag!" [target])
         let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
         let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
         let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
-        ⟨.StaticCall "select" [innerMap, typeConst], md⟩
-    | _ => ⟨ .Hole, md ⟩
+        ⟨.StaticCall "select" [innerMap, typeConst], source⟩
+    | _ => { val := .Hole, source := source }
 
 /-- State for the type hierarchy rewrite monad -/
 structure THState where
@@ -210,89 +215,22 @@ Lower `New name` to a block that:
 2. Increments the heap via `$heap := increment($heap)`
 3. Constructs a `MkComposite(counter, name_TypeTag())` value
 -/
-def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : THM StmtExprMd := do
+def lowerNew (name : Identifier) (source : Option FileRange) : THM StmtExprMd := do
   let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
-  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
+  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, none⟩ (some getCounter))
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
-  return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
+  return { val := .Block [saveCounter, updateHeap, compositeResult] none, source := source }
 
-/--
-Walk a StmtExpr AST and rewrite `IsType` and `New` nodes.
--/
-def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
-  match exprMd with
-  | WithMetadata.mk expr md =>
-  match expr with
-  | .New name => lowerNew name md
-  | .IsType target ty => do
-      let target' ← rewriteTypeHierarchyExpr target
-      return lowerIsType target' ty md
-  | .IfThenElse c t e => do
-      let e' ← match e with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      return ⟨.IfThenElse (← rewriteTypeHierarchyExpr c) (← rewriteTypeHierarchyExpr t) e', md⟩
-  | .Block stmts label => do
-      let stmts' ← stmts.attach.mapM fun ⟨s, _⟩ => rewriteTypeHierarchyExpr s
-      return ⟨.Block stmts' label, md⟩
-  | .LocalVariable n ty i => do
-      let i' ← match i with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      return ⟨.LocalVariable n ty i', md⟩
-  | .While c invs d b => do
-      let d' ← match d with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      let invs' ← invs.attach.mapM fun ⟨inv, _⟩ => rewriteTypeHierarchyExpr inv
-      return ⟨.While (← rewriteTypeHierarchyExpr c) invs' d' (← rewriteTypeHierarchyExpr b), md⟩
-  | .Return v => do
-      let v' ← match v with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      return ⟨.Return v', md⟩
-  | .Assign targets v => do
-      let targets' ← targets.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
-      return ⟨.Assign targets' (← rewriteTypeHierarchyExpr v), md⟩
-  | .FieldSelect t f => do return ⟨.FieldSelect (← rewriteTypeHierarchyExpr t) f, md⟩
-  | .PureFieldUpdate t f v => do return ⟨.PureFieldUpdate (← rewriteTypeHierarchyExpr t) f (← rewriteTypeHierarchyExpr v), md⟩
-  | .StaticCall callee args => do
-      let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
-      return ⟨.StaticCall callee args', md⟩
-  | .PrimitiveOp op args => do
-      let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
-      return ⟨.PrimitiveOp op args', md⟩
-  | .ReferenceEquals l r => do return ⟨.ReferenceEquals (← rewriteTypeHierarchyExpr l) (← rewriteTypeHierarchyExpr r), md⟩
-  | .AsType t ty => do return ⟨.AsType (← rewriteTypeHierarchyExpr t) ty, md⟩
-  | .InstanceCall t callee args => do
-      let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
-      return ⟨.InstanceCall (← rewriteTypeHierarchyExpr t) callee args', md⟩
-  | .Forall p trigger b => do
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
-      return ⟨.Forall p trigger' (← rewriteTypeHierarchyExpr b), md⟩
-  | .Exists p trigger b => do
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
-      return ⟨.Exists p trigger' (← rewriteTypeHierarchyExpr b), md⟩
-  | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
-  | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
-  | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
-  | .Assert c => do return ⟨.Assert (← rewriteTypeHierarchyExpr c), md⟩
-  | .Assume c => do return ⟨.Assume (← rewriteTypeHierarchyExpr c), md⟩
-  | .ProveBy v p => do return ⟨.ProveBy (← rewriteTypeHierarchyExpr v) (← rewriteTypeHierarchyExpr p), md⟩
-  | .ContractOf ty f => do return ⟨.ContractOf ty (← rewriteTypeHierarchyExpr f), md⟩
+/-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
+private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := do
+  match exprMd.val with
+  | .New name => lowerNew name exprMd.source
+  | .IsType target ty => return lowerIsType target ty exprMd.source
   | _ => return exprMd
-  termination_by sizeOf exprMd
-
-def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
-  let preconditions' ← proc.preconditions.mapM rewriteTypeHierarchyExpr
-  let body' ← match proc.body with
-    | .Transparent b => pure (.Transparent (← rewriteTypeHierarchyExpr b))
-    | .Opaque postconds impl modif =>
-        let postconds' ← postconds.mapM rewriteTypeHierarchyExpr
-        let impl' ← match impl with
-          | some x => pure (some (← rewriteTypeHierarchyExpr x))
-          | none => pure none
-        let modif' ← modif.mapM rewriteTypeHierarchyExpr
-        pure (.Opaque postconds' impl' modif')
-    | .Abstract postconds => pure (.Abstract (← postconds.mapM rewriteTypeHierarchyExpr))
-    | .External => pure .External
-  return { proc with preconditions := preconditions', body := body' }
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).
@@ -310,9 +248,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
-  let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
+  let (procs', _) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
-  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none⟩
   let remainingTypes := program.types.map fun td =>
     match td with
     | .Datatype dt =>

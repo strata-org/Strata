@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+public import Strata.Backends.CBMC.CollectSymbols
+public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Transform.ProcedureInlining
 
 /-! ## Core-to-GOTO translation pipeline
@@ -15,19 +16,15 @@ Translates Core procedures and functions into CProver GOTO contexts.
 ### Known limitations
 
 #### Program-level declarations (`Core.Decl`)
-- **`Decl.var`** (global variables): Emitted as GOTO symbol table entries with
-  `isStaticLifetime := true`. Optional initializers are translated to the symbol's
-  `value` field.
 - **`Decl.ax`** (axioms): Emitted as ASSUME instructions at the start of each
   procedure body.
 - **`Decl.distinct`**: Emitted as pairwise `!=` ASSUME instructions at the
   start of each procedure body.
 
 #### Procedure contracts (`Core.Procedure.Spec`)
-Preconditions, postconditions, and modifies clauses are now emitted as
-`#spec_requires`, `#spec_ensures`, and `#spec_assigns` named sub-expressions
-on the code type in the symbol table. These are recognized by
-`goto-instrument --apply-code-contracts` (DFCC).
+Preconditions and postconditions are emitted as `#spec_requires` and
+`#spec_ensures` named sub-expressions on the code type in the symbol table.
+These are recognized by `goto-instrument --apply-code-contracts` (DFCC).
 
 The following are not yet handled:
 - **`free requires`/`free ensures`**: Silently skipped (not emitted as contract
@@ -40,6 +37,8 @@ The following are not yet handled:
 -/
 
 namespace Strata
+
+public section
 
 private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
@@ -142,7 +141,9 @@ private partial def coreStmtsToGoto
   | [] => return trans
   | stmt :: rest =>
     let trans ← match stmt with
-      | .cmd (.call lhs procName args _md) =>
+      | .cmd (.call procName callArgs _md) =>
+        let lhs := Core.CallArg.getLhs callArgs
+        let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
         let argExprs ← renamedArgs.mapM toExpr
@@ -254,8 +255,6 @@ def procedureToGotoCtx
     (axioms : List Core.Axiom := [])
     (distincts :
       List (Core.Expression.Ident × List Core.Expression.Expr) := [])
-    (varTypes :
-      Core.Expression.Ident → Option Core.Expression.Ty := fun _ => none)
     : Except Std.Format
         (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
@@ -348,16 +347,6 @@ def procedureToGotoCtx
     let postJson ← (postGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
-  if !p.spec.modifies.isEmpty then
-    let mut modGoto : List CProverGOTO.Expr := []
-    for ident in p.spec.modifies do
-      let ty ← match varTypes ident with
-        | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
-        | _ => pure .Integer
-      modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
-    let modJson ← (modGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
-    contracts := contracts ++ [("#spec_assigns",
-      Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
   let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=
@@ -439,23 +428,6 @@ def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
 Composable building blocks for translating Core programs to GOTO.
 -/
 
-/-- Inline procedure calls repeatedly until a fixpoint is reached.
-    By default inlines all procedures except `main`. -/
-public def inlineCoreFixpoint (program : Core.Program)
-    (doInline : String → Core.Transform.CachedAnalyses → Bool := fun name _ => name ≠ "main")
-    (maxIterations : Nat := 10)
-    : Except String Core.Program := do
-  let mut pgm := program
-  for _ in List.range maxIterations do
-    match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd (doInline := doInline))
-          pgm .emp with
-    | ⟨.ok (changed, pgm'), _⟩ =>
-      pgm := pgm'
-      if !changed then break
-    | ⟨.error e, _⟩ => throw e
-  return pgm
-
 /-- Type-check a Core program using the standard context and factory.
     Returns the type-checked program and the resulting type environment. -/
 public def typeCheckCore (program : Core.Program)
@@ -492,7 +464,7 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
   let distincts := tcPgm.decls.filterMap fun d => match d with
     | .distinct name es _ => some (name, es) | _ => none
   match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
-        (varTypes := tcPgm.getVarTy?) with
+        with
   | .error e => throw s!"{e}"
   | .ok (ctx, liftedFuncs) =>
     let extraSyms ← match collectExtraSymbols tcPgm with
@@ -504,10 +476,10 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"
     let gotoFile := s!"{baseName}.goto.json"
-    match ← IO.FS.writeFile symTabFile symtab.pretty |>.toBaseIO with
+    match ← writeJsonFile symTabFile symtab |>.toBaseIO with
     | .ok () => pure ()
     | .error e => throw s!"Error writing {symTabFile}: {e}"
-    match ← IO.FS.writeFile gotoFile goto.pretty |>.toBaseIO with
+    match ← writeJsonFile gotoFile goto |>.toBaseIO with
     | .ok () => pure ()
     | .error e => throw s!"Error writing {gotoFile}: {e}"
     let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
@@ -521,12 +493,17 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (entryPoints : List String := ["main", "__main__"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
-  let inlined ← match inlineCoreFixpoint program with
+  let phase := Core.procedureInliningPipelinePhase
+    { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
+  let inlined ← match Core.Transform.run program (fun prog => do
+      let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
     | .error msg => throw msg
   let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints
+
+end -- public section
 
 end Strata

@@ -1,12 +1,10 @@
 test_func_input_type_constraints.py(4, 11): ✅ pass - Check PMul exception
-unknown location: ✅ pass - (Mul ensures) Return type constraint
-test_func_input_type_constraints.py(7, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - (Sum ensures) Return type constraint
+test_func_input_type_constraints.py(3, 48): ✅ pass - (Mul ensures) Return type constraint
+test_func_input_type_constraints.py(6, 62): ✅ pass - (Sum ensures) Return type constraint
 test_func_input_type_constraints.py(9, 11): ✅ pass - Check PAdd exception
-unknown location: ✅ pass - (Sum ensures) Return type constraint
-unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_0
-unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_1
-unknown location: ❓ unknown - (List_Dict_index ensures) Return type constraint
+test_func_input_type_constraints.py(12, 4): ❓ unknown - set_LaurelResult_calls_Any_get_0
+test_func_input_type_constraints.py(12, 4): ❓ unknown - set_LaurelResult_calls_Any_get_1
+test_func_input_type_constraints.py(11, 65): ❓ unknown - (List_Dict_index ensures) Return type constraint
 test_func_input_type_constraints.py(15, 0): ✅ pass - (Mul requires) Type constraint of x
 test_func_input_type_constraints.py(15, 0): ✅ pass - (Mul requires) Type constraint of y
 test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type constraint of x
@@ -14,5 +12,5 @@ test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type const
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of l
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of i
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of s
-DETAIL: 13 passed, 0 failed, 3 inconclusive
+DETAIL: 11 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

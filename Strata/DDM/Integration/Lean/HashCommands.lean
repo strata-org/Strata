@@ -5,13 +5,15 @@
 -/
 module
 
-public import Lean.Elab.Command
-public import Lean.Parser.Types
+import Lean.Elab.Command
 public meta import Strata.DDM.Elab
 public meta import Strata.DDM.Integration.Lean.Env
 public meta import Strata.DDM.Integration.Lean.ToExpr
 public meta import Strata.DDM.TaggedRegions
-public meta import Strata.DDM.Util.Lean
+import Strata.DDM.Elab.DeclM
+import Strata.DDM.Integration.Lean.Env
+import Strata.DDM.Integration.Lean.ToExpr
+import Strata.DDM.TaggedRegions
 
 open Lean
 open Lean.Elab (throwUnsupportedSyntax)
@@ -19,9 +21,8 @@ open Lean.Elab.Command (CommandElab CommandElabM liftCoreM)
 open Lean.Elab.Term (TermElab)
 open Lean.Parser (InputContext)
 open System (FilePath)
-open Strata.Lean
+open Strata.Lean (arrayToExpr listToExpr)
 
-public meta section
 namespace Strata
 
 class HasInputContext (m : Type → Type _) [Functor m] where
@@ -29,7 +30,9 @@ class HasInputContext (m : Type → Type _) [Functor m] where
   getFileName : m FilePath :=
     (fun ctx => FilePath.mk ctx.fileName) <$> getInputContext
 
-private instance : HasInputContext CommandElabM where
+meta section
+
+instance : HasInputContext CommandElabM where
   getInputContext := do
     let ctx ← read
     pure {
@@ -39,7 +42,7 @@ private instance : HasInputContext CommandElabM where
     }
   getFileName := return (← read).fileName
 
-private instance : HasInputContext CoreM where
+instance : HasInputContext CoreM where
   getInputContext := do
     let ctx ← read
     pure {
@@ -49,7 +52,7 @@ private instance : HasInputContext CoreM where
     }
   getFileName := return (← read).fileName
 
-private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolveName m] (name : Name) : m Name := do
+def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolveName m] (name : Name) : m Name := do
   let scope ← getCurrNamespace
   let fullName := scope ++ name
   let env ← getEnv
@@ -57,13 +60,13 @@ private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolve
     throwError s!"Cannot define {name}: {fullName} already exists."
   return fullName
 
-private def offsetPos (base : String.Pos.Raw) (pos : String.Pos.Raw) : String.Pos.Raw :=
+def offsetPos (base : String.Pos.Raw) (pos : String.Pos.Raw) : String.Pos.Raw :=
   ⟨base.byteIdx + pos.byteIdx⟩
 
-private def offsetSourceRange (base : String.Pos.Raw) (sr : SourceRange) : SourceRange :=
+def offsetSourceRange (base : String.Pos.Raw) (sr : SourceRange) : SourceRange :=
   { start := offsetPos base sr.start, stop := offsetPos base sr.stop }
 
-private def offsetMessage
+def offsetMessage
     (fullCtx snippetCtx : InputContext)
     (base : String.Pos.Raw)
     (msg : Lean.Message) : Lean.Message :=
@@ -75,7 +78,7 @@ private def offsetMessage
 /--
 Add a definition to environment and compile it.
 -/
-private def addDefn (name : Lean.Name)
+def addDefn (name : Lean.Name)
             (type : Lean.Expr)
             (value : Lean.Expr)
             (levelParams : List Name := [])
@@ -91,6 +94,8 @@ private def addDefn (name : Lean.Name)
     safety := safety
     all := all
   }
+
+public section
 
 /--
 Declare dialect and add to environment.
@@ -109,7 +114,7 @@ def declareDialect (d : Dialect) : CommandElabM Unit := do
     dialectExt.modifyState env (·.addDialect! d dialectAbsName (isNew := true))
   -- Create term to represent minimal DialectMap with dialect.
   let s := (dialectExt.getState (←Lean.getEnv))
-  let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ s.loaded.dialects))
+  let .isTrue mem := (inferInstance : Decidable (d.name ∈ s.loaded.dialects))
     | throwError "Internal error with unknown dialect"
   let openDialects := s.loaded.dialects.importedDialects d.name mem |>.toList
   let exprD (d : Dialect) : CommandElabM Lean.Expr := do
@@ -181,7 +186,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command
 
-def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : FilePath) : m FilePath := do
+private def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : FilePath) : m FilePath := do
   if path.isAbsolute then
     pure path
   else
@@ -191,7 +196,7 @@ def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : 
     pure <| leanDir / path
 
 @[command_elab loadDialectCommand]
-def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
+def loadDialectImpl : CommandElab := fun (stx : Syntax) => do
   match stx with
   | `(command|#load_dialect $pathStx) =>
     let dialectPath : FilePath := pathStx.getString
@@ -211,5 +216,7 @@ def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
   | _ =>
     throwUnsupportedSyntax
 
-end Strata
 end
+end
+
+end Strata

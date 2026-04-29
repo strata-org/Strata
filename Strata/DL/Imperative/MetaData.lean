@@ -178,8 +178,6 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 @[match_pattern]
-abbrev MetaData.message : MetaDataElem.Field P := .label "message"
-@[match_pattern]
 abbrev MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
@@ -293,6 +291,9 @@ def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
 
 /-- Metadata value for division-by-zero property type classification. -/
 def MetaData.divisionByZero : String := "divisionByZero"
+
+/-- Metadata value for arithmetic-overflow property type classification. -/
+def MetaData.arithmeticOverflow : String := "arithmeticOverflow"
 
 /-- Read the property type classification from metadata, if present. -/
 def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=

@@ -11,14 +11,6 @@ public section
 
 namespace List
 
-theorem List.subset_append_cons_right {α : Type} [DecidableEq α] {a b c : List α} {x : α}
-  (h : a ⊆ (b ++ c)) : a ⊆ b ++ (x :: c) := by
-  simp_all [List.instHasSubset, List.Subset]
-  intro e he
-  have := @h e he
-  cases this <;> simp_all
-  done
-
 /--
 Remove duplicates in a list.
 -/
@@ -348,8 +340,7 @@ theorem length_dedup_append_all_in_right {α : Type} [DecidableEq α] (l₁ l₂
 theorem length_dedup_append_subset_right {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) :
   (l₁ ++ l₂).dedup.length = l₂.dedup.length := by
-  simp_all [List.instHasSubset, List.Subset]
-  exact @length_dedup_append_all_in_right _ _ l₁ l₂ (by simp_all)
+  exact @length_dedup_append_all_in_right _ _ l₁ l₂ (by grind)
 
 theorem length_dedup_append_all_in_left {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₂.all (fun e => e ∈ l₁)) :
@@ -380,7 +371,7 @@ theorem length_dedup_subset_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α
   (h1 : l₁ ⊆ l₂) (h2 : l₂ ⊆ l₁) :
   l₁.dedup.length = l₂.dedup.length := by
   have := @length_dedup_all_in_eq _ _ l₁ l₂
-  simp_all [List.instHasSubset, List.Subset]
+  grind
 
 theorem length_dedup_append_le_right {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
   l₂.dedup.length ≤ (l₁ ++ l₂).dedup.length := by
@@ -429,7 +420,7 @@ theorem length_dedup_of_subset_not_mem_lt {α : Type} [DecidableEq α] (l₁ l�
   (h1 : l₁ ⊆ l₂) (h2 : a ∉ l₁) (h3 : a ∈ l₂) :
   l₁.dedup.length < l₂.dedup.length := by
   have := @length_dedup_of_all_in_not_mem_lt _ _ l₁ l₂ a
-  simp_all [List.instHasSubset, List.Subset]
+  grind
 
 theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) : l₁.dedup.length ≤ l₂.dedup.length := by
@@ -626,5 +617,73 @@ theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : Lis
       | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
       | tail _ hb => exact ih hnd.2 ha hb
 
+/-- Filtering a list by `p` and its complement preserves total length. -/
+theorem filter_compl_length (l : List α) (p : α → Bool) :
+    (l.filter p).length + (l.filter (not ∘ p)).length = l.length := by
+  induction l with
+  | nil => simp
+  | cons h t ih => simp [List.filter]; split <;> simp_all <;> omega
+
+/-- `List.partition` preserves total length. -/
+theorem partition_length (l : List α) (p : α → Bool) :
+    (l.partition p).1.length + (l.partition p).2.length = l.length := by
+  simp [partition_eq_filter_filter, filter_compl_length]
+
 end List
+
+/-! ### List.Forall₂ -/
+
+/-- Pointwise relation between two lists. -/
+inductive List.Forall₂ (R : α → β → Prop) : List α → List β → Prop where
+  | nil : Forall₂ R [] []
+  | cons : R a b → Forall₂ R as bs → Forall₂ R (a :: as) (b :: bs)
+
+theorem List.Forall₂.head {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : R a b := by
+  cases h; assumption
+
+theorem List.Forall₂.tail {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : Forall₂ R as bs := by
+  cases h; assumption
+
+theorem List.Forall₂.length_eq {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Forall₂ R as bs) : as.length = bs.length := by
+  induction h with
+  | nil => rfl
+  | cons _ _ ih => simp [ih]
+
+theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Forall₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
+    : R a b := by
+  induction h generalizing i with
+  | nil => simp at ha
+  | cons h_head _ ih =>
+    cases i with
+    | zero => simp at ha hb; cases ha; cases hb; exact h_head
+    | succ n => simp at ha hb; exact ih n ha hb
+
+/-- If `Forall₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
+`l2[i]? = some b` and `R a b`. -/
+theorem List.Forall₂.getElem?_some {R : α → β → Prop}
+    {l1 : List α} {l2 : List β}
+    (h : List.Forall₂ R l1 l2) {i : Nat} {a : α}
+    (ha : l1[i]? = some a)
+    : ∃ b, l2[i]? = some b ∧ R a b := by
+  induction h generalizing i with
+  | nil => simp at ha
+  | cons hr _ ih =>
+    cases i with
+    | zero => simp at ha; subst ha; exact ⟨_, rfl, hr⟩
+    | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
+
+/-! ### Zip / map lemmas -/
+
+theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
+  List.length l1 = List.length l2 →
+  (l1.zip l2).map Prod.fst = l1 := by
+  induction l1 generalizing l2 <;> cases l2 <;> simp_all
+
+theorem zip_map_snd_eq {α β: Type} (l1: List α) (l2: List β) :
+  List.length l1 = List.length l2 →
+  (l1.zip l2).map Prod.snd = l2 := by
+  induction l1 generalizing l2 <;> cases l2 <;> simp_all
+
 end

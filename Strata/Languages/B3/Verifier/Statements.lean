@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.Verifier.Expression
-import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.Conversion
+public import Strata.Languages.B3.Verifier.Expression
+public import Strata.Languages.B3.Verifier.State
+public import Strata.Languages.B3.DDMTransform.ParseCST
+public import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DDM.Format
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
 import Strata.Util.Tactics
@@ -30,6 +32,8 @@ Key advantage: O(n) not O(n²), solver accumulates lemmas.
 -/
 
 namespace Strata.B3.Verifier
+
+public section
 
 open Strata
 open Strata.SMT
@@ -113,5 +117,7 @@ def formatStatement (prog : Program) (stmt : B3AST.Statement SourceRange) (ctx: 
   let fmtCtx := FormatContext.ofDialects prog.dialects prog.globalContext {}
   let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
   (mformat (ArgF.op cstStmt.toAst) fmtCtx fmtState).format.pretty.trimAscii.toString
+
+end -- public section
 
 end Strata.B3.Verifier

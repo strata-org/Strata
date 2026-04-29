@@ -28,7 +28,7 @@ composite Container {
 }
 
 procedure modifyContainerOpaque(c: Container) returns (b: bool)
-  ensures true // makes this procedure opaque. Maybe we should use explicit syntax
+  opaque
   modifies c
 {
   c#value := c#value + 1;
@@ -61,7 +61,7 @@ procedure caller() {
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
-   ensures true
+   opaque
 {
     var i: int := modifyContainerTransparant(c)
 };
@@ -69,7 +69,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
-  ensures true
+  opaque
   modifies d
 {
     c#value := 2
@@ -78,13 +78,14 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
-  ensures true
+  opaque
   modifies d
 {
     var i: int := modifyContainerTransparant(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
+  opaque
   modifies c
   modifies d
 ;
@@ -99,10 +100,45 @@ procedure multipleModifiesClausesCaller() {
 };
 
 procedure newObjectDoNotCountForModifies()
-  ensures true
+  opaque
 {
   var c: Container := new Container;
   c#value := 1
+};
+
+procedure modifiesWildcardBodiless(c: Container, d: Container)
+  opaque
+  modifies *;
+
+procedure modifiesWildcardBodilessCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardBodiless(c, d);
+  assert x == d#value // this should fail because modifies * means anything can change
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure modifiesWildcardWithBody(c: Container, d: Container)
+  opaque
+  modifies *
+{
+  c#value := 2;
+  d#value := 3
+};
+
+procedure modifiesWildcardAndSpecific(c: Container, d: Container)
+  opaque
+  modifies c
+  modifies *;
+
+procedure modifiesWildcardAndSpecificCaller() {
+  var c: Container := new Container;
+  var d: Container := new Container;
+  var x: int := d#value;
+  modifiesWildcardAndSpecific(c, d);
+  assert x == d#value // fails because modifies * subsumes modifies c
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 "
 

@@ -1,0 +1,4 @@
+test_try_except_basic.py(2, 4): ✅ pass - assert(33)
+test_try_except_basic.py(7, 4): ✅ pass - try no exception
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

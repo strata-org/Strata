@@ -1,0 +1,4 @@
+test_var_reassign.py(2, 4): ✅ pass - assert(29)
+test_var_reassign.py(5, 4): ✅ pass - reassignment
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

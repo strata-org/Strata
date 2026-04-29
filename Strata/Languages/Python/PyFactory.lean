@@ -77,6 +77,7 @@ private def mkModeBoolFunc (name : String) (mode : MatchMode) :
       typeArgs := [],
       inputs := [("pattern", mty[string]), ("s", mty[string])],
       output := mty[bool],
+      attr := #[.evalIfCanonical 0],
       concreteEval := some
         (fun _ args => match args with
           | [LExpr.strConst () pattern, sExpr] =>
@@ -99,6 +100,7 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
       typeArgs := [],
       inputs := [("pattern", mty[string])],
       output := mty[Error],
+      attr := #[.evalIfCanonical 0],
       concreteEval := some
         (fun _ args => match args with
           | [LExpr.strConst () s] =>
@@ -141,6 +143,22 @@ def floatPowFunc : LFunc Core.CoreLParams :=
       output := mty[real]
       }
 
+-- Integer right shift with constant folding via concreteEval.
+-- Computes floor(x / 2^n) for n ≥ 0, avoiding Int.SafeDiv preconditions.
+def intRshiftFunc : LFunc Core.CoreLParams :=
+    { name := "int_rshift",
+      typeArgs := [],
+      inputs := [("x", mty[int]), ("n", mty[int])],
+      output := mty[int],
+      concreteEval := some
+        (fun md args => match args with
+          | [x, n] => match LExpr.denoteInt x, LExpr.denoteInt n with
+            | some xv, some nv =>
+              if nv ≥ 0 then .some (LExpr.intConst md (xv / (2 ^ nv.toNat))) else .none
+            | _, _ => .none
+          | _ => .none)
+      }
+
 def ReFactory : Factory Core.CoreLParams := .ofArray
     #[
       reFullmatchBoolFunc,
@@ -148,7 +166,8 @@ def ReFactory : Factory Core.CoreLParams := .ofArray
       reSearchBoolFunc,
       rePatternErrorFunc,
       intPowFunc,
-      floatPowFunc
+      floatPowFunc,
+      intRshiftFunc
     ]
 
 /-- Core.Factory extended with regex factory functions. -/

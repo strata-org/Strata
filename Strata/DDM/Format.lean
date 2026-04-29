@@ -5,7 +5,6 @@
 -/
 module
 
-import Std.Data.HashSet
 public import Strata.DDM.AST
 import all Strata.DDM.Util.Format
 import all Strata.DDM.Util.Nat
@@ -374,7 +373,28 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
         let args := rargs.reverse
         let bindings := op.argDecls
         let .isTrue bsize := decEq args.size bindings.size
-              | return panic! "Mismatch betweeen binding and arg size"
+              | do
+                -- When a function is applied to more arguments than it declares
+                -- (e.g. a function returning a function type via funMacro),
+                -- format it with its declared args, then apply the remaining
+                -- args with call syntax.
+                let declArgCount := bindings.size
+                if rargs.size > declArgCount then
+                  let fnArgs := args.take declArgCount
+                  let extraArgs := args.drop declArgCount
+                  let .isTrue bsize' := decEq fnArgs.size bindings.size
+                        | return panic! "Mismatch betweeen binding and arg size" -- nopanic:ok
+                  let argResults ← do
+                        match formatArguments (← read) (← get) bindings ⟨fnArgs, bsize'⟩ with
+                        | .ok r => pure r
+                        | .error e => return panic! e -- nopanic:ok
+                  let fnFmt := ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
+                  let extraFmts := (← extraArgs.mapM (·.mformatM)) |>.map (·.format)
+                  let extraFmts := Format.joinSep extraFmts.toList f!", "
+                  return .mk f!"({fnFmt.format})({extraFmts})" callPrec
+                else
+                  -- Fewer args than expected: format as name(args)
+                  ppArgs f.fullName
         let argResults ← do
               match formatArguments (← read) (← get) bindings ⟨args, bsize⟩ with
               | .ok r => pure r

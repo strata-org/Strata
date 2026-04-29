@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.InstToJson
+public import Strata.Backends.CBMC.GOTO.InstToJson
 
 /-!
 # CBMC Default Symbol Table
@@ -23,6 +24,8 @@ The symbols fall into three groups:
 -/
 
 namespace CProverGOTO
+
+public section
 
 /-- Target architecture configuration.
 
@@ -559,5 +562,7 @@ def wrapSymtab (symtabObj : Std.TreeMap.Raw String Lean.Json)
   let obj := (defaultSymbols cfg moduleName).foldl
     (fun acc (k, v) => acc.insert k (Lean.toJson v)) symtabObj
   Lean.Json.mkObj [("symbolTable", Lean.Json.obj obj)]
+
+end -- public section
 
 end CProverGOTO

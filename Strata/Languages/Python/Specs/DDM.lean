@@ -78,7 +78,7 @@ op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
   @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
   "isinstance" "(" subject ", " typeName ")";
-op lenExpr(subject : SpecExprDecl) : SpecExprDecl =>
+op stringLenExpr(subject : SpecExprDecl) : SpecExprDecl =>
   "len" "(" subject ")";
 op intExpr(value : Int) : SpecExprDecl => value;
 op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
@@ -205,11 +205,6 @@ private def SpecAtomType.toDDM (d : SpecAtomType)
       .typeIdentNoArgs loc nm.toDDM
     else
       .typeIdent loc nm.toDDM ⟨.none, args.map (·.toDDM)⟩
-  | .pyClass name args =>
-    if args.isEmpty then
-      .typeClassNoArgs loc ⟨.none, name⟩
-    else
-      .typeClass loc ⟨.none, name⟩ ⟨.none, args.map (·.toDDM)⟩
   | .intLiteral i => .typeIntLiteral loc (toDDMInt .none i)
   | .stringLiteral v => .typeStringLiteral loc ⟨.none, v⟩
   | .typedDict fields types fieldRequired =>
@@ -228,10 +223,10 @@ private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
     .typeUnion d.loc ⟨.none, d.atoms.map (·.toDDM)⟩
 termination_by sizeOf d
 decreasing_by
-  all_goals {
-    cases d
-    decreasing_tactic
-  }
+  · have mem : d.atoms[0] ∈ d.atoms := by grind
+    exact SpecType.sizeOf_atom_lt_of_mem mem
+  · rename_i a mem
+    exact SpecType.sizeOf_atom_lt_of_mem mem
 
 end
 
@@ -243,31 +238,31 @@ private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
 
 protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
-  | .placeholder => .placeholderExpr .none
-  | .var name => .varExpr .none ⟨.none, name⟩
-  | .getIndex subj field => .getIndexExpr .none subj.toDDM ⟨.none, field⟩
-  | .isInstanceOf subj tn => .isInstanceOfExpr .none subj.toDDM ⟨.none, tn⟩
-  | .len subj => .lenExpr .none subj.toDDM
-  | .intLit v => .intExpr .none (toDDMInt .none v)
-  | .intGe subj bound => .intGeExpr .none subj.toDDM bound.toDDM
-  | .intLe subj bound => .intLeExpr .none subj.toDDM bound.toDDM
-  | .floatLit v => .floatExpr .none ⟨.none, v⟩
-  | .floatGe subj bound => .floatGeExpr .none subj.toDDM bound.toDDM
-  | .floatLe subj bound => .floatLeExpr .none subj.toDDM bound.toDDM
-  | .enumMember subj values =>
-    .enumMemberExpr .none subj.toDDM
-      ⟨.none, values.map (⟨.none, ·⟩)⟩
-  | .regexMatch subj pattern =>
-    .regexMatchExpr .none subj.toDDM ⟨.none, pattern⟩
-  | .containsKey container key =>
-    .containsKeyExpr .none container.toDDM ⟨.none, key⟩
-  | .implies cond body =>
-    .impliesExpr .none cond.toDDM body.toDDM
-  | .not e => .notExpr .none e.toDDM
-  | .forallList list varName body =>
-    .forallListExpr .none list.toDDM ⟨.none, varName⟩ body.toDDM
-  | .forallDict dict keyVar valVar body =>
-    .forallDictExpr .none dict.toDDM ⟨.none, keyVar⟩ ⟨.none, valVar⟩ body.toDDM
+  | .placeholder loc => .placeholderExpr loc
+  | .var name loc => .varExpr loc ⟨loc, name⟩
+  | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
+  | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
+  | .stringLen subj loc => .stringLenExpr loc subj.toDDM
+  | .intLit v loc => .intExpr loc (toDDMInt loc v)
+  | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
+  | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
+  | .floatLit v loc => .floatExpr loc ⟨loc, v⟩
+  | .floatGe subj bound loc => .floatGeExpr loc subj.toDDM bound.toDDM
+  | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
+  | .enumMember subj values loc =>
+    .enumMemberExpr loc subj.toDDM
+      ⟨loc, values.map (⟨loc, ·⟩)⟩
+  | .regexMatch subj pattern loc =>
+    .regexMatchExpr loc subj.toDDM ⟨loc, pattern⟩
+  | .containsKey container key loc =>
+    .containsKeyExpr loc container.toDDM ⟨loc, key⟩
+  | .implies cond body loc =>
+    .impliesExpr loc cond.toDDM body.toDDM
+  | .not e loc => .notExpr loc e.toDDM
+  | .forallList list varName body loc =>
+    .forallListExpr loc list.toDDM ⟨loc, varName⟩ body.toDDM
+  | .forallDict dict keyVar valVar body loc =>
+    .forallDictExpr loc dict.toDDM ⟨loc, keyVar⟩ ⟨loc, valVar⟩ body.toDDM
 
 def specExprFormatContext : FormatContext :=
   .ofDialects DDM.PythonSpecs_map
@@ -331,10 +326,10 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
 private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
   | .typeClassNoArgs loc ⟨_, cl⟩ =>
-    .ofAtom loc <| .pyClass cl #[]
+    .ident loc { pythonModule := "", name := cl } #[]
   | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ =>
     let a := args.map (·.fromDDM)
-    .ofAtom loc <| .pyClass cl a
+    .ident loc { pythonModule := "", name := cl } a
   | .typeIdentNoArgs loc ⟨_, ident⟩ =>
     if let some pyIdent := PythonIdent.ofString ident then
       .ident loc pyIdent #[]
@@ -346,13 +341,13 @@ private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType
       .ident loc pyIdent a
     else
       panic! "Bad identifier"
-  | .typeIntLiteral loc i => .ofAtom loc <| .intLiteral i.ofDDM
-  | .typeStringLiteral loc ⟨_, s⟩ => .ofAtom loc <| .stringLiteral s
+  | .typeIntLiteral loc i => .intLiteral loc i.ofDDM
+  | .typeStringLiteral loc ⟨_, s⟩ => .stringLiteral loc s
   | .typeTypedDict loc ⟨_, fields⟩ =>
     let names := fields.map fun (.mkDictFieldDecl _ ⟨_, name⟩ _ _) => name
     let types := fields.attach.map fun ⟨.mkDictFieldDecl _ _ tp _, mem⟩ => tp.fromDDM
     let required := fields.map fun (.mkDictFieldDecl _ _ _ ⟨_, r⟩) => r
-    .ofAtom loc <| .typedDict names types required
+    .typedDict loc names types required
   | .typeUnion loc ⟨_, args⟩ =>
     if p : args.size > 0 then
       args.attach.foldl (init := args[0].fromDDM) (start := 1)
@@ -383,26 +378,26 @@ private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
 
 private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
-  | .placeholderExpr _ => .placeholder
-  | .varExpr _ ⟨_, name⟩ => .var name
-  | .getIndexExpr _ subj ⟨_, field⟩ => .getIndex subj.fromDDM field
-  | .isInstanceOfExpr _ subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn
-  | .lenExpr _ subj => .len subj.fromDDM
-  | .intExpr _ i => .intLit i.ofDDM
-  | .intGeExpr _ subj bound => .intGe subj.fromDDM bound.fromDDM
-  | .intLeExpr _ subj bound => .intLe subj.fromDDM bound.fromDDM
-  | .floatExpr _ ⟨_, v⟩ => .floatLit v
-  | .floatGeExpr _ subj bound => .floatGe subj.fromDDM bound.fromDDM
-  | .floatLeExpr _ subj bound => .floatLe subj.fromDDM bound.fromDDM
-  | .enumMemberExpr _ subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2))
-  | .regexMatchExpr _ subj ⟨_, pattern⟩ => .regexMatch subj.fromDDM pattern
-  | .containsKeyExpr _ container ⟨_, key⟩ => .containsKey container.fromDDM key
-  | .impliesExpr _ cond body => .implies cond.fromDDM body.fromDDM
-  | .notExpr _ e => .not e.fromDDM
-  | .forallListExpr _ list ⟨_, varName⟩ body =>
-    .forallList list.fromDDM varName body.fromDDM
-  | .forallDictExpr _ dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
-    .forallDict dict.fromDDM keyVar valVar body.fromDDM
+  | .placeholderExpr loc => .placeholder loc
+  | .varExpr loc ⟨_, name⟩ => .var name loc
+  | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
+  | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
+  | .stringLenExpr loc subj => .stringLen subj.fromDDM loc
+  | .intExpr loc i => .intLit i.ofDDM loc
+  | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc
+  | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM loc
+  | .floatExpr loc ⟨_, v⟩ => .floatLit v loc
+  | .floatGeExpr loc subj bound => .floatGe subj.fromDDM bound.fromDDM loc
+  | .floatLeExpr loc subj bound => .floatLe subj.fromDDM bound.fromDDM loc
+  | .enumMemberExpr loc subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2)) loc
+  | .regexMatchExpr loc subj ⟨_, pattern⟩ => .regexMatch subj.fromDDM pattern loc
+  | .containsKeyExpr loc container ⟨_, key⟩ => .containsKey container.fromDDM key loc
+  | .impliesExpr loc cond body => .implies cond.fromDDM body.fromDDM loc
+  | .notExpr loc e => .not e.fromDDM loc
+  | .forallListExpr loc list ⟨_, varName⟩ body =>
+    .forallList list.fromDDM varName body.fromDDM loc
+  | .forallDictExpr loc dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
+    .forallDict dict.fromDDM keyVar valVar body.fromDDM loc
 
 private def DDM.MessagePart.fromDDM (d : DDM.MessagePart SourceRange) : Specs.MessagePart :=
   match d with

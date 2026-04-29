@@ -1,0 +1,6 @@
+test_dict_in.py(3, 4): ✅ pass - assert_assert(49)_calls_PIn_0
+test_dict_in.py(3, 4): ✅ pass - key in dict
+test_dict_in.py(4, 4): ✅ pass - assert_assert(84)_calls_PNotIn_0
+test_dict_in.py(4, 4): ✅ pass - key not in dict
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

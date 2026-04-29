@@ -1107,7 +1107,7 @@ theorem LMonoTy.instantiateWithCheck_decompose
       · simp at h
       · -- Fourth split: isInstanceOfKnownType
         split at h
-        · simp [Except.pure] at h
+        · simp [Pure.pure, Except.pure] at h
           obtain ⟨h1, _⟩ := h
           subst h1
           exact ⟨mty_ie, _, _, h_ie, h_ra⟩
@@ -1365,8 +1365,8 @@ theorem knownTypeVars_go_append_superset
     intro v h
     obtain ⟨a, b⟩ := p
     simp only [TContext.types.knownTypeVars.go, List.mem_append] at h
-    unfold Map at *
-    simp only [List.cons_append, TContext.types.knownTypeVars.go, List.mem_append]
+    show v ∈ b.freeVars ++ TContext.types.knownTypeVars.go (List.append m' extra)
+    simp only [List.mem_append]
     rcases h with h_fv | h_rest
     · left; exact h_fv
     · right; exact ih v h_rest

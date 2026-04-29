@@ -12,17 +12,33 @@ open Strata
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:proposal-rw2022`
 - `verus-examples:rw2022_script`
+- `verus-lang/verus:examples/recursion.rs`
+- Verus links:
+  `proposal-rw2022`: https://github.com/verus-lang/verus/blob/main/examples/proposal-rw2022.rs
+  `rw2022_script`: https://github.com/verus-lang/verus/blob/main/examples/rw2022_script.rs
+  `recursion`: https://github.com/verus-lang/verus/blob/main/examples/recursion.rs
 - `vlir-tests:tests/LoopSimpleWithSpec`
-- Gap: Boole lowering does not yet preserve loop `decreases` into Core
+- Status: loop-level `decreases` is available in the CST/Core path
+- Remaining gap: function/procedure/spec-function `decreases`
 -/
 
 private def decreasesMetadataSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Core now has loop measures. The remaining gap is in the Boole frontend:
-// `while_statement` currently lowers with measure = `none`, so this loop's
-// intended `decreases n - i` is still kept only as a comment here.
+// Target shape for the remaining gap:
+//
+// function dec_to_zero(n: int) : int
+//   decreases n
+// {
+//   if n <= 0 then 0 else dec_to_zero(n - 1)
+// }
+//
+// procedure call_dec_to_zero(n: int) returns (r: int)
+//   decreases n
+// {
+//   r := dec_to_zero(n);
+// }
 
 procedure loop_measure_seed(n: int) returns (i: int)
 spec {
@@ -32,16 +48,17 @@ spec {
 {
   i := 0;
   while (i < n)
+    decreases n - i
     invariant 0 <= i
     invariant i <= n
-    // TODO(feature:decreases): lower this to Core's loop measure field.
   {
     i := i + 1;
   }
 };
 #end
 
-/-- info: Obligation: entry_invariant_0_0
+/-- info:
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
@@ -57,7 +74,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_measure_seed_ensures_1_744
+Obligation: loop_measure_seed_ensures_1_1174
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

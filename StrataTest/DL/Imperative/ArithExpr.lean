@@ -50,7 +50,7 @@ instance : ToFormat TEnv where
 
 /--
 Simple arithmetic expressions that will be used to specialize Imperative's
-partial evaluator.
+evaluator.
 -/
 inductive Expr where
   | Plus (e1 e2 : Expr)

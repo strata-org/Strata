@@ -342,7 +342,7 @@ info: (set-logic ALL)
     else ""
   IO.print smt
 
-/-! ## Test that final-message uses metadata message when present -/
+/-! ## Test that final-message uses propertySummary when present -/
 
 /--
 info: (set-logic ALL)
@@ -356,7 +356,7 @@ info: (set-logic ALL)
   let ctx : SMT.Context := SMT.Context.default
   let obligationTerm := Term.prim (.bool true)
   let md : Imperative.MetaData Core.Expression :=
-    #[⟨Imperative.MetaData.message, .msg "Division by zero is impossible"⟩]
+    Imperative.MetaData.empty.withPropertySummary "Division by zero is impossible"
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Strata.SMT.Solver.bufferWriter b
   let _ ←
@@ -381,11 +381,8 @@ def simpleMapProgram :=
 #strata
 program Core;
 
-var m : Map int int;
-
-procedure UpdateAndRead(k : int, v : int) returns (result : int)
+procedure UpdateAndRead(inout m : Map int int, k : int, v : int, out result : int)
 spec {
-    modifies m;
     ensures result == v;
 }
 {
@@ -397,7 +394,7 @@ spec {
 -- Test verification with axiomatized maps (default)
 /--
 info:
-Obligation: UpdateAndRead_ensures_1
+Obligation: UpdateAndRead_ensures_0
 Property: assert
 Result: ✅ pass
 -/
@@ -407,7 +404,7 @@ Result: ✅ pass
 -- Test verification with Array theory
 /--
 info:
-Obligation: UpdateAndRead_ensures_1
+Obligation: UpdateAndRead_ensures_0
 Property: assert
 Result: ✅ pass
 -/
@@ -419,9 +416,7 @@ def quotedStringProgram :=
 #strata
 program Core;
 
-var x: string;
-
-procedure Test() returns ()
+procedure Test(x: string)
 spec { ensures true; }
 {
   assume x == "{\"key\":\"val\"}";

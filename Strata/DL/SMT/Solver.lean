@@ -9,6 +9,7 @@ public import Strata.DL.SMT.DDMTransform.Translate
 public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.TermType
 public import Strata.Languages.Core.Options
+import Strata.DDM.Format
 import Std.Data.HashMap
 
 /-!
@@ -160,7 +161,7 @@ def comment (comment : String) : SolverM Unit :=
   emitln s!"; {inline}"
 
 def getValue (ids : List String) : SolverM Unit :=
-  let ids := Std.Format.joinSep ids " "
+  let ids := Std.Format.joinSep (ids.map quoteIdent) " "
   emitln s!"(get-value ({ids}))"
 
 def declareSort (id : String) (arity : Nat) : SolverM Unit :=

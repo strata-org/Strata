@@ -1,0 +1,7 @@
+test_int_pow.py(2, 4): ✅ pass - assert(24)
+test_int_pow.py(3, 4): ✅ pass - assert(39)
+test_int_pow.py(4, 13): ✅ pass - Check PPow exception
+test_int_pow.py(4, 4): ✅ pass - assert(55)
+test_int_pow.py(5, 4): ✅ pass - int power
+DETAIL: 5 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
