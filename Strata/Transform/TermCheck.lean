@@ -46,9 +46,12 @@ def termSuffix : String := "$$term"
 def termProcName (name : String) : String := s!"{name}{termSuffix}"
 
 /-- Find the decreasing parameter index for a function: explicit `measure`
-    field (future), or fallback to `@[cases]` (`inlineIfConstr`). -/
+    (from `decreases` clause), or fallback to `@[cases]` (`inlineIfConstr`). -/
 private def getDecreasesIdx (func : Function) : Option Nat :=
-  FuncAttr.findInlineIfConstr func.attr
+  match func.measure with
+  | some (.fvar _ id _) => func.inputs.keys.findIdx? (· == id)
+  | some _ => none
+  | none => FuncAttr.findInlineIfConstr func.attr
 
 /-- Extract the datatype name from a monomorphic type. -/
 private def dtNameOf (ty : LMonoTy) : String :=

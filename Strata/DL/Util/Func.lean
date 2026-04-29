@@ -80,6 +80,7 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   concreteEval : Option (MetadataT → List ExprT → Option ExprT) := .none
   axioms   : List ExprT := []  -- For axiomatic definitions
   preconditions : List (FuncPrecondition ExprT MetadataT) := []
+  measure  : Option ExprT := .none
 
 def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] (f : Func IdentT ExprT TyT MetadataT) : Format :=
   let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
@@ -95,11 +96,14 @@ def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat 
   let type := f!"{typeArgs} ({formatInputs f.inputs}) → {f.output}"
   let preconds := f.preconditions.map (f!"  requires {·.expr}")
   let precondsStr := if preconds.isEmpty then f!"" else Format.line ++ Format.joinSep preconds Format.line
+  let measureStr := match f.measure with
+    | some m => Format.line ++ f!"  decreases {m}"
+    | none => f!""
   let sep := if f.body.isNone then f!";" else f!" :="
   let body := if f.body.isNone then f!"" else Std.Format.indentD f!"({f.body.get!})"
   let recPrefix := if f.isRecursive then f!"rec " else f!""
   f!"{attr}\
-     {recPrefix}func {f.name} : {type}{precondsStr}{sep}\
+     {recPrefix}func {f.name} : {type}{precondsStr}{measureStr}{sep}\
      {body}"
 
 instance {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] : ToFormat (Func IdentT ExprT TyT MetadataT) where

@@ -548,4 +548,119 @@ Result: ✅ pass -/
 #guard_msgs in
 #eval verify polyDtTermPgm (options := .default)
 
+---------------------------------------------------------------------
+-- Test 10: explicit `decreases` clause matching @[cases] parameter
+---------------------------------------------------------------------
+
+def decreasesExplicitPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLen (@[cases] xs : IntList) : int
+  decreases xs
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+};
+#end
+
+/-- info:
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify decreasesExplicitPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 11: `decreases` on non-@[cases] ADT parameter
+-- cases splits on xs, but termination measure is ys
+---------------------------------------------------------------------
+
+def decreasesNonCasesPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
+  decreases ys
+{
+  if IntList..isNil(xs) then 0
+  else if IntList..isNil(ys) then 0
+  else 1 + zipLen(IntList..tl(xs), IntList..tl(ys))
+};
+
+procedure TestZipLen() spec {
+  ensures true;
+}
+{
+  var ys : IntList;
+  // case split on ys
+  assert [nilCases]: zipLen(Nil(), ys) == 0;
+};
+#end
+
+/-- info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: zipLen_terminates_0
+Property: assert
+Assumptions:
+IntList..dtRank_0: forall __q0 : IntList ::  { IntList..dtRank(__q0) }
+  IntList..dtRank(__q0) >= 0
+IntList..dtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..dtRank(Cons(__q0, __q1)) }
+  IntList..dtRank(__q1) < IntList..dtRank(Cons(__q0, __q1))
+Obligation:
+!(IntList..isNil(ys)) ==> !(IntList..isNil(xs)) ==> IntList..dtRank(IntList..tl(ys)) < IntList..dtRank(ys)
+
+Label: zipLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil(ys@1)) ==> !(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
+
+Label: zipLen_body_calls_IntList..tl_1
+Property: assert
+Obligation:
+!(IntList..isNil(ys@1)) ==> !(IntList..isNil(xs@1)) ==> IntList..isCons(ys@1)
+
+Label: nilCases
+Property: assert
+Obligation:
+true
+
+Label: TestZipLen_ensures_0
+Property: assert
+Obligation:
+true
+
+---
+info:
+Obligation: zipLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: zipLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: zipLen_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: nilCases
+Property: assert
+Result: ✅ pass
+
+Obligation: TestZipLen_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify decreasesNonCasesPgm (options := .default)
+
 end Strata.TerminationCheckTest

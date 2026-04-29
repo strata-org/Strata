@@ -858,7 +858,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let funcList := funcs.toList
     let (fsRev, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
       match func with
-      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ _decreases body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
         let siblingBvars := prevNames.map fun sn =>
           (.op () (mkIdent sn) none : Core.Expression.Expr)
