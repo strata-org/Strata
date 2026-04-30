@@ -77,12 +77,6 @@ private def invalidCore : TranslateM LMonoTy := do
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
-/-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
-private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
-  emitDiagnostic (diagnosticFromSource ty.source msg DiagnosticType.StrataBug)
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  return .tcons s!"LaurelResolutionErrorPlaceholder" []
-
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -109,7 +103,10 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
   | .Unknown => invalidCore
-  | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
+  | _ => do
+    emitDiagnostic (diagnosticFromSource ty.source "cannot translate type to Core: not supported yet" DiagnosticType.StrataBug)
+    invalidCore
+
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
