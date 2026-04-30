@@ -79,6 +79,7 @@ datatype Any {
   from_DictStrAny (as_Dict: DictStrAny),
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
+  from_Composite (typename: string, as_composite: DynamicComposite),
   from_Slice(start: int, stop: OptionInt),
   exception (get_error: Error)
 }

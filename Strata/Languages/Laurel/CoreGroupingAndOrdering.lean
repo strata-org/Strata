@@ -29,7 +29,7 @@ open Lambda (LMonoTy LExpr)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
-  | ⟨.UserDefined name, _⟩ => [name.text]
+  | ⟨.UserDefined name, _⟩ => [name.text, "Composite"]
   | ⟨.TSet elem, _⟩ => collectTypeRefs elem
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
   | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
@@ -85,7 +85,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some t => collectStaticCallNames t
       | none => []) ++
       collectStaticCallNames body
-  | .FieldSelect t _ => collectStaticCallNames t
+  | .FieldSelect t _ _ => collectStaticCallNames t
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
