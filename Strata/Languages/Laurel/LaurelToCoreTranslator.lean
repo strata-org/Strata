@@ -72,11 +72,24 @@ structure TranslateState where
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-/-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
+/-- Allocate a fresh type variable placeholder. The ftvar lets the
+    Core unifier assign any concrete type, which is the correct
+    semantics for "type unknown". -/
+private def freshTypePlaceholder : TranslateM LMonoTy := do
+  let s ← get
+  let id := s.nextId
+  set { s with nextId := id + 1 }
+  return .ftvar s!"$__ty_unused_{id}"
+
+/-- Emit a diagnostic and return a fresh type variable as a placeholder.
+    Sets `coreProgramHasSuperfluousErrors` to signal that the Core program
+    should not be verified. The placeholder is still needed so that
+    translation can continue building the Core AST and collect further
+    diagnostics (rather than aborting on the first type error). -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
   emitDiagnostic (diagnosticFromSource ty.source msg)
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  return .tcons "Error" []
+  freshTypePlaceholder
 
 /-
 Translate Laurel HighType to Core Type
@@ -103,7 +116,14 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .Unknown => throwTypeDiagnostic ty "could not infer type"
+  | .Unknown => do
+    -- Unknown types indicate a type error in the Laurel front-end.
+    -- We use a fresh type variable as placeholder (so translation can
+    -- continue and collect further diagnostics) but set the error flag
+    -- to prevent the Core program from being verified.
+    emitDiagnostic ((astNodeToCoreMd ty).toDiagnostic "could not infer type")
+    modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+    freshTypePlaceholder
   | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -430,6 +450,9 @@ def translateStmt (stmt : StmtExprMd)
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
+          | .Hole _ _ =>
+              -- Nondet hole: havoc the target variable
+              return [Core.Statement.havoc ident md]
           | _ =>
               let coreExpr ← translateExpr value
               return [Core.Statement.set ident coreExpr md]
@@ -446,7 +469,7 @@ def translateStmt (stmt : StmtExprMd)
               let outArgs : List (Core.CallArg Core.Expression) := lhsIdents.map .outArg
               return [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) (astNodeToCoreMd value)]
           | .InstanceCall .. =>
-              -- Instance method call: havoc all target variables
+              -- Unmodeled instance call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>
                 match t.val with
                 | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
