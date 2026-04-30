@@ -126,11 +126,10 @@ instance : ToString SolverError where
     | .crash d   => s!"{d}"
 
 /-- True when the solver output indicates a timeout rather than a crash.
-    z3 emits the literal word "timeout" on stdout.
-    cvc5 prints "interrupted by timeout" on stderr. -/
+    z3 emits "timeout" on stdout; cvc5 prints "interrupted by timeout"
+    on stderr. Only called when verdict parsing has already failed. -/
 private def isTimeoutOutput (output : IO.Process.Output) : Bool :=
-  (output.stdout.splitOn "\n" |>.any (·.trimAscii == "timeout")) ||
-    (output.stderr.contains "interrupted by timeout")
+  output.stdout.contains "timeout" || output.stderr.contains "timeout"
 
 ---------------------------------------------------------------------
 -- SMTDDM-based parsing
