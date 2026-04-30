@@ -33,7 +33,7 @@ public section
     by looking at the first non-hole sibling. -/
 private def inferComparisonArgType (model : SemanticModel) (args : List StmtExprMd) (source: Option FileRange) : HighTypeMd :=
   args.findSome? (fun a => match a.val with | .Hole _ _ => none | _ => some (computeExprType model a))
-    |>.getD ⟨ .Unknown, source ⟩
+    |>.getD ⟨ .TInt, source ⟩ -- use Int as a default type for comparisons where both operands are holes
 
 /-- Get the expected type for each argument of a call from the callee's parameter list. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
