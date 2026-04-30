@@ -258,7 +258,8 @@ private meta def specTests : List String := [
   "tc12_exhaustive",
   "tc13_from_import",
   "tc14_overload_dispatch",
-  "tc15_arg_count"
+  "tc15_arg_count",
+  "tc16_unknown_attr"
 ]
 
 #eval withPython fun pythonCmd => do

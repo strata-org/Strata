@@ -116,8 +116,11 @@ private def loadModuleSpec (modName : String) : TypeCheckM (Option ModuleSpec) :
       cacheSpec modName none
       return none
 
+private def emitDiag (sr : SourceRange) (kind msg : String) : TypeCheckM Unit :=
+  modify fun st => { st with diagnostics := st.diagnostics.push { sr, kind, msg } }
+
 /-- Resolve a qualified name to a module export. -/
-private def resolveQualifiedRef (_sr : SourceRange) (qn : QualifiedName)
+private def resolveQualifiedRef (sr : SourceRange) (qn : QualifiedName)
     : TypeCheckM AbstractType := do
   let modName := toString qn.module
   match ← loadModuleSpec modName with
@@ -131,10 +134,13 @@ private def resolveQualifiedRef (_sr : SourceRange) (qn : QualifiedName)
     | some (.typeDef st) => return specTypeToAbstract st
     | some (.externType source) =>
       return .instance_ s!"{source.pythonModule}.{source.name}"
-    | none => return .any (.unknown s!"{qn.name} not found in {modName}")
+    | none =>
+      emitDiag sr "warning" s!"{qn.name} not found in module {modName}"
+      return .any (.unknown s!"{qn.name} not found in {modName}")
 
 /-- Look up an attribute in a module's exports. -/
-private def resolveModuleAttr (modName name : String) : TypeCheckM AbstractType := do
+private def resolveModuleAttr (sr : SourceRange) (modName name : String)
+    : TypeCheckM AbstractType := do
   match ← loadModuleSpec modName with
   | none => return .any (.unknown s!"attr {name} on {modName}")
   | some ms =>
@@ -144,10 +150,13 @@ private def resolveModuleAttr (modName name : String) : TypeCheckM AbstractType 
     | some (.typeDef st) => return specTypeToAbstract st
     | some (.externType source) =>
       return .instance_ s!"{source.pythonModule}.{source.name}"
-    | none => return .any (.unknown s!"{name} not found in {modName}")
+    | none =>
+      emitDiag sr "warning" s!"{name} not found in module {modName}"
+      return .any (.unknown s!"{name} not found in {modName}")
 
 /-- Look up an attribute on a class instance. -/
-private def resolveClassAttr (className name : String) : TypeCheckM AbstractType := do
+private def resolveClassAttr (sr : SourceRange) (className name : String)
+    : TypeCheckM AbstractType := do
   let parts := className.splitOn "."
   let modParts := parts.dropLast
   let typeName := parts.getLast!
@@ -163,17 +172,18 @@ private def resolveClassAttr (className name : String) : TypeCheckM AbstractType
       if let some field := cls.fields.find? (·.name == name) then
         return specTypeToAbstract field.type
       if cls.exhaustive then
+        emitDiag sr "warning" s!"unknown method {name} on exhaustive class {className}"
         return .any (.unknown s!"unknown method {name} on {className}")
       return .any (.unknown s!"attr {name} on {className}")
     | _ => return .any (.unknown s!"attr {name} on {className}")
 
 /-- Resolve an attribute access on a typed value. -/
-private def resolveAttr (_sr : SourceRange) (className name : String)
+private def resolveAttr (sr : SourceRange) (className name : String)
     : TypeCheckM AbstractType := do
   if let some _ ← loadModuleSpec className then
-    resolveModuleAttr className name
+    resolveModuleAttr sr className name
   else
-    resolveClassAttr className name
+    resolveClassAttr sr className name
 
 
 /-- Extract the AbstractType of the first positional call arg. -/

@@ -23,3 +23,6 @@ func f:
   %4:result.0 : Any(unknown method nonexistent_method on myservice.Client)
 
 func @module_init:
+
+diagnostics:
+  warning: unknown method nonexistent_method on exhaustive class myservice.Client

@@ -1,0 +1,24 @@
+module "tc16_unknown_attr":
+
+func f():
+  bb0():
+    %0:math.0 = qualifiedRef math.math
+    %1:x.0 = attr %0 "nonexistent"
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc16_unknown_attr":
+
+func f:
+  %0:math.0 : math
+  %1:x.0 : Any(nonexistent not found in math)
+
+func @module_init:
+
+diagnostics:
+  warning: nonexistent not found in module math
