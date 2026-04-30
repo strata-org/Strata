@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Util.List
 
 /-! # ANF Encoder
 
@@ -71,20 +72,38 @@ private def hashOptType (ty : Option LMonoTy) : UInt64 :=
   | none => 0
   | some t => hash t
 
+---------------------------------------------------------------------
+-- Per-constructor hash combiners (single source of truth)
+---------------------------------------------------------------------
+
+private def hashConst (c : LConst) : UInt64 := mixHash 1 (hash (toString c))
+private def hashBVar (i : Nat) : UInt64 := mixHash 2 (hash i)
+private def hashFVar (n : CoreIdent) (ty : Option LMonoTy) : UInt64 :=
+  mixHash 3 (mixHash (hash n.name) (hashOptType ty))
+private def hashOp (o : CoreIdent) (ty : Option LMonoTy) : UInt64 :=
+  mixHash 4 (mixHash (hash o.name) (hashOptType ty))
+private def hashApp (hFn hArg : UInt64) : UInt64 := mixHash 5 (mixHash hFn hArg)
+private def hashIte (hC hT hF : UInt64) : UInt64 := mixHash 6 (mixHash hC (mixHash hT hF))
+private def hashEq (h1 h2 : UInt64) : UInt64 := mixHash 7 (mixHash h1 h2)
+private def hashAbs (name : String) (ty : Option LMonoTy) (hBody : UInt64) : UInt64 :=
+  mixHash 8 (mixHash (hash name) (mixHash (hashOptType ty) hBody))
+private def hashQuant (k : QuantifierKind) (name : String) (ty : Option LMonoTy)
+    (hTr hBody : UInt64) : UInt64 :=
+  let kh : UInt64 := match k with | .all => 0 | .exist => 1
+  mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptType ty) (mixHash hTr hBody))))
+
 /-- Hash an expression structurally, including type annotations but ignoring
     metadata, for use in HashMap-based ANF encoding. -/
 private def hashExpr : Expression.Expr → UInt64
-  | .const _ c => mixHash 1 (hash (toString c))
-  | .bvar _ i => mixHash 2 (hash i)
-  | .fvar _ n ty => mixHash 3 (mixHash (hash n.name) (hashOptType ty))
-  | .op _ o ty => mixHash 4 (mixHash (hash o.name) (hashOptType ty))
-  | .app _ fn arg => mixHash 5 (mixHash (hashExpr fn) (hashExpr arg))
-  | .ite _ c t f => mixHash 6 (mixHash (hashExpr c) (mixHash (hashExpr t) (hashExpr f)))
-  | .eq _ e1 e2 => mixHash 7 (mixHash (hashExpr e1) (hashExpr e2))
-  | .abs _ name ty body => mixHash 8 (mixHash (hash name) (mixHash (hashOptType ty) (hashExpr body)))
-  | .quant _ k name ty tr body =>
-    let kh : UInt64 := match k with | .all => 0 | .exist => 1
-    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptType ty) (mixHash (hashExpr tr) (hashExpr body)))))
+  | .const _ c => hashConst c
+  | .bvar _ i => hashBVar i
+  | .fvar _ n ty => hashFVar n ty
+  | .op _ o ty => hashOp o ty
+  | .app _ fn arg => hashApp (hashExpr fn) (hashExpr arg)
+  | .ite _ c t f => hashIte (hashExpr c) (hashExpr t) (hashExpr f)
+  | .eq _ e1 e2 => hashEq (hashExpr e1) (hashExpr e2)
+  | .abs _ name ty body => hashAbs name ty (hashExpr body)
+  | .quant _ k name ty tr body => hashQuant k name ty (hashExpr tr) (hashExpr body)
 
 /-- Wrapper for using expressions as HashMap keys with metadata-ignoring comparison. -/
 private structure ExprKey where
@@ -96,61 +115,45 @@ private instance : BEq ExprKey where
 private instance : Hashable ExprKey where
   hash k := hashExpr k.expr
 
-/-- Find expressions that appear more than once in a list. Uses a HashMap
-    for O(1) lookup. -/
+/-- Find expressions that appear more than once in a list, using metadata-ignoring
+    comparison via `ExprKey`. -/
 private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr :=
-  -- Single pass: count occurrences and remember the first expression per key
-  let map := exprs.foldl (fun (m : Std.HashMap ExprKey (Expression.Expr × Nat)) e =>
-    let key := ⟨e⟩
-    match m[key]? with
-    | some (orig, n) => m.insert key (orig, n + 1)
-    | none => m.insert key (e, 1)
-  ) {}
-  let revDups := map.fold (fun acc _ (orig, count) =>
-    if count > 1 then orig :: acc else acc
-  ) ([] : List Expression.Expr)
-  revDups.reverse
+  (exprs.map ExprKey.mk).findDuplicates.map ExprKey.expr
 
 /-- Replace all occurrences of any target with its corresponding replacement
     in an expression. Computes hashes bottom-up to avoid redundant traversals.
     The map stores (target, replacement) pairs keyed by hash. -/
-partial def replaceExprs (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
+def replaceExprs (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
     (e : Expression.Expr) : Expression.Expr :=
   (go e).2
 where
   /-- Bottom-up traversal returning (hash, replaced expression). -/
   go (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match e with
-    | .const _ c => (mixHash 1 (hash (toString c)), e)
-    | .bvar _ i => (mixHash 2 (hash i), e)
-    | .fvar _ n ty => (mixHash 3 (mixHash (hash n.name) (hashOptType ty)), e)
-    | .op _ o ty => (mixHash 4 (mixHash (hash o.name) (hashOptType ty)), e)
+    | .const _ c => (hashConst c, e)
+    | .bvar _ i => (hashBVar i, e)
+    | .fvar _ n ty => (hashFVar n ty, e)
+    | .op _ o ty => (hashOp o ty, e)
     | .app m fn arg =>
       let (hFn, fn') := go fn
       let (hArg, arg') := go arg
-      let h := mixHash 5 (mixHash hFn hArg)
-      check h (.app m fn' arg')
+      check (hashApp hFn hArg) (.app m fn' arg')
     | .ite m c t f =>
       let (hC, c') := go c
       let (hT, t') := go t
       let (hF, f') := go f
-      let h := mixHash 6 (mixHash hC (mixHash hT hF))
-      check h (.ite m c' t' f')
+      check (hashIte hC hT hF) (.ite m c' t' f')
     | .eq m e1 e2 =>
       let (h1, e1') := go e1
       let (h2, e2') := go e2
-      let h := mixHash 7 (mixHash h1 h2)
-      check h (.eq m e1' e2')
+      check (hashEq h1 h2) (.eq m e1' e2')
     | .abs m name ty body =>
       let (hB, body') := go body
-      let h := mixHash 8 (mixHash (hash name) (mixHash (hashOptType ty) hB))
-      check h (.abs m name ty body')
+      check (hashAbs name ty hB) (.abs m name ty body')
     | .quant m k name ty tr body =>
       let (hTr, tr') := go tr
       let (hB, body') := go body
-      let kh : UInt64 := match k with | .all => 0 | .exist => 1
-      let h := mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptType ty) (mixHash hTr hB))))
-      check h (.quant m k name ty tr' body')
+      check (hashQuant k name ty hTr hB) (.quant m k name ty tr' body')
   /-- Check if the hash matches a replacement target. -/
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
@@ -221,16 +224,17 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let body' := Statements.mapExprs (replaceExprs replacements) body
   (revDecls.reverse ++ body', nextIdx)
 
-/-- Deduplicate all procedures in a program. -/
-def anfEncodeProgram (p : Program) : Program :=
-  let (revDecls, _, _) := p.decls.foldl (fun (acc, idx, _) decl =>
+/-- Deduplicate all procedures in a program. Returns the modified program
+    and whether any changes were made. -/
+def anfEncodeProgram (p : Program) : Bool × Program :=
+  let (revDecls, _, changed) := p.decls.foldl (fun (acc, idx, changed) decl =>
     match decl with
     | .proc proc md =>
       let (body', idx') := anfEncodeBody proc.body idx
-      (.proc { proc with body := body' } md :: acc, idx', ())
-    | other => (other :: acc, idx, ())
-  ) ([], 0, ())
-  { decls := revDecls.reverse }
+      (.proc { proc with body := body' } md :: acc, idx', changed || idx' > idx)
+    | other => (other :: acc, idx, changed)
+  ) ([], 0, false)
+  (changed, { decls := revDecls.reverse })
 
 end Core.ANFEncoder
 
@@ -239,6 +243,7 @@ end Core.ANFEncoder
     definitional equalities without changing program semantics. -/
 def Core.anfEncoderPipelinePhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "ANFEncoder" fun prog => do
-    return (true, Core.ANFEncoder.anfEncodeProgram prog)
+    let (changed, prog') := Core.ANFEncoder.anfEncodeProgram prog
+    return (changed, prog')
 
 end -- public section

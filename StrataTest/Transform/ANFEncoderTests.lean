@@ -42,7 +42,7 @@ procedure test (x : int, y : int)
 };
 -/
 #guard_msgs in
-#eval IO.println (toString (anfEncodeProgram (translateCore iteDupProg)))
+#eval IO.println (toString (anfEncodeProgram (translateCore iteDupProg)).2)
 
 /-! ## No duplicates leaves body unchanged -/
 
@@ -65,6 +65,77 @@ procedure test (x : int, y : int)
 };
 -/
 #guard_msgs in
-#eval IO.println (toString (anfEncodeProgram (translateCore noDupProg)))
+#eval IO.println (toString (anfEncodeProgram (translateCore noDupProg)).2)
+
+/-! ## Duplicate ITE expression is lifted -/
+
+private def iteDupExprProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert ((if x > 0 then x else y) >= 0);
+  assert ((if x > 0 then x else y) <= 100);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  var $__anf.0 : int := if x > 0 then x else y;
+  assert [assert_0]: $__anf.0 >= 0;
+  assert [assert_1]: $__anf.0 <= 100;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore iteDupExprProg)).2)
+
+/-! ## Subexpressions within function calls are lifted when duplicated -/
+
+private def fnCallDupArgProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert (x + y > 0);
+  assert (x + y < 100);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  var $__anf.0 : int := x + y;
+  assert [assert_0]: $__anf.0 > 0;
+  assert [assert_1]: $__anf.0 < 100;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore fnCallDupArgProg)).2)
+
+/-! ## Unique subexpressions are not lifted -/
+
+private def uniqueSubexprProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert (x + 1 > 0);
+  assert (y + 2 < 100);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  assert [assert_0]: x + 1 > 0;
+  assert [assert_1]: y + 2 < 100;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore uniqueSubexprProg)).2)
 
 end Core.ANFEncoder.Tests

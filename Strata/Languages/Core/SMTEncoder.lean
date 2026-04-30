@@ -736,7 +736,7 @@ def ProofObligation.toSMTTerms (E : Env)
       let (rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
       .ok (defs ++ [{ name := name.name, ty := smtTy, body := rhsTerm }], ctx)
     else
-      -- Non-mono types: fall back to encoding as assumption
+      -- Non-mono types: silently drop (unreachable for well-typed ANF variables)
       let (_rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
       .ok (defs, ctx)
   -- Encode variable declarations

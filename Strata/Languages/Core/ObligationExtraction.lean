@@ -32,10 +32,8 @@ open Lambda Imperative
 mutual
 /-- Check if a single statement is valid for obligation extraction. -/
 def isValidObligationStatement : Statement → Bool
-  | .cmd (.cmd (.assert _ _ _)) => true
-  | .cmd (.cmd (.assume _ _ _)) => true
-  | .cmd (.cmd (.cover _ _ _)) => true
-  | .cmd (.cmd (.init _ _ _ _)) => true
+  | .cmd (.cmd (.assert _ _ _)) | .cmd (.cmd (.assume _ _ _))
+  | .cmd (.cmd (.cover _ _ _)) | .cmd (.cmd (.init _ _ _ _)) => true
   | .ite .nondet thenSs elseSs _ => isValidObligationInput thenSs && isValidObligationInput elseSs
   | _ => false
 
@@ -58,7 +56,9 @@ def extractGo (pc : PathConditions Expression) : Statements →
     match s with
     | .cmd (.cmd (.assert label e md)) =>
       let propType := match md.getPropertyType with
-        | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
+        | some s => if s == MetaData.divisionByZero then .divisionByZero
+                    else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else .assert
         | none => .assert
       extractGo pc rest (acc.push (ProofObligation.mk label propType pc e md))
 
