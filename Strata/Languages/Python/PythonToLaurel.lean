@@ -1385,7 +1385,7 @@ partial def translateAssign  (ctx : TranslationContext)
         | .StaticCall fnname args =>
             if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
               let resolvedId := mkId laurelName
-              let newExpr := mkStmtExprMd (StmtExpr.New $ mkId "DynamicComposite")
+              let newExpr := mkStmtExprMd (StmtExpr.New resolvedId)
               let newExprWrapped := mkStmtExprMd (.StaticCall "from_Composite" [mkStmtExprMd $ .LiteralString resolvedId.text, newExpr])
               let varType := mkHighTypeMd (.UserDefined resolvedId)
               let selfRef := mkStmtExprMd (StmtExpr.Identifier n.val)
@@ -1402,6 +1402,7 @@ partial def translateAssign  (ctx : TranslationContext)
             else
                 [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) source]
         | .New className =>
+            let rhs_trans := {rhs_trans with val := .StaticCall "from_Composite" [mkStmtExprMd $ .LiteralString className.text, rhs_trans]}
             if n.val ∈ ctx.variableTypes.unzip.1 then
               [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) source]
             else
@@ -1432,6 +1433,10 @@ partial def translateAssign  (ctx : TranslationContext)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
           return (newctx, initStmt :: assignStmts, true)
     | .Subscript _ _ _ _ =>
+        let rhs_trans := match rhs_trans.val with
+          | .New className =>
+            {rhs_trans with val := .StaticCall "from_Composite" [mkStmtExprMd $ .LiteralString className.text, rhs_trans]}
+          | _ => rhs_trans
         match getSubscriptList lhs with
         | target :: slices =>
             let target ← translateExpr ctx target
@@ -1442,6 +1447,10 @@ partial def translateAssign  (ctx : TranslationContext)
             return (ctx,assignStmts, false)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
     | .Attribute _ obj attr _ =>
+      let rhs_trans := match rhs_trans.val with
+        | .New className =>
+          {rhs_trans with val := .StaticCall "from_Composite" [mkStmtExprMd $ .LiteralString className.text, rhs_trans]}
+        | _ => rhs_trans
       match obj with
       | .Name _ name _ =>
         if name.val == "self" && ctx.currentClassName.isSome then
@@ -1455,7 +1464,7 @@ partial def translateAssign  (ctx : TranslationContext)
             | some ann =>
               let annStr := pyExprToString ann
               if let some (.compositeType laurelName) := ctx.importedSymbols[annStr]? then
-                pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
+                pure $ mkStmtExprMd (.StaticCall "from_Composite" [mkStmtExprMd $ .LiteralString laurelName, mkStmtExprMd (StmtExpr.New (mkId laurelName))])
               else pure rhs_trans
             | none => pure rhs_trans
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') source
@@ -2851,7 +2860,7 @@ def pythonToLaurel (info : PreludeInfo)
     match ct with
     | .Alias _ => pure ()  -- aliases have no composite layout; skip
     | _ =>
-    let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
+    let selfParam : Parameter := { name := "self", type := AnyTy }
     procedures := procedures.push
       { name := { text := compositeToStringName ct.name.text }
         inputs := [selfParam]

@@ -5,9 +5,9 @@ test_field_access_from_any.py(23, 13): ❓ unknown - Check PMul exception
 test_field_access_from_any.py(25, 7): ✅ pass - Check POr exception
 test_field_access_from_any.py(25, 0): ✅ pass - assert(361)
 test_field_access_from_any.py(27, 7): ✅ pass - Check POr exception
-test_field_access_from_any.py(27, 0): ❓ unknown - assert(424)
+test_field_access_from_any.py(27, 0): ✅ pass - assert(424)
 test_field_access_from_any.py(29, 7): ✅ pass - Check POr exception
-test_field_access_from_any.py(29, 0): ❓ unknown - assert(492)
+test_field_access_from_any.py(29, 0): ✅ pass - assert(492)
 test_field_access_from_any.py(31, 0): ❓ unknown - expected unknown
 DETAIL: 6 passed, 0 failed, 5 inconclusive
 RESULT: Inconclusive
