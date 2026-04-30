@@ -113,8 +113,8 @@ private def laurelPipeline : Array LaurelPass := #[
       (p', diags, {}) },
   { name := "InferHoleTypes"
     run := fun p m =>
-      let (p', stats) := inferHoleTypes m p
-      (p', [], stats) },
+      let (p', diags, stats) := inferHoleTypes m p
+      (p', diags, stats) },
   { name := "EliminateHoles"
     run := fun p _m =>
       let (p', stats) := eliminateHoles p

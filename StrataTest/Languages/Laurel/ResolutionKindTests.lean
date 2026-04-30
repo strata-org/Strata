@@ -84,7 +84,7 @@ procedure foo() opaque {
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "NewWithProc" newWithProc 73 processResolution
+#eval testInputWithOffset "NewWithProc" newWithProc 77 processResolution
 
 /-! ## Extending a non-composite type (e.g. a constrained type) -/
 
@@ -95,6 +95,6 @@ composite Foo extends nat { }
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "ExtendConstrained" extendConstrained 83 processResolution
+#eval testInputWithOffset "ExtendConstrained" extendConstrained 90 processResolution
 
 end Laurel

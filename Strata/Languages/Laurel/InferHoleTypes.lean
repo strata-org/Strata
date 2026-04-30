@@ -53,6 +53,7 @@ structure InferHoleState where
   model : SemanticModel
   currentOutputType : HighTypeMd
   statistics : Statistics := {}
+  diagnostics : List DiagnosticModel := []
 
 private abbrev InferHoleM := StateM InferHoleState
 
@@ -86,7 +87,10 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   match val with
   | .Hole det _ =>
       if expectedType.val == .Unknown then
-        modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}" }
+        modify fun s => { s with
+          statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}"
+          diagnostics := s.diagnostics ++ [diagnosticFromSource source "could not infer type"]
+        }
         return expr
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
@@ -166,10 +170,10 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 /--
 Annotate every `.Hole` in the program with a type inferred from context.
 -/
-def inferHoleTypes (model : SemanticModel) (program : Program) : Program × Statistics :=
+def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel × Statistics :=
   let initState : InferHoleState := { model := model, currentOutputType := { val := .Unknown, source := none }}
   let (procs, finalState) := (program.staticProcedures.mapM inferProcedure).run initState
-  ({ program with staticProcedures := procs }, finalState.statistics)
+  ({ program with staticProcedures := procs }, finalState.diagnostics, finalState.statistics)
 
 end -- public section
 end Laurel
