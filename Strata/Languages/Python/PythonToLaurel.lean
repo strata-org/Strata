@@ -1792,16 +1792,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- maybe_except (procedure calls that may throw). Consecutive checks
     -- without intervening modifications are redundant and create unnecessary
     -- ite branches in the verification conditions.
-    let modifiesMaybeExcept (stmt : StmtExprMd) : Bool :=
-      match stmt.val with
-      | .Assign targets _ => targets.any fun t =>
-          match t.val with | .Identifier n => n == "maybe_except" | _ => false
-      | .Block stmts _ => stmts.any fun s =>
-          match s.val with
-          | .Assign targets _ => targets.any fun t =>
-              match t.val with | .Identifier n => n == "maybe_except" | _ => false
-          | _ => false
+    let targetIsMaybeExcept (target : StmtExprMd) : Bool :=
+      match target.val with | .Identifier n => n == "maybe_except" | _ => false
+    let rec modifiesMaybeExceptVal (e : StmtExpr) : Bool :=
+      match e with
+      | .Assign targets _ => targets.any targetIsMaybeExcept
+      | .Block stmts _ => stmts.any fun s => modifiesMaybeExceptVal s.val
+      | .IfThenElse _ t e => modifiesMaybeExceptVal t.val ||
+          (e.map (modifiesMaybeExceptVal ·.val)).getD false
+      | .While _ _ _ body => modifiesMaybeExceptVal body.val
       | _ => false
+    let modifiesMaybeExcept (stmt : StmtExprMd) : Bool :=
+      modifiesMaybeExceptVal stmt.val
     let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
       [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
     let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
