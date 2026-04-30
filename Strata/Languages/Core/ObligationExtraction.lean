@@ -8,7 +8,7 @@ module
 public import Strata.Languages.Core.Env
 /-! # Proof Obligation Extraction
 
-A Core-to-obligations pass that walks a post-PE, post-dedup program and extracts
+A Core-to-obligations pass that walks a post-PE program and extracts
 proof obligations with their path conditions reconstructed from the program
 structure.
 

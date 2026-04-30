@@ -716,36 +716,39 @@ def ProofObligation.toSMTTerms (E : Env)
   Except Format (List Term × List VarDefinition × List VarDeclaration × Term × SMT.Context × Statistics) := do
   let flatEntries := d.assumptions.flatten
   -- Separate assumptions from variable definitions/declarations
-  let mut assumptionExprs : List (LExpr CoreLParams.mono) := []
-  let mut varDefs : List (CoreIdent × Expression.Ty × LExpr CoreLParams.mono) := []
-  let mut varDecls : List (CoreIdent × Expression.Ty) := []
+  let mut assumptionExprsRev : List (LExpr CoreLParams.mono) := []
+  let mut varDefsRev : List (CoreIdent × Expression.Ty × LExpr CoreLParams.mono) := []
+  let mut varDeclsRev : List (CoreIdent × Expression.Ty) := []
   for entry in flatEntries do
     match entry with
-    | .assumption _ expr => assumptionExprs := assumptionExprs ++ [expr]
-    | .varDecl name ty (.det e) => varDefs := varDefs ++ [(name, ty, e)]
-    | .varDecl name ty .nondet => varDecls := varDecls ++ [(name, ty)]
+    | .assumption _ expr => assumptionExprsRev := expr :: assumptionExprsRev
+    | .varDecl name ty (.det e) => varDefsRev := (name, ty, e) :: varDefsRev
+    | .varDecl name ty .nondet => varDeclsRev := (name, ty) :: varDeclsRev
+  let assumptionExprs := assumptionExprsRev.reverse
+  let varDefs := varDefsRev.reverse
+  let varDecls := varDeclsRev.reverse
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptionExprs ctx useArrayTheory
   -- Encode variable definitions
-  let (smtVarDefs, ctx) ← varDefs.foldlM (init := (([] : List VarDefinition), ctx)) fun (defs, ctx) (name, ty, rhs) => do
+  let (smtVarDefsRev, ctx) ← varDefs.foldlM (init := (([] : List VarDefinition), ctx)) fun (defs, ctx) (name, ty, rhs) => do
     if h : ty.isMonoType then
       let (smtTy, ctx) ← LMonoTy.toSMTType E (ty.toMonoType h) ctx useArrayTheory
       let (rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
-      .ok (defs ++ [{ name := name.name, ty := smtTy, body := rhsTerm }], ctx)
+      .ok ({ name := name.name, ty := smtTy, body := rhsTerm } :: defs, ctx)
     else
-      -- Non-mono types: silently drop (unreachable for well-typed ANF variables)
-      let (_rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
-      .ok (defs, ctx)
+      .error f!"SMT encoding: variable definition '{name.name}' has non-monomorphic type"
+  let smtVarDefs := smtVarDefsRev.reverse
   -- Encode variable declarations
-  let (smtVarDecls, ctx) ← varDecls.foldlM (init := (([] : List VarDeclaration), ctx)) fun (decls, ctx) (name, ty) => do
+  let (smtVarDeclsRev, ctx) ← varDecls.foldlM (init := (([] : List VarDeclaration), ctx)) fun (decls, ctx) (name, ty) => do
     if h : ty.isMonoType then
       let (smtTy, ctx) ← LMonoTy.toSMTType E (ty.toMonoType h) ctx useArrayTheory
-      .ok (decls ++ [{ name := name.name, ty := smtTy }], ctx)
+      .ok ({ name := name.name, ty := smtTy } :: decls, ctx)
     else
-      .ok (decls, ctx)
+      .error f!"SMT encoding: variable declaration '{name.name}' has non-monomorphic type"
+  let smtVarDecls := smtVarDeclsRev.reverse
   let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
   let stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
