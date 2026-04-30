@@ -1,0 +1,8 @@
+test_field_access_from_any_func_input.py(17, 0): ✔️ always true if reached - Check PMul exception
+test_field_access_from_any_func_input.py(18, 0): ✔️ always true if reached - assert(360)
+test_field_access_from_any_func_input.py(21, 0): ✔️ always true if reached - Check PMul exception
+test_field_access_from_any_func_input.py(22, 0): ✔️ always true if reached - assert(422)
+test_field_access_from_any_func_input.py(24, 0): ✔️ always true if reached - Check PMul exception
+test_field_access_from_any_func_input.py(25, 0): ✔️ always true if reached - assert(463)
+DETAIL: 6 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
