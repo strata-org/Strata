@@ -9,5 +9,5 @@ test_field_access_from_any.py(27, 0): ✅ pass - assert(424)
 test_field_access_from_any.py(29, 7): ✅ pass - Check POr exception
 test_field_access_from_any.py(29, 0): ✅ pass - assert(492)
 test_field_access_from_any.py(31, 0): ❓ unknown - expected unknown
-DETAIL: 6 passed, 0 failed, 5 inconclusive
+DETAIL: 8 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

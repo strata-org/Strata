@@ -208,7 +208,9 @@ def mkInstanceMethodCall (className : String) (methodName : String)
     (self : StmtExprMd) (args : List StmtExprMd)
     (source : Option FileRange := none) : StmtExprMd :=
   if className == "Any" then mkStmtExprMdWithLoc .Hole source
-  else mkStmtExprMdWithLoc (StmtExpr.StaticCall (manglePythonMethod className methodName) (self :: args)) source
+  else
+    let self := mkStmtExprMd $ .StaticCall "Any..as_composite!" [self]
+    mkStmtExprMdWithLoc (StmtExpr.StaticCall (manglePythonMethod className methodName) (self :: args)) source
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
@@ -1389,7 +1391,6 @@ partial def translateAssign  (ctx : TranslationContext)
               let newExprWrapped := mkStmtExprMd (.StaticCall "from_Composite" [mkStmtExprMd $ .LiteralString resolvedId.text, newExpr])
               let varType := mkHighTypeMd (.UserDefined resolvedId)
               let selfRef := mkStmtExprMd (StmtExpr.Identifier n.val)
-              let selfRef := mkStmtExprMd (.StaticCall "Any..as_composite!" [selfRef])
               let initStmt := mkInstanceMethodCall laurelName "__init__" selfRef args source
               if n.val ∈ ctx.variableTypes.unzip.1 then
                 let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] newExprWrapped) source
@@ -1836,10 +1837,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .mk_withitem _ ctxExpr optVars =>
         let mgrName := s!"with_mgr_{ctxExpr.toAst.ann.start.byteIdx}"
         let mgrExpr ← translateExpr currentCtx ctxExpr
-        let mgrExpr := mkStmtExprMd $ .StaticCall "Any..as_composite!" [mgrExpr]
         let mgrTy ← inferExprType currentCtx ctxExpr
         let mgrLauTy ← translateType currentCtx mgrTy
-        let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
+        let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName AnyTy (some mgrExpr))
         let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
         let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef [] md
