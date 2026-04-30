@@ -72,25 +72,16 @@ private meta def runTypeCheck (ionPath : System.FilePath) (moduleName : String)
   let tcDump := fmtTypeCheckResult ssaResult.module tcResult
   return s!"{ssaDump}\n--- type check ---\n\n{tcDump}"
 
-/-- Set to `true` to overwrite `.expected` files with actual output. -/
-private meta def regenerateTests : Bool := false
-
-/-- Run a single test case. -/
-private meta def runTestCase
-    (pythonCmd : System.FilePath)
-    (tmpDir : System.FilePath)
-    (pyFile : System.FilePath)
-    (expectedFile : System.FilePath)
-    (testName : String)
-    : IO (Option String) := do
-  let ionPath ← compilePython pythonCmd pyFile tmpDir
-  let actual ← runTypeCheck ionPath testName
+/-- Compare actual output against an expected file.  If the expected file
+    doesn't exist, generate it and report the test as newly created. -/
+private meta def checkOrGenerate (testName : String) (actual : String)
+    (expectedFile : System.FilePath) : IO (Option String) := do
   IO.FS.createDirAll "/tmp/tc_test_actual"
   IO.FS.writeFile s!"/tmp/tc_test_actual/{testName}.actual" actual
-  if regenerateTests then
+  if !(← expectedFile.pathExists) then
     IO.FS.createDirAll expectedDir
-    IO.FS.writeFile (expectedDir / s!"{testName}.expected") actual
-    return none
+    IO.FS.writeFile expectedFile actual
+    return some s!"{testName}: generated expected file"
   let expected ← IO.FS.readFile expectedFile
   if actual.trimAscii.toString == expected.trimAscii.toString then
     return none
@@ -108,6 +99,18 @@ private meta def runTestCase
         diffMsg := diffMsg ++ s!"    actual:   {aLine}\n"
         break
     return some diffMsg
+
+/-- Run a single test case. -/
+private meta def runTestCase
+    (pythonCmd : System.FilePath)
+    (tmpDir : System.FilePath)
+    (pyFile : System.FilePath)
+    (expectedFile : System.FilePath)
+    (testName : String)
+    : IO (Option String) := do
+  let ionPath ← compilePython pythonCmd pyFile tmpDir
+  let actual ← runTypeCheck ionPath testName
+  checkOrGenerate testName actual expectedFile
 
 private meta def specDir : System.FilePath :=
   "StrataTest/Languages/Python/TypeCheck/specs"
@@ -214,29 +217,7 @@ private meta def runSpecTestCase
     (testName : String) : IO (Option String) := do
   let ionPath ← compilePython pythonCmd pyFile tmpDir
   let actual ← runTypeCheck ionPath testName (specDir := some specTestDir)
-  IO.FS.createDirAll "/tmp/tc_test_actual"
-  IO.FS.writeFile s!"/tmp/tc_test_actual/{testName}.actual" actual
-  if regenerateTests then
-    IO.FS.createDirAll expectedDir
-    IO.FS.writeFile (expectedDir / s!"{testName}.expected") actual
-    return none
-  let expected ← IO.FS.readFile expectedFile
-  if actual.trimAscii.toString == expected.trimAscii.toString then
-    return none
-  else
-    let actualLines := actual.trimAscii.toString.splitOn "\n"
-    let expectedLines := expected.trimAscii.toString.splitOn "\n"
-    let mut diffMsg := s!"{testName}: output differs from expected\n"
-    let maxLines := max actualLines.length expectedLines.length
-    for i in [:maxLines] do
-      let aLine := actualLines[i]?.getD "<EOF>"
-      let eLine := expectedLines[i]?.getD "<EOF>"
-      if aLine != eLine then
-        diffMsg := diffMsg ++ s!"  first diff at line {i + 1}:\n"
-        diffMsg := diffMsg ++ s!"    expected: {eLine}\n"
-        diffMsg := diffMsg ++ s!"    actual:   {aLine}\n"
-        break
-    return some diffMsg
+  checkOrGenerate testName actual expectedFile
 
 /-! ## Test list -/
 
@@ -280,16 +261,25 @@ private meta def specTests : List String := [
         let task ← IO.asTask (runSpecTestCase pythonCmd tmpDir specTmpDir pyFile expFile name)
         tasks := tasks.push (name, task)
       let mut errors : Array String := #[]
+      let mut generated : Array String := #[]
       let mut passed : Nat := 0
       for (_, task) in tasks do
         match ← IO.wait task with
-        | .ok (some err) => errors := errors.push err
+        | .ok (some msg) =>
+          if msg.endsWith "generated expected file" then
+            generated := generated.push msg
+          else
+            errors := errors.push msg
         | .ok none => passed := passed + 1
         | .error e => errors := errors.push s!"Task error: {e}"
       IO.println s!"TypeCheckTest: {passed}/{tasks.size} passed"
+      if generated.size > 0 then
+        IO.println s!"TypeCheckTest generated ({generated.size}):"
+        for msg in generated do
+          IO.println s!"  {msg}"
       if errors.size > 0 then
-        IO.println s!"TypeCheckTest differences ({errors.size}):"
         for err in errors do
           IO.println err
+        throw <| .userError s!"TypeCheckTest: {errors.size} test(s) failed"
 
 end Strata.Python.TypeCheckTest
