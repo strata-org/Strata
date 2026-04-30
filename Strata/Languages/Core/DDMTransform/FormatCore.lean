@@ -587,7 +587,7 @@ partial def extractTriggerPatterns {M} [Inhabited M]
     let expr ← lexprToExpr trigger qLevel
     pure #[expr]
 
-/-- Convert a lambda abstraction to a CoreDDM `lambda` expression, reusing the
+/-- Convert a lambda abstraction to a CoreDDM `fun` expression, reusing the
     prettyName stored in the `abs` constructor as the bound variable name. -/
 partial def labsToExpr {M} [Inhabited M]
     (prettyName : String) (ty : Option Lambda.LMonoTy)
@@ -854,13 +854,18 @@ partial def elseToCST {M} [Inhabited M] (stmts : List Core.Statement)
     pure (.else1 default blockCST)
 
 partial def invariantsToCST {M} [Inhabited M]
-    (inv : List (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
+    (inv : List (String × Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
   match inv with
   | [] => pure (.nilInvariants default)
-  | expr :: rest => do
+  | (label, expr) :: rest => do
+    -- An empty source label is emitted as `none`; a non-empty label becomes
+    -- `some (.label …)`, matching how `assert` / `assume` labels are formatted.
+    let labelAnn : Ann (Option (Label M)) M :=
+      if label.isEmpty then ⟨default, none⟩
+      else ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
     let restCST ← invariantsToCST rest
-    pure (.consInvariants default exprCST restCST)
+    pure (.consInvariants default labelAnn exprCST restCST)
 
 partial def measureToCST {M} [Inhabited M]
     (measure : Option (Lambda.LExpr CoreLParams.mono)) :

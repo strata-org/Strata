@@ -1,0 +1,6 @@
+test_chained_compare_eval_once.py(2, 4): ✅ pass - assert(42)
+test_chained_compare_eval_once.py(3, 4): ✅ pass - assert(57)
+test_chained_compare_eval_once.py(4, 4): ✅ pass - assert(72)
+test_chained_compare_eval_once.py(5, 4): ✅ pass - chained with non-simple intermediate
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

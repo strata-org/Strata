@@ -9,6 +9,7 @@ public import Strata.Languages.B3.DDMTransform.DefinitionAST
 public import Strata.DL.SMT.SMT
 public import Strata.DL.SMT.Factory
 public import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DDM.Format
 import Strata.Util.Tactics
 
 public section

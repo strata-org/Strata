@@ -5,7 +5,7 @@
 -/
 module
 
-import Lean.Elab.Command
+import Lean.Elab.Command -- shake: keep
 public import Strata.DDM.Util.Ion.AST
 import all Strata.DDM.Util.Lean
 
@@ -73,8 +73,8 @@ def systemSymbolId! (sym : String) : SymbolId := SymbolTable.system |>.symbolId!
 
 -- Use metaprogramming to declare `{sym}SymbolId : SymbolId` for each system symbol.
 section
-open Lean
-open Elab.Command
+open Lean (TSyntax)
+open Lean.Elab.Command (elabCommand)
 
 -- Declare all system symbol ids as constants
 run_cmd do

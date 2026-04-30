@@ -102,7 +102,7 @@ private def nondetLoopProgram : C_Simp.Program :=
     inputs := ListMap.ofList [(n, .tcons "int" [])],
     body := [
       .cmd (.init i intTy (.det zero) md),
-      .loop .nondet .none [iLeN] [
+      .loop .nondet .none [("iLeN", iLeN)] [
         .cmd (.set i (.det iAddOne) md)
       ] md,
       .exit "return" md

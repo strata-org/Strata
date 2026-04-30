@@ -77,7 +77,8 @@ private def operationName : Operation → String
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
 -- Internal-only: public because `partial` prevents `private` in this section
-partial def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
+partial def stmtExprToArg (s : StmtExprMd) : Arg :=
+  stmtExprValToArg s.val
 where
   stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
@@ -187,9 +188,12 @@ private def ensuresClauseToArg (c : Condition) : Arg :=
     laurelOp "errorSummary" #[.strlit sr msg])
   laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
 
-private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
-  let refs := modifies.map stmtExprToArg |>.toArray
-  laurelOp "modifiesClause" #[commaSep refs]
+private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
+  let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
+  let wildcardArgs := wildcards.map (fun _ => laurelOp "modifiesWildcard" #[]) |>.toArray
+  let specificArgs := if specific.isEmpty then #[]
+    else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
+  wildcardArgs ++ specificArgs
 
 private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let opName := if proc.isFunctional then "function" else "procedure"
@@ -213,19 +217,19 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
-  let (ensuresArgs, modifiesArgs, bodyArg) := match proc.body with
+  let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      (#[], #[], optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      let mods := if modifies.isEmpty then #[] else #[modifiesClauseToArg modifies]
+      let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
-      (ens, mods, body)
+      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg mods])), body)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      (ens, #[], optionArg none)
+      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg #[]])), optionArg none)
     | .External =>
-      (#[], #[], optionArg (some (laurelOp "externalBody")))
+      (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr
     name := { dialect := "Laurel", name := opName }
     args := #[
@@ -235,8 +239,7 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       returnParamsArg,
       seqArg requiresArgs,
       invokeOnArg,
-      seqArg ensuresArgs,
-      seqArg modifiesArgs,
+      opaqueSpecArg,
       bodyArg
     ] }
 
@@ -340,7 +343,7 @@ private def formatOp (o : Strata.Operation) : Format :=
 def formatHighType (t : HighTypeMd) : Format := formatArg (highTypeToArg t)
 def formatHighTypeVal (t : HighType) : Format := formatArg (highTypeValToArg t)
 def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
-def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg ⟨s, none, {}⟩)
+def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg { val := s, source := none })
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)
