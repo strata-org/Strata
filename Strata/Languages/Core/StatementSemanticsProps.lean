@@ -2452,34 +2452,32 @@ private theorem list_mapExprs_id_of_forall {ss : List Statement}
     simp only [List.map_cons, List.cons.injEq]
     exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
 
-theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s :=
-  s.inductionOn
-    (cmd_case := fun c => by
+theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := by
+  induction s using Stmt.inductionOn with
+  | cmd_case c =>
+    cases c with
+    | cmd c =>
       cases c with
-      | cmd c =>
-        cases c with
-        | assert l e md => simp [Statement.mapExprs]
-        | assume l e md => simp [Statement.mapExprs]
-        | cover l e md => simp [Statement.mapExprs]
-        | init n ty e md => cases e <;> simp [Statement.mapExprs]
-        | set n e md => cases e <;> simp [Statement.mapExprs]
-      | call pname args md =>
-        simp [Statement.mapExprs]
-        induction args with
-        | nil => rfl
-        | cons h t ih => simp [ih]; cases h <;> rfl)
-    (block_case := fun l ss md ih => by
-      simp [Statement.mapExprs, list_mapExprs_id_of_forall ih])
-    (ite_case := fun cond tss ess md iht ihe => by
-      cases cond <;> simp [Statement.mapExprs, list_mapExprs_id_of_forall iht,
-                            list_mapExprs_id_of_forall ihe])
-    (loop_case := fun guard measure inv body md ihb => by
-      cases guard <;> simp [Statement.mapExprs, list_mapExprs_id_of_forall ihb]
-      all_goals constructor
-      all_goals first | (cases measure <;> simp) | (induction inv with | nil => rfl | cons _ _ ih => simp [ih]))
-    (exit_case := fun l md => by simp [Statement.mapExprs])
-    (funcDecl_case := fun decl md => by simp [Statement.mapExprs])
-    (typeDecl_case := fun tc md => by simp [Statement.mapExprs])
+      | assert _ _ _ | assume _ _ _ | cover _ _ _ => simp [Statement.mapExprs]
+      | init n ty e md => cases e <;> simp [Statement.mapExprs]
+      | set n e md => cases e <;> simp [Statement.mapExprs]
+    | call pname args md =>
+      simp [Statement.mapExprs]
+      induction args with
+      | nil => rfl
+      | cons h t ih => simp [ih]; cases h <;> rfl
+  | block_case l ss md ih =>
+    simp [Statement.mapExprs, list_mapExprs_id_of_forall ih]
+  | ite_case cond tss ess md iht ihe =>
+    cases cond <;> simp [Statement.mapExprs, list_mapExprs_id_of_forall iht,
+                          list_mapExprs_id_of_forall ihe]
+  | loop_case guard measure inv body md ihb =>
+    cases guard <;> simp [Statement.mapExprs, list_mapExprs_id_of_forall ihb]
+    all_goals constructor
+    all_goals first | (cases measure <;> simp) | (induction inv with | nil => rfl | cons _ _ ih => simp [ih])
+  | exit_case l md => simp [Statement.mapExprs]
+  | funcDecl_case decl md => simp [Statement.mapExprs]
+  | typeDecl_case tc md => simp [Statement.mapExprs]
 
 theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
   exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
