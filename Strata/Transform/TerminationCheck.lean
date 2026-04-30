@@ -6,20 +6,19 @@
 module
 
 public import Strata.Transform.CoreTransform
-public import Strata.DL.Lambda.DtRankAxioms
+public import Strata.DL.Lambda.AdtRankAxioms
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
+
 /-! # Termination Checking for Recursive Functions
 
 This transformation generates termination-checking procedures for recursive
 function blocks. For each `recFuncBlock`, it:
 
-1. Generates `D..dtRank` UF declarations and per-constructor axioms for the
+1. Generates `D..adtRank` UF declarations and per-constructor axioms for the
    datatypes used as decreasing measures.
-2. Generates a `$$term` procedure per function that asserts `dtRank` decreases
+2. Generates a `$$term` procedure per function that asserts `adtRank` decreases
    at each recursive call site.
-
-See `docs/TerminationChecking.md` for the full design.
 -/
 
 public section
@@ -36,7 +35,7 @@ open Core.Transform
 inductive Stats where
   | termCheckProcsGenerated
   | termCheckAssertsEmitted
-  | dtRankAxiomsGenerated
+  | adtRankAxiomsGenerated
 
 #derive_prefixed_toString Stats "TermCheck"
 
@@ -54,37 +53,21 @@ private def getDecreasesIdx (func : Function) : Option Nat :=
   | none => FuncAttr.findInlineIfConstr func.attr
 
 /-- Extract the datatype name from a monomorphic type. -/
-private def dtNameOf (ty : LMonoTy) : String :=
+private def adtNameOf (ty : LMonoTy) : String :=
   match ty with
   | .tcons n _ => n
   | _ => ""
 
-/-- Build the `dtRank(callArg) < dtRank(callerParam)` expression. -/
-private def mkDtRankLt
+/-- Build the `adtRank(callArg) < adtRank(callerParam)` expression. -/
+private def mkAdtRankLt
     (callArg : Expression.Expr)
     (callerParam : Expression.Ident)
-    (callerDtTy calleeDtTy : LMonoTy)
+    (callerAdtTy calleeAdtTy : LMonoTy)
     : Expression.Expr :=
-  let callerRankTy : LMonoTy := LMonoTy.arrow callerDtTy .int
-  let calleeRankTy : LMonoTy := LMonoTy.arrow calleeDtTy .int
-  let callerRank : Expression.Expr :=
-    .app () (.op () (↑(dtRankFuncName (dtNameOf callerDtTy))) (.some callerRankTy))
-      (.fvar () callerParam (.some callerDtTy))
-  let calleeRank : Expression.Expr :=
-    .app () (.op () (↑(dtRankFuncName (dtNameOf calleeDtTy))) (.some calleeRankTy))
-      callArg
+  let rank (t: LMonoTy) (e: Expression.Expr) : Expression.Expr :=
+    .app () (.op () (adtRankFuncName (adtNameOf t)) (.some (.arrow t .int))) e
   let ltTy : LMonoTy := LMonoTy.arrow .int (LMonoTy.arrow .int .bool)
-  .app () (.app () (.op () (↑"Int.Lt") (.some ltTy)) calleeRank) callerRank
-
-/-- Wrap an expression with implications from accumulated path conditions,
-    following the same pattern as `collectWFObligations` in Preconditions. -/
-private def wrapImplications
-    (implications : List Expression.Expr)
-    (ob : Expression.Expr)
-    : Expression.Expr :=
-  let impliesTy : LMonoTy := LMonoTy.arrow .bool (LMonoTy.arrow .bool .bool)
-  implications.foldr (fun lhs acc =>
-    .app () (.app () (.op () (↑"Bool.Implies") (.some impliesTy)) lhs) acc) ob
+  LExpr.mkApp () (.op () "Int.Lt" (.some ltTy)) [rank calleeAdtTy callArg, rank callerAdtTy (.fvar () callerParam (.some callerAdtTy))]
 
 /-- Extract termination obligations from an expression. Path conditions
     through `ite` branches are accumulated and wrapped as implications
@@ -93,20 +76,20 @@ private def extractTermObligations
     (body : Expression.Expr)
     (recFuncNames : List String)
     (callerParam : Expression.Ident)
-    (callerDtTy : LMonoTy)
+    (callerAdtTy : LMonoTy)
     (funcDecreasesMap : List (String × Nat × LMonoTy))
     : List Expression.Expr :=
   go body []
 where
-  go (e : Expression.Expr) (implications : List Expression.Expr)
+  go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
       : List Expression.Expr :=
     match _he: e with
     | .ite _ c t f =>
       let cObs := go c implications
-      let tObs := go t (c :: implications)
+      let tObs := go t (((), c) :: implications)
       let notC : Expression.Expr :=
-        .app () (.op () (↑"Bool.Not") (.some (LMonoTy.arrow .bool .bool))) c
-      let fObs := go f (notC :: implications)
+        LExpr.mkApp () (.op () "Bool.Not" (.some (LMonoTy.arrow .bool .bool))) [c]
+      let fObs := go f (((), notC) :: implications)
       cObs ++ tObs ++ fObs
     | .app _ _ _ =>
       match _h : getLFuncCall e with
@@ -116,10 +99,10 @@ where
           | .op _ opName _ =>
             if opName.name ∈ recFuncNames then
               match funcDecreasesMap.find? (fun (n, _, _) => n == opName.name) with
-              | some (_, calleeIdx, calleeDtTy) =>
+              | some (_, calleeIdx, calleeAdtTy) =>
                 match args[calleeIdx]? with
                 | some callArg =>
-                  let ltExpr := mkDtRankLt callArg callerParam callerDtTy calleeDtTy
+                  let ltExpr := mkAdtRankLt callArg callerParam callerAdtTy calleeAdtTy
                   [wrapImplications implications ltExpr]
                 | none => []
               | none => []
@@ -145,23 +128,26 @@ where
     produces `[("a", int)]`. -/
 private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
   match concreteTy with
-  | .tcons dtName concreteArgs =>
+  | .tcons adtName concreteArgs =>
     if concreteArgs.isEmpty then []
-    else match tf.getType dtName with
+    else match tf.getType adtName with
       | some dt => [dt.typeArgs.zip concreteArgs]
       | none => []
   | _ => []
 
 /-- Generate a termination-checking procedure for a single function.
     Returns `none` if the function has no recursive calls or no valid
-    decreasing parameter. The polymorphic `dtRankAxioms` are specialized
+    decreasing parameter. The polymorphic `adtRankAxioms` are specialized
     to the function's concrete decreasing-parameter type before being
-    embedded as preconditions. -/
+    embedded as preconditions.
+    The resulting procedure should NOT have preconditions checked, since
+    they will already be checked by the original program, and the generated
+    axioms do not use partial functions. -/
 private def mkTermCheckProc
     (func : Function)
     (recFuncNames : List String)
     (funcDecreasesMap : List (String × Nat × LMonoTy))
-    (dtRankAxioms : List (String × Expression.Expr))
+    (adtRankAxioms : List (String × Expression.Expr))
     (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
     : Option (Decl × Nat) := do
@@ -169,33 +155,32 @@ private def mkTermCheckProc
   let inputTys := func.inputs.values
   let decrTy ← inputTys[decrIdx]?
   let decrParam ← func.inputs.keys[decrIdx]?
-  let _ ← match decrTy with
-    | .tcons _ _ => some ()
-    | _ => none
   let body ← func.body
   let obligations := extractTermObligations body recFuncNames decrParam decrTy
     funcDecreasesMap
   if obligations.isEmpty then none
   let stmts := obligations.mapIdx fun i ob =>
     Statement.assert s!"{func.name.name}_terminates_{i}" ob md
-  let paramInits := func.inputs.toList.map fun (name, ty) =>
-    Statement.init name (LTy.forAll [] ty) .nondet md
   -- Specialize polymorphic axioms to the concrete decreasing-parameter type
   let tySubst := mkTySubst tf decrTy
-  let specializedAxioms := dtRankAxioms.map fun (name, e) =>
+  let specializedAxioms := adtRankAxioms.map fun (name, e) =>
     (name, e.applySubst tySubst)
   some (.proc {
     header := {
       name := ⟨termProcName func.name.name, ()⟩
       typeArgs := func.typeArgs
-      inputs := []
+      inputs := func.inputs
       outputs := []
       noFilter := true
+      noPrecondElim := true
     }
-    spec := { preconditions := specializedAxioms.map fun (name, e) =>
-                 (name, { expr := e, attr := .Free }),
+    spec := { preconditions :=
+                 (specializedAxioms.map fun (name, e) =>
+                   (name, { expr := e, attr := .Free })) ++
+                 (func.preconditions.mapIdx fun i p =>
+                   (s!"{func.name.name}_requires_{i}", { expr := p.expr, attr := .Free })),
                postconditions := [] }
-    body := paramInits ++ stmts
+    body := stmts
   } md, obligations.length)
 
 /-- Add a termination-check procedure as a leaf node in the cached call graph. -/
@@ -205,37 +190,31 @@ private def addTermProcToCallGraph (name : String) : CoreTransformM Unit :=
       callGraph := .some (cg.addLeafNode name) } }
   | .none => σ
 
-/-- Generate dtRank function declarations and axiom expressions for all
-    datatypes in the mutual block containing `dtName`. Returns the func
-    decls (to emit as top-level declarations), the named axiom expressions
-    (to embed as preconditions in `$$term` procedures), and the list of
-    all datatype names in the block (for deduplication tracking). -/
-private def mkDtRankDecls
-    (dtName : String) (tf : @TypeFactory Unit)
+/-- Result of generating adtRank declarations for a mutual datatype block. -/
+private structure AdtRankDecls where
+  funcDecls : List Decl
+  axioms : List (String × Expression.Expr)
+  adtNames : List String
+
+/-- Generate adtRank function declarations and axiom expressions for all
+    datatypes in the mutual block containing `adtName`. -/
+private def mkAdtRankDecls
+    (adtName : String) (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
-    : List Decl × List (String × Expression.Expr) × List String :=
-  match tf.toList.find? (fun b => b.any (fun d => d.name == dtName)) with
-  | none => ([], [], [])
+    : AdtRankDecls :=
+  match tf.toList.find? (fun b => b.any (fun d => d.name == adtName)) with
+  | none => ⟨[], [], []⟩
   | some block =>
-    let funcDecls := block.map fun dt =>
-      Decl.func (mkDtRankFunc (T := CoreLParams) dt) md
-    let axiomExprs := block.flatMap fun dt =>
-      let axioms := mkDtRankAxioms (T := CoreLParams) dt block ()
-      axioms.mapIdx fun i ax =>
-        (s!"{dtRankFuncName dt.name}_{i}", ax)
-    let names := block.map (·.name)
-    (funcDecls, axiomExprs, names)
+    { funcDecls := block.map fun dt =>
+        Decl.func (mkAdtRankFunc (T := CoreLParams) dt) md
+      axioms := block.flatMap fun dt =>
+        let axioms := mkAdtRankAxioms (T := CoreLParams) dt block ()
+        axioms.mapIdx fun i ax =>
+          (s!"{adtRankFuncName dt.name}_{i}", ax)
+      adtNames := block.map (·.name) }
 
-/-- Main transformation: iterate over declarations, generating dtRank axioms
-    and termination-checking procedures for each `recFuncBlock`.
-
-    Runs after PrecondElim in the pipeline. This avoids redundant destructor
-    safety checks in `$$term` procedures: PrecondElim would insert them for
-    partial function calls in the `$$term` body (e.g., `IntList..tl(xs)`),
-    but those are already proved in the original function's body WF procedure.
-    Running after PrecondElim means the `$$term` procedures are never seen by
-    PrecondElim. Termination proofs never require function preconditions —
-    they only assert `dtRank(callArg) < dtRank(callerParam)`. -/
+/-- Main transformation: iterate over declarations, generating adtRank axioms
+    and termination-checking procedures for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
   match (← get).factory with
   | .none => return (false, p)
@@ -244,82 +223,83 @@ def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
     return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
-      (emittedDtRank : Std.HashSet String)
+      (emittedAdtRank : Std.HashSet String)
       : CoreTransformM (Bool × List Decl) := do
     match decls with
     | [] => return (false, [])
     | d :: rest =>
       match d with
       | .recFuncBlock funcs md => do
-        -- Skip polymorphic functions: dtRank axioms are monomorphic, so we
+        -- Step 1: error checking
+        -- Skip polymorphic functions: adtRank axioms are monomorphic, so we
         -- cannot generate them for polymorphic datatypes yet. The user-facing
         -- error is in Env.addFactoryFunc; when that restriction is lifted,
-        -- this filter must be updated to handle polymorphic dtRank generation.
+        -- this filter must be updated to handle polymorphic adtRank generation.
         for func in funcs do
           if func.typeArgs.isEmpty then
             match getDecreasesIdx func with
             | none =>
-              throw (s!"recursive function '{func.name.name}' requires a " ++
-                    s!"'decreases' clause or a '@[cases]' parameter for termination checking")
+              throw (s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking")
             | some idx =>
               match func.inputs.values[idx]? with
               | some (.tcons n _) =>
                 if (tf.getType n).isNone then
-                  throw (s!"recursive function '{func.name.name}': decreasing parameter " ++
-                        s!"type '{n}' is not a known datatype")
+                  throw (s!"recursive function '{func.name.name}': decreasing parameter type '{n}' is not a known datatype")
               | some _ =>
-                throw (s!"recursive function '{func.name.name}': decreasing parameter " ++
-                      s!"must have a datatype type")
+                throw (s!"recursive function '{func.name.name}': decreasing parameter must have a datatype type")
               | none =>
-                throw (s!"recursive function '{func.name.name}': decreasing parameter " ++
-                      s!"index {idx} is out of range")
+                throw (s!"recursive function '{func.name.name}': decreasing parameter index {idx} is out of range")
+        -- Step 2: Build a map from function name to (decreasing param index, type).
         let funcDecreasesMap := funcs.filterMap fun func => do
           if !func.typeArgs.isEmpty then none
           let idx ← getDecreasesIdx func
           let ty ← func.inputs.values[idx]?
-          let _ ← match ty with
-            | .tcons n _ => some n
-            | _ => none
           pure (func.name.name, idx, ty)
-        let allDtNames := funcDecreasesMap.map (fun (_, _, ty) => dtNameOf ty) |>.eraseDups
-        let newDtNames := allDtNames.filter (fun n => !emittedDtRank.contains n)
-        let (dtRankFuncDecls, _, emittedBlockNames) :=
-          newDtNames.foldl (init := ([], [], [])) fun (decls, axioms, names) dtName =>
-            if names.contains dtName then (decls, axioms, names)
-            else
-              let (newDecls, newAxioms, blockNames) := mkDtRankDecls dtName tf md
-              (decls ++ newDecls, axioms ++ newAxioms, names ++ blockNames)
-        let emittedDtRank := emittedBlockNames.foldl (fun s n => s.insert n) emittedDtRank
-        let (_, dtRankAxioms, _) :=
-          allDtNames.foldl (init := ([], [], [])) fun (decls, axioms, names) dtName =>
-            if names.contains dtName then (decls, axioms, names)
-            else
-              let (newDecls, newAxioms, blockNames) := mkDtRankDecls dtName tf md
-              (decls ++ newDecls, axioms ++ newAxioms, names ++ blockNames)
-        incrementStat s!"{Stats.dtRankAxiomsGenerated}" dtRankAxioms.length
+        -- Step 3: Generate adtRank UF declarations and per-constructor axioms.
+        -- `newAdtRank`: func decls only for datatypes not yet emitted.
+        -- `allAdtRank`: all axioms needed by this block's $$term procedures.
+        let allAdtNames := funcDecreasesMap.map (fun (_, _, ty) => adtNameOf ty)
+          |>.eraseDups
+        let newAdtNames := allAdtNames.filter (fun n => !emittedAdtRank.contains n)
+        let collectAdtRank (adtNames : List String) : AdtRankDecls :=
+          let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
+            adtNames.foldl (init := ({}, [])) fun (seen, acc) adtName =>
+              if seen.contains adtName then (seen, acc)
+              else
+                let r := mkAdtRankDecls adtName tf md
+                (r.adtNames.foldl (fun s n => s.insert n) seen, r :: acc)
+          let results := revResults.reverse
+          { funcDecls := results.flatMap (·.funcDecls)
+            axioms := results.flatMap (·.axioms)
+            adtNames := results.flatMap (·.adtNames) }
+        let newAdtRank := collectAdtRank newAdtNames
+        let emittedAdtRank := newAdtRank.adtNames.foldl (fun s n => s.insert n) emittedAdtRank
+        let allAdtRank := collectAdtRank allAdtNames
+        incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
+        -- Step 4: Generate a $$term procedure per function with adtRank
+        -- decrease assertions at each recursive call site.
         let recNames := funcs.map (·.name.name)
         let termDecls ← funcs.filterMapM fun func => do
-          match mkTermCheckProc func recNames funcDecreasesMap dtRankAxioms tf md with
+          match mkTermCheckProc func recNames funcDecreasesMap allAdtRank.axioms tf md with
           | some (decl, numAsserts) => do
             incrementStat s!"{Stats.termCheckProcsGenerated}"
             incrementStat s!"{Stats.termCheckAssertsEmitted}" numAsserts
             addTermProcToCallGraph (termProcName func.name.name)
             return some decl
           | none => return none
-        let (changed, rest') ← transformDecls rest tf emittedDtRank
-        if dtRankFuncDecls.isEmpty && termDecls.isEmpty then
+        -- Step 5: Splice adtRank decls before the rec block, term procs after.
+        let (changed, rest') ← transformDecls rest tf emittedAdtRank
+        if newAdtRank.funcDecls.isEmpty && termDecls.isEmpty then
           return (changed, d :: rest')
         else
-          return (true, dtRankFuncDecls ++ [d] ++ termDecls ++ rest')
-      | .func _func _md => do
-        let (changed, rest') ← transformDecls rest tf emittedDtRank
-        return (changed, d :: rest')
+          return (true, newAdtRank.funcDecls ++ [d] ++ termDecls ++ rest')
       | .type (.data block) _md => do
         let tf' : @TypeFactory Unit := tf.push block
-        let (changed, rest') ← transformDecls rest tf' emittedDtRank
+        let (changed, rest') ← transformDecls rest tf' emittedAdtRank
         return (changed, d :: rest')
-      | _ => do
-        let (changed, rest') ← transformDecls rest tf emittedDtRank
+      | .func _ _ | .proc _ _ | .ax _ _ | .distinct _ _ _
+      | .type (.con _) _ | .type (.syn _) _ => do
+        let (changed, rest') ← transformDecls rest tf emittedAdtRank
         return (changed, d :: rest')
 
 end TermCheck

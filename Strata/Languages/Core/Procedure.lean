@@ -182,6 +182,8 @@ structure Procedure.Header where
   outputs  : @LMonoTySignature Unit
   /-- If true, FilterProcedures will never remove this procedure. -/
   noFilter : Bool := false
+  /-- If true, PrecondElim will skip this procedure's body and contract. -/
+  noPrecondElim : Bool := false
   deriving Repr, DecidableEq, Inhabited
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).

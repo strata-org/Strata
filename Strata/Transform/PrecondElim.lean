@@ -372,6 +372,10 @@ where
     | d :: rest =>
       match d with
       | .proc proc md => do
+        if proc.header.noPrecondElim then
+          let (changed, rest') ← transformDecls rest
+          return (changed, d :: rest')
+        else
         let F ← getFactory
         let (changed, body') ← transformStmts proc.body
         setFactory F

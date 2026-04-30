@@ -66,12 +66,6 @@ For each call to a function with preconditions:
 def collectWFObligations [Coe String (T.Identifier)]  [Inhabited T.Metadata] (F : Factory T) (e : LExpr T.mono) : List (WFObligation T) :=
   go F e []
 where
-  /-- Wrap an obligation with accumulated implications -/
-  wrapImplications (implications : List (T.Metadata × LExpr T.mono))
-      (ob : LExpr T.mono) : LExpr T.mono :=
-    implications.foldr (fun (md, lhs) acc =>
-      .app md (.app md (@boolImpliesFunc T).opExpr lhs) acc) ob
-
   go (F : Factory T) (e : LExpr T.mono)
       (implications : List (T.Metadata × LExpr T.mono)) : List (WFObligation T) :=
     -- A function call generates an obligation that the precondition is

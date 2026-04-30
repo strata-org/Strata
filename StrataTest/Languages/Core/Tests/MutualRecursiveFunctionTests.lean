@@ -49,21 +49,80 @@ info: true
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mutualRecPgm) |>.snd |>.isEmpty
 
-/--
+/-- info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: isEven_body_calls_MyNat..pred_0
+Property: assert
+Obligation:
+!(MyNat..isZero(n@1)) ==> MyNat..isSucc(n@1)
+
+Label: isOdd_body_calls_MyNat..pred_0
+Property: assert
+Obligation:
+!(MyNat..isZero(n@2)) ==> MyNat..isSucc(n@2)
+
+Label: isEven_terminates_0
+Property: assert
+Assumptions:
+MyNat..adtRank_0: forall __q0 : MyNat ::  { MyNat..adtRank(__q0) }
+  MyNat..adtRank(__q0) >= 0
+MyNat..adtRank_1: forall __q0 : MyNat ::  { MyNat..adtRank(Succ(__q0)) }
+  MyNat..adtRank(__q0) < MyNat..adtRank(Succ(__q0))
+Obligation:
+!(MyNat..isZero(n@3)) ==> MyNat..adtRank(MyNat..pred(n@3)) < MyNat..adtRank(n@3)
+
+Label: isOdd_terminates_0
+Property: assert
+Assumptions:
+MyNat..adtRank_0: forall __q0 : MyNat ::  { MyNat..adtRank(__q0) }
+  MyNat..adtRank(__q0) >= 0
+MyNat..adtRank_1: forall __q0 : MyNat ::  { MyNat..adtRank(Succ(__q0)) }
+  MyNat..adtRank(__q0) < MyNat..adtRank(Succ(__q0))
+Obligation:
+!(MyNat..isZero(n@4)) ==> MyNat..adtRank(MyNat..pred(n@4)) < MyNat..adtRank(n@4)
+
+Label: zeroEven
+Property: assert
+Obligation:
+true
+
+Label: zeroNotOdd
+Property: assert
+Obligation:
+true
+
+Label: oneOdd
+Property: assert
+Obligation:
+true
+
+Label: oneNotEven
+Property: assert
+Obligation:
+true
+
+Label: TestMutual_ensures_0
+Property: assert
+Obligation:
+true
+
+---
 info:
-Obligation: isEven_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_terminates_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -87,7 +146,7 @@ Obligation: TestMutual_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify mutualRecPgm (options := .quiet)
+#eval verify mutualRecPgm (options := .default)
 
 end Strata.MutualRecursiveFunctionTest
 
@@ -151,18 +210,6 @@ info: true
 
 /--
 info:
-Obligation: treeSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: listSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: listSize_terminates_1
-Property: assert
-Result: ✅ pass
-
 Obligation: treeSize_body_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
@@ -172,6 +219,18 @@ Property: assert
 Result: ✅ pass
 
 Obligation: listSize_body_calls_RoseList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_1
 Property: assert
 Result: ✅ pass
 
@@ -274,14 +333,6 @@ info: true
 
 /--
 info:
-Obligation: isEven_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_terminates_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
@@ -290,13 +341,13 @@ Obligation: isOdd_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
-Obligation: evenHalf_terminates_0
+Obligation: isEven_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: oddHalf_terminates_0
+Obligation: isOdd_terminates_0
 Property: assert
-Result: ❓ unknown
+Result: ✅ pass
 
 Obligation: evenHalf_body_calls_MyNat..pred_0
 Property: assert
@@ -311,6 +362,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: oddHalf_body_calls_evenHalf_1
+Property: assert
+Result: ✅ pass
+
+Obligation: evenHalf_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddHalf_terminates_0
 Property: assert
 Result: ✅ pass
 

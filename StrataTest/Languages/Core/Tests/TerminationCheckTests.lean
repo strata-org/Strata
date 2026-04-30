@@ -7,18 +7,15 @@
 import Strata.Languages.Core.Verifier
 
 /-!
-# Termination Checking Integration Tests
+# Termination Checking Tests
 
 Tests termination checking for recursive functions over algebraic datatypes.
-The TermCheck pipeline phase generates `D..dtRank` UF declarations, per-constructor
-axioms, and `$$term` procedures that assert `dtRank` decreases at each recursive
-call site.
 -/
 
 namespace Strata.TerminationCheckTest
 
 ---------------------------------------------------------------------
--- Test 1: listLen — basic structural recursion (full VCs shown)
+-- Test 1: listLen — basic structural recursion
 ---------------------------------------------------------------------
 
 def listLenTermPgm : Program :=
@@ -49,20 +46,20 @@ procedure TestListLen() spec {
 
 
 VCs:
-Label: listLen_terminates_0
-Property: assert
-Assumptions:
-IntList..dtRank_0: forall __q0 : IntList ::  { IntList..dtRank(__q0) }
-  IntList..dtRank(__q0) >= 0
-IntList..dtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..dtRank(Cons(__q0, __q1)) }
-  IntList..dtRank(__q1) < IntList..dtRank(Cons(__q0, __q1))
-Obligation:
-!(IntList..isNil(xs)) ==> IntList..dtRank(IntList..tl(xs)) < IntList..dtRank(xs)
-
 Label: listLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
 !(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
+
+Label: listLen_terminates_0
+Property: assert
+Assumptions:
+IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
+  IntList..adtRank(__q0) >= 0
+IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
+  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+Obligation:
+!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
 
 Label: nilLen
 Property: assert
@@ -81,11 +78,11 @@ true
 
 ---
 info:
-Obligation: listLen_terminates_0
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_body_calls_IntList..tl_0
+Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -122,15 +119,15 @@ rec function contains (key : int, @[cases] xs : IntList) : bool
 #end
 
 /-- info:
-Obligation: contains_terminates_0
-Property: assert
-Result: ✅ pass
-
 Obligation: contains_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
 
 Obligation: contains_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: contains_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
@@ -201,10 +198,6 @@ rec function sumList (@[cases] xs : IntList) : int
 #end
 
 /-- info:
-Obligation: sumList_terminates_0
-Property: assert
-Result: ✅ pass
-
 Obligation: sumList_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -218,6 +211,10 @@ Property: assert
 Result: ✅ pass
 
 Obligation: sumList_body_calls_IntList..tl_3
+Property: assert
+Result: ✅ pass
+
+Obligation: sumList_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
@@ -252,19 +249,19 @@ procedure TestMutual() spec {
 #end
 
 /-- info:
-Obligation: isEven_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_terminates_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -311,16 +308,67 @@ procedure Test() spec {
 };
 #end
 
-/-- info:
-Obligation: listLen_terminates_0
-Property: assert
-Result: ✅ pass
+/-- info: [Strata.Core] Type checking succeeded.
 
+
+VCs:
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
+
+Label: listLen_terminates_0
+Property: assert
+Assumptions:
+IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
+  IntList..adtRank(__q0) >= 0
+IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
+  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+Obligation:
+!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+
+Label: listSum_body_calls_IntList..hd_0
+Property: assert
+Obligation:
+!(IntList..isNil(xs@3)) ==> IntList..isCons(xs@3)
+
+Label: listSum_body_calls_IntList..tl_1
+Property: assert
+Obligation:
+!(IntList..isNil(xs@3)) ==> IntList..isCons(xs@3)
+
+Label: listSum_terminates_0
+Property: assert
+Assumptions:
+IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
+  IntList..adtRank(__q0) >= 0
+IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
+  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+Obligation:
+!(IntList..isNil(xs@4)) ==> IntList..adtRank(IntList..tl(xs@4)) < IntList..adtRank(xs@4)
+
+Label: lenNil
+Property: assert
+Obligation:
+true
+
+Label: sumNil
+Property: assert
+Obligation:
+true
+
+Label: Test_ensures_0
+Property: assert
+Obligation:
+true
+
+---
+info:
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listSum_terminates_0
+Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -329,6 +377,10 @@ Property: assert
 Result: ✅ pass
 
 Obligation: listSum_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: listSum_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -344,12 +396,12 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval verify sharedDtPgm (options := .quiet)
+#eval verify sharedDtPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 8: multiple recursive calls per branch — Tree with Branch and Chain
--- Branch(left, right) has two recursive fields → two termination obligations
--- Chain(head, tail) has one recursive field → one termination obligation
+-- Branch(left, right) has two recursive fields
+-- Chain(head, tail) has one recursive field
 ---------------------------------------------------------------------
 
 def treeSizePgm : Program :=
@@ -379,48 +431,6 @@ procedure TestTreeSize() spec {
 
 
 VCs:
-Label: treeSize_terminates_0
-Property: assert
-Assumptions:
-Tree..dtRank_0: forall __q0 : Tree ::  { Tree..dtRank(__q0) }
-  Tree..dtRank(__q0) >= 0
-Tree..dtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Branch(__q0, __q1)) }
-  Tree..dtRank(__q0) < Tree..dtRank(Branch(__q0, __q1))
-Tree..dtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Branch(__q0, __q1)) }
-  Tree..dtRank(__q1) < Tree..dtRank(Branch(__q0, __q1))
-Tree..dtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..dtRank(Chain(__q0, __q1)) }
-  Tree..dtRank(__q1) < Tree..dtRank(Chain(__q0, __q1))
-Obligation:
-Tree..isBranch(t) ==> !(Tree..isLeaf(t)) ==> Tree..dtRank(Tree..left(t)) < Tree..dtRank(t)
-
-Label: treeSize_terminates_1
-Property: assert
-Assumptions:
-Tree..dtRank_0: forall __q0 : Tree ::  { Tree..dtRank(__q0) }
-  Tree..dtRank(__q0) >= 0
-Tree..dtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Branch(__q0, __q1)) }
-  Tree..dtRank(__q0) < Tree..dtRank(Branch(__q0, __q1))
-Tree..dtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Branch(__q0, __q1)) }
-  Tree..dtRank(__q1) < Tree..dtRank(Branch(__q0, __q1))
-Tree..dtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..dtRank(Chain(__q0, __q1)) }
-  Tree..dtRank(__q1) < Tree..dtRank(Chain(__q0, __q1))
-Obligation:
-Tree..isBranch(t) ==> !(Tree..isLeaf(t)) ==> Tree..dtRank(Tree..right(t)) < Tree..dtRank(t)
-
-Label: treeSize_terminates_2
-Property: assert
-Assumptions:
-Tree..dtRank_0: forall __q0 : Tree ::  { Tree..dtRank(__q0) }
-  Tree..dtRank(__q0) >= 0
-Tree..dtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Branch(__q0, __q1)) }
-  Tree..dtRank(__q0) < Tree..dtRank(Branch(__q0, __q1))
-Tree..dtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..dtRank(Branch(__q0, __q1)) }
-  Tree..dtRank(__q1) < Tree..dtRank(Branch(__q0, __q1))
-Tree..dtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..dtRank(Chain(__q0, __q1)) }
-  Tree..dtRank(__q1) < Tree..dtRank(Chain(__q0, __q1))
-Obligation:
-!(Tree..isBranch(t)) ==> !(Tree..isLeaf(t)) ==> Tree..dtRank(Tree..tail(t)) < Tree..dtRank(t)
-
 Label: treeSize_body_calls_Tree..left_0
 Property: assert
 Obligation:
@@ -435,6 +445,48 @@ Label: treeSize_body_calls_Tree..tail_2
 Property: assert
 Obligation:
 !(Tree..isBranch(t@1)) ==> !(Tree..isLeaf(t@1)) ==> Tree..isChain(t@1)
+
+Label: treeSize_terminates_0
+Property: assert
+Assumptions:
+Tree..adtRank_0: forall __q0 : Tree ::  { Tree..adtRank(__q0) }
+  Tree..adtRank(__q0) >= 0
+Tree..adtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
+  Tree..adtRank(__q0) < Tree..adtRank(Branch(__q0, __q1))
+Tree..adtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
+  Tree..adtRank(__q1) < Tree..adtRank(Branch(__q0, __q1))
+Tree..adtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..adtRank(Chain(__q0, __q1)) }
+  Tree..adtRank(__q1) < Tree..adtRank(Chain(__q0, __q1))
+Obligation:
+Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..left(t@2)) < Tree..adtRank(t@2)
+
+Label: treeSize_terminates_1
+Property: assert
+Assumptions:
+Tree..adtRank_0: forall __q0 : Tree ::  { Tree..adtRank(__q0) }
+  Tree..adtRank(__q0) >= 0
+Tree..adtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
+  Tree..adtRank(__q0) < Tree..adtRank(Branch(__q0, __q1))
+Tree..adtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
+  Tree..adtRank(__q1) < Tree..adtRank(Branch(__q0, __q1))
+Tree..adtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..adtRank(Chain(__q0, __q1)) }
+  Tree..adtRank(__q1) < Tree..adtRank(Chain(__q0, __q1))
+Obligation:
+Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..right(t@2)) < Tree..adtRank(t@2)
+
+Label: treeSize_terminates_2
+Property: assert
+Assumptions:
+Tree..adtRank_0: forall __q0 : Tree ::  { Tree..adtRank(__q0) }
+  Tree..adtRank(__q0) >= 0
+Tree..adtRank_1: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
+  Tree..adtRank(__q0) < Tree..adtRank(Branch(__q0, __q1))
+Tree..adtRank_2: forall __q0 : Tree :: forall __q1 : Tree ::  { Tree..adtRank(Branch(__q0, __q1)) }
+  Tree..adtRank(__q1) < Tree..adtRank(Branch(__q0, __q1))
+Tree..adtRank_3: forall __q0 : int :: forall __q1 : Tree ::  { Tree..adtRank(Chain(__q0, __q1)) }
+  Tree..adtRank(__q1) < Tree..adtRank(Chain(__q0, __q1))
+Obligation:
+!(Tree..isBranch(t@2)) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..tail(t@2)) < Tree..adtRank(t@2)
 
 Label: leaf
 Property: assert
@@ -458,18 +510,6 @@ true
 
 ---
 info:
-Obligation: treeSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: treeSize_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: treeSize_terminates_2
-Property: assert
-Result: ✅ pass
-
 Obligation: treeSize_body_calls_Tree..left_0
 Property: assert
 Result: ✅ pass
@@ -479,6 +519,18 @@ Property: assert
 Result: ✅ pass
 
 Obligation: treeSize_body_calls_Tree..tail_2
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_terminates_2
 Property: assert
 Result: ✅ pass
 
@@ -521,28 +573,28 @@ rec function intListLen (@[cases] xs : MyList int) : int
 
 
 VCs:
-Label: intListLen_terminates_0
-Property: assert
-Assumptions:
-MyList..dtRank_0: forall __q0 : (MyList int) ::  { MyList..dtRank(__q0) }
-  MyList..dtRank(__q0) >= 0
-MyList..dtRank_1: forall __q0 : int :: forall __q1 : (MyList int) ::  { MyList..dtRank(Cons(__q0, __q1)) }
-  MyList..dtRank(__q1) < MyList..dtRank(Cons(__q0, __q1))
-Obligation:
-!(MyList..isNil(xs)) ==> MyList..dtRank(MyList..tl(xs)) < MyList..dtRank(xs)
-
 Label: intListLen_body_calls_MyList..tl_0
 Property: assert
 Obligation:
 !(MyList..isNil(xs@1)) ==> MyList..isCons(xs@1)
 
+Label: intListLen_terminates_0
+Property: assert
+Assumptions:
+MyList..adtRank_0: forall __q0 : (MyList int) ::  { MyList..adtRank(__q0) }
+  MyList..adtRank(__q0) >= 0
+MyList..adtRank_1: forall __q0 : int :: forall __q1 : (MyList int) ::  { MyList..adtRank(Cons(__q0, __q1)) }
+  MyList..adtRank(__q1) < MyList..adtRank(Cons(__q0, __q1))
+Obligation:
+!(MyList..isNil(xs@2)) ==> MyList..adtRank(MyList..tl(xs@2)) < MyList..adtRank(xs@2)
+
 ---
 info:
-Obligation: intListLen_terminates_0
+Obligation: intListLen_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: intListLen_body_calls_MyList..tl_0
+Obligation: intListLen_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
@@ -566,11 +618,11 @@ rec function listLen (@[cases] xs : IntList) : int
 #end
 
 /-- info:
-Obligation: listLen_terminates_0
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_body_calls_IntList..tl_0
+Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
@@ -609,16 +661,6 @@ procedure TestZipLen() spec {
 
 
 VCs:
-Label: zipLen_terminates_0
-Property: assert
-Assumptions:
-IntList..dtRank_0: forall __q0 : IntList ::  { IntList..dtRank(__q0) }
-  IntList..dtRank(__q0) >= 0
-IntList..dtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..dtRank(Cons(__q0, __q1)) }
-  IntList..dtRank(__q1) < IntList..dtRank(Cons(__q0, __q1))
-Obligation:
-!(IntList..isNil(ys)) ==> !(IntList..isNil(xs)) ==> IntList..dtRank(IntList..tl(ys)) < IntList..dtRank(ys)
-
 Label: zipLen_body_calls_IntList..tl_0
 Property: assert
 Obligation:
@@ -628,6 +670,16 @@ Label: zipLen_body_calls_IntList..tl_1
 Property: assert
 Obligation:
 !(IntList..isNil(ys@1)) ==> !(IntList..isNil(xs@1)) ==> IntList..isCons(ys@1)
+
+Label: zipLen_terminates_0
+Property: assert
+Assumptions:
+IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
+  IntList..adtRank(__q0) >= 0
+IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
+  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+Obligation:
+!(IntList..isNil(ys@2)) ==> !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(ys@2)) < IntList..adtRank(ys@2)
 
 Label: nilCases
 Property: assert
@@ -641,15 +693,15 @@ true
 
 ---
 info:
-Obligation: zipLen_terminates_0
-Property: assert
-Result: ✅ pass
-
 Obligation: zipLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
 Obligation: zipLen_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: zipLen_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -734,18 +786,7 @@ procedure TestMutualDt() spec {
 };
 #end
 
-/-- info: Obligation: treeSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: listSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: listSize_terminates_1
-Property: assert
-Result: ✅ pass
-
+/-- info:
 Obligation: treeSize_body_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
@@ -755,6 +796,18 @@ Property: assert
 Result: ✅ pass
 
 Obligation: listSize_body_calls_RoseList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_1
 Property: assert
 Result: ✅ pass
 
@@ -794,17 +847,18 @@ function badList (@[cases] xs : RoseList) : int
 };
 #end
 
-/-- info: Obligation: badTree_terminates_0
+/-- info:
+Obligation: badTree_body_calls_RoseTree..children_0
+Property: assert
+Result: ✅ pass
+
+Obligation: badTree_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: badList_terminates_0
 Property: assert
-Result: ❓ unknown
-
-Obligation: badTree_body_calls_RoseTree..children_0
-Property: assert
-Result: ✅ pass -/
+Result: ❓ unknown -/
 #guard_msgs in
 #eval verify mutualDtNonTermPgm (options := .quiet)
 
@@ -830,18 +884,7 @@ function intListSize (@[cases] xs : GenList int) : int
 };
 #end
 
-/-- info: Obligation: intTreeSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: intListSize_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: intListSize_terminates_1
-Property: assert
-Result: ✅ pass
-
+/-- info:
 Obligation: intTreeSize_body_calls_GenTree..children_0
 Property: assert
 Result: ✅ pass
@@ -852,8 +895,58 @@ Result: ✅ pass
 
 Obligation: intListSize_body_calls_GenList..tl_1
 Property: assert
+Result: ✅ pass
+
+Obligation: intTreeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListSize_terminates_1
+Property: assert
 Result: ✅ pass -/
 #guard_msgs in
 #eval verify polyMutualDtTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 17: precondition used to prove termination
+-- predVal recurses unconditionally on pred(n), but the precondition
+-- requires !isZero(n), ensuring n is a Succ.
+---------------------------------------------------------------------
+
+def precondTermPgm : Program :=
+#strata
+program Core;
+
+datatype MyNat { Zero(), Succ(pred: MyNat) };
+
+rec function predVal (@[cases] n : MyNat) : int
+  requires !MyNat..isZero(n);
+{
+  if MyNat..isZero(MyNat..pred(n)) then 0 else 1 + predVal(MyNat..pred(n))
+};
+
+#end
+
+/-- info: Obligation: predVal_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: predVal_body_calls_MyNat..pred_1
+Property: assert
+Result: ✅ pass
+
+Obligation: predVal_body_calls_predVal_2
+Property: assert
+Result: ✅ pass
+
+Obligation: predVal_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify precondTermPgm (options := .quiet)
 
 end Strata.TerminationCheckTest
