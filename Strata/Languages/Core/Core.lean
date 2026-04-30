@@ -156,7 +156,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- unmatched entries; this is intentional for the current single-env model.
   let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
     let blocks := E.deferred.toList.map fun ob =>
-      let assumes := ob.assumptions.flatten.filterMap fun
+      let assumes := ob.assumptions.reverse.flatten.filterMap fun
         | .assumption label e =>
           some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
         | _ => none
