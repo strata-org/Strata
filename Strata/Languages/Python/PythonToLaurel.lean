@@ -1967,7 +1967,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
-    return (finalCtx, (getExceptionCatch ctx iterExpr) ++ [counterDecl] ++ [loopBlock])
+    return (finalCtx, iterPreamble ++ (getExceptionCatch ctx iterRaw) ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
