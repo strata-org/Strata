@@ -1788,13 +1788,29 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         handlerCtx := hCtx
         handlerStmts := handlerStmts ++ hStmts
 
-    -- Insert exception checks after each statement in try body
+    -- Insert exception checks only after statements that could modify
+    -- maybe_except (procedure calls that may throw). Consecutive checks
+    -- without intervening modifications are redundant and create unnecessary
+    -- ite branches in the verification conditions.
+    let modifiesMaybeExcept (stmt : StmtExprMd) : Bool :=
+      match stmt.val with
+      | .Assign targets _ => targets.any fun t =>
+          match t.val with | .Identifier n => n == "maybe_except" | _ => false
+      | .Block stmts _ => stmts.any fun s =>
+          match s.val with
+          | .Assign targets _ => targets.any fun t =>
+              match t.val with | .Identifier n => n == "maybe_except" | _ => false
+          | _ => false
+      | _ => false
+    let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
+      [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
+    let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
+      (mkStmtExprMd (StmtExpr.Exit catchersLabel)) none)
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
-      let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
-        [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
-      let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
-        (mkStmtExprMd (StmtExpr.Exit catchersLabel)) none)
-      [stmt, exitToHandler]
+      if modifiesMaybeExcept stmt then
+        [stmt, exitToHandler]
+      else
+        [stmt]
 
     -- Normal completion: exit the try block, skipping handlers
     let exitTry := mkStmtExprMd (StmtExpr.Exit tryLabel)
