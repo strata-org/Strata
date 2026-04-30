@@ -232,6 +232,15 @@ def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName
       let id ← freshId
       pure ({ iden with uniqueId := some (id) }, id)
 
+  -- Detect when we are about to overwrite an existing scope entry with a different ID.
+  -- This would silently break any references that were already resolved to the old ID.
+  let s ← get
+  if let some (existingId, _) := s.scope.get? resolutionName then
+    if existingId != uniqueId then
+      let diag := diagnosticFromSource iden.source
+        s!"BUG: defineName is overwriting '{resolutionName}' (old ID {existingId}, new ID {uniqueId}). Earlier references will be dangling."
+      modify fun s => { s with errors := s.errors.push diag }
+
   modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node),
                            currentScopeNames := s.currentScopeNames.insert resolutionName }
   return name'
