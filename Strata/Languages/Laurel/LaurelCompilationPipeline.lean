@@ -197,8 +197,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   runPipelineM options.keepAllFilesPrefix do
     let (program, model, passDiags, stats) ← runLaurelPasses options program
     let ordered := orderProgram program
-    if ! passDiags.isEmpty then
-      return (none, passDiags, program, stats)
 
     let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
