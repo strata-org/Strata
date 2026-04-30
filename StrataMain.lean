@@ -531,7 +531,8 @@ def pyTypeCheckCommand : Command where
   args := [ "file" ]
   flags := [
     { name := "profile", help := "Print elapsed time for each step." },
-    { name := "spec-dir", help := "Directory containing .pyspec.st.ion files for import resolution." }
+    { name := "spec-dir", help := "Directory containing .pyspec.st.ion files for import resolution.",
+      takesArg := .arg "dir" }
   ]
   help := "Run forward type analysis on a Python Ion program and print inferred types."
   callback := fun v pflags => do
