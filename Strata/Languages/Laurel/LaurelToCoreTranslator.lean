@@ -73,10 +73,15 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
 /-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
-private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
-  emitDiagnostic (diagnosticFromSource ty.source msg)
+private def haltFurtherCompilation: TranslateM LMonoTy := do
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  return .tcons "Error" []
+  return .tcons s!"LaurelResolutionErrorPlaceholder" []
+
+/-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
+private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
+  emitDiagnostic (diagnosticFromSource ty.source msg DiagnosticType.StrataBug)
+  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-
 Translate Laurel HighType to Core Type
@@ -103,7 +108,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .Unknown => throwTypeDiagnostic ty "could not infer type"
+  | .Unknown => throwTypeDiagnostic ty "bug in Laurel: unknown type encountered while translating to Core"
   | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))

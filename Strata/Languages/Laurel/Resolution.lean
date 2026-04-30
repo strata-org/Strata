@@ -152,7 +152,7 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved source => ⟨ .Unknown, source ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; default
 
 /-! ## Resolution result -/
 
