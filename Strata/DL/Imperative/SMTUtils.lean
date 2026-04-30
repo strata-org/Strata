@@ -125,11 +125,14 @@ instance : ToString SolverError where
     | .timeout d => s!"Solver timeout: {d}"
     | .crash d   => s!"{d}"
 
-/-- True when the solver output indicates a timeout rather than a crash.
-    z3 emits "timeout" on stdout; cvc5 prints "interrupted by timeout"
-    on stderr. Only called when verdict parsing has already failed. -/
+/-- True when the word "timeout" appears as a whitespace-delimited token
+    in the solver's stdout or stderr. z3 emits "timeout" as a standalone
+    line on stdout; cvc5 prints "interrupted by timeout." on stderr.
+    Only called when verdict parsing has already failed. -/
 private def isTimeoutOutput (output : IO.Process.Output) : Bool :=
-  output.stdout.contains "timeout" || output.stderr.contains "timeout"
+  let hasWord (s : String) := s.splitOn " " |>.any fun tok =>
+    tok.trimAscii.toString == "timeout" || tok.trimAscii.toString == "timeout."
+  hasWord output.stdout || hasWord output.stderr
 
 ---------------------------------------------------------------------
 -- SMTDDM-based parsing
@@ -267,8 +270,6 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
     | some (validityResult, _) => return .ok (satResult, validityResult)
     | none =>
-      if isTimeoutOutput output then
-        return .ok (satResult, .unknown)
       return .error (mkError output)
   | none =>
     return .error (mkError output)

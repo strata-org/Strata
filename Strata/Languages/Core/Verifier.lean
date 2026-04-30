@@ -1177,7 +1177,11 @@ def toDiagnosticModel (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
   match vcr.outcome with
-  | .error err => some { fileRange, message := s!"analysis error: {err}", type := DiagnosticType.StrataBug }
+  | .error err =>
+    let diagType := match err with
+      | .solverTimeout _ => DiagnosticType.Warning
+      | _ => DiagnosticType.StrataBug
+    some { fileRange, message := s!"analysis error: {err}", type := diagType }
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then

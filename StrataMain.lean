@@ -52,10 +52,12 @@ All `strata` subcommands use a common exit code scheme:
 | 0    | Success            | Analysis passed, inconclusive, or `--no-solve` completed.  |
 | 1    | User error         | Bad input: invalid arguments, malformed source, etc.      |
 | 2    | Failures found     | Analysis completed and found failures.                    |
-| 3    | Internal error     | Tool bug, unexpected solver result, or translation crash. |
+| 3    | Internal error     | SMT encoding failure, solver crash, or translation bug.   |
 | 4    | Known limitation   | Intentionally unsupported language construct.             |
+| 5    | Solver timeout     | SMT solver exceeded its time limit.                       |
 
 Codes 1–2 are **user-actionable** (fix the input or the code under analysis).
+Code 5 is **user-actionable** (increase `--solver-timeout` or simplify the spec).
 Codes 3–4 are **tool-side** (report as a bug or wait for support). -/
 
 namespace ExitCode
