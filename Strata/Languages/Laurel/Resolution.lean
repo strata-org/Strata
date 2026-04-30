@@ -573,12 +573,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
-    let ctName' ← defineNameCheckDup ct.name (.constrainedType ct)
+    let ctName' ← resolveRef ct.name
     let base' ← resolveHighType ct.base
     -- The valueName (e.g. `x` in `constrained nat = x: int where x >= 0`) must be
     -- in scope when resolving the constraint and witness expressions.
     let (valueName', constraint', witness') ← withScope do
-      let valueName' ← resolveRef ct.valueName
+      let valueName' ← defineNameCheckDup ct.valueName (.quantifierVar ct.valueName base')
       let constraint' ← resolveStmtExpr ct.constraint
       let witness' ← resolveStmtExpr ct.witness
       return (valueName', constraint', witness')
@@ -788,7 +788,8 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
         let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
       for proc in ct.instanceProcedures do
         let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
-    | .Constrained _ => return
+    | .Constrained ct =>
+      let _ ← defineNameCheckDup ct.name (.constrainedType ct)
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
