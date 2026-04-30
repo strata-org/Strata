@@ -157,14 +157,14 @@ where
             let (ma, Env) ← LExpr.resolve C Env m |>.mapError DiagnosticModel.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
-          let (it, Env) ← invariant.foldlM (fun (acc, E) i => do
+          let (it, Env) ← invariant.foldlM (fun (acc, E) (lbl, i) => do
             let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
             let (ia, E') ← LExpr.resolve C E i |>.mapError DiagnosticModel.fromFormat
             if ia.toLMonoTy == .tcons "bool" [] then
-              .ok (acc ++ [ia], E')
+              .ok (acc ++ [(lbl, ia)], E')
             else
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
-          ) ([], Env)
+          ) (([] : List (String × _)), Env)
           let mty := mt.map LExpr.toLMonoTy
           match mty with
           | none | some (.tcons "int" []) =>
@@ -172,7 +172,8 @@ where
             let guarda' : ExprOrNondet Expression := match guarda with
               | some e => .det e.unresolved
               | none => .nondet
-            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
+            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved)
+              (it.map (fun (lbl, e) => (lbl, e.unresolved))) tb md
             .ok (s', Env, C)
           | _ =>
             .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
@@ -276,7 +277,8 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .ite cond tss ess md =>
     .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
+    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m)
+      (i.map (fun (l, e) => (l, e.applySubst S))) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with
