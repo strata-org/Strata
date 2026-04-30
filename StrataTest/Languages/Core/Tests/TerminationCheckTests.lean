@@ -704,4 +704,156 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 #guard_msgs in
 #eval verify decreasesNonADTPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 14: mutual recursion over different mutual datatypes
+-- treeSize recurses on RoseTree, listSize on RoseList
+---------------------------------------------------------------------
+
+def mutualDtTermPgm : Program :=
+#strata
+program Core;
+
+datatype RoseTree { Leaf(val: int), Node(children: RoseList) }
+datatype RoseList { RNil(), RCons(hd: RoseTree, tl: RoseList) };
+
+rec function treeSize (@[cases] t : RoseTree) : int
+{
+  if RoseTree..isLeaf(t) then 1 else listSize(RoseTree..children(t))
+}
+function listSize (@[cases] xs : RoseList) : int
+{
+  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+};
+
+procedure TestMutualDt() spec {
+  ensures true;
+}
+{
+  assert [leaf]: treeSize(Leaf(42)) == 1;
+  assert [singleNode]: treeSize(Node(RCons(Leaf(1), RNil()))) == 1;
+};
+#end
+
+/-- info: Obligation: treeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_body_calls_RoseTree..children_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_body_calls_RoseList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_body_calls_RoseList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: leaf
+Property: assert
+Result: ✅ pass
+
+Obligation: singleNode
+Property: assert
+Result: ✅ pass
+
+Obligation: TestMutualDt_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify mutualDtTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 15: mutual recursion over different datatypes — non-decreasing
+-- cross-call should fail
+---------------------------------------------------------------------
+
+def mutualDtNonTermPgm : Program :=
+#strata
+program Core;
+
+datatype RoseTree { Leaf(val: int), Node(children: RoseList) }
+datatype RoseList { RNil(), RCons(hd: RoseTree, tl: RoseList) };
+
+rec function badTree (@[cases] t : RoseTree) : int
+{
+  if RoseTree..isLeaf(t) then 1 else badList(RoseTree..children(t))
+}
+function badList (@[cases] xs : RoseList) : int
+{
+  if RoseList..isRNil(xs) then 0 else badTree(Node(xs))
+};
+#end
+
+/-- info: Obligation: badTree_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: badList_terminates_0
+Property: assert
+Result: ❓ unknown
+
+Obligation: badTree_body_calls_RoseTree..children_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify mutualDtNonTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 16: polymorphic mutual datatypes with monomorphic instantiation
+-- GenTree(a)/GenList(a) instantiated at int
+---------------------------------------------------------------------
+
+def polyMutualDtTermPgm : Program :=
+#strata
+program Core;
+
+datatype GenTree (a : Type) { GLeaf(val: a), GNode(children: GenList a) }
+datatype GenList (a : Type) { GNil(), GCons(hd: GenTree a, tl: GenList a) };
+
+rec function intTreeSize (@[cases] t : GenTree int) : int
+{
+  if GenTree..isGLeaf(t) then 1 else intListSize(GenTree..children(t))
+}
+function intListSize (@[cases] xs : GenList int) : int
+{
+  if GenList..isGNil(xs) then 0 else intTreeSize(GenList..hd(xs)) + intListSize(GenList..tl(xs))
+};
+#end
+
+/-- info: Obligation: intTreeSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListSize_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListSize_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: intTreeSize_body_calls_GenTree..children_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListSize_body_calls_GenList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: intListSize_body_calls_GenList..tl_1
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify polyMutualDtTermPgm (options := .quiet)
+
 end Strata.TerminationCheckTest
