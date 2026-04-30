@@ -133,7 +133,7 @@ def sanitizeFilename (s : String) : String :=
          || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
     else some c
 
-private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
+def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
@@ -851,6 +851,47 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- Callbacks invoked by the verifier at interesting points in
+`verifySingleEnv` / `getObligationResult`. Used by the Split-Solve-Reconcile
+manifest emitter (see `Strata.Languages.Core.Manifest`). Unused by default. -/
+structure VerifyCallbacks where
+  /-- Invoked for every obligation that needed the SMT solver, after the
+  SMT encoding step has run (so `estate` is populated) and after
+  `dischargeObligation` has written the `.smt2` file. Arguments: the
+  (possibly rewritten) obligation, the list of typed variables (input to
+  the encoder), the SMT context, the encoder state, the **requested**
+  satisfiability / validity checks (what the check mode asked for), the
+  **evaluator-resolved** results (each `none` when the evaluator did not
+  resolve that check), the absolute filename of the `.smt2` file, and the
+  list of active pipeline phases. -/
+  onSolverObligation :
+    Imperative.ProofObligation Expression →
+    List Expression.TypedIdent →
+    Core.SMT.Context →
+    Strata.SMT.EncoderState →
+    (satisfiabilityCheck : Bool) →
+    (validityCheck : Bool) →
+    (peSatResult? : Option Core.SMT.Result) →
+    (peValResult? : Option Core.SMT.Result) →
+    (smtFilePath : String) →
+    (phases : List AbstractedPhase) →
+    IO Unit := fun _ _ _ _ _ _ _ _ _ _ => pure ()
+  /-- Invoked for every obligation resolved entirely by the evaluator
+  (i.e. no `.smt2` file was written). Arguments: the obligation, the two
+  evaluator-resolved results, whether each check was requested, and the
+  active pipeline phases. -/
+  onSimObligation :
+    Imperative.ProofObligation Expression →
+    Core.SMT.Result →
+    Core.SMT.Result →
+    (satisfiabilityCheck : Bool) →
+    (validityCheck : Bool) →
+    (phases : List AbstractedPhase) →
+    IO Unit := fun _ _ _ _ _ _ => pure ()
+
+/-- Default no-op callbacks. -/
+def VerifyCallbacks.empty : VerifyCallbacks := {}
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -861,6 +902,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
+    (callbacks : VerifyCallbacks := .empty)
+    (peSatResult? : Option Core.SMT.Result := none)
+    (peValResult? : Option Core.SMT.Result := none)
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
@@ -889,6 +933,16 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                  {if options.verbose >= .debug then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
+    -- Fire solver-obligation callback (used by manifest emission). The
+    -- "requested" checks combine both the solver-needed ones and any
+    -- checks the evaluator resolved — both contribute to the final
+    -- outcome and reconcile needs to know about both.
+    let requestedSatCheck := satisfiabilityCheck || peSatResult?.isSome
+    let requestedValCheck := validityCheck || peValResult?.isSome
+    IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+      (callbacks.onSolverObligation obligation typedVarsInObligation ctx estate
+        requestedSatCheck requestedValCheck peSatResult? peValResult?
+        filename.toString phases)
     -- Convert unvalidated sat results to unknown when phases require validation
     let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
     let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
@@ -918,7 +972,8 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (callbacks : VerifyCallbacks := .empty) :
     EIO DiagnosticModel (VCResults × Statistics) := do
   let p := E.program
   let profile := options.profile
@@ -956,6 +1011,10 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
           let phases := externalPhases ++ corePhases
+          -- Fire sim-obligation callback (used by manifest emission).
+          IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+            (callbacks.onSimObligation obligation peSat peVal
+              satisfiabilityCheck validityCheck phases)
           let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
           let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
           let peLog := buildSolverLog peSat peVal
@@ -1000,6 +1059,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+                      callbacks peSatResult? peValResult?
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
         -- Merge evaluator results with solver results
@@ -1039,6 +1099,7 @@ def verify (program : Program)
     (externalPhases : List AbstractedPhase := [])
     (prefixPhases : List PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (callbacks : VerifyCallbacks := .empty)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
@@ -1084,7 +1145,7 @@ def verify (program : Program)
     if options.checkOnly then
       pure []
     else
-      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases phases) pEs)
+      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases phases callbacks) pEs)
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
@@ -1132,6 +1193,7 @@ def verify
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (callbacks : Core.VerifyCallbacks := .empty)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
@@ -1139,7 +1201,8 @@ def verify
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
                   (Core.verify program tempDir proceduresToVerify options moreFns
                     (externalPhases := externalPhases)
-                    (keepAllFilesPrefix := keepAllFilesPrefix))
+                    (keepAllFilesPrefix := keepAllFilesPrefix)
+                    (callbacks := callbacks))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner
