@@ -73,11 +73,6 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
 /-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
-private def haltFurtherCompilation: TranslateM LMonoTy := do
-  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  return .tcons s!"LaurelResolutionErrorPlaceholder" []
-
-/-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
 private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
   emitDiagnostic (diagnosticFromSource ty.source msg DiagnosticType.StrataBug)
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
