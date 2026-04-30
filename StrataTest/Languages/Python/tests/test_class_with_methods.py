@@ -1,3 +1,4 @@
+# strata-args: --check-mode bugFinding --check-level full
 import test_helper
 
 class DataStore:

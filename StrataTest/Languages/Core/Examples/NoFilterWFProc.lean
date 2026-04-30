@@ -18,7 +18,7 @@ def noFilterWFPgm :=
 #strata
 program Core;
 
-procedure P(a : int, b : int) returns (r : int)
+procedure P(a : int, b : int, out r : int)
 spec {
   requires [b_nonzero]: (b != 0);
   ensures [result_ok]: (r == a / b);
@@ -50,7 +50,9 @@ Result: ✅ pass
         (proceduresToVerify := some ["P"])
 
 -- Don't verify P, and don't produce a procedure for the contract
-/-- info: -/
+/--
+info:
+-/
 #guard_msgs in
 #eval verify noFilterWFPgm
         (options := .quiet)

@@ -9,6 +9,7 @@ op boolType : LaurelType => "bool";
 op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
+op bvType (width: Num): LaurelType => "bv" width;
 // Core type passthrough: parsed as Ident, translated to HighType.TCore
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
@@ -24,10 +25,10 @@ op nondetHole: StmtExpr => "<??>";
 
 // Variable declarations
 category TypeAnnotation;
-op typeAnnotation(varType: LaurelType): TypeAnnotation => ":" varType;
+op typeAnnotation(varType: LaurelType): TypeAnnotation => ": " varType;
 
 category Initializer;
-op initializer(value: StmtExpr): Initializer => ":=" value:0;
+op initializer(value: StmtExpr): Initializer => " := " value:0;
 
 op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Initializer): StmtExpr
   => @[prec(0)] "var " name varType assignment;
@@ -45,7 +46,7 @@ op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value;
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
@@ -83,11 +84,11 @@ op existsExpr (name: Ident, ty: LaurelType, trigger: Option Trigger, body: StmtE
 
 // Error messages (used in assert, requires, ensures)
 category ErrorSummary;
-op errorSummary(msg: Str): ErrorSummary => "summary" msg;
+op errorSummary(msg: Str): ErrorSummary => " summary " msg;
 
 // If-else
 category ElseBranch;
-op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] "else" stmts;
+op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] " else " stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBranch): StmtExpr =>
   @[prec(20)] "if " cond " then " thenBranch:0 elseBranch:0;
@@ -95,8 +96,8 @@ op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBran
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
 op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
-op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
-op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{" stmts "}" label;
+op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{ " stmts " }";
+op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{ " stmts " }" label;
 op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
 // While loops
@@ -104,18 +105,18 @@ category InvariantClause;
 op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;
 
 op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
-  => "while" "(" cond ")" invariants body:0;
+  => "while" "(" cond ")" invariants " " body:0;
 
 op forLoop (init: StmtExpr, cond: StmtExpr, step: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
-  => "for" "(" init ";" cond ";" step ")" invariants body:0;
+  => "for" "(" init ";" cond ";" step ")" invariants " " body:0;
 
 category Parameter;
-op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;
+op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
 
 // Composite types
 category Field;
-op mutableField (name: Ident, fieldType: LaurelType): Field => "var " name ":" fieldType;
-op immutableField (name: Ident, fieldType: LaurelType): Field => name ":" fieldType;
+op mutableField (name: Ident, fieldType: LaurelType): Field => " var " name ": " fieldType;
+op immutableField (name: Ident, fieldType: LaurelType): Field => " " name ": " fieldType;
 
 // Type checking and casting
 op isType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " is " typeName;
@@ -123,13 +124,13 @@ op asType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " 
 
 // Composite types with optional extends
 category Extends;
-op extends(parents: CommaSepBy Ident): Extends => "extends " parents;
+op extends(parents: CommaSepBy Ident): Extends => " extends " parents;
 
 category Composite;
 
 // Datatype definitions
 category DatatypeConstructorArg;
-op datatypeConstructorArg (name: Ident, argType: LaurelType): DatatypeConstructorArg => name ":" argType;
+op datatypeConstructorArg (name: Ident, argType: LaurelType): DatatypeConstructorArg => name ": " argType;
 
 category DatatypeConstructor;
 op datatypeConstructor (name: Ident, args: CommaSepBy DatatypeConstructorArg): DatatypeConstructor => name "(" args ")";
@@ -139,29 +140,34 @@ category DatatypeConstructorList;
 op datatypeConstructorList (constructors: CommaSepBy DatatypeConstructor): DatatypeConstructorList => constructors;
 
 category Datatype;
-op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "datatype " name "{" constructors "}";
+op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "datatype " name " { " constructors " }";
 
 // Procedures
 category ReturnType;
-op returnType(returnType: LaurelType): ReturnType => ":" returnType;
+op returnType(returnType: LaurelType): ReturnType => ": " returnType;
 
 category InvokeOnClause;
-op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "invokeOn" trigger:0;
+op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "\n  invokeOn " trigger:0;
 
 category RequiresClause;
-op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "requires" cond:0 errorMessage;
+op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  requires " cond:0 errorMessage;
 
 category EnsuresClause;
-op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "ensures" cond:0 errorMessage;
+op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  ensures " cond:0 errorMessage;
 
 category ModifiesClause;
-op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "modifies" refs;
+op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs;
+op modifiesWildcard: ModifiesClause => "\n  modifies *";
 
 category ReturnParameters;
-op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "returns" "(" parameters ")";
+op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
+
+category OpaqueSpec;
+op opaqueSpec(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause): OpaqueSpec =>
+  "\n  opaque" ensures modifies;
 
 category Body;
-op body(body: StmtExpr): Body => body:0;
+op body(body: StmtExpr): Body => "\n" body:0;
 op externalBody: Body => "external";
 
 category Procedure;
@@ -170,22 +176,20 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
-op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending "{" fields procedures "}";
+op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 
 category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,

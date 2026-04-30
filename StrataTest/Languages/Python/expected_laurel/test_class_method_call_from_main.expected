@@ -1,0 +1,6 @@
+test_class_method_call_from_main.py(10, 8): ❓ unknown - name must not be empty
+test_class_method_call_from_main.py(9, 23): ❓ unknown - (Greeter@greet ensures) Return type constraint
+test_class_method_call_from_main.py(14, 4): ✅ pass - (Greeter@__init__ requires) Type constraint of name
+test_class_method_call_from_main.py(15, 4): ✅ pass - assert(415)
+DETAIL: 2 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

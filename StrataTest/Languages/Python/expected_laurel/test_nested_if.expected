@@ -1,0 +1,8 @@
+test_nested_if.py(2, 4): ✅ pass - assert(26)
+test_nested_if.py(3, 4): ✅ pass - assert(41)
+test_nested_if.py(4, 4): ✅ pass - assert(57)
+test_nested_if.py(5, 7): ✅ pass - Check PGt exception
+test_nested_if.py(6, 11): ✅ pass - Check PGt exception
+test_nested_if.py(8, 4): ✅ pass - nested if
+DETAIL: 6 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

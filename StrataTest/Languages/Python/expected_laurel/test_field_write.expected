@@ -1,0 +1,4 @@
+test_field_write.py(8, 4): ✅ pass - (Cell@__init__ requires) Type constraint of val
+test_field_write.py(10, 4): ✅ pass - field overwritten
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

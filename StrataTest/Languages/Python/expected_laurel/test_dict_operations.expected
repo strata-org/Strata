@@ -1,34 +1,26 @@
 test_dict_operations.py(7, 0): ✅ pass - assert_assert(81)_calls_Any_get_0
-test_dict_operations.py(7, 0): ✅ pass - assert_assert(81)_calls_Any_to_bool_1
 test_dict_operations.py(7, 0): ✅ pass - assert(81)
 test_dict_operations.py(8, 0): ✅ pass - assert_assert(118)_calls_Any_get_0
-test_dict_operations.py(8, 0): ✅ pass - assert_assert(118)_calls_Any_to_bool_1
 test_dict_operations.py(8, 0): ✅ pass - assert(118)
 test_dict_operations.py(10, 0): ✅ pass - Check Any_sets! exception
 test_dict_operations.py(11, 0): ✅ pass - assert_assert(172)_calls_Any_get_0
-test_dict_operations.py(11, 0): ✅ pass - assert_assert(172)_calls_Any_to_bool_1
 test_dict_operations.py(11, 0): ✅ pass - assert(172)
 test_dict_operations.py(13, 0): ✅ pass - assert_assert(204)_calls_PIn_0
-test_dict_operations.py(13, 0): ✅ pass - assert_assert(204)_calls_Any_to_bool_1
 test_dict_operations.py(13, 0): ✅ pass - assert(204)
 test_dict_operations.py(14, 0): ✅ pass - assert_assert(228)_calls_PNotIn_0
-test_dict_operations.py(14, 0): ✅ pass - assert_assert(228)_calls_Any_to_bool_1
 test_dict_operations.py(14, 0): ✅ pass - assert(228)
 test_dict_operations.py(23, 0): ✅ pass - assert_assert(403)_calls_Any_get_0
 test_dict_operations.py(23, 0): ✅ pass - assert_assert(403)_calls_Any_get_1
 test_dict_operations.py(23, 0): ✅ pass - assert_assert(403)_calls_Any_get_2
-test_dict_operations.py(23, 0): ✅ pass - assert_assert(403)_calls_Any_to_bool_3
 test_dict_operations.py(23, 0): ✅ pass - assert(403)
 test_dict_operations.py(24, 0): ✅ pass - assert_assert(457)_calls_Any_get_0
 test_dict_operations.py(24, 0): ✅ pass - assert_assert(457)_calls_Any_get_1
 test_dict_operations.py(24, 0): ✅ pass - assert_assert(457)_calls_Any_get_2
-test_dict_operations.py(24, 0): ✅ pass - assert_assert(457)_calls_Any_to_bool_3
 test_dict_operations.py(24, 0): ✅ pass - assert(457)
 test_dict_operations.py(26, 0): ✅ pass - Check Any_sets! exception
 test_dict_operations.py(27, 0): ✅ pass - assert_assert(557)_calls_Any_get_0
 test_dict_operations.py(27, 0): ✅ pass - assert_assert(557)_calls_Any_get_1
 test_dict_operations.py(27, 0): ✅ pass - assert_assert(557)_calls_Any_get_2
-test_dict_operations.py(27, 0): ✅ pass - assert_assert(557)_calls_Any_to_bool_3
 test_dict_operations.py(27, 0): ✅ pass - assert(557)
-DETAIL: 32 passed, 0 failed, 0 inconclusive
+DETAIL: 24 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

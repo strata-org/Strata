@@ -1,0 +1,4 @@
+test_optional_str.py(5, 4): ✅ pass - optional str
+test_optional_str.py(7, 4): ✅ pass - optional str None
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

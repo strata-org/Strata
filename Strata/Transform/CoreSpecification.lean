@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.StatementSemanticsProps
-import Strata.Transform.Specification
-import Strata.Languages.Core.WF
+module
+
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.StatementSemanticsProps
+public import Strata.Transform.Specification
+public import Strata.Languages.Core.WF
+
+public section
 
 /-! # Core-Level Specification
 
@@ -28,7 +32,7 @@ open Core Imperative
 /-! ## Core `Lang` bundle -/
 
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
-def Lang.core
+@[expose] def Lang.core
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Specification.Lang Expression :=
@@ -37,15 +41,17 @@ def Lang.core
 
 /-! ## Well-formed program state at the entry of procedure -/
 
-/-- The list of variables (either local or global) that must have been declared,
+/-- The list of variables that must have been declared,
     to make execution of the body of this procedure not stuck.
     outputs are included because the body refers to the output variables without
     initialization.
-    This does not include the old variables. -/
-def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
+    Old snapshot variables for in-out parameters (those appearing in both
+    inputs and outputs) are included because the body or spec of the
+    procedure may refer to those with "old g".  -/
+@[expose] def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
   ListMap.keys proc.header.inputs ++
   ListMap.keys proc.header.outputs ++
-  proc.spec.modifies
+  (ListMap.keys proc.header.getInoutParams).map (fun id => CoreIdent.mkOld id.name)
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals have been
@@ -55,10 +61,11 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
-  oldModifiesMatchesCurrent : ∀ g ∈ proc.spec.modifies,
-    ρ.store g = ρ.store (CoreIdent.mkOld g.name)
-  oldInputMatchesCurrent : ∀ id ∈ ListMap.keys proc.header.inputs,
+  -- When a procedure is called, the value of "old g" must be equal to "g"
+  -- for in-out parameters.
+  oldInoutMatchesInout : ∀ id ∈ ListMap.keys proc.header.getInoutParams,
     ρ.store id = ρ.store (CoreIdent.mkOld id.name)
+  -- Precondition holds in the body, and input state had no failure.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
     ρ.eval ρ.store check.expr = some HasBool.tt
@@ -71,7 +78,7 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 
 /-- A specific assertion `a` in procedure `proc` is valid
     for initial program states satisfying the preconditions (`ProcEnvWF`). -/
-def AssertValidInProcedure
+@[expose] def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
   Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
@@ -85,10 +92,6 @@ def AssertValidInProcedure
     2. Postcondition: When the procedure body terminates from a `ProcEnvWF`
        initial environment, every non-free postcondition holds and
        `hasFailure` stays `false`.
-
-    Note: The `modifies` clause (frame condition) is not included here because
-    removal of global variables is under discussion which will make the
-    `modifies` clause redundant.
 
     This is partial correctness: if the program has an infinite loop, the
     postcondition is considered to be satisfied. Since total correctness is

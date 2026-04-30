@@ -17,171 +17,23 @@ after PrecondElim generates WF-checking procedures. -/
 namespace Strata.Python.PreludeVerifyTest
 
 /-- Build the full Core prelude program (Laurel-translated + Core-only parts). -/
-private def preludeProgram : Core.Program :=
-  let (coreOption, _) := Strata.translateCombinedLaurel pythonRuntimeLaurelPart
+private def preludeProgram : IO Core.Program := do
+  let (coreOption, _) ← Strata.translateCombinedLaurel pythonRuntimeLaurelPart
   match coreOption with
-  | some prog => prog
-  | none => { decls := [] }
+  | some prog => return prog
+  | none => return { decls := [] }
 
-private def verifyPrelude : IO Core.VCResults := do
+private def verifyPrelude : IO (Array DiagnosticModel) := do
+  let prog ← preludeProgram
   IO.FS.withTempDir fun tempDir => do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify preludeProgram tempDir
+      (Core.verify prog tempDir
         (options := .quiet)
         (moreFns := Strata.Python.ReFactory)
         (externalPhases := [Strata.frontEndPhase]))
-    return r
+    return r.flatMap (fun vcr => (toDiagnosticModel vcr []).toArray)
 
-/--
-info:
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: List_take_body_calls_List_take_0
-Property: assert
-Result: ✅ pass
-
-Obligation: List_take_len_post_postcondition_calls_List_take_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assume_postcondition_calls_List_take_0
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: List_drop_body_calls_List_drop_0
-Property: assert
-Result: ✅ pass
-
-Obligation: List_drop_len_post_postcondition_calls_List_drop_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assume_postcondition_calls_List_drop_0
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: List_get_body_calls_List_get_0
-Property: assert
-Result: ✅ pass
-
-Obligation: List_slice_body_calls_List_drop_0
-Property: assert
-Result: ✅ pass
-
-Obligation: List_slice_body_calls_List_take_1
-Property: assert
-Result: ✅ pass
-
-Obligation: List_set_body_calls_List_set_0
-Property: assert
-Result: ✅ pass
-
-Obligation: DictStrAny_get_body_calls_DictStrAny_get_0
-Property: assert
-Result: ✅ pass
-
-Obligation: DictStrAny_get_or_none_body_calls_DictStrAny_get_0
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_get_body_calls_DictStrAny_get_0
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_get_body_calls_List_get_1
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_get_body_calls_List_slice_2
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_get_body_calls_List_drop_3
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_get!_body_calls_DictStrAny_get_0
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_get!_body_calls_List_get_1
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_set_body_calls_List_set_0
-Property: assert
-Result: ✅ pass
-
-Obligation: Any_set!_body_calls_List_set_0
-Property: assert
-Result: ✅ pass
-
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_0
-Property: division by zero check
-Result: ✅ pass
-
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_1
-Property: division by zero check
-Result: ✅ pass
-
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_2
-Property: division by zero check
-Result: ✅ pass
-
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_3
-Property: division by zero check
-Result: ✅ pass
-
-Obligation: PAnd_body_calls_Any_to_bool_0
-Property: assert
-Result: ✅ pass
-
-Obligation: POr_body_calls_Any_to_bool_0
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
-
-Obligation: assert(41898)
-Property: assert
-Result: ✅ pass
-
-Obligation: assert(41965)
-Property: assert
-Result: ✅ pass
-
-Obligation: assert(42073)
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
-Property: assert
-Result: ✅ pass
--/
+/-- info: #[] -/
 #guard_msgs in
 #eval verifyPrelude
 

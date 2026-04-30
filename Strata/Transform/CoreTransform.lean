@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
 public import Strata.DL.Util.LabelGen
+public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
 
@@ -78,14 +79,15 @@ def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
-/-- Checks whether a variable `ident` can be found in program `p` -/
-@[expose]
-def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
-  (p.find? .var ident).isSome
-
 
 /-- Cached results of program analyses that are helpful for program
-    transformation. -/
+    transformation.
+
+    Invariant: When `callGraph` is `some cg`, `cg` must reflect the current
+    program's procedure call structure. Every procedure in the program must
+    have an entry in `cg.callees`, and every call edge must be accounted for.
+    Transforms that add, remove, or modify procedures must update the call
+    graph accordingly (or set it to `.none` to invalidate it). -/
 structure CachedAnalyses where
   callGraph: Option CallGraph := .none
 
@@ -101,14 +103,14 @@ structure CoreTransformState where
   genState: CoreGenState
   -- The program that is being transformed.
   -- The definition of "current" may vary depending on the transformation.
-  -- During transformation, it is allowed for currentProgram be slightly stale
-  -- (has procedures and functions and statements that are not transformed
-  -- yet). For example, procedure inlining will always keep currentProgram that
-  -- is before inlining.
-  -- However, when transformation is finished, currentProgram must contain the
-  -- program that is fully updated (or it has to be .none). runProgram enforces
-  -- that currentProgram of this CoreTransformState is updated to be the updated
-  -- program.
+  -- If the transformation is implemented with runProgram or runProgramUntil,
+  -- the currentProgram field will store the latest versions of finished
+  -- procedures, but the procedure that is being updated might have stale
+  -- statements.
+  -- When a transformation is finished, currentProgram must contain the
+  -- program that is fully updated (or it has to be .none).
+  -- Using runProgram/runProgramUntil enforces that currentProgram of this
+  -- CoreTransformState is updated to be the updated program.
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
@@ -116,6 +118,8 @@ structure CoreTransformState where
   -- declarations (e.g., PrecondElim). The factory grows as function
   -- declarations are encountered during traversal.
   factory: Option (@Lambda.Factory CoreLParams) := .none
+  -- Per-transform statistics counters, keyed by string names.
+  statistics: Statistics := {}
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -137,7 +141,8 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
       cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory })
+      factory := coreTransformState.factory,
+      statistics := coreTransformState.statistics })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
@@ -158,24 +163,10 @@ def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
   modify fun σ => { σ with factory := some F }
 
-@[expose]
-def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
+/-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
+def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
+  modify fun σ => { σ with statistics := σ.statistics.increment key n }
 
-@[expose]
-def getIdentTy! (p : Program) (id : Expression.Ident)
-  : CoreTransformM (Expression.Ty) := do
-  match getIdentTy? p id with
-  | none => throw s!"failed to find type for {Std.format id}"
-  | some ty => return ty
-
-@[expose]
-def getIdentTys! (p : Program) (ids : List Expression.Ident)
-  : CoreTransformM (List Expression.Ty) := do
-  match ids with
-  | [] => return []
-  | id :: rest =>
-    let ty ← getIdentTy! p id
-    return ty :: (← getIdentTys! p rest)
 
 /--
 returned list has the shape
@@ -203,18 +194,6 @@ def genOutExprIdentsTrip
   if outputs.length ≠ lhs.length then throw "output length and lhs length mismatch"
   else let gen_idents ← genOutExprIdents lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
-
-/--
-returned list has the shape
-`((generated_name, ty), original_name)`
--/
-def genOldExprIdentsTrip
-  (p : Program)
-  (ids : List Expression.Ident)
-  : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
-  let gen_idents ← genOldExprIdents ids
-  let tys ← getIdentTys! p ids
-  return (gen_idents.zip tys).zip ids
 
 /--
 Generate an init statement with rhs as expression
@@ -324,42 +303,6 @@ private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)
     return ⟨changed0 || changed, (sres ++ ss'')⟩
 
 /--
-Visit all procedures and run f. The returned Bool corresponds to whether the
-program has been updated.
-NOTE: please use runProgram if possible since CoreTransformState might result
-in an inconsistent state. This function is for partial implementation.
--/
-private def runProcedures
-    (f : Command → CoreTransformM (Option (List Statement)))
-    (dcls : List Decl)
-    (targetProcList : Option (List String) := .none)
-    : CoreTransformM (Bool × List Decl) := do
-  match dcls with
-  | [] => return (false, [])
-  | d :: ds =>
-    match d with
-    | .proc proc md =>
-      if (match targetProcList with
-         | .none => true
-         | .some p => proc.header.name.1 ∈ p) then
-        modify (fun σ => { σ with
-          currentProcedureName := .some proc.header.name.1
-        })
-        let (changed, new_body) ← runStmtsRec f proc.body
-        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
-        return (changed || changed',
-          Decl.proc {
-            proc with body := new_body
-          } md :: new_procs)
-      else
-        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
-        return (changed', d :: new_procs)
-    | _ =>
-      let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
-      return (changed', d :: new_procs)
-
-
-/--
 Run f on each command of the program.
 Returns (has the program updated?, the updated program).
 If targetProcList is .none, apply f to all statements in every procedure.
@@ -372,15 +315,67 @@ def runProgram
     (targetProcList : Option (List String) := .none)
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
-  let (changed, newDecls) ← runProcedures
-    (targetProcList := targetProcList) f p.decls
-  let newProg := { decls := newDecls }
+
+  let mut anyChanged := false
+  let mut newDecls := p.decls
+  for i in [:p.decls.length] do
+    match p.decls[i]? with
+    | some (.proc proc md) =>
+      let isTargetProc := match targetProcList with
+         | .none => true
+         | .some pl => proc.header.name.1 ∈ pl
+
+      if isTargetProc then
+        -- Initialize CoreTransformState
+        modify (fun σ => { σ with
+          currentProcedureName := .some proc.header.name.1
+        })
+
+        let (changed, new_body) ← runStmtsRec f proc.body
+
+        if changed then
+          newDecls := newDecls.set i (Decl.proc { proc with body := new_body } md)
+          anyChanged := true
+          modify (fun σ => { σ with
+            currentProgram := .some { decls := newDecls }
+          })
+    | _ => pure ()
+
+  let newProg : Program := { decls := newDecls }
   modify (fun σ => { σ with
-    currentProgram := .some newProg,
     currentProcedureName := .none
   })
-  return (changed, newProg)
+  return (anyChanged, newProg)
 
+/-- Repeatedly apply a command-level transformation until no more changes occur
+    or the iteration limit is reached.
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def runProgramUntil
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (maxIters : Option Nat := none)
+    (targetProcList : Option (List String) := .none)
+  : CoreTransformM (Bool × Program) := do
+  match maxIters with
+  | some n =>
+    let mut prog := p
+    let mut anyChanged := false
+    for _ in List.range n do
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
+  | none =>
+    let mut prog := p
+    let mut anyChanged := false
+    repeat
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
 
 @[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)

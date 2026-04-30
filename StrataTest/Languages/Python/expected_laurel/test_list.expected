@@ -1,20 +1,23 @@
 test_list.py(3, 0): ✅ pass - assert_assert(32)_calls_PIn_0
-test_list.py(3, 0): ✅ pass - assert_assert(32)_calls_Any_to_bool_1
 test_list.py(3, 0): ✅ pass - assert(32)
 test_list.py(5, 0): ✅ pass - set_n_calls_Any_get_0
-test_list.py(7, 0): ✅ pass - assert_assert(71)_calls_Any_to_bool_0
 test_list.py(7, 0): ✅ pass - assert(71)
-test_list.py(11, 10): ✅ pass - Check PAdd exception
-test_list.py(13, 0): ✅ pass - assert_assert(152)_calls_Any_get_0
-test_list.py(13, 0): ✅ pass - assert_assert(152)_calls_Any_to_bool_1
-test_list.py(13, 0): ✅ pass - assert(152)
-test_list.py(15, 0): ✅ pass - Check Any_sets! exception
-test_list.py(17, 7): ✅ pass - Check PAdd exception
-test_list.py(17, 7): ✅ pass - Check PAdd exception
-test_list.py(17, 7): ✅ pass - Check PAdd exception
-test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_get_0
-test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_get_1
-test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_to_bool_2
-test_list.py(17, 0): ✅ pass - assert(200)
-DETAIL: 18 passed, 0 failed, 0 inconclusive
+test_list.py(9, 0): ✅ pass - assert_assert(87)_calls_Any_get_0
+test_list.py(9, 0): ✅ pass - assert(87)
+test_list.py(11, 0): ✅ pass - assert_assert(113)_calls_Any_get_0
+test_list.py(11, 0): ✅ pass - assert(113)
+test_list.py(13, 0): ✅ pass - Check Any_sets! exception
+test_list.py(15, 0): ✅ pass - assert_assert(158)_calls_Any_get_0
+test_list.py(15, 0): ✅ pass - assert(158)
+test_list.py(19, 10): ✅ pass - Check PAdd exception
+test_list.py(21, 0): ✅ pass - assert_assert(250)_calls_Any_get_0
+test_list.py(21, 0): ✅ pass - assert(250)
+test_list.py(23, 0): ✅ pass - Check Any_sets! exception
+test_list.py(25, 7): ✅ pass - assert_assert(305)_calls_Any_get_0
+test_list.py(25, 7): ✅ pass - assert_assert(305)_calls_Any_get_1
+test_list.py(25, 7): ✅ pass - Check PAdd exception
+test_list.py(25, 0): ✅ pass - assert_assert(298)_calls_Any_get_0
+test_list.py(25, 0): ✅ pass - assert_assert(298)_calls_Any_get_1
+test_list.py(25, 0): ✅ pass - assert(298)
+DETAIL: 21 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

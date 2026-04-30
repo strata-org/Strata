@@ -12,16 +12,24 @@ import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 public import Strata.Languages.Core.Statement
 public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
+
+public section
 
 namespace Core
 namespace ProcedureInlining
 
 open Transform
 
-public section
+/-- Statistics keys tracked by the procedure inlining transformation. -/
+inductive Stats where
+  | visitedCalls
+  | inlinedCalls
+
+#derive_prefixed_toString Stats "ProcedureInlining"
 
 -- Gathers all labels including those in assert and assume.
 mutual
@@ -196,15 +204,19 @@ use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
 def inlineCallCmd
-    (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
+    (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
     (cmd: Command)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
-      | .call lhs procName args md =>
+      | .call procName callArgs md =>
+        let lhs := CallArg.getLhs callArgs
+        let args := CallArg.getInputExprs callArgs
+        incrementStat s!"{Stats.visitedCalls}"
 
         let st ← get
-        if ¬ doInline procName st.cachedAnalyses then return .none else
+        if ¬ doInline st.currentProcedureName procName st.cachedAnalyses then return .none else
+        incrementStat s!"{Stats.inlinedCalls}"
 
         let some p := (← get).currentProgram
           | throw s!"currentProgram not set"
@@ -278,11 +290,40 @@ def inlineCallCmd
 
       | _ => return .none
 
-end -- public section
-
 end ProcedureInlining
+
+/-- A `doInline` predicate that refuses to inline procedures involved in
+    recursion (i.e., part of a cycle in the call graph).  Falls back to
+    `true` when no call graph is available. -/
+def doInlineNonRecursive (callee : String) (analyses : Transform.CachedAnalyses) : Bool :=
+  match analyses.callGraph with
+  | none => true
+  | some cg => !cg.isRecursive callee
+
+/--
+Options to control the behavior of inlining procedure calls in a Core program.
+-/
+structure InlineTransformOptions where
+  -- 'doInline caller callee cachedAnalysis' returns true if the call command
+  -- from caller to callee should be inlined. The caller can be none if the
+  -- command is an orphaned one (rare, but can happen if inlineCallCmd is run
+  -- directly on Command).
+  doInline : Option String → String → Transform.CachedAnalyses → Bool :=
+      fun _ callee analyses => doInlineNonRecursive callee analyses
+  maxIters : Option Nat := none
+
+/-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
+    at call sites. Inlining is semantics-preserving, so models are always
+    sound (model-preserving).
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def procedureInliningPipelinePhase
+    (opts : InlineTransformOptions := {})
+    : PipelinePhase :=
+  open Transform in
+  modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
+    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
+
 end Core
 
--- NB: workaround for the fact that Core is both a module and a dialect.
-public abbrev coreInlineCallCmd (doInline : String → Core.Transform.CachedAnalyses → Bool := fun _ _ => true) :=
-  Core.ProcedureInlining.inlineCallCmd (doInline := doInline)
+end -- public section

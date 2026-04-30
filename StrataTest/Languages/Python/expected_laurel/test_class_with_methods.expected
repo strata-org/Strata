@@ -1,12 +1,9 @@
-test_class_with_methods.py(18, 4): ✅ pass - callElimAssert_requires_11
-test_class_with_methods.py(23, 4): ✅ pass - get_count should return 30
-test_class_with_methods.py(23, 4): ❓ unknown - get_count should return 30
-test_class_with_methods.py(26, 4): ✅ pass - get_name should return mystore
-test_class_with_methods.py(26, 4): ❓ unknown - get_name should return mystore
-test_class_with_methods.py(28, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
-test_class_with_methods.py(28, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
-test_class_with_methods.py(28, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-test_class_with_methods.py(17, 0): ✅ pass - postcondition
-test_class_with_methods.py(30, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 8 passed, 0 failed, 2 inconclusive
-RESULT: Inconclusive
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_19
+test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_21
+test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name should return mystore
+test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_name_is_foo
+test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_str
+test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_bar
+DETAIL: 7 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

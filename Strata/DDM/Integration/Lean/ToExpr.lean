@@ -8,12 +8,10 @@ module
 This module provides ToExpr instances and other methods
 for converting DDM types into Lean expressions.
 -/
-public import Lean.Elab.Term
-meta import Lean.Elab.Term.TermElabM
 public import Strata.DDM.AST
-import Strata.DDM.Util.ByteArray
-import Strata.DDM.Util.Decimal
 import Strata.DDM.Util.Lean
+public meta import Lean.Elab.Term.TermElabM
+import Lean.Exception
 
 
 open Lean

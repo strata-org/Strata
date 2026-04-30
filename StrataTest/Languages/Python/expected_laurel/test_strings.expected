@@ -1,8 +1,10 @@
+test_strings.py(3, 4): ✅ pass - assert(43)
+test_strings.py(4, 4): ✅ pass - assert(65)
 test_strings.py(5, 18): ✅ pass - Check PAdd exception
+test_strings.py(5, 4): ✅ pass - assert(88)
 test_strings.py(6, 4): ✅ pass - string concatenation implemented incorrectly
-test_strings.py(6, 4): ✅ pass - string concatenation implemented incorrectly
+test_strings.py(9, 4): ✅ pass - assert(226)
+test_strings.py(10, 4): ✅ pass - assert(245)
 test_strings.py(11, 4): ✅ pass - string equality implemented incorrectly
-test_strings.py(11, 4): ✅ pass - string equality implemented incorrectly
-test_strings.py(13, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 8 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

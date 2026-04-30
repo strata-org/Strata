@@ -1,19 +1,20 @@
-unknown location: ✅ pass - (get_number ensures) Return type constraint
-unknown location: ✅ pass - (get_greeting ensures) Return type constraint
-unknown location: ✅ pass - (get_flag ensures) Return type constraint
-unknown location: ✅ pass - (get_nothing ensures) Return type constraint
+test_return_types.py(1, 20): ✅ pass - (get_number ensures) Return type constraint
+test_return_types.py(4, 22): ✅ pass - (get_greeting ensures) Return type constraint
+test_return_types.py(7, 18): ✅ pass - (get_flag ensures) Return type constraint
+test_return_types.py(11, 4): ✅ pass - assert(159)
+test_return_types.py(10, 21): ✅ pass - (get_nothing ensures) Return type constraint
 test_return_types.py(15, 18): ✅ pass - Check PAdd exception
-unknown location: ✅ pass - (add ensures) Return type constraint
-test_return_types.py(20, 4): ✅ pass - get_number returned wrong value
+test_return_types.py(15, 4): ✅ pass - assert(223)
+test_return_types.py(14, 27): ✅ pass - (add ensures) Return type constraint
+test_return_types.py(19, 4): ✅ pass - assert(278)
 test_return_types.py(20, 4): ❓ unknown - get_number returned wrong value
-test_return_types.py(23, 4): ✅ pass - get_greeting returned wrong value
+test_return_types.py(22, 4): ✅ pass - assert(359)
 test_return_types.py(23, 4): ❓ unknown - get_greeting returned wrong value
-test_return_types.py(26, 4): ✅ pass - get_flag returned wrong value
+test_return_types.py(25, 4): ✅ pass - assert(449)
 test_return_types.py(26, 4): ❓ unknown - get_flag returned wrong value
 test_return_types.py(28, 4): ✅ pass - (add requires) Type constraint of a
 test_return_types.py(28, 4): ✅ pass - (add requires) Type constraint of b
-test_return_types.py(29, 4): ✅ pass - add returned wrong value
+test_return_types.py(28, 4): ✅ pass - assert(529)
 test_return_types.py(29, 4): ❓ unknown - add returned wrong value
-test_return_types.py(31, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 13 passed, 0 failed, 4 inconclusive
+DETAIL: 14 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

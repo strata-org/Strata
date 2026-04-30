@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.C_Simp.DDMTransform.Parse
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.Identifiers
+public import Strata.Languages.C_Simp.DDMTransform.Parse
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Lambda.Lambda
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.Identifiers
+
+public section
 
 -- We define the AST for our language here.
 

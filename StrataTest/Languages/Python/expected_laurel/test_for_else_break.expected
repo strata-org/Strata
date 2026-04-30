@@ -1,0 +1,5 @@
+test_for_else_break.py(2, 4): ✅ pass - assert(31)
+test_for_else_break.py(3, 4): ✅ pass - assume_assume(46)_calls_PIn_0
+test_for_else_break.py(8, 4): ✅ pass - for else skipped on break
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

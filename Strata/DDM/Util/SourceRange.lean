@@ -40,12 +40,15 @@ instance : Std.ToFormat SourceRange where
     Renders location information in a format VSCode understands.
     Returns "path:line:col-col" if on same line, otherwise "path:line:col". -/
 def format (loc : SourceRange) (path : System.FilePath) (fm : Lean.FileMap) : String :=
-  let spos := fm.toPosition loc.start
-  let epos := fm.toPosition loc.stop
-  if spos.line == epos.line then
-    s!"{path}:{spos.line}:{spos.column+1}-{epos.column+1}"
+  if loc.isNone then
+    s!"{path}:unknown"
   else
-    s!"{path}:{spos.line}:{spos.column+1}"
+    let spos := fm.toPosition loc.start
+    let epos := fm.toPosition loc.stop
+    if spos.line == epos.line then
+      s!"{path}:{spos.line}:{spos.column+1}-{epos.column+1}"
+    else
+      s!"{path}:{spos.line}:{spos.column+1}"
 
 end Strata.SourceRange
 end

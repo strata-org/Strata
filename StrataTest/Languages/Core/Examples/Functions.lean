@@ -22,7 +22,7 @@ inline function barTest2(y : int) : int { y }
 function barTest3(y : int) : int { barTest1(y) }
 function barTest4(y : int) : int { barTest3(y) }
 
-procedure fooProc(a : int) returns () {
+procedure fooProc(a : int) {
   assert [barEq]: (barTest1(a) == barTest2(a));
   assert [fooEq]: (fooConst == fooTest);
 };
@@ -52,7 +52,7 @@ VCs:
 Label: barEq
 Property: assert
 Obligation:
-barTest1($__a0) == $__a0
+barTest1(a@1) == a@1
 
 Label: fooEq
 Property: assert
@@ -86,7 +86,7 @@ program Core;
 
 function add(x : int, y : int) : int { x + y }
 
-procedure testMultiArg(a : int, b : int) returns () {
+procedure testMultiArg(a : int, b : int) {
   assert [addComm]: (add(a, b) == add(b, a));
 };
 
@@ -100,7 +100,7 @@ VCs:
 Label: addComm
 Property: assert
 Obligation:
-add($__a0, $__b1) == add($__b1, $__a0)
+add(a@1, b@1) == add(b@1, a@1)
 
 ---
 info:
@@ -126,7 +126,7 @@ program Core;
 
 function allPositive(x : int) : bool { forall y : int :: y > 0 ==> y + x > 0 }
 
-procedure testQuantBody(n : int) returns () {
+procedure testQuantBody(n : int) {
   assert [quantOk]: (n > 0 ==> allPositive(n));
 };
 
@@ -140,7 +140,7 @@ VCs:
 Label: quantOk
 Property: assert
 Obligation:
-$__n0 > 0 ==> allPositive($__n0)
+n@1 > 0 ==> allPositive(n@1)
 
 ---
 info:

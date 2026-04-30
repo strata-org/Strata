@@ -25,6 +25,7 @@ def builtinsStr := mk "builtins" "str"
 def noneType := mk "_types" "NoneType"
 
 def typingAny := mk "typing" "Any"
+def typingBinaryIO := mk "typing" "BinaryIO"
 def typingDict := mk "typing" "Dict"
 def typingGenerator := mk "typing" "Generator"
 def typingList := mk "typing" "List"
@@ -77,7 +78,6 @@ An atomic type in the PySpec language
 -/
 inductive SpecAtomType where
 | ident (nm : PythonIdent) (args : Array SpecType)
-| pyClass (name : String) (args : Array SpecType)
 /- An integer literal -/
 | intLiteral (value : Int)
 /-- A string literal -/
@@ -93,11 +93,31 @@ The `fieldRequired` array is parallel to `fields`/`fieldTypes`.
             (fieldRequired : Array Bool)
 deriving Inhabited, Repr
 
+structure SpecIdent where
+  name : PythonIdent
+  args : Array SpecType
+deriving Inhabited, Repr
+
+structure SpecTypedDict where
+  fields        : Array String
+  fieldTypes    : Array SpecType
+  fieldRequired : Array Bool
+deriving Inhabited, Repr
+
 /--
-A PySpec type is a union of atom types.
+A PySpec type is a union of atom types, stored with separate collections
+for each variant for efficient union operations on literal-heavy types.
 -/
 structure SpecType where
-  atoms : Array SpecAtomType
+  private mk ::
+  /-- Named type identifiers, sorted by PythonIdent ordering. -/
+  idents     : Array SpecIdent
+  /-- Integer literal values. -/
+  intLits    : Std.HashSet Int
+  /-- String literal values. -/
+  stringLits : Std.HashSet String
+  /-- TypedDict types, sorted by field names. -/
+  typedDicts : Array SpecTypedDict
   /-- Source location of this type. May be `.none` for builtin types. -/
   loc : SourceRange
 deriving Inhabited
@@ -127,7 +147,7 @@ termination_by a₁.size - i
 mutual
 
 /-- Compare two atom types by structure, ignoring `loc` in nested `SpecType`
-    values. Variants are ordered: ident < pyClass < intLiteral < stringLiteral
+    values. Variants are ordered: ident < intLiteral < stringLiteral
     < typedDict. -/
 protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
   match x, y with
@@ -136,12 +156,6 @@ protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
       compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
   | .ident .., _ => .lt
   | _, .ident .. => .gt
-
-  | .pyClass xname xargs, .pyClass yname yargs =>
-    compare xname yname |>.then $
-      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
-  | .pyClass .., _ => .lt
-  | _, .pyClass .. => .gt
 
   | .intLiteral xval, .intLiteral yval => compare xval yval
   | .intLiteral .., _ => .lt
@@ -155,28 +169,138 @@ protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
     compare xfields yfields |>.then $
     compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xfieldTypes.attach yfieldTypes |>.then $
     compare xisTotal yisTotal
-termination_by sizeOf x
 
-/-- Compare two types by their atoms arrays, ignoring `loc`. -/
-protected def SpecType.compare (x y : SpecType) : Ordering :=
-  compareHLex (fun ⟨xe, _⟩ y => xe.compare y )
-      x.atoms.attach y.atoms
+protected def SpecIdent.compare (x y : SpecIdent) : Ordering :=
+  compare x.name y.name |>.then $
+    compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) x.args.attach y.args
 termination_by sizeOf x
-decreasing_by
-  cases x
-  case mk xl xa =>
-    decreasing_tactic
+decreasing_by cases x; decreasing_tactic
+
+protected def SpecTypedDict.compare (x y : SpecTypedDict) : Ordering :=
+  compare x.fields y.fields |>.then $
+    compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) x.fieldTypes.attach y.fieldTypes |>.then $
+    compare x.fieldRequired y.fieldRequired
+termination_by sizeOf x
+decreasing_by cases x; decreasing_tactic
+
+/-- Compare two types, ignoring `loc`. -/
+protected def SpecType.compare (x y : SpecType) : Ordering :=
+  compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) x.idents.attach y.idents |>.then $
+  (compare (x.intLits.toArray.qsort (· < ·)) (y.intLits.toArray.qsort (· < ·))) |>.then $
+  (compare (x.stringLits.toArray.qsort (· < ·)) (y.stringLits.toArray.qsort (· < ·))) |>.then $
+  compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) x.typedDicts.attach y.typedDicts
+termination_by sizeOf x
+decreasing_by all_goals (cases x; decreasing_tactic)
 
 end
 
+namespace SpecType
+
+
+theorem sizeOf_idents_lt_of_mem {a : SpecIdent} {tp : SpecType}
+    (h : a ∈ tp.idents) : sizeOf a < sizeOf tp := by
+  cases tp
+  decreasing_tactic
+
+theorem sizeOf_typedDicts_lt_of_mem {a : SpecTypedDict} {tp : SpecType}
+    (h : a ∈ tp.typedDicts) : sizeOf a < sizeOf tp := by
+  cases tp
+  decreasing_tactic
+
+/-- Total number of atoms across all fields. -/
+def size (tp : SpecType) : Nat :=
+  tp.idents.size + tp.intLits.size + tp.stringLits.size + tp.typedDicts.size
+
+/-- Reconstruct the flat array of atoms. Output order: idents (sorted),
+    int literals (sorted), string literals (sorted), typedDicts (sorted). -/
+def atoms (tp : SpecType) : Array SpecAtomType :=
+  let r := tp.idents.map fun si => .ident si.name si.args
+  let ints := tp.intLits.toArray.qsort (· < ·)
+  let r := ints.foldl (init := r) fun acc k => acc.push (.intLiteral k)
+  let strs := tp.stringLits.toArray.qsort (· < ·)
+  let r := strs.foldl (init := r) fun acc k => acc.push (.stringLiteral k)
+  tp.typedDicts.foldl (init := r) fun acc td =>
+    acc.push (.typedDict td.fields td.fieldTypes td.fieldRequired)
+
+end SpecType
+
+mutual
+
+def SpecIdent.toString (si : SpecIdent) : String :=
+  if si.args.size == 0 then s!"{si.name}"
+  else s!"{si.name}[{", ".intercalate (si.args.map (fun a => a.toString) |>.toList)}]"
+termination_by sizeOf si
+decreasing_by cases si; decreasing_tactic
+
+def SpecTypedDict.toString (td : SpecTypedDict) : String :=
+  let fieldNames := td.fields
+  let fieldTypes := td.fieldTypes
+    if p : fieldNames.size = fieldTypes.size then
+      let ppField (i : Fin fieldNames.size) := s!"{fieldNames[i]} : {SpecType.toString fieldTypes[i]}"
+      let results := Array.ofFn ppField
+      s!"TypedDict({", ".intercalate results.toList})"
+    else
+      s!"Malformed typed dict"
+termination_by sizeOf td
+decreasing_by
+  cases td
+  decreasing_tactic
+
+def SpecType.toString (tp : SpecType) : String :=
+  let parts : Array String :=
+    let r := tp.idents.map fun si => si.toString
+    let ints := tp.intLits.toArray.qsort (· < ·)
+    let r := ints.foldl (init := r) fun acc k => acc.push s!"Literal[{k}]"
+    let strs := tp.stringLits.toArray.qsort (· < ·)
+    let r := strs.foldl (init := r) fun acc k => acc.push s!"Literal[\"{k}\"]"
+    tp.typedDicts.foldl (init := r) fun acc td => acc.push td.toString
+  if parts.size == 1 then
+    parts[0]!
+  else
+    s!"Union[{", ".intercalate parts.toList}]"
+termination_by sizeOf tp
+decreasing_by all_goals (cases tp; decreasing_tactic)
+
+end
+
+instance : ToString SpecType where toString := SpecType.toString
+
+protected def SpecAtomType.toString : SpecAtomType → String
+  | .ident nm args =>
+    if args.size == 0 then s!"{nm}"
+    else s!"{nm}[{", ".intercalate (args.map (fun a => a.toString) |>.toList)}]"
+  | .intLiteral v => s!"Literal[{v}]"
+  | .stringLiteral v => s!"Literal[\"{v}\"]"
+  | .typedDict fieldNames fieldTypes _ =>
+    if p : fieldNames.size = fieldTypes.size then
+      let ppField (i : Fin fieldNames.size) := s!"{fieldNames[i]} : {SpecType.toString fieldTypes[i]}"
+      let results := Array.ofFn ppField
+      s!"TypedDict({", ".intercalate results.toList})"
+    else
+      s!"Malformed typed dict"
+
+instance : ToString SpecAtomType where toString := SpecAtomType.toString
+
 instance : BEq SpecAtomType where
   beq x y := SpecAtomType.compare x y == .eq
+
+instance : BEq SpecIdent where
+  beq x y := SpecIdent.compare x y == .eq
+
+instance : BEq SpecTypedDict where
+  beq x y := SpecTypedDict.compare x y == .eq
 
 instance : BEq SpecType where
   beq x y := SpecType.compare x y == .eq
 
 instance : Ord SpecAtomType where
   compare := SpecAtomType.compare
+
+instance : Ord SpecIdent where
+  compare := SpecIdent.compare
+
+instance : Ord SpecTypedDict where
+  compare := SpecTypedDict.compare
 
 instance : Ord SpecType where
   compare := SpecType.compare
@@ -189,95 +313,133 @@ namespace SpecType
 instance : Repr SpecType where
   reprPrec tp prec := private reprPrec tp.atoms.toList prec
 
-/--
-Merges two sorted arrays of atom types into a single sorted array without
-duplicates. Implements the core logic for union type operations using a
-two-pointer algorithm.
--/
-private partial def unionAux (x y : Array SpecAtomType) (i : Fin x.size) (j : Fin y.size) (r : Array SpecAtomType) : Array SpecAtomType :=
-  let xe := x[i]
-  let ye := y[j]
-  match compare xe ye with
-  | .lt =>
-    let i' := i.val + 1
-    if xip : i' < x.size then
-      unionAux x y ⟨i', xip⟩ j (r.push xe)
-    else
-      r.push xe ++ y.drop j
-  | .eq =>
-    let i' := i.val + 1
-    let j' := j.val + 1
-    if xip : i' < x.size then
-      if yjp : j' < y.size then
-        unionAux x y ⟨i', xip⟩ ⟨j', yjp⟩ (r.push xe)
-      else
-        r.push xe ++ x.drop i'
-    else
-      r.push xe ++ y.drop j
-  | .gt =>
-    let j' := j.val + 1
-    if yjp : j' < y.size then
-      unionAux x y i ⟨j', yjp⟩ (r.push ye)
-    else
-      r.push ye ++ x.drop i.val
+private def empty (loc : SourceRange) : SpecType :=
+  { idents := #[], intLits := {}, stringLits := {}, typedDicts := #[], loc }
 
-/-- Union two SpecTypes with a specified location for the result -/
+/-- Sorted merge of two sorted arrays without duplicates. -/
+private partial def sortedMerge {α} [Ord α] (x y : Array α) : Array α :=
+  go x y 0 0 #[]
+where go (x y : Array α) (i j : Nat) (r : Array α) :=
+  if hi : i < x.size then
+    if hj : j < y.size then
+      match compare x[i] y[j] with
+      | .lt => go x y (i+1) j (r.push x[i])
+      | .eq => go x y (i+1) (j+1) (r.push x[i])
+      | .gt => go x y i (j+1) (r.push y[j])
+    else
+      r ++ x.drop i
+  else
+    r ++ y.drop j
+
+/-- Union two SpecTypes with a specified location for the result. -/
 def union (loc : SourceRange) (x y : SpecType) : SpecType :=
-  if xp : 0 < x.atoms.size then
-    if yp : 0 < y.atoms.size then
-      { loc := loc, atoms := unionAux x.atoms y.atoms ⟨0, xp⟩ ⟨0, yp⟩ #[] }
-    else
-      x
-  else
-    y
-
-def ofAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType := { loc := loc, atoms := #[atom] }
-
-@[specialize]
-private def removeAdjDupsAux {α} [BEq α] (a : Array α) (i : Nat) (r : Array α) (rne : r.size > 0) : Array α :=
-  if ilt : i < a.size then
-    if r.back == a[i] then
-      removeAdjDupsAux a (i+1) r rne
-    else
-      removeAdjDupsAux a (i+1) (r.push a[i]) (by simp +arith)
-  else
-    r
-
-/--
-Removes duplicate adjacent elements
--/
-@[inline]
-private def removeAdjDups {α} [BEq α] (a : Array α) : Array α :=
-  if p : a.size = 0 then
-    #[]
-  else
-    removeAdjDupsAux a 1 #[a[0]] (by simp +arith)
-
-/-- Construct a `SpecType` from an array of atoms by sorting and
-    removing duplicates to produce a canonical representation. -/
-protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
-  let elts := atoms.qsort (· < ·)
-  { loc := loc, atoms := removeAdjDups elts }
+  { idents     := sortedMerge x.idents y.idents
+    intLits    := x.intLits.union y.intLits
+    stringLits := x.stringLits.union y.stringLits
+    typedDicts := sortedMerge x.typedDicts y.typedDicts
+    loc }
 
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
-  ofAtom loc (.ident i args)
+  { empty loc with idents := #[{ name := i, args }] }
 
-def pyClass (loc : SourceRange) (name : String) (params : Array SpecType) : SpecType :=
-  ofAtom loc (.pyClass name params)
+def noneType (loc : SourceRange) : SpecType :=
+  ident loc .noneType
 
-def asSingleton (tp : SpecType) : Option SpecAtomType := do
-  if tp.atoms.size = 1 then
-    for atp in tp.atoms do return atp
+def intLiteral (loc : SourceRange) (value : Int) : SpecType :=
+  { empty loc with intLits := ({} : Std.HashSet Int).insert value }
+
+def stringLiteral (loc : SourceRange) (value : String) : SpecType :=
+  { empty loc with stringLits := ({} : Std.HashSet String).insert value }
+
+def typedDict (loc : SourceRange) (fields : Array String)
+    (fieldTypes : Array SpecType) (fieldRequired : Array Bool) : SpecType :=
+  { empty loc with typedDicts := #[{ fields, fieldTypes, fieldRequired }] }
+
+def unionArray (loc : SourceRange) (elts : Array SpecType) : SpecType :=
+  elts.foldl (init := empty loc) (union loc · ·)
+
+private def asSingleton (tp : SpecType) : Option SpecAtomType := do
+  guard (tp.size == 1)
+  if h : tp.idents.size = 1 then
+    let si := tp.idents[0]
+    return .ident si.name si.args
+  else if tp.intLits.size == 1 then
+    let v := tp.intLits.toArray[0]!
+    return .intLiteral v
+  else if tp.stringLits.size == 1 then
+    let v := tp.stringLits.toArray[0]!
+    return .stringLiteral v
+  else if h : tp.typedDicts.size = 1 then
+    let td := tp.typedDicts[0]
+    return .typedDict td.fields td.fieldTypes td.fieldRequired
+  else
+    none
+
+def asIdent (tp : SpecType) : Option PythonIdent := do
+  guard (tp.intLits.size == 0 && tp.stringLits.size == 0
+       && tp.typedDicts.size == 0)
+  if h : tp.idents.size = 1 then
+    let si := tp.idents[0]
+    guard (si.args.size == 0)
+    return si.name
+  else
+    none
+
+def isIntType (tp : SpecType) : Bool := tp.asIdent == some .builtinsInt
+
+def isFloatType (tp : SpecType) : Bool := tp.asIdent == some .builtinsFloat
+
+def isStringType (tp : SpecType) : Bool := tp.asIdent == some .builtinsStr
+
+def isBoolType (tp : SpecType) : Bool := tp.asIdent == some .builtinsBool
+
+def isTypedDict (tp : SpecType) : Bool :=
+  tp.idents.size == 0 && tp.intLits.size == 0 && tp.stringLits.size == 0
+    && tp.typedDicts.size == 1
+
+def lookupTypedDictField (tp : SpecType) (field : String) : Option SpecType := do
+  guard tp.isTypedDict
+  let td := tp.typedDicts[0]!
+  for i in [:td.fields.size] do
+    if td.fields[i]! == field then return td.fieldTypes[i]!
   none
 
-def isAtom (tp : SpecType) (atp : SpecAtomType) : Bool := tp.asSingleton.any (· == atp)
+def extractElementType (tp : SpecType) : Option SpecType := do
+  guard (tp.intLits.size == 0 && tp.stringLits.size == 0
+       && tp.typedDicts.size == 0)
+  if h : tp.idents.size = 1 then
+    let si := tp.idents[0]
+    if (si.name == .typingList || si.name == .typingSequence) && si.args.size == 1 then
+      return si.args[0]!
+    none
+  else none
 
-instance : Membership SpecAtomType SpecType where
-  mem a e := private a.atoms.binSearchContains e (· < ·) = true
+def extractDictKeyValueTypes (tp : SpecType) : Option (SpecType × SpecType) := do
+  guard (tp.intLits.size == 0 && tp.stringLits.size == 0
+       && tp.typedDicts.size == 0)
+  if h : tp.idents.size = 1 then
+    let si := tp.idents[0]
+    if (si.name == .typingDict || si.name == .typingMapping) && si.args.size == 2 then
+      return (si.args[0]!, si.args[1]!)
+    none
+  else none
 
-@[instance]
-def instDecidableMem (e : SpecAtomType) (tp : SpecType) : Decidable (e ∈ tp) :=
-  inferInstanceAs (Decidable (_ = _))
+def asStringLiteral (tp : SpecType) : Option String := do
+  guard (tp.idents.size == 0 && tp.intLits.size == 0
+       && tp.typedDicts.size == 0 && tp.stringLits.size == 1)
+  return tp.stringLits.toArray[0]!
+
+structure DictField where
+  name : String
+  type : SpecType
+  required : Bool
+deriving Inhabited
+
+def asTypedDict (tp : SpecType) : Option (Array DictField) := do
+  guard tp.isTypedDict
+  let td := tp.typedDicts[0]!
+  some <| td.fields.mapIdx fun i name =>
+    { name, type := td.fieldTypes.getD i default, required := td.fieldRequired.getD i true }
 
 end SpecType
 
@@ -316,40 +478,66 @@ and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
 inductive SpecExpr where
 /-- Stands in for an assert pattern not yet supported by the translator.
     The original Python expression is preserved in `Assertion.message`. -/
-| placeholder
-| var (name : String)
-| getIndex (subject : SpecExpr) (field : String)
-| isInstanceOf (subject : SpecExpr) (typeName : String)
-| len (subject : SpecExpr)
-| intLit (value : Int)
-| intGe (subject : SpecExpr) (bound : SpecExpr)
-| intLe (subject : SpecExpr) (bound : SpecExpr)
+| placeholder (loc : SourceRange)
+| var (name : String) (loc : SourceRange)
+| getIndex (subject : SpecExpr) (field : String) (loc : SourceRange)
+| isInstanceOf (subject : SpecExpr) (typeName : String) (loc : SourceRange)
+/-- `stringLen subject` represents `len(subject)` where `subject` is a string.
+    Used in preconditions like `assert len(name) >= 1`. -/
+| stringLen (subject : SpecExpr) (loc : SourceRange)
+| intLit (value : Int) (loc : SourceRange)
+| intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 /-- A floating-point literal, stored as a string to preserve precision. -/
-| floatLit (value : String)
-| floatGe (subject : SpecExpr) (bound : SpecExpr)
-| floatLe (subject : SpecExpr) (bound : SpecExpr)
-| enumMember (subject : SpecExpr) (values : Array String)
+| floatLit (value : String) (loc : SourceRange)
+| floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| floatLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| enumMember (subject : SpecExpr) (values : Array String) (loc : SourceRange)
 /-- `regexMatch subject pattern` asserts that `subject` matches the regular
     expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
     in the Python source. -/
-| regexMatch (subject : SpecExpr) (pattern : String)
+| regexMatch (subject : SpecExpr) (pattern : String) (loc : SourceRange)
 /-- `containsKey container key` asserts that `key` is present in `container`.
     Corresponds to `"key" in container` in the Python source. -/
-| containsKey (container : SpecExpr) (key : String)
+| containsKey (container : SpecExpr) (key : String) (loc : SourceRange)
 /-- `implies condition body` asserts that if `condition` holds then `body` holds.
     Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
-| implies (condition : SpecExpr) (body : SpecExpr)
+| implies (condition : SpecExpr) (body : SpecExpr) (loc : SourceRange)
 /-- Logical negation. Used for else-branch conditions. -/
-| not (e : SpecExpr)
+| not (e : SpecExpr) (loc : SourceRange)
 /-- `forallList list varName body` asserts that `body` holds for every element
     of `list`, with `varName` bound to each element in turn. Only `body` may
     refer to `varName`. Corresponds to `for varName in list: assert body`. -/
-| forallList (list : SpecExpr) (varName : String) (body : SpecExpr)
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr) (loc : SourceRange)
 /-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
     key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
     Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
-| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr)
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
 deriving Inhabited
+
+/-- Structural equality ignoring source locations. -/
+def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
+  | .placeholder _, .placeholder _ => true
+  | .var n₁ _, .var n₂ _ => n₁ == n₂
+  | .getIndex s₁ f₁ _, .getIndex s₂ f₂ _ => s₁.softBEq s₂ && f₁ == f₂
+  | .isInstanceOf s₁ t₁ _, .isInstanceOf s₂ t₂ _ => s₁.softBEq s₂ && t₁ == t₂
+  | .stringLen s₁ _, .stringLen s₂ _ => s₁.softBEq s₂
+  | .intLit v₁ _, .intLit v₂ _ => v₁ == v₂
+  | .intGe s₁ b₁ _, .intGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .intLe s₁ b₁ _, .intLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatLit v₁ _, .floatLit v₂ _ => v₁ == v₂
+  | .floatGe s₁ b₁ _, .floatGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .floatLe s₁ b₁ _, .floatLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .enumMember s₁ v₁ _, .enumMember s₂ v₂ _ => s₁.softBEq s₂ && v₁ == v₂
+  | .regexMatch s₁ p₁ _, .regexMatch s₂ p₂ _ => s₁.softBEq s₂ && p₁ == p₂
+  | .containsKey c₁ k₁ _, .containsKey c₂ k₂ _ => c₁.softBEq c₂ && k₁ == k₂
+  | .implies c₁ b₁ _, .implies c₂ b₂ _ => c₁.softBEq c₂ && b₁.softBEq b₂
+  | .not e₁ _, .not e₂ _ => e₁.softBEq e₂
+  | .forallList l₁ v₁ b₁ _, .forallList l₂ v₂ b₂ _ =>
+    l₁.softBEq l₂ && v₁ == v₂ && b₁.softBEq b₂
+  | .forallDict d₁ k₁ v₁ b₁ _, .forallDict d₂ k₂ v₂ b₂ _ =>
+    d₁.softBEq d₂ && k₁ == k₂ && v₁ == v₂ && b₁.softBEq b₂
+  | _, _ => false
 
 inductive MessagePart where
 | str (s : String)

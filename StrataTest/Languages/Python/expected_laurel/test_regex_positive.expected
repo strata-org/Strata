@@ -1,425 +1,284 @@
 test_regex_positive.py(7, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(8, 4): ✅ pass - fullmatch literal should match
-test_regex_positive.py(8, 4): ✅ pass - fullmatch literal should match
 test_regex_positive.py(10, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(11, 4): ✅ pass - fullmatch literal should reject extra chars
 test_regex_positive.py(11, 4): ✅ pass - fullmatch literal should reject extra chars
 test_regex_positive.py(14, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(15, 4): ✅ pass - fullmatch char class should match
-test_regex_positive.py(15, 4): ✅ pass - fullmatch char class should match
 test_regex_positive.py(17, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(18, 4): ✅ pass - fullmatch char class should reject uppercase
 test_regex_positive.py(18, 4): ✅ pass - fullmatch char class should reject uppercase
 test_regex_positive.py(21, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(22, 4): ✅ pass - fullmatch negated class should match non-digits
-test_regex_positive.py(22, 4): ✅ pass - fullmatch negated class should match non-digits
 test_regex_positive.py(24, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(25, 4): ✅ pass - fullmatch negated class should reject digits
 test_regex_positive.py(25, 4): ✅ pass - fullmatch negated class should reject digits
 test_regex_positive.py(28, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(29, 4): ✅ pass - fullmatch dot-plus should match non-empty
-test_regex_positive.py(29, 4): ✅ pass - fullmatch dot-plus should match non-empty
 test_regex_positive.py(31, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(32, 4): ✅ pass - fullmatch single dot should reject two chars
 test_regex_positive.py(32, 4): ✅ pass - fullmatch single dot should reject two chars
 test_regex_positive.py(35, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(36, 4): ✅ pass - fullmatch a* should match empty
-test_regex_positive.py(36, 4): ✅ pass - fullmatch a* should match empty
 test_regex_positive.py(38, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(39, 4): ✅ pass - fullmatch a* should match repeated
 test_regex_positive.py(39, 4): ✅ pass - fullmatch a* should match repeated
 test_regex_positive.py(41, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(42, 4): ✅ pass - fullmatch a* should reject non-a
-test_regex_positive.py(42, 4): ✅ pass - fullmatch a* should reject non-a
 test_regex_positive.py(45, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(46, 4): ✅ pass - fullmatch a+ should reject empty
 test_regex_positive.py(46, 4): ✅ pass - fullmatch a+ should reject empty
 test_regex_positive.py(48, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(49, 4): ✅ pass - fullmatch a+ should match one-or-more
-test_regex_positive.py(49, 4): ✅ pass - fullmatch a+ should match one-or-more
 test_regex_positive.py(52, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(53, 4): ✅ pass - fullmatch ab?c should match without b
 test_regex_positive.py(53, 4): ✅ pass - fullmatch ab?c should match without b
 test_regex_positive.py(55, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(56, 4): ✅ pass - fullmatch ab?c should match with b
-test_regex_positive.py(56, 4): ✅ pass - fullmatch ab?c should match with b
 test_regex_positive.py(58, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(59, 4): ✅ pass - fullmatch ab?c should reject two b's
 test_regex_positive.py(59, 4): ✅ pass - fullmatch ab?c should reject two b's
 test_regex_positive.py(62, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(63, 4): ✅ pass - fullmatch alternation should match first
-test_regex_positive.py(63, 4): ✅ pass - fullmatch alternation should match first
 test_regex_positive.py(65, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(66, 4): ✅ pass - fullmatch alternation should match second
 test_regex_positive.py(66, 4): ✅ pass - fullmatch alternation should match second
 test_regex_positive.py(68, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(69, 4): ✅ pass - fullmatch alternation should reject other
-test_regex_positive.py(69, 4): ✅ pass - fullmatch alternation should reject other
 test_regex_positive.py(72, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(73, 4): ✅ pass - fullmatch concat should match
 test_regex_positive.py(73, 4): ✅ pass - fullmatch concat should match
 test_regex_positive.py(75, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(76, 4): ✅ pass - fullmatch concat should reject wrong order
-test_regex_positive.py(76, 4): ✅ pass - fullmatch concat should reject wrong order
 test_regex_positive.py(80, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(81, 4): ✅ pass - match should match at start
 test_regex_positive.py(81, 4): ✅ pass - match should match at start
 test_regex_positive.py(83, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(84, 4): ✅ pass - match should reject when not at start
-test_regex_positive.py(84, 4): ✅ pass - match should reject when not at start
 test_regex_positive.py(86, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(87, 4): ✅ pass - match should match prefix
 test_regex_positive.py(87, 4): ✅ pass - match should match prefix
 test_regex_positive.py(89, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(90, 4): ✅ pass - match should reject non-prefix
-test_regex_positive.py(90, 4): ✅ pass - match should reject non-prefix
 test_regex_positive.py(94, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(95, 4): ✅ pass - search should find digits in middle
 test_regex_positive.py(95, 4): ✅ pass - search should find digits in middle
 test_regex_positive.py(97, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(98, 4): ✅ pass - search should reject when no digits
-test_regex_positive.py(98, 4): ✅ pass - search should reject when no digits
 test_regex_positive.py(100, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(101, 4): ✅ pass - search should find substring
-test_regex_positive.py(101, 4): ✅ pass - search should find substring
 test_regex_positive.py(103, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(104, 4): ✅ pass - search should reject missing substring
 test_regex_positive.py(104, 4): ✅ pass - search should reject missing substring
 test_regex_positive.py(108, 4): ✅ pass - set_p_calls_re_compile_0
 test_regex_positive.py(110, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(111, 4): ✅ pass - compiled fullmatch should match
-test_regex_positive.py(111, 4): ✅ pass - compiled fullmatch should match
 test_regex_positive.py(113, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(114, 4): ✅ pass - compiled fullmatch should reject uppercase
 test_regex_positive.py(114, 4): ✅ pass - compiled fullmatch should reject uppercase
 test_regex_positive.py(116, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(117, 4): ✅ pass - compiled match should match prefix
-test_regex_positive.py(117, 4): ✅ pass - compiled match should match prefix
 test_regex_positive.py(119, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(120, 4): ✅ pass - compiled search should find in middle
 test_regex_positive.py(120, 4): ✅ pass - compiled search should find in middle
 test_regex_positive.py(125, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(126, 4): ✅ pass - fullmatch empty pattern on empty string
-test_regex_positive.py(126, 4): ✅ pass - fullmatch empty pattern on empty string
 test_regex_positive.py(128, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(129, 4): ✅ pass - fullmatch empty pattern on non-empty string
 test_regex_positive.py(129, 4): ✅ pass - fullmatch empty pattern on non-empty string
 test_regex_positive.py(132, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(133, 4): ✅ pass - fullmatch single char
-test_regex_positive.py(133, 4): ✅ pass - fullmatch single char
 test_regex_positive.py(135, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(136, 4): ✅ pass - fullmatch single char mismatch
 test_regex_positive.py(136, 4): ✅ pass - fullmatch single char mismatch
 test_regex_positive.py(139, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(140, 4): ✅ pass - fullmatch nested group-plus
-test_regex_positive.py(140, 4): ✅ pass - fullmatch nested group-plus
 test_regex_positive.py(142, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(143, 4): ✅ pass - fullmatch nested group-plus mismatch
 test_regex_positive.py(143, 4): ✅ pass - fullmatch nested group-plus mismatch
 test_regex_positive.py(146, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(147, 4): ✅ pass - fullmatch loop min
-test_regex_positive.py(147, 4): ✅ pass - fullmatch loop min
 test_regex_positive.py(149, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(150, 4): ✅ pass - fullmatch loop max
 test_regex_positive.py(150, 4): ✅ pass - fullmatch loop max
 test_regex_positive.py(152, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(153, 4): ✅ pass - fullmatch loop below min
-test_regex_positive.py(153, 4): ✅ pass - fullmatch loop below min
 test_regex_positive.py(155, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(156, 4): ✅ pass - fullmatch loop above max
 test_regex_positive.py(156, 4): ✅ pass - fullmatch loop above max
 test_regex_positive.py(159, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(160, 4): ✅ pass - fullmatch group loop match
-test_regex_positive.py(160, 4): ✅ pass - fullmatch group loop match
 test_regex_positive.py(162, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(163, 4): ✅ pass - fullmatch group loop too few
 test_regex_positive.py(163, 4): ✅ pass - fullmatch group loop too few
 test_regex_positive.py(165, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(166, 4): ✅ pass - fullmatch group loop 3 reps
-test_regex_positive.py(166, 4): ✅ pass - fullmatch group loop 3 reps
 test_regex_positive.py(168, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(169, 4): ✅ pass - fullmatch group loop 1 rep
 test_regex_positive.py(169, 4): ✅ pass - fullmatch group loop 1 rep
 test_regex_positive.py(174, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(175, 4): ✅ pass - fullmatch ^a match
-test_regex_positive.py(175, 4): ✅ pass - fullmatch ^a match
 test_regex_positive.py(177, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(178, 4): ✅ pass - fullmatch ^a reject
 test_regex_positive.py(178, 4): ✅ pass - fullmatch ^a reject
 test_regex_positive.py(180, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(181, 4): ✅ pass - fullmatch a$ match
-test_regex_positive.py(181, 4): ✅ pass - fullmatch a$ match
 test_regex_positive.py(183, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(184, 4): ✅ pass - fullmatch a$ reject
 test_regex_positive.py(184, 4): ✅ pass - fullmatch a$ reject
 test_regex_positive.py(186, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(187, 4): ✅ pass - fullmatch ^a$ match
-test_regex_positive.py(187, 4): ✅ pass - fullmatch ^a$ match
 test_regex_positive.py(189, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(190, 4): ✅ pass - fullmatch ^a$ reject trailing
 test_regex_positive.py(190, 4): ✅ pass - fullmatch ^a$ reject trailing
 test_regex_positive.py(192, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(193, 4): ✅ pass - fullmatch ^a$ reject leading
-test_regex_positive.py(193, 4): ✅ pass - fullmatch ^a$ reject leading
 test_regex_positive.py(196, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(197, 4): ✅ pass - fullmatch ^$ on empty
 test_regex_positive.py(197, 4): ✅ pass - fullmatch ^$ on empty
 test_regex_positive.py(199, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(200, 4): ✅ pass - fullmatch ^$ on non-empty
-test_regex_positive.py(200, 4): ✅ pass - fullmatch ^$ on non-empty
 test_regex_positive.py(202, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(203, 4): ✅ pass - match ^$ on empty
 test_regex_positive.py(203, 4): ✅ pass - match ^$ on empty
 test_regex_positive.py(205, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(206, 4): ✅ pass - match ^$ on non-empty
-test_regex_positive.py(206, 4): ✅ pass - match ^$ on non-empty
 test_regex_positive.py(208, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(209, 4): ✅ pass - search ^$ on empty
 test_regex_positive.py(209, 4): ✅ pass - search ^$ on empty
 test_regex_positive.py(211, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(212, 4): ✅ pass - search ^$ on non-empty
-test_regex_positive.py(212, 4): ✅ pass - search ^$ on non-empty
 test_regex_positive.py(217, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(218, 4): ✅ pass - match ^a
 test_regex_positive.py(218, 4): ✅ pass - match ^a
 test_regex_positive.py(220, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(221, 4): ✅ pass - match ^a trailing ok
-test_regex_positive.py(221, 4): ✅ pass - match ^a trailing ok
 test_regex_positive.py(223, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(224, 4): ✅ pass - match ^a reject
 test_regex_positive.py(224, 4): ✅ pass - match ^a reject
 test_regex_positive.py(227, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(228, 4): ✅ pass - match ^a$ exact
-test_regex_positive.py(228, 4): ✅ pass - match ^a$ exact
 test_regex_positive.py(230, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(231, 4): ✅ pass - match ^a$ reject trailing
 test_regex_positive.py(231, 4): ✅ pass - match ^a$ reject trailing
 test_regex_positive.py(233, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(234, 4): ✅ pass - match a$ exact
-test_regex_positive.py(234, 4): ✅ pass - match a$ exact
 test_regex_positive.py(236, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(237, 4): ✅ pass - match a$ reject trailing
 test_regex_positive.py(237, 4): ✅ pass - match a$ reject trailing
 test_regex_positive.py(239, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(240, 4): ✅ pass - match a.*$ accepts
-test_regex_positive.py(240, 4): ✅ pass - match a.*$ accepts
 test_regex_positive.py(242, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(243, 4): ✅ pass - match a.*$ rejects
 test_regex_positive.py(243, 4): ✅ pass - match a.*$ rejects
 test_regex_positive.py(248, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(249, 4): ✅ pass - search a in middle
-test_regex_positive.py(249, 4): ✅ pass - search a in middle
 test_regex_positive.py(251, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(252, 4): ✅ pass - search a not found
 test_regex_positive.py(252, 4): ✅ pass - search a not found
 test_regex_positive.py(255, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(256, 4): ✅ pass - search ^a at start
-test_regex_positive.py(256, 4): ✅ pass - search ^a at start
 test_regex_positive.py(258, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(259, 4): ✅ pass - search ^a reject non-start
 test_regex_positive.py(259, 4): ✅ pass - search ^a reject non-start
 test_regex_positive.py(261, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(262, 4): ✅ pass - search ^a exact
-test_regex_positive.py(262, 4): ✅ pass - search ^a exact
 test_regex_positive.py(265, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(266, 4): ✅ pass - search a$ at end
 test_regex_positive.py(266, 4): ✅ pass - search a$ at end
 test_regex_positive.py(268, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(269, 4): ✅ pass - search a$ reject non-end
-test_regex_positive.py(269, 4): ✅ pass - search a$ reject non-end
 test_regex_positive.py(271, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(272, 4): ✅ pass - search a$ deep end
 test_regex_positive.py(272, 4): ✅ pass - search a$ deep end
 test_regex_positive.py(274, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(275, 4): ✅ pass - search a$ reject trailing
-test_regex_positive.py(275, 4): ✅ pass - search a$ reject trailing
 test_regex_positive.py(278, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(279, 4): ✅ pass - search ^a$ exact
 test_regex_positive.py(279, 4): ✅ pass - search ^a$ exact
 test_regex_positive.py(281, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(282, 4): ✅ pass - search ^a$ reject prefix
-test_regex_positive.py(282, 4): ✅ pass - search ^a$ reject prefix
 test_regex_positive.py(284, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(285, 4): ✅ pass - search ^a$ reject suffix
 test_regex_positive.py(285, 4): ✅ pass - search ^a$ reject suffix
 test_regex_positive.py(289, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(290, 4): ✅ pass - search ^abc at start
-test_regex_positive.py(290, 4): ✅ pass - search ^abc at start
 test_regex_positive.py(292, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(293, 4): ✅ pass - search ^abc reject non-start
 test_regex_positive.py(293, 4): ✅ pass - search ^abc reject non-start
 test_regex_positive.py(295, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(296, 4): ✅ pass - search abc$ at end
-test_regex_positive.py(296, 4): ✅ pass - search abc$ at end
 test_regex_positive.py(298, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(299, 4): ✅ pass - search abc$ reject non-end
 test_regex_positive.py(299, 4): ✅ pass - search abc$ reject non-end
 test_regex_positive.py(301, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(302, 4): ✅ pass - search ^abc$ exact
-test_regex_positive.py(302, 4): ✅ pass - search ^abc$ exact
 test_regex_positive.py(304, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(305, 4): ✅ pass - search ^abc$ reject prefix
 test_regex_positive.py(305, 4): ✅ pass - search ^abc$ reject prefix
 test_regex_positive.py(307, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(308, 4): ✅ pass - search ^abc$ reject suffix
-test_regex_positive.py(308, 4): ✅ pass - search ^abc$ reject suffix
 test_regex_positive.py(312, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(313, 4): ✅ pass - fullmatch ^a{3}$ match
 test_regex_positive.py(313, 4): ✅ pass - fullmatch ^a{3}$ match
 test_regex_positive.py(315, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(316, 4): ✅ pass - fullmatch ^a{3}$ too few
-test_regex_positive.py(316, 4): ✅ pass - fullmatch ^a{3}$ too few
 test_regex_positive.py(318, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(319, 4): ✅ pass - fullmatch ^a{3}$ too many
 test_regex_positive.py(319, 4): ✅ pass - fullmatch ^a{3}$ too many
 test_regex_positive.py(321, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(322, 4): ✅ pass - match ^a{3}$ exact
-test_regex_positive.py(322, 4): ✅ pass - match ^a{3}$ exact
 test_regex_positive.py(324, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(325, 4): ✅ pass - match ^a{3}$ reject trailing
 test_regex_positive.py(325, 4): ✅ pass - match ^a{3}$ reject trailing
 test_regex_positive.py(327, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(328, 4): ✅ pass - match a{3} trailing ok
-test_regex_positive.py(328, 4): ✅ pass - match a{3} trailing ok
 test_regex_positive.py(332, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(333, 4): ✅ pass - escaped dot matches literal
 test_regex_positive.py(333, 4): ✅ pass - escaped dot matches literal
 test_regex_positive.py(335, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(336, 4): ✅ pass - escaped dot rejects non-dot
-test_regex_positive.py(336, 4): ✅ pass - escaped dot rejects non-dot
 test_regex_positive.py(338, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(339, 4): ✅ pass - escaped plus matches literal
 test_regex_positive.py(339, 4): ✅ pass - escaped plus matches literal
 test_regex_positive.py(341, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(342, 4): ✅ pass - escaped plus rejects
-test_regex_positive.py(342, 4): ✅ pass - escaped plus rejects
 test_regex_positive.py(344, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(345, 4): ✅ pass - escaped star matches literal
 test_regex_positive.py(345, 4): ✅ pass - escaped star matches literal
 test_regex_positive.py(347, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(348, 4): ✅ pass - escaped star rejects
-test_regex_positive.py(348, 4): ✅ pass - escaped star rejects
 test_regex_positive.py(350, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(351, 4): ✅ pass - escaped question matches literal
 test_regex_positive.py(351, 4): ✅ pass - escaped question matches literal
 test_regex_positive.py(353, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(354, 4): ✅ pass - escaped question rejects
-test_regex_positive.py(354, 4): ✅ pass - escaped question rejects
 test_regex_positive.py(356, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(357, 4): ✅ pass - escaped parens match literal
 test_regex_positive.py(357, 4): ✅ pass - escaped parens match literal
 test_regex_positive.py(359, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(360, 4): ✅ pass - escaped parens reject
-test_regex_positive.py(360, 4): ✅ pass - escaped parens reject
 test_regex_positive.py(362, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(363, 4): ✅ pass - escaped backslash matches literal
 test_regex_positive.py(363, 4): ✅ pass - escaped backslash matches literal
 test_regex_positive.py(365, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(366, 4): ✅ pass - escaped backslash rejects
-test_regex_positive.py(366, 4): ✅ pass - escaped backslash rejects
 test_regex_positive.py(369, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(370, 4): ✅ pass - search escaped dot
 test_regex_positive.py(370, 4): ✅ pass - search escaped dot
 test_regex_positive.py(372, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(373, 4): ✅ pass - search escaped backslash
-test_regex_positive.py(373, 4): ✅ pass - search escaped backslash
 test_regex_positive.py(375, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(376, 4): ✅ pass - search escaped backslash reject
 test_regex_positive.py(376, 4): ✅ pass - search escaped backslash reject
 test_regex_positive.py(380, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(381, 4): ✅ pass - colon literal match
-test_regex_positive.py(381, 4): ✅ pass - colon literal match
 test_regex_positive.py(383, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(384, 4): ✅ pass - colon literal reject
 test_regex_positive.py(384, 4): ✅ pass - colon literal reject
 test_regex_positive.py(386, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(387, 4): ✅ pass - colon class match
-test_regex_positive.py(387, 4): ✅ pass - colon class match
 test_regex_positive.py(389, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(390, 4): ✅ pass - colon class reject
 test_regex_positive.py(390, 4): ✅ pass - colon class reject
 test_regex_positive.py(392, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(393, 4): ✅ pass - search colon class
-test_regex_positive.py(393, 4): ✅ pass - search colon class
 test_regex_positive.py(395, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(396, 4): ✅ pass - match anchored colon
 test_regex_positive.py(396, 4): ✅ pass - match anchored colon
 test_regex_positive.py(398, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(399, 4): ✅ pass - match anchored colon reject trailing
-test_regex_positive.py(399, 4): ✅ pass - match anchored colon reject trailing
 test_regex_positive.py(403, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(404, 4): ✅ pass - wildcard empty middle
 test_regex_positive.py(404, 4): ✅ pass - wildcard empty middle
 test_regex_positive.py(406, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(407, 4): ✅ pass - wildcard non-empty middle
-test_regex_positive.py(407, 4): ✅ pass - wildcard non-empty middle
 test_regex_positive.py(409, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(410, 4): ✅ pass - wildcard wrong ending
 test_regex_positive.py(410, 4): ✅ pass - wildcard wrong ending
 test_regex_positive.py(412, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(413, 4): ✅ pass - search wildcard
-test_regex_positive.py(413, 4): ✅ pass - search wildcard
 test_regex_positive.py(416, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(417, 4): ✅ pass - multi-char alt first
 test_regex_positive.py(417, 4): ✅ pass - multi-char alt first
 test_regex_positive.py(419, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(420, 4): ✅ pass - multi-char alt second
-test_regex_positive.py(420, 4): ✅ pass - multi-char alt second
 test_regex_positive.py(422, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(423, 4): ✅ pass - multi-char alt reject concat
 test_regex_positive.py(423, 4): ✅ pass - multi-char alt reject concat
 test_regex_positive.py(425, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(426, 4): ✅ pass - search multi-char alt
-test_regex_positive.py(426, 4): ✅ pass - search multi-char alt
 test_regex_positive.py(430, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(431, 4): ✅ pass - fullmatch ^a|b$ first branch
 test_regex_positive.py(431, 4): ✅ pass - fullmatch ^a|b$ first branch
 test_regex_positive.py(433, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(434, 4): ✅ pass - fullmatch ^a|b$ second branch
-test_regex_positive.py(434, 4): ✅ pass - fullmatch ^a|b$ second branch
 test_regex_positive.py(436, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(437, 4): ✅ pass - fullmatch ^a|b$ reject
 test_regex_positive.py(437, 4): ✅ pass - fullmatch ^a|b$ reject
 test_regex_positive.py(439, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(440, 4): ✅ pass - search ^a|b$ start anchor
-test_regex_positive.py(440, 4): ✅ pass - search ^a|b$ start anchor
 test_regex_positive.py(442, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(443, 4): ✅ pass - search ^a|b$ end anchor
-test_regex_positive.py(443, 4): ✅ pass - search ^a|b$ end anchor
 test_regex_positive.py(445, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(446, 4): ✅ pass - search ^a|b$ neither
 test_regex_positive.py(446, 4): ✅ pass - search ^a|b$ neither
 test_regex_positive.py(450, 4): ✅ pass - set_p_calls_re_compile_0
 test_regex_positive.py(452, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(453, 4): ✅ pass - compiled ^abc$ fullmatch
-test_regex_positive.py(453, 4): ✅ pass - compiled ^abc$ fullmatch
 test_regex_positive.py(455, 4): ✅ pass - set_m_calls_re_search_0
-test_regex_positive.py(456, 4): ✅ pass - compiled ^abc$ search exact
 test_regex_positive.py(456, 4): ✅ pass - compiled ^abc$ search exact
 test_regex_positive.py(458, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(459, 4): ✅ pass - compiled ^abc$ search reject prefix
-test_regex_positive.py(459, 4): ✅ pass - compiled ^abc$ search reject prefix
 test_regex_positive.py(461, 4): ✅ pass - set_m_calls_re_match_0
-test_regex_positive.py(462, 4): ✅ pass - compiled ^abc$ match exact
 test_regex_positive.py(462, 4): ✅ pass - compiled ^abc$ match exact
 test_regex_positive.py(464, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(465, 4): ✅ pass - compiled ^abc$ match reject trailing
-test_regex_positive.py(465, 4): ✅ pass - compiled ^abc$ match reject trailing
 test_regex_positive.py(472, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(473, 4): ✅ pass - malformed: unmatched paren is exception, not None
 test_regex_positive.py(473, 4): ✅ pass - malformed: unmatched paren is exception, not None
 test_regex_positive.py(475, 4): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_positive.py(476, 4): ✅ pass - malformed: nothing to repeat is exception, not None
-test_regex_positive.py(476, 4): ✅ pass - malformed: nothing to repeat is exception, not None
 test_regex_positive.py(478, 4): ✅ pass - set_m_calls_re_fullmatch_0
-test_regex_positive.py(479, 4): ✅ pass - malformed: bad bounds is exception, not None
 test_regex_positive.py(479, 4): ✅ pass - malformed: bad bounds is exception, not None
 test_regex_positive.py(481, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_positive.py(482, 4): ✅ pass - malformed: search with bad pattern is exception, not None
-test_regex_positive.py(482, 4): ✅ pass - malformed: search with bad pattern is exception, not None
 test_regex_positive.py(484, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(485, 4): ✅ pass - malformed: match with bad pattern is exception, not None
-test_regex_positive.py(485, 4): ✅ pass - malformed: match with bad pattern is exception, not None
-test_regex_positive.py(487, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 423 passed, 0 failed, 0 inconclusive
+DETAIL: 282 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

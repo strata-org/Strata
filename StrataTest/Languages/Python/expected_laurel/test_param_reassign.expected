@@ -1,0 +1,33 @@
+test_param_reassign.py(2, 8): ✅ pass - Check PAdd exception
+test_param_reassign.py(1, 37): ✅ pass - (single_param_reassign ensures) Return type constraint
+test_param_reassign.py(6, 8): ✅ pass - Check PAdd exception
+test_param_reassign.py(7, 8): ✅ pass - Check PMul exception
+test_param_reassign.py(8, 11): ✅ pass - Check PAdd exception
+test_param_reassign.py(5, 44): ✅ pass - (multi_param_reassign ensures) Return type constraint
+test_param_reassign.py(11, 11): ✅ pass - Check PAdd exception
+test_param_reassign.py(10, 41): ✅ pass - (no_param_reassign ensures) Return type constraint
+test_param_reassign.py(14, 8): ✅ pass - Check PAdd exception
+test_param_reassign.py(13, 46): ✅ pass - (partial_param_reassign ensures) Return type constraint
+test_param_reassign.py(18, 8): ✅ pass - Check PAdd exception
+test_param_reassign.py(19, 8): ✅ pass - Check PMul exception
+test_param_reassign.py(17, 36): ✅ pass - (param_reassign_twice ensures) Return type constraint
+test_param_reassign.py(23, 4): ✅ pass - (single_param_reassign requires) Type constraint of x
+test_param_reassign.py(23, 4): ✅ pass - assert(422)
+test_param_reassign.py(24, 4): ❓ unknown - single reassign
+test_param_reassign.py(26, 4): ✅ pass - (multi_param_reassign requires) Type constraint of a
+test_param_reassign.py(26, 4): ✅ pass - (multi_param_reassign requires) Type constraint of b
+test_param_reassign.py(26, 4): ✅ pass - assert(500)
+test_param_reassign.py(27, 4): ❓ unknown - multi reassign
+test_param_reassign.py(29, 4): ✅ pass - (no_param_reassign requires) Type constraint of x
+test_param_reassign.py(29, 4): ✅ pass - (no_param_reassign requires) Type constraint of y
+test_param_reassign.py(29, 4): ✅ pass - assert(580)
+test_param_reassign.py(30, 4): ❓ unknown - no reassign
+test_param_reassign.py(32, 4): ✅ pass - (partial_param_reassign requires) Type constraint of x
+test_param_reassign.py(32, 4): ✅ pass - (partial_param_reassign requires) Type constraint of y
+test_param_reassign.py(32, 4): ✅ pass - assert(653)
+test_param_reassign.py(33, 4): ❓ unknown - partial reassign
+test_param_reassign.py(35, 4): ✅ pass - (param_reassign_twice requires) Type constraint of x
+test_param_reassign.py(35, 4): ✅ pass - assert(738)
+test_param_reassign.py(36, 4): ❓ unknown - reassign twice
+DETAIL: 26 passed, 0 failed, 5 inconclusive
+RESULT: Inconclusive

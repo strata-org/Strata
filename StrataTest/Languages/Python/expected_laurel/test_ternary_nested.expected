@@ -1,0 +1,7 @@
+test_ternary_nested.py(2, 4): ✅ pass - assert(31)
+test_ternary_nested.py(3, 22): ✅ pass - Check PGt exception
+test_ternary_nested.py(3, 44): ✅ pass - Check PGt exception
+test_ternary_nested.py(3, 4): ✅ pass - assert(46)
+test_ternary_nested.py(4, 4): ✅ pass - nested ternary
+DETAIL: 5 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

@@ -1,0 +1,4 @@
+test_int_to_any.py(4, 4): ✅ pass - assert(51)
+test_int_to_any.py(6, 4): ✅ pass - int assigned to Any
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.Resolution
 import Strata.Util.Tactics
 
@@ -28,13 +28,13 @@ and variable declarations.
 -/
 def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   match _: expr with
-  | WithMetadata.mk val md =>
+  | AstNode.mk val source =>
   match _: val with
   -- Literals
-  | .LiteralInt _ => ⟨ .TInt, md ⟩
-  | .LiteralBool _ => ⟨ .TBool, md ⟩
-  | .LiteralString _ => ⟨ .TString, md ⟩
-  | .LiteralDecimal _ => ⟨ .TReal, md ⟩
+  | .LiteralInt _ => ⟨ .TInt, source ⟩
+  | .LiteralBool _ => ⟨ .TBool, source ⟩
+  | .LiteralString _ => ⟨ .TString, source ⟩
+  | .LiteralDecimal _ => ⟨ .TReal, source ⟩
   -- Variables
   | .Identifier id => (model.get id).getType
   -- Field access
@@ -43,12 +43,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
   | .StaticCall callee _ => match model.get callee with
-    | .datatypeConstructor t _ => ⟨ .UserDefined t, md, ⟩
+    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
-      | _ => { val := HighType.Unknown, md := default }
-    | .unresolved => { val := HighType.Unknown, md := default }
+      | _ => { val := HighType.Unknown, source := none }
+    | .unresolved => { val := HighType.Unknown, source := none }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
       default
@@ -58,49 +58,48 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
       match args with
       | head :: tail =>
         match op with
-        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
+        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, source ⟩
         | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
           match (computeExprType model head).val with
-            | .TFloat64  => ⟨ .TFloat64, md ⟩
-            | .TReal => ⟨ .TReal, md ⟩
-            | .TInt => ⟨ .TInt, md ⟩
-            | _ => ⟨ .TCore "unknown", md ⟩
-        | .StrConcat => ⟨ .TString, md ⟩
-      | _ => ⟨ .TCore "unknown", md ⟩
+            | .TFloat64  => ⟨ .TFloat64, source ⟩
+            | .TReal => ⟨ .TReal, source ⟩
+            | .TInt => ⟨ .TInt, source ⟩
+            | _ => ⟨ .TCore "unknown", source ⟩
+        | .StrConcat => ⟨ .TString, source ⟩
+      | _ => ⟨ .TCore "unknown", source ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
         computeExprType model last
-    | none => ⟨ .TVoid, md ⟩
+    | none => ⟨ .TVoid, source ⟩
   -- Statements
-  | .LocalVariable _ _ _ => ⟨ .TVoid, md ⟩
-  | .While _ _ _ _ => ⟨ .TVoid, md ⟩
-  | .Exit _ => ⟨ .TVoid, md ⟩
-  | .Return _ => ⟨ .TVoid, md ⟩
+  | .LocalVariable _ _ _ => ⟨ .TVoid, source ⟩
+  | .While _ _ _ _ => ⟨ .TVoid, source ⟩
+  | .Exit _ => ⟨ .TVoid, source ⟩
+  | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
-  | .Assert _ => ⟨ .TVoid, md ⟩
-  | .Assume _ => ⟨ .TVoid, md ⟩
+  | .Assert _ => ⟨ .TVoid, source ⟩
+  | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related
-  | .New name => ⟨ .UserDefined name, md ⟩
+  | .New name => ⟨ .UserDefined name, source ⟩
   | .This => default -- TODO: implement
-  | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
+  | .ReferenceEquals _ _ => ⟨ .TBool, source ⟩
   | .AsType _ ty => ty
-  | .IsType _ _ => ⟨ .TBool, md ⟩
+  | .IsType _ _ => ⟨ .TBool, source ⟩
   -- Verification specific
-  | .Forall _ _ _ => ⟨ .TBool, md ⟩
-  | .Exists _ _ _ => ⟨ .TBool, md ⟩
-  | .Assigned _ => ⟨ .TBool, md ⟩
+  | .Quantifier _ _ _ _ => ⟨ .TBool, source ⟩
+  | .Assigned _ => ⟨ .TBool, source ⟩
   | .Old v => computeExprType model v
-  | .Fresh _ => ⟨ .TBool, md ⟩
+  | .Fresh _ => ⟨ .TBool, source ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
   | .ContractOf _ _ => default -- TODO: implement
   -- Special
   | .Abstract =>default -- TODO: implement
   | .All => default -- TODO: implement
-  | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, md ⟩
+  | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, source ⟩
 
 /-- Classification of a heap-relevant modifies type. -/
 inductive ModifiesTypeKind where

@@ -28,7 +28,7 @@ def translate (t : Strata.Program) : Core.Program :=
 
 def transformProgram (t : Strata.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program (PrecondElim.precondElim · Core.Factory) with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
@@ -41,7 +41,7 @@ def divInBodyPgm :=
 #strata
 program Core;
 
-procedure test(a : int) returns ()
+procedure test(a : int)
 {
   var z : int := 10 / a;
 };
@@ -54,11 +54,11 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure test (a : int) returns ()
+procedure test (a : int)
 {
   assert [init_calls_Int.SafeDiv_0]: !(a == 0);
   var z : int := 10 / a;
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram divInBodyPgm))
@@ -85,19 +85,19 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure safeMod$$wf (x : int, y : int) returns ()
+procedure safeMod$$wf (x : int, y : int)
 {
   assume [precond_safeMod_0]: !(y == 0);
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
-  };
+};
 function safeMod (x : int, y : int) : int {
   x % y
 }
-procedure foo$$wf (x : int, y : int) returns ()
+procedure foo$$wf (x : int, y : int)
 {
   assert [foo_precond_calls_safeMod_0]: !(y == 0);
   assume [precond_foo_0]: safeMod(x, y) > 0;
-  };
+};
 function foo (x : int, y : int) : int {
   x + y
 }
@@ -113,7 +113,7 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
-procedure test(xs : List) returns ()
+procedure test(xs : List)
 spec {
   requires List..isCons(xs);
   requires List..head(xs) > 0;
@@ -129,22 +129,23 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List) returns ()
+procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
   assume [test_requires_1]: List..head(xs) > 0;
-  };
-procedure test (xs : List) returns ()
+};
+procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
   requires [test_requires_1]: List..head(xs) > 0;
   } {
-  };
+  ⏎
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram procContractADTPgm))
@@ -157,7 +158,7 @@ program Core;
 
 datatype List { Nil(), Cons(head : int, tail : List) };
 
-procedure test(xs : List) returns ()
+procedure test(xs : List)
 spec {
   requires List..isCons(xs);
   ensures List..head(xs) > 0;
@@ -174,11 +175,11 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List) returns ()
+procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
@@ -186,14 +187,15 @@ procedure test$$wf (xs : List) returns ()
   assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
   assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
   assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
-  };
-procedure test (xs : List) returns ()
+};
+procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
   ensures [test_ensures_1]: List..head(xs) > 0;
   ensures [test_ensures_2]: List..head(List..tail(xs)) > 0;
   } {
-  };
+  ⏎
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
@@ -204,7 +206,7 @@ def funcDeclPrecondPgm :=
 #strata
 program Core;
 
-procedure test() returns ()
+procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
@@ -221,7 +223,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure test () returns ()
+procedure test ()
 {
   var x : int := 1;
   safeDiv$$wf: {
@@ -229,11 +231,11 @@ procedure test () returns ()
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
     assume [precond_safeDiv_0]: y / x > 0;
     assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
+  }
   function safeDiv (y : int) : int { y / x }
   assert [init_calls_safeDiv_0]: 5 / x > 0;
   var z : int := safeDiv(5);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcDeclPrecondPgm))
@@ -244,7 +246,7 @@ def inlineFuncInIteSimplePgm :=
 #strata
 program Core;
 
-procedure test(cond : bool, x : int, y : int) returns ()
+procedure test(cond : bool, x : int, y : int)
 {
   if (cond) {
     function f(a : int) : int
@@ -267,28 +269,28 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure test (cond : bool, x : int, y : int) returns ()
+procedure test (cond : bool, x : int, y : int)
 {
   if (cond) {
     f$$wf: {
       var a : int;
       assume [precond_f_0]: !(x == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-      }
+    }
     function f (a : int) : int { a / x }
     assert [init_calls_f_0]: !(x == 0);
     var r1 : int := f(10);
-    } else {
+  } else {
     f$$wf: {
       var a : int;
       assume [precond_f_0]: !(y == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-      }
+    }
     function f (a : int) : int { a / y }
     assert [init_calls_f_0]: !(y == 0);
     var r2 : int := f(20);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
@@ -299,7 +301,7 @@ def funcInMultipleProcsPgm :=
 #strata
 program Core;
 
-procedure proc1(x : int) returns ()
+procedure proc1(x : int)
 {
   function f(a : int) : int
     requires x != 0;
@@ -307,7 +309,7 @@ procedure proc1(x : int) returns ()
   var r : int := f(10);
 };
 
-procedure proc2(y : int) returns ()
+procedure proc2(y : int)
 {
   function f(a : int) : int
     requires y != 0;
@@ -323,28 +325,28 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure proc1 (x : int) returns ()
+procedure proc1 (x : int)
 {
   f$$wf: {
     var a : int;
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
+  }
   function f (a : int) : int { a / x }
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
-  };
-procedure proc2 (y : int) returns ()
+};
+procedure proc2 (y : int)
 {
   f$$wf: {
     var a : int;
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-    }
+  }
   function f (a : int) : int { a / y }
   assert [init_calls_f_0]: !(y == 0);
   var r : int := f(20);
-  };
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcInMultipleProcsPgm))
@@ -355,7 +357,7 @@ def iteCondPrecondPgm :=
 #strata
 program Core;
 
-procedure test(x : int, y : int) returns ()
+procedure test(x : int, y : int)
 {
   if (x / y > 0) {
     var z : int := 1;
@@ -371,15 +373,15 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure test (x : int, y : int) returns ()
+procedure test (x : int, y : int)
 {
   assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
   if (x / y > 0) {
     var z : int := 1;
-    } else {
+  } else {
     var z : int := 2;
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram iteCondPrecondPgm))
@@ -389,9 +391,7 @@ procedure test (x : int, y : int) returns ()
 def loopGuardPrecondPgm :=
 #strata
 program Core;
-var g : int;
-procedure test(y : int) returns ()
-spec { modifies g; }
+procedure test(inout g : int, y : int)
 {
   while (y / (y / g) > 0) { g := g - 1; }
 };
@@ -403,11 +403,8 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-var g : int;
-procedure test (y : int) returns ()
-spec {
-  modifies g;
-  } {
+procedure test (inout g : int, y : int)
+{
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
   assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);
   while (y / (y / g) > 0)
@@ -415,8 +412,8 @@ spec {
     g := g - 1;
     assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
     assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram loopGuardPrecondPgm))
