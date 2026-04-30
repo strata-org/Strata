@@ -1937,6 +1937,9 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     let inputTypes := funcDecl.args.map (λ arg =>
       match arg.tys with | [ty] => (arg.name, ty) | _ => (arg.name, PyLauType.Any))
     let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes}
+    let ctx := match ctx.currentClassName with
+      | some cn => {ctx with variableTypes := ("self", cn) :: ctx.variableTypes}
+      | none => ctx
     let (bodyTrans, newCtx) ← match body with
     | some body =>
         let (bodyBlock, newCtx) ←  translateFunctionBody ctx funcDecl.kwargsName inputs body

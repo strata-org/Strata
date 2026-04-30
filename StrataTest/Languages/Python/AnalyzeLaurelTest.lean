@@ -383,4 +383,29 @@ recursively translates subclasses, so the type
       let msgs := result.errors.toList.map (·.message)
       throw <| IO.userError s!"Resolution errors after FilterPrelude:\n{"\n".intercalate msgs}"
 
+/-! ## Self-field dispatch test
+
+Verifies that `self.field.method()` inside a class method resolves through
+dispatch rather than being flattened to an underscore-separated package call.
+Without the fix, `self.store.put_item(...)` would produce a Hole instead of
+invoking the Storage spec, so precondition violations would go undetected. -/
+
+#eval withPython fun pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
+      "test_self_field_dispatch_precondition.py" (useRoots := true)
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      let mut foundAlwaysFalse := false
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          let line := r.formatOutcome
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
+      if !foundAlwaysFalse then
+        throw <| IO.userError
+          "Expected ✖️ always false for empty bucket violation via self.field dispatch"
+
 end Strata.Python.AnalyzeLaurelTest
