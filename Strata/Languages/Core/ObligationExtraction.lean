@@ -142,7 +142,6 @@ private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
         | ok v2 => intro _ _; simp; exact extractGo_ok _ _ _ hrest
     · exact extractGo_ok _ _ _ hrest
     · unfold isValidObligationStatement at hs; simp at hs
-  termination_by ss
 
 /-- If the input satisfies `isValidObligationInput`, then `extractFromStatements`
     never returns an error. -/
