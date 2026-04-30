@@ -663,4 +663,45 @@ Result: ✅ pass -/
 #guard_msgs in
 #eval verify decreasesNonCasesPgm (options := .default)
 
+---------------------------------------------------------------------
+-- Test 12: error — recursive function with no @[cases] or decreases
+---------------------------------------------------------------------
+
+def noCasesNoDecreasesPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + bad(IntList..tl(xs))
+};
+#end
+
+/-- error: ❌ Transform Error. recursive function 'bad' requires a 'decreases' clause or a '@[cases]' parameter for termination checking -/
+#guard_msgs in
+#eval verify noCasesNoDecreasesPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 13: error — decreases on non-ADT parameter (temporary)
+---------------------------------------------------------------------
+
+def decreasesNonADTPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList, n : int) : int
+  decreases n
+{
+  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), n - 1)
+};
+#end
+
+/-- error: ❌ Transform Error. recursive function 'bad': decreasing parameter type 'int' is not a known datatype -/
+#guard_msgs in
+#eval verify decreasesNonADTPgm (options := .quiet)
+
 end Strata.TerminationCheckTest

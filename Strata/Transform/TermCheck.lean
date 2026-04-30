@@ -255,6 +255,24 @@ where
         -- cannot generate them for polymorphic datatypes yet. The user-facing
         -- error is in Env.addFactoryFunc; when that restriction is lifted,
         -- this filter must be updated to handle polymorphic dtRank generation.
+        for func in funcs do
+          if func.typeArgs.isEmpty then
+            match getDecreasesIdx func with
+            | none =>
+              throw (s!"recursive function '{func.name.name}' requires a " ++
+                    s!"'decreases' clause or a '@[cases]' parameter for termination checking")
+            | some idx =>
+              match func.inputs.values[idx]? with
+              | some (.tcons n _) =>
+                if (tf.getType n).isNone then
+                  throw (s!"recursive function '{func.name.name}': decreasing parameter " ++
+                        s!"type '{n}' is not a known datatype")
+              | some _ =>
+                throw (s!"recursive function '{func.name.name}': decreasing parameter " ++
+                      s!"must have a datatype type")
+              | none =>
+                throw (s!"recursive function '{func.name.name}': decreasing parameter " ++
+                      s!"index {idx} is out of range")
         let funcDecreasesMap := funcs.filterMap fun func => do
           if !func.typeArgs.isEmpty then none
           let idx ← getDecreasesIdx func

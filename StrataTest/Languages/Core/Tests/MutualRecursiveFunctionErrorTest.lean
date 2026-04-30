@@ -58,10 +58,12 @@ program Core;
 datatype MyNat { Zero(), Succ(pred: MyNat) };
 
 rec function isEven (n : MyNat) : bool
+decreases n
 {
   if MyNat..isZero(n) then true else isOdd(MyNat..pred(n))
 }
 function isOdd (n : MyNat) : bool
+decreases n
 {
   if MyNat..isZero(n) then false else isEven(MyNat..pred(n))
 };
