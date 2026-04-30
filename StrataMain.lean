@@ -1323,8 +1323,15 @@ def verifyCommand : Command where
       else
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        let hasImplError := vcResults.any (fun r => r.isImplementationError || r.hasSMTError)
+        let hasTimeout := vcResults.any Core.VCResult.isTimeout
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
-        IO.Process.exit ExitCode.failuresFound
+        if hasImplError then
+          IO.Process.exit ExitCode.internalError
+        else if hasTimeout then
+          IO.Process.exit ExitCode.solverTimeout
+        else
+          IO.Process.exit ExitCode.failuresFound
 
 def pyInterpretCommand : Command where
   name := "pyInterpret"
