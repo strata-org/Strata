@@ -119,10 +119,14 @@ private theorem step_hasFailure_monotone
   | step_ite_false _ _ => exact hf
   | step_ite_nondet_true => exact hf
   | step_ite_nondet_false => exact hf
-  | step_loop_enter _ _ => exact hf
-  | step_loop_exit _ _ => exact hf
-  | step_loop_nondet_enter => exact hf
-  | step_loop_nondet_exit => exact hf
+  | step_loop_enter _ _ _ _ =>
+    simp [Config.getEnv]; left; exact hf
+  | step_loop_exit _ _ _ _ =>
+    simp [Config.getEnv]; left; exact hf
+  | step_loop_nondet_enter _ _ =>
+    simp [Config.getEnv]; left; exact hf
+  | step_loop_nondet_exit _ _ =>
+    simp [Config.getEnv]; left; exact hf
   | step_exit => exact hf
   | step_funcDecl => simp [Config.getEnv]; exact hf
   | step_typeDecl => exact hf
@@ -165,6 +169,18 @@ theorem EvalStmtsSmall_hasFailure_monotone
       c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
     exact this _ _ Heval Hf
   intro c c' hstar hf
+  induction hstar with
+  | refl => exact hf
+  | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone hstep hf)
+
+theorem StepStmtStar_hasFailure_monotone
+  {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
+  {extendEval : ExtendEval P}
+  [HasBool P] [HasNot P]
+  {c c' : Config P CmdT}
+  (hstar : StepStmtStar P EvalCmd extendEval c c')
+  (hf : c.getEnv.hasFailure = true) :
+  c'.getEnv.hasFailure = true := by
   induction hstar with
   | refl => exact hf
   | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone hstep hf)

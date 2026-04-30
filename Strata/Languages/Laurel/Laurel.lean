@@ -19,10 +19,6 @@ namespace Laurel
 
 public section
 
-abbrev MetaData := Imperative.MetaData Core.Expression
--- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr MetaData := inferInstance
-
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
     Carries a mandatory unique ID assigned by the resolution pass. -/
 structure Identifier where
@@ -30,8 +26,8 @@ structure Identifier where
   text : String
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
-  /-- Source-level metadata (locations, annotations). -/
-  md : MetaData
+  /-- Source location for this identifier. -/
+  source : Option FileRange := none
   deriving Repr
 
 -- Temporary hack because the Python through Laurel pipeline doesn't resolve
@@ -39,15 +35,15 @@ instance : BEq Identifier where
   beq a b := a.text == b.text
 
 instance : Inhabited Identifier where
- default := { text := "defaultIdentifier", md := .empty }
+ default := { text := "defaultIdentifier" }
 
 instance : ToString Identifier where
   toString id := id.text
 
 instance : Coe String Identifier where
-  coe s := { text := s, md := .empty }
+  coe s := { text := s }
 
-def mkId (name: String): Identifier := { text := name, md := .empty }
+def mkId (name: String): Identifier := { text := name }
 
 /--
 Primitive operations available in Laurel expressions.
@@ -115,8 +111,6 @@ structure AstNode (t : Type) : Type where
   val : t
   /-- Source location for this AST node. -/
   source : Option FileRange
-  /-- Source-level metadata (locations, annotations). -/
-  md : MetaData := .empty
   deriving Repr
 
 /--
@@ -169,6 +163,12 @@ inductive HighType : Type where
   The unknown type can not be represented in Core so its occurence will abort compilation before evaluating Core -/
   | Unknown
   deriving Repr
+
+/-- Whether a quantifier is universal or existential. -/
+inductive QuantifierMode where
+  | Forall
+  | Exists
+  deriving Repr, BEq, Inhabited
 
 mutual
 
@@ -290,10 +290,8 @@ inductive StmtExpr : Type where
   | IsType (target : AstNode StmtExpr) (type : AstNode HighType)
   /-- Call an instance method on a target object. -/
   | InstanceCall (target : AstNode StmtExpr) (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Universal quantification over a typed parameter with an optional trigger. -/
-  | Forall (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
-  /-- Existential quantification over a typed parameter with an optional trigger. -/
-  | Exists (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
+  /-- Quantification (universal or existential) over a typed parameter with an optional trigger. -/
+  | Quantifier (mode : QuantifierMode) (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
   | Assigned (name : AstNode StmtExpr)
   /-- Refer to the pre-state value of an expression in a postcondition. -/
@@ -341,15 +339,24 @@ def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c 
 def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
   { c with condition := f c.condition }
 
-/-- Build Core metadata from an optional source location and Laurel metadata. -/
-def fileRangeToCoreMd (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : Imperative.MetaData Core.Expression :=
-  match source with
-  | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-  | none => md
+/-- Build Core metadata from an optional source location. -/
+def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
+  let fr := source.getD FileRange.unknown
+  Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
 
-/-- Build Core metadata from an AstNode's source location and any extra metadata. -/
+/-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
-  fileRangeToCoreMd node.source node.md
+  fileRangeToCoreMd node.source
+
+/-- Build Core metadata from an Identifier's source location. -/
+def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=
+  fileRangeToCoreMd id.source
+
+/-- Create a DiagnosticModel from an optional source location and a message. -/
+def diagnosticFromSource (source : Option FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
+  match source with
+  | some fr => DiagnosticModel.withRange fr msg type
+  | none => DiagnosticModel.fromMessage msg type
 
 instance : Inhabited StmtExpr where
   default := .Hole
@@ -394,6 +401,13 @@ deriving instance BEq for HighType
 def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
+
+/-- Check whether a single modifies entry is the wildcard (`*`). -/
+def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false
+
+/-- Check whether a modifies list contains the wildcard (`*`). -/
+def hasModifiesWildcard (modifiesExprs : List StmtExprMd) : Bool :=
+  modifiesExprs.any StmtExprMd.isWildcard
 
 def Body.isExternal : Body → Bool
   | .External => true

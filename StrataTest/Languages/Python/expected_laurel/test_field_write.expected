@@ -1,6 +1,4 @@
-test_field_write.py(8, 4): ✅ pass - callElimAssert_requires_3
+test_field_write.py(8, 4): ✅ pass - (Cell@__init__ requires) Type constraint of val
 test_field_write.py(10, 4): ✅ pass - field overwritten
-test_field_write.py(10, 4): ✅ pass - field overwritten
-test_field_write.py(7, 0): ✅ pass - postcondition
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

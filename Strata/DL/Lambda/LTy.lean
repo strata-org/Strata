@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Util.Map
+import Strata.Util.Tactics
 public meta import Lean.Elab.Term
 
 /-! ## Formalization of Mono- and Poly- Types in Lambda
@@ -151,6 +152,14 @@ def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
 def LMonoTy.isArrow : LMonoTy → Option (LMonoTy × LMonoTy)
   | .tcons "arrow" [dom, cod] => some (dom, cod)
   | _ => none
+
+/-- Checks if the type contains an arrow (function type) at any depth. -/
+def LMonoTy.containsArrow : LMonoTy → Bool
+  | .tcons "arrow" _ => true
+  | .tcons _ args => args.attach.any (fun x => LMonoTy.containsArrow x.1)
+  | .ftvar _ | .bitvec _ => false
+  termination_by t => SizeOf.sizeOf t
+  decreasing_by cases x; term_by_mem
 
 @[simp] theorem LMonoTy.isArrow_arrow (t1 t2 : LMonoTy) :
     (LMonoTy.arrow t1 t2).isArrow = some (t1, t2) := by

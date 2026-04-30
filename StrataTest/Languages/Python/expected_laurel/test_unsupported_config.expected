@@ -1,5 +1,4 @@
-test_unsupported_config.py(4, 0): ❓ unknown (pass on 3 paths, unknown on 2 paths) - postcondition
 test_unsupported_config.py(8, 4): ✅ pass - Assert No UnCaught Exception
 test_unsupported_config.py(9, 8): ❓ unknown - assert(178)
-DETAIL: 1 passed, 0 failed, 2 inconclusive
+DETAIL: 1 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

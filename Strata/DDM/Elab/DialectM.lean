@@ -5,13 +5,13 @@
 -/
 module
 
-public import Strata.DDM.AST
+import Std.Data.HashMap.Lemmas
+
 public import Strata.DDM.Elab.Core
 
-import Std.Data.HashMap
-import Strata.Util.DecideProp
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
+import Strata.Util.DecideProp
 
 set_option autoImplicit false
 

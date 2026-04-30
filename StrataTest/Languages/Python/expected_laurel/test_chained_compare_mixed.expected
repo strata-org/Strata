@@ -1,0 +1,8 @@
+test_chained_compare_mixed.py(2, 4): ✅ pass - assert(38)
+test_chained_compare_mixed.py(3, 4): ✅ pass - assert(53)
+test_chained_compare_mixed.py(4, 4): ✅ pass - assert(68)
+test_chained_compare_mixed.py(5, 4): ✅ pass - mixed operators
+test_chained_compare_mixed.py(6, 4): ❓ unknown - reversed mixed should fail
+test_chained_compare_mixed.py(7, 4): ❓ unknown - should fail: a is 1
+DETAIL: 4 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

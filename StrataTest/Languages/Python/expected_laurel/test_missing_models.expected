@@ -1,7 +1,7 @@
-test_missing_models.py(12, 4): ❓ unknown (pass on 2 paths, unknown on 3 paths) - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_missing_models.py(12, 4): ❓ unknown (pass on 2 paths, unknown on 2 paths) - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-test_missing_models.py(15, 4): ❓ unknown (pass on 2 paths, unknown on 3 paths) - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_missing_models.py(15, 4): ❓ unknown (pass on 2 paths, unknown on 2 paths) - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
 test_missing_models.py(6, 0): ✅ pass - Assert No UnCaught Exception
