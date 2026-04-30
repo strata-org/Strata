@@ -1300,8 +1300,9 @@ abbrev DischargeFn :=
 abbrev CoreSMTSolver :=
   @Lambda.Factory CoreLParams → Program → EIO DiagnosticModel (VCResults × Statistics)
 
-/-- Factory type for constructing discharge functions. Backends can provide
-    their own factory to plug in alternative solvers. -/
+/-- Factory for discharge functions. Called once per obligation with the
+    obligation's typed variables, metadata, and label. A custom implementation
+    can replace the default (batch/incremental SMT-LIB) backend. -/
 abbrev MkDischargeFn :=
   VerifyOptions → IO.Ref Nat → System.FilePath →
   List Expression.TypedIdent → Imperative.MetaData Expression → String → DischargeFn
@@ -1310,11 +1311,11 @@ abbrev MkDischargeFn :=
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
     `options.incremental` and `options.alwaysGenerateSMT`.
     Thread-safe: the batch path uses atomic `modifyGet` for the filename counter. -/
-def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
+def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath)
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
-    (label : String) : DischargeFn :=
+    (label : String) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
     if options.incremental && !options.alwaysGenerateSMT then
@@ -1667,7 +1668,7 @@ def mkDefaultCoreSMTSolver
     CoreSMTSolver :=
   fun moreFns oblProgram =>
     verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
-      axiomNames axiomProgram externalPhases corePhases mkDischarge
+      axiomNames axiomProgram externalPhases corePhases (mkDischarge := mkDischarge)
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
@@ -1734,7 +1735,8 @@ def verify (program : Program)
     else
       let coreSMTSolver := solver.getD
         (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
-          axiomNames (axiomProgram := program) externalPhases phases mkDischarge)
+          axiomNames (axiomProgram := program) externalPhases phases
+          (mkDischarge := mkDischarge))
       pure [← coreSMTSolver moreFns oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
