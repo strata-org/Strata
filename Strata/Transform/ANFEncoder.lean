@@ -211,7 +211,7 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   -- Build all var declarations and the replacement map
   let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
     let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
-    let freshTy := Core.getExprType? dup
+    let freshTy := dup.typeOf
     let freshVar : Expression.Expr := .fvar () freshName freshTy
     let ty : Expression.Ty := match freshTy with
       | some mty => LTy.forAll [] mty
