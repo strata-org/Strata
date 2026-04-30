@@ -210,7 +210,7 @@ Guidelines](#syntactic-style-guidelines).
 For security reasons, Strata's continuous integration policy only allows running
 internal benchmarks if the pull request was created from a branch in
 strata-org/Strata, not from a fork.
-Therefore, external contributors will need to find a "shepherd" who can
+As an external contributor, you will need to find a "shepherd" who can
 (1) move your branch to strata-org/Strata, and
 (2) recreate a pull request that will launch all continuous integration
 checks.
@@ -221,7 +221,7 @@ this and solicit and address review comments.
 Second, once the review comments are resolved, ask one of your reviewers to shepherd your pull request.
 They will copy your branch into strata-org/Strata and create a new pull request that
 will run the full internal benchmarks.
-If the internal benchmark results look good, your patch is finally good to go. :)
+If the internal benchmark results look good, your patch is finally good to go.
 
 # Filing an Issue
 
