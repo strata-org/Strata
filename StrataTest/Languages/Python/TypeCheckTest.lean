@@ -166,6 +166,45 @@ private meta def buildTestSpecs (dir : System.FilePath) : IO Unit := do
     exhaustive := true
   }
   writeSpecFile dir "myservice" #[.classDef clientClass]
+  -- cloudkit spec: overloaded client() function for dispatch testing
+  let dbIdent : PythonIdent := { pythonModule := "cloudkit.database", name := "DatabaseClient" }
+  let dbLiteralType : Strata.Python.Specs.SpecType :=
+    { atoms := #[.stringLiteral "database"], loc := default }
+  let dbArg : Strata.Python.Specs.Arg :=
+    { name := "service_name", type := dbLiteralType }
+  let clientDb : Strata.Python.Specs.FunctionDecl := {
+    loc := default, nameLoc := default
+    name := "client"
+    args := { args := #[dbArg], kwonly := #[] }
+    returnType := .ident default dbIdent
+    isOverload := true
+    preconditions := #[], postconditions := #[]
+  }
+  let cacheIdent : PythonIdent := { pythonModule := "cloudkit.cache", name := "CacheClient" }
+  let cacheLiteralType : Strata.Python.Specs.SpecType :=
+    { atoms := #[.stringLiteral "cache"], loc := default }
+  let cacheArg : Strata.Python.Specs.Arg :=
+    { name := "service_name", type := cacheLiteralType }
+  let clientCache : Strata.Python.Specs.FunctionDecl := {
+    loc := default, nameLoc := default
+    name := "client"
+    args := { args := #[cacheArg], kwonly := #[] }
+    returnType := .ident default cacheIdent
+    isOverload := true
+    preconditions := #[], postconditions := #[]
+  }
+  let fallbackArg : Strata.Python.Specs.Arg :=
+    { name := "service_name", type := .ident default .builtinsStr }
+  let clientFallback : Strata.Python.Specs.FunctionDecl := {
+    loc := default, nameLoc := default
+    name := "client"
+    args := { args := #[fallbackArg], kwonly := #[] }
+    returnType := .ident default .typingAny
+    isOverload := false
+    preconditions := #[], postconditions := #[]
+  }
+  writeSpecFile dir "cloudkit" #[.functionDecl clientDb, .functionDecl clientCache,
+                                 .functionDecl clientFallback]
 
 /-- Run a test case that uses spec loading. -/
 private meta def runSpecTestCase
@@ -217,7 +256,9 @@ private meta def specTests : List String := [
   "tc10_class_method",
   "tc11_class_field",
   "tc12_exhaustive",
-  "tc13_from_import"
+  "tc13_from_import",
+  "tc14_overload_dispatch",
+  "tc15_arg_count"
 ]
 
 #eval withPython fun pythonCmd => do

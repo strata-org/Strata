@@ -1,0 +1,29 @@
+module "tc14_overload_dispatch":
+
+func f():
+  bb0():
+    %0:cloudkit.0 = qualifiedRef cloudkit.cloudkit
+    %3:db_client.0 = call attr(%0, "client")(positional("database"))
+    %4:cloudkit.1 = qualifiedRef cloudkit.cloudkit
+    %7:cache_client.0 = call attr(%4, "client")(positional("cache"))
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc14_overload_dispatch":
+
+func f:
+  %0:cloudkit.0 : cloudkit
+  %1:_tmp.0 : Callable(cloudkit.client)
+  %2:_tmp.1 : Literal("database")
+  %3:db_client.0 : cloudkit.database.DatabaseClient
+  %4:cloudkit.1 : cloudkit
+  %5:_tmp.3 : Callable(cloudkit.client)
+  %6:_tmp.4 : Literal("cache")
+  %7:cache_client.0 : cloudkit.cache.CacheClient
+
+func @module_init:

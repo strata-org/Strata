@@ -1,0 +1,28 @@
+module "tc15_arg_count":
+
+func f():
+  bb0():
+    %0:math.0 = qualifiedRef math.math
+    %5:x.0 = call attr(%0, "sqrt")(positional(1.0), positional(2.0), positional(3.0))
+    ret
+
+func @module_init():
+  bb0():
+    ret
+
+--- type check ---
+
+module "tc15_arg_count":
+
+func f:
+  %0:math.0 : math
+  %1:_tmp.0 : Callable(math.sqrt)
+  %2:_tmp.1 : Literal(1.0)
+  %3:_tmp.2 : Literal(2.0)
+  %4:_tmp.3 : Literal(3.0)
+  %5:x.0 : float
+
+func @module_init:
+
+diagnostics:
+  warning: too many positional args for math.sqrt: expected 1, got 3

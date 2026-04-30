@@ -127,7 +127,7 @@ private def resolveQualifiedRef (_sr : SourceRange) (qn : QualifiedName)
       return .instance_ modName
     match ms.exports.get? qn.name with
     | some (.classDef _) => return .callable s!"{modName}.{qn.name}"
-    | some (.functionDecl _) => return .callable s!"{modName}.{qn.name}"
+    | some (.functionGroup _) => return .callable s!"{modName}.{qn.name}"
     | some (.typeDef st) => return specTypeToAbstract st
     | some (.externType source) =>
       return .instance_ s!"{source.pythonModule}.{source.name}"
@@ -140,7 +140,7 @@ private def resolveModuleAttr (modName name : String) : TypeCheckM AbstractType 
   | some ms =>
     match ms.exports.get? name with
     | some (.classDef _) => return .callable s!"{modName}.{name}"
-    | some (.functionDecl _) => return .callable s!"{modName}.{name}"
+    | some (.functionGroup _) => return .callable s!"{modName}.{name}"
     | some (.typeDef st) => return specTypeToAbstract st
     | some (.externType source) =>
       return .instance_ s!"{source.pythonModule}.{source.name}"
@@ -175,9 +175,45 @@ private def resolveAttr (_sr : SourceRange) (className name : String)
   else
     resolveClassAttr className name
 
+
+/-- Extract the AbstractType of the first positional call arg. -/
+private def firstPosArgType (args : Array CallArg) (s : TypeState) : AbstractType :=
+  match args.find? (fun | .positional _ => true | _ => false) with
+  | some (.positional v) => s.getType v
+  | _ => .any (.unknown "no positional arg")
+
+/-- Count positional args in a call (excludes keyword, *args, **kwargs). -/
+private def countPosArgs (args : Array CallArg) : Nat :=
+  args.foldl (init := 0) fun n arg =>
+    match arg with
+    | .positional _ => n + 1
+    | _ => n
+
+/-- Resolve a function group call.  Uses `FunctionGroup.resolve` for O(1)
+    overload dispatch on the first positional arg's string literal value. -/
+private def resolveFuncGroupCall (sr : SourceRange) (sigName : String)
+    (g : FunctionGroup) (args : Array CallArg) (s : TypeState)
+    : TypeCheckM AbstractType := do
+  if let some decl := g.single? then
+    let posCount := countPosArgs args
+    let hasStarArgs := args.any fun | .starArgs _ | .starKwargs _ => true | _ => false
+    let minArgs := decl.args.args.size
+    let hasKwargs := decl.args.kwargs.isSome
+    if !hasStarArgs && !hasKwargs && posCount > minArgs then
+      let diag : Diagnostic := {
+        sr, kind := "warning"
+        msg := s!"too many positional args for {sigName}: expected {minArgs}, got {posCount}"
+      }
+      modify fun st => { st with diagnostics := st.diagnostics.push diag }
+    return specTypeToAbstract decl.returnType
+  let firstArg := firstPosArgType args s
+  match g.resolve firstArg with
+  | some decl => return specTypeToAbstract decl.returnType
+  | none => return .any (.unknown s!"call on {sigName}")
+
 /-- Resolve a call to a known callable. -/
-private def resolveCall (_sr : SourceRange) (sigName : String) (_args : Array CallArg)
-    (_s : TypeState) : TypeCheckM AbstractType := do
+private def resolveCall (sr : SourceRange) (sigName : String) (args : Array CallArg)
+    (s : TypeState) : TypeCheckM AbstractType := do
   let parts := sigName.splitOn "."
   if parts.length < 2 then return .any (.unknown s!"call on {sigName}")
   let funcName := parts.getLast!
@@ -191,7 +227,8 @@ private def resolveCall (_sr : SourceRange) (sigName : String) (_args : Array Ca
     | none => return .any (.unknown s!"call on {sigName}")
     | some ms =>
       match ms.exports.get? funcName with
-      | some (.functionDecl decl) => return specTypeToAbstract decl.returnType
+      | some (.functionGroup g) =>
+        resolveFuncGroupCall sr sigName g args s
       | some (.classDef _) => return .instance_ sigName
       | _ => return .any (.unknown s!"call on {sigName}")
   else
@@ -200,10 +237,12 @@ private def resolveCall (_sr : SourceRange) (sigName : String) (_args : Array Ca
     | some ms =>
       match ms.exports.get? ownerName with
       | some (.classDef cls) =>
-        if let some method := cls.methods.find? (·.name == funcName) then
-          return specTypeToAbstract method.returnType
-        return .any (.unknown s!"call on {sigName}")
-      | some (.functionDecl decl) => return specTypeToAbstract decl.returnType
+        let g := ModuleSpec.methodGroup cls.methods funcName
+        if g.byFirstArg.isEmpty && g.fallbacks.isEmpty then
+          return .any (.unknown s!"call on {sigName}")
+        resolveFuncGroupCall sr sigName g args s
+      | some (.functionGroup g) =>
+        resolveFuncGroupCall sr sigName g args s
       | _ => return .any (.unknown s!"call on {sigName}")
 
 /-- Process a single instruction and return its result type. -/
