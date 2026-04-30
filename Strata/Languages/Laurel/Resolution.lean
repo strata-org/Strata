@@ -493,7 +493,7 @@ def resolveBody (body : Body) : ResolveM Body := do
 
 /-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← defineName proc.name (.staticProcedure proc)
+  let procName' ← resolveRef proc.name
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
@@ -520,7 +520,7 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
 
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← defineName proc.name (.instanceProcedure typeName proc)
+  let procName' ← resolveRef proc.name
   withScope do
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
