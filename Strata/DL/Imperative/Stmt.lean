@@ -160,6 +160,46 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### MapExpr
+
+Apply a function to all expressions in a statement's structural positions
+(guards, measures, invariants). Command-level expressions are mapped by
+the caller-supplied `mapCmd` function.
+-/
+
+mutual
+/-- Apply `fExpr` to structural expressions and `mapCmd` to commands. -/
+def Stmt.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (s : Stmt P C) : Stmt P C :=
+  match s with
+  | .cmd c => .cmd (mapCmd c)
+  | .block l ss md => .block l (Block.mapExpr fExpr mapCmd ss) md
+  | .ite (.det c) tss ess md =>
+    .ite (.det (fExpr c)) (Block.mapExpr fExpr mapCmd tss) (Block.mapExpr fExpr mapCmd ess) md
+  | .ite .nondet tss ess md =>
+    .ite .nondet (Block.mapExpr fExpr mapCmd tss) (Block.mapExpr fExpr mapCmd ess) md
+  | .loop (.det g) measure inv body md =>
+    .loop (.det (fExpr g)) (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
+      (Block.mapExpr fExpr mapCmd body) md
+  | .loop .nondet measure inv body md =>
+    .loop .nondet (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
+      (Block.mapExpr fExpr mapCmd body) md
+  | .exit l md => .exit l md
+  | .funcDecl decl md => .funcDecl decl md
+  | .typeDecl tc md => .typeDecl tc md
+  termination_by (Stmt.sizeOf s)
+
+/-- Apply `fExpr` and `mapCmd` to every statement in a block. -/
+def Block.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (ss : Block P C) : Block P C :=
+  match ss with
+  | [] => []
+  | s :: rest => Stmt.mapExpr fExpr mapCmd s :: Block.mapExpr fExpr mapCmd rest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### StripMetaData
 
 Functions to remove metadata from statements and blocks.
