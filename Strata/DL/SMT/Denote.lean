@@ -137,7 +137,7 @@ def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
 mutual
 
 /-- Interpret primitive SMT types as Lean types, when supported. -/
-def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
+@[expose] def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
   match pty with
   | .bool => return fun _ => Prop
   | .int => return fun _ => Int
@@ -191,7 +191,7 @@ Interpret an SMT `TermType` as a Lean `Type`, when supported.
 
 Returns `none` when we lack an interpretation (e.g. for reals).
 -/
-def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
+@[expose] def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
   match ty with
   | .prim pty => denotePrimSort sctx pty
   | .option ty =>
@@ -1564,10 +1564,12 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
       | real _ => simp [TermPrim.typeOf] at htyeq
       | bool bb =>
         obtain ⟨fa, hdta, hiffa⟩ := iha; obtain ⟨fb, hdtb, hiffb⟩ := ihb
-        refine ⟨fun Γ => @Eq Prop (fa Γ) (fb Γ),
+        refine ⟨fun Γ => fa Γ ↔ fb Γ,
           by unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
-             rw [hdta, hdtb]; first | rfl | simp, ?_⟩
-        simp only [decide_eq_true_eq, eq_iff_iff]
+             simp only [hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                        dite_true]
+             congr; funext x; apply propext; exact eq_iff_iff, ?_⟩
+        simp only [decide_eq_true_eq]
         cases ba <;> cases bb <;> simp_all
       | int _ => simp [TermPrim.typeOf] at htyeq
       | bitvec _ => simp [TermPrim.typeOf] at htyeq
@@ -1577,10 +1579,12 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
       | real _ => simp [TermPrim.typeOf] at htyeq
       | int nb =>
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        refine ⟨fun Γ => fa Γ = fb Γ,
-          by unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
-             rw [hdta, hdtb]; first | rfl | simp, ?_⟩
-        simp [hvala, hvalb, decide_eq_true_eq]
+        refine ⟨fun Γ => fa Γ = fb Γ, ?_, ?_⟩
+        · unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
+          simp only [hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [hvala, hvalb, decide_eq_true_eq]
       | bool _ => simp [TermPrim.typeOf] at htyeq
       | bitvec _ => simp [TermPrim.typeOf] at htyeq
       | string _ => simp [TermPrim.typeOf] at htyeq
@@ -1593,10 +1597,12 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
           injection htyeq with h; injection h
         subst hkk
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        refine ⟨fun Γ => fa Γ = fb Γ,
-          by unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
-             rw [hdta, hdtb]; first | rfl | simp, ?_⟩
-        simp [hvala, hvalb, decide_eq_true_eq]
+        refine ⟨fun Γ => fa Γ = fb Γ, ?_, ?_⟩
+        · unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
+          simp only [hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [hvala, hvalb, decide_eq_true_eq]
       | bool _ => simp [TermPrim.typeOf] at htyeq
       | int _ => simp [TermPrim.typeOf] at htyeq
       | string _ => simp [TermPrim.typeOf] at htyeq
@@ -1604,10 +1610,12 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
       cases vb with
       | string sb =>
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        refine ⟨fun Γ => fa Γ = fb Γ,
-          by unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
-             rw [hdta, hdtb]; first | rfl | simp, ?_⟩
-        simp [hvala, hvalb, decide_eq_true_eq]
+        refine ⟨fun Γ => fa Γ = fb Γ, ?_, ?_⟩
+        · unfold denoteTerm denoteTerms denoteTerms denoteTerms chainable chainable.go
+          simp only [hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [hvala, hvalb, decide_eq_true_eq]
       | real _ => simp [TermPrim.typeOf] at htyeq
       | bool _ => simp [TermPrim.typeOf] at htyeq
       | int _ => simp [TermPrim.typeOf] at htyeq
@@ -1621,17 +1629,23 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
       cases vb with
       | bool _ =>
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, _⟩ := ihb
-        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp, ?_⟩
-        simp only [if_pos hcpos]; exact hvala
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp only [if_pos hcpos]; exact hvala
       | _ => simp [TermPrim.typeOf] at htyeq
     | int n =>
       cases vb with
       | int _ =>
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, _⟩ := ihb
-        exact ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp,
-          by simp [if_pos hcpos]; exact hvala⟩
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [if_pos hcpos]; exact hvala
       | _ => simp [TermPrim.typeOf] at htyeq
     | @bitvec k x =>
       cases vb with
@@ -1639,17 +1653,23 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
         have hk : k = k' := by simp [TermPrim.typeOf] at htyeq; exact htyeq
         subst hk
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, _⟩ := ihb
-        exact ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp,
-          by simp [if_pos hcpos]; exact hvala⟩
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [if_pos hcpos]; exact hvala
       | _ => simp [TermPrim.typeOf] at htyeq
     | string s =>
       cases vb with
       | string _ =>
         obtain ⟨fa, hdta, hvala⟩ := iha; obtain ⟨fb, hdtb, _⟩ := ihb
-        exact ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp,
-          by simp [if_pos hcpos]; exact hvala⟩
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [if_pos hcpos]; exact hvala
       | _ => simp [TermPrim.typeOf] at htyeq
   | @ite_false _ _ _ _ va v _ _ _ htyeq ihc iha ihb =>
     obtain ⟨fc, hdtc, hiffc⟩ := ihc
@@ -1660,17 +1680,23 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
       cases va with
       | bool _ =>
         obtain ⟨fa, hdta, _⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp, ?_⟩
-        simp only [if_neg hcneg]; exact hvalb
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp only [if_neg hcneg]; exact hvalb
       | _ => simp [TermPrim.typeOf] at htyeq
     | int n =>
       cases va with
       | int _ =>
         obtain ⟨fa, hdta, _⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        exact ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp,
-          by simp [if_neg hcneg]; exact hvalb⟩
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [if_neg hcneg]; exact hvalb
       | _ => simp [TermPrim.typeOf] at htyeq
     | @bitvec k x =>
       cases va with
@@ -1678,17 +1704,23 @@ private theorem DenotePred.sound_aux {t : Term} {v : TermPrim} (h : DenotePred t
         have hk : k' = k := by simp [TermPrim.typeOf] at htyeq; exact htyeq
         subst hk
         obtain ⟨fa, hdta, _⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        exact ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp,
-          by simp [if_neg hcneg]; exact hvalb⟩
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [if_neg hcneg]; exact hvalb
       | _ => simp [TermPrim.typeOf] at htyeq
     | string s =>
       cases va with
       | string _ =>
         obtain ⟨fa, hdta, _⟩ := iha; obtain ⟨fb, hdtb, hvalb⟩ := ihb
-        exact ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), by
-          unfold denoteTerm; rw [hdtc, hdta, hdtb]; first | rfl | simp,
-          by simp [if_neg hcneg]; exact hvalb⟩
+        refine ⟨fun Γ => @ite _ (fc Γ) (Classical.propDecidable (fc Γ)) (fa Γ) (fb Γ), ?_, ?_⟩
+        · unfold denoteTerm
+          simp only [hdtc, hdta, hdtb, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+                     dite_true]
+          congr; funext
+        · simp [if_neg hcneg]; exact hvalb
       | _ => simp [TermPrim.typeOf] at htyeq
   -- ═══ Integer arithmetic ═══
   | @neg_int _ n _ _ ih =>
@@ -1920,3 +1952,70 @@ theorem DenotePred.sound_string {t : Term} {s : String}
     denoteStringTermAux t = some s := by
   obtain ⟨f, hdt, hval⟩ := DenotePred.sound_aux h
   simp [denoteStringTermAux, hdt, hval]
+
+/-! ### DenotePred determinism -/
+
+/-- `DenotePred` is deterministic: a term has at most one denotation. -/
+theorem DenotePred.deterministic {t : Term} {v₁ v₂ : TermPrim}
+    (h₁ : DenotePred t v₁) (h₂ : DenotePred t v₂) : v₁ = v₂ := by
+  induction h₁ generalizing v₂ with
+  | prim_bool b => cases h₂; rfl
+  | prim_int n => cases h₂; rfl
+  | prim_bitvec x => cases h₂; rfl
+  | prim_string s => cases h₂; rfl
+  | ite_true _ _ _ _ ihc iha _ =>
+    cases h₂ with
+    | ite_true _ ha' _ _ => exact iha ha'
+    | ite_false hc' _ _ _ => exact absurd (ihc hc') (by simp)
+  | ite_false _ _ _ _ ihc _ ihb =>
+    cases h₂ with
+    | ite_true hc' _ _ _ => exact absurd (ihc hc') (by simp)
+    | ite_false _ _ hb' _ => exact ihb hb'
+  -- All remaining constructors: unique matching, close with injection + subst
+  | not _ ih => cases h₂ with | not h' => have := ih h'; simp_all
+  | and _ _ iha ihb => cases h₂ with | and ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | or _ _ iha ihb => cases h₂ with | or ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | implies _ _ iha ihb => cases h₂ with | implies ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | eq _ _ _ iha ihb => cases h₂ with | eq ha' hb' _ => have := iha ha'; have := ihb hb'; simp_all
+  | neg_int _ ih => cases h₂ with | neg_int h' => have := ih h'; simp_all
+  | add_int _ _ iha ihb => cases h₂ with | add_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | sub_int _ _ iha ihb => cases h₂ with | sub_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | mul_int _ _ iha ihb => cases h₂ with | mul_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | div_int _ _ iha ihb => cases h₂ with | div_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | mod_int _ _ iha ihb => cases h₂ with | mod_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | abs_int _ ih => cases h₂ with | abs_int h' => have := ih h'; simp_all
+  | le_int _ _ iha ihb => cases h₂ with | le_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | lt_int _ _ iha ihb => cases h₂ with | lt_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | ge_int _ _ iha ihb => cases h₂ with | ge_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | gt_int _ _ iha ihb => cases h₂ with | gt_int ha' hb' => have := iha ha'; have := ihb hb'; simp_all
+  | bvneg _ ih => cases h₂ with | bvneg h' => have h := ih h'; cases h; rfl
+  | bvadd _ _ iha ihb => cases h₂ with | bvadd ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsub _ _ iha ihb => cases h₂ with | bvsub ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvmul _ _ iha ihb => cases h₂ with | bvmul ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvnot _ ih => cases h₂ with | bvnot h' => have h := ih h'; cases h; rfl
+  | bvand _ _ iha ihb => cases h₂ with | bvand ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvor _ _ iha ihb => cases h₂ with | bvor ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvxor _ _ iha ihb => cases h₂ with | bvxor ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvshl _ _ iha ihb => cases h₂ with | bvshl ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvlshr _ _ iha ihb => cases h₂ with | bvlshr ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvashr _ _ iha ihb => cases h₂ with | bvashr ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvslt _ _ iha ihb => cases h₂ with | bvslt ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsle _ _ iha ihb => cases h₂ with | bvsle ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvult _ _ iha ihb => cases h₂ with | bvult ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvule _ _ iha ihb => cases h₂ with | bvule ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsgt _ _ iha ihb => cases h₂ with | bvsgt ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsge _ _ iha ihb => cases h₂ with | bvsge ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvugt _ _ iha ihb => cases h₂ with | bvugt ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvuge _ _ iha ihb => cases h₂ with | bvuge ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvudiv _ _ iha ihb => cases h₂ with | bvudiv ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvurem _ _ iha ihb => cases h₂ with | bvurem ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsdiv _ _ iha ihb => cases h₂ with | bvsdiv ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsrem _ _ iha ihb => cases h₂ with | bvsrem ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvnego _ ih => cases h₂ with | bvnego h' => have h := ih h'; cases h; rfl
+  | bvsaddo _ _ iha ihb => cases h₂ with | bvsaddo ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvssubo _ _ iha ihb => cases h₂ with | bvssubo ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvsmulo _ _ iha ihb => cases h₂ with | bvsmulo ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | bvconcat _ _ iha ihb => cases h₂ with | bvconcat ha' hb' => have h1 := iha ha'; have h2 := ihb hb'; cases h1; cases h2; rfl
+  | zero_extend i ha iha => cases h₂ with | zero_extend i' ha' => have := iha ha'; cases this; rfl
+  | str_length _ ih => cases h₂ with | str_length h' => have := ih h'; simp_all
+  | str_concat _ _ iha ihb => cases h₂ with | str_concat ha' hb' => have := iha ha'; have := ihb hb'; simp_all
