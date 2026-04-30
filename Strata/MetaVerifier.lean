@@ -59,7 +59,11 @@ def genVCsSingleENV (E : Env) : Option coreVCs := do
   | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := (loopElim program).fst
+  let program := match Core.Transform.run program (fun p => do
+      let (_, p') ← Core.LoopElim.loopElim p
+      return p') with
+    | .ok p => p
+    | .error _ => program
   match Core.typeCheckAndEval options program with
   | .error _ => none
   | .ok (pEs, _stats) =>

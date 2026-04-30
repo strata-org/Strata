@@ -301,6 +301,23 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ---
     EvalCmd δ σ (.init x _ .nondet _) σ' false
 
+  /-- Re-initialize `x` when it is already defined: behaves like `set`.
+      This allows `.init` commands to execute on subsequent loop iterations
+      where the variable was initialized in a previous iteration. -/
+  | eval_reinit :
+    δ σ e = .some v →
+    UpdateState P σ x v σ' →
+    WellFormedSemanticEvalVar δ →
+    ---
+    EvalCmd δ σ (.init x _ (.det e) _) σ' false
+
+  /-- Re-initialize `x` with an unconstrained value when already defined. -/
+  | eval_reinit_unconstrained :
+    UpdateState P σ x v σ' →
+    WellFormedSemanticEvalVar δ →
+    ---
+    EvalCmd δ σ (.init x _ .nondet _) σ' false
+
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
     δ σ e = .some v →

@@ -390,6 +390,10 @@ def withOldBindings
 structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
   preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
     Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
+  preserves_wfVal : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVal δ →
+    Imperative.WellFormedSemanticEvalVal (EvalPureFunc φ δ σ decl)
+  preserves_wfVar : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVar δ →
+    Imperative.WellFormedSemanticEvalVar (EvalPureFunc φ δ σ decl)
 
 ---------------------------------------------------------------------
 

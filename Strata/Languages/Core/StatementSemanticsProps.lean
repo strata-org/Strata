@@ -1753,11 +1753,14 @@ theorem EvalCmdDefMonotone' :
   EvalCmd Core.Expression δ σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
-  cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
-  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
-  next _ Hup => exact UpdateStateDefMonotone Hdef Hup
-  next Hup => exact UpdateStateDefMonotone Hdef Hup
+  cases Heval with
+  | eval_init Hsm Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_init_unconstrained Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_reinit Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | eval_reinit_unconstrained Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | eval_set Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | eval_set_nondet Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | _ => exact Hdef
 
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
@@ -1771,6 +1774,10 @@ theorem EvalCmdTouch
   case eval_init_unconstrained x' δ σ x v σ' σ₀ Hup Hwf =>
     apply TouchVars.init_some Hup
     constructor
+  case eval_reinit δ σ x v σ' σ₀ e Hsm Hup Hwf =>
+    exact TouchVars.update_some Hup TouchVars.none
+  case eval_reinit_unconstrained x' v σ' σ₀ Hup Hwf =>
+    exact TouchVars.update_some Hup TouchVars.none
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
   case eval_set_nondet x v σ' σ₀ e Hsm Hup Hwf =>
