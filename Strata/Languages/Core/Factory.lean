@@ -326,10 +326,10 @@ def strInRegexFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Str.InRegEx" mty[string] mty[regex] mty[bool]
 
 def strPrefixOfFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.PrefixOf" mty[string] mty[string] mty[bool]
+  binaryOp "Str.PrefixOf" String.isPrefixOf
 
 def strSuffixOfFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.SuffixOf" mty[string] mty[string] mty[bool]
+  binaryOp "Str.SuffixOf" (fun s t => String.endsWith t s)
 
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
