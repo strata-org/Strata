@@ -1300,14 +1300,21 @@ abbrev DischargeFn :=
 abbrev CoreSMTSolver :=
   @Lambda.Factory CoreLParams → Program → EIO DiagnosticModel (VCResults × Statistics)
 
+/-- Factory for discharge functions. Called once per obligation with the
+    obligation's typed variables, metadata, and label. A custom implementation
+    can replace the default (batch/incremental SMT-LIB) backend. -/
+abbrev MkDischargeFn :=
+  VerifyOptions → IO.Ref Nat → System.FilePath →
+  List Expression.TypedIdent → Imperative.MetaData Expression → String → DischargeFn
+
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
     `options.incremental` and `options.alwaysGenerateSMT`. -/
-def mkDischargeFn (options : VerifyOptions) (counter : IO.Ref Nat)
+def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath)
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
-    (label : String) : DischargeFn :=
+    (label : String) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
     if options.incremental && !options.alwaysGenerateSMT then
@@ -1390,7 +1397,8 @@ def verifySingleEnv (oblProgram : Program)
     -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (mkDischarge : MkDischargeFn := mkDischargeFn) :
     EIO DiagnosticModel (VCResults × Statistics) := do
   -- Build SMT encoding context from the obligations program itself
   let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
@@ -1479,7 +1487,7 @@ def verifySingleEnv (oblProgram : Program)
           match ty with
           | .some ty => return (v,LTy.forAll [] ty)
           | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
-      let discharge := mkDischargeFn options counter tempDir
+      let discharge := mkDischarge options counter tempDir
         typedVarsInObligation obligation.metadata obligation.label
       let t4 ← IO.monoNanosNow
       let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
@@ -1520,11 +1528,12 @@ def mkDefaultCoreSMTSolver
     (axiomNames : List String := [])
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (mkDischarge : MkDischargeFn := mkDischargeFn) :
     CoreSMTSolver :=
   fun moreFns oblProgram =>
     verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
-      axiomNames axiomProgram externalPhases corePhases
+      axiomNames axiomProgram externalPhases corePhases (mkDischarge := mkDischarge)
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
@@ -1542,6 +1551,7 @@ def verify (program : Program)
     (prefixPhases : List PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
     (solver : Option CoreSMTSolver := none)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
@@ -1590,7 +1600,8 @@ def verify (program : Program)
     else
       let coreSMTSolver := solver.getD
         (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
-          axiomNames (axiomProgram := program) externalPhases phases)
+          axiomNames (axiomProgram := program) externalPhases phases
+          (mkDischarge := mkDischarge))
       pure [← coreSMTSolver moreFns oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
@@ -1640,6 +1651,7 @@ def verify
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
     (solver : Option Core.CoreSMTSolver := none)
+    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
@@ -1648,7 +1660,8 @@ def verify
                   (Core.verify program tempDir proceduresToVerify options moreFns
                     (externalPhases := externalPhases)
                     (keepAllFilesPrefix := keepAllFilesPrefix)
-                    (solver := solver))
+                    (solver := solver)
+                    (mkDischarge := mkDischarge))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner
