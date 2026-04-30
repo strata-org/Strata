@@ -500,7 +500,7 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
-/-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
+/-- Resolve a procedure: resolve its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← resolveRef proc.name
   withScope do
