@@ -585,6 +585,8 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Str.Substr"   => .ok (.app Op.str_substr,    .string, ctx)
     | "Str.ToRegEx"  => .ok (.app Op.str_to_re,     .regex,  ctx)
     | "Str.InRegEx"  => .ok (.app Op.str_in_re,     .bool,   ctx)
+    | "Str.PrefixOf" => .ok (.app Op.str_prefixof,  .bool,   ctx)
+    | "Str.SuffixOf" => .ok (.app Op.str_suffixof,  .bool,   ctx)
     | "Re.All"       => .ok (.app Op.re_all,        .regex,  ctx)
     | "Re.AllChar"   => .ok (.app Op.re_allchar,    .regex,  ctx)
     | "Re.Range"     => .ok (.app Op.re_range,      .regex,  ctx)

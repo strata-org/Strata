@@ -188,6 +188,12 @@ def strToRegexFunc : WFLFunc CoreLParams :=
 def strInRegexFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Str.InRegEx" mty[string] mty[regex] mty[bool]
 
+def strPrefixOfFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.PrefixOf" mty[string] mty[string] mty[bool]
+
+def strSuffixOfFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.SuffixOf" mty[string] mty[string] mty[bool]
+
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
 
@@ -665,6 +671,8 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   strSubstrFunc,
   strToRegexFunc,
   strInRegexFunc,
+  strPrefixOfFunc,
+  strSuffixOfFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -792,6 +800,8 @@ def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
 def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
+def strPrefixOfOp : Expression.Expr := strPrefixOfFunc.opExpr
+def strSuffixOfOp : Expression.Expr := strSuffixOfFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr
