@@ -208,6 +208,23 @@ private meta def buildTestSpecs (dir : System.FilePath) : IO Unit := do
   }
   writeSpecFile dir "cloudkit" #[.functionDecl clientDb, .functionDecl clientCache,
                                  .functionDecl clientFallback]
+  -- cloudkit.database spec: DatabaseClient class loaded transitively
+  let queryArg : Strata.Python.Specs.Arg :=
+    { name := "sql", type := .ident default .builtinsStr }
+  let queryMethod : Strata.Python.Specs.FunctionDecl := {
+    loc := default, nameLoc := default
+    name := "query"
+    args := { args := #[queryArg], kwonly := #[] }
+    returnType := .ident default .builtinsDict
+    isOverload := false
+    preconditions := #[], postconditions := #[]
+  }
+  let dbClientClass : Strata.Python.Specs.ClassDef := {
+    loc := default
+    name := "DatabaseClient"
+    methods := #[queryMethod]
+  }
+  writeSpecFile dir "cloudkit/database" #[.classDef dbClientClass]
 
 /-- Run a test case that uses spec loading. -/
 private meta def runSpecTestCase
@@ -240,7 +257,8 @@ private meta def specTests : List String := [
   "tc13_from_import",
   "tc14_overload_dispatch",
   "tc15_arg_count",
-  "tc16_unknown_attr"
+  "tc16_unknown_attr",
+  "tc17_transitive_dispatch"
 ]
 
 #eval withPython fun pythonCmd => do
