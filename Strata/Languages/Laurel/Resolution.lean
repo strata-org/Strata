@@ -122,11 +122,11 @@ inductive ResolvedNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
-  | unresolved
+  | unresolved (referenceSource: Option FileRange)
   deriving Repr
 
 instance : Inhabited ResolvedNode where
-  default := ResolvedNode.unresolved
+  default := ResolvedNode.unresolved none
 
 /-- Return the constructor tag of a `ResolvedNode`. -/
 def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
@@ -142,7 +142,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
-  | .unresolved           => .unresolved
+  | .unresolved _          => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
@@ -151,9 +151,7 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
- | .unresolved =>
-    -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", none ⟩
+ | .unresolved source => ⟨ .Unknown, source ⟩
  | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none ⟩
 
 /-! ## Resolution result -/
@@ -175,7 +173,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
       | .parameter _ => true
       | .datatypeConstructor _ _ => true
       | .constant _ => true
-      | .unresolved => true -- functions calls are more permissive, so true avoids possibly incorrect errors
+      | .unresolved _ => true -- functions calls are more permissive, so true avoids possibly incorrect errors
       | node =>
           dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
           false
@@ -245,7 +243,7 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
   if (← get).currentScopeNames.contains resolutionName then
     let diag := diagnosticFromSource iden.source s!"Duplicate definition '{resolutionName}' is already defined in this scope"
     modify fun s => { s with errors := s.errors.push diag }
-    defineName iden .unresolved overrideResolutionName
+    defineName iden (.unresolved iden.source) overrideResolutionName
   else
     defineName iden node overrideResolutionName
 
