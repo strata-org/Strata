@@ -140,42 +140,40 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   let stats := declStats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
 
-  -- Convert each Env's deferred obligations into a procedure body.
-  -- The resulting program has type/datatype declarations preserved,
-  -- but each procedure's body is replaced with the obligations tree
-  -- (assume/assert blocks combined with if *). Axioms are inlined
-  -- into each procedure's obligations (from E.deferred path conditions).
+  -- Convert the evaluation Env's deferred obligations into a procedure body.
+  -- Program.eval accumulates all procedures into a single Env, so pEs
+  -- is always a single-element list. We extract the single Env and build
+  -- one obligation procedure containing all deferred obligations.
   -- Type/datatype declarations come from the original program.
   let typeDecls := program.decls.filter fun d =>
     match d with | .type _ _ => true | _ => false
-  let postEvalEnv := pEs.head?.getD E
-  let procNames := program.decls.filterMap fun d =>
-    match d with | .proc p _ => some p.header.name | _ => none
-  -- Note: pEs may have fewer entries than procNames when Program.eval
-  -- accumulates all procedures into a single Env. zip silently drops
-  -- unmatched entries; this is intentional for the current single-env model.
-  let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
-    let blocks := E.deferred.toList.map fun ob =>
-      let assumes := ob.assumptions.reverse.flatten.filterMap fun
-        | .assumption label e =>
-          some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
-        | _ => none
-      let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
-        if ob.property == .cover
-        then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
-        else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
-      assumes ++ [assertStmt]
-    let body := match blocks with
-      | [] => []
-      | [b] => b
-      | b :: rest => rest.foldl (fun acc block =>
-          [Imperative.Stmt.ite .nondet acc block .empty]) b
-    let proc : Procedure := {
-      header := { name := procName, typeArgs := [], inputs := [], outputs := [] },
-      spec := { preconditions := [], postconditions := [] },
-      body := body
-    }
-    Decl.proc proc .empty
+  let postEvalEnv ← match pEs with
+    | [e] => pure e
+    | _ => throw (DiagnosticModel.fromMessage s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
+  let procName := program.decls.findSome? fun
+    | .proc p _ => some p.header.name | _ => none
+  let blocks := postEvalEnv.deferred.toList.map fun ob =>
+    let assumes := ob.assumptions.reverse.flatten.filterMap fun
+      | .assumption label e =>
+        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
+      | _ => none
+    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
+      if ob.property == .cover
+      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
+      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+    assumes ++ [assertStmt]
+  let body := match blocks with
+    | [] => []
+    | [b] => b
+    | b :: rest => rest.foldl (fun acc block =>
+        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let oblProcs := match procName with
+    | some name => [Decl.proc {
+        header := { name := name, typeArgs := [], inputs := [], outputs := [] },
+        spec := { preconditions := [], postconditions := [] },
+        body := body
+      } .empty]
+    | none => []
 
   -- Include function declarations and distinct constraints from the
   -- evaluation environment so the obligations program is self-contained
@@ -190,8 +188,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    for E in pEs do
-      dbg_trace f!"{formatProofObligations E.deferred}"
+    dbg_trace f!"{formatProofObligations postEvalEnv.deferred}"
   return (oblProgram, stats)
 
 

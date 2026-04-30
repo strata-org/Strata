@@ -456,30 +456,21 @@ end
 
 ---------------------------------------------------------------------
 
-/-- Apply a function to all user-facing expressions in a statement. -/
-def Statement.mapExprs (f : Expression.Expr → Expression.Expr) : Statement → Statement
-  | .cmd (.cmd (.assert l e md)) => .cmd (.cmd (.assert l (f e) md))
-  | .cmd (.cmd (.assume l e md)) => .cmd (.cmd (.assume l (f e) md))
-  | .cmd (.cmd (.cover l e md)) => .cmd (.cmd (.cover l (f e) md))
-  | .cmd (.cmd (.init n ty (.det e) md)) => .cmd (.cmd (.init n ty (.det (f e)) md))
-  | .cmd (.cmd (.set n (.det e) md)) => .cmd (.cmd (.set n (.det (f e)) md))
-  | .cmd (.call pname args md) => .cmd (.call pname (args.map fun
+/-- Apply a function to all user-facing expressions in a Core command. -/
+def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Command
+  | .cmd (.assert l e md) => .cmd (.assert l (f e) md)
+  | .cmd (.assume l e md) => .cmd (.assume l (f e) md)
+  | .cmd (.cover l e md) => .cmd (.cover l (f e) md)
+  | .cmd (.init n ty (.det e) md) => .cmd (.init n ty (.det (f e)) md)
+  | .cmd (.set n (.det e) md) => .cmd (.set n (.det (f e)) md)
+  | .call pname args md => .call pname (args.map fun
       | .inArg e => .inArg (f e)
-      | a => a) md)
-  | .block l ss md => .block l (ss.map (Statement.mapExprs f)) md
-  | .ite (.det c) tss ess md =>
-    .ite (.det (f c)) (tss.map (Statement.mapExprs f)) (ess.map (Statement.mapExprs f)) md
-  | .ite .nondet tss ess md =>
-    .ite .nondet (tss.map (Statement.mapExprs f)) (ess.map (Statement.mapExprs f)) md
-  | .loop (.det g) measure inv body md =>
-    .loop (.det (f g)) (measure.map f) (inv.map fun (l, e) => (l, f e)) (body.map (Statement.mapExprs f)) md
-  | .loop .nondet measure inv body md =>
-    .loop .nondet (measure.map f) (inv.map fun (l, e) => (l, f e)) (body.map (Statement.mapExprs f)) md
-  | .cmd (.cmd (.init n ty .nondet md)) => .cmd (.cmd (.init n ty .nondet md))
-  | .cmd (.cmd (.set n .nondet md)) => .cmd (.cmd (.set n .nondet md))
-  | .exit l md => .exit l md
-  | .funcDecl decl md => .funcDecl decl md
-  | .typeDecl tc md => .typeDecl tc md
+      | a => a) md
+  | c => c
+
+/-- Apply a function to all user-facing expressions in a statement. -/
+def Statement.mapExprs (f : Expression.Expr → Expression.Expr) (s : Statement) : Statement :=
+  Imperative.Stmt.mapExpr f (Command.mapExpr f) s
 
 /-- Apply a function to all user-facing expressions in a list of statements. -/
 def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
