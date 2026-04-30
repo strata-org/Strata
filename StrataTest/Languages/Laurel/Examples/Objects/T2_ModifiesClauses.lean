@@ -145,7 +145,10 @@ procedure modifiesWildcardAndSpecific(c: Container, d: Container)
 
 procedure modifiesWildcardAndSpecificCaller()
   opaque
+<<<<<<< HEAD
   modifies *
+=======
+>>>>>>> 6efab795d94584d93735843c2217e46647913f06
 {
   var c: Container := new Container;
   var d: Container := new Container;
