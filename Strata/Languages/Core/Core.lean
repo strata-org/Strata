@@ -147,9 +147,9 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- Type/datatype declarations come from the original program.
   let typeDecls := program.decls.filter fun d =>
     match d with | .type _ _ => true | _ => false
-  let postEvalEnv := match pEs with
-    | [e] => e
-    | _ => panic! s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}"
+  let postEvalEnv ← match pEs with
+    | [e] => pure e
+    | _ => throw (DiagnosticModel.fromMessage s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
   let procName := program.decls.findSome? fun
     | .proc p _ => some p.header.name | _ => none
   let blocks := postEvalEnv.deferred.toList.map fun ob =>
