@@ -1682,6 +1682,7 @@ def verify (program : Program)
     (prefixPhases : List PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
     (solver : Option CoreSMTSolver := none)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
@@ -1730,7 +1731,7 @@ def verify (program : Program)
     else
       let coreSMTSolver := solver.getD
         (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
-          axiomNames (axiomProgram := program) externalPhases phases)
+          axiomNames (axiomProgram := program) externalPhases phases mkDischarge)
       pure [← coreSMTSolver moreFns oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
@@ -1780,6 +1781,7 @@ def verify
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
     (solver : Option Core.CoreSMTSolver := none)
+    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
@@ -1788,7 +1790,8 @@ def verify
                   (Core.verify program tempDir proceduresToVerify options moreFns
                     (externalPhases := externalPhases)
                     (keepAllFilesPrefix := keepAllFilesPrefix)
-                    (solver := solver))
+                    (solver := solver)
+                    (mkDischarge := mkDischarge))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner
