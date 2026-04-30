@@ -103,7 +103,7 @@ inductive LConst : Type where
 
   /-- A Boolean constant. -/
   | boolConst (b: Bool)
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Hashable
 
 /--
 Lambda expressions with quantifiers.
