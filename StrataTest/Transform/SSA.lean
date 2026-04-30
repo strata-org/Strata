@@ -41,7 +41,7 @@ procedure f(x : int, out y : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATest1
   let result := runSSA pgm
   -- After SSA, the program should be different (variables renamed)
@@ -64,7 +64,7 @@ procedure f(c : bool, out y : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATest2
   let result := runSSA pgm
   -- After SSA, should have more declarations (fresh variables + merges)
@@ -84,7 +84,7 @@ procedure f(out y : int) {
 set_option linter.unusedVariables false in
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATest3
   let _result := runSSA pgm
   return true
@@ -101,7 +101,7 @@ spec {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATest4
   let result := runSSA pgm
   return toString (Std.format result) == toString (Std.format pgm)
@@ -114,7 +114,7 @@ section SSATransformPassTests
 -- SSA can be applied via runTransforms
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATest1
   match Core.runTransforms pgm [.ssa] with
   | .ok result => return toString (Std.format result) != ""
@@ -136,7 +136,7 @@ procedure f(a : int, out b : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestPipeline
   match Core.runTransforms pgm [.callElim, .ssa] with
   | .ok result => return toString (Std.format result) != ""
@@ -168,7 +168,7 @@ procedure f(c1 : bool, c2 : bool, out y : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestNestedIte
   let result := runSSA pgm
   return toString (Std.format result) != toString (Std.format pgm)
@@ -191,7 +191,7 @@ procedure f(c : bool, out r : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestOneBranchModifies
   let result := runSSA pgm
   return toString (Std.format result) != toString (Std.format pgm)
@@ -211,7 +211,7 @@ procedure f(out y : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestMultiAssign
   let result := runSSA pgm
   return toString (Std.format result) != toString (Std.format pgm)
@@ -232,7 +232,7 @@ procedure f(x : int, out y : int) {
 set_option linter.unusedVariables false in
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestAssertAssume
   let _result := runSSA pgm
   return true
@@ -252,7 +252,7 @@ procedure f(out y : int) {
 set_option linter.unusedVariables false in
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestHavocThenSet
   let _result := runSSA pgm
   return true
@@ -269,7 +269,7 @@ procedure f(inout g : int) {
 set_option linter.unusedVariables false in
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestInout
   let _result := runSSA pgm
   return true
@@ -292,7 +292,7 @@ procedure g(x : int, out y : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestMultiProc
   let result := runSSA pgm
   -- Both procedures should be transformed
@@ -314,7 +314,7 @@ procedure f(c : bool, out y : int) {
 
 /-- info: true -/
 #guard_msgs in
-#eval! do
+#eval do
   let pgm := translate SSATestElseOnly
   let result := runSSA pgm
   return toString (Std.format result) != toString (Std.format pgm)
