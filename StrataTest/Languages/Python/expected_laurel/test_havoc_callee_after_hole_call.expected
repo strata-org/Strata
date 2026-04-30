@@ -4,5 +4,7 @@ test_havoc_callee_after_hole_call.py(16, 0): ✔️ always true if reached - cha
 test_havoc_callee_after_hole_call.py(20, 0): ✔️ always true if reached - unrelated variable: nothing should be havocked
 test_havoc_callee_after_hole_call.py(25, 0): ✔️ always true if reached - composite arg: heap not havocked (out of scope)
 test_havoc_callee_after_hole_call.py(30, 0): ❓ unknown - expected unknown because argument locals should be havocked
-DETAIL: 3 passed, 0 failed, 3 inconclusive
+test_havoc_callee_after_hole_call.py(36, 0): ❓ unknown - assume_assume(1193)_calls_PIn_0
+test_havoc_callee_after_hole_call.py(37, 4): ✔️ always true if reached - for-loop over unmodeled iterator should not crash
+DETAIL: 4 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

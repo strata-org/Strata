@@ -28,3 +28,10 @@ xs2: list[int] = [1, 2]
 ys2: list[int] = []
 xs2.unknown_method_that_may_modify_arguments(ys2)
 assert ys2 == [], "expected unknown because argument locals should be havocked"
+
+# Regression: unmodeled method call as for-loop iterator.
+# The receiver havoc must be lifted out of the iterator expression so
+# the block does not end up in expression position inside the assume.
+response: dict = {"messages": []}
+for msg in response.unmodeled_iter_method():
+    assert True, "for-loop over unmodeled iterator should not crash"

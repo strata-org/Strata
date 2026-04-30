@@ -1,1 +1,1 @@
-\[ERROR\] assert \(assert\(75\)\) condition did not reduce to bool
+[ERROR] assert (assert(75)) condition did not reduce to bool

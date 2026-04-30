@@ -1868,8 +1868,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- and Any_iter_index is only called inside the loop body where that condition is satisfied,
   -- so it is sound to not put it inside AnyMaybeExceptionList
   | .For _ target iter body _orelse _ => do
-    -- The iterator expression (we abstract it away)
-    let iterExpr ← translateExpr ctx iter
+    -- The iterator expression (we abstract it away).
+    -- When the expression contains side-effect statements (e.g. a block with
+    -- receiver havoc from an unmodeled method call), bind it to a temporary
+    -- variable so the side effects execute once and the clean variable
+    -- reference can be used in PIn / Any_len / the while condition.
+    -- This mirrors Python semantics where the iterator is evaluated once.
+    let iterRaw ← translateExpr ctx iter
+    let (iterPreamble, iterExpr) := match iterRaw.val with
+      | .Block (_ :: _ :: _) _ =>
+        let varName := s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some iterRaw))
+        let varRef  := mkStmtExprMd (StmtExpr.Identifier varName)
+        ([varDecl], varRef)
+      | _ => ([], iterRaw)
     if let .Call _ (.Name _ {val:= "range",..} _) _ _  := iter then
       if let .StaticCall "range" _ := iterExpr.val then
         pure ()
@@ -1927,7 +1939,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
     let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
-    return (finalCtx, preamble ++ [counterDecl] ++ [loopBlock])
+    return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
