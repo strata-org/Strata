@@ -207,19 +207,19 @@ Guidelines](#syntactic-style-guidelines).
 
 ## Two-step review, and finding a shepherd
 
-For security reason, Strata's continuous integration policy doesn't allow running
-internal benchmarks if the pull request was created from a branch of a
-fork of Strata, not a branch residing in strata-org/Strata.
-Therefore, for external contributors, you will need to find a 'shepherd' who can
+For security reasons, Strata's continuous integration policy only allows running
+internal benchmarks if the pull request was created from a branch in
+strata-org/Strata, not from a fork.
+Therefore, external contributors will need to find a "shepherd" who can
 (1) move your branch to strata-org/Strata, and
-(2) recreate a pull request which will finally launch all continuous integration
+(2) recreate a pull request that will launch all continuous integration
 checks.
 We recommend the following two steps to deliver your patch to Strata.
 First, put your patch in your own fork and open a pull request to strata-org/Strata.
-This will naturally make the CI checks regarding internal benchmarks, but please ignore
-them and solicit/address comments.
-Second, once these are resolved, ask one of your reviewers to shepherd your pull request.
-They will copy your branch into strata-org/Strata and create a new pull request which
+The CI checks for internal benchmarks will fail, but please ignore
+this and solicit and address review comments.
+Second, once the review comments are resolved, ask one of your reviewers to shepherd your pull request.
+They will copy your branch into strata-org/Strata and create a new pull request that
 will run the full internal benchmarks.
 If the internal benchmark results look good, your patch is finally good to go. :)
 
