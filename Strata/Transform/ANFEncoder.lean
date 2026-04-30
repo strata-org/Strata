@@ -76,7 +76,7 @@ private def hashOptType (ty : Option LMonoTy) : UInt64 :=
 -- Per-constructor hash combiners (single source of truth)
 ---------------------------------------------------------------------
 
-private def hashConst (c : LConst) : UInt64 := mixHash 1 (hash (toString c))
+private def hashConst (c : LConst) : UInt64 := mixHash 1 (hash c)
 private def hashBVar (i : Nat) : UInt64 := mixHash 2 (hash i)
 private def hashFVar (n : CoreIdent) (ty : Option LMonoTy) : UInt64 :=
   mixHash 3 (mixHash (hash n.name) (hashOptType ty))
