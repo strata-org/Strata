@@ -320,3 +320,104 @@ procedure f(c : bool, out y : int) {
   return toString (Std.format result) != toString (Std.format pgm)
 
 end SSAEdgeCaseTests
+
+/-! ## SSA Correctness Oracle Tests -/
+section SSACorrectnessTests
+
+/-- VC-outcome round-trip: ensures that passes before SSA still passes after.
+    This catches Bug 1 (output parameter loss). -/
+def SSAIncRoundTrip :=
+#strata
+program Core;
+procedure inc(x : int, out y : int)
+spec {
+  ensures (y == (x + 1));
+} {
+  y := (x + 1);
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval show IO Bool from do
+  let pgm := translate SSAIncRoundTrip
+  -- Verify original passes
+  let origResults ←
+    EIO.toIO (fun e => IO.Error.userError e)
+      (Strata.Core.verifyProgram pgm
+        { Core.VerifyOptions.default with verbose := .quiet }
+        (proceduresToVerify := some ["inc"]))
+  let origPass := origResults.all Core.VCResult.isSuccess
+  -- Verify SSA'd version also passes
+  let .ok ssaPgm := Core.runTransforms pgm [.ssa]
+    | return false
+  let ssaResults ←
+    EIO.toIO (fun e => IO.Error.userError e)
+      (Strata.Core.verifyProgram ssaPgm
+        { Core.VerifyOptions.default with verbose := .quiet }
+        (proceduresToVerify := some ["inc"]))
+  let ssaPass := ssaResults.all Core.VCResult.isSuccess
+  return origPass && ssaPass
+
+/-- VC-outcome round-trip with if-then-else and output parameter. -/
+def SSABranchRoundTrip :=
+#strata
+program Core;
+procedure max(a : int, b : int, out r : int)
+spec {
+  ensures (r >= a);
+  ensures (r >= b);
+} {
+  if (a >= b) {
+    r := a;
+  } else {
+    r := b;
+  }
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval show IO Bool from do
+  let pgm := translate SSABranchRoundTrip
+  let origResults ←
+    EIO.toIO (fun e => IO.Error.userError e)
+      (Strata.Core.verifyProgram pgm
+        { Core.VerifyOptions.default with verbose := .quiet }
+        (proceduresToVerify := some ["max"]))
+  let origPass := origResults.all Core.VCResult.isSuccess
+  let .ok ssaPgm := Core.runTransforms pgm [.ssa]
+    | return false
+  let ssaResults ←
+    EIO.toIO (fun e => IO.Error.userError e)
+      (Strata.Core.verifyProgram ssaPgm
+        { Core.VerifyOptions.default with verbose := .quiet }
+        (proceduresToVerify := some ["max"]))
+  let ssaPass := ssaResults.all Core.VCResult.isSuccess
+  return origPass && ssaPass
+
+/-- Scoping: variables declared inside a branch should NOT appear in phi merges
+    at the outer scope. This catches Bug 2 (out-of-scope references). -/
+def SSAScopingTest :=
+#strata
+program Core;
+procedure f(c : bool, out r : int) {
+  if (c) {
+    var x : int := 42;
+  } else {
+  }
+  r := 0;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval do
+  let pgm := translate SSAScopingTest
+  let result := runSSA pgm
+  let s := toString (Std.format result)
+  -- The output should NOT contain "ssa_phi_x" since x was only declared
+  -- inside the then-branch and wasn't in scope before the ITE.
+  return (s.splitOn "ssa_phi_x").length == 1
+
+end SSACorrectnessTests
