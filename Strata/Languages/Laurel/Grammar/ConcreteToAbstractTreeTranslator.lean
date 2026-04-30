@@ -64,8 +64,8 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  let md ← getArgMetaData arg
-  return { text := id, md := md }
+  let source ← getArgFileRange arg
+  return { text := id, source := source }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -154,7 +154,7 @@ instance : Inhabited Procedure where
     decreases := none
     isFunctional := false
     invokeOn := none
-    body := .Transparent ⟨.LiteralBool true, none, #[]⟩
+    body := .Transparent { val := .LiteralBool true, source := none }
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -378,6 +378,11 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
         | q`Laurel.modifiesClause, #[refsArg] =>
           let refs ← translateModifiesExprs refsArg
           allModifies := allModifies ++ refs
+        | q`Laurel.modifiesWildcard, #[] =>
+          let src ← match (← get).uri with
+            | some uri => pure (some (SourceRange.toFileRange uri clauseOp.ann))
+            | none => pure none
+          allModifies := allModifies ++ [mkStmtExprMd .All src]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
     pure allModifies
@@ -433,9 +438,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg]
+      requiresArg, invokeOnArg, opaqueSpecArg, bodyArg]
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg] =>
+      requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -465,10 +470,16 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected invokeOnClause operation, got {repr invokeOnOp.name}"
       | .option _ none => pure none
       | _ => pure none
-    -- Parse postconditions (ensures clauses - zero or more)
-    let postconditions ← translateEnsuresClauses ensuresArg
-    -- Parse modifies clauses (zero or more)
-    let modifies ← translateModifiesClauses modifiesArg
+    -- Parse optional opaqueSpec (contains ensures and modifies)
+    let (isOpaque, postconditions, modifies) ← match opaqueSpecArg with
+      | .option _ (some (.op opaqueSpecOp)) => match opaqueSpecOp.name, opaqueSpecOp.args with
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
+          let postconditions ← translateEnsuresClauses ensuresArg
+          let modifies ← translateModifiesClauses modifiesArg
+          pure (true, postconditions, modifies)
+        | _, _ => TransM.error s!"Expected opaqueSpec operation, got {repr opaqueSpecOp.name}"
+      | .option _ none => pure (false, [], [])
+      | _ => pure (false, [], [])
     -- Parse optional body
     let isExternal ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
@@ -485,10 +496,10 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External
-      else match postconditions, body with
-      | _ :: _, bodyOpt => Body.Opaque postconditions bodyOpt modifies
-      | [], some b => Body.Transparent b
-      | [], none => Body.Opaque [] none modifies
+      else if isOpaque then Body.Opaque postconditions body modifies
+      else match body with
+      | some b => Body.Transparent b
+      | none => Body.Opaque [] none modifies
     return {
       name := name
       inputs := parameters
@@ -501,7 +512,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 9 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 
