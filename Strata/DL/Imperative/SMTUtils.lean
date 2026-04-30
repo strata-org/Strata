@@ -115,6 +115,23 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
+/-- Classifies the error when the solver fails to produce a valid verdict. -/
+inductive SolverError where
+  | timeout (detail : String)
+  | crash (detail : String)
+
+instance : ToString SolverError where
+  toString
+    | .timeout d => s!"Solver timeout: {d}"
+    | .crash d   => s!"{d}"
+
+/-- True when the solver output indicates a timeout rather than a crash.
+    z3 emits the literal word "timeout" on stdout.
+    cvc5 prints "interrupted by timeout" on stderr. -/
+private def isTimeoutOutput (output : IO.Process.Output) : Bool :=
+  (output.stdout.splitOn "\n" |>.any (·.trimAscii == "timeout")) ||
+    (output.stderr.contains "interrupted by timeout")
+
 ---------------------------------------------------------------------
 -- SMTDDM-based parsing
 ---------------------------------------------------------------------
@@ -206,7 +223,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (vars : List P.TypedIdent) (output : IO.Process.Output)
     (E : Strata.SMT.EncoderState) (smtsolver : String)
     (satisfiabilityCheck validityCheck : Bool)
-    : IO (Except Format (Result P.Ident × Result P.Ident)) := do
+    : IO (Except SolverError (Result P.Ident × Result P.Ident)) := do
   let stdout := output.stdout
 
   -- Helper to parse a single verdict and model
@@ -234,21 +251,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     | "unknown" => return some (.unknown, skipToNextVerdict rest)
     | _ => return none
 
-  -- Parse results based on which checks are enabled
-  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
-  | some (satResult, remaining) =>
-    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
-    | some (validityResult, _) => return .ok (satResult, validityResult)
-    | none =>
-      let stderr := output.stderr
-      let hasExecError := stderr.contains "could not execute external process"
-      let hasFileError := stderr.contains "No such file or directory"
-      let suggestion :=
-        if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
-          s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
-        else ""
-      return .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
-  | none =>
+  let mkError (output : IO.Process.Output) : SolverError :=
     let stderr := output.stderr
     let hasExecError := stderr.contains "could not execute external process"
     let hasFileError := stderr.contains "No such file or directory"
@@ -256,7 +259,20 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
       if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
         s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
       else ""
-    return .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+    let detail := s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+    if isTimeoutOutput output then .timeout detail else .crash detail
+
+  -- Parse results based on which checks are enabled
+  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
+  | some (satResult, remaining) =>
+    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
+    | some (validityResult, _) => return .ok (satResult, validityResult)
+    | none =>
+      if isTimeoutOutput output then
+        return .ok (satResult, .unknown)
+      return .error (mkError output)
+  | none =>
+    return .error (mkError output)
 
 def addLocationInfo {P : PureExpr} [BEq P.Ident]
   (md : Imperative.MetaData P) (message : String × String)
@@ -287,7 +303,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool)
   (skipSolver : Bool := false) :
-  IO (Except Format (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 

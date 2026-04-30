@@ -63,6 +63,7 @@ namespace ExitCode
   def failuresFound    : UInt8 := 2
   def internalError    : UInt8 := 3
   def knownLimitation  : UInt8 := 4
+  def solverTimeout    : UInt8 := 5
 end ExitCode
 
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
@@ -505,13 +506,23 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
   printPyAnalyzeResult "Known limitation" message
   IO.Process.exit ExitCode.knownLimitation
 
+private def exitPyAnalyzeSolverTimeout {α} (message : String) : IO α := do
+  printPyAnalyzeResult "Solver timeout" message
+  IO.Process.exit ExitCode.solverTimeout
+
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
     exit helpers above, which are called on early pipeline failure).
-    Classification uses successive partitioning: implementation errors are
-    removed first, then the classifier partitions the rest into
+    Classification uses successive partitioning: timeouts and implementation
+    errors are removed first, then the classifier partitions the rest into
     success / failure / inconclusive (guaranteeing disjointness).
-    Unreachable count is reported as supplementary info. -/
+    Unreachable count is reported as supplementary info.
+
+    Exit-code priority (highest wins):
+    - Internal error (exit 3): encoding failures or solver crashes
+    - Solver timeout (exit 5): solver exceeded time limit
+    - Failures found (exit 2): assertion violations
+    - Inconclusive / success (exit 0) -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     (checkMode : VerificationMode := .deductive) : IO Unit := do
   let classifier : ResultClassifier :=
@@ -520,23 +531,28 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
       { isSuccess := (·.isBugFindingSuccess)
         isFailure := (·.isBugFindingFailure) }
     | _ => {}
-  -- 1. Partition out implementation errors (broken results, not classifiable).
-  let (implError, classifiable) :=
+  -- 1. Partition out implementation errors and timeouts (not classifiable).
+  let (implError, rest1) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
+  let (timeouts, classifiable) := rest1.partition (·.isTimeout)
   -- 2. Successive partitioning via the classifier: success → failure → inconclusive.
   let (success, rest)          := classifiable.partition classifier.isSuccess
   let (failure, inconclusive)  := rest.partition classifier.isFailure
   -- 3. Unreachable is informational (not a separate partition).
   let nUnreachable  := vcResults.filter (·.isUnreachable) |>.size
   let nImplError    := implError.size
+  let nTimeout      := timeouts.size
   let nSuccess      := success.size
   let nFailure      := failure.size
   let nInconclusive := inconclusive.size
   let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
-  let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
-  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
+  let implErrorStr   := if nImplError > 0   then s!", {nImplError} internal errors" else ""
+  let timeoutStr     := if nTimeout > 0     then s!", {nTimeout} solver timeouts" else ""
+  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{timeoutStr}{implErrorStr}"
   if nImplError > 0 then
     exitPyAnalyzeInternalError s!"An unexpected result was produced. {counts}"
+  else if nTimeout > 0 then
+    exitPyAnalyzeSolverTimeout s!"Solver exceeded time limit. {counts}"
   else if nFailure > 0 then
     exitPyAnalyzeFailuresFound counts
   else
@@ -958,7 +974,7 @@ def laurelAnalyzeCommand : Command where
     | some vcResults =>
       IO.println s!"==== RESULTS ===="
       for vc in vcResults do
-        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
+        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => toString e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
