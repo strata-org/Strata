@@ -2443,7 +2443,7 @@ theorem core_noFailure_preserved
 
 /-! ## mapExprs identity -/
 
-private theorem list_map_id_of_forall {ss : List Statement}
+private theorem list_mapExprs_id_of_forall {ss : List Statement}
     (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
     ss.map (Statement.mapExprs id) = ss := by
   induction ss with
@@ -2469,12 +2469,12 @@ theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s :=
         | nil => rfl
         | cons h t ih => simp [ih]; cases h <;> rfl)
     (block_case := fun l ss md ih => by
-      simp [Statement.mapExprs, list_map_id_of_forall ih])
+      simp [Statement.mapExprs, list_mapExprs_id_of_forall ih])
     (ite_case := fun cond tss ess md iht ihe => by
-      cases cond <;> simp [Statement.mapExprs, list_map_id_of_forall iht,
-                            list_map_id_of_forall ihe])
+      cases cond <;> simp [Statement.mapExprs, list_mapExprs_id_of_forall iht,
+                            list_mapExprs_id_of_forall ihe])
     (loop_case := fun guard measure inv body md ihb => by
-      cases guard <;> simp [Statement.mapExprs, list_map_id_of_forall ihb]
+      cases guard <;> simp [Statement.mapExprs, list_mapExprs_id_of_forall ihb]
       all_goals constructor
       all_goals first | (cases measure <;> simp) | (induction inv with | nil => rfl | cons _ _ ih => simp [ih]))
     (exit_case := fun l md => by simp [Statement.mapExprs])
@@ -2482,10 +2482,7 @@ theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s :=
     (typeDecl_case := fun tc md => by simp [Statement.mapExprs])
 
 theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
-  simp [Statements.mapExprs]
-  induction ss with
-  | nil => rfl
-  | cons s rest ih => simp [Statement.mapExprs_id s, ih]
+  exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
 
 end Core
 

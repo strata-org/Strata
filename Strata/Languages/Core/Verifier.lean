@@ -275,7 +275,10 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   solver.setLogic "ALL"
   prelude
   for s in ctx.sorts do
-    let _ ← unwrap "declareSort" (← solver.declareSort s.name s.arity)
+    -- Skip sorts that will be defined as datatypes by emitDatatypesAbstract,
+    -- since strict solver APIs (e.g. cvc5 FFI) reject redefinition.
+    if !ctx.seenDatatypes.contains s.name then
+      let _ ← unwrap "declareSort" (← solver.declareSort s.name s.arity)
   emitDatatypesAbstract solver ctx
   let initState : AbstractEncoderState τ := { base := EncoderState.init }
   let varDefNames := varDefinitions.map (·.name)
