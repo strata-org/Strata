@@ -151,6 +151,9 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   let postEvalEnv := pEs.head?.getD E
   let procNames := program.decls.filterMap fun d =>
     match d with | .proc p _ => some p.header.name | _ => none
+  -- Note: pEs may have fewer entries than procNames when Program.eval
+  -- accumulates all procedures into a single Env. zip silently drops
+  -- unmatched entries; this is intentional for the current single-env model.
   let oblProcs := (pEs.zip procNames).map fun (E, procName) =>
     let blocks := E.deferred.toList.map fun ob =>
       let assumes := ob.assumptions.flatten.filterMap fun
