@@ -862,10 +862,13 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
     : EIO DiagnosticModel VCResult := do
-  let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+  let profile := options.profile
+  let debugProg : Unit → Format := fun _ =>
+    f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
+  let tGetVars ← IO.monoNanosNow
   let varsInObligation := ProofObligation.getVars obligation
   -- All variables in ProofObligation must have been typed.
   let typedVarsInObligation ← varsInObligation.mapM
@@ -873,6 +876,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       match ty with
       | .some ty => return (v,LTy.forAll [] ty)
       | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
+  let tDischarge ← IO.monoNanosNow
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
@@ -882,11 +886,14 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             filename.toString
           assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
           (label := obligation.label))
+  let tDone ← IO.monoNanosNow
+  if profile then
+    let _ ← (IO.println s!"[profile]         getVars: {nsToMs (tDischarge - tGetVars)}ms, serialize/write/solve: {nsToMs (tDone - tDischarge)}ms" |>.toBaseIO)
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
-                 {if options.verbose >= .debug then prog else ""}"
+                 {if options.verbose >= .debug then debugProg () else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
     -- Convert unvalidated sat results to unknown when phases require validation
@@ -935,7 +942,9 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
     let mut smtEncodeNs : Nat := 0
     let mut solverNs : Nat := 0
     let mut peResolvedCount : Nat := 0
+    let mut obligationIdx : Nat := 0
     for obligation in E.deferred do
+      let tOblStart ← IO.monoNanosNow
       -- Determine which checks to perform based on metadata or check mode/amount
       let (satisfiabilityCheck, validityCheck) :=
         if Imperative.MetaData.hasFullCheck obligation.metadata then
@@ -973,15 +982,16 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
               let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
               dbg_trace f!"\n\nResult: {result}\n{prog}"
             if options.stopOnFirstError then break
+          if profile then
+            let tOblEnd ← IO.monoNanosNow
+            let _ ← (IO.println s!"[profile]       obligation[{obligationIdx}] {obligation.label}: {nsToMs (tOblEnd - tOblStart)}ms (PE resolved)" |>.toBaseIO)
+          obligationIdx := obligationIdx + 1
           continue
       -- Need the solver for at least one check
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
       let t2 ← IO.monoNanosNow
-      let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-      let t3 ← IO.monoNanosNow
-      smtEncodeNs := smtEncodeNs + (t3 - t2)
-      match maybeTerms with
+      match ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory with
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
         let result := { obligation,
@@ -996,6 +1006,8 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx, encStats) =>
+        let t3 ← IO.monoNanosNow
+        smtEncodeNs := smtEncodeNs + (t3 - t2)
         stats := stats.merge encStats
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
@@ -1017,6 +1029,10 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
+      if profile then
+        let tOblEnd ← IO.monoNanosNow
+        let _ ← (IO.println s!"[profile]       obligation[{obligationIdx}] {obligation.label}: {nsToMs (tOblEnd - tOblStart)}ms" |>.toBaseIO)
+      obligationIdx := obligationIdx + 1
     if profile then
       let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
