@@ -397,6 +397,12 @@ def translateStmt (stmt : StmtExprMd)
             lhs := lhs ++ [ident]
           | .Field _ _ => pure () -- already handled above
         return (inits, lhs)
+      -- Translate a procedure/instance call: init Declare targets with nondet, then emit call
+      let translateCallTargets (calleeName : String) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
+        let coreArgs ← args.mapM (fun a => translateExpr a)
+        let (inits, lhs) ← initTargetsNondet
+        let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
+        return inits ++ [Core.Statement.call calleeName (coreArgs.map .inArg ++ outArgs) md]
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
@@ -416,17 +422,9 @@ def translateStmt (stmt : StmtExprMd)
             | .Field _ _ => pure () -- already handled above
           return result
         else
-          -- Procedure call: init Declare targets with nondet, then emit call
-          let coreArgs ← args.mapM (fun a => translateExpr a)
-          let (inits, lhs) ← initTargetsNondet
-          let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-          return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
+          translateCallTargets callee.text args
       | .InstanceCall _target callee args =>
-          -- Instance call: init Declare targets with nondet, then emit call
-          let coreArgs ← args.mapM (fun a => translateExpr a)
-          let (inits, lhs) ← initTargetsNondet
-          let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-          return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
+          translateCallTargets callee.text args
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           let mut result : List Core.Statement := []

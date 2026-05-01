@@ -352,7 +352,7 @@ where
         | .InstanceCall callTarget _callee args => do
           let _callTarget' ← recurse callTarget
           let _args' <- args.mapM recurse
-          pure (v, false)
+          pure (⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩, false)
         | _ =>
           pure (<- recurse v, false)
 
