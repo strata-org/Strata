@@ -664,11 +664,8 @@ to `true` under all possible interpretations.
 A key metatheoretic result is that the operational and denotational semantics
 agree. The theorem `Step.denote_preserved` states that a single evaluation step
 preserves the denotation of an expression. `StepStar.denote_preserved` lifts
-this to the multi-step relation. The theorem `eval_denote_sound` composes
-`StepStar.denote_preserved` and `eval_StepStar` (which shows that the partial
-evaluator is sound with respect to `StepStar`, independent of the denotational
-semantics) to show that the evaluator is sound with respect to the denotational
-semantics.
+this to `StepStar`, showing that denotation is preserved across arbitrary
+reduction sequences.
 
 ## Command Semantics
 
