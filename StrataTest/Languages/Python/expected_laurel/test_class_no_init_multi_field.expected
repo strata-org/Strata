@@ -1,4 +1,8 @@
 test_class_no_init_multi_field.py(7, 4): ✅ pass - callElimAssert_requires_2
 test_class_no_init_multi_field.py(8, 4): ✅ pass - class with multiple annotated fields no init
-DETAIL: 2 passed, 0 failed, 0 inconclusive
+unknown location: ✅ pass - Heap reference counter monotone
+test_class_no_init_multi_field.py(6, 0): ✅ pass - postcondition_1
+unknown location: ✅ pass - Heap reference counter monotone
+unknown location: ✅ pass - postcondition_1
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

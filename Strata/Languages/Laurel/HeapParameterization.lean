@@ -404,13 +404,17 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- Preconditions use $heap_in (the input state)
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
 
+    let inHeapRef := mkMd $ .StaticCall "Heap..nextReference!" [mkMd $ .Identifier heapInName]
+    let outHeapRef := mkMd $ .StaticCall "Heap..nextReference!" [mkMd $ .Identifier heapName]
+    let monoCond : Condition := {condition:= mkMd $ .PrimitiveOp .Geq [outHeapRef, inHeapRef], summary := "Heap reference counter monotone"}
+
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           -- First assign $heap_in to $heap, then transform body using $heap
           let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
+          pure (.Opaque [monoCond] (mkMd (.Block [assignHeap, bodyExpr'] none)) [])
       | .Opaque postconds impl modif =>
           -- Postconditions use $heap (the output state)
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
@@ -421,10 +425,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
-          pure (.Opaque postconds' impl' modif')
+          pure (.Opaque (monoCond::postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
-          pure (.Abstract postconds')
+          pure (.Abstract (monoCond::postconds'))
       | .External => pure .External
 
     return { proc with

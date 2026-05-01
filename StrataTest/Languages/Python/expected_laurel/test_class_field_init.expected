@@ -1,2 +1,4 @@
-DETAIL: 0 passed, 0 failed, 0 inconclusive
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+unknown location: ✔️ always true if reached - postcondition_1
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -1,9 +1,15 @@
 test_with_statement.py(17, 4): ✔️ always true if reached - assert(364)
 test_with_statement.py(20, 4): ✔️ always true if reached - assert(426)
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+test_with_statement.py(15, 0): ✔️ always true if reached - postcondition_1
 test_with_statement.py(25, 8): ✔️ always true if reached - assert(525)
 test_with_statement.py(26, 8): ✔️ always true if reached - assert(558)
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+test_with_statement.py(22, 0): ✔️ always true if reached - postcondition_1
 test_with_statement.py(32, 21): ✔️ always true if reached - Check PAdd exception
 test_with_statement.py(32, 8): ✔️ always true if reached - assert(697)
 test_with_statement.py(33, 8): ✔️ always true if reached - assert(724)
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+test_with_statement.py(28, 0): ✔️ always true if reached - postcondition_1
+DETAIL: 13 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

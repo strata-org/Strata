@@ -1,6 +1,10 @@
+unknown location: ✅ pass - Heap reference counter monotone
+test_class_method_call_from_main.py(6, 4): ❓ unknown - postcondition_1
 test_class_method_call_from_main.py(10, 8): ❓ unknown - name must not be empty
 test_class_method_call_from_main.py(9, 23): ❓ unknown - (Greeter@greet ensures) Return type constraint
 test_class_method_call_from_main.py(14, 4): ✅ pass - (Greeter@__init__ requires) Type constraint of name
 test_class_method_call_from_main.py(15, 4): ✅ pass - assert(415)
-DETAIL: 2 passed, 0 failed, 2 inconclusive
+unknown location: ✅ pass - Heap reference counter monotone
+unknown location: ✅ pass - postcondition_1
+DETAIL: 5 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

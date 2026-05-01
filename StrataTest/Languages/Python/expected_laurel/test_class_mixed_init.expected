@@ -1,3 +1,5 @@
 test_class_mixed_init.py(15, 0): ✔️ always true if reached - class with init
-DETAIL: 1 passed, 0 failed, 0 inconclusive
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+unknown location: ✔️ always true if reached - postcondition_1
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
