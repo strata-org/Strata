@@ -103,7 +103,7 @@ inductive LConst : Type where
 
   /-- A Boolean constant. -/
   | boolConst (b: Bool)
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Hashable
 
 /--
 Lambda expressions with quantifiers.
@@ -361,6 +361,58 @@ def isOp (e : LExpr T) : Bool :=
   match e with
   | .op _ _ _ => true
   | _ => false
+
+/-- Check if an expression is a leaf node (const, bvar, fvar, or op). -/
+def isLeaf {T : LExprParamsT} (e : LExpr T) : Bool :=
+  match e with
+  | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => true
+  | _ => false
+
+/-- Check if an expression contains bound variables. -/
+def hasBVar {T : LExprParamsT} : LExpr T → Bool
+  | .bvar _ _ => true
+  | .const _ _ | .fvar _ _ _ | .op _ _ _ => false
+  | .app _ fn arg => hasBVar fn || hasBVar arg
+  | .ite _ c t f => hasBVar c || hasBVar t || hasBVar f
+  | .eq _ e1 e2 => hasBVar e1 || hasBVar e2
+  | .abs _ _ _ body => hasBVar body
+  | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
+
+/-- Hash an optional type annotation. -/
+def hashOptTy [Hashable TT] (ty : Option TT) : UInt64 :=
+  match ty with
+  | none => 0
+  | some t => hash t
+
+-- Per-constructor hash combiners. Used by `hashExpr` and by bottom-up
+-- traversals that build hashes from pre-computed child hashes.
+
+@[inline] def hashConst (hc : UInt64) : UInt64 := mixHash 1 hc
+@[inline] def hashBVar (hi : UInt64) : UInt64 := mixHash 2 hi
+@[inline] def hashFVar (hn hty : UInt64) : UInt64 := mixHash 3 (mixHash hn hty)
+@[inline] def hashOp (ho hty : UInt64) : UInt64 := mixHash 4 (mixHash ho hty)
+@[inline] def hashApp (hfn harg : UInt64) : UInt64 := mixHash 5 (mixHash hfn harg)
+@[inline] def hashIte (hc ht hf : UInt64) : UInt64 := mixHash 6 (mixHash hc (mixHash ht hf))
+@[inline] def hashEqExpr (h1 h2 : UInt64) : UInt64 := mixHash 7 (mixHash h1 h2)
+@[inline] def hashAbs (hname hty hbody : UInt64) : UInt64 :=
+  mixHash 8 (mixHash hname (mixHash hty hbody))
+@[inline] def hashQuantExpr (hk hname hty htr hbody : UInt64) : UInt64 :=
+  mixHash 9 (mixHash hk (mixHash hname (mixHash hty (mixHash htr hbody))))
+
+/-- Hash an expression structurally, including type annotations but ignoring
+    metadata. Useful for HashMap-based deduplication. -/
+def hashExpr {T : LExprParamsT} [Hashable T.TypeType] : LExpr T → UInt64
+  | .const _ c => hashConst (hash c)
+  | .bvar _ i => hashBVar (hash i)
+  | .fvar _ n ty => hashFVar (hash n.name) (hashOptTy ty)
+  | .op _ o ty => hashOp (hash o.name) (hashOptTy ty)
+  | .app _ fn arg => hashApp (hashExpr fn) (hashExpr arg)
+  | .ite _ c t f => hashIte (hashExpr c) (hashExpr t) (hashExpr f)
+  | .eq _ e1 e2 => hashEqExpr (hashExpr e1) (hashExpr e2)
+  | .abs _ name ty body => hashAbs (hash name) (hashOptTy ty) (hashExpr body)
+  | .quant _ k name ty tr body =>
+    let kh : UInt64 := match k with | .all => 0 | .exist => 1
+    hashQuantExpr kh (hash name) (hashOptTy ty) (hashExpr tr) (hashExpr body)
 
 @[expose, match_pattern]
 protected def true {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .boolConst m true

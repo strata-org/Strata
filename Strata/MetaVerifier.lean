@@ -10,6 +10,7 @@ import Lean.Elab.Tactic
 
 import Strata.Languages.Core.Verifier
 import Strata.Transform.LoopElim
+import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.Verify
 public import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
@@ -53,18 +54,24 @@ namespace Core
 abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
-def genVCsSingleENV (E : Env) : Option coreVCs := do
-  match E.error with
-  | some _ => none
-  | _ => return E.deferred.toList.map (fun ob => (E, ob))
-
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   let program := (loopElim program).fst
-  match Core.typeCheckAndEval options program with
+  match Core.typeCheck options program with
   | .error _ => none
-  | .ok (pEs, _stats) =>
-    let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs
-    return VCss.flatten.reverse
+  | .ok tcProgram =>
+    match Core.toCoreProofObligationProgram options tcProgram with
+    | .error _ => none
+    | .ok (oblProgram, _stats) =>
+      match Core.ObligationExtraction.extractObligations oblProgram with
+      | .error _ => none
+      | .ok obligations =>
+        let E := match Core.buildEnv options tcProgram with
+          | .ok (initE, _) =>
+            match Program.eval initE with
+            | .ok (pEs, _) => pEs.head?.getD initE
+            | .error _ => initE
+          | .error _ => Env.init (empty_factory := true)
+        return obligations.toList.map (fun ob => (E, ob))
 
 end Core
 
@@ -120,8 +127,11 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     let maybeTerms := Core.ProofObligation.toSMTTerms E ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, t, ctx, _stats) =>
-      (ob.label, sanitizeSMTContext ctx, ts, t)
+    | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
+      -- For denotational semantics, variable definitions are equivalent to equalities
+      let defAssumptions := varDefs.map fun d =>
+        Strata.SMT.Factory.eq (.app (.uf ⟨d.name, [], d.ty⟩) [] d.ty) d.body
+      (ob.label, sanitizeSMTContext ctx, defAssumptions ++ ts, t)
 
 /--
 Interpret a list of SMT verification conditions as the conjunction of their

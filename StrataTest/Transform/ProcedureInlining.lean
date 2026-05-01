@@ -237,7 +237,7 @@ def translate (t : Strata.Program) : Core.Program :=
 def runInlineCall (p : Core.Program) : Core.Program :=
   match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
   | ⟨.ok (_,res), _⟩ => res
-  | ⟨.error e, _⟩ => panic! e
+  | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
     : Except Format Bool := do

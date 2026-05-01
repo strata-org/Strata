@@ -258,13 +258,13 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[("callElimAssume_post", Core.true)]],
+    assumptions := [[.assumption "callElimAssume_post" Core.true]],
     obligation := Core.true, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[("precond_x_positive", Core.true)]],
+    assumptions := [[.assumption "precond_x_positive" Core.true]],
     obligation := Core.true, metadata := {} }
 
 -- Combined Core phases: clean obligation preserves sat
