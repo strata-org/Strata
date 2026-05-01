@@ -745,4 +745,36 @@ function applyFn () : int -> int -> int -> int {
 #guard_msgs in
 #eval formatCore lambdaHigherOrderPgm
 
+-------------------------------------------------------------------------------
+
+private def strPrefixSuffixPgm : Program :=
+#strata
+program Core;
+
+procedure TestPrefixSuffix(s1 : string, s2 : string)
+spec {
+  requires str.prefixof(s1, s2);
+  ensures str.suffixof(s1, s2) || str.prefixof(s1, s2);
+}
+{
+  assert [prefix_holds]: str.prefixof(s1, s2);
+  assert [either]: str.suffixof(s1, s2) || str.prefixof(s1, s2);
+};
+#end
+
+/--
+info: program Core;
+
+procedure TestPrefixSuffix (s1 : string, s2 : string)
+spec {
+  requires [TestPrefixSuffix_requires_0]: str.prefixof(s1, s2);
+  ensures [TestPrefixSuffix_ensures_1]: str.suffixof(s1, s2) || str.prefixof(s1, s2);
+  } {
+  assert [prefix_holds]: str.prefixof(s1, s2);
+  assert [either]: str.suffixof(s1, s2) || str.prefixof(s1, s2);
+};
+-/
+#guard_msgs in
+#eval ASTtoCST strPrefixSuffixPgm
+
 end Strata.Test

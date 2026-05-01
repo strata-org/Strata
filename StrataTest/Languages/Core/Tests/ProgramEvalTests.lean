@@ -67,6 +67,8 @@ func Str.Concat :  ((x : string) (y : string)) → string;
 func Str.Substr :  ((x : string) (i : int) (n : int)) → string;
 func Str.ToRegEx :  ((x : string)) → regex;
 func Str.InRegEx :  ((x : string) (y : regex)) → bool;
+func Str.PrefixOf :  ((x : string) (y : string)) → bool;
+func Str.SuffixOf :  ((x : string) (y : string)) → bool;
 func Re.All :  () → regex;
 func Re.AllChar :  () → regex;
 func Re.Range :  ((x : string) (y : string)) → regex;
