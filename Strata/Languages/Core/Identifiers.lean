@@ -13,12 +13,16 @@ public import Strata.DDM.Util.SourceRange
 public section
 
 /-- Lightweight source location for Core expressions: a byte range plus an optional file URI.
-    The URI is needed because inlining can move expressions across files. -/
+    The URI is needed because inlining can move expressions across files.
+    `relatedLocs` accumulates additional source locations from substitution so that
+    both the original expression and the substituted argument can be reported. -/
 structure ExprSourceLoc where
   /-- The file this expression originates from, if known. -/
   uri   : Option Strata.Uri := none
   /-- Byte-offset range within the file. -/
   range : Strata.SourceRange
+  /-- Additional source locations accumulated during substitution (e.g. call-site arguments). -/
+  relatedLocs : List (Option Strata.Uri × Strata.SourceRange) := []
 deriving Inhabited, Repr
 
 /-- Expression source locations are considered equal for the purpose of expression comparison,
@@ -30,9 +34,9 @@ instance : DecidableEq ExprSourceLoc := fun a b => isTrue (ExprSourceLoc.eq_triv
 namespace ExprSourceLoc
 
 @[expose]
-def none : ExprSourceLoc := { uri := .none, range := Strata.SourceRange.none }
+def none : ExprSourceLoc := { uri := .none, range := Strata.SourceRange.none, relatedLocs := [] }
 
-def isNone (loc : ExprSourceLoc) : Bool := loc.uri.isNone ∧ loc.range.isNone
+def isNone (loc : ExprSourceLoc) : Bool := loc.uri.isNone ∧ loc.range.isNone ∧ loc.relatedLocs.isEmpty
 
 /-- Build from a `SourceRange` with no URI. -/
 def ofRange (sr : Strata.SourceRange) : ExprSourceLoc := { uri := .none, range := sr }
@@ -43,9 +47,14 @@ def ofUriRange (uri : Strata.Uri) (sr : Strata.SourceRange) : ExprSourceLoc :=
 
 instance : Std.ToFormat ExprSourceLoc where
   format loc :=
-    match loc.uri with
-    | some u => f!"{u}:{loc.range}"
-    | .none  => f!"{loc.range}"
+    let primary := match loc.uri with
+      | some u => f!"{u}:{loc.range}"
+      | .none  => f!"{loc.range}"
+    if loc.relatedLocs.isEmpty then primary
+    else
+      let related := loc.relatedLocs.map fun (u, r) =>
+        match u with | some u => f!"{u}:{r}" | .none => f!"{r}"
+      f!"{primary} (related: {related})"
 
 end ExprSourceLoc
 

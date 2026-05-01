@@ -45,8 +45,9 @@ instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) w
 instance : Inhabited ExpressionMetadata :=
   show Inhabited ExprSourceLoc from inferInstance
 
--- When combining provenance during evaluation, prefer the Original expression's
--- source location so that inlined expressions retain their origin.
+-- When combining provenance during evaluation, use the Original expression's
+-- source location as primary and collect other non-none locations as related,
+-- so that both the original expression and the substituted argument can be reported.
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
   combine reasons :=
     let findLoc (prov : Lambda.LExpr.EvalProvenance) : Option ExprSourceLoc :=
@@ -54,11 +55,24 @@ instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
         | .Original, .Original | .ReplacementVar, .ReplacementVar
         | .Abstraction, .Abstraction => true
         | _, _ => false) |>.map (·.2)
-    let firstNonNone := [.Original, .ReplacementVar, .Abstraction] |>.findSome? fun prov =>
+    let nonNoneLoc (prov : Lambda.LExpr.EvalProvenance) : Option ExprSourceLoc :=
       match findLoc prov with
       | some loc => if loc.isNone then none else some loc
       | none => none
-    firstNonNone.getD ExprSourceLoc.none
+    -- Pick the primary location: prefer Original > ReplacementVar > Abstraction
+    let priority := [.Original, .ReplacementVar, .Abstraction]
+    match priority.findSome? nonNoneLoc with
+    | none => ExprSourceLoc.none
+    | some primaryLoc =>
+      -- Collect related locations from all other non-none provenance entries,
+      -- including their own relatedLocs.
+      let related := priority.foldl (init := primaryLoc.relatedLocs) fun acc prov =>
+        match nonNoneLoc prov with
+        | some loc =>
+          if loc.uri == primaryLoc.uri && loc.range == primaryLoc.range then acc
+          else (loc.uri, loc.range) :: (loc.relatedLocs ++ acc)
+        | none => acc
+      { primaryLoc with relatedLocs := related }
 
 instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
   show Inhabited (Lambda.LExpr ⟨⟨ExprSourceLoc, CoreIdent⟩, LMonoTy⟩) from inferInstance
