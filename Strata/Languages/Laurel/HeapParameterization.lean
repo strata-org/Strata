@@ -68,9 +68,10 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
       for ⟨assignTarget, _⟩ in assignTargets.attach do
-        match assignTarget.val with
-        | .Field _ _ =>
+        match _hav: assignTarget.val with
+        | .Field target _fieldName =>
             modify fun s => { s with writesHeapDirectly := true }
+            collectExprMd target
         | .Local _ | .Declare _ => pure ()
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
@@ -89,7 +90,16 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .ContractOf _ f => collectExprMd f
   | _ => pure ()
   termination_by sizeOf expr
-  decreasing_by all_goals (simp_wf; try term_by_mem)
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try term_by_mem)
+    -- For target inside Field in assign target list (attach-based loop):
+    all_goals (
+      have := List.sizeOf_lt_of_mem ‹_›
+      have := AstNode.sizeOf_val_lt assignTarget
+      have : sizeOf assignTarget.val = sizeOf (Variable.Field target _fieldName) := by exact congrArg sizeOf _hav
+      simp at *
+      omega)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
