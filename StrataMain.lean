@@ -54,18 +54,16 @@ All `strata` subcommands use a common exit code scheme:
 | 2    | Failures found     | Analysis completed and found failures.                    |
 | 3    | Internal error     | SMT encoding failure, solver crash, or translation bug.   |
 | 4    | Known limitation   | Intentionally unsupported language construct.             |
-| 5    | Solver timeout     | SMT solver exceeded its time limit.                       |
 
 Codes 1–2 are **user-actionable** (fix the input or the code under analysis).
-Code 5 is **user-actionable** (increase `--solver-timeout` or simplify the spec).
-Codes 3–4 are **tool-side** (report as a bug or wait for support). -/
+Codes 3–4 are **tool-side** (report as a bug or wait for support).
+Exit 0 covers success, inconclusive results, and solver timeouts. -/
 
 namespace ExitCode
   def userError        : UInt8 := 1
   def failuresFound    : UInt8 := 2
   def internalError    : UInt8 := 3
   def knownLimitation  : UInt8 := 4
-  def solverTimeout    : UInt8 := 5
 end ExitCode
 
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
@@ -508,10 +506,6 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
   printPyAnalyzeResult "Known limitation" message
   IO.Process.exit ExitCode.knownLimitation
 
-private def exitPyAnalyzeSolverTimeout {α} (message : String) : IO α := do
-  printPyAnalyzeResult "Solver timeout" message
-  IO.Process.exit ExitCode.solverTimeout
-
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
     exit helpers above, which are called on early pipeline failure).
@@ -522,9 +516,8 @@ private def exitPyAnalyzeSolverTimeout {α} (message : String) : IO α := do
 
     Exit-code priority (highest wins):
     - Internal error (exit 3): encoding failures or solver crashes
-    - Solver timeout (exit 5): solver exceeded time limit
     - Failures found (exit 2): assertion violations
-    - Inconclusive / success (exit 0) -/
+    - Inconclusive / success / solver timeout (exit 0) -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     (checkMode : VerificationMode := .deductive) : IO Unit := do
   let classifier : ResultClassifier :=
@@ -553,12 +546,14 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
   let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{timeoutStr}{implErrorStr}"
   if nImplError > 0 then
     exitPyAnalyzeInternalError s!"An unexpected result was produced. {counts}"
-  else if nTimeout > 0 then
-    exitPyAnalyzeSolverTimeout s!"Solver exceeded time limit. {counts}"
   else if nFailure > 0 then
     exitPyAnalyzeFailuresFound counts
   else
-    printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
+    let label :=
+      if nTimeout > 0 then "Solver timeout"
+      else if nInconclusive > 0 then "Inconclusive"
+      else "Analysis success"
+    printPyAnalyzeResult label counts
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
@@ -1326,13 +1321,11 @@ def verifyCommand : Command where
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         let hasImplError := vcResults.any (fun r => r.isImplementationError || r.hasSMTError)
-        let hasTimeout := vcResults.any Core.VCResult.isTimeout
+        let hasFailure := vcResults.any (fun r => !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError)
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         if hasImplError then
           IO.Process.exit ExitCode.internalError
-        else if hasTimeout then
-          IO.Process.exit ExitCode.solverTimeout
-        else
+        else if hasFailure then
           IO.Process.exit ExitCode.failuresFound
 
 def pyInterpretCommand : Command where
