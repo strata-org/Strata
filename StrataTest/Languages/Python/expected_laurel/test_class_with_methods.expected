@@ -1,4 +1,4 @@
-test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_19
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_12
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
 test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_14
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name should return mystore
