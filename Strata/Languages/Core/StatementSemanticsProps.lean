@@ -2487,8 +2487,6 @@ theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := b
   | loop_case guard measure inv body md ihb =>
     cases guard <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
                            block_mapExpr_id_of_forall ihb]
-    all_goals constructor
-    all_goals first | (cases measure <;> simp) | (induction inv with | nil => rfl | cons _ _ ih => simp [ih])
   | exit_case l md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
   | funcDecl_case decl md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
   | typeDecl_case tc md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
