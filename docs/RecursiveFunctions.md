@@ -137,14 +137,14 @@ so the encoder emits it as a concrete equality rather than a quantified axiom.
 
 Termination checking is always on for all `rec` functions. It verifies that
 recursive calls pass a structurally smaller argument by encoding a well-founded
-ordering on ADTs using `dtRank` functions (see `docs/TerminationChecking.md`).
+ordering on ADTs using `adtRank` functions.
 
 For each recursive function, the TermCheck pipeline phase:
 
-1. Generates a `D..dtRank : D → Int` uninterpreted function and per-constructor
+1. Generates a `D..adtRank : D → Int` uninterpreted function and per-constructor
    axioms establishing that recursive fields have strictly smaller rank.
 2. Generates a `f$$term` verification procedure that asserts
-   `dtRank(callArg) < dtRank(callerParam)` at each recursive call site,
+   `adtRank(callArg) < adtRank(callerParam)` at each recursive call site,
    guarded by the path condition through `ite` branches.
 
 A function that fails its termination check will produce an `unknown` or `fail`

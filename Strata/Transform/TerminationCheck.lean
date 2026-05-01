@@ -44,6 +44,8 @@ def termSuffix : String := "$$term"
 
 def termProcName (name : String) : String := s!"{name}{termSuffix}"
 
+def isTermProc (name : String) : Bool := name.endsWith termSuffix
+
 /-- Find the decreasing parameter index for a function: explicit `measure`
     (from `decreases` clause), or fallback to `@[cases]` (`inlineIfConstr`). -/
 private def getDecreasesIdx (func : Function) : Option Nat :=
@@ -172,7 +174,6 @@ private def mkTermCheckProc
       inputs := func.inputs
       outputs := []
       noFilter := true
-      noPrecondElim := true
     }
     spec := { preconditions :=
                  (specializedAxioms.map fun (name, e) =>
@@ -256,8 +257,12 @@ where
           let ty ← func.inputs.values[idx]?
           pure (func.name.name, idx, ty)
         -- Step 3: Generate adtRank UF declarations and per-constructor axioms.
-        -- `newAdtRank`: func decls only for datatypes not yet emitted.
-        -- `allAdtRank`: all axioms needed by this block's $$term procedures.
+        -- `newAdtRank` emits UF decls only for datatypes not yet in the program.
+        -- `allAdtRank` collects all axioms this block needs — each $$term proc
+        -- embeds axioms as preconditions, so it needs the full set even if the
+        -- UF decls were emitted by a previous block.
+        -- `collectAdtRank` deduplicates internally because mutual blocks can
+        -- map multiple function types to the same mutual datatype block.
         let allAdtNames := funcDecreasesMap.map (fun (_, _, ty) => adtNameOf ty)
           |>.eraseDups
         let newAdtNames := allAdtNames.filter (fun n => !emittedAdtRank.contains n)
