@@ -31,9 +31,9 @@ rec function listLen (@[cases] xs : IntList) : int
 
 /--
 info: program Core;
-datatype IntList {(
-  (Nil())),
-  (Cons(hd : int, tl : IntList))
+datatype IntList {
+  Nil(),
+  Cons(hd : int, tl : IntList)
 };
 rec function listLen (@[cases] xs : IntList) : int
 {
@@ -63,11 +63,11 @@ rec function len<a>(@[cases] xs : MyList a) : int
 #end
 
 /-- info: program Core;
-datatype MyList (a : Type) {(
-  (Nil())),
-  (Cons(hd : a, tl : (MyList a)))
+datatype MyList (a : Type) {
+  Nil(),
+  Cons(hd : a, tl : MyList a)
 };
-rec function len<a> (@[cases] xs : (MyList a)) : int
+rec function len<a> (@[cases] xs : MyList a) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
 };
@@ -99,9 +99,9 @@ function isOdd (@[cases] n : MyNat) : bool
 #end
 
 /-- info: program Core;
-datatype MyNat {(
-  (Zero())),
-  (Succ(pred : MyNat))
+datatype MyNat {
+  Zero(),
+  Succ(pred : MyNat)
 };
 rec function isEven (@[cases] n : MyNat) : bool
 {

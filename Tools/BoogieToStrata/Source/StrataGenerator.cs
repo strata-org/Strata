@@ -49,6 +49,9 @@ public class StrataGenerator : ReadOnlyVisitor {
     private TypeCtorDecl? _refTypeCtor;
     private TypeCtorDecl? _fieldTypeCtor;
     private TypeSynonymDecl? _heapTypeSyn;
+    // Global variables collected from the program, used to convert them
+    // into inout/input parameters on procedure headers and call sites.
+    private List<GlobalVariable> _globalVariables = [];
 
     private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
         _options = options;
@@ -118,12 +121,9 @@ public class StrataGenerator : ReadOnlyVisitor {
                 generator.WriteLine();
             }
 
-            var variables = liveDeclarations.OfType<GlobalVariable>().ToList();
-            if (variables.Count != 0) {
-                generator.WriteLine("// Variables");
-                variables.ForEach(gv => generator.VisitGlobalVariable(gv));
-                generator.WriteLine();
-            }
+            // Collect global variables (no longer emitted as `var` declarations;
+            // they become inout/input parameters on procedures).
+            generator._globalVariables = liveDeclarations.OfType<GlobalVariable>().ToList();
 
             if (p.Procedures.Count() != 0) {
                 generator.WriteLine("// Uninterpreted procedures");
@@ -949,17 +949,35 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override Cmd VisitCallCmd(CallCmd node) {
-        var p = node.callee;
-        Indent("call ");
-        if (node.Outs.Count > 0) {
-            EmitSeparated(node.Outs, e => VisitExpr(e), ", ");
-            WriteText(" := ");
-        }
+        var callee = node.Proc;
+        var modifiesNames = new HashSet<string>(callee.Modifies.Select(m => m.Name));
 
-        WriteText($"{Name(p)}(");
-        EmitSeparated(node.Ins, e => VisitExpr(e), ", ");
+        Indent("call ");
+        WriteText($"{Name(callee.Name)}(");
+        // Emit: inout globals, then read-only globals, then original args, then out outputs.
+        var needComma = false;
+        foreach (var g in _globalVariables.Where(g => modifiesNames.Contains(g.Name))) {
+            if (needComma) WriteText(", ");
+            WriteText($"inout {Name(g.Name)}");
+            needComma = true;
+        }
+        foreach (var g in _globalVariables.Where(g => !modifiesNames.Contains(g.Name))) {
+            if (needComma) WriteText(", ");
+            WriteText(Name(g.Name));
+            needComma = true;
+        }
+        foreach (var arg in node.Ins) {
+            if (needComma) WriteText(", ");
+            VisitExpr(arg);
+            needComma = true;
+        }
+        foreach (var outVar in node.Outs) {
+            if (needComma) WriteText(", ");
+            WriteText("out ");
+            VisitExpr(outVar);
+            needComma = true;
+        }
         WriteLine(");");
-        // TODO: assume where expressions on all modified variables, all output variables
         return node;
     }
 
@@ -1700,21 +1718,26 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void WriteProcedureHeader(Procedure proc) {
+        // Modifies globals become inout params; read-only globals become input params.
+        var modifiesNames = new HashSet<string>(proc.Modifies.Select(m => m.Name));
+        var modifiesGlobals = _globalVariables.Where(g => modifiesNames.Contains(g.Name)).ToList();
+        var readOnlyGlobals = _globalVariables.Where(g => !modifiesNames.Contains(g.Name)).ToList();
+
         WriteText($"procedure {Name(proc.Name)}");
         EmitTypeParameters(proc.TypeParameters);
         WriteText("(");
-        WriteFormals(proc.InParams);
-        WriteText(")");
-        WriteText(" returns (");
-        WriteFormals(proc.OutParams);
+        // Emit: inout globals, then read-only globals, then original inputs, then out outputs.
+        var needComma = false;
+        WriteFormals(modifiesGlobals, ref needComma, "inout ");
+        WriteFormals(readOnlyGlobals, ref needComma);
+        WriteFormals(proc.InParams, ref needComma);
+        WriteFormals(proc.OutParams, ref needComma, "out ");
         WriteLine(")");
 
-        if (proc.Modifies.Count != 0 || proc.Requires.Count != 0 || proc.Ensures.Count != 0) {
+        // Spec: no modifies clause; only requires and ensures.
+        if (proc.Requires.Count != 0 || proc.Ensures.Count != 0) {
             WriteLine("spec {");
             IncIndent();
-            foreach (var mod in proc.Modifies) {
-                IndentLine($"modifies {Name(mod.Name)};");
-            }
 
             foreach (var req in proc.Requires) {
                 Indent();
@@ -1757,17 +1780,22 @@ public class StrataGenerator : ReadOnlyVisitor {
         return node;
     }
 
-    private void WriteFormals(List<Variable> variables) {
+    private void WriteFormals(IEnumerable<Variable> variables, ref bool needComma,
+                              string prefix = "") {
         var n = 0;
-        EmitSeparated(variables, v => {
+        foreach (var v in variables) {
+            if (needComma) WriteText(", ");
             var name = v.TypedIdent.Name ?? "";
-            if (name == "") {
-                name = $"x{n++}";
-            }
-
-            WriteText($"{Name(name)} : ");
+            if (name == "") name = $"x{n++}";
+            WriteText($"{prefix}{Name(name)} : ");
             VisitType(v.TypedIdent.Type);
-        }, ", ");
+            needComma = true;
+        }
+    }
+
+    private void WriteFormals(List<Variable> variables) {
+        var needComma = false;
+        WriteFormals(variables, ref needComma);
     }
 
     private void WriteVariableTypes(List<Variable> variables) {

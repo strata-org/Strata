@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.BasicBlock
-import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.CFGSemantics
 import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.Stmt
 import Strata.DL.Lambda.LExpr
-import Strata.DL.Util.LabelGen
+public import Strata.DL.Util.LabelGen
+
+public section
 
 namespace Imperative
 
@@ -46,7 +49,7 @@ def stmtsToBlocks
   [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
   (k : String)
   (ss : List (Stmt P CmdT))
-  (exitConts : List (String × String))
+  (exitConts : List (Option String × String))
   (accum : List CmdT) :
   StringGenM (String × DetBlocks String CmdT P) :=
 match ss with
@@ -66,7 +69,7 @@ match ss with
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Process block body, extending the list of exit continuations.
-  let (bl, bbs) ← stmtsToBlocks kNext bss ((l, kNext) :: exitConts) []
+  let (bl, bbs) ← stmtsToBlocks kNext bss ((.some l, kNext) :: exitConts) []
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "blk$" accum .none bl
   -- Create labeled block if needed
@@ -118,12 +121,17 @@ match ss with
       let ldec ← StringGenState.gen "measure_decrease$"
       let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
-  -- Body jumps to bodyK (either directly to lentry, or through the decrease block)
-  let (bl, bbs) ← stmtsToBlocks bodyK bss exitConts []
+  -- Body jumps to bodyK (either directly to lentry, or through the decrease block).
+  let (bl, bbs) ← stmtsToBlocks bodyK bss ((.none, kNext) :: exitConts) []
+  -- For each invariant, emit an `assert` whose label preserves the source
+  -- label when present.  When the source label is empty (frontend did not
+  -- supply one), generate a fresh `inv$` label for uniqueness.
   let invCmds : List CmdT ←
-    is.mapM (fun i => do
-      let invLabel ← StringGenState.gen "inv$"
-      pure (HasPassiveCmds.assert invLabel i MetaData.empty))
+    is.mapM (fun (srcLabel, i) => do
+      let assertLabel ←
+        if srcLabel.isEmpty then StringGenState.gen "inv$"
+        else pure srcLabel
+      pure (HasPassiveCmds.assert assertLabel i MetaData.empty))
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
@@ -148,7 +156,7 @@ match ss with
     | (.none, []) => k
     | (.none, (_, k) :: _) => k
     | (.some l, _) =>
-      match exitConts.lookup l with
+      match exitConts.lookup (.some l) with
       | .some k => k
       -- Just keep going if this is an invalid exit. We assume a prior
       -- check to avoid this.

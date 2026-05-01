@@ -3,10 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Program
-import Strata.Backends.CBMC.Common
+public import Strata.Backends.CBMC.Common
+public import Strata.Util.Json
+public import Strata.Backends.CBMC.GOTO.Program
+
 import Strata.Util.Tactics
+
+public section
 
 namespace CProverGOTO
 open Lean
@@ -256,7 +261,7 @@ def programToJson (name : String) (program : Program) : Except String Json := do
 /-- Write a program to JSON file -/
 def writeProgramToFile (fileName : String) (programName : String) (program : Program) : IO Unit := do
   let json ← IO.ofExcept (programToJson programName program)
-  IO.FS.writeFile fileName json.pretty
+  writeJsonFile fileName json
 
 /-- Convert `Program`s to JSON containing GOTO functions -/
 def programsToJson (programs : List (String × Program)) : Except String Json := do
@@ -268,7 +273,7 @@ def programsToJson (programs : List (String × Program)) : Except String Json :=
 /-- Write programs to JSON file -/
 def writeProgramsToFile (fileName : String) (programs : List (String × Program)) : IO Unit := do
   let json ← IO.ofExcept (programsToJson programs)
-  IO.FS.writeFile fileName json.pretty
+  writeJsonFile fileName json
 
 -------------------------------------------------------------------------------
 

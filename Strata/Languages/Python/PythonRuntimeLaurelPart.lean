@@ -13,7 +13,7 @@ namespace Python
 
 /--
 Python prelude declarations expressed in Laurel grammar.
-Converted from PythonRuntimeCorePart.lean (Core dialect) to Laurel dialect.
+Converted from PythonLaurelCorePrelude.lean (Core dialect) to Laurel dialect.
 
 Core-specific constructs that Laurel does not support:
 - `inline` keyword: noted in comments
@@ -307,16 +307,20 @@ function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
   if (Any..isfrom_None(v)) then false else
   if (Any..isfrom_str(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  if (Any..isfrom_float(v)) then !(Any..as_float!(v) == 0.0) else
   if (Any..isfrom_DictStrAny(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
   if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil()) else
-  false
-  //WILL BE ADDED
+  <?>
+};
+
+function to_bool_any(v: Any) : Any
+{
+  from_bool(Any_to_bool(v))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -330,6 +334,7 @@ function List_len (l : ListAny) : int
 
 procedure List_len_pos(l : ListAny)
   invokeOn List_len(l)
+  opaque
   ensures List_len(l) >= 0;
 
 function List_contains (l : ListAny, x: Any) : bool
@@ -368,6 +373,7 @@ function List_take (l : ListAny, i: int) : ListAny
 
 procedure List_take_len(l : ListAny, i: int)
   invokeOn List_len(List_take(l,i))
+  opaque
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_take(l,i)) == i;
 
 function List_drop (l : ListAny, i: int) : ListAny
@@ -380,12 +386,33 @@ function List_drop (l : ListAny, i: int) : ListAny
 
 procedure List_drop_len(l : ListAny, i: int)
   invokeOn List_len(List_drop(l,i))
+  opaque
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
-function List_slice (l : ListAny, start : int, stop: int) : ListAny
-  requires start >= 0 && start < List_len(l) && stop >= 0 && stop <= List_len(l) && start <= stop
+function int_max (i1: int, i2: int) : int
 {
-  List_take (List_drop (l, start), stop - start)
+  if i1 >= i2 then i1 else i2
+};
+
+function int_min (i1: int, i2: int) : int
+{
+  if i1 <= i2 then i1 else i2
+};
+
+function List_slice_non_neg (l : ListAny, start : int, stop: int) : ListAny
+  requires start >= 0 && stop >= 0
+{
+  if (start >= List_len(l)) || (start >= stop) then ListAny_nil()
+  else List_take (List_drop (l, start), int_min(stop, List_len(l))  - start)
+};
+
+
+function List_slice (l : ListAny, start : int, stop: int) : ListAny
+{
+  List_slice_non_neg (l,
+    if start >= 0 then start else int_max (List_len(l) + start, 0),
+    if stop >= 0 then stop else int_max (List_len(l) + stop, 0)
+  )
 };
 
 function List_set_non_neg (l : ListAny, i : int, v: Any) : ListAny
@@ -406,13 +433,8 @@ function List_set (l : ListAny, i : int, v: Any) : ListAny
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
 
-function ListAny_range(i: Any) : ListAny;
-
-function range (i: Any) : Any
-  requires Any..isfrom_int(i)
-{
-  from_ListAny (ListAny_range(i))
-};
+function range (start: Any, stop: Any, step: Any) : Any
+  requires Any..isfrom_int(start) && Any..isfrom_None(stop) && Any..isfrom_None(step);
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // DictStrAny functions
@@ -453,19 +475,23 @@ function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
 
 function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList)) &&
-                ((OptionInt..isOptSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
-                  || (OptionInt..isOptNone(Any..stop!(index)))))
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
 {
   if Any..isfrom_DictStrAny(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
-      List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isOptSome(Any..stop!(index)) then
-    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
   else
-    from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
+    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+};
+
+function Any_get_slice (list: Any, index: Any): Any
+  requires (Any..isfrom_ListAny(list) && Any..isfrom_Slice(index))
+{
+  from_ListAny(List_slice(
+    Any..as_ListAny!(list),
+    Any..start!(index),
+    if OptionInt..isOptSome(Any..stop!(index))
+    then OptionInt..unwrap!(Any..stop!(index))
+    else List_len(Any..as_ListAny!(list))))
 };
 
 function Any_get! (dictOrList: Any, index: Any): Any
@@ -516,6 +542,19 @@ function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
   else Any_set!(dictOrList, ListAny..head!(indices),
     Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
+
+function Any_len (v: Any) : int;
+
+function Any_len_to_Any (v: Any) : Any {
+  from_int(Any_len(v))
+};
+
+procedure Any_len_pos(v: Any)
+  invokeOn Any_len(v)
+  opaque
+  ensures Any_len(v) >= 0;
+
+function Any_iter_index(iter: Any, index: int) : Any;
 
 function PIn (v: Any, dictOrList: Any) : Any
   requires (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(v)) || Any..isfrom_ListAny(dictOrList)
@@ -590,21 +629,21 @@ function PNeg (v: Any) : Any
     exception(UndefinedError ("Operand Type is not defined"))
 };
 
-function PNot (v: Any) : Any
+function PBitNot (v: Any) : Any
 {
   if Any..isexception(v) then v
   else if Any..isfrom_bool(v) then
-    from_bool(!(Any..as_bool!(v)))
+    from_int(-(bool_to_int(Any..as_bool!(v)) + 1))
   else if Any..isfrom_int(v) then
-    from_bool(!(Any..as_int!(v) == 0))
-  else if Any..isfrom_float(v) then
-    from_bool(!(Any..as_float!(v) == 0.0))
-  else if Any..isfrom_str(v) then
-    from_bool(!(Any..as_string!(v) == ""))
-  else if Any..isfrom_ListAny(v) then
-    from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
+    from_int(-(Any..as_int!(v) + 1))
   else
     exception(UndefinedError ("Operand Type is not defined"))
+};
+
+function PNot (v: Any) : Any
+{
+  if Any..isexception(v) then v
+  else from_bool(!(Any_to_bool(v)))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -876,26 +915,26 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
   if ! Any_to_bool (v1) then v1 else v2
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any..isexception(v1) then v1 else
   if Any_to_bool (v1) then v1 else v2
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
-// Modelling of other Python operations, currrently unsupported
+// Modelling of Python arithmetic and bitwise operations
 // /////////////////////////////////////////////////////////////////////////////////////
-// int_pow and float_pow are provided by the factory (PyFactory.lean) with concreteEval.
-// Declared here as external so PPow can reference them; they are filtered
+// int_pow, int_rshift, and float_pow are provided by the factory (PyFactory.lean) with concreteEval.
+// Declared here as external so PPow/PRShift can reference them; they are filtered
 // during Laurel-to-Core translation and the factory provides the Core versions.
 function int_pow (base: int, exp: int) : int
+  external;
+function int_rshift (x: int, n: int) : int
   external;
 function float_pow (base: real, exp: real) : real
   external;
@@ -918,8 +957,53 @@ function PPow (v1: Any, v2: Any) : Any
 };
 
 function PMod (v1: Any, v2: Any) : Any
+  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
-  exception(UnimplementedError ("Mod operator is not supported"))
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
+    from_int( bool_to_int(Any..as_bool!(v1)) % bool_to_int(Any..as_bool!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) % Any..as_int!(v2))
+  else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
+    from_int(Any..as_int!(v1) % bool_to_int(Any..as_bool!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
+    from_int(Any..as_int!(v1) % Any..as_int!(v2))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python bitwise shift operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function PLShift (v1: Any, v2: Any) : Any
+{
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
+    from_int(Any..as_int!(v1) * int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
+    from_int(bool_to_int(Any..as_bool!(v1)) * int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
+    from_int(Any..as_int!(v1) * int_pow(2, bool_to_int(Any..as_bool!(v2))))
+  else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) * int_pow(2, bool_to_int(Any..as_bool!(v2))))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+function PRShift (v1: Any, v2: Any) : Any
+{
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
+    from_int(int_rshift(Any..as_int!(v1), Any..as_int!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
+    from_int(int_rshift(bool_to_int(Any..as_bool!(v1)), Any..as_int!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
+    from_int(int_rshift(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
+  else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
+    from_int(int_rshift(bool_to_int(Any..as_bool!(v1)), bool_to_int(Any..as_bool!(v2))))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -936,10 +1020,12 @@ function datetime_strptime(dtstring: Any, format: Any) : Any;
 
 procedure datetime_tostring_cancel(dt: Any)
   invokeOn datetime_strptime(to_string_any(dt), from_str ("%Y-%m-%d"))
+  opaque
   ensures datetime_strptime(to_string_any(dt), from_str ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
   requires Any..isfrom_datetime(d) summary "(Origin_datetime_date_Requires)d_type"
+  opaque
   ensures Any..isfrom_datetime(ret) && Any..as_datetime!(ret) <= Any..as_datetime!(d) summary "ret_type"
 {
   var timedt: int;
@@ -956,6 +1042,7 @@ procedure datetime_date(d: Any) returns (ret: Any, error: Error)
 };
 
 procedure datetime_now(tz: Any) returns (ret: Any)
+  opaque
   ensures Any..isfrom_datetime(ret) summary "ret_type"
 {
   var d: int;
@@ -967,6 +1054,7 @@ procedure timedelta_func(days: Any, hours: Any) returns (delta : Any, maybe_exce
   requires Any..isfrom_None(hours) || Any..isfrom_int(hours) summary "(Origin_timedelta_Requires)hours_type"
   requires Any..isfrom_int(days) ==> Any..as_int!(days)>=0 summary "(Origin_timedelta_Requires)days_pos"
   requires Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0 summary "(Origin_timedelta_Requires)hours_pos"
+  opaque
   ensures Any..isfrom_int(delta) && Any..as_int!(delta)>=0 summary "ret_pos"
 {
   var days_i : int := 0;
@@ -988,6 +1076,7 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   requires req_name == from_str("foo") summary "(Origin_test_helper_procedure_Requires)req_name_is_foo"
   requires (Any..isfrom_None(opt_name)) || (Any..isfrom_str(opt_name)) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str"
   requires (opt_name == from_None()) || (opt_name == from_str("bar")) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar"
+  opaque
   ensures (Error..isNoError(maybe_except)) summary "ensures_maybe_except_none"
 {
   assert req_name == from_str("foo") summary "assert_name_is_foo";
@@ -996,7 +1085,7 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
 };
 
-procedure print(msg : Any) returns ();
+procedure print(msg : Any, opt : Any, sep : Any, end : Any, file : Any, flush : Any) returns ();
 
 #end
 
@@ -1006,17 +1095,12 @@ Parse the Laurel DDM prelude into a Laurel Program.
 
 -- Prelude functions that may return an exception value as Any.
 -- We should make sure that all functions in this list propagate the exceptions from their arguments.
-def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PNot", "PAdd", "PSub", "PMul",
-   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PAnd", "POr"]
+public def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
+   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
 
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
-  | .ok p =>
-    let addExceptionMd := p.staticProcedures.map (λ f =>
-      if f.name.text ∈ AnyMaybeExceptionList then
-        {f with md:= f.md.withPropertySummary "AnyMaybeExcept" }
-      else f)
-    {p with staticProcedures := addExceptionMd}
+  | .ok p => p
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
 end Python

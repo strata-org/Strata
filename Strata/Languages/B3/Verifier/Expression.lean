@@ -3,12 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.DDMTransform.DefinitionAST
-import Strata.DL.SMT.SMT
-import Strata.DL.SMT.Factory
-import Strata.Languages.B3.DDMTransform.Conversion
+public import Strata.Languages.B3.DDMTransform.DefinitionAST
+public import Strata.DL.SMT.SMT
+public import Strata.DL.SMT.Factory
+public import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DDM.Format
 import Strata.Util.Tactics
+
+public section
 
 /-!
 # B3 AST to SMT Term Conversion

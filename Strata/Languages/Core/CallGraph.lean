@@ -19,7 +19,27 @@ structure CallGraph where
   callees : Std.HashMap String (Std.HashMap String Nat)
   -- A map from callee to a list of (caller, # of calls)
   callers : Std.HashMap String (Std.HashMap String Nat)
-deriving Repr
+deriving Inhabited, BEq
+
+namespace CallGraph
+
+def sortedEntries (m : Std.HashMap String α) : List (String × α) :=
+  m.toList.mergeSort (·.1 < ·.1)
+
+def reprMap (m : Std.HashMap String (Std.HashMap String Nat)) : Std.Format :=
+  let fmtInner (vs : List (String × Nat)) : Std.Format :=
+    Std.Format.joinSep (vs.map fun p => f!"(\"{p.1}\", {p.2})") ", "
+  let entries := sortedEntries m
+  let parts := entries.map fun p => f!"(\"{p.1}\", [{fmtInner (sortedEntries p.2)}])"
+  Std.Format.joinSep parts ("," ++ Std.Format.line)
+
+instance : Repr CallGraph where
+  reprPrec cg _ :=
+    f!"CallGraph(callees: [{reprMap cg.callees}],"
+    ++ Std.Format.line
+    ++ f!"         callers: [{reprMap cg.callers}])"
+
+end CallGraph
 
 def CallGraph.empty : CallGraph :=
   { callees := Std.HashMap.emptyWithCapacity,
@@ -64,6 +84,12 @@ def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
     callers := new_callers
   }
 
+/-- Add a node with no callees to the call graph. -/
+def CallGraph.addLeafNode (cg : CallGraph) (name : String) : CallGraph :=
+  { cg with
+    callees := cg.callees.insert name {}
+    callers := cg.callers.insert name {} }
+
 /-- BFS worker for transitive closure. `getNeighbors` provides the edges.
 `allNodes` is a fixed universe of node names (all keys in the graph);
 termination is proved via the lexicographic measure
@@ -94,6 +120,12 @@ def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :
   let allNodes := cg.callees.toList.map Prod.fst
   (closureGo cg.getCallees allNodes [] [name]).filter (· ≠ name)
 
+/-- True when `name` is part of a (possibly self-referencing) cycle in the
+    call graph — i.e., it can transitively reach itself through callees. -/
+def CallGraph.isRecursive (cg : CallGraph) (name : String) : Bool :=
+  cg.getCallees name |>.any fun callee =>
+    callee == name || (cg.getCalleesClosure callee).contains name
+
 /-- Compute transitive closure of callees for multiple `names`. -/
 def CallGraph.getAllCalleesClosure (cg : CallGraph) (names : List String) : List String :=
   names.flatMap (cg.getCalleesClosure ·)
@@ -103,19 +135,71 @@ def CallGraph.getCallersClosure (cg : CallGraph) (name : String) : List String :
   let allNodes := cg.callers.toList.map Prod.fst
   (closureGo cg.getCallers allNodes [] [name]).filter (· ≠ name)
 
+
+/-- Pick the SCC representative: prefer the alphabetically smallest node
+    among `preferredRoots`, falling back to the alphabetically smallest
+    among all `remaining`.  `first` is the head of `remaining` (passed
+    explicitly to avoid `head!`). -/
+private def pickPreferredOrLexicographicallySmallest
+    (first : String) (remaining : List String)
+    (preferredSet : Std.HashSet String) : String :=
+  let preferred := remaining.filter preferredSet.contains
+  match preferred with
+  | p :: ps => ps.foldl (fun best n => if n < best then n else best) p
+  | [] => remaining.foldl (fun best n => if n < best then n else best) first
+
+/-- Worker for `computeRoots`.  `fuel` bounds the number of iterations;
+    it is initialised to `nodes.length` which is always sufficient because
+    each iteration removes at least one node. -/
+private def CallGraph.computeRootsAux (cg : CallGraph)
+    (preferredSet : Std.HashSet String)
+    : Nat → List String → List String → List String
+  | 0, remaining, roots => roots ++ remaining
+  | _ + 1, [], roots => roots
+  | fuel + 1, first :: rest, roots =>
+    let remaining := first :: rest
+    let remainingSet := Std.HashSet.ofList remaining
+    let noIncoming := remaining.filter fun name =>
+      (cg.getCallers name).all fun caller => !remainingSet.contains caller
+    let (newRoots, starts) :=
+      if noIncoming.isEmpty then
+        -- All remaining form SCCs; pick representative
+        let pick := pickPreferredOrLexicographicallySmallest first remaining preferredSet
+        (roots ++ [pick], [pick])
+      else
+        (roots ++ noIncoming, noIncoming)
+    let reachable := starts ++ cg.getAllCalleesClosure starts
+    let newRemaining := remaining.filter (fun n => !(reachable.contains n))
+    cg.computeRootsAux preferredSet fuel newRemaining newRoots
+
+/-- Compute "root" nodes of the call graph.
+
+    A root is a node with no incoming edges from other nodes in the
+    remaining set.  When only strongly connected components remain (every
+    node has at least one incoming edge), the alphabetically smallest node
+    among `preferredRoots` is chosen first; if none are in the SCC the
+    overall alphabetically smallest node is used.  The algorithm iteratively
+    removes roots and their reachable descendants until no nodes remain. -/
+def CallGraph.computeRoots (cg : CallGraph)
+    (preferredRoots : List String := []) : List String :=
+  let nodes := (cg.callees.toList.map Prod.fst).mergeSort (· < ·)
+  cg.computeRootsAux (.ofList preferredRoots) nodes.length nodes []
+
 /-- Build call graph from name-callees pairs -/
 def buildCallGraph (items : List (String × List String)) : CallGraph :=
   let calleeMap := items.foldl (fun acc (name, calls) =>
     acc.insert name (Std.HashMap.ofList calls.occurrences))
     Std.HashMap.emptyWithCapacity
 
+  let emptyCallerMap := items.foldl (fun acc (name, _) =>
+    acc.insert name ([] : List String)) Std.HashMap.emptyWithCapacity
   let callerMapNodedup :=
     items.foldl (fun acc ⟨caller,callees⟩ =>
       callees.foldl (fun acc' callee =>
         let existingCallers := Option.getD (acc'.get? callee) []
         acc'.insert callee (caller :: existingCallers))
       acc)
-      Std.HashMap.emptyWithCapacity
+      emptyCallerMap
   let callerMap := callerMapNodedup.map
     (fun _ v => Std.HashMap.ofList v.occurrences)
 
@@ -148,7 +232,7 @@ mutual
 /-- Extract procedure calls from a single statement -/
 def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
-  | .cmd (.call _ procName _ _) => [procName]
+  | .cmd (.call procName _ _) => [procName]
   | .cmd _ => []
   | .block _ body _ => extractCallsFromStatements body
   | .ite _ thenBody elseBody _ =>

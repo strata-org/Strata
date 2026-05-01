@@ -1,0 +1,52 @@
+Python:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Strata/Languages/Python/**'
+          - 'StrataTest/Languages/Python/**'
+          - 'Tools/Python/**'
+
+Laurel:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Strata/Languages/Laurel/**'
+          - 'StrataTest/Languages/Laurel/**'
+
+Core:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Strata/Languages/Core/**'
+          - 'StrataTest/Languages/Core/**'
+
+SMT:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Strata/DL/SMT/**'
+          - 'StrataTest/DL/SMT/**'
+
+GOTO:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Strata/Backends/CBMC/GOTO/**'
+          - 'StrataTest/Backends/CBMC/GOTO/**'
+
+Java:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Strata/DDM/Integration/Java/**'
+          - 'Strata/DDM/Integration/Java.lean'
+          - 'StrataTest/DDM/Integration/Java/**'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'lake-manifest.json'
+          - 'lakefile.toml'
+          - 'lean-toolchain'
+          - 'Tools/Python/pyproject.toml'
+          - 'Tools/BoogieToStrata/**/*.csproj'
+          - 'Tools/BoogieToStrata/**/*.sln'
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'

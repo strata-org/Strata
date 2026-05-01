@@ -1,0 +1,5 @@
+test_class_no_init_with_method.py(4, 23): ❓ unknown - (WithMethod@get_x ensures) Return type constraint
+test_class_no_init_with_method.py(8, 4): ✅ pass - callElimAssert_requires_2
+test_class_no_init_with_method.py(9, 4): ✅ pass - class with method but no __init__
+DETAIL: 2 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

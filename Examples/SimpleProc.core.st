@@ -15,13 +15,10 @@ program Core;
 //  limitations under the License.
 //
 
-var g : bool;
-
-procedure Test(x : bool) returns (y : bool)
+procedure Test(inout g : bool, x : bool, out y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
-  ensures (g == old g);
 }
 {
   y := x || x;

@@ -9,6 +9,7 @@ op boolType : LaurelType => "bool";
 op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
+op bvType (width: Num): LaurelType => "bv" width;
 // Core type passthrough: parsed as Ident, translated to HighType.TCore
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
@@ -156,9 +157,14 @@ op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClau
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs;
+op modifiesWildcard: ModifiesClause => "\n  modifies *";
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
+
+category OpaqueSpec;
+op opaqueSpec(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause): OpaqueSpec =>
+  "\n  opaque" ensures modifies;
 
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
@@ -170,20 +176,18 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

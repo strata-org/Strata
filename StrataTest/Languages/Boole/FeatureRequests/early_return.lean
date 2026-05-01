@@ -12,49 +12,38 @@ open Strata
 Near-upstream anchors from `differential_status.md`:
 - Gap: Early return
 - Upstream note: Verus SST `return expr;` is currently comment-only in translation
+
+Early return is implemented via `exit functionName;`:
+  1. The Boole → Core translator wraps every procedure body in a labeled
+     block named after the procedure.
+  2. `exit functionName;` in the body exits that block, skipping any
+     remaining statements — i.e., an early return.
+  3. Output variables must be assigned before the exit, as with any early
+     return style.
 -/
 
 private def earlyReturnSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape once Boole has native return support.
-//
-// Preferred implementation strategy: wrap the procedure body in a
-// synthetic labeled block and lower `return` to output assignments plus
-// `exit` from that block.
-//
-// procedure abs_seed(x: int) returns (r: int)
-// spec {
-//   ensures 0 <= r;
-// }
-// {
-//   if (x < 0) {
-//     return 0 - x;
-//   } else {
-//     return x;
-//   }
-// };
-
 procedure abs_seed(x: int) returns (r: int)
 spec {
-  ensures true;
+  ensures 0 <= r;
 }
 {
   if (x < 0) {
-    // TODO(feature:return): allow `return 0 - x;`.
     r := 0 - x;
-  } else {
-    // TODO(feature:return): allow `return x;`.
-    r := x;
+    exit abs_seed;
   }
+  r := x;
 };
 #end
 
 /-- info:
-Obligation: abs_seed_ensures_0_813
+Obligation: abs_seed_ensures_0_797
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" earlyReturnSeed (options := .quiet)
 

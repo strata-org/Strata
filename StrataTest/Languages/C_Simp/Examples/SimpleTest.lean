@@ -85,17 +85,17 @@ VCs:
 Label: test_assert
 Property: assert
 Assumptions:
-pre: $__y1 > 0
+pre: y@1 > 0
 Obligation:
-$__x0 + $__y1 > $__x0
+x@1 + y@1 > x@1
 
 Label: post
 Property: assert
 Assumptions:
-pre: $__y1 > 0
-<label_ite_cond_true: (~Int.Gt z #10)>: if $__x0 + $__y1 > 10 then $__x0 + $__y1 > 10 else true
-<label_ite_cond_false: !(~Int.Gt z #10)>: if if $__x0 + $__y1 > 10 then false else true then if $__x0 + $__y1 > 10 then false else true else true
-test_assume: if $__x0 + $__y1 > 10 then $__x0 + $__y1 - 1 else $__x0 + $__y1 + 1 > 0
+pre: y@1 > 0
+<label_ite_cond_true: z > 10>: if x@1 + y@1 > 10 then x@1 + y@1 > 10 else true
+<label_ite_cond_false: !(z > 10)>: if if x@1 + y@1 > 10 then false else true then if x@1 + y@1 > 10 then false else true else true
+test_assume: if x@1 + y@1 > 10 then x@1 + y@1 - 1 else x@1 + y@1 + 1 > 0
 Obligation:
 true
 

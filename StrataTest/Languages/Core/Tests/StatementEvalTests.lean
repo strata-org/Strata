@@ -22,12 +22,10 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → #18]
+[(x : int) → 18]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -44,12 +42,12 @@ Label: x_eq_18
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
                     .set "x" eb[#18] .empty,
-                    .assert "x_eq_18" eb[x == #18] .empty]) |>.snd |> format
+                    .assert "x_eq_18" eb[x == #18] .empty]) |> format
 
 /--
 info: Error:
@@ -63,8 +61,6 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -81,7 +77,7 @@ Label: x_eq_12
 Property: assert
 Assumptions:
 Proof Obligation:
-(_yinit == #12)
+_yinit == 12
 -/
 #guard_msgs in
 #eval (evalOne
@@ -89,7 +85,7 @@ Proof Obligation:
   ∅
   [.init "x" t[int] (.det eb[#0]) .empty,
   .set "x" eb[y] .empty,
-  .assert "x_eq_12" eb[x == #12] .empty]) |>.snd |> format
+  .assert "x_eq_12" eb[x == #12] .empty]) |> format
 
 /--
 info: Error:
@@ -98,12 +94,10 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : bool) → (x == #true)]
+[(x : bool) → x == true]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -123,7 +117,7 @@ Deferred Proof Obligations:
 #eval evalOne ∅ ∅
        [
        .init "x" t[bool] (.det eb[x == #true]) .empty
-       ] |>.snd |> format
+       ] |> format
 
 /--
 info: Error:
@@ -132,17 +126,12 @@ Subst Map:
 
 Expression Env:
 State:
-[(minit : (arrow int int)) → (_minit : (arrow int int))
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else ((_minit : (arrow int int))
-         %0)))
-      %0)))
-   %0)))
-(m0 : int) → ((_minit : (arrow int int)) #0)]
+[(minit : (arrow int int)) → _minit
+(m : (arrow int int)) → fun __q0 : ($__unknown_type) => if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => if __q2 == 1 then 10 else _minit(__q2))(__q1))(__q0)
+(m0 : int) → _minit(0)]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -159,19 +148,19 @@ Label: m_5_eq_50
 Property: assert
 Assumptions:
 Proof Obligation:
-(((_minit : (arrow int int)) #5) == #50)
+_minit(5) == 50
 
 Label: m_2_eq_20
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 
 Label: m_1_eq_10
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 -/
 #guard_msgs in
 #eval (evalOne
@@ -186,7 +175,7 @@ Proof Obligation:
   .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
   .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))] .empty,
   .assert "m_1_eq_10" eb[(m #1) == #10] .empty
-  ]) |>.snd |> format
+  ]) |> format
 
 /--
 info: Error:
@@ -196,15 +185,10 @@ Subst Map:
 Expression Env:
 State:
 [minit → _minit
-(m : (arrow int int)) → (λ (if (%0 == #3) then #30 else ((λ (if (%0 == #2) then #20 else ((λ (if (%0 == #1) then #10 else (_minit
-         %0)))
-      %0)))
-   %0)))]
+(m : (arrow int int)) → fun __q0 : ($__unknown_type) => if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => if __q2 == 1 then 10 else _minit(__q2))(__q1))(__q0)]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -221,19 +205,19 @@ Label: m_5_eq_50
 Property: assert
 Assumptions:
 Proof Obligation:
-((_minit #5) == #50)
+_minit(5) == 50
 
 Label: m_2_eq_20
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 
 Label: m_1_eq_10
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 -/
 #guard_msgs in
 #eval (evalOne
@@ -246,7 +230,7 @@ Proof Obligation:
   .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
   .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))] .empty,
   .assert "m_1_eq_10" eb[(m #1) == #10] .empty
-  ]) |>.snd |> format
+  ]) |> format
 
 
 
@@ -282,14 +266,12 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (if (zinit == #false) then #6 else #0)
-(y : int) → #6
+[(x : int) → if zinit == false then 6 else 0
+(y : int) → 6
 zinit → zinit]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 
 
@@ -297,8 +279,8 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
+(z_false, zinit == false)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 
 
 Warnings:
@@ -307,29 +289,29 @@ Deferred Proof Obligations:
 Label: trivial
 Property: assert
 Assumptions:
-(<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
-(z_false, (zinit == #false))
+(<label_ite_cond_false: !(z == false)>, if zinit == false then false else true)
+(z_false, zinit == false)
 Proof Obligation:
-#true
+true
 
 Label: x_eq_y_label_0
 Property: assert
 Assumptions:
-(z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
+(z_false, zinit == false)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 Proof Obligation:
-((if (zinit == #false) then #6 else #0) == #6)
+if zinit == false then 6 else 0 == 6
 
 Label: x_eq_y
 Property: assert
 Assumptions:
-(z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
+(z_false, zinit == false)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 Proof Obligation:
-((if (zinit == #false) then #6 else #0) == #6)
+if zinit == false then 6 else 0 == 6
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog1) |>.snd |> format
+#eval (evalOne ∅ ∅ prog1) |> format
 
 
 private def prog2 : Statements := [
@@ -342,31 +324,16 @@ private def prog2 : Statements := [
 ]
 
 /--
-info: {
-  init (x : int) := #0
-  x := #1
-  havoc x
-  assert [x_eq_1] ($__x0 == #1)
-  havoc x
-  x := #8
-}
--/
-#guard_msgs in
-#eval (evalOne ∅ ∅ prog2) |>.fst |> format
-
-/--
 info: Error:
 none
 Subst Map:
 
 Expression Env:
 State:
-[(x : int) → #8]
+[(x : int) → 8]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 2
 Factory Functions:
 
 
@@ -383,10 +350,10 @@ Label: x_eq_1
 Property: assert
 Assumptions:
 Proof Obligation:
-(($__x0 : int) == #1)
+x@1 == 1
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog2) |>.snd |> format
+#eval (evalOne ∅ ∅ prog2) |> format
 
 /--
 Test funcDecl: declare a helper function and use it
@@ -416,15 +383,13 @@ Subst Map:
 
 Expression Env:
 State:
-[(y : int) → (~double #5)]
+[(y : int) → double(5)]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 func double :  ((x : int)) → int :=
-  ((~Int.Add x x))
+  (x + x)
 
 
 Datatypes:
@@ -439,10 +404,10 @@ Label: y_eq_10
 Property: assert
 Assumptions:
 Proof Obligation:
-((~double #5) == #10)
+double(5) == 10
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
+#eval (evalOne ∅ ∅ testFuncDecl) |> format
 
 /--
 Test funcDecl with variable capture: function captures variable value at declaration time,
@@ -475,16 +440,14 @@ Subst Map:
 
 Expression Env:
 State:
-[(n : int) → #20
-(result : int) → (~addN #5)]
+[(n : int) → 20
+(result : int) → addN(5)]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 func addN :  ((x : int)) → int :=
-  ((~Int.Add x #10))
+  (x + 10)
 
 
 Datatypes:
@@ -499,10 +462,10 @@ Label: result_eq_15
 Property: assert
 Assumptions:
 Proof Obligation:
-((~addN #5) == #15)
+addN(5) == 15
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format
+#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |> format
 
 /--
 Test polymorphic funcDecl: declare a polymorphic function `choose` that takes a boolean
@@ -545,17 +508,15 @@ Subst Map:
 
 Expression Env:
 State:
-[(intResult : int) → #1
-(boolResult : bool) → #false]
+[(intResult : int) → 1
+(boolResult : bool) → false]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 0
 Factory Functions:
 @[inline]
 func choose : ∀[a]. ((cond : bool) (x : a) (y : a)) → a :=
-  ((if cond then x else y))
+  (if cond then x else y)
 
 
 Datatypes:
@@ -570,18 +531,18 @@ Label: intResult_eq_1
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 
 Label: boolResult_eq_false
 Property: assert
 Assumptions:
 Proof Obligation:
-#true
+true
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |>.snd |> format
+#eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |> format
 
--- Test nondet if: partial evaluator introduces a fresh boolean and splits paths
+-- Test nondet if: evaluator introduces a fresh boolean and splits paths
 /--
 info: Error:
 none
@@ -589,13 +550,11 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (if ($__$__nondet_cond_00 : bool) then #1 else #2)
-($__nondet_cond_0 : bool) → ($__$__nondet_cond_00 : bool)]
+[(x : int) → if $__nondet_cond_0 then 1 else 2
+($__nondet_cond_0 : bool) → $__nondet_cond_0]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
-Variable gen count: 1
 Factory Functions:
 
 
@@ -603,8 +562,8 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
+(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
 
 
 Warnings:
@@ -613,10 +572,10 @@ Deferred Proof Obligations:
 Label: x_pos
 Property: assert
 Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
+(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
 Proof Obligation:
-((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
+if $__nondet_cond_0 then 1 else 2 == 1
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
@@ -624,7 +583,7 @@ Proof Obligation:
                       [Statement.set "x" eb[#1] .empty]
                       [Statement.set "x" eb[#2] .empty]
                       .empty,
-                    .assert "x_pos" eb[(x == #1)] .empty]) |>.snd |> format
+                    .assert "x_pos" eb[(x == #1)] .empty]) |> format
 
 end Tests
 ---------------------------------------------------------------------

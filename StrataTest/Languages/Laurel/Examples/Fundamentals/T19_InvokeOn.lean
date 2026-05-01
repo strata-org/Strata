@@ -23,6 +23,7 @@ function needsPAndQsInvoke1(): int {
 
 procedure PAndQ(x: int)
   invokeOn P(x)
+  opaque
   ensures P(x) && Q(x);
 
 function needsPAndQsInvoke2(): int {
@@ -43,6 +44,7 @@ function A(x: int, y: real): bool;
 function B(x: real): bool;
 procedure AAndB(x: int, y: real)
   invokeOn A(x, y)
+  opaque
   ensures A(x, y) && B(y);
 
 procedure invokeA(x: int, y :real) {
@@ -57,6 +59,7 @@ procedure invokeB(x: int, y :real) {
 function R(x: int): bool;
 procedure badPostcondition(x: int)
   invokeOn R(x)
+  opaque
   ensures R(x)
 //        ^^^^ error: assertion does not hold
 {
@@ -66,6 +69,6 @@ procedure badPostcondition(x: int)
 
 #guard_msgs (drop info, error) in
 #eval testInputWithOffset "InvokeOn" program 14
-  (Strata.Laurel.processLaurelFileWithOptions { Core.VerifyOptions.default with solver := "z3" })
+  (Strata.Laurel.processLaurelFileWithOptions { verifyOptions := { Core.VerifyOptions.default with solver := "z3" } })
 
 end Strata.Laurel

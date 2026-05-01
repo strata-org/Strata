@@ -1,3 +1,9 @@
+# strata-args: --check-mode bugFinding --check-level full
+# The postcondition (heap frame: pre-existing objects unchanged) is ❓ unknown
+# in deductive mode because CircularBuffer@__init__ has no ensures/modifies
+# clause — after call elimination the heap is havoc'd. In bugFinding mode,
+# procedure inlining substitutes the body, letting the solver see that
+# __init__ only touches the freshly allocated object.
 import test_helper
 
 class CircularBuffer:

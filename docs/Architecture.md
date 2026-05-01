@@ -48,7 +48,7 @@ It currently provides the following features:
 * Declaration and optionally definition of pure functions
 * Declaration and optionally definition of procedures with local variables, multiple outputs, preconditions, postconditions, and frame conditions.
 
-The `Imperative` dialect also includes a verification condition generator (VCG) based on partial evaluation that produces a proof obligation for each assertion that appears in a statement or list of statements. It currently produces expressions in the `Lambda` dialect, but could be generalized as it depends only on the `.ite` expression constructor, which could equivalently be Boolean negation.
+The `Imperative` dialect also includes a verification condition generator (VCG) based on symbolic simulation that produces a proof obligation for each assertion that appears in a statement or list of statements. It currently produces expressions in the `Lambda` dialect, but could be generalized as it depends only on the `.ite` expression constructor, which could equivalently be Boolean negation.
 
 ### C_Simp
 
@@ -78,7 +78,7 @@ The current Strata implementation includes only one analysis: the Strata Core di
 
 ## External Reasoning Tools
 
-Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Strata Core language based on partial evaluation along with an interface to SMT solvers (in [`Strata.DL.SMT`](../Strata/DL/SMT/)).
+Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Strata Core language based on symbolic simulation along with an interface to SMT solvers (in [`Strata.DL.SMT`](../Strata/DL/SMT/)).
 
 ## Third-Party Dialects and Analyses
 

@@ -10,13 +10,13 @@ public import Strata.Util.IO
 public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
-import Strata.Transform.ProcedureInlining
+public import Strata.Transform.ProcedureInlining
 import Strata.Transform.FilterProcedures
 import Strata.Transform.IrrelevantAxioms
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Python.PySpecPipeline
@@ -58,9 +58,9 @@ declared using `noncomputable opaque` to define the intended API surface and
 should not be invoked yet.
 -/
 
-namespace Strata
-
 public section
+
+namespace Strata
 
 open Strata.Python.Specs (ModuleName)
 
@@ -233,21 +233,13 @@ dialect into the dialect-specific AST for the Core dialect. This can fail with
 an error message if the input program contains constructs that are not yet
 supported.
 -/
-def laurelToCore (p : Laurel.Program) : Except String Core.Program :=
-  let (coreOpt, diags) := Laurel.translate { emitResolutionErrors := true } p
+def laurelToCore (p : Laurel.Program) : IO (Except String Core.Program) := do
+  let (coreOpt, diags) ← Laurel.translate { emitResolutionErrors := true } p
   match coreOpt with
-  | some core => .ok core
-  | none => .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
+  | some core => return .ok core
+  | none => return .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
 
 /-! ### Transformation of Core programs -/
-
-/--
-Options to control the behavior of inlining procedure calls in a Core program.
-The `doInline` predicate decides, for each call site, whether to inline.
-When `none`, all calls are inlined.
--/
-structure Core.InlineTransformOptions where
-  doInline : Option (String → Core.Transform.CachedAnalyses → Bool) := none
 
 /-- A single named transform pass with its arguments. -/
 inductive Core.TransformPass where
@@ -262,11 +254,10 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     : Core.Transform.CoreTransformM Core.Program := do
   match pass with
   | .inlineProcedures opts =>
-    let pred := opts.doInline.getD (fun _ _ => true)
-    let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) program
+    let (_, prog) ← (Core.procedureInliningPipelinePhase opts).transform program
     return prog
   | .loopElim =>
-    pure (Core.loopElim program)
+    pure (Core.loopElim program).fst
   | .callElim =>
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
     return prog
@@ -298,7 +289,7 @@ Transform a Core program to replace each loop with assertions and assumptions ab
 its invariants.
 -/
 def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  Core.loopElim p
+  (Core.loopElim p).fst
 
 /--
 Transform a Core program to replace each procedure call with assertions and
@@ -335,10 +326,13 @@ def Core.verifyProgram
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
+    (prefixPhases : List Core.PipelinePhase := [])
+    (keepAllFilesPrefix : Option String := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases)
+      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
+        (keepAllFilesPrefix := keepAllFilesPrefix))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
@@ -355,7 +349,7 @@ def Laurel.verifyProgram
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Option Core.VCResults × List DiagnosticModel) :=
-  Strata.Laurel.verifyToVcResults program options
+  Strata.Laurel.verifyToVcResults program { verifyOptions := options }
 
 /--
 Analyze a Laurel program and return structured diagnostic models
@@ -365,7 +359,7 @@ def Laurel.analyzeToDiagnosticModels
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Array DiagnosticModel) :=
-  Strata.Laurel.verifyToDiagnosticModels program options
+  Strata.Laurel.verifyToDiagnosticModels program { verifyOptions := options }
 
 /-! ### Python direct-to-Core pipeline -/
 
@@ -547,7 +541,7 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
 /-! ### Python-to-Core via Laurel pipeline -/
 
 /-- Translate a Python Ion file all the way to Core.  Composes
-    `pyAnalyzeLaurel` (Python → combined Laurel) and
+    `pythonAndSpecToLaurel` (Python → combined Laurel) and
     `translateCombinedLaurel` (Laurel → Core with prelude). -/
 def pyTranslateLaurel
     (pythonIonPath : String)
@@ -556,12 +550,14 @@ def pyTranslateLaurel
     (specDir : System.FilePath := ".")
     : EIO String (Core.Program × List DiagnosticModel) := do
   let laurel ←
-    match ← pyAnalyzeLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
+    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => throw (toString err)
-  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
+  let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
+
+end Strata
 
 end -- public section

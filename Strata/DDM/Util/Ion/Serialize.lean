@@ -28,7 +28,7 @@ theorem zeros_size (n : Nat) : (zeros n).size = n := by
   | zero =>
     simp
   | succ n hyp =>
-    simp_all [ByteArray.size_push]
+    simp_all
     exact hyp
 
 end Strata.ByteArray
