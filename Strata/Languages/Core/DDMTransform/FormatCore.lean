@@ -472,6 +472,8 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   -- String and Regex operations
   | .str .Concat => pure (.str_concat default arg1 arg2)
   | .str .InRegEx => pure (.str_inregex default arg1 arg2)
+  | .str .PrefixOf => pure (.str_prefixof default arg1 arg2)
+  | .str .SuffixOf => pure (.str_suffixof default arg1 arg2)
   | .re .Range => pure (.re_range default arg1 arg2)
   | .re .Concat => pure (.re_concat default arg1 arg2)
   | .re .Union => pure (.re_union default arg1 arg2)
