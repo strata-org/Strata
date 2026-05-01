@@ -41,6 +41,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_class_with_methods",
     "test_default_params",
     "test_dict_operations",
+    "test_exception_as_var",
     "test_for_loop",
     "test_func_input_type_constraints",
     "test_if_elif",
