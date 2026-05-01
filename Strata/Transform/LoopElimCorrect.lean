@@ -1824,30 +1824,6 @@ private theorem loop_invariant_dichotomy_nondet
       exact .inr (.inr ⟨ρ₀, hall_tt₀, hwfb₀, hwfv₀, hwfvar₀, hnf₀',
         hbody_exit, rfl⟩)
 
-/-! ## Store definedness from source execution -/
-
-/-- If the source body reaches terminal (or exiting) from ρ₀, then every variable
-    in `assigned_vars` (= modifiedVars body filtered by ∉ definedVars body) was
-    already defined at ρ₀.
-
-    The argument: if `n` is modified during execution (via UpdateState, which
-    requires `σ n = some _`) but never initialized (via InitState), then `n` must
-    have been defined at ρ₀.  Contrapositive: if `ρ₀.store n = none` and body
-    doesn't InitState it first, UpdateState for `n` would be impossible →
-    execution gets stuck → can't reach terminal/exiting.
-
-    A full proof requires detailed trace induction over `StepStmt` constructors;
-    we state it here and will fill it in a subsequent PR. -/
-private theorem modifiedVars_defined_from_execution
-    (body : Statements)
-    (ρ₀ : Env Expression)
-    (assigned_vars : List Expression.Ident)
-    (hvars : assigned_vars = (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body))
-    (hreach : (∃ ρ', CoreStar π φ (.stmts body ρ₀) (.terminal ρ')) ∨
-              (∃ lbl ρ', CoreStar π φ (.stmts body ρ₀) (.exiting lbl ρ'))) :
-    ∀ n ∈ assigned_vars, (ρ₀.store n).isSome := by
-  sorry
-
 /-! ## Simulation -/
 
 private theorem simulation
@@ -2643,11 +2619,11 @@ theorem loopElim_overapproximatesAggressive
       (LangCore π φ)
       (LangCore π φ)
       (fun s => some (stmtResult σ s)) := by
-  intro st st' ht ρ₀ hwfb hwfv hwfvar
+  intro st st' ht ρ₀ hwfb hwfv hwfvar hswf
   simp at ht; subst ht
   have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st)).1
     σ st (Nat.le_refl _) sorry ρ₀ hwfb hwfv hwfvar
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, sorry⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
   · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
   · intro ⟨cfg, hfail, hreach⟩
