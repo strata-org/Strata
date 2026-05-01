@@ -46,7 +46,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
-      | [singleOutput] => singleOutput.type
+      | firstOutput :: _ => firstOutput.type
       | _ => { val := HighType.Unknown, source := none }
     | .unresolved => { val := HighType.Unknown, source := none }
     | astNode =>

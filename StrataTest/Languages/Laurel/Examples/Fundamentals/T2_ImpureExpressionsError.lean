@@ -41,7 +41,6 @@ procedure impureContractIsNotLegal1(x: int)
 //              ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 {
   assert impure() == 1
-//       ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 };
 
 procedure impureContractIsNotLegal2(x: int)
