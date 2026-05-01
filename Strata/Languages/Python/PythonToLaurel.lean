@@ -1602,9 +1602,9 @@ def getExceptionCheckPreamble (ctx : TranslationContext) (e : StmtExprMd) (varNa
   else if containsUserCall ctx e then
     let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some e))
     let varRef := mkStmtExprMd (StmtExpr.Identifier varName)
-    ([varDecl, mkExceptionCheckAssert varRef "Check exception"], varRef)
+    (varDecl::getExceptionCatch ctx varRef, varRef)
   else
-    (getExceptionAssertions ctx e, e)
+    (getExceptionCatch ctx e, e)
 
 def withExceptionChecks (ctx : TranslationContext)
     (result : TranslationContext × List StmtExprMd)
@@ -1714,7 +1714,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$if_cond_{test.toAst.ann.start.byteIdx}"
     let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condRef) bodyBlock elseBlock) md
 
-    return (bodyCtx, (getExceptionCatch ctx condExpr) ++ [ifStmt])
+    return (bodyCtx, preamble ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
@@ -1728,7 +1728,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$while_cond_{test.toAst.ann.start.byteIdx}"
     let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, (getExceptionCatch ctx condExpr) ++ [whileWrapped])
+    return (loopCtx, preamble ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
@@ -1740,7 +1740,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         -- Coerce Composite return values to Any for LaurelResult : Any
         let eRef ← coerceToAny ctx expr eRef
         let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] eRef) md
-        .ok [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
+        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
       | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
     return (ctx, stmts)
 
@@ -1769,8 +1769,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       assertStmt
     else
       mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
-
-    return (condCtx, (getExceptionCatch ctx condExpr) ++ [result])
+    let (preamble, _) := getExceptionCheckPreamble ctx condExpr s!"$assert_exc_{test.toAst.ann.start.byteIdx}"
+    return (condCtx, preamble ++ [result])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])
@@ -1967,7 +1967,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
-    return (finalCtx, iterPreamble ++ (getExceptionCatch ctx iterRaw) ++ [counterDecl] ++ [loopBlock])
+    let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
+    return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
