@@ -1,15 +1,11 @@
+test_procedure_in_assert.py(8, 4): ✅ pass - assert(322)
 test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)
 test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)hours_type
 test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)days_pos
 test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)hours_pos
 test_procedure_in_assert.py(9, 17): ✅ pass - Check PSub exception
-test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)
-test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)hours_type
-test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)days_pos
-test_procedure_in_assert.py(9, 24): ✅ pass - (Origin_timedelta_Requires)hours_pos
+test_procedure_in_assert.py(10, 4): ✅ pass - assert(384)
 test_procedure_in_assert.py(11, 4): ✅ pass - should pass
-test_procedure_in_assert.py(11, 4): ✅ pass - should pass
-unknown location: ✅ pass - (main ensures) Return type constraint
-test_procedure_in_assert.py(14, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 13 passed, 0 failed, 0 inconclusive
+test_procedure_in_assert.py(3, 14): ✅ pass - (main ensures) Return type constraint
+DETAIL: 9 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
