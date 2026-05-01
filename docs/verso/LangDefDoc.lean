@@ -403,8 +403,9 @@ auxiliary functions:
 3. *Field accessors*: for each field, Strata generates safe and unsafe variants.
    The default (safe) versions (e.g., `List..head`) add a precondition check
    requiring that the argument is an instance of the given constructor. The
-   unsafe versions (e.g., `List..head!`) do not check this and have *undefined
-   behavior* if called on the wrong constructor.
+   unsafe versions (e.g., `List..head!`) do not check this — the result is
+   unspecified (an arbitrary value of the return type) if called on the wrong
+   constructor.
 
 ## Functions
 
