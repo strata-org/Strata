@@ -378,16 +378,16 @@ info: "; s1\n(declare-const s1 String)\n(define-fun $__t.0 () String s1)\n; s2\n
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () strPrefixOfOp (.fvar () "s1" (.some .string)))
-    (.fvar () "s2" (.some .string)))
+  (.app Strata.SourceRange.none (.app Strata.SourceRange.none strPrefixOfOp (.fvar Strata.SourceRange.none "s1" (.some .string)))
+    (.fvar Strata.SourceRange.none "s2" (.some .string)))
 
 /--
 info: "; s1\n(declare-const s1 String)\n(define-fun $__t.0 () String s1)\n; s2\n(declare-const s2 String)\n(define-fun $__t.1 () String s2)\n(define-fun $__t.2 () Bool (str.suffixof $__t.0 $__t.1))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
-    (.fvar () "s2" (.some .string)))
+  (.app Strata.SourceRange.none (.app Strata.SourceRange.none strSuffixOfOp (.fvar Strata.SourceRange.none "s1" (.some .string)))
+    (.fvar Strata.SourceRange.none "s2" (.some .string)))
 
 end Core
 
