@@ -158,7 +158,7 @@ def sanitizeFilename (s : String) : String :=
          || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
     else some c
 
-private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
+def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
@@ -887,7 +887,7 @@ def coreAbstractedPhases (procs : Option (List String) := none)
   (corePipelinePhases procs options moreFns).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
-private def buildSolverLog (satResult valResult : SMT.Result)
+def buildSolverLog (satResult valResult : SMT.Result)
     (satisfiabilityCheck validityCheck : Bool)
     (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
   let sat : Array SolverPhaseLog :=
@@ -908,6 +908,75 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- Build a `VCResult` from raw solver results, applying phase validation,
+solver log construction, and outcome masking. This is the single source of
+truth for turning `(satResult, valResult)` into a classified `VCResult`,
+used by both the integrated verifier (`getObligationResult`) and the
+reconcile path (`reconcileOne`). -/
+def buildVCResult
+    (obligation : ProofObligation Expression)
+    (satResult valResult : SMT.Result)
+    (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase)
+    (options : VerifyOptions)
+    (lexprModel : LExprModel := []) : VCResult :=
+  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+  let (adjVal, valPhaseLog) := valResult.adjustForPhases phases obligation
+  let smtLog := buildSolverLog satResult valResult
+    satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+  let rawOutcome : VCOutcome := {
+    satisfiabilityProperty := adjSat,
+    validityProperty := adjVal,
+    solverLog := #[smtLog] }
+  let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
+  { obligation,
+    outcome := .ok outcome,
+    verbose := options.verbose,
+    checkLevel := options.checkLevel,
+    checkMode := options.checkMode,
+    lexprModel }
+
+/-- Callbacks invoked by the verifier at interesting points in
+`verifySingleEnv` / `getObligationResult`. Used by the Split-Solve-Reconcile
+manifest emitter (see `Strata.Languages.Core.Manifest`). Unused by default. -/
+structure VerifyCallbacks where
+  /-- Invoked for every obligation that needed the SMT solver, after the
+  SMT encoding step has run (so `estate` is populated) and after
+  `dischargeObligation` has written the `.smt2` file. Arguments: the
+  (possibly rewritten) obligation, the list of typed variables (input to
+  the encoder), the SMT context, the encoder state, the **requested**
+  satisfiability / validity checks (what the check mode asked for), the
+  **evaluator-resolved** results (each `none` when the evaluator did not
+  resolve that check), the absolute filename of the `.smt2` file, and the
+  list of active pipeline phases. -/
+  onSolverObligation :
+    Imperative.ProofObligation Expression →
+    List Expression.TypedIdent →
+    Core.SMT.Context →
+    Strata.SMT.EncoderState →
+    (satisfiabilityCheck : Bool) →
+    (validityCheck : Bool) →
+    (peSatResult? : Option Core.SMT.Result) →
+    (peValResult? : Option Core.SMT.Result) →
+    (smtFilePath : String) →
+    (phases : List AbstractedPhase) →
+    IO Unit := fun _ _ _ _ _ _ _ _ _ _ => pure ()
+  /-- Invoked for every obligation resolved entirely by the evaluator
+  (i.e. no `.smt2` file was written). Arguments: the obligation, the two
+  evaluator-resolved results, whether each check was requested, and the
+  active pipeline phases. -/
+  onSimObligation :
+    Imperative.ProofObligation Expression →
+    Core.SMT.Result →
+    Core.SMT.Result →
+    (satisfiabilityCheck : Bool) →
+    (validityCheck : Bool) →
+    (phases : List AbstractedPhase) →
+    IO Unit := fun _ _ _ _ _ _ => pure ()
+
+/-- Default no-op callbacks. -/
+def VerifyCallbacks.empty : VerifyCallbacks := {}
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -918,6 +987,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
+    (callbacks : VerifyCallbacks := .empty)
+    (peSatResult? : Option Core.SMT.Result := none)
+    (peValResult? : Option Core.SMT.Result := none)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
     : EIO DiagnosticModel VCResult := do
@@ -952,18 +1024,18 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                  {if options.verbose >= .debug then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
+    -- Fire solver-obligation callback (used by manifest emission). The
+    -- "requested" checks combine both the solver-needed ones and any
+    -- checks the evaluator resolved — both contribute to the final
+    -- outcome and reconcile needs to know about both.
+    let requestedSatCheck := satisfiabilityCheck || peSatResult?.isSome
+    let requestedValCheck := validityCheck || peValResult?.isSome
+    IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+      (callbacks.onSolverObligation obligation typedVarsInObligation ctx estate
+        requestedSatCheck requestedValCheck peSatResult? peValResult?
+        filename.toString phases)
     -- Convert unvalidated sat results to unknown when phases require validation
-    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
-    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
-    -- Build solver log: raw solver results followed by phase validation logs
-    let smtLog := buildSolverLog satResult validityResult
-      satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-    let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := adjSat,
-      validityProperty := adjVal,
-      solverLog := #[smtLog] }
-    let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-    -- Extract model from sat results (using raw solver results)
+    -- and build the classified VCResult.
     let model := match satResult, validityResult with
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
@@ -971,14 +1043,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     -- Filter out managed variables from model display
     let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
     let model := model.filter fun (name, _) => !managedVarNames.contains name.name
-    let result := { obligation,
-                    outcome := .ok outcome,
-                    estate,
-                    verbose := options.verbose,
-                    checkLevel := options.checkLevel,
-                    checkMode := options.checkMode,
-                    lexprModel := model }
-    return result
+    let result := buildVCResult obligation satResult validityResult
+      satisfiabilityCheck validityCheck phases options (lexprModel := model)
+    return { result with estate }
 
 
 def verifySingleEnv (oblProgram : Program)
@@ -993,7 +1060,8 @@ def verifySingleEnv (oblProgram : Program)
     -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
-    (corePhases : List AbstractedPhase := coreAbstractedPhases) :
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (callbacks : VerifyCallbacks := .empty) :
     EIO DiagnosticModel (VCResults × Statistics) := do
   -- Build SMT encoding context from the obligations program itself
   let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
@@ -1031,6 +1099,10 @@ def verifySingleEnv (oblProgram : Program)
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
         let phases := externalPhases ++ corePhases
+        -- Fire sim-obligation callback (used by manifest emission).
+        IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+          (callbacks.onSimObligation obligation peSat peVal
+            satisfiabilityCheck validityCheck phases)
         let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
         let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
         let peLog := buildSolverLog peSat peVal
@@ -1075,6 +1147,7 @@ def verifySingleEnv (oblProgram : Program)
       let t4 ← IO.monoNanosNow
       let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+                    callbacks peSatResult? peValResult?
                     (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
       solverNs := solverNs + (t5 - t4)
@@ -1115,6 +1188,7 @@ def verify (program : Program)
     (externalPhases : List AbstractedPhase := [])
     (prefixPhases : List PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (callbacks : VerifyCallbacks := .empty)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
@@ -1161,7 +1235,7 @@ def verify (program : Program)
     if options.checkOnly then
       pure []
     else
-      pure [← verifySingleEnv oblProgram moreFns options counter tempDir axiomCache? axiomNames (axiomProgram := program) externalPhases phases]
+      pure [← verifySingleEnv oblProgram moreFns options counter tempDir axiomCache? axiomNames (axiomProgram := program) externalPhases phases callbacks]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
@@ -1209,6 +1283,7 @@ def verify
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
+    (callbacks : Core.VerifyCallbacks := .empty)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
@@ -1216,7 +1291,8 @@ def verify
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
                   (Core.verify program tempDir proceduresToVerify options moreFns
                     (externalPhases := externalPhases)
-                    (keepAllFilesPrefix := keepAllFilesPrefix))
+                    (keepAllFilesPrefix := keepAllFilesPrefix)
+                    (callbacks := callbacks))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner

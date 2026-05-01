@@ -76,6 +76,28 @@ See [Verification Modes](docs/VerificationModes.md) for details on
 the `--check-mode` flag and the deductive and bug-finding verification
 modes.
 
+## Split-Solve-Reconcile (cloud-based SMT solving)
+
+For large programs, SMT solving dominates wall-clock time. The
+split-solve-reconcile workflow lets you run all solver queries in parallel
+(e.g. in the cloud) while keeping Strata's pipeline local:
+
+```bash
+# 1. Generate VCs and a manifest describing them.
+lake exe strata verify Examples/SimpleProc.core.st --no-solve --vc-directory ./vcs/
+
+# 2. Solve each .smt2 file (locally, in parallel, or in the cloud).
+for f in ./vcs/*.smt2; do
+  cvc5 --produce-models "$f" > "${f%.smt2}.result" 2>&1
+done
+
+# 3. Reconcile solver results with the manifest to produce the final report.
+lake exe strata reconcile --vc-directory ./vcs/
+```
+
+See [Cloud Solving](docs/CloudSolving.md) for the manifest format and
+more detail.
+
 ## Troubleshooter
 
 ### When running unit tests: "error: no such file or directory (error code: 2)"
