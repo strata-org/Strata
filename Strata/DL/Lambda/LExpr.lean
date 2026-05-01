@@ -378,6 +378,28 @@ def hasBVar {T : LExprParamsT} : LExpr T → Bool
   | .abs _ _ _ body => hasBVar body
   | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
 
+/-- Hash an expression structurally, including type annotations but ignoring
+    metadata. Useful for HashMap-based deduplication. -/
+def hashExpr {T : LExprParamsT} [Hashable T.TypeType] : LExpr T → UInt64
+  | .const _ c => mixHash 1 (hash c)
+  | .bvar _ i => mixHash 2 (hash i)
+  | .fvar _ n ty => mixHash 3 (mixHash (hash n.name) (hashOptTy ty))
+  | .op _ o ty => mixHash 4 (mixHash (hash o.name) (hashOptTy ty))
+  | .app _ fn arg => mixHash 5 (mixHash (hashExpr fn) (hashExpr arg))
+  | .ite _ c t f => mixHash 6 (mixHash (hashExpr c) (mixHash (hashExpr t) (hashExpr f)))
+  | .eq _ e1 e2 => mixHash 7 (mixHash (hashExpr e1) (hashExpr e2))
+  | .abs _ name ty body =>
+    mixHash 8 (mixHash (hash name) (mixHash (hashOptTy ty) (hashExpr body)))
+  | .quant _ k name ty tr body =>
+    let kh : UInt64 := match k with | .all => 0 | .exist => 1
+    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptTy ty)
+      (mixHash (hashExpr tr) (hashExpr body)))))
+where
+  hashOptTy (ty : Option T.TypeType) : UInt64 :=
+    match ty with
+    | none => 0
+    | some t => hash t
+
 @[expose, match_pattern]
 protected def true {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .boolConst m true
 
