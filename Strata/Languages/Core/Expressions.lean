@@ -15,12 +15,12 @@ public import Strata.DDM.Util.SourceRange
 namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
--- nosourcerange-file: typeclass defaults and operator constructors use SourceRange.none
+-- nosourcerange-file: typeclass defaults and operator constructors use ExprSourceLoc.none
 -- because they build expressions programmatically, not from parsed source.
 
 public section
 
-@[expose] abbrev ExpressionMetadata := Strata.SourceRange
+@[expose] abbrev ExpressionMetadata := ExprSourceLoc
 
 @[expose]
 abbrev Expression : Imperative.PureExpr :=
@@ -38,12 +38,12 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
 
 -- Inhabited default; no meaningful source location
 instance : Inhabited Expression.Expr where
-  default := .intConst Strata.SourceRange.none 0
+  default := .intConst ExprSourceLoc.none 0
 
 /-- Build an `LExpr.op` node from a structured `CoreOp`.
     `CoreOp` values are language-level operators with no source location. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
-  .op Strata.SourceRange.none op.toString ty
+  .op ExprSourceLoc.none op.toString ty
 
 ---------------------------------------------------------------------
 

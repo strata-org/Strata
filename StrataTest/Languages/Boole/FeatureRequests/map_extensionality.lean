@@ -83,7 +83,7 @@ spec {
 
 private def mkExprApp (f : Core.Expression.Expr) (args : List Core.Expression.Expr) :
     Core.Expression.Expr :=
-  Lambda.LExpr.mkApp Strata.SourceRange.none f args
+  Lambda.LExpr.mkApp ExprSourceLoc.none f args
 
 private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.Expr := do
   let booleProg <- (Strata.Boole.getProgram quantifiedMapExtensionalityCaptureSeed).toOption
@@ -100,10 +100,10 @@ private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.
 
 private def expectedQuantifiedMapExtensionalityCapture : Core.Expression.Expr :=
   let mapIntInt := Core.mapTy .int .int
-  let lhs := mkExprApp Core.mapSelectOp [.bvar Strata.SourceRange.none 2, .bvar Strata.SourceRange.none 0]
-  let rhs := mkExprApp Core.mapSelectOp [.bvar Strata.SourceRange.none 1, .bvar Strata.SourceRange.none 0]
-  .quant Strata.SourceRange.none .all "" (some mapIntInt) (.bvar Strata.SourceRange.none 0)
-    (.quant Strata.SourceRange.none .all "" (some mapIntInt) (.bvar Strata.SourceRange.none 0)
-      (.quant Strata.SourceRange.none .all "" (some .int) lhs (.eq Strata.SourceRange.none lhs rhs)))
+  let lhs := mkExprApp Core.mapSelectOp [.bvar ExprSourceLoc.none 2, .bvar ExprSourceLoc.none 0]
+  let rhs := mkExprApp Core.mapSelectOp [.bvar ExprSourceLoc.none 1, .bvar ExprSourceLoc.none 0]
+  .quant ExprSourceLoc.none .all "" (some mapIntInt) (.bvar ExprSourceLoc.none 0)
+    (.quant ExprSourceLoc.none .all "" (some mapIntInt) (.bvar ExprSourceLoc.none 0)
+      (.quant ExprSourceLoc.none .all "" (some .int) lhs (.eq ExprSourceLoc.none lhs rhs)))
 
 #guard loweredQuantifiedMapExtensionalityCapture? == some expectedQuantifiedMapExtensionalityCapture

@@ -24,16 +24,16 @@ namespace Strata.Test.GenericCallFallback
 open Strata Core Lambda
 
 private def mkOp (name : String) : Core.Expression.Expr :=
-  LExpr.op Strata.SourceRange.none ⟨name, ()⟩ none
+  LExpr.op ExprSourceLoc.none ⟨name, ()⟩ none
 
 private def mkFvar (name : String) : Core.Expression.Expr :=
-  LExpr.fvar Strata.SourceRange.none ⟨name, ()⟩ none
+  LExpr.fvar ExprSourceLoc.none ⟨name, ()⟩ none
 
 private def mkApp (fn arg : Core.Expression.Expr) : Core.Expression.Expr :=
-  LExpr.app Strata.SourceRange.none fn arg
+  LExpr.app ExprSourceLoc.none fn arg
 
 private def mkStrConst (s : String) : Core.Expression.Expr :=
-  LExpr.const Strata.SourceRange.none (.strConst s)
+  LExpr.const ExprSourceLoc.none (.strConst s)
 
 private def mkCall1 (opName : String) (a : Core.Expression.Expr) : Core.Expression.Expr :=
   mkApp (mkOp opName) a

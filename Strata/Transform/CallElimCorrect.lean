@@ -26,7 +26,7 @@ import Strata.DL.Util.ListUtils
   `Stmt`. This proof will be re-done with a new small-step semantics in the near
   future.
 
-  Variable references in these proofs use `SourceRange.none` to match the
+  Variable references in these proofs use `ExprSourceLoc.none` to match the
   synthesized expressions produced by the call elimination transform.
 
   This file contains the main proof that the call elimination transformation is
@@ -517,7 +517,7 @@ theorem EvalStatementContractInitVar :
   constructor
   constructor
   . apply Imperative.EvalCmd.eval_init <;> try assumption
-    have Hwfv := Hwf (Lambda.LExpr.fvar Strata.SourceRange.none v none) v σ
+    have Hwfv := Hwf (Lambda.LExpr.fvar ExprSourceLoc.none v none) v σ
     rw [Hwfv]; assumption
     simp [Imperative.HasFvar.getFvar]
     apply Imperative.InitState.init Hnone
@@ -1047,8 +1047,8 @@ theorem Lambda.LExpr.substFvarCorrect :
       simp [Imperative.HasFvar.getFvar]
   case abs m ty e ih  =>
     specialize ih Hinv
-    have e2 := (e.substFvar fro (Lambda.LExpr.fvar Strata.SourceRange.none to none))
-    have Hwfc := Hwfc.1 σ σ' e ((e.substFvar fro (Lambda.LExpr.fvar Strata.SourceRange.none to none)))
+    have e2 := (e.substFvar fro (Lambda.LExpr.fvar ExprSourceLoc.none to none))
+    have Hwfc := Hwfc.1 σ σ' e ((e.substFvar fro (Lambda.LExpr.fvar ExprSourceLoc.none to none)))
     grind
   case quant m k ty tr e trih eih =>
     simp [Imperative.invStores, Imperative.substStores,
@@ -1933,7 +1933,7 @@ NormalizedOldExpr e →
         rename_i md tyy id v
         have HH2 := HH md tyy () id v
         simp_all
-      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar Strata.SourceRange.none h' none) fn) := by
+      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar ExprSourceLoc.none h' none) fn) := by
         intros Hold
         apply Hnold
         apply substOldIsOldPred' ?_ Hold
@@ -1986,8 +1986,8 @@ theorem substOldExpr_cons:
     split <;> simp [*]
     simp_all [createOldVarsSubst, createFvar]
     rename_i _ fn e _ _ H
-    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar Strata.SourceRange.none h.fst.fst none) fn) = fn'
-    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar Strata.SourceRange.none h.fst.fst none) e) = e'
+    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar ExprSourceLoc.none h.fst.fst none) fn) = fn'
+    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar ExprSourceLoc.none h.fst.fst none) e) = e'
     rw (occs := [3]) [Core.OldExpressions.substsOldExpr.eq_def]
     simp; split
     simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all
@@ -3159,7 +3159,7 @@ theorem substsOldPostSubset:
 
     have ih := @ih post Hdisj
     have : (Imperative.HasVarsPure.getVars
-      (substsOldExpr ((h.snd, Lambda.LExpr.fvar Strata.SourceRange.none h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
+      (substsOldExpr ((h.snd, Lambda.LExpr.fvar ExprSourceLoc.none h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
           ((Imperative.HasVarsPure.getVars (substsOldExpr (List.map createOldVarsSubst.go t) post)) ++ [h.1.fst]) := by
       apply substOldExprPostSubset
     apply List.Subset.trans this

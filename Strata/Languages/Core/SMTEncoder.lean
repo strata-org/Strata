@@ -17,7 +17,7 @@ public import Strata.Languages.Core.CoreOp
 ---------------------------------------------------------------------
 
 -- nosourcerange-file: SMT encoding builds intermediate expressions programmatically;
--- these synthesized terms carry SourceRange.none.
+-- these synthesized terms carry ExprSourceLoc.none.
 
 namespace Core
 open Std (ToFormat Format format)
@@ -642,14 +642,14 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
               -- Substitute the formals in the function body with appropriate
               -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
               -- Synthesized bound variables for substitution; no source location
-              let bvars := (List.range formals.length).map (fun i => LExpr.bvar Strata.SourceRange.none i)
+              let bvars := (List.range formals.length).map (fun i => LExpr.bvar ExprSourceLoc.none i)
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
               let (term, ctx) ← toSMTTerm E bvs body ctx
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
           -- For recursive functions, generate per-constructor axioms
           -- Recursive axioms are synthesized; no source location
           let recAxioms ← if func.isRecursive && isNew then
-              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
+              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ExprSourceLoc.none
             else .ok []
           let allAxioms := func.axioms ++ recAxioms
           if isNew then
@@ -724,7 +724,7 @@ def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SM
   | .ok (smt, _) => Encoder.termToString smt
 
 /-- Convert an SMT term back to a Core `LExpr` for counterexample display.
-SMT terms have no source location, so all nodes use `SourceRange.none`.
+SMT terms have no source location, so all nodes use `ExprSourceLoc.none`.
 
 Handles:
 - Primitives: bool, int, real, bitvec, string
@@ -743,42 +743,42 @@ and render them with the correct Core data structure.
 def smtTermToLExpr (t : Strata.SMT.Term)
     (constructorNames : Std.HashSet String := {}) : LExpr CoreLParams.mono :=
   match t with
-  | .prim (.bool b)       => .boolConst Strata.SourceRange.none b
-  | .prim (.int i)        => .intConst Strata.SourceRange.none i
-  | .prim (.real d)       => .realConst Strata.SourceRange.none d.toRat
-  | .prim (.bitvec b)     => .bitvecConst Strata.SourceRange.none _ b
-  | .prim (.string s)     => .strConst Strata.SourceRange.none s
+  | .prim (.bool b)       => .boolConst ExprSourceLoc.none b
+  | .prim (.int i)        => .intConst ExprSourceLoc.none i
+  | .prim (.real d)       => .realConst ExprSourceLoc.none d.toRat
+  | .prim (.bitvec b)     => .bitvecConst ExprSourceLoc.none _ b
+  | .prim (.string s)     => .strConst ExprSourceLoc.none s
   | .var v                =>
     -- Zero-arg constructors arrive as plain variables from the SMT solver.
     -- Mark them with `.op` so the formatter can emit `Name()`.
     if constructorNames.contains v.id then
-      .op Strata.SourceRange.none v.id none
+      .op ExprSourceLoc.none v.id none
     else
-      .fvar Strata.SourceRange.none v.id none
+      .fvar ExprSourceLoc.none v.id none
   | .app (.core (.uf uf)) args _retTy =>
     -- Constructor names use `.op` so the formatter can distinguish them
     -- from plain variables (e.g., `Nil` constructor must not be .fvar)
     let fnExpr : LExpr CoreLParams.mono :=
       if constructorNames.contains uf.id then
-        .op Strata.SourceRange.none uf.id none
+        .op ExprSourceLoc.none uf.id none
       else
-        .fvar Strata.SourceRange.none uf.id none
-    args.foldl (fun acc arg => .app Strata.SourceRange.none acc (smtTermToLExpr arg constructorNames)) fnExpr
+        .fvar ExprSourceLoc.none uf.id none
+    args.foldl (fun acc arg => .app ExprSourceLoc.none acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
-    let fnExpr : LExpr CoreLParams.mono := .op Strata.SourceRange.none name none
-    args.foldl (fun acc arg => .app Strata.SourceRange.none acc (smtTermToLExpr arg constructorNames)) fnExpr
+    let fnExpr : LExpr CoreLParams.mono := .op ExprSourceLoc.none name none
+    args.foldl (fun acc arg => .app ExprSourceLoc.none acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app op args _ =>
     -- Generic fallback for other ops: render as op name applied to args
     let opName := op.mkName
-    let fnExpr : LExpr CoreLParams.mono := .op Strata.SourceRange.none opName none
-    args.foldl (fun acc arg => .app Strata.SourceRange.none acc (smtTermToLExpr arg constructorNames)) fnExpr
-  | .none _ty             => .op Strata.SourceRange.none "none" none
-  | .some inner           => .app Strata.SourceRange.none (.op Strata.SourceRange.none "some" none) (smtTermToLExpr inner constructorNames)
+    let fnExpr : LExpr CoreLParams.mono := .op ExprSourceLoc.none opName none
+    args.foldl (fun acc arg => .app ExprSourceLoc.none acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .none _ty             => .op ExprSourceLoc.none "none" none
+  | .some inner           => .app ExprSourceLoc.none (.op ExprSourceLoc.none "some" none) (smtTermToLExpr inner constructorNames)
   | .quant _ _ _ _        =>
     -- Quantifiers in model values are unusual; fall back to string repr
     let s := match Strata.SMTDDM.termToString t with
              | .ok s => s | .error _ => repr t |>.pretty
-    .fvar Strata.SourceRange.none s none
+    .fvar ExprSourceLoc.none s none
 
 /--
 Extract the set of datatype constructor names from an `SMT.Context`.

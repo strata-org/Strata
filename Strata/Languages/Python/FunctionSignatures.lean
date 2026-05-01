@@ -11,7 +11,7 @@ namespace Strata
 namespace Python
 
 -- nosourcerange-file: function signature helpers synthesize default-value expressions
--- programmatically; these carry SourceRange.none.
+-- programmatically; these carry ExprSourceLoc.none.
 
 public section
 
@@ -159,7 +159,7 @@ def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else
     let mkNoneExpr (ty : String) : Core.Expression.Expr :=
-      .app Strata.SourceRange.none (.op Strata.SourceRange.none (ty ++ "_mk_none") none) (.op Strata.SourceRange.none "None_none" none)
+      .app ExprSourceLoc.none (.op ExprSourceLoc.none (ty ++ "_mk_none") none) (.op ExprSourceLoc.none "None_none" none)
     match ty with
     | "StrOrNone" => mkNoneExpr "StrOrNone"
     | "BoolOrNone" => mkNoneExpr "BoolOrNone"

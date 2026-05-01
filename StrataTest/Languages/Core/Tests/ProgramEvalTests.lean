@@ -477,7 +477,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 10) -/
 #guard_msgs in
-#eval runProc arithPgm "Test" [.intConst Strata.SourceRange.none 5]
+#eval runProc arithPgm "Test" [.intConst ExprSourceLoc.none 5]
 
 -- If-then-else
 private def itePgm : Strata.Program :=
@@ -495,11 +495,11 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 7) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst Strata.SourceRange.none 7]
+#eval runProc itePgm "Test" [.intConst ExprSourceLoc.none 7]
 
 /-- info: y = (some 3) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst Strata.SourceRange.none (-3)]
+#eval runProc itePgm "Test" [.intConst ExprSourceLoc.none (-3)]
 
 -- Procedure call
 private def callPgm : Strata.Program :=
@@ -517,7 +517,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 20) -/
 #guard_msgs in
-#eval runProc callPgm "Test" [.intConst Strata.SourceRange.none 10]
+#eval runProc callPgm "Test" [.intConst ExprSourceLoc.none 10]
 
 -- Chained procedure calls (DoubleTwice)
 private def chainedCallPgm : Strata.Program :=
@@ -536,7 +536,7 @@ procedure Test(x : int, out output : int)
 
 /-- info: output = (some 20) -/
 #guard_msgs in
-#eval runProc chainedCallPgm "Test" [.intConst Strata.SourceRange.none 5]
+#eval runProc chainedCallPgm "Test" [.intConst ExprSourceLoc.none 5]
 
 -- Loop (sum of 0..n-1)
 private def loopPgm : Strata.Program :=
@@ -557,7 +557,7 @@ procedure Test(n : int, out sum : int)
 
 /-- info: sum = (some 15) -/
 #guard_msgs in
-#eval runProc loopPgm "Test" [.intConst Strata.SourceRange.none 5]
+#eval runProc loopPgm "Test" [.intConst ExprSourceLoc.none 5]
 
 -- Assertion success
 private def assertSuccessPgm : Strata.Program :=

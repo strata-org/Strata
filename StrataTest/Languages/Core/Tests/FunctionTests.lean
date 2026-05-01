@@ -21,7 +21,7 @@ open LTy.Syntax LExpr.SyntaxMono
                         typeArgs := ["a", "b"],
                         inputs := [(⟨"w", ()⟩, mty[int]), (⟨"x", ()⟩, mty[%a]), (⟨"y", ()⟩, mty[%b]), (⟨"z", ()⟩, mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar Strata.SourceRange.none (⟨"x", ()⟩) none) } : Function)
+                        body := some (LExpr.fvar ExprSourceLoc.none (⟨"x", ()⟩) none) } : Function)
          return format type
 
 end Core

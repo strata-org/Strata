@@ -79,7 +79,7 @@ private def withTypeBVars (xs : List String) (k : TranslateM α) : TranslateM α
 private def withBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
   let old := (← get).bvars
   -- Synthesized bound variable references; no source location available
-  let fresh := xs.toArray.map (fun n => (.fvar Strata.SourceRange.none (mkIdent n) none : Core.Expression.Expr))
+  let fresh := xs.toArray.map (fun n => (.fvar ExprSourceLoc.none (mkIdent n) none : Core.Expression.Expr))
   modify fun s => { s with bvars := old ++ fresh }
   try
     let out ← k
@@ -468,7 +468,7 @@ private def constructProcArgsPrefix (n : String)
   let modifiesArgs := modifiesTyped.map fun (id, _) => Core.CallArg.inoutArg id
   -- Synthesized variable reference for read-only global; no source location
   let readOnlyArgs := readOnlyGlobals.map
-    fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar Strata.SourceRange.none id none : Core.Expression.Expr)
+    fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar ExprSourceLoc.none id none : Core.Expression.Expr)
   return modifiesArgs ++ readOnlyArgs
 
 def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
@@ -720,7 +720,7 @@ private def lowerPureFuncDef
     let pres := pres.preconditions.map (fun (_, c) =>
       let sr := match Imperative.getFileRange c.md with
         | some fr => fr.range
-        | none => Strata.SourceRange.none -- fallback when metadata has no file range
+        | none => ExprSourceLoc.none -- fallback when metadata has no file range
       ⟨c.expr, sr⟩)
     let body ← withBVars inputNames (toCoreExpr body)
     let attr :=

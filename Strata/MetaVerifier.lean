@@ -197,7 +197,14 @@ deriving instance ToExpr for SMT.Term
 deriving instance ToExpr for Core.SMT.Sort
 deriving instance ToExpr for Core.SMT.IF
 deriving instance ToExpr for SanitizedContext
-deriving instance ToExpr for Core.CoreExprMetadata
+meta instance : ToExpr Strata.Uri where
+  toTypeExpr := mkConst ``Strata.Uri
+  toExpr
+    | .file p => mkApp (mkConst ``Strata.Uri.file) (toExpr p)
+
+meta instance : ToExpr ExprSourceLoc where
+  toTypeExpr := mkConst ``ExprSourceLoc
+  toExpr e := mkApp2 (mkConst ``ExprSourceLoc.mk) (toExpr e.uri) (toExpr e.range)
 deriving instance ToExpr for Lambda.LMonoTy
 
 instance [ToExpr α] : ToExpr (Lambda.Identifier α) where

@@ -112,27 +112,27 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
   match ty with
   | .tcons "int" [] =>
     let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
-    return (.some (.intConst Strata.SourceRange.none i))
+    return (.some (.intConst ExprSourceLoc.none i))
   | .tcons "bool" [] =>
     let rand_flag <- IO.rand 0 1
     let rand_flag := rand_flag == 0
-    return (.some (.boolConst Strata.SourceRange.none rand_flag))
+    return (.some (.boolConst ExprSourceLoc.none rand_flag))
   | .tcons "real" [] =>
     let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
     let n <- IO.rand 1 2147483648
-    return (.some (.realConst Strata.SourceRange.none (mkRat i n)))
+    return (.some (.realConst ExprSourceLoc.none (mkRat i n)))
   | .tcons "string" [] =>
     -- TODO: random string generator
-    return (.some (.strConst Strata.SourceRange.none "a"))
+    return (.some (.strConst ExprSourceLoc.none "a"))
   | .tcons "regex" [] =>
     -- TODO: random regex generator
-    return (.some (.app Strata.SourceRange.none
-      (.op Strata.SourceRange.none (⟨"Str.ToRegEx", ()⟩) .none) (.strConst Strata.SourceRange.none ".*")))
+    return (.some (.app ExprSourceLoc.none
+      (.op ExprSourceLoc.none (⟨"Str.ToRegEx", ()⟩) .none) (.strConst ExprSourceLoc.none ".*")))
   | .bitvec n =>
     let specialvals :=
       [0, 1, -1, Int.ofNat n, (Int.pow 2 (n-1)) - 1, -(Int.pow 2 (n-1))]
     let i <- pickInterestingValue 3 specialvals (IO.rand 0 ((Nat.pow 2 n) - 1))
-    return (.some (.bitvecConst Strata.SourceRange.none n (BitVec.ofInt n i)))
+    return (.some (.bitvecConst ExprSourceLoc.none n (BitVec.ofInt n i)))
   | _ =>
     return .none
 
@@ -164,8 +164,8 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
           break
         else
           let args := List.map (Option.get!) args
-          let expr := List.foldl (fun e arg => (.app Strata.SourceRange.none e arg))
-            (LExpr.op Strata.SourceRange.none (⟨e.name.name, ()⟩) .none) args
+          let expr := List.foldl (fun e arg => (.app ExprSourceLoc.none e arg))
+            (LExpr.op ExprSourceLoc.none (⟨e.name.name, ()⟩) .none) args
           let res <- checkValid expr
           if ¬ res then
             if cnt_skipped = 0 then
@@ -191,7 +191,7 @@ open Lambda.LTy.Syntax
 #guard_msgs in #eval (checkValid eb[if #1 == #2 then #false else #true])
 /-- info: true -/
 #guard_msgs in #eval (checkValid
-  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none (⟨"Int.Add", ()⟩) .none) eb[#100]) eb[#50]))
+  (.app ExprSourceLoc.none (.app ExprSourceLoc.none (.op ExprSourceLoc.none (⟨"Int.Add", ()⟩) .none) eb[#100]) eb[#50]))
 
 
 -- This may take a while

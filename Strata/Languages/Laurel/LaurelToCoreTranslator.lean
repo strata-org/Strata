@@ -38,7 +38,7 @@ open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp r
 namespace Strata.Laurel
 
 -- nosourcerange-file: Laurel-to-Core translation synthesizes Core expressions from Laurel AST nodes;
--- synthesized expressions use SourceRange.none when no source location is available.
+-- synthesized expressions use ExprSourceLoc.none when no source location is available.
 
 open Std (Format ToFormat)
 open Strata
@@ -49,12 +49,12 @@ public section
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
-/-- Extract the `SourceRange` from an `AstNode`, falling back to `SourceRange.none`
-    when the node has no source location (e.g. synthesized nodes). -/
-private def sourceRangeOf (node : AstNode α) : Strata.SourceRange :=
+/-- Extract source location from an `AstNode` as an `ExprSourceLoc`,
+    preserving the URI when available. -/
+private def exprSourceLocOf (node : AstNode α) : ExprSourceLoc :=
   match node.source with
-  | some fr => fr.range
-  | none => Strata.SourceRange.none
+  | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
+  | none => ExprSourceLoc.none
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -141,7 +141,7 @@ def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr :
   emitDiagnostic d
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
   let id ← freshId
-  return LExpr.fvar Strata.SourceRange.none (⟨s!"DUMMY_VAR_{id}", ()⟩) none
+  return LExpr.fvar ExprSourceLoc.none (⟨s!"DUMMY_VAR_{id}", ()⟩) none
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
@@ -162,7 +162,7 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
-  let sr := sourceRangeOf expr
+  let sr := exprSourceLocOf expr
   let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       throwExprDiagnostic $ diagnosticFromSource source msg
@@ -329,7 +329,7 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   s!"({fileRange.range.start})"
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
-  let sr := sourceRangeOf ty
+  let sr := exprSourceLocOf ty
   match ty.val with
   | .TInt => return .const sr (.intConst 0)
   | .TBool => return .const sr (.boolConst false)
@@ -612,9 +612,9 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
     -- Synthesized conjunction of postconditions; no single source location applies
-    | [] => .const Strata.SourceRange.none (.boolConst true)
+    | [] => .const ExprSourceLoc.none (.boolConst true)
     | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp Strata.SourceRange.none boolAndOp [acc, x]) e
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp ExprSourceLoc.none boolAndOp [acc, x]) e
   let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
@@ -628,11 +628,11 @@ where
     match params with
     | [] => return body
     | [p] =>
-      let sr := p.name.source.map (·.range) |>.getD Strata.SourceRange.none
+      let sr := p.name.source.map (·.range) |>.getD ExprSourceLoc.none
       return LExpr.allTr sr p.name.text (some (← translateType p.type)) trigger body
     | p :: rest => do
       let inner ← buildQuants rest body trigger
-      let sr := p.name.source.map (·.range) |>.getD Strata.SourceRange.none
+      let sr := p.name.source.map (·.range) |>.getD ExprSourceLoc.none
       return LExpr.all sr p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
@@ -660,7 +660,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition.condition [] true
-    return { expr := checkExpr, md := sourceRangeOf precondition.condition })
+    return { expr := checkExpr, md := exprSourceLocOf precondition.condition })
 
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument

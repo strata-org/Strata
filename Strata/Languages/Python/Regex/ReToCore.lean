@@ -122,35 +122,35 @@ private def rii2r := mty[regex → (int → (int → regex))]
 Empty regex pattern; matches an empty string.
 -/
 private def Core.emptyRegex : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none strToRegexFunc.name (some s2r)) [strConst Strata.SourceRange.none ""]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none strToRegexFunc.name (some s2r)) [strConst ExprSourceLoc.none ""]
 
 /--
 Unmatchable regex pattern.
 -/
 private def Core.unmatchableRegex : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reNoneFunc.name (some reTy)) []
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reNoneFunc.name (some reTy)) []
 
 -- Core regex expression builders.
 private abbrev mkReFromStr (s : String) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none strToRegexFunc.name (some s2r)) [strConst Strata.SourceRange.none s]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none strToRegexFunc.name (some s2r)) [strConst ExprSourceLoc.none s]
 private abbrev mkReRange   (c1 c2 : Char) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reRangeFunc.name (some ss2r)) [strConst Strata.SourceRange.none (toString c1), strConst Strata.SourceRange.none (toString c2)]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reRangeFunc.name (some ss2r)) [strConst ExprSourceLoc.none (toString c1), strConst ExprSourceLoc.none (toString c2)]
 private abbrev mkReAllChar : Expression.Expr :=
-  .op Strata.SourceRange.none reAllCharFunc.name (some reTy)
+  .op ExprSourceLoc.none reAllCharFunc.name (some reTy)
 private abbrev mkReComp    (r : Expression.Expr) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reCompFunc.name (some r2r)) [r]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reCompFunc.name (some r2r)) [r]
 private abbrev mkReUnion   (a b : Expression.Expr) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reUnionFunc.name (some rr2r)) [a, b]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reUnionFunc.name (some rr2r)) [a, b]
 private abbrev mkReConcat  (a b : Expression.Expr) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reConcatFunc.name (some rr2r)) [a, b]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reConcatFunc.name (some rr2r)) [a, b]
 private abbrev mkReInter   (a b : Expression.Expr) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reInterFunc.name (some rr2r)) [a, b]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reInterFunc.name (some rr2r)) [a, b]
 private abbrev mkReStar    (r   : Expression.Expr) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reStarFunc.name (some r2r)) [r]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reStarFunc.name (some r2r)) [r]
 private abbrev mkRePlus    (r   : Expression.Expr) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none rePlusFunc.name (some r2r)) [r]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none rePlusFunc.name (some r2r)) [r]
 private abbrev mkReLoop    (r   : Expression.Expr) (lo hi : Nat) : Expression.Expr :=
-  mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reLoopFunc.name (some rii2r)) [r, intConst Strata.SourceRange.none lo, intConst Strata.SourceRange.none hi]
+  mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reLoopFunc.name (some rii2r)) [r, intConst ExprSourceLoc.none lo, intConst ExprSourceLoc.none hi]
 
 /--
 Shared body for `star` and `loop {0, m}` (m ≥ 2):
@@ -316,7 +316,7 @@ private def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
-  | .error err => (mkApp Strata.SourceRange.none (.op Strata.SourceRange.none reAllFunc.name (some reTy)) [], some err)
+  | .error err => (mkApp ExprSourceLoc.none (.op ExprSourceLoc.none reAllFunc.name (some reTy)) [], some err)
   | .ok ast =>
     -- `dotStar`: passed with `atStart=false`, `atEnd=false` since `anychar`
     -- ignores both.
