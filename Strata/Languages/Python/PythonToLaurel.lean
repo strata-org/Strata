@@ -2216,7 +2216,10 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     let inputTypes := funcDecl.args.map fun arg =>
       (arg.name, highTypeToPyLauType arg.laurelType.val)
     let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes}
-    let (body, newCtx) ← match body with
+    let ctx := match ctx.currentClassName with
+      | some cn => {ctx with variableTypes := ("self", cn) :: ctx.variableTypes}
+      | none => ctx
+    let (bodyTrans, newCtx) ← match body with
     | some body =>
         let (bodyBlock, newCtx) ←  translateFunctionBody ctx funcDecl.kwargsName inputs body
         pure $ (Body.Opaque typeConstraintPostcondition bodyBlock wildcardModifies, newCtx)
@@ -2233,7 +2236,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       outputs := outputs
       preconditions := typeConstraintPreconditions
       decreases := none
-      body := body
+      body := bodyTrans
       isFunctional := false
     }
 
@@ -2559,7 +2562,7 @@ structure PreludeInfo where
   /-- Procedure names (non-function callables) -/
   procedureNames : List String := []
   /-- Names of procedures that should generate calls (have transparent bodies or preconditions). -/
-  inlinableProcedures : Std.HashSet String := {}
+  callableProcedures : Std.HashSet String := {}
   /-- Maps Python-visible names to their structured symbol info.
       Includes both canonical Laurel names and unprefixed aliases. -/
   importedSymbols : Std.HashMap String ImportedSymbol := {}
@@ -2649,7 +2652,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
-  inlinableProcedures :=
+  callableProcedures :=
     prog.staticProcedures.foldl (init := {}) fun s p =>
       match p.body with
       | .Transparent _ => s.insert p.name.text
@@ -2665,7 +2668,7 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   functions := a.functions ++ b.functions
   maybeExceptionFunctions := a.maybeExceptionFunctions ++ b.maybeExceptionFunctions
   procedureNames := a.procedureNames ++ b.procedureNames
-  inlinableProcedures := b.inlinableProcedures.fold (init := a.inlinableProcedures) fun s n => s.insert n
+  callableProcedures := b.callableProcedures.fold (init := a.callableProcedures) fun s n => s.insert n
   importedSymbols := b.importedSymbols.fold (init := a.importedSymbols) fun m k v => m.insert k v
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/

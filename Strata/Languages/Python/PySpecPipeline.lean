@@ -293,7 +293,7 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
       m.insert name (.compositeType name)
   -- Register procedures under their Laurel names
   let symbols := merged.procedures.fold (init := symbols) fun m name sig =>
-    let inlinable := merged.inlinableProcedures.contains name
+    let inlinable := merged.callableProcedures.contains name
     m.insert name (.procedure name sig inlinable)
   -- Register functions under their Laurel names
   let symbols := merged.functions.foldl (init := symbols) fun m name =>
@@ -308,7 +308,7 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
       let syms := merged.procedures.fold (init := syms) fun s name sig =>
         if name.startsWith (prefixed ++ "@") then
           let unprefixedName := unprefixed ++ name.drop prefixed.length
-          let inlinable := merged.inlinableProcedures.contains name
+          let inlinable := merged.callableProcedures.contains name
           s.insert unprefixedName (.procedure name sig inlinable)
         else s
       -- Function aliases
