@@ -61,7 +61,7 @@ procedure badPostcondition(x: int)
   invokeOn R(x)
   opaque
   ensures R(x)
-//        ^^^^ error: assertion does not hold
+//        ^^^^ error: assertion could not be proved
 {
 };
 

@@ -18,17 +18,45 @@ public section
 
 ---------------------------------------------------------------------
 
-@[expose] abbrev PathCondition (P : PureExpr)  := ListMap String P.Expr
+/-- An entry in a path condition list. Restricts what can appear as a path
+    condition to assumptions and variable declarations. -/
+inductive PathConditionEntry (P : PureExpr) where
+  /-- An assumption with a label and a boolean expression. -/
+  | assumption (label : String) (expr : P.Expr)
+  /-- A variable declaration with a name, type, and optional initializer. -/
+  | varDecl (name : P.Ident) (ty : P.Ty) (value : ExprOrNondet P)
+
+/-- The label or name identifying a path condition entry. -/
+def PathConditionEntry.name {P : PureExpr} [ToFormat P.Ident] : PathConditionEntry P → String
+  | .assumption label _ => label
+  | .varDecl name _ _ => toString (f!"{name}")
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] : BEq (PathConditionEntry P) where
+  beq
+    | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
+    | .varDecl n1 t1 (.det e1), .varDecl n2 t2 (.det e2) => n1 == n2 && t1 == t2 && e1 == e2
+    | .varDecl n1 t1 .nondet, .varDecl n2 t2 .nondet => n1 == n2 && t1 == t2
+    | _, _ => false
+
+@[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
 @[expose] abbrev PathConditions (P : PureExpr) := List (PathCondition P)
 
-def PathCondition.format' {P} [ToFormat P.Expr] (m : PathCondition P) : Format :=
+def PathConditionEntry.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : PathConditionEntry P → Format
+  | .assumption label expr => f!"({label}, {expr})"
+  | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e})"
+  | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+
+instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (PathConditionEntry P) where
+  format := PathConditionEntry.format'
+
+def PathCondition.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] (m : PathCondition P) : Format :=
   match m with
   | [] => ""
-  | [(k, v)] => f!"({k}, {v})"
-  | (k, v) :: rest =>
-    f!"({k}, {v})\n" ++ PathCondition.format' rest
+  | [e] => PathConditionEntry.format' e
+  | e :: rest =>
+    f!"{PathConditionEntry.format' e}\n" ++ PathCondition.format' rest
 
-def PathConditions.format' {P} [ToFormat P.Expr] (ms : PathConditions P) : Format :=
+def PathConditions.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] (ms : PathConditions P) : Format :=
   match ms with
   | [] => ""
   | [m] => f!"[{PathCondition.format' m}]"
@@ -36,15 +64,15 @@ def PathConditions.format' {P} [ToFormat P.Expr] (ms : PathConditions P) : Forma
     f!"[{PathCondition.format' m}]\n" ++
     PathConditions.format' rest
 
-instance [ToFormat P.Expr] : ToFormat (PathCondition P) where
+instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (PathCondition P) where
   format p := PathCondition.format' p
 
-instance [ToFormat P.Expr] : ToFormat (PathConditions P) where
+instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (PathConditions P) where
   format p := PathConditions.format' p
 
 def PathConditions.newest (ps : PathConditions P) : PathCondition P :=
   match ps with
-  | [] => .empty
+  | [] => []
   | p :: _ => p
 
 def PathConditions.pop (ps : PathConditions P) : PathConditions P :=
@@ -55,19 +83,19 @@ def PathConditions.pop (ps : PathConditions P) : PathConditions P :=
 def PathConditions.push (ps : PathConditions P) (p : PathCondition P): PathConditions P :=
   p :: ps
 
-def PathConditions.insert (ps : PathConditions P) (l : String) (e : P.Expr) :=
+def PathConditions.addEntry (ps : PathConditions P) (e : PathConditionEntry P) : PathConditions P :=
   match ps with
-  | [] => [Map.ofList [(l, e)]]
-  | p :: ps => Map.insert p l e :: ps
+  | [] => [[e]]
+  | p :: ps => (p ++ [e]) :: ps
 
 def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : PathConditions P :=
   let new := ps.newest ++ m
   let ps := ps.pop
   ps.push new
 
-/-- Remove path conditions with specified names -/
-def PathConditions.removeByNames (ps : PathConditions P) (names : List String) : PathConditions P :=
-  ps.map (fun pc => pc.filter (fun (name, _) => !names.contains name))
+/-- Remove path condition entries with specified names -/
+def PathConditions.removeByNames [ToFormat P.Ident] (ps : PathConditions P) (names : List String) : PathConditions P :=
+  ps.map (fun pc => pc.filter (fun e => !names.contains e.name))
 
 inductive PropertyType where
   | cover
@@ -100,14 +128,14 @@ structure ProofObligation (P : PureExpr) where
   obligation : P.Expr
   metadata : MetaData P
 
-instance [BEq P.Ident] [BEq P.Expr] [BEq (MetaData P)] : BEq (ProofObligation P) where
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (ProofObligation P) where
   beq a b :=
     a.label == b.label &&
     a.assumptions == b.assumptions &&
     a.obligation == b.obligation &&
     a.metadata == b.metadata
 
-instance [ToFormat P.Ident] [ToFormat P.Expr] : ToFormat (ProofObligation P) where
+instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (ProofObligation P) where
   format ob := f!"Label: {ob.label}\n\
                   Property : {ob.property}\n\
                   Assumptions: {PathConditions.format' ob.assumptions}\n\

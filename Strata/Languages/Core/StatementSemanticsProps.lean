@@ -2441,6 +2441,59 @@ theorem core_noFailure_preserved
         (fun a cfg hr hat => hvalid a cfg (StepStmtStar_to_CoreStepStar hr) hat)
         hf₀ hstep)
 
+/-! ## mapExprs identity -/
+
+private theorem block_mapExpr_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    Imperative.Block.mapExpr id (Command.mapExpr id) ss = ss := by
+  induction ss with
+  | nil => simp [Imperative.Block.mapExpr]
+  | cons s rest ih =>
+    simp only [Imperative.Block.mapExpr, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+private theorem list_mapExprs_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    ss.map (Statement.mapExprs id) = ss := by
+  induction ss with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [List.map_cons, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+private theorem Command.mapExpr_id (c : Command) : Command.mapExpr id c = c := by
+  cases c with
+  | cmd c =>
+    cases c with
+    | assert _ _ _ | assume _ _ _ | cover _ _ _ => simp [Command.mapExpr]
+    | init n ty e md => cases e <;> simp [Command.mapExpr]
+    | set n e md => cases e <;> simp [Command.mapExpr]
+  | call pname args md =>
+    simp [Command.mapExpr]
+    induction args with
+    | nil => rfl
+    | cons h t ih => simp [ih]; cases h <;> rfl
+
+theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := by
+  induction s using Stmt.inductionOn with
+  | cmd_case c =>
+    simp only [Statement.mapExprs, Imperative.Stmt.mapExpr]
+    exact congrArg Stmt.cmd (Command.mapExpr_id c)
+  | block_case l ss md ih =>
+    simp [Statement.mapExprs, Imperative.Stmt.mapExpr, block_mapExpr_id_of_forall ih]
+  | ite_case cond tss ess md iht ihe =>
+    cases cond <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
+                          block_mapExpr_id_of_forall iht, block_mapExpr_id_of_forall ihe]
+  | loop_case guard measure inv body md ihb =>
+    cases guard <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
+                           block_mapExpr_id_of_forall ihb]
+  | exit_case l md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+  | funcDecl_case decl md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+  | typeDecl_case tc md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+
+theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
+  exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
+
 end Core
 
 end -- public section
