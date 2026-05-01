@@ -243,7 +243,8 @@ arrangements, including sequencing, alternation, and iteration. Sequencing
 statements occurs by grouping them into blocks. Loops can be annotated with
 optional invariants and decreasing measures, which can be used for deductive
 verification. An `exit` statement transfers control out of the nearest
-enclosing block with a matching label. In addition, statements include
+enclosing block with a matching label, or, if no label is provided, the nearest
+enclosing block. In addition, statements include
 `funcDecl` for local function declarations (which extend the expression
 evaluator within a scope) and `typeDecl` for local type declarations.
 
@@ -302,8 +303,8 @@ section describes the top-level constructs that make up a Strata Core program.
 
 Strata Core expressions are `Lambda` expressions instantiated with a specific
 identifier type (`CoreIdent`) and a monomorphic type system (`LMonoTy`). A
-`CoreIdent` carries scope information, including whether it refers to a global
-variable, a local variable, or an `old` expression (denoting a pre-state value).
+`CoreIdent` identifies either a local variable or an `old` expression (denoting
+a pre-state value).
 
 ### Built-in Types
 
@@ -325,9 +326,11 @@ synonyms, and algebraic datatypes).
 ### Built-in Operators
 
 Strata Core provides built-in operators organized by the types they operate on.
-The following summarizes each category; the definitive list of operators within
-each category can be found in the
-[API reference](https://strata-org.github.io/Strata/api/Strata/Languages/Core/CoreOp.html).
+The following summarizes each category; the definitive list of operators is
+registered in
+[`Core.Factory`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Factory.lean)
+(see also the
+[API reference](https://strata-org.github.io/Strata/api/Strata/Languages/Core/CoreOp.html)).
 
 - *Boolean*: conjunction, disjunction, negation, implication, equivalence.
 - *Numeric (int and real)*: addition, subtraction, multiplication, negation,
@@ -338,8 +341,8 @@ each category can be found in the
   unsigned), bitwise (and, or, xor, not, shifts), comparisons (signed and
   unsigned), concatenation, and extraction of sub-ranges. Safe arithmetic
   variants generate overflow precondition checks.
-- *String*: length, concatenation, substring extraction, conversion to regular
-  expression, and regular expression membership.
+- *String*: length, concatenation, substring extraction, prefix and suffix
+  checks, conversion to regular expression, and regular expression membership.
 - *Regular expression*: constructors (all, allChar, range, none), composition
   (concatenation, union, intersection, complement, star, plus, loop).
 - *Map*: constant map, select (lookup), and update (store).
@@ -373,6 +376,13 @@ datatype <Name>(<TypeParams>) {
 };
 ```
 
+Strata Core datatypes must satisfy several well-formedness properties: they must
+be inhabited (subject to a syntactic check that tries to determine a provably
+inhabited constructor), uniform (the type parameters cannot change through
+recursion), strictly positive (all recursive occurrences of a type in a
+constructor do not appear to the left of any arrow), and non-nested (disallowing
+e.g. `datatype Foo() { A(x: List<Foo>) }`).
+
 Datatypes may be polymorphic and recursive:
 
 ```
@@ -391,17 +401,18 @@ auxiliary functions:
 2. *Tester functions*: for each constructor, a function that returns `true` if
    a value was created with that constructor. The naming convention is
    `<Datatype>..is<Constructor>` (e.g., `Option..isNone`, `List..isCons`).
-3. *Field accessors*: for each field, a function that extracts the field value.
-   The naming convention is `<Datatype>..<fieldName>` (e.g., `Option..val`,
-   `List..head`, `List..tail`). Field accessors are partial functions — calling
-   them on the wrong constructor variant is undefined behavior.
+3. *Field accessors*: for each field, Strata generates safe and unsafe variants.
+   The default (safe) versions (e.g., `List..head`) add a precondition check
+   requiring that the argument is an instance of the given constructor. The
+   unsafe versions (e.g., `List..head!`) do not check this and have *undefined
+   behavior* if called on the wrong constructor.
 
 ## Functions
 
 Strata Core functions are pure, named operations with typed input parameters
-and a return type. A function may have an optional body (a lambda expression);
-if absent, it is uninterpreted. Functions may also have preconditions that
-restrict their domain.
+and a return type. A function may have an optional body (an expression over the
+declared parameters); if absent, it is uninterpreted. Functions may also have
+preconditions that restrict their domain.
 
 The concrete syntax for a function declaration without a body is:
 
@@ -418,13 +429,15 @@ function Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) : ReturnType
 };
 ```
 
-A function may be prefixed with `inline` to request inlining.
+A function may be prefixed with `inline` to request inlining during the partial
+evaluation transform, when applied.
 
 ### Recursive Functions
 
-Both single and mutually recursive functions are supported. Recursive functions
-are declared with the `rec` keyword, and exactly one parameter must be annotated
-with `@[cases]` to indicate the algebraic datatype argument being recursed on.
+Currently, only recursive functions over algebraic datatypes are supported (both
+single and mutually recursive). Recursive functions are declared with the `rec`
+keyword, and exactly one parameter must be annotated with `@[cases]` to indicate
+the algebraic datatype argument being recursed on.
 
 ```
 rec function listLen (@[cases] xs : IntList) : int
@@ -474,9 +487,10 @@ variable.
 {docstring Core.CallArg}
 
 A Strata Core `Statement` is an `Imperative.Stmt` parameterized by Core's
-expression type and extended command type. Convenience abbreviations provide
-`Statement.init`, `Statement.set`, `Statement.havoc`, `Statement.assert`,
-`Statement.assume`, `Statement.call`, and `Statement.cover`.
+expression type and extended command type. Strata provides convenience
+abbreviations: `Statement.init`, `Statement.set`, `Statement.havoc`,
+`Statement.assert`, `Statement.assume`, `Statement.call`, and
+`Statement.cover`.
 
 ## Procedures
 
@@ -567,9 +581,9 @@ against its contract independently, and callers reason only about the contract.
 
 ### Body and verification
 
-If a procedure has a body, the preconditions are assumed to hold on entry, the
-body is executed, and the postconditions must hold on exit. If the body is
-absent, the procedure is abstract and can only be reasoned about via its
+If a procedure has a non-empty body, the preconditions are assumed to hold on
+entry, the body is executed, and the postconditions must hold on exit. If the
+body is empty, the procedure is abstract and can only be reasoned about via its
 contract.
 
 ### The Procedure type
@@ -585,7 +599,7 @@ one of:
 - an axiom,
 - a `distinct` declaration (asserting that a list of expressions are pairwise distinct),
 - a procedure,
-- a function, or
+- a (non-recursive) function, or
 - a mutually recursive function block.
 
 {docstring Core.Decl}
@@ -635,25 +649,26 @@ user-provided type constructor interpretation
 
 {docstring Lambda.SortDenote}
 
-The functional denotation `LExpr.denote` interprets a well-typed annotated
-expression into a Lean value of the appropriate type. It is noncomputable
-(due to `Classical.propDecidable` in the `eq` and `quant` cases) and is used
-for reasoning, not computation.
-
-The relational predicate `Denotes` provides an equivalent specification that
-avoids dependent-type casts, relating well-typed expressions directly to their
-semantic values. The `denote_Denotes` and `Denotes_denote` theorems establish
-soundness and completeness of `Denotes` with respect to `denote`.
+The denotation function `LExpr.denote` interprets a well-typed annotated
+expression into a Lean value of the appropriate type. It is parameterized by
+interpretations for type constructors, operators, and free variables. Each
+Lambda construct is denoted into the corresponding Lean one; for example, an
+if-then-else becomes a Lean if-then-else, a `forall` quantifier becomes a Lean
+`forall`, and so on. Since Lambda allows unbounded quantification and equality
+over arbitrary types, this denotation can be used only for reasoning, not for
+computation. Validity of a Lambda expression means that `LExpr.denote` evaluates
+to `true` under all possible interpretations.
 
 ### Consistency with Operational Semantics
 
 A key metatheoretic result is that the operational and denotational semantics
 agree. The theorem `Step.denote_preserved` states that a single evaluation step
-preserves the denotation of an expression. Its multi-step counterpart,
-`StepStar.denote_preserved`, extends this to arbitrary reduction sequences:
-if `e₁` reduces to `e₂` in zero or more steps, the denotations of `e₁` and
-`e₂` are equal. The theorem `eval_denote_sound` composes these results to show
-that the evaluator is sound with respect to the denotational semantics.
+preserves the denotation of an expression. `StepStar.denote_preserved` lifts
+this to the multi-step relation. The theorem `eval_denote_sound` composes
+`StepStar.denote_preserved` and `eval_StepStar` (which shows that the partial
+evaluator is sound with respect to `StepStar`, independent of the denotational
+semantics) to show that the evaluator is sound with respect to the denotational
+semantics.
 
 ## Command Semantics
 
@@ -663,7 +678,7 @@ three components:
 
 1. A *store* mapping variables to their current values.
 2. An expression *evaluator*.
-3. A cumulative *failure flag* that is OR-ed with per-command assertion failures.
+3. A cumulative *failure flag* that is the disjunction of per-command assertion failures.
 
 {docstring Imperative.Env}
 
@@ -685,10 +700,6 @@ a standard way.
 
 The semantics of the {name Stmt}`Stmt` type is defined in terms of
 *configurations*, represented by the {name Imperative.Config}`Config` type.
-A configuration tracks the current execution state: a single statement, a list
-of statements, a terminal state, an exiting state (from an `exit` statement),
-a block context wrapping an inner configuration, or a sequence context for
-processing statement lists one step at a time.
 
 {docstring Imperative.Config}
 
@@ -722,3 +733,18 @@ The {name Imperative.StepKleeneStar}`StepKleeneStar` relation is the reflexive,
 transitive closure.
 
 {docstring Imperative.StepKleeneStar}
+
+## Program-wide Semantics
+
+The per-component semantics above are linked to program-wide specifications via
+two key definitions in
+[`Specification.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/Specification.lean):
+
+- `Hoare.Triple`: a partial-correctness triple `{Pre} s {Post}` stating that
+  if `Pre` holds on entry and the statement terminates, the postcondition holds
+  and no assertion has failed.
+- `AllAssertsValid`: universally quantifies over all assertion sites in a
+  statement, requiring each to hold on every reachable path.
+
+The two are shown equivalent by `hoareTriple_implies_assertValid` and
+`allAssertsValid_implies_hoareTriple`.

@@ -67,6 +67,10 @@ procedures they transitively depend on).
 Removes axioms that do not mention any of the functions named in the
 `--functions` flag, reducing the size of the analysis problem.
 
+Additional internal transforms (e.g., `PrecondElim`, `DetToKleene`,
+`StructuredToUnstructured`) are used by the analysis pipelines but are not
+currently exposed via the CLI.
+
 # Analysis Modes
 
 Strata supports three analysis modes, selected via `--check-mode`. These modes
@@ -102,11 +106,11 @@ functions (e.g., `Option..isNone` maps to `is-None`).
 Functions with bodies are inlined by the partial evaluator where possible.
 Functions without bodies are declared as uninterpreted functions.
 
-Recursive functions are encoded as uninterpreted functions together with
-per-constructor axioms equipped with trigger patterns. For each constructor `C`
-of the ADT at the `@[cases]` parameter, a universally quantified axiom is
-generated with the unevaluated LHS as a trigger pattern and the partially
-evaluated RHS as the body.
+Recursive functions are simplified by the partial evaluator but are encoded as
+uninterpreted functions with per-constructor axioms in the SMT encoding. For
+each constructor `C` of the ADT at the `@[cases]` parameter, the encoding
+generates an axiom representing the corresponding rewrite rule (e.g.,
+`List.length Nil = 0` and `forall h t, List.length (Cons h t) = 1 + List.length t`).
 
 ## Axiom Encoding
 
