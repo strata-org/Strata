@@ -91,32 +91,36 @@ where
   /-- Bottom-up traversal returning (hash, replaced expression). -/
   go (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match e with
-    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => (LExpr.hashExpr e, e)
+    | .const _ c => check (LExpr.hashConst (hash c)) e
+    | .bvar _ i => check (LExpr.hashBVar (hash i)) e
+    | .fvar _ n ty => check (LExpr.hashFVar (hash n.name) (LExpr.hashOptTy ty)) e
+    | .op _ o ty => check (LExpr.hashOp (hash o.name) (LExpr.hashOptTy ty)) e
     | .app m fn arg =>
-      let (_, fn') := go fn
-      let (_, arg') := go arg
+      let (hfn, fn') := go fn
+      let (harg, arg') := go arg
       let e' : Expression.Expr := .app m fn' arg'
-      check (LExpr.hashExpr e') e'
+      check (LExpr.hashApp hfn harg) e'
     | .ite m c t f =>
-      let (_, c') := go c
-      let (_, t') := go t
-      let (_, f') := go f
+      let (hc, c') := go c
+      let (ht, t') := go t
+      let (hf, f') := go f
       let e' : Expression.Expr := .ite m c' t' f'
-      check (LExpr.hashExpr e') e'
+      check (LExpr.hashIte hc ht hf) e'
     | .eq m e1 e2 =>
-      let (_, e1') := go e1
-      let (_, e2') := go e2
+      let (h1, e1') := go e1
+      let (h2, e2') := go e2
       let e' : Expression.Expr := .eq m e1' e2'
-      check (LExpr.hashExpr e') e'
+      check (LExpr.hashEqExpr h1 h2) e'
     | .abs m name ty body =>
-      let (_, body') := go body
+      let (hbody, body') := go body
       let e' : Expression.Expr := .abs m name ty body'
-      check (LExpr.hashExpr e') e'
+      check (LExpr.hashAbs (hash name) (LExpr.hashOptTy ty) hbody) e'
     | .quant m k name ty tr body =>
-      let (_, tr') := go tr
-      let (_, body') := go body
+      let (htr, tr') := go tr
+      let (hbody, body') := go body
       let e' : Expression.Expr := .quant m k name ty tr' body'
-      check (LExpr.hashExpr e') e'
+      let kh : UInt64 := match k with | .all => 0 | .exist => 1
+      check (LExpr.hashQuantExpr kh (hash name) (LExpr.hashOptTy ty) htr hbody) e'
   /-- Check if the hash matches a replacement target. -/
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
@@ -127,18 +131,38 @@ where
 /-- Collect all subexpression hashes from an expression,
     excluding the expression itself. -/
 private def collectSubexprHashes (e : Expression.Expr) : Std.HashSet UInt64 :=
-  let topHash := LExpr.hashExpr e
-  go e |>.erase topHash
+  let (topHash, set) := go e
+  set.insert topHash |>.erase topHash
 where
-  go (e : Expression.Expr) : Std.HashSet UInt64 :=
-    let h := LExpr.hashExpr e
+  /-- Bottom-up traversal returning (hash, set of descendant hashes). -/
+  go (e : Expression.Expr) : UInt64 × Std.HashSet UInt64 :=
     match e with
-    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => ({} : Std.HashSet UInt64).insert h
-    | .app _ fn arg => (go fn |>.union (go arg)).insert h
-    | .ite _ c t f => (go c |>.union (go t) |>.union (go f)).insert h
-    | .eq _ e1 e2 => (go e1 |>.union (go e2)).insert h
-    | .abs _ _ _ body => (go body).insert h
-    | .quant _ _ _ _ tr body => (go tr |>.union (go body)).insert h
+    | .const _ c => (LExpr.hashConst (hash c), {})
+    | .bvar _ i => (LExpr.hashBVar (hash i), {})
+    | .fvar _ n ty => (LExpr.hashFVar (hash n.name) (LExpr.hashOptTy ty), {})
+    | .op _ o ty => (LExpr.hashOp (hash o.name) (LExpr.hashOptTy ty), {})
+    | .app _ fn arg =>
+      let (hfn, s1) := go fn
+      let (harg, s2) := go arg
+      (LExpr.hashApp hfn harg, s1.union s2 |>.insert hfn |>.insert harg)
+    | .ite _ c t f =>
+      let (hc, s1) := go c
+      let (ht, s2) := go t
+      let (hf, s3) := go f
+      (LExpr.hashIte hc ht hf, s1.union s2 |>.union s3 |>.insert hc |>.insert ht |>.insert hf)
+    | .eq _ e1 e2 =>
+      let (h1, s1) := go e1
+      let (h2, s2) := go e2
+      (LExpr.hashEqExpr h1 h2, s1.union s2 |>.insert h1 |>.insert h2)
+    | .abs _ name ty body =>
+      let (hbody, s) := go body
+      (LExpr.hashAbs (hash name) (LExpr.hashOptTy ty) hbody, s.insert hbody)
+    | .quant _ k name ty tr body =>
+      let (htr, s1) := go tr
+      let (hbody, s2) := go body
+      let kh : UInt64 := match k with | .all => 0 | .exist => 1
+      (LExpr.hashQuantExpr kh (hash name) (LExpr.hashOptTy ty) htr hbody,
+       s1.union s2 |>.insert htr |>.insert hbody)
 
 /-- Remove entries that are subexpressions of larger entries in the list.
     Uses hash-based lookup for O(n) per-target instead of O(n × tree_size). -/
