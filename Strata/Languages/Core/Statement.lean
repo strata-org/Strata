@@ -461,6 +461,64 @@ end
 
 ---------------------------------------------------------------------
 
+/-- Apply a function to all user-facing expressions in a Core command. -/
+def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Command
+  | .cmd (.assert l e md) => .cmd (.assert l (f e) md)
+  | .cmd (.assume l e md) => .cmd (.assume l (f e) md)
+  | .cmd (.cover l e md) => .cmd (.cover l (f e) md)
+  | .cmd (.init n ty (.det e) md) => .cmd (.init n ty (.det (f e)) md)
+  | .cmd (.set n (.det e) md) => .cmd (.set n (.det (f e)) md)
+  | .call pname args md => .call pname (args.map fun
+      | .inArg e => .inArg (f e)
+      | a => a) md
+  | c => c
+
+/-- Apply a function to all user-facing expressions in a statement. -/
+def Statement.mapExprs (f : Expression.Expr → Expression.Expr) (s : Statement) : Statement :=
+  Imperative.Stmt.mapExpr f (Command.mapExpr f) s
+
+/-- Apply a function to all user-facing expressions in a list of statements. -/
+def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
+    (ss : Statements) : Statements :=
+  ss.map (Statement.mapExprs f)
+
+/-- Collect all user-facing expressions from a statement. -/
+def Statement.collectExprs :
+    Statement → List Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) => [e]
+  | .cmd (.cmd (.assume _ e _)) => [e]
+  | .cmd (.cmd (.cover _ e _)) => [e]
+  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
+  | .cmd (.cmd (.set _ (.det e) _)) => [e]
+  | .cmd (.call _ args _) => args.filterMap fun
+      | .inArg e => some e
+      | _ => none
+  | .block _ ss _ => ss.flatMap Statement.collectExprs
+  | .ite (.det c) tss ess _ =>
+    [c] ++ tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .ite .nondet tss ess _ =>
+    tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .loop (.det g) measure inv body _ =>
+    [g] ++ measure.toList ++
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+  | .loop .nondet measure inv body _ =>
+    measure.toList ++
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+  | .cmd (.cmd (.init _ _ .nondet _)) => []
+  | .cmd (.cmd (.set _ .nondet _)) => []
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Collect all user-facing expressions from a list of statements. -/
+def Statements.collectExprs
+    (ss : Statements) : List Expression.Expr :=
+  ss.flatMap Statement.collectExprs
+
+---------------------------------------------------------------------
+
 
 end
 end Core
