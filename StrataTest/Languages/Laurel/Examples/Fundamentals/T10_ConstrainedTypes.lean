@@ -123,6 +123,20 @@ procedure uninitNotWitness() {
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
 
+// Function with valid constrained return — constraint not checked (not yet supported)
+function goodFunc(): nat { 3 };
+//       ^^^^^^^^ error: constrained return types on functions are not yet supported
+
+// Function with invalid constrained return — constraint not checked (not yet supported)
+function badFunc(): nat { -1 };
+//       ^^^^^^^ error: constrained return types on functions are not yet supported
+
+// Caller of constrained function — body is inlined, caller sees actual value
+procedure callerGood() {
+  var x: int := goodFunc();
+  assert x >= 0
+};
+
 // Quantifier constraint injection — forall
 // n + 1 > 0 is only provable with n >= 0 injected; false for all int
 procedure forallNat() {
