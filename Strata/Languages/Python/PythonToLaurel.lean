@@ -1174,7 +1174,35 @@ partial def translateCall (ctx : TranslationContext)
           | .Attribute range _ attr _ => (attr.val, range)
           | _ => (funcName, .none)
         throwUserError range s!"Unknown method '{methodName}'"
-    return mkStmtExprMd .Hole
+    -- Havoc the receiver and Any-typed arguments since the unmodeled call
+    -- may mutate them and value-typed locals are not reachable via heap havoc.
+    -- Note: composite-typed arguments are NOT havoc'd here. If the unmodeled
+    -- call mutates a composite's fields, the heap should be havoc'd, but that
+    -- requires coordination with HeapParameterization and is out of scope.
+    let receiverHavoc := match f with
+      | .Attribute _ (.Name _ receiverName _) _ _ =>
+        if receiverName.val ∈ ctx.variableTypes.unzip.1 then
+          [mkStmtExprMd (StmtExpr.Assign
+            [mkVariableMd (.Local receiverName.val)]
+            (mkStmtExprMd .Hole))]
+        else []
+      | _ => []
+    let argHavoc := args.flatMap fun arg =>
+      if let .Name _ n _ := arg then
+        match ctx.variableTypes.find? (λ v => Prod.fst v == n.val) with
+        | some (varName, ty) =>
+          if ty == PyLauType.Any then
+            [mkStmtExprMd (StmtExpr.Assign
+              [mkVariableMd (.Local varName)]
+              (mkStmtExprMd (.Hole false none)))]
+          else []
+        | _ => []
+      else []
+    let havocStmts := receiverHavoc ++ argHavoc
+    if havocStmts.isEmpty then
+      return mkStmtExprMd .Hole
+    else
+      return mkStmtExprMd (.Block (havocStmts ++ [mkStmtExprMd .Hole]) none)
   -- Step 3: translate the resolved call
   let methodName := match f with
     | .Attribute _ _ attr _ => attr.val
@@ -1544,13 +1572,46 @@ partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) :
       ([cond, thenBranch] ++ elseBranch.toList).flatMap $ getMaybeExceptionExprs ctx
   | _ => []
 
+/-- Build a single exception-check assert: `assert !Any..isexception(e)`. -/
+def mkExceptionCheckAssert (e : StmtExprMd) (summary : String) : StmtExprMd :=
+  let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [e]])
+  mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some summary }) e.source
+
 partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) : List StmtExprMd :=
-  let maybeExceptExprs := getMaybeExceptionExprs ctx e
-  maybeExceptExprs.map fun mbe =>
+  (getMaybeExceptionExprs ctx e).map fun mbe =>
     let funcName := match mbe.val with | .StaticCall f _ => f.text | _ => "expression"
-    let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [mbe]])
-    let cond : Condition := { condition := condExpr, summary := some s!"Check {funcName} exception" }
-    mkStmtExprMdWithLoc (.Assert cond) mbe.source
+    mkExceptionCheckAssert mbe s!"Check {funcName} exception"
+
+/-- Check whether an expression tree contains a `StaticCall` to a user-defined
+    function (procedure).  Such calls are disallowed in pure contexts (e.g.
+    assert bodies), so exception-check assertions that embed them must first
+    extract the expression into a temporary variable.  See issue #1000. -/
+partial def containsUserCall (ctx : TranslationContext) (e : StmtExprMd) : Bool :=
+  match e.val with
+  | .StaticCall callee args =>
+    callee.text ∈ ctx.userFunctions || args.any (containsUserCall ctx)
+  | .PrimitiveOp _ args => args.any (containsUserCall ctx)
+  | .IfThenElse cond thenBranch elseBranch =>
+    containsUserCall ctx cond || containsUserCall ctx thenBranch ||
+      elseBranch.any (containsUserCall ctx)
+  | _ => false
+
+/-- Generate exception-check assertions for an expression, extracting it into a
+    temporary variable when the expression contains a user-defined procedure
+    call.  Returns `(preamble, exprRef)` where `preamble` is the list of
+    statements to emit before the use site and `exprRef` is the expression to
+    use in place of the original (either the original or a variable reference).
+    See issue #1000. -/
+def getExceptionCheckPreamble (ctx : TranslationContext) (e : StmtExprMd) (varName : String)
+    : List StmtExprMd × StmtExprMd :=
+  if (getMaybeExceptionExprs ctx e).isEmpty then
+    ([], e)
+  else if containsUserCall ctx e then
+    let varDecl := mkVarDeclInit varName AnyTy e
+    let varRef := mkStmtExprMd (StmtExpr.Var (.Local varName))
+    ([varDecl, mkExceptionCheckAssert varRef "Check exception"], varRef)
+  else
+    (getExceptionAssertions ctx e, e)
 
 def withExceptionChecks (ctx : TranslationContext)
     (result : TranslationContext × List StmtExprMd)
@@ -1632,9 +1693,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) bodyBlock elseBlock) md
+    let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$if_cond_{test.toAst.ann.start.byteIdx}"
+    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condRef) bodyBlock elseBlock) md
 
-    return (bodyCtx, (getExceptionAssertions ctx condExpr) ++ [ifStmt])
+    return (bodyCtx, preamble ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
@@ -1645,20 +1707,21 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let loopCtx := { ctx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
     let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
-    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condExpr) [] none bodyBlock) md
+    let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$while_cond_{test.toAst.ann.start.byteIdx}"
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, (getExceptionAssertions ctx condExpr) ++ [whileWrapped])
+    return (loopCtx, preamble ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
-        let exceptionCheck := getExceptionAssertions ctx e
+        let (preamble, eRef) := getExceptionCheckPreamble ctx e s!"$ret_exc_{expr.toAst.ann.start.byteIdx}"
         -- Coerce Composite return values to Any for LaurelResult : Any
-        let e ← coerceToAny ctx expr e
-        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] e) md
-        .ok $ exceptionCheck ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
+        let eRef ← coerceToAny ctx expr eRef
+        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] eRef) md
+        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
       | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
     return (ctx, stmts)
 
@@ -1688,7 +1751,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else
       mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
 
-    return (condCtx, (getExceptionAssertions ctx condExpr) ++ [result])
+    let (preamble, _) := getExceptionCheckPreamble ctx condExpr s!"$assert_exc_{test.toAst.ann.start.byteIdx}"
+
+    return (condCtx, preamble ++ [result])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])
@@ -1718,7 +1783,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, exceptionCheck ++ [expr])
     -- Unmodeled call: skip exception checks (no model to check against),
     -- but havoc maybe_except since the call could throw.
+    -- Unmodeled call: havoc is now handled in translateCall via Block.
     | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
+    | .Block _ _ => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
@@ -1819,8 +1886,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- and Any_iter_index is only called inside the loop body where that condition is satisfied,
   -- so it is sound to not put it inside AnyMaybeExceptionList
   | .For _ target iter body _orelse _ => do
-    -- The iterator expression (we abstract it away)
-    let iterExpr ← translateExpr ctx iter
+    -- The iterator expression (we abstract it away).
+    -- When the expression contains side-effect statements (e.g. a block with
+    -- receiver havoc from an unmodeled method call), bind it to a temporary
+    -- variable so the side effects execute once and the clean variable
+    -- reference can be used in PIn / Any_len / the while condition.
+    -- This mirrors Python semantics where the iterator is evaluated once.
+    let iterRaw ← translateExpr ctx iter
+    let (iterPreamble, iterExpr) := match iterRaw.val with
+      | .Block (_ :: _ :: _) _ =>
+        let varName := s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
+        let varDecl := mkVarDeclInit varName AnyTy iterRaw
+        let varRef  := mkStmtExprMd (StmtExpr.Var (.Local varName))
+        ([varDecl], varRef)
+      | _ => ([], iterRaw)
     if let .Call _ (.Name _ {val:= "range",..} _) _ _  := iter then
       if let .StaticCall "range" _ := iterExpr.val then
         pure ()
@@ -1877,7 +1956,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
-    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ [counterDecl] ++ [loopBlock])
+    let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
+    return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
@@ -2151,6 +2231,9 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     let inputTypes := funcDecl.args.map fun arg =>
       (arg.name, highTypeToPyLauType arg.laurelType.val)
     let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes}
+    let ctx := match ctx.currentClassName with
+      | some cn => {ctx with variableTypes := ("self", cn) :: ctx.variableTypes}
+      | none => ctx
     let (bodyTrans, newCtx) ← match body with
     | some body =>
         let (bodyBlock, newCtx) ←  translateFunctionBody ctx funcDecl.kwargsName inputs body

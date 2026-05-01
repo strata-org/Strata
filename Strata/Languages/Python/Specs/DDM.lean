@@ -78,8 +78,10 @@ op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
   @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
   "isinstance" "(" subject ", " typeName ")";
-op stringLenExpr(subject : SpecExprDecl) : SpecExprDecl =>
+op lenExpr(subject : SpecExprDecl) : SpecExprDecl =>
   "len" "(" subject ")";
+op stringLenExpr(subject : SpecExprDecl) : SpecExprDecl =>
+  "stringLen" "(" subject ")";
 op intExpr(value : Int) : SpecExprDecl => value;
 op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
   @[prec(15)] subject " >=_int " bound;
@@ -197,6 +199,48 @@ def DDM.Int.ofDDM {α} : DDM.Int α → _root_.Int
 
 mutual
 
+private def SpecIdent.toDDM (si : SpecIdent) (loc : SourceRange) : DDM.SpecType SourceRange :=
+  if si.args.isEmpty then
+    .typeIdentNoArgs loc si.name.toDDM
+  else
+    .typeIdent loc si.name.toDDM ⟨.none, si.args.map (·.toDDM)⟩
+termination_by sizeOf si
+decreasing_by cases si; decreasing_tactic
+
+private def SpecTypedDict.toDDM (td : SpecTypedDict) (loc : SourceRange) : DDM.SpecType SourceRange :=
+  assert! td.fields.size = td.fieldTypes.size
+  let argc := td.fieldTypes.size
+  let a := Array.ofFn fun (⟨i, ilt⟩ : Fin argc) =>
+    .mkDictFieldDecl .none ⟨.none, td.fields[i]!⟩ td.fieldTypes[i].toDDM ⟨.none, td.fieldRequired[i]!⟩
+  .typeTypedDict loc ⟨.none, a⟩
+termination_by sizeOf td
+decreasing_by cases td; decreasing_tactic
+
+private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
+  let parts : Array (DDM.SpecType SourceRange) :=
+    let r := d.idents.attach.map fun ⟨si, _⟩ => si.toDDM d.loc
+    let ints := d.intLits.toArray.qsort (· < ·)
+    let r := ints.foldl (init := r) fun acc k =>
+      acc.push (.typeIntLiteral d.loc (toDDMInt .none k))
+    let strs := d.stringLits.toArray.qsort (· < ·)
+    let r := strs.foldl (init := r) fun acc k =>
+      acc.push (.typeStringLiteral d.loc ⟨.none, k⟩)
+    d.typedDicts.attach.foldl (init := r) fun acc ⟨td, _⟩ =>
+      acc.push (td.toDDM d.loc)
+  assert! parts.size > 0
+  if parts.size = 1 then
+    parts[0]!
+  else
+    .typeUnion d.loc ⟨.none, parts⟩
+termination_by sizeOf d
+decreasing_by
+  · rename_i mem
+    apply SpecType.sizeOf_idents_lt_of_mem mem
+  · rename_i mem
+    apply SpecType.sizeOf_typedDicts_lt_of_mem mem
+
+end
+
 private def SpecAtomType.toDDM (d : SpecAtomType)
     (loc : SourceRange := .none) : DDM.SpecType SourceRange :=
   match d with
@@ -213,22 +257,7 @@ private def SpecAtomType.toDDM (d : SpecAtomType)
     let a := Array.ofFn fun (⟨i, ilt⟩ : Fin argc) =>
       .mkDictFieldDecl .none ⟨.none, fields[i]!⟩ types[i].toDDM ⟨.none, fieldRequired[i]!⟩
     .typeTypedDict loc ⟨.none, a⟩
-termination_by sizeOf d
 
-private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
-  assert! d.atoms.size > 0
-  if p : d.atoms.size = 1 then
-    d.atoms[0].toDDM (loc := d.loc)
-  else
-    .typeUnion d.loc ⟨.none, d.atoms.map (·.toDDM)⟩
-termination_by sizeOf d
-decreasing_by
-  · have mem : d.atoms[0] ∈ d.atoms := by grind
-    exact SpecType.sizeOf_atom_lt_of_mem mem
-  · rename_i a mem
-    exact SpecType.sizeOf_atom_lt_of_mem mem
-
-end
 
 private def SpecDefault.toDDM : Specs.SpecDefault → DDM.SpecDefault SourceRange
   | .none => .noneDefault .none
@@ -382,6 +411,7 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .varExpr loc ⟨_, name⟩ => .var name loc
   | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
   | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
+  | .lenExpr loc subj => .stringLen subj.fromDDM loc
   | .stringLenExpr loc subj => .stringLen subj.fromDDM loc
   | .intExpr loc i => .intLit i.ofDDM loc
   | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc

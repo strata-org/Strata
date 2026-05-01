@@ -434,6 +434,20 @@ def translateStmt (stmt : StmtExprMd)
             | .Field _ _ => pure () -- already handled above
           let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
           return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
+      | .Hole _ _ =>
+          -- Hole RHS: havoc all targets (unmodeled call side-effect).
+          let mut result : List Core.Statement := []
+          for target in targets do
+            match target.val with
+            | .Declare param =>
+              let coreType := LTy.forAll [] (← translateType param.type)
+              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+              result := result ++ [Core.Statement.init ident coreType .nondet md]
+            | .Local name =>
+              let ident : Core.CoreIdent := ⟨name.text, ()⟩
+              result := result ++ [Core.Statement.havoc ident md]
+            | .Field _ _ => pure () -- already handled above
+          return result
       | _ =>
         match targets with
         | [target] =>
@@ -494,12 +508,16 @@ def translateStmt (stmt : StmtExprMd)
           return [.exit (some "$body") md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
-      let invExprs ← invariants.mapM (translateExpr)
+      let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt body
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
       return [Imperative.Stmt.exit (some target) md]
+  | .Hole _ _ =>
+      -- Hole in statement position: treat as havoc (no-op).
+      -- This can occur when an unmodeled call's Block is flattened.
+      return []
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
