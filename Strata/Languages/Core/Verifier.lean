@@ -580,7 +580,7 @@ analysis.
 -/
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
-  outcome : Except VCError VCOutcome := .error (.encoding "not yet computed")
+  outcome : Except VCError VCOutcome
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
   checkLevel : CheckLevel := .minimal

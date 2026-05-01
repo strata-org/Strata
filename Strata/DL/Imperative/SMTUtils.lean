@@ -123,15 +123,16 @@ inductive SolverError where
 instance : ToString SolverError where
   toString
     | .timeout d => s!"Solver timeout: {d}"
-    | .crash d   => s!"{d}"
+    | .crash d   => s!"Solver crash: {d}"
 
 /-- True when the word "timeout" appears as a whitespace-delimited token
     in the solver's stdout or stderr. z3 emits "timeout" as a standalone
     line on stdout; cvc5 prints "interrupted by timeout." on stderr.
     Only called when verdict parsing has already failed. -/
 private def isTimeoutOutput (output : IO.Process.Output) : Bool :=
-  let hasWord (s : String) := s.splitOn " " |>.any fun tok =>
-    tok.trimAscii.toString == "timeout" || tok.trimAscii.toString == "timeout."
+  let hasWord (s : String) := s.splitOn "\n" |>.any fun line =>
+    line.splitOn " " |>.any fun tok =>
+      tok.trimAscii.toString == "timeout" || tok.trimAscii.toString == "timeout."
   hasWord output.stdout || hasWord output.stderr
 
 ---------------------------------------------------------------------
