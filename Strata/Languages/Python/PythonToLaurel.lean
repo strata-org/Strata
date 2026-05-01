@@ -1177,7 +1177,35 @@ partial def translateCall (ctx : TranslationContext)
           | .Attribute range _ attr _ => (attr.val, range)
           | _ => (funcName, .none)
         throwUserError range s!"Unknown method '{methodName}'"
-    return mkStmtExprMd .Hole
+    -- Havoc the receiver and Any-typed arguments since the unmodeled call
+    -- may mutate them and value-typed locals are not reachable via heap havoc.
+    -- Note: composite-typed arguments are NOT havoc'd here. If the unmodeled
+    -- call mutates a composite's fields, the heap should be havoc'd, but that
+    -- requires coordination with HeapParameterization and is out of scope.
+    let receiverHavoc := match f with
+      | .Attribute _ (.Name _ receiverName _) _ _ =>
+        if receiverName.val ∈ ctx.variableTypes.unzip.1 then
+          [mkStmtExprMd (StmtExpr.Assign
+            [mkVariableMd (.Local receiverName.val)]
+            (mkStmtExprMd .Hole))]
+        else []
+      | _ => []
+    let argHavoc := args.flatMap fun arg =>
+      if let .Name _ n _ := arg then
+        match ctx.variableTypes.find? (λ v => Prod.fst v == n.val) with
+        | some (varName, ty) =>
+          if ty == PyLauType.Any then
+            [mkStmtExprMd (StmtExpr.Assign
+              [mkVariableMd (.Local varName)]
+              (mkStmtExprMd (.Hole false none)))]
+          else []
+        | _ => []
+      else []
+    let havocStmts := receiverHavoc ++ argHavoc
+    if havocStmts.isEmpty then
+      return mkStmtExprMd .Hole
+    else
+      return mkStmtExprMd (.Block (havocStmts ++ [mkStmtExprMd .Hole]) none)
   -- Step 3: translate the resolved call
   let methodName := match f with
     | .Attribute _ _ attr _ => attr.val
@@ -1758,7 +1786,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, exceptionCheck ++ [expr])
     -- Unmodeled call: skip exception checks (no model to check against),
     -- but havoc maybe_except since the call could throw.
+    -- Unmodeled call: havoc is now handled in translateCall via Block.
     | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
+    | .Block _ _ => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
@@ -1859,8 +1889,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- and Any_iter_index is only called inside the loop body where that condition is satisfied,
   -- so it is sound to not put it inside AnyMaybeExceptionList
   | .For _ target iter body _orelse _ => do
-    -- The iterator expression (we abstract it away)
-    let iterExpr ← translateExpr ctx iter
+    -- The iterator expression (we abstract it away).
+    -- When the expression contains side-effect statements (e.g. a block with
+    -- receiver havoc from an unmodeled method call), bind it to a temporary
+    -- variable so the side effects execute once and the clean variable
+    -- reference can be used in PIn / Any_len / the while condition.
+    -- This mirrors Python semantics where the iterator is evaluated once.
+    let iterRaw ← translateExpr ctx iter
+    let (iterPreamble, iterExpr) := match iterRaw.val with
+      | .Block (_ :: _ :: _) _ =>
+        let varName := s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
+        let varDecl := mkVarDeclInit varName AnyTy iterRaw
+        let varRef  := mkStmtExprMd (StmtExpr.Var (.Local varName))
+        ([varDecl], varRef)
+      | _ => ([], iterRaw)
     if let .Call _ (.Name _ {val:= "range",..} _) _ _  := iter then
       if let .StaticCall "range" _ := iterExpr.val then
         pure ()
@@ -1918,7 +1960,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none innerBlock) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
     let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
-    return (finalCtx, preamble ++ [counterDecl] ++ [loopBlock])
+    return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
@@ -2192,6 +2234,9 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     let inputTypes := funcDecl.args.map fun arg =>
       (arg.name, highTypeToPyLauType arg.laurelType.val)
     let ctx := {ctx with variableTypes:= ("nullcall_ret", PyLauType.Any)::inputTypes}
+    let ctx := match ctx.currentClassName with
+      | some cn => {ctx with variableTypes := ("self", cn) :: ctx.variableTypes}
+      | none => ctx
     let (body, newCtx) ← match body with
     | some body =>
         let (bodyBlock, newCtx) ←  translateFunctionBody ctx funcDecl.kwargsName inputs body
