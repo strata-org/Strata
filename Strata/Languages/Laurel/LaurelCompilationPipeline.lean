@@ -197,11 +197,10 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     let (program, model, passDiags, stats) ← runLaurelPasses options program
     let ordered := orderProgram program
 
-    /-- This early return is a simple way to protect against duplicative errors. Without this return,
-    resolution errors reported by Laurel would also be reported by Core.
-    There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
-    but that would need more consideration.
-    --/
+    -- This early return is a simple way to protect against duplicative errors. Without this return,
+    -- resolution errors reported by Laurel would also be reported by Core.
+    -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
+    -- but that would need more consideration.
     if passDiags.any (·.type != .Warning) then
       return (none, passDiags, program, stats)
 
