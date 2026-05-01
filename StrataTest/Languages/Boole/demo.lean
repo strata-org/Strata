@@ -46,7 +46,6 @@ theorem loopSimple_smtVCsCorrect : smtVCsCorrect loopSimple := by
  Lean.ofReduceBool,
  Lean.trustCompiler,
  Quot.sound,
- SourceRange.eq_trivial,
  Core.WFFactory._native.native_decide.ax_1✝,
  Core.bv16SafeAddFunc._native.native_decide.ax_1✝,
  Core.bv16SafeMulFunc._native.native_decide.ax_1✝,
