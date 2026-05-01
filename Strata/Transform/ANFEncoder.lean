@@ -29,6 +29,8 @@ The pass walks procedure bodies via `anfEncodeProgram`, hoisting duplicated
 subexpressions into `var` declarations prepended to the body.
 -/
 
+-- nosourcerange-file: ANF-synthesized fresh variables have no source location
+
 public section
 
 namespace Core.ANFEncoder
