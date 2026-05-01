@@ -269,21 +269,19 @@ where
     let ⟨expr, source⟩ := exprMd
     match _h : expr with
     | .FieldSelect selectTarget fieldName fieldTy => do
-        match fieldTy with
+        let (qualifiedName, ty) ← do match fieldTy with
         | none =>
           let some qualifiedName := resolveQualifiedFieldName model fieldName
             | return ⟨ .Hole, source ⟩
-          let valTy := (model.get fieldName).getType
-          let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
-          -- Unwrap Box: apply the appropriate destructor
-          recordBoxConstructor model valTy.val
-          return mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]
+          let valTy := (model.get fieldName).getType.val
+          pure (qualifiedName, valTy)
         | some fieldTy =>
-          let qualifiedName := mkMd <| .StaticCall s!"@DynamicField.{fieldName.text}" []
-          let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, qualifiedName], source⟩
-          recordBoxConstructor model fieldTy.val
+          let qualifiedName := s!"@DynamicField.{fieldName.text}"
           recordDynamicField fieldName.text
-          return mkMd <| .StaticCall (boxDestructorName model fieldTy.val) [readExpr]
+          pure (qualifiedName, fieldTy.val)
+        recordBoxConstructor model ty
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
+        return mkMd <| .StaticCall (boxDestructorName model ty) [readExpr]
     | .StaticCall callee args =>
         let args' ← args.mapM (recurse ·)
         let calleeReadsHeap ← readsHeap callee
@@ -334,36 +332,26 @@ where
     | .Assign targets v =>
         match targets with
         | [⟨.FieldSelect target fieldName fieldTy, _⟩] =>
-          match fieldTy with
-          | none =>
-            let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | return ⟨ .Hole, source⟩
-            let valTy := (model.get fieldName).getType
-            let target' ← recurse target
-            let v' ← recurse v
-            -- Wrap value in Box constructor
-            recordBoxConstructor model valTy.val
-            let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
-            let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
+          let (qualifiedName, ty) ← do match fieldTy with
+            | none =>
+              let some qualifiedName := resolveQualifiedFieldName model fieldName
+                | return ⟨ .Hole, source ⟩
+              let valTy := (model.get fieldName).getType.val
+              pure (qualifiedName, valTy)
+            | some fieldTy =>
+              let qualifiedName := s!"@DynamicField.{fieldName.text}"
+              recordDynamicField fieldName.text
+              pure (qualifiedName, fieldTy.val)
+          recordBoxConstructor model ty
+          let target' ← recurse target
+          let v' ← recurse v
+          let boxedVal := mkMd <| .StaticCall (boxConstructorName model ty) [v']
+          let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
               (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source⟩
-            if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, source⟩
-            else
-              return heapAssign
-          | some fieldTy =>
-            let qualifiedName := mkMd <| .StaticCall s!"@DynamicField.{fieldName.text}" []
-            let target' ← recurse target
-            let v' ← recurse v
-            -- Wrap value in Box constructor
-            recordBoxConstructor model fieldTy.val
-            recordDynamicField fieldName.text
-            let boxedVal := mkMd <| .StaticCall (boxConstructorName model fieldTy.val) [v']
-            let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', qualifiedName, boxedVal])), source⟩
-            if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, source⟩
-            else
-              return heapAssign
+          if valueUsed then
+            return ⟨ .Block [heapAssign, v'] none, source⟩
+          else
+            return heapAssign
         | [fieldSelectMd] =>
           let tgt' ← recurse fieldSelectMd
           return ⟨ .Assign [tgt'] (← recurse v), source ⟩

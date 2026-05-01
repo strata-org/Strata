@@ -270,7 +270,10 @@ inductive StmtExpr : Type where
   | Identifier (name : Identifier)
   /-- Assignment to one or more targets. Multiple targets are only allowed when the value is a `StaticCall` to a procedure with multiple outputs. -/
   | Assign (targets : List (AstNode StmtExpr)) (value : AstNode StmtExpr)
-  /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
+  /-- Read a field from a target expression. Combined with `Assign` for field writes.
+      When fieldType is none, fieldName is expected to be resolved into a valid field by Laurel.
+      When fieldType is some ty (provided by user), this is a dynamic field access, Laurel will not resolve the field.
+  -/
   | FieldSelect (target : AstNode StmtExpr) (fieldName : Identifier) (fieldType : Option (AstNode HighType):= none)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
