@@ -405,6 +405,8 @@ public instance : ToString PipelineError where
     | .knownLimitation msg => s!"Known limitation: {msg}"
     | .internal msg => msg
 
+def verboseWarnings : Bool := false
+
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
     translate Python to Laurel, and combine with PySpec Laurel.
@@ -444,9 +446,10 @@ public def pythonAndSpecToLaurel
   let pyspecWarnings := result.pyspecWarnings
   if pyspecWarnings.size > 0 && !quiet then
     let _ ← IO.eprintln
-      s!"{pyspecWarnings.size} PySpec translation warning(s):" |>.toBaseIO
-    for err in pyspecWarnings do
-      let _ ← IO.eprintln s!"  {err.file}: {err.kind.phase}.{err.kind.category}: {err.message}" |>.toBaseIO
+      s!"{pyspecWarnings.size} PySpec translation warning(s)" |>.toBaseIO
+    if verboseWarnings then
+      for err in pyspecWarnings do
+        let _ ← IO.eprintln s!"  {err.file}: {err.kind.phase}.{err.kind.category}: {err.message}" |>.toBaseIO
   if let some warnFile := warningSummaryFile then
     let counts : Std.HashMap _ Nat := pyspecWarnings.foldl (init := {})
       fun acc err => acc.alter err.kind fun mv => some (mv.getD 0 + 1)
