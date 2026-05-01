@@ -202,7 +202,7 @@ def mkVariableMd (v : Variable) : VariableMd :=
 def stmtExprToVar (e : StmtExprMd) : VariableMd :=
   match e.val with
   | .Var v => { val := v, source := e.source }
-  | _ => panic! "stmtExprToVar: expected Var node"
+  | _ => panic! "stmtExprToVar: expected Var node" -- nopanic:ok
 
 /-- Create a StmtExprMd with source location metadata. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (source : Option FileRange) : StmtExprMd :=
