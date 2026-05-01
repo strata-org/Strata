@@ -164,7 +164,9 @@ procedure modifyHeapAndReturnMultiple(c: Container) returns (x: int, y: int, z: 
   modifies c
 ;
 
-procedure heapModifyingMultipleReturnCaller() {
+procedure heapModifyingMultipleReturnCaller()
+  opaque
+{
   var c: Container := new Container;
   var y: int;
   assign var x: int, y, var z: int := modifyHeapAndReturnMultiple(c);
@@ -173,10 +175,13 @@ procedure heapModifyingMultipleReturnCaller() {
   assert z == 3
 };
 
-procedure fieldAssignsFromHeapModifyingMultipleReturnCaller() {
+procedure fieldAssignsFromHeapModifyingMultipleReturnCaller()
+  opaque
+{
   var c: Container := new Container;
   var y: int;
-  assign c#intValue, y, var z: int := modifyHeapAndReturnMultiple(c);
+  assign var w: int, y, var z: int := modifyHeapAndReturnMultiple(c);
+  c#intValue := w;
   assert c#intValue == 1;
   assert y == 2;
   assert z == 3

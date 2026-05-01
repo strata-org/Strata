@@ -17,7 +17,9 @@ procedure multipleReturns() returns (x: int, y: int, z: int)
   opaque
   ensures x == 1 && y == 2 && z == 3;
 
-procedure caller() {
+procedure caller()
+  opaque
+{
   var y: int;
   assign var x: int, y, var z: int := multipleReturns();
   assert x == 1;
@@ -35,7 +37,9 @@ procedure caller() {
   n := 4
 };
 
-procedure repeatedAssignTarget() {
+procedure repeatedAssignTarget()
+  opaque
+{
   var x: int;
   assign x, x, x := multipleReturns();
   assert x == 3

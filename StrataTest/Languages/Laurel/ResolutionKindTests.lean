@@ -38,6 +38,7 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
 
 def varAsType := r"
 procedure foo() opaque {
+  var x: int := 1;
   var y: x := 2
 //       ^ error: 'x' resolves to variable, but expected composite type, constrained type, datatype definition, type alias
 };
@@ -51,6 +52,7 @@ procedure foo() opaque {
 def procAsType := r"
 procedure bar() opaque { };
 procedure foo() opaque {
+  var y: bar := 1
 //       ^^^ error: 'bar' resolves to static procedure, but expected composite type, constrained type, datatype definition, type alias
 };
 "
@@ -63,6 +65,7 @@ procedure foo() opaque {
 def typeAsStaticCall := r"
 composite Foo { }
 procedure bar() opaque {
+  var x: int := Foo()
 //              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, constant
 };
 "

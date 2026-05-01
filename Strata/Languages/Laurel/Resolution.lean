@@ -144,22 +144,6 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .quantifierVar ..     => .quantifierVar
   | .unresolved _          => .unresolved
 
-/-- Return the constructor tag of a `ResolvedNode`. -/
-def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
-  | .var ..               => .var
-  | .parameter ..         => .parameter
-  | .staticProcedure ..   => .staticProcedure
-  | .instanceProcedure .. => .instanceProcedure
-  | .field ..             => .field
-  | .compositeType ..     => .compositeType
-  | .constrainedType ..   => .constrainedType
-  | .datatypeDefinition .. => .datatypeDefinition
-  | .datatypeConstructor .. => .datatypeConstructor
-  | .typeAlias ..         => .typeAlias
-  | .constant ..          => .constant
-  | .quantifierVar ..     => .quantifierVar
-  | .unresolved           => .unresolved
-
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
