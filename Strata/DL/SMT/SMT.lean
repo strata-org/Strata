@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.SMT.Encoder
 public import Strata.DL.SMT.Factory
+public import Strata.DL.SMT.FactoryCorrect
 public import Strata.DL.SMT.Function
 public import Strata.DL.SMT.Op
 public import Strata.DL.SMT.Solver

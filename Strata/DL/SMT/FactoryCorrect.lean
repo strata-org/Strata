@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.SMT.Denote
+import Strata.DL.SMT.DenotePred
 import Strata.DL.SMT.Factory
 
 /-!
