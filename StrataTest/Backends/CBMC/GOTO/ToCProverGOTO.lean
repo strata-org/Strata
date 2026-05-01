@@ -449,7 +449,7 @@ def ExampleLoopInvariant : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP
    .loop (.det
      (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      none
-     [(.const { underlying := (), type := mty[bool] } (.boolConst true))]  -- invariant: true
+     [("inv_true", .const { underlying := (), type := mty[bool] } (.boolConst true))]  -- invariant: true
      [.cmd (.set (Lambda.Identifier.mk "i" ()) (.det (addBV32LExpr
        (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32]))
        (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 1)))) {})]
@@ -492,7 +492,7 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
      -- measure: i
      (some (.fvar { underlying := (), type := mty[int] } (Lambda.Identifier.mk "i" ()) (some mty[int])))
      -- invariants: [true]
-     [(.const { underlying := (), type := mty[bool] } (.boolConst true))]
+     [("inv_true", .const { underlying := (), type := mty[bool] } (.boolConst true))]
      -- body: empty
      []
      {}]
