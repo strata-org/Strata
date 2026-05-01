@@ -557,6 +557,37 @@ def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited
 
 ---------------------------------------------------------------------
 
+/-! ## Datatype Info
+
+Collected metadata about datatype constructors, testers, and selectors.
+Shared by the Lambda evaluator and Core-to-Core transforms.
+-/
+
+/-- Collected datatype metadata for partial evaluation and simplification. -/
+structure DatatypeInfo where
+  /-- Tester name → the constructor it tests for -/
+  testerToConstr : Std.HashMap String String := {}
+  /-- Selector name (e.g. "Any..as_int!") → (constructor name, field index) -/
+  selectorInfo : Std.HashMap String (String × Nat) := {}
+  /-- Set of all constructor names -/
+  constrNames : Std.HashSet String := {}
+
+/-- Build DatatypeInfo from a list of datatypes (e.g. from a MutualDatatype block). -/
+def DatatypeInfo.ofDatatypes (dts : List (LDatatype IDMeta)) : DatatypeInfo :=
+  dts.foldl (init := {}) fun info dt =>
+    dt.constrs.foldl (init := info) fun info c =>
+      let cname := c.name.name
+      let selectors := (List.range c.args.length).foldl (init := info.selectorInfo) fun m i =>
+        match c.args[i]? with
+        | some (fieldId, _) => m.insert (unsafeDestructorFuncName dt fieldId) (cname, i)
+        | none => m
+      { info with
+        testerToConstr := info.testerToConstr.insert c.testerName cname
+        selectorInfo := selectors
+        constrNames := info.constrNames.insert cname }
+
+---------------------------------------------------------------------
+
 -- Type Factories
 
 /-- A TypeFactory stores datatypes grouped by mutual recursion. -/
