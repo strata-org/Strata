@@ -47,7 +47,7 @@ structure AbstractedPhase where
 def obligationHasLabelPrefix (obligation : ProofObligation Expression)
     (pfx : String) : Bool :=
   obligation.assumptions.any fun pc =>
-    pc.any fun (label, _) => label.startsWith pfx
+    pc.any fun entry => entry.name.startsWith pfx
 
 /-- A verification pipeline phase that pairs a program transformation with
     its model validation. This coupling ensures that adding a new transform

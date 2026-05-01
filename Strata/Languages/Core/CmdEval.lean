@@ -90,7 +90,7 @@ private def findUnique (xs : List String) (label : String) (counter : Nat) : Str
 
 private def generateUniqueLabel (pathConditions : PathConditions Expression)
     (baseLabel : String) : String :=
-  let labels := pathConditions.flatten.map (fun (label, _) => label)
+  let labels := pathConditions.flatten.map (fun e => e.name)
   if labels.contains baseLabel then
     let newLabel := findUnique labels baseLabel 1
     dbg_trace f!"⚠️ [addPathCondition] Label clash detected for \
@@ -102,10 +102,12 @@ private def generateUniqueLabel (pathConditions : PathConditions Expression)
 def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
   match p with
   | [] => E
-  | (label, e) :: prest =>
-    -- Generate a unique label if there's a clash.
-    let uniqueLabel := generateUniqueLabel E.pathConditions label
-    let new_path_conditions := E.pathConditions.insert uniqueLabel e
+  | entry :: prest =>
+    let uniqueLabel := generateUniqueLabel E.pathConditions entry.name
+    let entry' := match entry with
+      | .assumption _ e => .assumption uniqueLabel e
+      | other => other
+    let new_path_conditions := E.pathConditions.addEntry entry'
     let E := { E with pathConditions := new_path_conditions }
     addPathCondition E prest
 

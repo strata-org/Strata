@@ -14,50 +14,50 @@ open Lambda
 open Strata.SMT
 
 /--
-info: "(define-fun $__t.0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
+info: "(assert (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant Strata.SourceRange.none .all "n" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.quant Strata.SourceRange.none .exist "m" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
 
 /--
-info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (= i x)))\n"
+info: "; x\n(declare-const x Int)\n(assert (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none .exist "i" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none  .exist "i" (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0))
    (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none .exist "i" (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0))
    (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 /-- info: "Cannot encode expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none .exist "i" (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.none)) (.bvar Strata.SourceRange.none 0))
    (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
+info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none .exist "i" (.some .int)
    (mkTriggerExpr [[.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))]])
    (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
@@ -70,10 +70,10 @@ info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\
    }})
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none .all "m" (.some .int) (.bvar Strata.SourceRange.none 0) (.quant Strata.SourceRange.none .all "n" (.some .int) (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1))
    (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1)) (.fvar Strata.SourceRange.none "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
@@ -88,10 +88,10 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((m Int) (n Int)) (= (f n m) x)))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (= (f n m) x)))\n"
 -/
 #guard_msgs in -- No valid trigger
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant Strata.SourceRange.none .all "m" (.some .int) (.bvar Strata.SourceRange.none 0) (.quant Strata.SourceRange.none .all "n" (.some .int) (.bvar Strata.SourceRange.none 0)
    (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1)) (.fvar Strata.SourceRange.none "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
@@ -110,10 +110,10 @@ section ArrayTheory
 
 -- Test map select with Array theory enabled
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun $__t.1 () Int i)\n(define-fun $__t.2 () Int (select $__t.0 $__t.1))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n(assert (select m i))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
     (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
     (.fvar Strata.SourceRange.none "i" (.some .int)))
@@ -127,10 +127,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
 
 -- Test map update with Array theory enabled
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun $__t.1 () Int i)\n; v\n(declare-const v Int)\n(define-fun $__t.2 () Int v)\n(define-fun $__t.3 () (Array Int Int) (store $__t.0 $__t.1 $__t.2))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n(assert (store m i v))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
     (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
     (.fvar Strata.SourceRange.none "i" (.some .int)))
@@ -145,10 +145,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
 
 -- Test nested map operations with Array theory
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun $__t.1 () Int i)\n; v\n(declare-const v Int)\n(define-fun $__t.2 () Int v)\n(define-fun $__t.3 () (Array Int Int) (store $__t.0 $__t.1 $__t.2))\n; j\n(declare-const j Int)\n(define-fun $__t.4 () Int j)\n(define-fun $__t.5 () Int (select $__t.3 $__t.4))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n; j\n(declare-const j Int)\n(assert (select (store m i v) j))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
     (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
       (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
@@ -165,10 +165,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
 
 -- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int Int) m)\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(define-fun $__t.1 () Int (getFirst $__t.0))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(assert (getFirst m))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none (.op Strata.SourceRange.none (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
            (.fvar Strata.SourceRange.none (⟨"m", ()⟩) (.some (mapTy .int .int))))
   (useArrayTheory := true)
@@ -183,29 +183,29 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
    }})
 
 -- Test that all bound variables get globally unique generated names
-/-- info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
+/-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant Strata.SourceRange.none .all "" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.quant Strata.SourceRange.none .exist "" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
 
 -- Test nested quantifiers with same user name get disambiguated human-readable names
 /--
-info: "(define-fun $__t.0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
+info: "(assert (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.quant Strata.SourceRange.none .exist "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
 
 -- Test triply nested quantifiers all get distinct disambiguated human-readable names
 /--
-info: "(define-fun $__t.0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
+info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
     (.quant Strata.SourceRange.none .all "x@1" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
@@ -213,10 +213,10 @@ info: "(define-fun $__t.0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x
 
 
 /--
-info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n"
+info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
    (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
 
@@ -242,10 +242,10 @@ info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((x@1 Int)
 -- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
 -- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
 /--
-info: "; x\n(declare-const x String)\n(define-fun $__t.0 () String x)\n(define-fun $__t.1 () Bool (= $__t.0 \"{\"\"key\"\":\"\"val\"\"}\"))\n"
+info: "; x\n(declare-const x String)\n(assert (= x \"{\"\"key\"\":\"\"val\"\"}\"))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.eq Strata.SourceRange.none (.fvar Strata.SourceRange.none "x" (.some .string)) (.strConst Strata.SourceRange.none "{\"key\":\"val\"}"))
 
 -- Test that negative integer constants are lowered to (- N) form
@@ -255,10 +255,10 @@ info: "; x\n(declare-const x String)\n(define-fun $__t.0 () String x)\n(define-f
 
 -- Test that Real.Div encodes to `/` (real division) not `div` (integer division).
 /--
-info: "; x\n(declare-const x Real)\n(define-fun $__t.0 () Real x)\n; y\n(declare-const y Real)\n(define-fun $__t.1 () Real y)\n(define-fun $__t.2 () Real (|/| $__t.0 $__t.1))\n"
+info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x y))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none
     (.app Strata.SourceRange.none
       (.op Strata.SourceRange.none "Real.Div" (.some (.arrow .real (.arrow .real .real))))
@@ -373,18 +373,18 @@ info: (set-logic ALL)
 /-! ## SMT encoding of str.prefixof / str.suffixof -/
 
 /--
-info: "; s1\n(declare-const s1 String)\n(define-fun $__t.0 () String s1)\n; s2\n(declare-const s2 String)\n(define-fun $__t.1 () String s2)\n(define-fun $__t.2 () Bool (str.prefixof $__t.0 $__t.1))\n"
+info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.prefixof s1 s2))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none (.app Strata.SourceRange.none strPrefixOfOp (.fvar Strata.SourceRange.none "s1" (.some .string)))
     (.fvar Strata.SourceRange.none "s2" (.some .string)))
 
 /--
-info: "; s1\n(declare-const s1 String)\n(define-fun $__t.0 () String s1)\n; s2\n(declare-const s2 String)\n(define-fun $__t.1 () String s2)\n(define-fun $__t.2 () Bool (str.suffixof $__t.0 $__t.1))\n"
+info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.suffixof s1 s2))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app Strata.SourceRange.none (.app Strata.SourceRange.none strSuffixOfOp (.fvar Strata.SourceRange.none "s1" (.some .string)))
     (.fvar Strata.SourceRange.none "s2" (.some .string)))
 

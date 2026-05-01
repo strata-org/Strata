@@ -804,7 +804,7 @@ def pyAnalyzeToGotoCommand : Command where
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
     match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
-    | .error e => exitInternalError e
+    | .error e => exitInternalError (toString e)
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
       let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }

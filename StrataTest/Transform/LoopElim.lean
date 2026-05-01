@@ -19,13 +19,13 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with loop-elimination labels in path conditions. -/
 private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_loopElim", property := .assert,
-    assumptions := [[("assume_invariant_0_0", .true Strata.SourceRange.none), ("assume_guard_0", .true Strata.SourceRange.none)]],
+    assumptions := [[.assumption "assume_invariant_0_0" (.true Strata.SourceRange.none), .assumption "assume_guard_0" (.true Strata.SourceRange.none)]],
     obligation := .true Strata.SourceRange.none, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[("precond_x_positive", .true Strata.SourceRange.none)]],
+    assumptions := [[.assumption "precond_x_positive" (.true Strata.SourceRange.none)]],
     obligation := .true Strata.SourceRange.none, metadata := {} }
 
 -- loopElimPipelinePhase: rejects sat when obligation has loop-elim labels
