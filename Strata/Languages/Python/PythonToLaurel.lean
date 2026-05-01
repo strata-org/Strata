@@ -198,11 +198,11 @@ def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
 def mkVariableMd (v : Variable) : VariableMd :=
   { val := v, source := none }
 
-/-- Extract a Variable from a StmtExpr, if it is a Var. -/
+/-- Extract a Variable from a StmtExpr. Panics if the expression is not a Var. -/
 def stmtExprToVar (e : StmtExprMd) : VariableMd :=
   match e.val with
   | .Var v => { val := v, source := e.source }
-  | _ => { val := .Local "BUG_invalid_var", source := e.source }
+  | _ => panic! "stmtExprToVar: expected Var node"
 
 /-- Create a StmtExprMd with source location metadata. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (source : Option FileRange) : StmtExprMd :=

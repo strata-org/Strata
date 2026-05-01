@@ -84,6 +84,8 @@ where
   variableToArg : Variable → Arg
     | .Local name => laurelOp "identifier" #[ident name.text]
     | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
+    -- Declare is handled specially in the Assign [Declare _] case above (line 109).
+    -- This fallback drops the type; it should not be reached in normal operation.
     | .Declare param => laurelOp "identifier" #[ident param.name.text]
   stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]

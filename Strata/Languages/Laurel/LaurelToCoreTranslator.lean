@@ -380,6 +380,23 @@ def translateStmt (stmt : StmtExprMd)
         modify fun s => { s with coreProgramHasSuperfluousErrors := true }
         return []
       else
+      -- Partition targets into init statements for Declare targets and CoreIdent list for all targets.
+      -- Declare targets get `init nondet`; Local targets just contribute their identifier.
+      let initTargetsNondet : TranslateM (List Core.Statement × List Core.CoreIdent) := do
+        let mut inits : List Core.Statement := []
+        let mut lhs : List Core.CoreIdent := []
+        for target in targets do
+          match target.val with
+          | .Declare param =>
+            let coreType := LTy.forAll [] (← translateType param.type)
+            let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+            inits := inits ++ [Core.Statement.init ident coreType .nondet md]
+            lhs := lhs ++ [ident]
+          | .Local name =>
+            let ident : Core.CoreIdent := ⟨name.text, ()⟩
+            lhs := lhs ++ [ident]
+          | .Field _ _ => pure () -- already handled above
+        return (inits, lhs)
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
@@ -401,37 +418,13 @@ def translateStmt (stmt : StmtExprMd)
         else
           -- Procedure call: init Declare targets with nondet, then emit call
           let coreArgs ← args.mapM (fun a => translateExpr a)
-          let mut inits : List Core.Statement := []
-          let mut lhs : List Core.CoreIdent := []
-          for target in targets do
-            match target.val with
-            | .Declare param =>
-              let coreType := LTy.forAll [] (← translateType param.type)
-              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
-              inits := inits ++ [Core.Statement.init ident coreType .nondet md]
-              lhs := lhs ++ [ident]
-            | .Local name =>
-              let ident : Core.CoreIdent := ⟨name.text, ()⟩
-              lhs := lhs ++ [ident]
-            | .Field _ _ => pure () -- already handled above
+          let (inits, lhs) ← initTargetsNondet
           let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
           return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
       | .InstanceCall _target callee args =>
           -- Instance call: init Declare targets with nondet, then emit call
           let coreArgs ← args.mapM (fun a => translateExpr a)
-          let mut inits : List Core.Statement := []
-          let mut lhs : List Core.CoreIdent := []
-          for target in targets do
-            match target.val with
-            | .Declare param =>
-              let coreType := LTy.forAll [] (← translateType param.type)
-              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
-              inits := inits ++ [Core.Statement.init ident coreType .nondet md]
-              lhs := lhs ++ [ident]
-            | .Local name =>
-              let ident : Core.CoreIdent := ⟨name.text, ()⟩
-              lhs := lhs ++ [ident]
-            | .Field _ _ => pure () -- already handled above
+          let (inits, lhs) ← initTargetsNondet
           let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
           return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
       | .Hole _ _ =>

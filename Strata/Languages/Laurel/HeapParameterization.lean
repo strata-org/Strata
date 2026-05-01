@@ -362,12 +362,14 @@ where
         else processedTargets
       let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source ⟩
 
-      let declareToLocal(var: Variable): Variable := match var with
+      -- Convert a Declare variable to a Local reference (stripping the type).
+      -- Non-Declare variables pass through unchanged.
+      let variableAsRef(var: Variable): Variable := match var with
         | .Declare param => Variable.Local param.name
         | x => x
 
       let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
-        then updateStatements ++ [⟨ StmtExpr.Var $ declareToLocal $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
+        then updateStatements ++ [⟨ StmtExpr.Var $ variableAsRef $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
         else updateStatements
 
       if suffixes.length > 0 then

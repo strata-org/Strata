@@ -278,7 +278,9 @@ inductive StmtExpr : Type where
   | LiteralString (value : String)
   /-- A decimal literal. -/
   | LiteralDecimal (value : Decimal)
-  /-- A variable reference. -/
+  /-- A variable reference or declaration. When `var` is `Variable.Local`, this is a reference
+      that evaluates to the variable's value. When `var` is `Variable.Declare`, this is a
+      declaration without an initializer (used as a standalone statement in a block). -/
   | Var (var : Variable)
   /-- Assignment to one or more targets. Multiple targets are only supported with identifier targets and a call as the RHS. -/
   | Assign (targets : List (AstNode Variable)) (value : AstNode StmtExpr)
