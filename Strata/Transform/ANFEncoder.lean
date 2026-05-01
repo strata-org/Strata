@@ -66,45 +66,6 @@ where
     | .app _ fn arg => collectAppArgs fn ++ collectSubexprs arg
     | _ => []
 
-/-- Hash an optional type annotation. -/
-private def hashOptType (ty : Option LMonoTy) : UInt64 :=
-  match ty with
-  | none => 0
-  | some t => hash t
-
----------------------------------------------------------------------
--- Per-constructor hash combiners (single source of truth)
----------------------------------------------------------------------
-
-private def hashConst (c : LConst) : UInt64 := mixHash 1 (hash c)
-private def hashBVar (i : Nat) : UInt64 := mixHash 2 (hash i)
-private def hashFVar (n : CoreIdent) (ty : Option LMonoTy) : UInt64 :=
-  mixHash 3 (mixHash (hash n.name) (hashOptType ty))
-private def hashOp (o : CoreIdent) (ty : Option LMonoTy) : UInt64 :=
-  mixHash 4 (mixHash (hash o.name) (hashOptType ty))
-private def hashApp (hFn hArg : UInt64) : UInt64 := mixHash 5 (mixHash hFn hArg)
-private def hashIte (hC hT hF : UInt64) : UInt64 := mixHash 6 (mixHash hC (mixHash hT hF))
-private def hashEq (h1 h2 : UInt64) : UInt64 := mixHash 7 (mixHash h1 h2)
-private def hashAbs (name : String) (ty : Option LMonoTy) (hBody : UInt64) : UInt64 :=
-  mixHash 8 (mixHash (hash name) (mixHash (hashOptType ty) hBody))
-private def hashQuant (k : QuantifierKind) (name : String) (ty : Option LMonoTy)
-    (hTr hBody : UInt64) : UInt64 :=
-  let kh : UInt64 := match k with | .all => 0 | .exist => 1
-  mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashOptType ty) (mixHash hTr hBody))))
-
-/-- Hash an expression structurally, including type annotations but ignoring
-    metadata, for use in HashMap-based ANF encoding. -/
-private def hashExpr : Expression.Expr → UInt64
-  | .const _ c => hashConst c
-  | .bvar _ i => hashBVar i
-  | .fvar _ n ty => hashFVar n ty
-  | .op _ o ty => hashOp o ty
-  | .app _ fn arg => hashApp (hashExpr fn) (hashExpr arg)
-  | .ite _ c t f => hashIte (hashExpr c) (hashExpr t) (hashExpr f)
-  | .eq _ e1 e2 => hashEq (hashExpr e1) (hashExpr e2)
-  | .abs _ name ty body => hashAbs name ty (hashExpr body)
-  | .quant _ k name ty tr body => hashQuant k name ty (hashExpr tr) (hashExpr body)
-
 /-- Wrapper for using expressions as HashMap keys with metadata-ignoring comparison. -/
 private structure ExprKey where
   expr : Expression.Expr
@@ -113,7 +74,7 @@ private instance : BEq ExprKey where
   beq a b := a.expr == b.expr
 
 private instance : Hashable ExprKey where
-  hash k := hashExpr k.expr
+  hash k := LExpr.hashExpr k.expr
 
 /-- Find expressions that appear more than once in a list, using metadata-ignoring
     comparison via `ExprKey`. -/
@@ -130,30 +91,32 @@ where
   /-- Bottom-up traversal returning (hash, replaced expression). -/
   go (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match e with
-    | .const _ c => (hashConst c, e)
-    | .bvar _ i => (hashBVar i, e)
-    | .fvar _ n ty => (hashFVar n ty, e)
-    | .op _ o ty => (hashOp o ty, e)
+    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => (LExpr.hashExpr e, e)
     | .app m fn arg =>
-      let (hFn, fn') := go fn
-      let (hArg, arg') := go arg
-      check (hashApp hFn hArg) (.app m fn' arg')
+      let (_, fn') := go fn
+      let (_, arg') := go arg
+      let e' : Expression.Expr := .app m fn' arg'
+      check (LExpr.hashExpr e') e'
     | .ite m c t f =>
-      let (hC, c') := go c
-      let (hT, t') := go t
-      let (hF, f') := go f
-      check (hashIte hC hT hF) (.ite m c' t' f')
+      let (_, c') := go c
+      let (_, t') := go t
+      let (_, f') := go f
+      let e' : Expression.Expr := .ite m c' t' f'
+      check (LExpr.hashExpr e') e'
     | .eq m e1 e2 =>
-      let (h1, e1') := go e1
-      let (h2, e2') := go e2
-      check (hashEq h1 h2) (.eq m e1' e2')
+      let (_, e1') := go e1
+      let (_, e2') := go e2
+      let e' : Expression.Expr := .eq m e1' e2'
+      check (LExpr.hashExpr e') e'
     | .abs m name ty body =>
-      let (hB, body') := go body
-      check (hashAbs name ty hB) (.abs m name ty body')
+      let (_, body') := go body
+      let e' : Expression.Expr := .abs m name ty body'
+      check (LExpr.hashExpr e') e'
     | .quant m k name ty tr body =>
-      let (hTr, tr') := go tr
-      let (hB, body') := go body
-      check (hashQuant k name ty hTr hB) (.quant m k name ty tr' body')
+      let (_, tr') := go tr
+      let (_, body') := go body
+      let e' : Expression.Expr := .quant m k name ty tr' body'
+      check (LExpr.hashExpr e') e'
   /-- Check if the hash matches a replacement target. -/
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
@@ -164,11 +127,11 @@ where
 /-- Collect all subexpression hashes from an expression,
     excluding the expression itself. -/
 private def collectSubexprHashes (e : Expression.Expr) : Std.HashSet UInt64 :=
-  let topHash := hashExpr e
+  let topHash := LExpr.hashExpr e
   go e |>.erase topHash
 where
   go (e : Expression.Expr) : Std.HashSet UInt64 :=
-    let h := hashExpr e
+    let h := LExpr.hashExpr e
     match e with
     | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => ({} : Std.HashSet UInt64).insert h
     | .app _ fn arg => (go fn |>.union (go arg)).insert h
@@ -185,7 +148,7 @@ private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr
     acc.union (collectSubexprHashes e)
   ) {}
   -- Keep only expressions whose hash is NOT a subexpression of another target
-  exprs.filter (fun e => !subHashes.contains (hashExpr e))
+  exprs.filter (fun e => !subHashes.contains (LExpr.hashExpr e))
 
 /-- Shared pipeline: collect subexpressions, filter, find duplicates, remove
     subsumed, and sort by size (largest first). -/
@@ -217,7 +180,7 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
       | some mty => LTy.forAll [] mty
       | none => LTy.forAll ["α"] (.ftvar "α")
     let varDecl := Statement.init freshName ty (.det dup) .empty
-    let h := hashExpr dup
+    let h := LExpr.hashExpr dup
     (varDecl :: decls, repMap.insert h (dup, freshVar), idx + 1)
   ) ([], ({} : Std.HashMap UInt64 (Expression.Expr × Expression.Expr)), startIdx)
   -- Single pass: replace all targets at once
