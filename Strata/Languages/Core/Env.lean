@@ -45,9 +45,20 @@ instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) w
 instance : Inhabited ExpressionMetadata :=
   show Inhabited ExprSourceLoc from inferInstance
 
--- When combining provenance during evaluation, no single source location applies
+-- When combining provenance during evaluation, prefer the Original expression's
+-- source location so that inlined expressions retain their origin.
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
-  combine _ := ExprSourceLoc.none
+  combine reasons :=
+    let findLoc (prov : Lambda.LExpr.EvalProvenance) : Option ExprSourceLoc :=
+      reasons.find? (fun p => match p.1, prov with
+        | .Original, .Original | .ReplacementVar, .ReplacementVar
+        | .Abstraction, .Abstraction => true
+        | _, _ => false) |>.map (·.2)
+    let firstNonNone := [.Original, .ReplacementVar, .Abstraction] |>.findSome? fun prov =>
+      match findLoc prov with
+      | some loc => if loc.isNone then none else some loc
+      | none => none
+    firstNonNone.getD ExprSourceLoc.none
 
 instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
   show Inhabited (Lambda.LExpr ⟨⟨ExprSourceLoc, CoreIdent⟩, LMonoTy⟩) from inferInstance
