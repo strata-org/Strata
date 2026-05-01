@@ -157,6 +157,30 @@ procedure datatypeField()
 //   assert d#intValue == 1;
 //   assert x == 4;
 // }
+
+procedure modifyHeapAndReturnMultiple(c: Container) returns (x: int, y: int, z: int)
+  opaque
+  ensures x == 1 && y == 2 && z == 3
+  modifies c
+;
+
+procedure heapModifyingMultipleReturnCaller() {
+  var c: Container := new Container;
+  var y: int;
+  assign var x: int, y, var z: int := modifyHeapAndReturnMultiple(c);
+  assert x == 1;
+  assert y == 2;
+  assert z == 3
+};
+
+procedure fieldAssignsFromHeapModifyingMultipleReturnCaller() {
+  var c: Container := new Container;
+  var y: int;
+  assign c#intValue, y, var z: int := modifyHeapAndReturnMultiple(c);
+  assert c#intValue == 1;
+  assert y == 2;
+  assert z == 3
+};
 "#
 
 #guard_msgs(drop info, error) in

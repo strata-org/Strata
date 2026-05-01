@@ -62,13 +62,11 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some eelse => collectStaticCallNames eelse
       | none => []
   | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s)
-  | .Assign targets v =>
-      targets.flatMap (fun t => collectStaticCallNames t) ++
+  | .Assign _targets v =>
+      -- Targets are Variables; Field targets can contain StmtExpr children,
+      -- but field-target assigns are eliminated before this pass runs,
+      -- so we only need to collect from the value.
       collectStaticCallNames v
-  | .LocalVariable _ _ initOption =>
-      match initOption with
-      | some init => collectStaticCallNames init
-      | none => []
   | .Return v =>
       match v with
       | some x => collectStaticCallNames x
@@ -85,7 +83,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       | some t => collectStaticCallNames t
       | none => []) ++
       collectStaticCallNames body
-  | .FieldSelect t _ => collectStaticCallNames t
+  | .Var (.Field t _) => collectStaticCallNames t
   | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
@@ -98,7 +96,11 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .Assigned v => collectStaticCallNames v
   | _ => []
 termination_by sizeOf expr
-decreasing_by all_goals (have := AstNode.sizeOf_val_lt ‹_›; term_by_mem)
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try term_by_mem)
+  all_goals omega
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC

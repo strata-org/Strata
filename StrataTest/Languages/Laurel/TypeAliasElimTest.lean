@@ -49,7 +49,7 @@ private def chainedProgram : Program :=
       mkProc "test"
         [{ name := mkId "x", type := mkTy (.UserDefined (mkId "B")) }]
         [{ name := mkId "r", type := mkTy (.UserDefined (mkId "A")) }]
-        (.Transparent ⟨.Return (some ⟨.Identifier (mkId "x"), none⟩), none⟩)
+        (.Transparent ⟨.Return (some ⟨.Var (.Local (mkId "x")), none⟩), none⟩)
     ]
     staticFields := []
     types := [
@@ -111,7 +111,7 @@ private def procSigProgram : Program :=
         [{ name := mkId "a", type := mkTy (.UserDefined (mkId "MyInt")) },
          { name := mkId "b", type := mkTy (.UserDefined (mkId "MyBool")) }]
         [{ name := mkId "r", type := mkTy (.UserDefined (mkId "MyInt")) }]
-        (.Transparent ⟨.Return (some ⟨.Identifier (mkId "a"), none⟩), none⟩)
+        (.Transparent ⟨.Return (some ⟨.Var (.Local (mkId "a")), none⟩), none⟩)
     ]
     staticFields := []
     types := [

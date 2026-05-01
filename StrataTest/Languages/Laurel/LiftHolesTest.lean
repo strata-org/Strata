@@ -53,7 +53,7 @@ procedure test()
 procedure test() { var x: int := 1 + <?> };
 "
 
--- Bare Hole as LocalVariable initializer → replaced with call (no longer preserved as havoc).
+-- Bare Hole as Assign Declare initializer → replaced with call (no longer preserved as havoc).
 /--
 info: function $hole_0()
   returns ($result: int)

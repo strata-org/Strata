@@ -1,6 +1,6 @@
 test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_19
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
-test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_21
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_14
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name should return mystore
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_str

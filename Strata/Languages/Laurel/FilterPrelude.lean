@@ -78,7 +78,7 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .Pure base => collectHighTypeNames base
   | .Intersection types => types.forM collectHighTypeNames
   | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString | .THeap
-  | .TBv _ | .Unknown => pure ()
+  | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
 
 /-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree. -/
 private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
@@ -92,16 +92,19 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames cond; collectExprNames thenB
     elseB.forM collectExprNames
   | .Block stmts _ => stmts.forM collectExprNames
-  | .LocalVariable _ ty init =>
-    collectHighTypeNames ty
-    init.forM collectExprNames
   | .While cond invs dec body =>
     collectExprNames cond; invs.forM collectExprNames
     dec.forM collectExprNames
     collectExprNames body
   | .Assign targets value =>
-    collectExprNames value; targets.forM collectExprNames
-  | .FieldSelect target _ => collectExprNames target
+    collectExprNames value
+    for ⟨t, _⟩ in targets.attach do
+      match t.val with
+      | .Field target _ => collectExprNames target
+      | .Local _ => pure ()
+      | .Declare param => collectHighTypeNames param.type
+  | .Var (.Field target _) => collectExprNames target
+  | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
   | .PrimitiveOp _ args => args.forM collectExprNames
@@ -120,7 +123,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
   | .Hole _ ty => ty.forM collectHighTypeNames
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Identifier _ | .This | .Abstract | .All => pure ()
+  | .Var (.Local _) | .This | .Abstract | .All => pure ()
 
 /-- Collect names from a procedure body. -/
 private def collectBodyNames (body : Body) : CollectM Unit := do
@@ -177,7 +180,7 @@ private partial def collectInvokeOnTargets (expr : StmtExprMd)
   | .StaticCall callee args =>
     let rest ← args.flatMapM collectInvokeOnTargets
     return callee.text :: rest
-  | .Identifier _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ => return []
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"

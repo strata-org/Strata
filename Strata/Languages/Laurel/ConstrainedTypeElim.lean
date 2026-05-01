@@ -55,7 +55,7 @@ def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
     (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Identifier varName, src⟩], src⟩
+      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Var (.Local varName), src⟩], src⟩
     else none
   | _ => none
 
@@ -68,7 +68,7 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
       if ptMap.contains parent.text then
         let paramId := { ct.valueName with uniqueId := none }
         let paramRef : StmtExprMd :=
-          { val := .Identifier paramId, source := none }
+          { val := .Var (.Local paramId), source := none }
         let parentCall : StmtExprMd :=
           { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := none }
         { val := .PrimitiveOp .And [ct.constraint, parentCall], source := none }
@@ -86,14 +86,21 @@ private def wrap (stmts : List StmtExprMd) (src : Option FileRange)
     : StmtExprMd :=
   match stmts with | [s] => s | ss => ⟨.Block ss none, src⟩
 
+def resolveVariable (ptMap : ConstrainedTypeMap) (v : VariableMd) : VariableMd :=
+  match v.val with
+  | .Declare param => ⟨.Declare { param with type := resolveType ptMap param.type }, v.source⟩
+  | _ => v
+
 /-- Resolve constrained types in type positions and inject constraint calls into quantifier bodies.
     Recursion into StmtExprMd children is handled by `mapStmtExpr`. -/
 def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprMd :=
   let source := expr.source
 
   match expr.val with
-  | .LocalVariable n ty init =>
-    ⟨.LocalVariable n (resolveType ptMap ty) init, source⟩
+  | .Assign targets value =>
+    ⟨.Assign (targets.map (resolveVariable ptMap)) value, source⟩
+  | .Var (.Declare param) =>
+    ⟨.Var (.Declare { param with type := resolveType ptMap param.type }), source⟩
   | .Quantifier mode param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
@@ -122,25 +129,31 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   let source := stmt.source
 
   match _h : stmt.val with
-  | .LocalVariable name ty init =>
-    let callOpt := constraintCallFor ptMap ty.val name (src := source)
-    if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
-    let (init', check) : Option StmtExprMd × List StmtExprMd := match init with
-      | none => match callOpt with
-        | some c => (none, [⟨.Assume c, source⟩])
-        | none => (none, [])
-      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert { condition := c }, source⟩)
-    pure ([⟨.LocalVariable name ty init', source⟩] ++ check)
+  | .Var (.Declare param) =>
+    let callOpt := constraintCallFor ptMap param.type.val param.name (src := source)
+    if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
+    let check := match callOpt with
+      | some c => [⟨.Assume c, source⟩]
+      | none => []
+    pure ([stmt] ++ check)
 
-  | .Assign [target] _ => match target.val with
-    | .Identifier name => do
-      match (← get).get? name.text with
-      | some ty =>
-        let assert := (constraintCallFor ptMap ty name (src := source)).toList.map
-          fun c => ⟨.Assert { condition := c }, source⟩
-        pure ([stmt] ++ assert)
-      | none => pure [stmt]
-    | _ => pure [stmt]
+  | .Assign targets _value =>
+    -- Handle Declare targets for constrained type elimination
+    let declareChecks ← targets.foldlM (init := ([] : List StmtExprMd)) fun acc target =>
+      match target.val with
+      | .Declare param => do
+        let callOpt := constraintCallFor ptMap param.type.val param.name (src := source)
+        if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
+        pure (acc ++ callOpt.toList.map fun c => ⟨.Assert { condition := c }, source⟩)
+      | .Local name => do
+        match (← get).get? name.text with
+        | some ty =>
+          let assert := (constraintCallFor ptMap ty name (src := source)).toList.map
+            fun c => ⟨.Assert { condition := c }, source⟩
+          pure (acc ++ assert)
+        | none => pure acc
+      | _ => pure acc
+    pure ([stmt] ++ declareChecks)
 
   | .Block stmts sep =>
     let stmtss ← inScope (stmts.mapM (elimStmt ptMap))
@@ -205,7 +218,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
 
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src⟩
+    ⟨.Assign [⟨.Declare ⟨witnessId, resolveType ptMap ct.base⟩, src⟩] ct.witness, src⟩
   let assert : StmtExprMd :=
     ⟨.Assert { condition := (constraintCallFor ptMap (.UserDefined ct.name) witnessId (src := src)).get! }, src⟩
   { name := mkId s!"$witness_{ct.name.text}"
