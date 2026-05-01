@@ -118,4 +118,4 @@ Axioms are emitted as universally quantified SMT assertions.
 
 # GOTO Analysis
 
-TODO: Document the GOTO analysis pipeline.
+Documentation forthcoming.

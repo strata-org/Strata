@@ -195,12 +195,11 @@ This relation depends on two contexts:
    {name TypeFactory}`TypeFactory` type. Built-in functions optionally include
    concrete evaluation functions, which can be used in the semantics described
    below.
-
-{docstring Lambda.LContext}
-
 2. {name Lambda.TContext}`TContext`: data that changes throughout the type
    checking process — a map from free variables in expressions to types, and a
    list of type aliases including the name and definition of each alias.
+
+{docstring Lambda.LContext}
 
 {docstring Lambda.TContext}
 
