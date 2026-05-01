@@ -1,5 +1,7 @@
 test_class_field_use.py(14, 4): ✔️ always true if reached - Check PMul exception
 test_class_field_use.py(14, 4): ✔️ always true if reached - assert(302)
 test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+test_class_field_use.py(12, 0): ✔️ always true if reached - postcondition_1
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -6,5 +6,7 @@ test_havoc_callee_after_hole_call.py(25, 0): ✔️ always true if reached - com
 test_havoc_callee_after_hole_call.py(30, 0): ❓ unknown - expected unknown because argument locals should be havocked
 test_havoc_callee_after_hole_call.py(36, 0): ❓ unknown - assume_assume(1193)_calls_PIn_0
 test_havoc_callee_after_hole_call.py(37, 4): ✔️ always true if reached - for-loop over unmodeled iterator should not crash
-DETAIL: 4 passed, 0 failed, 4 inconclusive
+unknown location: ✔️ always true if reached - Heap reference counter monotone
+unknown location: ✔️ always true if reached - postcondition_1
+DETAIL: 6 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

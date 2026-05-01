@@ -1,3 +1,7 @@
+unknown location: ✅ pass - Heap reference counter monotone
+test_composite_return.py(6, 4): ❓ unknown - postcondition_1
 test_composite_return.py(10, 4): ✅ pass - (MyService@__init__ requires) Type constraint of name
-DETAIL: 1 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+unknown location: ✅ pass - Heap reference counter monotone
+test_composite_return.py(9, 0): ✅ pass - postcondition_1
+DETAIL: 4 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

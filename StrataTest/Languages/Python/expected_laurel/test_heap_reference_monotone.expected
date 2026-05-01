@@ -1,0 +1,9 @@
+unknown location: ✅ pass - Heap reference counter monotone
+test_heap_reference_monotone.py(2, 4): ❓ unknown - postcondition_1
+test_heap_reference_monotone.py(5, 0): ✅ pass - (ClassA@__init__ requires) Type constraint of n
+test_heap_reference_monotone.py(6, 0): ✅ pass - (ClassA@__init__ requires) Type constraint of n
+test_heap_reference_monotone.py(11, 0): ✅ pass - assert(128)
+unknown location: ✅ pass - Heap reference counter monotone
+unknown location: ✅ pass - postcondition_1
+DETAIL: 6 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

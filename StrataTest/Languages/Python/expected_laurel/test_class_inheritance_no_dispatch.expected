@@ -1,3 +1,5 @@
 test_class_inheritance_no_dispatch.py(25, 4): ❓ unknown - assert(714)
-DETAIL: 0 passed, 0 failed, 1 inconclusive
+unknown location: ✅ pass - Heap reference counter monotone
+unknown location: ✅ pass - postcondition_1
+DETAIL: 2 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

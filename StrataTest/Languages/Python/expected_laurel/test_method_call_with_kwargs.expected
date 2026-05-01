@@ -5,5 +5,7 @@ test_method_call_with_kwargs.py(8, 0): ✅ pass - (MyClass@__init__ requires) Ty
 test_method_call_with_kwargs.py(9, 0): ✅ pass - (MyClass@some_method requires) Type constraint of ip1
 test_method_call_with_kwargs.py(9, 0): ✅ pass - (MyClass@some_method requires) Type constraint of ip2
 test_method_call_with_kwargs.py(9, 0): ✅ pass - (MyClass@some_method requires) Type constraint of ip3
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+unknown location: ✅ pass - Heap reference counter monotone
+unknown location: ✅ pass - postcondition_1
+DETAIL: 9 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
