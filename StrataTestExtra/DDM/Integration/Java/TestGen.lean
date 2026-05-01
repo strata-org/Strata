@@ -185,13 +185,15 @@ elab "#testCompile" : command => do
     IO.FS.writeFile path content
     filePaths := filePaths.push path.toString
 
-    let result ← IO.Process.output {
-      cmd := "javac"
-      args := #["-cp", jarPath] ++ filePaths
-    }
+  let result ← IO.Process.output {
+    cmd := "javac"
+    args := #["-cp", s!"{jarPath}:{dir}"] ++ filePaths
+  }
 
-    if result.exitCode != 0 then
-      Lean.throwError s!"javac failed:\n{result.stderr}"
+  if result.exitCode != 0 then
+    Lean.throwError s!"javac failed:\n{result.stderr}"
+
+  IO.FS.removeDirAll dir
 
 #testCompile
 
