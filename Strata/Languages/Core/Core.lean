@@ -150,6 +150,9 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   let postEvalEnv ← match pEs with
     | [e] => pure e
     | _ => throw (DiagnosticModel.fromMessage s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
+  -- The procedure name is only used for the obligation procedure header;
+  -- downstream phases (ObligationExtraction) walk the body and ignore it.
+  -- We pick the first procedure name as a representative label.
   let procName := program.decls.findSome? fun
     | .proc p _ => some p.header.name | _ => none
   let blocks := postEvalEnv.deferred.toList.map fun ob =>
