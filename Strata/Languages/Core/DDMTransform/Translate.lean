@@ -687,10 +687,9 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.re_none      => return Core.reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
-/-- Convert a DDM `SourceRange` to an `ExprSourceLoc` using the file name from the translation context. -/
-private def exprLoc (sr : SourceRange) : TransM ExprSourceLoc := do
-  let uri : Uri := .file (← StateT.get).inputCtx.fileName
-  return ExprSourceLoc.ofUriRange uri sr
+/-- Build the URI for the current translation unit. -/
+private def getUri : TransM Uri := do
+  return .file (← StateT.get).inputCtx.fileName
 
 mutual
 
@@ -703,7 +702,7 @@ def withScopedBindings
   TransM (ListMap Core.Expression.Ident Core.Expression.Ty × TransBindings × Core.Expression.Expr) := do
     let xsArray ← translateDeclList bindings xsa
     let n := xsArray.size
-    let m ← exprLoc xsa.ann
+    let m := ExprSourceLoc.ofUriRange (← getUri) xsa.ann
     let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar m (n - 1 - i)))
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
@@ -716,7 +715,7 @@ def translateLambda
   (bindings : TransBindings) (xsa : Arg) (bodya : Arg) :
   TransM Core.Expression.Expr := do
     let (xsArray, _, b) ← withScopedBindings p bindings xsa bodya
-    let m ← exprLoc xsa.ann
+    let m := ExprSourceLoc.ofUriRange (← getUri) xsa.ann
     let buildLambda := fun (name, ty) e =>
       match ty with
       | .forAll [] mty =>
@@ -731,7 +730,7 @@ def translateQuantifier
   (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
   TransM Core.Expression.Expr := do
     let (xsArray, xbindings, b) ← withScopedBindings p bindings xsa bodya
-    let m ← exprLoc xsa.ann
+    let m := ExprSourceLoc.ofUriRange (← getUri) xsa.ann
 
     -- Handle triggers if present
     let triggers ← match triggersa with
@@ -757,7 +756,7 @@ def translateTriggerGroup (p: Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .op op := arg
     | TransM.error s!"translateTriggerGroup expected op, got {repr arg}"
-  let m ← exprLoc op.ann
+  let m := ExprSourceLoc.ofUriRange (← getUri) op.ann
   match op.name, op.args with
   | q`Core.trigger, #[tsa] => do
    let ts  ← translateCommaSep (fun t => translateExpr p bindings t) tsa
@@ -769,7 +768,7 @@ def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .op op := arg
     | TransM.error s!"translateTriggers expected op, got: {repr arg}"
-  let m ← exprLoc op.ann
+  let m := ExprSourceLoc.ofUriRange (← getUri) op.ann
   match op.name, op.args with
   | q`Core.triggersAtom, #[group] =>
     let g ← translateTriggerGroup p bindings group
@@ -794,7 +793,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
-  let uri : Uri := .file (← StateT.get).inputCtx.fileName
+  let uri ← getUri
   let loc (sr : SourceRange) : ExprSourceLoc := ExprSourceLoc.ofUriRange uri sr
   let (op, args) := expr.flatten
   match op, args with
@@ -1255,7 +1254,7 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
       let args ← checkOpArg specElt q`Core.requires_spec 3
       let _l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
       let e ← translateExpr p bindings args[2]!
-      return (acc ++ [⟨e, op.ann⟩], count + 1)
+      return (acc ++ [⟨e, ExprSourceLoc.ofUriRange (← getUri) op.ann⟩], count + 1)
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 

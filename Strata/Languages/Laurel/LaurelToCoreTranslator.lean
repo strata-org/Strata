@@ -628,11 +628,15 @@ where
     match params with
     | [] => return body
     | [p] =>
-      let sr := p.name.source.map (·.range) |>.getD ExprSourceLoc.none
+      let sr := match p.name.source with
+        | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
+        | none => ExprSourceLoc.none
       return LExpr.allTr sr p.name.text (some (← translateType p.type)) trigger body
     | p :: rest => do
       let inner ← buildQuants rest body trigger
-      let sr := p.name.source.map (·.range) |>.getD ExprSourceLoc.none
+      let sr := match p.name.source with
+        | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
+        | none => ExprSourceLoc.none
       return LExpr.all sr p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
