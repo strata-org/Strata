@@ -24,7 +24,7 @@ This document describes the transforms and analyses available for Strata Core
 programs. Transforms are program-to-program rewrites that are independent of any
 specific analysis. Analyses consume a (possibly transformed) Core program and
 produce verification results. For the language definition itself, see the
-[Strata Core Language Definition](https://github.com/strata-org/Strata/tree/main/docs/verso/LangDefDoc.lean).
+[Strata Core Language Definition](../langdef/html-single/).
 
 # Program Transforms
 
@@ -115,7 +115,3 @@ generates an axiom representing the corresponding rewrite rule (e.g.,
 ## Axiom Encoding
 
 Axioms are emitted as universally quantified SMT assertions.
-
-# GOTO Analysis
-
-Documentation forthcoming.
