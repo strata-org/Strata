@@ -96,14 +96,17 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/
   getEnv : CfgT → Env P
+  /-- Store well-formedness: the store has all variables the statement may touch. -/
+  storeWF : StmtT → Env P → Prop
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
 abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
-    (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
+    (isAtAssert : Config P CmdT → AssertId P → Prop)
+    (storeWF : Stmt P CmdT → Env P → Prop := fun _ _ => True) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
-   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
+   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, storeWF⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
@@ -590,6 +593,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
     ∀ (ρ₀ : Env P),
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
+      L₁.storeWF st ρ₀ →
       -- Terminal/exiting envs are a subset.
       (∀ (ρ' : Env P),
         (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
@@ -600,6 +604,9 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
       ∧
       -- Fail preservation.
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
+      ∧
+      -- Store WF preservation.
+      L₂.storeWF st' ρ₀
 
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
@@ -609,33 +616,36 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
     (hsem : Overapproximates L₁ L₂ T)
     {Pre Post : Env P → Prop}
     (htriple : Hoare.Triple L₂ Pre s' Post)
-    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval) :
+    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval)
+    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.storeWF st ρ₀) :
     Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  exact htriple ρ₀ ρ' hpre hwfb hf₀ ((hsem st s' ht ρ₀ hwfb (hwfv ρ₀ hpre)).1 ρ' |>.1 hstar)
+  have hr := hsem st s' ht ρ₀ hwfb (hwfv ρ₀ hpre) (hswf ρ₀ hpre)
+  exact htriple ρ₀ ρ' hpre hwfb hf₀ (hr.1 ρ' |>.1 hstar)
 
 theorem overapproximates_id (L₁ : Lang P) :
     Overapproximates L₁ L₁ some := by
-  intro st s' ht ρ₀ _ _
+  intro st s' ht ρ₀ _ _ hswf
   simp at ht; subst ht
-  exact ⟨fun _ => ⟨id, fun _ => id⟩, id⟩
+  exact ⟨fun _ => ⟨id, fun _ => id⟩, id, hswf⟩
 
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Overapproximates L₁ L₂ T₁)
     (h₂ : Overapproximates L₂ L₃ T₂) :
     Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ hwfb hwfv
+  intro st s'' ht ρ₀ hwfb hwfv hswf
   simp [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
-    have hr₁ := h₁ st s' h ρ₀ hwfb hwfv
-    have hr₂ := h₂ s' s'' ht ρ₀ hwfb hwfv
-    refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_⟩
+    have hr₁ := h₁ st s' h ρ₀ hwfb hwfv hswf
+    have hr₂ := h₂ s' s'' ht ρ₀ hwfb hwfv hr₁.2.2
+    refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, ?_⟩
     · intro hstar; exact (hr₂.1 ρ').1 ((hr₁.1 ρ').1 hstar)
     · intro lbl hstar; exact (hr₂.1 ρ').2 lbl ((hr₁.1 ρ').2 lbl hstar)
-    · intro hfail; exact hr₂.2 (hr₁.2 hfail)
+    · intro hfail; exact hr₂.2.1 (hr₁.2.1 hfail)
+    · exact hr₂.2.2
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
 /-! ## Aggressive overapproximation
@@ -654,6 +664,7 @@ public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT →
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
       WellFormedSemanticEvalVar ρ₀.eval →
+      L₁.storeWF st ρ₀ →
       -- Terminal case
       (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
         CanFail L₂ st' ρ₀ ∨
@@ -668,15 +679,18 @@ public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT →
       ∧
       -- Fail preservation, but does not exactly track the counterexample.
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
+      ∧
+      -- Store WF preservation.
+      L₂.storeWF st' ρ₀
 
 /-- `Overapproximates` implies `OverapproximatesAggressively`. -/
 theorem Overapproximates.toAggressive (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (h : Overapproximates L₁ L₂ T) :
     OverapproximatesAggressively L₁ L₂ T := by
-  intro st s' ht ρ₀ hwfb hwfv _hwfvar
-  have hr := h st s' ht ρ₀ hwfb hwfv
-  refine ⟨?_, ?_, hr.2⟩
+  intro st s' ht ρ₀ hwfb hwfv _hwfvar hswf
+  have hr := h st s' ht ρ₀ hwfb hwfv hswf
+  refine ⟨?_, ?_, hr.2.1, hr.2.2⟩
   · intro ρ' hstar
     exact .inr (fun _ => (hr.1 ρ').1 hstar)
   · intro lbl ρ' hstar
@@ -684,9 +698,9 @@ theorem Overapproximates.toAggressive (L₁ L₂ : Lang P)
 
 theorem OverapproximatesAggressively_id (L₁ : Lang P) :
     OverapproximatesAggressively L₁ L₁ some := by
-  intro st st' ht ρ₀ hwfb hwfv _hwfvar
+  intro st st' ht ρ₀ _hwfb _hwfv _hwfvar hswf
   simp at ht; subst ht
-  refine ⟨?_, ?_, id⟩
+  refine ⟨?_, ?_, id, hswf⟩
   · intro ρ' hstar
     exact .inr (fun _ => hstar)
   · intro lbl ρ' hstar
@@ -697,14 +711,14 @@ theorem OverapproximatesAggressively_comp (L₁ L₂ L₃ : Lang P)
     (h₁ : OverapproximatesAggressively L₁ L₂ T₁)
     (h₂ : OverapproximatesAggressively L₂ L₃ T₂) :
     OverapproximatesAggressively L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ hwfb hwfv hwfvar
+  intro st s'' ht ρ₀ hwfb hwfv hwfvar hswf
   simp [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
-    have ⟨h₁_term, h₁_exit, h₁_fail⟩ := h₁ st s' h ρ₀ hwfb hwfv hwfvar
-    have ⟨h₂_term, h₂_exit, h₂_fail⟩ := h₂ s' s'' ht ρ₀ hwfb hwfv hwfvar
-    refine ⟨?_, ?_, fun hf => h₂_fail (h₁_fail hf)⟩
+    have ⟨h₁_term, h₁_exit, h₁_fail, h₁_swf⟩ := h₁ st s' h ρ₀ hwfb hwfv hwfvar hswf
+    have ⟨h₂_term, h₂_exit, h₂_fail, h₂_swf⟩ := h₂ s' s'' ht ρ₀ hwfb hwfv hwfvar h₁_swf
+    refine ⟨?_, ?_, fun hf => h₂_fail (h₁_fail hf), h₂_swf⟩
     · -- Terminal case
       intro ρ' hstar
       match h₁_term ρ' hstar with
@@ -751,6 +765,7 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
+  storeWF := fun _ _ => True
 
 omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] in
 private theorem mapM_noFuncDecl
@@ -853,7 +868,7 @@ private theorem overapproximates_stmts_canfail
           -- Failure within execution of s. Use hsem for CanFail preservation.
           have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
             ⟨inner_cfg, hf_inner, hreach_inner⟩
-          have hcanfail_s' := (hsem s s' hs ρ₀ hwfb hwfv).2 hcanfail_s
+          have hcanfail_s' := (hsem s s' hs ρ₀ hwfb hwfv trivial).2.1 hcanfail_s
           -- hcanfail_s' : CanFail (Lang.imperative ...) s' ρ₀
           -- i.e. ∃ cfg', cfg'.getEnv.hasFailure = true ∧ StepStmtStar (.stmt s' ρ₀) cfg'
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_s'
@@ -872,7 +887,7 @@ private theorem overapproximates_stmts_canfail
           -- hcanfail_rest' : CanFail (imperativeBlock ...) rest' ρ₁
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_rest'
           -- Lift: .stmts (s' :: rest') ρ₀ →* .stmts rest' ρ₁ →* cfg'
-          have hterm_s' := (hsem s s' hs ρ₀ hwfb hwfv).1 ρ₁ |>.1 hterm_s
+          have hterm_s' := (hsem s s' hs ρ₀ hwfb hwfv trivial).1 ρ₁ |>.1 hterm_s
           exact ⟨cfg', hf',
             ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ hterm_s')
@@ -919,7 +934,7 @@ private theorem overapproximates_stmts_aux
           have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
           exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-              ((hsem s s' hs ρ₀ hwfb hwfv).1 ρ₁ |>.1 hterm_s))
+              ((hsem s s' hs ρ₀ hwfb hwfv trivial).1 ρ₁ |>.1 hterm_s))
             ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
@@ -929,13 +944,13 @@ private theorem overapproximates_stmts_aux
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendEval _ _ rest'
-                ((hsem s s' hs ρ₀ hwfb hwfv).1 ρ' |>.2 lbl hexit_s))
+                ((hsem s s' hs ρ₀ hwfb hwfv trivial).1 ρ' |>.2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
             have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-                ((hsem s s' hs ρ₀ hwfb hwfv).1 ρ₁ |>.1 hterm_s))
+                ((hsem s s' hs ρ₀ hwfb hwfv trivial).1 ρ₁ |>.1 hterm_s))
               ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)
 
 theorem overapproximates_stmts
@@ -946,9 +961,9 @@ theorem overapproximates_stmts
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ hwfb hwfv
+  intro ss ss' hmap ρ₀ hwfb hwfv _
   refine ⟨fun ρ' => overapproximates_stmts_aux evalCmd extendEval isAtAssertFn T hsem ss
-    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv, ?_⟩
+    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv, ?_, trivial⟩
   exact overapproximates_stmts_canfail evalCmd extendEval isAtAssertFn T hsem ss
     (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ hwfb hwfv
 
@@ -989,7 +1004,7 @@ private theorem overapproximatesAggressively_stmts_canfail
         | .inl ⟨inner_cfg, hf_inner, hreach_inner⟩ =>
           have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
             ⟨inner_cfg, hf_inner, hreach_inner⟩
-          have hcanfail_s' := (hsem s s' hs ρ₀ hwfb hwfv hwfvar).2.2 hcanfail_s
+          have hcanfail_s' := (hsem s s' hs ρ₀ hwfb hwfv hwfvar trivial).2.2.1 hcanfail_s
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_s'
           exact ⟨.seq cfg' rest', by simp [Config.getEnv]; exact hf',
             .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach')⟩
@@ -1005,7 +1020,7 @@ private theorem overapproximatesAggressively_stmts_canfail
             eval_preserved.1 eval_preserved.2.1 eval_preserved.2.2 hcanfail_rest
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_rest'
           -- hsem gives CanFail ∨ (hasFailure = false → terminates) for s' at ρ₁
-          match (hsem s s' hs ρ₀ hwfb hwfv hwfvar).1 ρ₁ hterm_s with
+          match (hsem s s' hs ρ₀ hwfb hwfv hwfvar trivial).1 ρ₁ hterm_s with
           | .inl canfail_s' =>
             obtain ⟨cfg'', hf'', hreach''⟩ := canfail_s'
             exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
@@ -1020,7 +1035,7 @@ private theorem overapproximatesAggressively_stmts_canfail
                 cases h : ρ₁.hasFailure <;> simp_all
               have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
                 ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁', hterm_s⟩
-              have hcanfail_s' := (hsem s s' hs ρ₀ hwfb hwfv hwfvar).2.2 hcanfail_s
+              have hcanfail_s' := (hsem s s' hs ρ₀ hwfb hwfv hwfvar trivial).2.2.1 hcanfail_s
               obtain ⟨cfg'', hf'', hreach''⟩ := hcanfail_s'
               exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
                 .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach'')⟩
@@ -1074,7 +1089,7 @@ private theorem overapproximatesAggressively_stmts_aux
       intro ρ₁ hterm_s
       have heq := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd_s hterm_s
       exact ⟨heq ▸ hwfb, heq ▸ hwfv, heq ▸ hwfvar⟩
-    have ⟨hsem_term, hsem_exit, hsem_fail⟩ := hsem s s' hs ρ₀ hwfb hwfv hwfvar
+    have ⟨hsem_term, hsem_exit, hsem_fail, _hsem_swf⟩ := hsem s s' hs ρ₀ hwfb hwfv hwfvar trivial
     -- Helper for the common pattern: ρ₁.hasFailure = true → s can fail → s' can fail → lift
     have canfail_from_failure : ∀ (ρ₁ : Env P),
         StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
@@ -1178,9 +1193,9 @@ theorem overapproximatesAggressively_stmts
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ hwfb hwfv hwfvar
+  intro ss ss' hmap ρ₀ hwfb hwfv hwfvar _
   have hnofd := mapM_noFuncDecl T hnofd_T ss ss' hmap
-  refine ⟨fun ρ' hstar => ?_, fun lbl ρ' hstar => ?_, ?_⟩
+  refine ⟨fun ρ' hstar => ?_, fun lbl ρ' hstar => ?_, ?_, trivial⟩
   · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn T hsem ss
       hnofd ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).1 hstar
   · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn T hsem ss

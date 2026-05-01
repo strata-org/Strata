@@ -49,6 +49,7 @@ abbrev Lang.kleene : Lang P where
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
   getEnv := KleeneConfig.getEnv
+  storeWF := fun _ _ => True
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 
@@ -960,8 +961,8 @@ theorem detToKleene_overapproximates
     (extendEval : ExtendEval P) :
     Transform.Overapproximates (Lang.det extendEval) (Lang.kleene (P := P))
       (StmtToKleeneStmt (P := P)) := by
-  intro st ns ht ρ₀ hwfb hwfv
-  refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_⟩
+  intro st ns ht ρ₀ hwfb hwfv _hswf
+  refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, trivial⟩
   · exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv
   · intro lbl hstar
     exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval st
