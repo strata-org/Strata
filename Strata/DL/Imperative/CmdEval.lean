@@ -91,9 +91,9 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
         (c', σ)
       | some false =>
         let σ := EC.addWarning σ (.AssumeFail label e)
-        (c', EC.addPathCondition σ [(label, e)])
+        (c', EC.addPathCondition σ [.assumption label e])
       | none =>
-        (c', EC.addPathCondition σ [(label, e)])
+        (c', EC.addPathCondition σ [.assumption label e])
 
     | .cover label e md =>
       let (e, σ) := EC.preprocess σ c e
