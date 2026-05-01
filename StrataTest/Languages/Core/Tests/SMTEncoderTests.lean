@@ -370,6 +370,24 @@ info: (set-logic ALL)
     else ""
   IO.print smt
 
+/-! ## SMT encoding of str.prefixof / str.suffixof -/
+
+/--
+info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.prefixof s1 s2))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.app () (.app () strPrefixOfOp (.fvar () "s1" (.some .string)))
+    (.fvar () "s2" (.some .string)))
+
+/--
+info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.suffixof s1 s2))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
+    (.fvar () "s2" (.some .string)))
+
 end Core
 
 /-! ## End-to-End Test with Complete Program -/
