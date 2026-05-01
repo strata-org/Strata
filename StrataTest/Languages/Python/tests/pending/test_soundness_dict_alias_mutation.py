@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: dict aliasing - mutation through alias not visible
 # Python dicts are mutable reference objects. Assigning b = a creates
 # an alias, not a copy. Strata treats assignment as value copy.

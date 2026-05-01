@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: list mutation in conditional branch through alias
 # Even when mutation happens inside a conditional, the alias relationship
 # means the original list is modified. Strata doesn't track this.

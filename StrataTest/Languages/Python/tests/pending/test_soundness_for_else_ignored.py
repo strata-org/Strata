@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: for/else clause is silently ignored
 # In Python, the else clause runs when the loop completes without break.
 # Strata drops the else clause entirely.

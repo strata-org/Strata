@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: augmented modulo with negative divisor
 # Python: 7 %= -3 gives -2 (sign follows divisor)
 # Strata incorrectly computes 1 (Euclidean mod)

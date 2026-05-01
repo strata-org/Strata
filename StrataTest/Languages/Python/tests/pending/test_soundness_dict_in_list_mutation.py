@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: dict stored in list, mutated through list access
 # d is stored in lst. Mutating lst[0]["val"] should change d["val"]
 # because they are the same object. Strata doesn't model this sharing.

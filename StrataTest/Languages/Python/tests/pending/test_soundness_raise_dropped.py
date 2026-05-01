@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: raise is silently dropped, so code after raise executes
 # In Python, raise stops execution. Strata drops raise entirely.
 # This assertion is FALSE in Python (unreachable) but Strata verifies it.

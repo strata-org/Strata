@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: self-referential list structure
 # a[1] = a makes the list contain itself. Mutating a[0] is visible
 # through a[1][0] since a[1] IS a. Strata copies the value instead.

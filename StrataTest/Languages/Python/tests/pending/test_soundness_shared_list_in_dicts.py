@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: same list stored as value in two different dicts
 # Both d1 and d2 hold a reference to items. Mutating through d1
 # is visible through d2. Strata copies the list value into each dict.

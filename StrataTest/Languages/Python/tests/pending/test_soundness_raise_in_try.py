@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: raise in try is dropped, so r=2 executes after raise
 # In Python, raise stops execution within the try block.
 # Strata drops raise, so r=2 executes, and the except handler is skipped.

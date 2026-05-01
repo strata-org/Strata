@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: dict mutation through alias after reading a value
 # ref is an alias of original. Reading ref["a"] and then writing
 # ref["b"] modifies original. Strata treats ref as an independent copy.

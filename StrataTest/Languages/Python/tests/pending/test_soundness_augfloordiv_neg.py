@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: augmented floor division with negative divisor
 # Python: 7 //= -2 gives -4
 # Strata incorrectly computes -3 (Euclidean division)

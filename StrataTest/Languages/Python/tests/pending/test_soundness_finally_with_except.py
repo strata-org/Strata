@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: finally clause ignored even with try/except/finally
 # In Python, finally always runs after try/except.
 # Strata drops the finally clause entirely.

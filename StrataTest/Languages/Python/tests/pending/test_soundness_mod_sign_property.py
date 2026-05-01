@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: Python's mod result sign follows divisor sign
 # Python: 10 % (-3) == -2 (negative, like divisor)
 # Strata incorrectly computes 1 (Euclidean mod, always non-negative)

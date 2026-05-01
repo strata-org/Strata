@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: function returning its argument creates alias
 # identity() returns the same object it received. b is an alias of a.
 # Mutating b mutates a. Strata treats the return value as a fresh copy.

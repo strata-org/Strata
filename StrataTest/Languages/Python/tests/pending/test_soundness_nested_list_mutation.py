@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: nested list mutation through shared reference
 # inner is stored in outer. Mutating outer[0][0] should change inner[0]
 # because they are the same object. Strata doesn't model this sharing.

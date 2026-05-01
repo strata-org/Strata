@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: list aliasing - mutation through alias not visible
 # Python lists are mutable reference objects. Assigning b = a creates
 # an alias, not a copy. Strata treats assignment as value copy.

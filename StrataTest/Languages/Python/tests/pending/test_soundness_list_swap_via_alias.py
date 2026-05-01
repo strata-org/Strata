@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: list swap through alias shows both directions of aliasing
 # Modifying b[0] changes a[0] AND modifying b[2] changes a[2].
 # Strata treats b as an independent copy, so a is unchanged.

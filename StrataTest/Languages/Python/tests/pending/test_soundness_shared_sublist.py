@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: two containers sharing a sub-list
 # a and b both contain shared as their first element. Mutating through
 # a[0][0] changes shared, which is visible through b[0][0].

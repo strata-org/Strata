@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: chain of aliases - mutation through transitive alias
 # a, b, c all refer to the same dict. Mutating through c should be
 # visible through a. Strata treats each assignment as a value copy.

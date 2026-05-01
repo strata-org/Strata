@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: grid built from repeated row reference
 # All three elements of grid are the same list object. Mutating
 # grid[0][0] changes all rows. Classic Python "gotcha" with [[0]*n]*m.

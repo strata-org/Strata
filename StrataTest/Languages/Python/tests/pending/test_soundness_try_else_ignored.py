@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: try/else clause is silently ignored
 # In Python, the else clause of try/except runs when no exception occurs.
 # Strata drops the else clause entirely.

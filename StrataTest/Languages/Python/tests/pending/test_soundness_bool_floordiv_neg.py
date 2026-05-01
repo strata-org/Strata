@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: bool floor division with negative divisor
 # Python: True // (-3) = 1 // (-3) = -1 (floor of -0.333...)
 # Strata incorrectly computes 0 (Euclidean: 1 div (-3) = 0)

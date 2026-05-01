@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: modulo with negative divisor uses Euclidean modulo
 # Python: 7 % (-2) == -1 (sign follows divisor)
 # Strata incorrectly computes 1 (Euclidean mod, always non-negative)

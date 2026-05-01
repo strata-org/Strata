@@ -1,3 +1,4 @@
+# strata-pending: soundness
 # Soundness bug: ternary expression returns alias, not copy
 # c = a if True else b makes c an alias of a. Mutating c mutates a.
 # Strata treats the ternary result as an independent value.
