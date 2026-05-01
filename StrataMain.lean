@@ -1320,7 +1320,9 @@ def verifyCommand : Command where
       else
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        -- Encoding failures, solver crashes, or per-check SMT errors (exit 3)
         let hasImplError := vcResults.any (fun r => r.isImplementationError || r.hasSMTError)
+        -- Assertion violations that are not timeouts or internal errors (exit 2)
         let hasFailure := vcResults.any (fun r => !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError)
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         if hasImplError then
