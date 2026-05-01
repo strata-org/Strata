@@ -302,9 +302,10 @@ Expected output (when Python + z3 available):
     | .ok vcResults =>
       let mut foundAlwaysFalse := false
       for r in vcResults do
-        let line := r.formatOutcome
-        if (line.splitOn "✖️").length != 1 then
-          foundAlwaysFalse := true
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          let line := r.formatOutcome
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
       if !foundAlwaysFalse then
         throw <| IO.userError
           "Expected ✖️ always false for regex violation"
@@ -326,9 +327,10 @@ assertion. This exercises the full pipeline with type alias resolution.
     | .ok vcResults =>
       let mut foundAlwaysFalse := false
       for r in vcResults do
-        let line := r.formatOutcome
-        if (line.splitOn "✖️").length != 1 then
-          foundAlwaysFalse := true
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          let line := r.formatOutcome
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
       if !foundAlwaysFalse then
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
