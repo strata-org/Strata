@@ -830,7 +830,7 @@ def coreAbstractedPhases (procs : Option (List String) := none) : List Abstracte
   (corePipelinePhases procs).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
-private def buildSolverLog (satResult valResult : SMT.Result)
+def buildSolverLog (satResult valResult : SMT.Result)
     (satisfiabilityCheck validityCheck : Bool)
     (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
   let sat : Array SolverPhaseLog :=
@@ -850,6 +850,34 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   match r with
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
+
+/-- Build a `VCResult` from raw solver results, applying phase validation,
+solver log construction, and outcome masking. This is the single source of
+truth for turning `(satResult, valResult)` into a classified `VCResult`,
+used by both the integrated verifier (`getObligationResult`) and the
+reconcile path (`reconcileOne`). -/
+def buildVCResult
+    (obligation : ProofObligation Expression)
+    (satResult valResult : SMT.Result)
+    (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase)
+    (options : VerifyOptions)
+    (lexprModel : LExprModel := []) : VCResult :=
+  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+  let (adjVal, valPhaseLog) := valResult.adjustForPhases phases obligation
+  let smtLog := buildSolverLog satResult valResult
+    satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+  let rawOutcome : VCOutcome := {
+    satisfiabilityProperty := adjSat,
+    validityProperty := adjVal,
+    solverLog := #[smtLog] }
+  let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
+  { obligation,
+    outcome := .ok outcome,
+    verbose := options.verbose,
+    checkLevel := options.checkLevel,
+    checkMode := options.checkMode,
+    lexprModel }
 
 /-- Callbacks invoked by the verifier at interesting points in
 `verifySingleEnv` / `getObligationResult`. Used by the Split-Solve-Reconcile
@@ -944,29 +972,14 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
         requestedSatCheck requestedValCheck peSatResult? peValResult?
         filename.toString phases)
     -- Convert unvalidated sat results to unknown when phases require validation
-    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
-    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
-    -- Build solver log: raw solver results followed by phase validation logs
-    let smtLog := buildSolverLog satResult validityResult
-      satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-    let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := adjSat,
-      validityProperty := adjVal,
-      solverLog := #[smtLog] }
-    let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-    -- Extract model from sat results (using raw solver results)
+    -- and build the classified VCResult.
     let model := match satResult, validityResult with
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
-    let result := { obligation,
-                    outcome := .ok outcome,
-                    estate,
-                    verbose := options.verbose,
-                    checkLevel := options.checkLevel,
-                    checkMode := options.checkMode,
-                    lexprModel := model }
-    return result
+    let result := buildVCResult obligation satResult validityResult
+      satisfiabilityCheck validityCheck phases options (lexprModel := model)
+    return { result with estate }
 
 def verifySingleEnv (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)

@@ -86,44 +86,15 @@ def resolveOptions (m : Manifest) (ov : ReconcileOverride) : VerifyOptions :=
 
 /-! ## Core reconcile algorithm -/
 
-/-- `buildSolverLog` is `private` in `Verifier.lean`; re-implement it here
-with the same semantics so the `solverLog` array matches what
-`verifySingleEnv` would produce. -/
-private def buildSolverLog (satResult valResult : Core.SMT.Result)
-    (satisfiabilityCheck validityCheck : Bool)
-    (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
-  let sat : Array SolverPhaseLog :=
-    if satisfiabilityCheck then #[{ phase := "solver.sat", result := satResult }] else #[]
-  let val : Array SolverPhaseLog :=
-    if validityCheck then #[{ phase := "solver.val", result := valResult }] else #[]
-  sat ++ val ++ satPhaseLog.toArray ++ valPhaseLog.toArray
-
 /-- Build a single `VCResult` from a manifest entry and the corresponding
-solver result pair. This mirrors the logic in `getObligationResult` for the
-solver path and `verifySingleEnv` for the evaluator-resolved path — both
-feed into the same `VCOutcome` construction. -/
+solver result pair. Delegates to `buildVCResult` (the single source of truth
+shared with `getObligationResult`). -/
 def reconcileOne (mo : ManifestObligation) (options : VerifyOptions)
     (satResult valResult : Core.SMT.Result) : VCResult :=
   let obligation := reconstructObligation mo
-  -- Reconstruct pipeline phases from per-phase decisions.
   let phases := reconstructPhaseValidation mo.phaseValidation
-  -- Apply phase validation: demote sat → unknown when a phase requires
-  -- validation (matching the runtime behavior in Verifier.lean).
-  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
-  let (adjVal, valPhaseLog) := valResult.adjustForPhases phases obligation
-  let smtLog := buildSolverLog satResult valResult
-    mo.satisfiabilityCheck mo.validityCheck satPhaseLog valPhaseLog
-  let rawOutcome : VCOutcome := {
-    satisfiabilityProperty := adjSat,
-    validityProperty := adjVal,
-    solverLog := #[smtLog] }
-  let outcome := maskOutcome rawOutcome mo.satisfiabilityCheck mo.validityCheck
-  { obligation,
-    outcome := .ok outcome,
-    verbose := options.verbose,
-    checkLevel := options.checkLevel,
-    checkMode := options.checkMode,
-    lexprModel := [] }
+  buildVCResult obligation satResult valResult
+    mo.satisfiabilityCheck mo.validityCheck phases options
 
 /-- Read the solver result for one manifest obligation. When resolved by the
 evaluator, returns the stored result. Otherwise, reads `smtFile`'s `.result`
