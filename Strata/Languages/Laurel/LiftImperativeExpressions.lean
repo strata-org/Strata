@@ -157,7 +157,7 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return computeExprType s.model expr
 
-/-- Check if an expression contains any assignments or imperative calls (recursively). -/
+/-- Check if an expression contains any assignments (recursively). -/
 def containsAssignment (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
@@ -174,43 +174,30 @@ def containsAssignment (expr : StmtExprMd) : Bool :=
   decreasing_by
     all_goals ((try cases x); simp_all; try term_by_mem)
 
-def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : StmtExprMd) : Bool :=
+/-- Check if an expression contains any non-functional procedure calls (recursively). -/
+def containsImperativeCall (model : SemanticModel) (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
   match val with
-  | .Assign .. => true
-  | .StaticCall name args1 =>
+  | .StaticCall name args =>
     (match model.get name with
     | .staticProcedure proc => !proc.isFunctional
     | _ => false) ||
-      args1.attach.any (fun x => containsAssignmentOrImperativeCall model x.val)
-  | .PrimitiveOp _ args2 => args2.attach.any (fun x => containsAssignmentOrImperativeCall model x.val)
-  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImperativeCall model x.val)
+      args.attach.any (fun x => containsImperativeCall model x.val)
+  | .PrimitiveOp _ args => args.attach.any (fun x => containsImperativeCall model x.val)
+  | .Block stmts _ => stmts.attach.any (fun x => containsImperativeCall model x.val)
   | .IfThenElse cond th el =>
-      containsAssignmentOrImperativeCall model cond ||
-      containsAssignmentOrImperativeCall model th ||
-      match el with | some e => containsAssignmentOrImperativeCall model e | none => false
+      containsImperativeCall model cond ||
+      containsImperativeCall model th ||
+      match el with | some e => containsImperativeCall model e | none => false
   | _ => false
   termination_by expr
   decreasing_by
     all_goals ((try cases x); simp_all; try term_by_mem)
 
-/-- Check if an expression contains any nondeterministic holes (recursively). -/
-private def containsNondetHole (expr : StmtExprMd) : Bool :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .Hole false _ => true
-  | .PrimitiveOp _ args => args.attach.any (fun x => containsNondetHole x.val)
-  | .StaticCall _ args => args.attach.any (fun x => containsNondetHole x.val)
-  | .Block stmts _ => stmts.attach.any (fun x => containsNondetHole x.val)
-  | .IfThenElse cond th el =>
-      containsNondetHole cond || containsNondetHole th ||
-      match el with | some e => containsNondetHole e | none => false
-  | _ => false
-  termination_by expr
-  decreasing_by
-    all_goals ((try cases x); simp_all; try term_by_mem)
+/-- Check if an expression contains any assignments or non-functional procedure calls (recursively). -/
+def containsAssignmentOrImperativeCall (model : SemanticModel) (expr : StmtExprMd) : Bool :=
+  containsAssignment expr || containsImperativeCall model expr
 
 /--
 Shared logic for lifting an assignment in expression position:
@@ -384,7 +371,9 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         return [stmt]
 
   | .Assume cond =>
-      if containsNondetHole cond && !containsAssignmentOrImperativeCall (← get).model cond then
+      -- Do not transform assume conditions with assignments — they must be rejected.
+      -- But nondeterministic holes and imperative calls need to be lifted.
+      if !containsAssignment cond then
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
