@@ -198,11 +198,11 @@ def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
 def mkVariableMd (v : Variable) : VariableMd :=
   { val := v, source := none }
 
-/-- Extract a Variable from a StmtExpr. Panics if the expression is not a Var. -/
-def stmtExprToVar (e : StmtExprMd) : VariableMd :=
+/-- Extract a Variable from a StmtExpr. Throws if the expression is not a Var. -/
+def stmtExprToVar (e : StmtExprMd) : Except TranslationError VariableMd :=
   match e.val with
-  | .Var v => { val := v, source := e.source }
-  | _ => panic! "stmtExprToVar: expected Var node" -- nopanic:ok
+  | .Var v => .ok { val := v, source := e.source }
+  | _ => .error (.internalError "stmtExprToVar: expected Var node")
 
 /-- Create a StmtExprMd with source location metadata. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (source : Option FileRange) : StmtExprMd :=
@@ -1456,7 +1456,7 @@ partial def translateAssign  (ctx : TranslationContext)
             let slices ← slices.mapM (translateExpr ctx)
             let source := sourceRangeToSource ctx.filePath lhs.toAst.ann
             let anySetsExpr := mkStmtExprMdWithLoc (StmtExpr.StaticCall "Any_sets!" [ListAny_mk slices, target, rhs_trans]) source
-            let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [stmtExprToVar target] anySetsExpr) source]
+            let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [← stmtExprToVar target] anySetsExpr) source]
             return (ctx,assignStmts, false)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
     | .Attribute _ obj attr _ =>
@@ -1480,7 +1480,7 @@ partial def translateAssign  (ctx : TranslationContext)
           return (ctx, [assignStmt], true)
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
-          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [stmtExprToVar targetExpr] rhs_trans) source
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [← stmtExprToVar targetExpr] rhs_trans) source
           return (ctx, [assignStmt], true)
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
     | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
