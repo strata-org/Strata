@@ -692,12 +692,12 @@ theorem procBodyVerify_procedureCorrect
   have h_wrapped_eval : ∀ (cfg : CoreConfig),
       Config.getEval (.block verifyLabel (.seq (.block bodyLabel cfg) postAsserts)) =
       Config.getEval cfg := by
-    intro cfg; simp [Config.getEval]
+    intro cfg; simp [Config.getEval, Config.getEnv]
 
   have h_wrapped_store : ∀ (cfg : CoreConfig),
       Config.getStore (.block verifyLabel (.seq (.block bodyLabel cfg) postAsserts)) =
       Config.getStore cfg := by
-    intro cfg; simp [Config.getStore]
+    intro cfg; simp [Config.getStore, Config.getEnv]
 
   -- Unfold h_correct for easier application
   have h_correct' : ∀ (a : AssertId Expression) (ρ_init : Env Expression)

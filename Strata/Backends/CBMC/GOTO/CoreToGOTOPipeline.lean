@@ -80,7 +80,8 @@ private partial def unwrapCmdExt
     .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn))
+      (i.map (fun (l, e) => (l, renameExpr rn e))) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
     .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
@@ -216,7 +217,7 @@ private partial def coreStmtsToGoto
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let mut backGuard := CProverGOTO.Expr.true
-          for inv in invariants do
+          for (_, inv) in invariants do
             let inv_expr ← toExpr (renameExpr rn inv)
             backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
           match measure with
@@ -498,7 +499,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
   let inlined ← match Core.Transform.run program (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
-    | .error msg => throw msg
+    | .error msg => throw (toString msg)
   let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg
