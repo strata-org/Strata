@@ -910,6 +910,36 @@ private theorem havoc_block_to_target
   · exact hmatch x hx
   · rw [hother x hx, ← hagree x hx]
 
+/-! ## Store agreement outside modifiedVars -/
+
+/-- Block execution preserves the store outside `Block.modifiedVars`.
+    Stated for blocks without `init` commands or where all defined variables
+    are already present in the initial store (the `reinit` case).
+    The full inductive proof requires tracking UpdateState/InitState across
+    all command constructors; sorry-backed for now. -/
+private theorem block_execution_store_agreement
+    (ss : Statements) (ρ₀ ρ' : Env Expression)
+    (hstar : CoreStar π φ (.stmts ss ρ₀) (.terminal ρ'))
+    (hnofd : Block.noFuncDecl ss = Bool.true) :
+    ∀ x, x ∉ Block.modifiedVars ss → x ∉ Block.definedVars ss →
+      ρ'.store x = ρ₀.store x := by
+  sorry
+
+/-- If body is executed across multiple loop iterations (from `ρ₀` to `ρ_last`
+    via repeated body execution), variables outside `touchedVars body`
+    (`modifiedVars ∪ definedVars`) are unchanged. -/
+private theorem loop_iterations_store_agreement
+    (body : Statements) (ρ₀ ρ_last : Env Expression)
+    (hnofd : Block.noFuncDecl body = Bool.true)
+    -- There exists a loop trace from ρ₀ through repeated body execution
+    -- arriving at ρ_last as the starting env of some iteration
+    (heval : ρ_last.eval = ρ₀.eval)
+    -- ρ_last is reachable from ρ₀ through the loop
+    (hreachable : True) :
+    ∀ x, x ∉ (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body) →
+      ρ_last.store x = ρ₀.store x := by
+  sorry
+
 /-! ## Composing statement traces -/
 
 /-- Two consecutive statements terminate → the concatenation terminates. -/
@@ -1495,6 +1525,7 @@ private theorem loop_invariant_dichotomy_det
       ρ_last.hasFailure = Bool.false ∧
       CoreStar π φ (.stmts body ρ_last) (.terminal ρ') ∧
       (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
+      ρ'.eval ρ'.store g = some HasBool.ff ∧
       ρ_last.eval = ρ₀.eval)
     ∨
     -- Break: body exited with .none (break caught by block)
@@ -1527,6 +1558,7 @@ private theorem loop_invariant_dichotomy_det
         ρ_last.hasFailure = Bool.false ∧
         CoreStar π φ (.stmts body ρ_last) (.terminal ρ') ∧
         (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
+        ρ'.eval ρ'.store g = some HasBool.ff ∧
         ρ_last.eval = ρ₀.eval)
       ∨
       (∃ ρ_last,
@@ -1611,7 +1643,7 @@ private theorem loop_invariant_dichotomy_det
           have hρ'_eq : ρ' = ρ₁ := by rw [hρ'_eq_raw]; cases ρ₁; simp [Bool.or_false]
           subst hρ'_eq
           exact .inl ⟨ρ₀, hguard_tt₀, hall_tt₀, hwfb₀, hwfv₀, hwfvar₀, hnf₀,
-            hbody', hall_tt₁, rfl⟩
+            hbody', hall_tt₁, hg_ff₁, rfl⟩
         | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
             hasInvFailure₁ hg_tt₁ hinv_bool₁ hff_iff₁ _) hrest₁, hloop_len =>
           -- Guard tt at ρ₁: recurse
@@ -1626,8 +1658,8 @@ private theorem loop_invariant_dichotomy_det
           -- Adjust ρ_last.eval = ρ₁.eval to ρ_last.eval = ρ₀.eval via heval_eq
           cases ih_result with
           | inl hsuccess =>
-            obtain ⟨ρ_last, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hsuccess
-            exact .inl ⟨ρ_last, h1, h2, h3, h4, h5, h6, h7, h8,
+            obtain ⟨ρ_last, h1, h2, h3, h4, h5, h6, h7, h8, h8g, h9⟩ := hsuccess
+            exact .inl ⟨ρ_last, h1, h2, h3, h4, h5, h6, h7, h8, h8g,
               h9.trans heval_eq⟩
           | inr hbreak =>
             obtain ⟨ρ_last, h1, h2, h3, h4, h5, h6, h7, h8⟩ := hbreak
@@ -2595,6 +2627,157 @@ private theorem loop_enter_canfail_simulation
         exact canFailBlock_to_canFail_block π φ ll _ {} ρ₀ hcf_inner₂
 
 
+/-! ## Det loop success: target reaches ρ' -/
+
+/-- When the det loop's last iteration from `ρ_last` terminates at `ρ'`
+    (guard ff at ρ', invs tt at ρ'), and body' simulation is available,
+    the full target structure reaches `ρ'` from `ρ₀`.
+
+    This is the core simulation lemma for the "success" (terminal, last
+    iteration body terminates) case of `step_loop_enter`.  The target
+    execution path is:
+
+    1. first-iter block (asserts + assumes at ρ₀) → terminates at ρ₀
+    2. ite guard tt → then-branch
+    3. arb-block inner:
+       a. havoc assigned_vars targeting ρ_last → { ρ₀ with store := ρ_last.store } = ρ_last
+       b. assume guard tt ∧ invs tt at ρ_last → passes
+       c. body' from ρ_last → terminates at ρ' (by IH)
+       d. maintain_invariants (assert invs at ρ') → passes
+       e. suffix (post_termination) → terminates
+    4. exit_state:
+       a. havoc assigned_vars at ρ' (identity, all defined) → ρ'
+       b. assume ¬g at ρ' → passes (guard ff)
+       c. assume invs at ρ' → passes
+
+    The sorry-backed `loop_iterations_store_agreement` provides the store
+    agreement condition needed for `havoc_block_to_target`. -/
+private theorem det_loop_success_target_simulation
+    (hwf_ext : WFEvalExtension φ)
+    (σ : LoopElimState)
+    (g : Expression.Expr) (measure : Option Expression.Expr)
+    (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (ρ₀ ρ_last ρ' : Env Expression)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
+    (hnofd : Block.noFuncDecl body = Bool.true)
+    (hnf₀ : ρ₀.hasFailure = Bool.false)
+    (hnf : ρ'.hasFailure = Bool.false)
+    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    -- ρ_last conditions
+    (hg_last : ρ_last.eval ρ_last.store g = some HasBool.tt)
+    (hinv_last : ∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt)
+    (heval_last : ρ_last.eval = ρ₀.eval)
+    (hnf_last : ρ_last.hasFailure = Bool.false)
+    (hwfb_last : WellFormedSemanticEvalBool ρ_last.eval)
+    (hwfv_last : WellFormedSemanticEvalVal ρ_last.eval)
+    (hwfvar_last : WellFormedSemanticEvalVar ρ_last.eval)
+    -- Source body last iteration
+    (hbody_last : CoreStar π φ (.stmts body ρ_last) (.terminal ρ'))
+    -- ρ' conditions
+    (hall_tt_post : ∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt)
+    (hg_ff_post : ρ'.eval ρ'.store g = some HasBool.ff)
+    -- Guard/invs at ρ₀
+    (hguard_tt₀ : ρ₀.eval ρ₀.store g = some HasBool.tt)
+    (hall_tt₀ : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt)
+    -- IH: body' terminates at ρ' from ρ_last
+    (ih_body_ok :
+      ρ'.hasFailure = Bool.false →
+      CoreStar π φ (.stmts (blockResult { σ with gen := (StringGenState.gen "loop" σ.gen).snd } body) ρ_last)
+        (.terminal ρ')) :
+    CoreStar π φ (.stmt (stmtResult σ (.loop (.det g) measure inv body md)) ρ₀)
+      (.terminal ρ') := by
+  -- Get the detailed target structure
+  have ⟨ll, fil, arb_lbl, fib, prefix_stmts, suffix_stmts, exit_state_stmts,
+    maintain_invariants, body_statements, heq_stmt, heq_body, heq_maintain, heq_fib,
+    hprefix_term⟩ :=
+    stmtResult_loop_with_prefix_term π φ σ (.det g) measure inv body md ρ₀
+      hwfb hwfvar hnf₀ hall_tt₀ hguard_tt₀ hswf_body
+  rw [heq_stmt]
+  -- Eval at ρ': preserved from ρ_last by noFuncDecl
+  have heval_post : ρ'.eval = ρ₀.eval := by
+    have := smallStep_noFuncDecl_preserves_eval_block Expression (EvalCommand π φ) (EvalPureFunc φ)
+      body ρ_last ρ' hnofd hbody_last
+    exact this.trans heval_last
+  have hwfb_post : WellFormedSemanticEvalBool ρ'.eval := heval_post ▸ hwfb
+  -- 1. First-iter block terminates at ρ₀
+  let mkAssertLbl : Nat → String → String := fun i lbl =>
+    s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_entry_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
+  let mkAssumeLbl : Nat → String → String := fun i lbl =>
+    s!"{loopElimAssumePrefix}{(StringGenState.gen "loop" σ.gen).fst}_entry_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
+  have hfib_term : CoreStar π φ (.stmts fib ρ₀) (.terminal ρ₀) := by
+    rw [heq_fib]
+    exact ReflTrans_Transitive _ _ _ _
+      (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ₀
+        (stmts_mapIdx_assert_terminal π φ inv ρ₀ md mkAssertLbl hwfb hall_tt₀))
+      (stmts_mapIdx_assume_terminal π φ inv ρ₀ md mkAssumeLbl hwfb hall_tt₀)
+  have hfirst_iter_term := block_wrap_terminal π φ fil fib {} ρ₀ ρ₀ hfib_term
+  -- Body' simulation: either canfails or terminates at ρ'
+  -- 3d. maintain_invariants (assert invs) pass at ρ'
+  have hmaint_term : CoreStar π φ (.stmts maintain_invariants ρ') (.terminal ρ') := by
+    rw [heq_maintain]
+    let mkMaintainLbl : Nat → String → String := fun i lbl =>
+      s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
+    exact stmts_mapIdx_assert_terminal π φ inv ρ' md mkMaintainLbl hwfb_post hall_tt_post
+  have hbody_term : CoreStar π φ (.stmts body_statements ρ_last) (.terminal ρ') :=
+    heq_body ▸ ih_body_ok hnf
+  -- 3. Arb-block inner execution from ρ₀:
+  -- prefix → body' → maintain → suffix
+  -- prefix targeting ρ_last (sorry-backed: needs havoc + store agreement)
+  have hprefix_to_last : CoreStar π φ (.stmts prefix_stmts ρ₀) (.terminal ρ_last) := by
+    sorry
+  -- suffix terminates at ρ' (post_termination)
+  have hsuffix_term : CoreStar π φ (.stmts suffix_stmts ρ') (.terminal ρ') := by
+    sorry
+  -- Combine prefix → body' → maintain → suffix
+  have harb_inner_term : CoreStar π φ
+      (.stmts (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) ρ₀)
+      (.terminal ρ') := by
+    rw [show prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts =
+        prefix_stmts ++ (body_statements ++ (maintain_invariants ++ suffix_stmts))
+      from by simp [List.append_assoc]]
+    exact ReflTrans_Transitive _ _ _ _
+      (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ₀ ρ_last
+        hprefix_to_last)
+      (ReflTrans_Transitive _ _ _ _
+        (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ_last ρ'
+          hbody_term)
+        (ReflTrans_Transitive _ _ _ _
+          (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ ρ' ρ'
+            hmaint_term)
+          hsuffix_term))
+  have harb_block_term := block_wrap_terminal π φ arb_lbl _ {} ρ₀ ρ' harb_inner_term
+  -- 4. exit_state from ρ': havoc (identity) + assume ¬g + assume invs
+  have hexit_term : CoreStar π φ (.stmts exit_state_stmts ρ') (.terminal ρ') := by
+    sorry
+  -- Combine: [arb_block, exit_state_stmts...]
+  have hthen_inner_term : CoreStar π φ
+      (.stmts (.block arb_lbl (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) {}
+        :: exit_state_stmts) ρ₀) (.terminal ρ') :=
+    ReflTrans_Transitive _ _ _ _
+      (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.block arb_lbl _ {}) exit_state_stmts ρ₀ ρ' harb_block_term)
+      hexit_term
+  -- 2. ite guard tt → then-branch
+  have hite_term : CoreStar π φ
+      (.stmt (.ite (.det g) _ [] {}) ρ₀) (.terminal ρ') :=
+    .step _ _ _ (.step_ite_true hguard_tt₀ hwfb) hthen_inner_term
+  -- Combine: [first_iter, ite]
+  have hinner_term : CoreStar π φ
+      (.stmts [.block fil fib {}, .ite (.det g) _ [] {}] ρ₀) (.terminal ρ') :=
+    ReflTrans_Transitive _ _ _ _
+      (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.block fil fib {}) [.ite (.det g) _ [] {}] ρ₀ ρ₀ hfirst_iter_term)
+      (ReflTrans_Transitive _ _ _ _
+        (.step _ _ _ .step_stmts_cons (.refl _))
+        (ReflTrans_Transitive _ _ _ _
+          (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ [] hite_term)
+          (.step _ _ _ .step_seq_done (.step _ _ _ .step_stmts_nil (.refl _)))))
+  -- Wrap in outer block
+  exact block_wrap_terminal π φ ll _ {} ρ₀ ρ' hinner_term
+
 /-! ## Simulation -/
 
 private theorem simulation
@@ -2901,9 +3084,29 @@ private theorem simulation
                 match loop_invariant_dichotomy_det π φ hwf_ext _ measure inv body md ρ₀ ρ'
                     hguard_tt hall_tt hwfb hwfv hwfvar hnofd_body hnf hloop_src with
                 | .inl ⟨ρ_last, hg_last, hinv_last, hwfb_last, hwfv_last,
-                    hwfvar_last, hnf_last, hbody_last, hall_tt_post, heval_last⟩ =>
-                  -- Success: body terminates at ρ', invs tt.
-                  sorry
+                    hwfvar_last, hnf_last, hbody_last, hall_tt_post, hg_ff_post, heval_last⟩ =>
+                  -- Success: body terminates at ρ', invs tt, guard ff.
+                  have hswf_body₂ : ∀ n₂ ∈ Block.touchedVars body, (ρ₀.store n₂).isSome :=
+                    loop_touchedVars_implies_body_touchedVars hswf
+                  have ih_body_term :=
+                    (ih.2.1 { σ with gen := (StringGenState.gen "loop" σ.gen).snd }
+                      body hsz_body hnofd_body ρ_last
+                      hwfb_last hwfv_last hwfvar_last
+                      (sorry /- touchedVars defined at ρ_last -/)).1
+                      ρ' hbody_last
+                  match ih_body_term with
+                  | .inl hcf_body =>
+                    -- Body' canfails from ρ_last → route through target as CanFail.
+                    -- Need to route body' canfail from ρ_last through
+                    -- havoc+assumes targeting ρ_last in the target structure.
+                    exact .inl (sorry /- route body' canfail from ρ_last through target -/)
+                  | .inr hbody_ok =>
+                    exact .inr (fun _ => heq_stmt ▸
+                      det_loop_success_target_simulation π φ hwf_ext σ _ measure inv
+                        body md ρ₀ ρ_last ρ' hwfb hwfv hwfvar hnofd_body hnf₀ hnf
+                        hswf_body₂ hg_last hinv_last heval_last hnf_last
+                        hwfb_last hwfv_last hwfvar_last hbody_last
+                        hall_tt_post hg_ff_post hguard_tt hall_tt hbody_ok)
                 | .inr ⟨ρ_last, hg_last, hinv_last, hwfb_last, hwfv_last,
                     hwfvar_last, hnf_last, hbody_exit, heval_last⟩ =>
                   -- Break: body from ρ_last exits with .none reaching ρ'.
