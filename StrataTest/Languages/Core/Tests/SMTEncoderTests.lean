@@ -323,6 +323,7 @@ info: (set-logic ALL)
 (assert false)
 (check-sat)
 (set-info :final-message "assert_bounds_check")
+(set-info :property "assert")
 -/
 #guard_msgs in
 #eval show IO _ from do
@@ -350,6 +351,7 @@ info: (set-logic ALL)
 (assert false)
 (check-sat)
 (set-info :final-message "Division by zero is impossible")
+(set-info :property "assert")
 -/
 #guard_msgs in
 #eval show IO _ from do

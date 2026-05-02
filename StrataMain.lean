@@ -12,7 +12,6 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
-import Strata.Languages.Core.Manifest
 import Strata.Languages.Core.Reconcile
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.StatementEval
@@ -1286,7 +1285,7 @@ def verifyCommand : Command where
         else if pgm.dialect == "Boole" then
           Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
         else
-          Strata.verifyWithManifest pgm inputCtx proceduresToVerify opts
+          Strata.verify pgm inputCtx proceduresToVerify opts
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
@@ -1312,78 +1311,59 @@ def verifyCommand : Command where
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
 
-/-- Reconcile: read `<vc-directory>/manifest.json` and solver `.result` files,
+/-- Reconcile: read `.smt2` files and solver `.result` files from a directory,
     produce the final verification report. See `docs/CloudSolving.md`. -/
 def reconcileCommand : Command where
   name := "reconcile"
   args := []
   flags := [
     { name := "vc-directory",
-      help := "Directory containing manifest.json and solver .result files (required).",
+      help := "Directory containing .smt2 and solver .result files (required).",
       takesArg := .arg "dir" },
     { name := "check-mode",
-      help := s!"Override check mode from the manifest: {Core.VerificationMode.options}.",
+      help := s!"Check mode: {Core.VerificationMode.options}.",
       takesArg := .arg "mode" },
     { name := "check-level",
-      help := s!"Override check level from the manifest: {Core.CheckLevel.options}.",
+      help := s!"Check level: {Core.CheckLevel.options}.",
       takesArg := .arg "level" },
     { name := "verbose", help := "Enable verbose output." },
     { name := "quiet", help := "Suppress default output." },
     { name := "sarif",
-      help := "Write results as SARIF to <vc-directory>/reconcile.sarif." },
-    { name := "strict",
-      help := "Fail if any .result file is missing (default: continue)." }
+      help := "Write results as SARIF to <vc-directory>/reconcile.sarif." }
   ]
-  help := "Reconcile solver results with a generation manifest."
+  help := "Reconcile solver results with .smt2 files."
   callback := fun _v pflags => do
     let vcDirStr ← match pflags.getString "vc-directory" with
       | .some d => pure d
       | .none => exitFailure "--vc-directory is required for reconcile."
     let vcDir : System.FilePath := ⟨vcDirStr⟩
-    -- Parse override options.
-    let checkModeOv ← match pflags.getString "check-mode" with
-      | .none => pure (none : Option Core.VerificationMode)
+    let checkMode ← match pflags.getString "check-mode" with
+      | .none => pure Core.VerificationMode.deductive
       | .some s => match Core.VerificationMode.ofString? s with
-        | .some m => pure (some m)
+        | .some m => pure m
         | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {Core.VerificationMode.options}."
-    let checkLevelOv ← match pflags.getString "check-level" with
-      | .none => pure (none : Option Core.CheckLevel)
+    let checkLevel ← match pflags.getString "check-level" with
+      | .none => pure Core.CheckLevel.minimal
       | .some s => match Core.CheckLevel.ofString? s with
-        | .some l => pure (some l)
+        | .some l => pure l
         | .none => exitFailure s!"Invalid check level: '{s}'. Must be {Core.CheckLevel.options}."
-    let verboseOv : Option Core.VerboseMode :=
-      if pflags.getBool "verbose" then some .normal
-      else if pflags.getBool "quiet" then some .quiet
-      else none
-    let ov : Core.ReconcileOverride :=
-      { checkMode := checkModeOv, checkLevel := checkLevelOv, verbose := verboseOv }
-    -- Read and validate the manifest.
-    let manifest ← match ← Core.readManifest vcDir with
-      | .ok m => pure m
-      | .error e => exitUserError e
-    -- Validate result files exist (warn or fail-strict).
-    let missing ← Core.missingResultFiles manifest vcDir
-    if !missing.isEmpty then
-      let msg := s!"{missing.size} missing .result file(s): {missing.toList}"
-      if pflags.getBool "strict" then
-        exitUserError msg
-      else
-        IO.eprintln s!"Warning: {msg}"
-    -- Reconcile.
-    let vcResults ← Core.reconcile manifest vcDir ov
-    -- Output.
-    let effectiveOptions := Core.resolveOptions manifest ov
+    let verbose : Core.VerboseMode :=
+      if pflags.getBool "verbose" then .normal
+      else if pflags.getBool "quiet" then .quiet
+      else .normal
+    let options : Core.VerifyOptions :=
+      { Core.VerifyOptions.default with
+        checkMode, checkLevel, verbose }
+    let vcResults ← Core.reconcileDirectory vcDir options
     if pflags.getBool "sarif" then
-      -- SARIF needs a file map for proper location reporting; when source is
-      -- unavailable we still emit a document, but line/column falls back to 0.
       let files := Map.empty
       let outputPath := (vcDir / "reconcile.sarif").toString
-      Core.Sarif.writeSarifOutput effectiveOptions.checkMode files vcResults outputPath
+      Core.Sarif.writeSarifOutput options.checkMode files vcResults outputPath
     for vcResult in vcResults do
       let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata none
       println! f!"{posStr} [{vcResult.obligation.label}]: \
                     {vcResult.formatOutcome}"
-    printPyAnalyzeSummary vcResults effectiveOptions.checkMode
+    printPyAnalyzeSummary vcResults options.checkMode
 
 def pyInterpretCommand : Command where
   name := "pyInterpret"

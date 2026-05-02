@@ -16,7 +16,6 @@ import Strata.Transform.IrrelevantAxioms
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Core.Manifest
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -331,21 +330,9 @@ def Core.verifyProgram
     (keepAllFilesPrefix : Option String := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults := do
-    -- Install manifest-emitting callbacks when --no-solve is used so the
-    -- split-solve-reconcile workflow works for all verify entry points.
-    let mut callbacks : Core.VerifyCallbacks := .empty
-    let mut manifestRef? : Option (IO.Ref (Array Core.ManifestObligation)) := none
-    if options.skipSolver then
-      let ref ← IO.mkRef (#[] : Array Core.ManifestObligation)
-      callbacks := Core.manifestEmittingCallbacks ref
-      manifestRef? := some ref
     let results ← EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
-        (keepAllFilesPrefix := keepAllFilesPrefix)
-        (callbacks := callbacks))
-    if let some ref := manifestRef? then
-      let entries ← ref.get
-      Core.emitManifest tempDir options entries
+        (keepAllFilesPrefix := keepAllFilesPrefix))
     pure results
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
