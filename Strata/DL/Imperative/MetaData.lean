@@ -295,6 +295,9 @@ def MetaData.divisionByZero : String := "divisionByZero"
 /-- Metadata value for arithmetic-overflow property type classification. -/
 def MetaData.arithmeticOverflow : String := "arithmeticOverflow"
 
+/-- Metadata value for out-of-bounds-access property type classification. -/
+def MetaData.outOfBoundsAccess : String := "outOfBoundsAccess"
+
 /-- Read the property type classification from metadata, if present. -/
 def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
   match md.findElem MetaData.propertyType with

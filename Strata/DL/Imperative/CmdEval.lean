@@ -69,6 +69,7 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (Ïƒ : S) (c : Cmd P) : Cmd P Ã
       let propType := match md.getPropertyType with
         | some s => if s == MetaData.divisionByZero then .divisionByZero
                     else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else if s == MetaData.outOfBoundsAccess then .outOfBoundsAccess
                     else .assert
         | none => .assert
       match EC.denoteBool e with

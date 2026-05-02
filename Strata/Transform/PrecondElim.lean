@@ -75,6 +75,8 @@ private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : O
   | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeNeg⟩
   | .bv ⟨_, .SafeUAdd⟩ | .bv ⟨_, .SafeUSub⟩ | .bv ⟨_, .SafeUMul⟩ | .bv ⟨_, .SafeUNeg⟩ =>
     some Imperative.MetaData.arithmeticOverflow
+  | .seq .Select | .seq .Update | .seq .Take | .seq .Drop =>
+    some Imperative.MetaData.outOfBoundsAccess
   | _ => none
 
 /--
