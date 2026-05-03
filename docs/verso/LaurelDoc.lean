@@ -155,9 +155,14 @@ a[0] := 42;
 assert a[0] == 42;
 ```
 
-Out-of-bounds access is unconstrained, matching SMT-LIB semantics; the verifier may
-return any value for an out-of-bounds read and may leave an out-of-bounds write
-undefined.
+Out-of-bounds access is a verification obligation. `Sequence.select`,
+`Sequence.update`, `Sequence.take`, and `Sequence.drop` carry preconditions
+that the index or length argument is in range; the subscript sugar inherits
+them. The solver will emit a proof obligation at each subscript site — both
+in imperative code and in pure positions like `requires`/`ensures` clauses,
+quantifier bodies, and function bodies. If the index cannot be shown to be
+in bounds, verification fails with an `outOfBoundsAccess` diagnostic. This
+matches how division by zero is checked.
 
 ## Sequence operations
 
@@ -178,9 +183,28 @@ The `Sequence` namespace exposes the following operations:
 `Array.length(a)` returns the length of an array. It is internally desugared to
 `Sequence.length(a#$data)` and requires its argument to be of type `Array<T>`.
 
+## Array to sequence conversion
+
+`Sequence.fromArray(a)` returns a `Seq<T>` snapshot of an `Array<T>`'s current
+contents. The snapshot is independent: subsequent mutations to the array are
+not reflected in the returned sequence.
+
+```
+var a: Array<int> := [1, 2, 3];
+var s: Seq<int> := Sequence.fromArray(a);
+a[0] := 99;
+assert s[0] == 1;   // the snapshot still holds the original value
+assert a[0] == 99;
+```
+
+This is the supported idiom for extracting values out of an array. Laurel does
+not support implicit `Array<T>` → `Seq<T>` conversion. There is no corresponding
+`Seq<T>` → `Array<T>` conversion; constructing an array from a literal or from
+another array requires `new`.
+
 ## Common mistakes
 
-A pre-pass validator flags four common misuses with helpful messages:
+A pre-pass validator flags five common misuses with helpful messages:
 
 - Using `a[i := v]` (functional update) on an `Array<T>`:
 
@@ -207,6 +231,16 @@ A pre-pass validator flags four common misuses with helpful messages:
   assert Array.length(s) == 3;
   //     ~~~~~~~~~~~~~~~
   // error: `Array.length` requires an argument of type `Array<T>`, got `Seq<int>`.
+  ```
+
+- Calling `Sequence.fromArray` on something that is not an `Array<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(s);
+  //                 ~~~~~~~~~~~~~~~~~~~~~
+  // error: `Sequence.fromArray` requires an argument of type `Array<T>`,
+  //        got `Seq<int>`.
   ```
 
 - Declaring `Array<T>` with a `T` other than `int` (current SMT limitation):
