@@ -30,6 +30,9 @@ This document tracks the selected Boole feature-request seeds kept under
   - `&`, `|`, `^`, `>>` (UShr), `>>s` (SShr), `<<`, `~` lower to `Bv{N}.And/Or/Xor/UShr/SShr/Shl/Not` Core ops.
   - `bvWidth` helper extracts the bit-width from the Boole type and dispatches to the right-sized op.
   - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
+- **Signed bitvector comparisons** (`<s`, `<=s`, `>s`, `>=s`)
+  - `a <s b` etc. lower via `toCoreBvBin` to `Bv{N}.SLt/SLe/SGt/SGe`; four `toCoreExpr` cases added to `Verify.lean`.
+  - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) (`bv_signed_cmp`, 7 postconditions).
 - **Mutual recursion over datatypes** (#599)
   - `rec function ... ;` blocks work end-to-end; two `Verify.lean` fixes: `lowerPureFuncDef` propagates `@[cases]` to `FuncAttr.inlineIfConstr`, and `toCoreDecls` injects preceding sibling op-exprs as De Bruijn bvars so cross-sibling calls resolve.
   - Remaining gap: mutual recursion over `int` still needs function-level `decreases` (not yet implemented).

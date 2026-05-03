@@ -380,6 +380,10 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .bvshl  m ty a b => toCoreBvBin m ty "Shl"  (← toCoreExpr a) (← toCoreExpr b)
   | .bvushr m ty a b => toCoreBvBin m ty "UShr" (← toCoreExpr a) (← toCoreExpr b)
   | .bvsshr m ty a b => toCoreBvBin m ty "SShr" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvslt  m ty a b => toCoreBvBin m ty "SLt"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsle  m ty a b => toCoreBvBin m ty "SLe"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsgt  m ty a b => toCoreBvBin m ty "SGt"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsge  m ty a b => toCoreBvBin m ty "SGe"  (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
       return oldifyExpr (← get).currentInoutNames (← toCoreExpr a)
   -- Sequence operations (Core Grammar, inherited by Boole)

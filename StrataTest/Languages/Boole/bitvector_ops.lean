@@ -174,3 +174,57 @@ Result: ✅ pass-/
 example : Strata.smtVCsCorrect bitvectorSShrSeed := by
   gen_smt_vcs
   all_goals (first | grind | decide)
+
+-- Exercises signed bitvector comparisons (<s, <=s, >s, >=s).
+-- In bv8 signed interpretation: 0xFF = -1, 0x7F = 127.
+private def bitvectorSignedCmpSeed : Strata.Program :=
+#strata
+program Boole;
+
+procedure bv_signed_cmp(a: bv8, b: bv8) returns ()
+spec {
+  ensures bv{8}(255) <s  bv{8}(0);
+  ensures bv{8}(127) >s  bv{8}(0);
+  ensures bv{8}(255) <=s bv{8}(0);
+  ensures bv{8}(127) >=s bv{8}(0);
+  ensures bv{8}(0)   <=s bv{8}(0);
+  ensures bv{8}(0)   >=s bv{8}(0);
+  ensures bv{8}(255) <s  bv{8}(1);
+}
+{ };
+#end
+
+/-- info:
+Obligation: bv_signed_cmp_ensures_0_4904
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_1_4939
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_2_4974
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_3_5009
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_4_5044
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_5_5079
+Property: assert
+Result: ✅ pass
+
+Obligation: bv_signed_cmp_ensures_6_5114
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" bitvectorSignedCmpSeed (options := .quiet)
+
+example : Strata.smtVCsCorrect bitvectorSignedCmpSeed := by
+  gen_smt_vcs
+  all_goals (first | grind | decide)
