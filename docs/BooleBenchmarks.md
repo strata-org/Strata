@@ -10,18 +10,18 @@ Each benchmark is a real exec function with `requires`/`ensures`. The goal: run 
 The five benchmarks are the core operations of three widely deployed cryptographic systems: X25519 key exchange, Ed25519 signatures, and Ristretto255 (the prime-order group used in zero-knowledge proof frameworks).
 
 - Field multiplication (`FieldElement51::mul`) is the arithmetic foundation of Curve25519 — every higher-level operation, from key exchange to signature verification, ultimately reduces to repeated calls to it.
-- Scalar reduction (`from_bytes_mod_order`) enforces a security property called canonical encoding, whose absence caused signature malleability vulnerabilities in several widely-used libraries including OpenSSL and tinyssh (RFC 8032 §5.1.7).
-- Point decompression (`CompressedEdwardsY::decompress`) and Ristretto compression (`RistrettoPoint::compress`) are the serialization steps that happen at every signature verification and every zero-knowledge proof respectively. 
+- Scalar reduction (`from_bytes_mod_order_wide`) reduces a 64-byte hash output to a canonical scalar, enforcing the security property whose absence caused signature malleability vulnerabilities in several widely-used libraries including OpenSSL and tinyssh (RFC 8032 §5.1.7); it additionally guarantees that a uniformly random input produces a uniformly random scalar — the property required for secure nonce generation in EdDSA.
+- Point decompression (`CompressedEdwardsY::decompress`) and Ristretto compression (`RistrettoPoint::compress`) are the serialization steps that happen at every signature verification and every zero-knowledge proof respectively.
 - `MontgomeryPoint::mul_clamped` is the core scalar multiplication step of X25519 — the key exchange used in TLS 1.3, Signal, WireGuard, and SSH.
 
 ## Overview
 
-The five benchmarks cover all five main source modules of the repo:
+The five benchmarks cover the main source modules of the repo:
 
 | # | Function | Protocol / Layer | Module | Total lines | Exec lines |
 |---|----------|-----------------|--------|:-----------:|:----------:|
 | 1 | `FieldElement51::mul` | Field arithmetic — GF(2²⁵⁵ − 19) | `field.rs` | 149 | ~50 |
-| 2 | `Scalar::from_bytes_mod_order` | Scalar arithmetic — ℤ/ℓℤ | `scalar.rs` | 19 | 3 |
+| 2 | `Scalar::from_bytes_mod_order_wide` | Scalar arithmetic — ℤ/ℓℤ | `scalar.rs` | 49 | 13 |
 | 3 | `CompressedEdwardsY::decompress` | Ed25519 — point decompression | `edwards.rs` | 76 | ~36 |
 | 4 | `RistrettoPoint::compress` | Ristretto / ZK — group encoding | `ristretto.rs` | 309 | ~35 |
 | 5 | `MontgomeryPoint::mul_clamped` | X25519 — key exchange | `montgomery.rs` | 45 (+400†) | 3 (+400†) |
@@ -49,24 +49,21 @@ fn mul(self, _rhs: &'a FieldElement51) -> (output: FieldElement51)
 
 ---
 
-## Benchmark 2 — `Scalar::from_bytes_mod_order`
+## Benchmark 2 — `Scalar::from_bytes_mod_order_wide`
 
-**19 lines** (scalar.rs:273–291) · 3 exec statements
+**49 lines** (scalar.rs:300–348) · 13 exec statements
 
 ```rust
-pub fn from_bytes_mod_order(bytes: [u8; 32]) -> (result: Scalar)
+pub fn from_bytes_mod_order_wide(input: &[u8; 64]) -> (result: Scalar)
     ensures
-        scalar_as_canonical(&result) == u8_32_as_group_canonical(bytes),
+        scalar_as_canonical(&result) == group_canonical(bytes_seq_as_nat(input@)),
         is_canonical_scalar(&result),
-{
-    let s_unreduced = Scalar { bytes };
-    s_unreduced.reduce()
-}
+        is_uniform_bytes(input) ==> is_uniform_scalar(&result),
 ```
 
-- Every Ed25519 signature passes scalars through this function. Non-canonical encodings cause **signature malleability**: two valid signatures for the same message.
-- `is_canonical_scalar` is a deployed security property — several widely-used libraries including OpenSSL and tinyssh were found vulnerable when they did not enforce it (RFC 8032 §5.1.7).
-- The body is three lines; the interesting claim is entirely in the postcondition.
+- Takes a 64-byte input — the size of a SHA-512 hash output — and reduces it mod ℓ to a canonical scalar. This is the function used in EdDSA nonce generation: `H(k || M)` (a 64-byte hash) is passed through this function to produce the signing scalar `r`.
+- The first two postconditions enforce canonical encoding, whose absence caused signature malleability vulnerabilities in several widely-used libraries including OpenSSL and tinyssh (RFC 8032 §5.1.7).
+- The third postcondition is a probabilistic security property: if the input is uniformly distributed (as a hash output is), the output scalar is also uniformly distributed. This is the property required for **nonce secrecy** — a biased nonce in EdDSA directly leaks the private key (as in the ECDSA PlayStation 3 attack).
 
 ---
 
@@ -158,15 +155,16 @@ seeds live in
 |-----|-----|--------|----------|
 | Struct/record field access | #13 | ○ open | [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) |
 | Native `nat` support | #10 | ○ open | [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) |
-| Recursive spec functions over sequences | #11 | ○ open | [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) — basic ops (`Sequence.skip`, `Sequence.subrange`, `Sequence.take`, etc.) are implemented; remaining gap is recursive spec functions (`bytes_seq_as_nat`, `seq_as_nat_52`) that underlie `u8_32_as_group_canonical` (B2), `u8_32_as_nat` (B5), and `field_element_from_bytes` (B3, B4); these need int-based termination proofs (blocked on `@[cases]`-free recursion over `int`) |
+| Recursive spec functions over sequences | #11 | ○ open | [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) — basic ops (`Sequence.skip`, `Sequence.subrange`, `Sequence.take`, etc.) are implemented; remaining gap is recursive spec functions that walk a sequence element by element: `bytes_seq_as_nat` (needed by B2 and B5), `seq_as_nat_52` (B1), and `field_element_from_bytes` (B3, B4); these need int-based termination proofs (blocked on `@[cases]`-free recursion over `int`) |
 
 **Additional gaps per benchmark:**
 
 | # | Gap | FR# | Status | Notes |
 |---|-----|-----|--------|-------|
 | 1 | `u128` as `int` | — | ○ open | 25 cross-limb products; no new language feature needed once struct access lands — model `u64`/`u128` limbs as `int` |
-| 2 | `[u8; 32]` byte arrays | — | ○ open | Model as `Map int bv8`; pattern demonstrated in [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) |
-| 2 | `reduce()` spec function | — | ✓ done | Axiom seed [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) verifies with abstract `ByteArray32`/`Scalar` types; `u8_32_as_group_canonical` stays abstract — spelling it out recursively requires int-based termination over sequences (open gap) |
+| 2 | `[u8; 64]` byte arrays | — | ○ open | Model as `Map int bv8`; pattern demonstrated in [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) |
+| 2 | `reduce()` spec function | — | ✓ done | Axiom seed [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean) verifies with abstract `ByteArray32`/`Scalar` types; `bytes_seq_as_nat` stays abstract — spelling it out recursively requires int-based termination over sequences (open gap) |
+| 2 | `is_uniform_scalar` axiom | — | ○ open | Probabilistic postcondition; needs abstract `is_uniform_bytes` / `is_uniform_scalar` predicates as Boole axioms |
 | 3 | `Option<EdwardsPoint>` return | — | ○ open | Encoding pattern demonstrated in [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) and [`datatypes_and_selectors.lean`](../StrataTest/Languages/Boole/FeatureRequests/datatypes_and_selectors.lean) |
 | 3 | `field_square` / `sqrt_ratio_i` axioms | — | ○ open | Needed for the full decompress body |
 | 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support |
