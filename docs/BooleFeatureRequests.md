@@ -30,7 +30,7 @@ This document tracks the selected Boole feature-request seeds kept under
   - `&`, `|`, `^`, `>>` (UShr), `>>s` (SShr), `<<`, `~` lower to `Bv{N}.And/Or/Xor/UShr/SShr/Shl/Not` Core ops.
   - `bvWidth` helper extracts the bit-width from the Boole type and dispatches to the right-sized op.
   - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
-- **Signed bitvector comparisons** (`<s`, `<=s`, `>s`, `>=s`)
+- **Signed bitvector comparisons** (#1075) (`<s`, `<=s`, `>s`, `>=s`)
   - `a <s b` etc. lower via `toCoreBvBin` to `Bv{N}.SLt/SLe/SGt/SGe`; four `toCoreExpr` cases added to `Verify.lean`.
   - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/bitvector_ops.lean) (`bv_signed_cmp`, 7 postconditions).
 - **Mutual recursion over datatypes** (#599)
