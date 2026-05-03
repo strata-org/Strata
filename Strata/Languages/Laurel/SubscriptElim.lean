@@ -21,6 +21,8 @@ Type-aware pass that desugars `Subscript` nodes based on the target type:
 
 Also:
 - Rewrites `Array.length(a)` to `Sequence.length(a#$data)`.
+- Rewrites `Sequence.fromArray(a)` to `a#$data` (a snapshot read of
+  the array's current Seq contents).
 - Splits `var a: Array<T> := <init>` (where `init` is a `Seq` literal, not
   another Array) into `var a: Array<T> := new $Array; a#$data := <init>`.
 - Conditionally injects the synthetic `$Array` composite (containing a single
@@ -28,7 +30,10 @@ Also:
 
 After this pass, no `Subscript` nodes remain in the program.
 
-Out-of-bounds access is unconstrained by design, matching SMT-LIB semantics.
+Out-of-bounds access produces a verification obligation at the call site:
+the Core-level bounds preconditions on `Sequence.select` / `update` / `take` /
+`drop` propagate through `PrecondElim`, and the SMT solver is responsible for
+discharging them.
 -/
 
 namespace Strata.Laurel
@@ -229,6 +234,19 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
           ⟨.LiteralInt 0, src⟩
       | _ =>
         -- Wrong arity — leave alone (validator/resolver will flag).
+        ⟨.StaticCall callee args', src⟩
+    else if callee.text == sequenceFromArrayName then
+      -- `Sequence.fromArray(a)` → `a#$data` — only when `a` is an Array<T>.
+      -- When the argument is not an Array the validator has flagged it; we
+      -- rewrite defensively to `Sequence.empty()` so Core type checking
+      -- does not add confusing follow-on errors.
+      match args' with
+      | [a] =>
+        if isArrayType model a then
+          mkFieldSelect a SeqOp.dataField src
+        else
+          mkCall SeqOp.empty [] src
+      | _ =>
         ⟨.StaticCall callee args', src⟩
     else
       ⟨.StaticCall callee args', src⟩

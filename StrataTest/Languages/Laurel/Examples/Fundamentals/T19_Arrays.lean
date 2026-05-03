@@ -80,6 +80,7 @@ procedure arrayLoop() {
 procedure setFirst(a: Array<int>, v: int)
   requires Array.length(a) > 0
   opaque
+  ensures Array.length(a) > 0
   ensures a[0] == v
   modifies a
 {
@@ -90,6 +91,24 @@ procedure callSetFirst() {
   var a: Array<int> := [1, 2, 3];
   setFirst(a, 42);
   assert a[0] == 42
+};
+
+// Sequence.fromArray takes a snapshot of the array's current contents.
+procedure fromArrayBasic() {
+  var a: Array<int> := [10, 20, 30];
+  var s: Seq<int> := Sequence.fromArray(a);
+  assert Sequence.length(s) == 3;
+  assert s[0] == 10
+};
+
+// Snapshot semantics: mutating the array after extraction does not
+// affect the previously-taken sequence.
+procedure fromArraySnapshot() {
+  var a: Array<int> := [1, 2, 3];
+  var s: Seq<int> := Sequence.fromArray(a);
+  a[0] := 99;
+  assert s[0] == 1;
+  assert a[0] == 99
 };
 "
 
@@ -132,6 +151,18 @@ procedure arrayNonIntElement() {
 
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "ArrayNonIntElement" arrayNonIntElementProgram 14 processLaurelFile
+
+def fromArrayWrongArgProgram := r"
+// Sequence.fromArray on a non-Array argument
+procedure fromArrayWrongArg() {
+  var s: Seq<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(s)
+//                   ^^^^^^^^^^^^^^^^^^^^^ error: requires an argument of type
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "FromArrayWrongArg" fromArrayWrongArgProgram 14 processLaurelFile
 
 end Laurel
 end Strata

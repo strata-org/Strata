@@ -592,4 +592,9 @@ def arrayCompositeName := "$Array"
     `SubscriptElim` into `Sequence.length(a.$data)`. -/
 def arrayLengthName := "Array.length"
 
+/-- Name of the `Sequence.fromArray` function. Takes a snapshot of an array's
+    contents as an immutable `Seq<T>`. Calls are desugared by `SubscriptElim`
+    into `a#$data`. -/
+def sequenceFromArrayName := "Sequence.fromArray"
+
 end

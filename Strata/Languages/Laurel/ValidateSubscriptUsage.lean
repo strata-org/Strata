@@ -17,7 +17,7 @@ Pure validation pass (Laurel → `List DiagnosticModel`) that reports misuses of
 `Seq<T>` and `Array<T>` which would otherwise surface as confusing downstream
 errors. Runs alongside `validateDiamondFieldAccesses` in `runLaurelPasses`.
 
-The four diagnostics are:
+The diagnostics are:
 
 1. `a[i := v]` on `Array<T>` — arrays are mutable; functional update is only
    valid for sequences.
@@ -25,6 +25,7 @@ The four diagnostics are:
    only valid for arrays.
 3. `Array.length(x)` where `x` is not an `Array<T>`.
 4. `Array<T>` where `T ≠ int` (current SMT limitation).
+5. `Sequence.fromArray(x)` where `x` is not an `Array<T>`.
 -/
 
 namespace Strata.Laurel
@@ -58,11 +59,14 @@ private def msgSeqDestructiveUpdate : String :=
 private def msgArrayLengthArg (actual : String) : String :=
   s!"`Array.length` requires an argument of type `Array<T>`, got `{actual}`."
 
+private def msgSequenceFromArrayArg (actual : String) : String :=
+  s!"`Sequence.fromArray` requires an argument of type `Array<T>`, got `{actual}`."
+
 private def msgArrayElementNotInt (actual : String) : String :=
   s!"`Array<T>` is currently only supported for `T = int`. " ++
   s!"Support for other element types is not yet implemented. Found: `Array<{actual}>`."
 
-/-! ## Type-position walk (diagnostic 4) -/
+/-! ## Type-position walk (Array element type diagnostic) -/
 
 /-- Collect diagnostics for any `Array<T>` whose element type is not `int`. -/
 partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
@@ -86,7 +90,7 @@ partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
   | .Intersection tys => tys.flatMap validateHighType
   | _ => []
 
-/-! ## Expression-position walk (diagnostics 1, 2, 3) -/
+/-! ## Expression-position walk (Subscript and call diagnostics) -/
 
 /-- Walk a `StmtExprMd` and collect diagnostics for Subscript/Array.length
     misuse, recursing into all subexpressions and embedded types. -/
@@ -114,7 +118,7 @@ def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List Diagnost
     let targetDiags := targets.attach.foldl
       (fun acc ⟨t, _⟩ => acc ++ validateStmtExpr model t) []
     assignDiag ++ targetDiags ++ validateStmtExpr model value
-  -- Diagnostic 3: Array.length(x) with x not Array<T>
+  -- Diagnostics 3 and 5: Array.length(x) / Sequence.fromArray(x) with x not Array<T>
   | .StaticCall callee args =>
     let lengthDiag : List DiagnosticModel :=
       if callee.text == arrayLengthName then
@@ -125,7 +129,17 @@ def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List Diagnost
           else [diagnosticFromSource expr.source (msgArrayLengthArg (fmtType actualTy))]
         | _ => []
       else []
-    lengthDiag ++ args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateStmtExpr model a) []
+    let fromArrayDiag : List DiagnosticModel :=
+      if callee.text == sequenceFromArrayName then
+        match args with
+        | [a] =>
+          let actualTy := (computeExprType model a).val
+          if isArrayTy actualTy then []
+          else [diagnosticFromSource expr.source (msgSequenceFromArrayArg (fmtType actualTy))]
+        | _ => []
+      else []
+    lengthDiag ++ fromArrayDiag ++
+      args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateStmtExpr model a) []
   -- Everything below: recurse into children; no local diagnostic.
   | .IfThenElse c t (some e) =>
     validateStmtExpr model c ++ validateStmtExpr model t ++ validateStmtExpr model e

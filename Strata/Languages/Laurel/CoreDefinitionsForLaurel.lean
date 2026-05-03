@@ -71,6 +71,9 @@ function Sequence.drop(s: int, n: int) : int
 function Array.length(a: int) : int
   external;
 
+function Sequence.fromArray(a: int) : int
+  external;
+
 #end
 
 /--
