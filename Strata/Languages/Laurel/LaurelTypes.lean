@@ -50,7 +50,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Variables
   | .Identifier id => (model.get id).getType
   -- Field access
-  | .FieldSelect _ fieldName => (model.get fieldName).getType
+  | .FieldSelect _ fieldName _ => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise

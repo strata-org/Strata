@@ -106,7 +106,7 @@ where
         | t :: _ => stmtExprToArg t
         | [] => laurelOp "identifier" #[ident "_"]
       laurelOp "assign" #[targetArg, stmtExprToArg value]
-    | .FieldSelect target field =>
+    | .FieldSelect target field _ =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]

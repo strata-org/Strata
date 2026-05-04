@@ -57,7 +57,7 @@ def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExp
 
 def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
-  | .FieldSelect target _ =>
+  | .FieldSelect target _ _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExprMd target
   | .InstanceCall target _ args => collectExprMd target; for a in args do collectExprMd a
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
@@ -70,7 +70,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
       -- Check if any target is a field assignment (heap write)
       for ⟨assignTarget, _⟩ in assignTargets.attach do
         match assignTarget.val with
-        | .FieldSelect _ _ =>
+        | .FieldSelect _ _ _ =>
             modify fun s => { s with writesHeapDirectly := true }
         | _ => pure ()
         collectExprMd assignTarget
@@ -154,6 +154,7 @@ structure TransformState where
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
   /-- Box constructors used during transformation, collected for datatype generation -/
   usedBoxConstructors : List DatatypeConstructor := []
+  usedDynamicField : List String := []
 
 @[expose] abbrev TransformM := StateM TransformState
 
@@ -222,6 +223,13 @@ private def recordBoxConstructor (model : SemanticModel) (ty : HighType) : Trans
         else { s with usedBoxConstructors := s.usedBoxConstructors ++ [ctor] }
   | _ => return
 
+/-- Record a Box constructor use in the transform state -/
+private def recordDynamicField (fieldName : String) : TransformM Unit := do
+  modify fun s =>
+    if fieldName ∈  s.usedDynamicField then s
+        else { s with usedDynamicField := s.usedDynamicField ++ [fieldName] }
+
+
 def readsHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapReaders.contains name
 
@@ -258,15 +266,20 @@ where
   recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
     let ⟨expr, source⟩ := exprMd
     match _h : expr with
-    | .FieldSelect selectTarget fieldName => do
-        let some qualifiedName := resolveQualifiedFieldName model fieldName
-          | return ⟨ .Hole, source ⟩
-
-        let valTy := (model.get fieldName).getType
+    | .FieldSelect selectTarget fieldName fieldTy => do
+        let (qualifiedName, ty) ← do match fieldTy with
+        | none =>
+          let some qualifiedName := resolveQualifiedFieldName model fieldName
+            | return ⟨ .Hole, source ⟩
+          let valTy := (model.get fieldName).getType.val
+          pure (qualifiedName, valTy)
+        | some fieldTy =>
+          let qualifiedName := s!"@DynamicField.{fieldName.text}"
+          recordDynamicField fieldName.text
+          pure (qualifiedName, fieldTy.val)
+        recordBoxConstructor model ty
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
-        -- Unwrap Box: apply the appropriate destructor
-        recordBoxConstructor model valTy.val
-        return mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]
+        return mkMd <| .StaticCall (boxDestructorName model ty) [readExpr]
     | .StaticCall callee args =>
         let args' ← args.mapM (recurse ·)
         let calleeReadsHeap ← readsHeap callee
@@ -316,21 +329,27 @@ where
         return ⟨ .Return v', source ⟩
     | .Assign targets v =>
         match targets with
-        | [⟨.FieldSelect target fieldName, _⟩] =>
-            let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | return ⟨ .Hole, source ⟩
-            let valTy := (model.get fieldName).getType
-            let target' ← recurse target
-            let v' ← recurse v
-            -- Wrap value in Box constructor
-            recordBoxConstructor model valTy.val
-            let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
-            let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source ⟩
-            if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, source ⟩
-            else
-              return heapAssign
+        | [⟨.FieldSelect target fieldName fieldTy, _⟩] =>
+          let (qualifiedName, ty) ← do match fieldTy with
+            | none =>
+              let some qualifiedName := resolveQualifiedFieldName model fieldName
+                | return ⟨ .Hole, source ⟩
+              let valTy := (model.get fieldName).getType.val
+              pure (qualifiedName, valTy)
+            | some fieldTy =>
+              let qualifiedName := s!"@DynamicField.{fieldName.text}"
+              recordDynamicField fieldName.text
+              pure (qualifiedName, fieldTy.val)
+          recordBoxConstructor model ty
+          let target' ← recurse target
+          let v' ← recurse v
+          let boxedVal := mkMd <| .StaticCall (boxConstructorName model ty) [v']
+          let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
+              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source⟩
+          if valueUsed then
+            return ⟨ .Block [heapAssign, v'] none, source⟩
+          else
+            return heapAssign
         | [fieldSelectMd] =>
           let tgt' ← recurse fieldSelectMd
           return ⟨ .Assign [tgt'] (← recurse v), source ⟩
@@ -474,13 +493,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let heapWriters := computeWritesHeap allProcs
   let initState : TransformState := { heapReaders, heapWriters }
   let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
-  -- Collect all qualified field names and generate a Field datatype
-  let fieldNames := program.types.foldl (fun acc td =>
-    match td with
-    | .Composite ct => acc ++ ct.fields.map (fun f => (mkId $ ct.name.text ++ "." ++ f.name.text))
-    | _ => acc) ([] : List Identifier)
-  let fieldDatatype : TypeDefinition :=
-    .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
+
   -- Remove fields from composite types since they are now stored in the heap
   -- Also transform instance procedures, accumulating used Box constructors
   let (types', state2) := program.types.foldl (fun (accTypes, accState) td =>
@@ -490,6 +503,16 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
       (accTypes ++ [.Composite { ct with fields := [], instanceProcedures := instProcs' }], s')
     | other => (accTypes ++ [other], accState))
     ([], state1)
+
+  -- Collect all qualified field names and generate a Field datatype
+  let dynamicFieldConstructors := state2.usedDynamicField.map fun fieldName => { name := s!"@DynamicField.{fieldName}", args := [] }
+  let fieldNames := program.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct => acc ++ ct.fields.map (fun f => (mkId $ ct.name.text ++ "." ++ f.name.text))
+    | _ => acc) ([] : List Identifier)
+  let fieldDatatype : TypeDefinition :=
+    .Datatype { name := "Field", typeArgs := [], constructors := dynamicFieldConstructors ++ fieldNames.map fun n => { name := n, args := [] } }
+
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
     .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }

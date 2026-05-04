@@ -122,7 +122,7 @@ Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited fie
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
-  | .FieldSelect target fieldName =>
+  | .FieldSelect target fieldName _ =>
     let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
     let fieldError := match (computeExprType model target).val with
       | .UserDefined typeName =>
