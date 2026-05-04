@@ -1718,17 +1718,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | some (.Constant _ (.ConString _ str) _) => some str.val
       | _ => none
     -- Check if condition contains a Hole - if so, hoist to variable
-    let (condStmts, finalCondExpr, condCtx) :=
+    let (condStmts, finalCondExpr, condCtx, isHoisted) :=
       match condExpr.val with
       | .Hole =>
         let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
         let varType := mkHighTypeMd .TBool
         let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
         let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
-        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
-      | _ => ([], condExpr, ctx)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] }, true)
+      | _ => ([], condExpr, ctx, false)
 
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := Any_to_bool finalCondExpr, summary }) md
+    let coercedCond := if isHoisted then finalCondExpr else Any_to_bool finalCondExpr
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := coercedCond, summary }) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
