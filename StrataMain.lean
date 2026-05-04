@@ -209,7 +209,10 @@ def verifyOptionsFlags : List Flag := [
     help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
-    takesArg := .arg "N|none" }
+    takesArg := .arg "N|none" },
+  { name := "parallel",
+    help := "Number of parallel solver workers (default: 1, sequential).",
+    takesArg := .arg "N" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -249,6 +252,12 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--path-cap must be at least 1 or 'none'."
                    else pure (.some n)
       | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
+  let parallelWorkers ← match pflags.getString "parallel" with
+    | .none => pure base.parallelWorkers
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--parallel must be at least 1."
+                   else pure n
+      | .none => exitFailure s!"Invalid parallel workers: '{s}'. Must be a positive number."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -271,7 +280,8 @@ def parseVerifyOptions (pflags : ParsedFlags)
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
     vcDirectory,
-    pathCap
+    pathCap,
+    parallelWorkers
   }
 
 /-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already

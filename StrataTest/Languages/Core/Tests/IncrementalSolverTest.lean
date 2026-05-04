@@ -36,6 +36,7 @@ def quietIncremental : Core.VerifyOptions where
   profile := false
   overflowChecks := {}
   incremental := true
+  parallelWorkers := 1
 
 private def getVerdict (results : Array Core.VCResult) : String := Id.run do
   for r in results do
