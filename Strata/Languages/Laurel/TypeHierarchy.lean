@@ -118,6 +118,20 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
   | _ => false
 
 /--
+Check whether accessing `fieldName` on `target` is a diamond-inherited field access,
+and if so return a diagnostic error using the given `source` range.
+-/
+private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
+    (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
+  match (computeExprType model target).val with
+  | .UserDefined typeName =>
+    if isDiamondInheritedField model typeName fieldName then
+      let fileRange := source.getD FileRange.unknown
+      [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
+    else []
+  | _ => []
+
+/--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
@@ -125,13 +139,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   match _h : expr.val with
   | .Var (.Field target fieldName) =>
     let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
-    let fieldError := match (computeExprType model target).val with
-      | .UserDefined typeName =>
-        if isDiamondInheritedField model typeName fieldName then
-          let fileRange := expr.source.getD FileRange.unknown
-          [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
-        else []
-      | _ => []
+    let fieldError := checkDiamondFieldAccess model target fieldName expr.source
     targetErrors ++ fieldError
   | .Block stmts _ =>
     stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
@@ -140,13 +148,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
       match _hv : t.val with
       | .Field target fieldName =>
         let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
-        let fieldError := match (computeExprType model target).val with
-          | .UserDefined typeName =>
-            if isDiamondInheritedField model typeName fieldName then
-              let fileRange := t.source.getD FileRange.unknown
-              [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
-            else []
-          | _ => []
+        let fieldError := checkDiamondFieldAccess model target fieldName t.source
         acc ++ innerErrors ++ fieldError
       | .Local _ | .Declare _ => acc) []
     targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
