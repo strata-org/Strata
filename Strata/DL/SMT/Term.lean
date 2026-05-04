@@ -174,12 +174,12 @@ abbrev Term.real  (r : Decimal) : Term := .prim (.real r)
 abbrev Term.bitvec {n : Nat} (bv : BitVec n) : Term := .prim (.bitvec bv)
 abbrev Term.string (s : String) : Term := .prim (.string s)
 
-def TermPrim.typeOf : TermPrim → TermType
-  | .bool _           => .bool
-  | .int _            => .int
-  | .real _           => .real
-  | .bitvec b         => .bitvec b.width
-  | .string _         => .string
+@[expose] def TermPrim.typeOf : TermPrim → TermType
+  | .bool _              => .bool
+  | .int _               => .int
+  | .real _              => .real
+  | @TermPrim.bitvec n _ => .bitvec n
+  | .string _            => .string
 
 def Term.typeOf : Term → TermType
   | .prim l       => l.typeOf
