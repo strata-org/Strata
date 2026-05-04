@@ -41,7 +41,9 @@ function guardInFunction(x: int) returns (r: int) {
   return 3
 };
 
-procedure testFunctions() {
+procedure testFunctions()
+  opaque
+{
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -52,6 +54,7 @@ procedure testFunctions() {
 };
 
 procedure guards(a: int) returns (r: int)
+  opaque
 {
   var b: int := a + 2;
   if b > 2 then {
@@ -70,6 +73,7 @@ procedure guards(a: int) returns (r: int)
 };
 
 procedure dag(a: int) returns (r: int)
+  opaque
 {
   var b: int;
 

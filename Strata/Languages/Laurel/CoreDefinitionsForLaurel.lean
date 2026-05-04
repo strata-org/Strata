@@ -25,6 +25,7 @@ def coreDefinitionsForLaurelDDM :=
 #strata
 program Laurel;
 
+datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
 
 // The types for these Map functions are incorrect.
