@@ -1,0 +1,311 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# =============================================================================
+# Python Front-End Fuzz Testing
+# =============================================================================
+#
+# This workflow fuzz-tests Strata's Python front-end by generating random
+# Python programs and running them through the Strata pipeline. It is inspired
+# by CBMC's use of CSmith (see .github/workflows/csmith.yaml in the CBMC
+# repository) and by the hypothesmith project (https://github.com/Zac-HD/
+# hypothesmith), which generates syntactically valid Python programs using
+# the Hypothesis property-based testing framework.
+#
+# ## Trigger
+#
+# Runs on pull_request only — not on merge_group or push to main. This is
+# intentional: fuzz tests are non-deterministic and are meant to catch
+# regressions in PRs, not to gate merges or post-merge builds.
+#
+# ## What it tests
+#
+# Two modes run in sequence:
+#
+# 1. **Syntax mode** — Uses hypothesmith to generate syntactically valid
+#    Python from the grammar. Each program is parsed into Strata's Ion
+#    format, round-tripped through `strata toIon`, and diffed. This tests
+#    that the parser pipeline doesn't crash on arbitrary valid Python.
+#
+# 2. **Semantic mode** — Uses a custom generator to produce typed Python
+#    programs with assertions whose expected values are computed by CPython
+#    at generation time (analogous to CSmith computing a checksum). Each
+#    program is first validated with CPython, then run through
+#    `pyAnalyzeLaurel`. If Strata reports a failing assertion on a program
+#    that CPython runs correctly, that's a semantic modelling bug.
+#
+# The `--unrestricted` flag is used, which includes generators for Python
+# constructs beyond what Strata supports today (classes, generators,
+# comprehensions, try/except, match, async, decorators, etc.). Programs
+# that hit unsupported constructs are reported as SKIP, not failures.
+#
+# ## Failure analysis
+#
+# When fuzz tests fail on the PR, the workflow performs a bisection-style
+# analysis by re-running the same tests (same seed) against the merge base:
+#
+#   Pick random seed
+#           │
+#           ▼
+#   Run 10 fuzz tests on PR branch
+#           │
+#       ┌───┴───┐
+#     PASS    FAIL
+#       │       │
+#       ▼       ▼
+#     Done   Save fuzz scripts, checkout merge base,
+#            rebuild strata, re-run with same seed
+#               │
+#           ┌───┴──────────┐
+#       Base FAILS      Base PASSES
+#           │                │
+#           ▼                ▼
+#     Create GitHub      CI FAILS
+#     issue labeled      (regression
+#     'fuzz-bug'          from PR)
+#     (pre-existing
+#      bug, PR not
+#      blocked)
+#
+# ## Reproducibility
+#
+# Every run uses a random seed derived from the current timestamp. The seed
+# is reported in the step name, in the logs, and in all failure messages.
+# To reproduce a failure locally:
+#
+#   cd Tools/Python
+#   ./scripts/hypothesmith.sh 10 <SEED> both --unrestricted
+#
+# The seed controls both the Hypothesis engine (syntax mode) and Python's
+# random module (semantic mode), so identical seeds produce identical
+# programs.
+#
+# ## Files
+#
+# - Tools/Python/scripts/hypothesmith.sh    — Main driver script
+# - Tools/Python/scripts/gen_random_python.py — Program generator
+# - Tools/Python/scripts/gen_unrestricted.py  — Extended generators
+# =============================================================================
+
+name: Python Fuzz
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  fuzz_python:
+    name: Fuzz-test Python front-end
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed to create issues for pre-existing bugs.
+      issues: write
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          # Full history is needed to find the merge base for failure analysis.
+          fetch-depth: 0
+
+      # Generate a seed from the current nanosecond timestamp. This is
+      # reported in the step name and all log output so that any failure
+      # can be reproduced deterministically.
+      - name: Pick random seed
+        id: seed
+        run: echo "value=$(date +%s%N | cut -c1-10)" >> $GITHUB_OUTPUT
+
+      - name: Install cvc5
+        shell: bash
+        run: |
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "x86_64" ]; then ARCH_NAME="x86_64"
+          elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then ARCH_NAME="arm64"
+          else echo "Unsupported architecture: $ARCH"; exit 1; fi
+          wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+          unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
+          chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
+          echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+
+      # Try to restore a cached Lean build to avoid rebuilding from scratch.
+      - name: Restore lake cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+
+      # Build only the strata executable — skip proofs and other targets
+      # to keep the job fast.
+      - name: Build Strata executables
+        uses: leanprover/lean-action@v1
+        with:
+          use-github-cache: false
+          build-args: 'strata:exe strata'
+          test: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      # Install the Strata Python bindings (for py_to_strata) and
+      # hypothesmith (for grammar-based program generation).
+      - name: Install Python dependencies
+        run: |
+          python -m venv Tools/Python/.venv
+          Tools/Python/.venv/bin/pip install --quiet -e Tools/Python
+          Tools/Python/.venv/bin/pip install --quiet hypothesmith
+
+      # Run 10 fuzz tests in both syntax and semantic modes with
+      # --unrestricted. The seed is shown in the step name for easy
+      # identification in the GitHub Actions UI.
+      - name: Run fuzz tests on PR (seed=${{ steps.seed.outputs.value }})
+        id: fuzz_pr
+        working-directory: Tools/Python
+        run: |
+          echo "::group::Fuzz test output"
+          set +e
+          ./scripts/hypothesmith.sh 10 ${{ steps.seed.outputs.value }} both --unrestricted 2>&1 | tee /tmp/fuzz_pr.log
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      # --- Failure analysis ---
+      # If the PR fuzz tests failed, check whether the same failure exists
+      # at the merge base. This distinguishes regressions (PR broke it)
+      # from pre-existing bugs (already broken on main).
+      #
+      # The fuzz scripts are saved before checking out the merge base
+      # because they may not exist there (e.g., if this PR is the one
+      # that introduces the fuzz infrastructure).
+      - name: Analyse failure against merge base
+        id: analyse
+        if: steps.fuzz_pr.outputs.exit_code != '0'
+        run: |
+          echo "PR fuzz tests failed with seed ${{ steps.seed.outputs.value }}"
+          echo ""
+
+          # Save the fuzz scripts from the PR branch — they may not exist
+          # at the merge base.
+          cp -r Tools/Python/scripts /tmp/fuzz_scripts
+
+          # Find and check out the merge base (the common ancestor of the
+          # PR branch and the target branch).
+          MERGE_BASE=$(git merge-base HEAD origin/${{ github.base_ref }})
+          echo "Merge base: $MERGE_BASE"
+          git checkout "$MERGE_BASE"
+
+          # Restore the fuzz scripts into the merge-base working tree.
+          cp /tmp/fuzz_scripts/gen_random_python.py Tools/Python/scripts/
+          cp /tmp/fuzz_scripts/gen_unrestricted.py Tools/Python/scripts/
+          cp /tmp/fuzz_scripts/hypothesmith.sh Tools/Python/scripts/
+          chmod +x Tools/Python/scripts/hypothesmith.sh
+
+          # Rebuild strata at the merge base. This may fail if the Lean
+          # toolchain or dependencies changed significantly between the
+          # merge base and the PR. In that case, we can't determine
+          # whether this is a regression, so we report "inconclusive".
+          if ! lake build strata:exe strata 2>&1 | tail -10; then
+            echo "result=inconclusive" >> $GITHUB_OUTPUT
+            echo "⚠️  Could not build merge base. Cannot determine if this is a regression."
+            exit 0
+          fi
+
+          # Re-run the exact same fuzz tests (same seed, same count, same
+          # modes) against the merge-base build.
+          echo "::group::Merge-base fuzz test output"
+          set +e
+          cd Tools/Python
+          ./scripts/hypothesmith.sh 10 ${{ steps.seed.outputs.value }} both --unrestricted 2>&1 | tee /tmp/fuzz_base.log
+          BASE_EXIT=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          if [ $BASE_EXIT -ne 0 ]; then
+            echo "result=pre-existing" >> $GITHUB_OUTPUT
+            echo ""
+            echo "⚠️  Merge base ALSO fails with the same seed."
+            echo "This is a pre-existing bug, not a regression from this PR."
+          else
+            echo "result=regression" >> $GITHUB_OUTPUT
+            echo ""
+            echo "❌ Merge base passes but PR fails."
+            echo "This PR introduced a regression."
+          fi
+
+      # --- Pre-existing bug: file an issue ---
+      # If the merge base also fails, this is a bug that already exists on
+      # main. We create a GitHub issue (with deduplication by seed) so it
+      # gets tracked, but we do NOT fail the CI — the PR author shouldn't
+      # be blocked by a pre-existing bug.
+      - name: Create issue for pre-existing bug
+        if: steps.analyse.outputs.result == 'pre-existing' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const seed = '${{ steps.seed.outputs.value }}';
+            const title = `[fuzz] Pre-existing Python front-end bug (seed ${seed})`;
+            // Deduplicate: don't create a second issue for the same seed.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'fuzz-bug',
+              per_page: 100,
+            });
+            if (existing.data.some(i => i.title.includes(`seed ${seed}`))) {
+              console.log('Issue already exists for this seed, skipping.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              labels: ['fuzz-bug'],
+              body: [
+                `A fuzz test found a pre-existing failure in the Python front-end.`,
+                ``,
+                `**Seed:** \`${seed}\``,
+                `**PR:** #${context.issue.number}`,
+                `**Merge base also fails:** yes`,
+                ``,
+                `### Reproduce`,
+                `\`\`\`bash`,
+                `cd Tools/Python`,
+                `./scripts/hypothesmith.sh 10 ${seed} both --unrestricted`,
+                `\`\`\``,
+                ``,
+                `This bug exists on \`main\` and was not introduced by the PR.`,
+              ].join('\n'),
+            });
+
+      # --- Regression: fail CI ---
+      # The merge base passes but the PR fails — this PR broke something.
+      - name: Fail if PR introduced a regression
+        if: steps.analyse.outputs.result == 'regression'
+        run: |
+          echo "::error::Fuzz test regression detected (seed=${{ steps.seed.outputs.value }}). The merge base passes but this PR fails."
+          echo ""
+          echo "Reproduce locally:"
+          echo "  cd Tools/Python"
+          echo "  ./scripts/hypothesmith.sh 10 ${{ steps.seed.outputs.value }} both --unrestricted"
+          exit 1
+
+      # --- Inconclusive: fail CI conservatively ---
+      # We couldn't build the merge base, so we can't tell if this is a
+      # regression or pre-existing. Fail to be safe.
+      - name: Fail if analysis was inconclusive
+        if: steps.analyse.outputs.result == 'inconclusive'
+        run: |
+          echo "::warning::Fuzz test failed (seed=${{ steps.seed.outputs.value }}) but could not build merge base to determine if this is a regression."
+          echo ""
+          echo "Reproduce locally:"
+          echo "  cd Tools/Python"
+          echo "  ./scripts/hypothesmith.sh 10 ${{ steps.seed.outputs.value }} both --unrestricted"
+          exit 1
+
+      - name: Report seed on success
+        if: steps.fuzz_pr.outputs.exit_code == '0'
+        run: echo "✅ All fuzz tests passed (seed=${{ steps.seed.outputs.value }})"
