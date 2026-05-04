@@ -47,6 +47,10 @@ function OptString_len (o : Option string) : int {
 -- Test 2: Incorrect polymorphic instantiation caught by type checking
 ---------------------------------------------------------------------
 
+/--
+error: Encountered int expression when string expected.
+-/
+#guard_msgs in
 def polyUnifBadPgm : Program :=
 #strata
 program Core;
@@ -67,5 +71,6 @@ First mismatch: string with int.
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram polyUnifBadPgm)).fst
+
 
 end Strata.PolyUnifTest

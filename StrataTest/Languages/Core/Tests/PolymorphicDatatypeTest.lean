@@ -562,12 +562,6 @@ end Strata.PolymorphicDatatypeTest
 namespace Strata.InferTypePanicTest
 
 -- Verify that the program does not panic during type inference (issue #650).
--- The program has type errors that should be reported gracefully.
-/--
-error: Could not infer type parameter 2 for Core.seq_select
----
-error: Encountered .|| expression when MethodSetting expected.
--/
 #guard_msgs in
 def issue650Pgm : Program :=
 #strata

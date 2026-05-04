@@ -180,6 +180,98 @@ termination_by t
 def mapAnn {α β} (t : TypeExprF α) (f : α → β) : TypeExprF β :=
   t.mapAnnM (m := Id) f
 
+/-- Return true if the type expression contains any `.tvar` node. -/
+protected def hasTVar {α} : TypeExprF α → Bool
+| .tvar _ _ => true
+| .ident _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasTVar)
+| .fvar _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasTVar)
+| .arrow _ a r => a.hasTVar || r.hasTVar
+| .bvar _ _ => false
+termination_by e => e
+
+/-- Replace `.tvar` nodes using a substitution (array of name-type pairs).
+    Unmapped tvars are left unchanged. -/
+protected def substTVars {α} (tp : TypeExprF α)
+    (subst : Array (String × TypeExprF α)) : TypeExprF α :=
+  match tp with
+  | .tvar _ name =>
+    match subst.find? (·.1 == name) with
+    | some (_, replacement) => replacement
+    | none => tp
+  | .ident n i args =>
+    .ident n i (args.attach.map fun ⟨e, _⟩ => e.substTVars subst)
+  | .fvar n idx args =>
+    .fvar n idx (args.attach.map fun ⟨e, _⟩ => e.substTVars subst)
+  | .arrow n a r =>
+    .arrow n (a.substTVars subst) (r.substTVars subst)
+  | .bvar _ _ => tp
+termination_by tp
+
+/-- Structural equality ignoring annotations. -/
+protected def eqNoAnn {α β} : TypeExprF α → TypeExprF β → Bool
+| .tvar _ n1, .tvar _ n2 => n1 == n2
+| .bvar _ i, .bvar _ j => i == j
+| .ident _ n1 a1, .ident _ n2 a2 =>
+  if h : n1 = n2 ∧ a1.size = a2.size then
+    a1.size.all fun i p =>
+      TypeExprF.eqNoAnn a1[i] a2[i]
+  else
+    false
+| .fvar _ i1 a1, .fvar _ i2 a2 =>
+  if h : i1 = i2 ∧ a1.size = a2.size then
+    a1.size.all fun i p =>
+      TypeExprF.eqNoAnn a1[i] a2[i]
+  else
+    false
+| .arrow _ a1 r1, .arrow _ a2 r2 =>
+  a1.eqNoAnn a2 && r1.eqNoAnn r2
+| _, _ => false
+termination_by a => a
+
+/-- First-order pattern matching of a type with tvars (pattern) against a
+    concrete type (target). Produces a consistent tvar substitution.
+    Returns the updated substitution on success, or `none` on structural mismatch. -/
+protected def matchTVars {α}
+    (pattern target : TypeExprF α)
+    (subst : Array (String × TypeExprF α))
+    : Option (Array (String × TypeExprF α)) :=
+  match pattern with
+  | .tvar _ name =>
+    match subst.find? (·.1 == name) with
+    | some (_, prev) => if prev.eqNoAnn target then some subst else none
+    | none => some (subst.push (name, target))
+  | .ident _ n1 args1 =>
+    match target with
+    | .ident _ n2 args2 =>
+      if h : n1 = n2 ∧ args1.size = args2.size then
+        args1.size.foldM (fun i p s =>
+          (args1[i]).matchTVars (args2[i]) s) subst
+      else none
+    | .tvar _ _ => some subst  -- target is tvar: can't learn, pass through
+    | _ => none
+  | .fvar _ idx1 args1 =>
+    match target with
+    | .fvar _ idx2 args2 =>
+      if h : idx1 = idx2 ∧ args1.size = args2.size then
+        args1.size.foldM (fun i p s =>
+          (args1[i]).matchTVars (args2[i]) s) subst
+      else none
+    | .tvar _ _ => some subst
+    | _ => none
+  | .arrow _ a1 r1 =>
+    match target with
+    | .arrow _ a2 r2 => do
+      let subst' ← a1.matchTVars a2 subst
+      r1.matchTVars r2 subst'
+    | .tvar _ _ => some subst
+    | _ => none
+  | .bvar _ i =>
+    match target with
+    | .bvar _ j => if i == j then some subst else none
+    | .tvar _ _ => some subst
+    | _ => none
+termination_by pattern
+
 end TypeExprF
 
 /-- Separator format for sequence formatting -/

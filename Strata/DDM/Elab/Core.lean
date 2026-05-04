@@ -27,15 +27,14 @@ namespace Strata
 
 namespace TypeExprF
 
-/-
-This applies global context to instantiate types and variables.
-
-Free type alias variables bound to alias
--/
+/-- Substitute bound type variables in `d` using `bindings`.
+`bindings` is indexed directly by de Bruijn index: `bindings[i]`
+replaces `bvar i`.  Out-of-range indices are shifted down by
+`bindings.size`. -/
 protected def instType {α} (d : TypeExprF α) (bindings : Array (TypeExprF α)) : TypeExprF α := Id.run <|
   d.instTypeM fun n idx =>
     if p : idx < bindings.size then
-      pure <| bindings[bindings.size - (idx+1)]
+      pure <| bindings[idx]
     else
       .bvar n (idx - bindings.size)
 
@@ -201,7 +200,7 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
             | logErrorMF c.info.loc mf!"Expected type"
           tpArgs := tpArgs.push cinfo.typeExpr
           children := children.push c
-        let tp :=  .fvar loc fidx tpArgs
+        let tp :=  .fvar loc fidx tpArgs.reverse  -- flattenTypeApp returns reverse order
         let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := tp, isInferred := false }
         return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
@@ -298,7 +297,7 @@ def translateTypeIdent (elabInfo : ElabInfo) (qualIdentInfo : Tree) (args : Arra
   | .type decl =>
     checkArgSize loc ident decl.argNames.size args
     let tpArgs ← args.mapM fun a => return (← asTypeInfo a).typeExpr
-    let tp := .ident loc ident tpArgs
+    let tp := .ident loc ident tpArgs.reverse  -- flattenTypeApp returns reverse order
     let info : TypeInfo := { toElabInfo := elabInfo, typeExpr := tp, isInferred := false }
     return .node (.ofTypeInfo info) args
   | .syncat decl =>
@@ -560,7 +559,20 @@ def elabArgIndex {α} {n}
   | some idx => collectNewBindingsM initialScope trees[idx.toLevel] f
 
 /--
-Parse TypeApp and TypeParen expressions to get Init.TypeExpr into head-format form.
+Flatten a chain of left-associated `Init.TypeApp` nodes into a head
+and an array of type arguments in **reverse** (right-to-left) order.
+
+`Init.TypeParen` nodes are stripped during flattening.
+
+Example: the type expression `Map Inte (Lst Boole)`, parsed as
+
+    TypeApp(TypeApp(Map, Inte), TypeParen(TypeApp(Lst, Boole)))
+
+is flattened to `(Map, #[TypeApp(Lst, Boole), Inte])`.
+
+The reversed order is an artifact of left-to-right peeling of `TypeApp`
+nodes.  Callers that store args in `.fvar`/`.ident` type nodes must
+reverse the array to forward (declaration) order.
 -/
 def flattenTypeApp (arg : Tree) (args : Array Tree) : Tree × Array Tree :=
   match arg with
@@ -697,7 +709,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
       checkArgSize opInfo.loc qname decl.argNames.size args
       let args ← args.attach.mapM fun ⟨a, _⟩ =>
         translateTypeExpr a
-      return .ident opInfo.loc qname args
+      return .ident opInfo.loc qname args.reverse  -- flattenTypeApp returns reverse order
     | _ =>
       logError ident.info.loc s!"Expected type"; pure default
   | q`Init.TypeArrow => do
@@ -756,7 +768,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     -- First check if the type is in the GlobalContext (for user-defined types like datatypes)
     if let .name name := tpId then
       if let some binding := tctx.lookupVar name then
-        let tpArgs ← args.mapM translateTypeExpr
+        let tpArgs ← args.reverse.mapM translateTypeExpr  -- flattenTypeApp returns reverse order
         match binding with
         | .fvar fidx k =>
           match k with
@@ -795,7 +807,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     match decl with
     | .type decl =>
       checkArgSize opInfo.loc name decl.argNames.size args
-      let args ← args.mapM translateTypeExpr
+      let args ← args.reverse.mapM translateTypeExpr  -- flattenTypeApp returns reverse order
       return .expr (.ident opInfo.loc name args)
     | .syncat decl =>
       checkArgSize opInfo.loc name decl.argNames.size args
@@ -974,7 +986,12 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
   | .fvar _ idx =>
     match tctx.globalContext.kindOf! idx with
     | .expr tp =>
-      return resultType! tctx tp a.val.size
+      if tp.hasTVar then
+        -- Resolve tvars by matching parameter types against inferred arg types.
+        let (resolvedTp, nPeeled) ← resolveFVarTVars tctx tp a.val
+        return resultType! tctx resolvedTp (a.val.size - nPeeled)
+      else
+        return resultType! tctx tp a.val.size
     | .type _ _ => panic! "Expected expression instead of type."
   | .fn _ ident => do
     let dm := (← read).dialects
@@ -998,6 +1015,43 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
            pure default
     return resultType! tctx tp (a.val.size - fnArgCount)
   | .app _ f a => panic! "Invalid app in result of Expr.hnf"
+where
+  /-- Resolve tvars in a polymorphic fvar type by matching parameter types
+      against the inferred types of the actual arguments.  Returns the
+      resolved result type (after peeling matched arrows) and the number
+      of arrows consumed, so the caller can adjust its arg count. -/
+  resolveFVarTVars (tctx : TypingContext) (tp : TypeExpr) (args : Array Arg)
+      : ElabM (TypeExpr × Nat) := do
+    -- Peel arrows to get parameter types and result type.
+    let mut subst : Array (String × TypeExpr) := #[]
+    let mut paramTp := tp
+    let mut nPeeled := 0
+    for arg in args do
+      match paramTp with
+      | .arrow _ pty rest =>
+        match arg with
+        | .expr e =>
+          let argType ← inferType tctx e
+          match pty.matchTVars argType subst with
+          | some s => subst := s
+          | none => pure ()  -- structural mismatch; skip gracefully
+        | _ => pure ()  -- non-expr arg (type, op, etc.); skip
+        paramTp := rest
+        nPeeled := nPeeled + 1
+      | _ => break  -- no more arrows to peel
+    -- Only substitute if all tvars in the result type are resolved.
+    -- Partial resolution (e.g., constructors where some tvars don't appear
+    -- in any parameter) can cause downstream type mismatches.
+    if subst.isEmpty then
+      return (tp, 0)
+    else
+      let resolvedResult := paramTp.substTVars subst
+      if resolvedResult.hasTVar then
+        -- Some tvars remain unresolved; leave the type unchanged to
+        -- preserve the existing tvar pass-through behavior.
+        return (tp, 0)
+      else
+        return (resolvedResult, nPeeled)
 
 /--
 Given a tree from operations with category `Init.TypeExpr`, build a tree with the type or category
