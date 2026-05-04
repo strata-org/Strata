@@ -13,7 +13,9 @@ namespace Strata
 namespace Laurel
 
 def forLoopProgram := r"
-procedure sumToThree() {
+procedure sumToThree()
+  opaque
+{
   var sum: int := 0;
   for (var i: int := 0; i < 3; i := i + 1)
     invariant sum >= 0
