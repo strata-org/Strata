@@ -28,11 +28,19 @@ structure SourceRange where
 deriving Inhabited, Repr
 
 /-- Source ranges carry location metadata but are considered equal for the
-    purpose of expression comparison. This ensures that semantically identical
-    expressions with different source positions are treated as equal. -/
-axiom SourceRange.eq_trivial : ∀ (a b : SourceRange), a = b
+    purpose of expression comparison (`BEq`). This ensures that semantically
+    identical expressions with different source positions are treated as equal. -/
+instance : BEq SourceRange where
+  beq _ _ := true
 
-instance : DecidableEq SourceRange := fun a b => isTrue (SourceRange.eq_trivial a b)
+instance : DecidableEq SourceRange := fun a b =>
+  if h₁ : a.start = b.start then
+    if h₂ : a.stop = b.stop then
+      isTrue (by cases a; cases b; simp_all)
+    else
+      isFalse (by intro h; cases h; exact h₂ rfl)
+  else
+    isFalse (by intro h; cases h; exact h₁ rfl)
 
 namespace SourceRange
 
