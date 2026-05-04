@@ -36,34 +36,55 @@ inductive Decision where
 deriving DecidableEq, Repr
 
 /--
- A Solver is an interpreter for SMTLib scripts, which are passed to the solver
- via its `smtLibInput` stream. Solvers optionally have an `smtLibOutput` stream
- to which they print the results of executing the commands received on the input
- stream. We assume that both the input and output streams conform to the SMTLib
- standard: the inputs are SMTLib script commands encoded as s-expressions, and
- the outputs are the s-expressions whose shape is determined by the standard for
- each command. We don't have an error stream here, since we configure solvers to
- run in quiet mode and not print anything to the error stream.
+ An SMT-LIB solver process wrapper. Renamed from `Solver` to `SMTLibSolver`
+ to distinguish from the abstract `Solver` interface.
+
+ An SMTLibSolver is an interpreter for SMTLib scripts, which are passed to the
+ solver via its `smtLibInput` stream. Solvers optionally have an `smtLibOutput`
+ stream to which they print the results of executing the commands received on
+ the input stream. We assume that both the input and output streams conform to
+ the SMTLib standard: the inputs are SMTLib script commands encoded as
+ s-expressions, and the outputs are the s-expressions whose shape is determined
+ by the standard for each command. We don't have an error stream here, since we
+ configure solvers to run in quiet mode and not print anything to the error
+ stream.
 -/
-structure Solver where
+structure SMTLibSolver where
   smtLibInput : IO.FS.Stream
   smtLibOutput : Option IO.FS.Stream
 
-/-- State tracked by `SolverM`: caches `Term → SMT-LIB string` and
+/-- Backward-compatible alias for `SMTLibSolver`. -/
+abbrev Solver := SMTLibSolver
+
+/-- State tracked by `SMTLibSolverM`: caches `Term → SMT-LIB string` and
     `TermType → SMT-LIB string` conversions so that the same term/type is
     never converted twice. -/
-structure SolverState where
+structure SMTLibSolverState where
   /-- Caches `Term → full SMT-LIB string` via `SMTDDM.termToString`. -/
   termStrings : Std.HashMap Term String := {}
   /-- Caches `TermType → full SMT-LIB string` via `SMTDDM.termTypeToString`. -/
   typeStrings : Std.HashMap TermType String := {}
 
-def SolverState.init : SolverState := {}
+def SMTLibSolverState.init : SMTLibSolverState := {}
 
-@[expose] abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
+/-- Backward-compatible alias for `SMTLibSolverState`. -/
+abbrev SolverState := SMTLibSolverState
+
+/-- Backward-compatible alias. -/
+abbrev SolverState.init := SMTLibSolverState.init
+
+/-- SMT-LIB solver monad. Renamed from `SolverM` to `SMTLibSolverM`
+    to distinguish from the abstract solver interface. -/
+@[expose] abbrev SMTLibSolverM (α) := StateT SolverState (ReaderT Solver IO) α
+
+/-- Backward-compatible alias for `SMTLibSolverM`. -/
+abbrev SolverM := SMTLibSolverM
 
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
+
+/-- Alias for `SolverM.run`. -/
+abbrev SMTLibSolverM.run := @SolverM.run
 
 /-- A typed SMT-LIB datatype constructor: name + typed fields. -/
 structure SMTConstructor where
@@ -74,11 +95,11 @@ deriving Repr, Inhabited
 namespace Solver
 
 /--
-  Returns a Solver for the given path and arguments. This function expects
-  `path` to point to an SMT solver executable, and `args` to specify valid
-  arguments to that solver.
+  Returns an SMTLibSolver for the given path and arguments. This function
+  expects `path` to point to an SMT solver executable, and `args` to specify
+  valid arguments to that solver.
 -/
-def spawn (path : String) (args : Array String) : IO Solver := do
+def spawn (path : String) (args : Array String) : IO SMTLibSolver := do
   try
     let proc ← IO.Process.spawn {
       stdin  := .piped
@@ -96,7 +117,7 @@ def spawn (path : String) (args : Array String) : IO Solver := do
   Returns an instance of the solver that is backed by the executable
   specified in the environment variable "SOLVER".
 -/
-def solver : IO Solver := do
+def solver : IO SMTLibSolver := do
   match (← IO.getEnv "SOLVER") with
   | .some path => spawn path ["--quiet", "--lang", "smt"].toArray
   | .none      => throw (IO.userError "SOLVER environment variable not defined.")
@@ -108,7 +129,7 @@ def solver : IO Solver := do
   useful). For example, `Solver.checkSat` returns `Decision.unknown`. This
   function expects `h` to be write-enabled.
 -/
-def fileWriter (h : IO.FS.Handle) : IO Solver :=
+def fileWriter (h : IO.FS.Handle) : IO SMTLibSolver :=
   return ⟨IO.FS.Stream.ofHandle h, .none⟩
 
 /--
@@ -117,7 +138,7 @@ def fileWriter (h : IO.FS.Handle) : IO Solver :=
   return values that are sound according to the SMTLIb spec (but generally not
   useful). For example, `Solver.checkSat` returns `Decision.unknown`.
 -/
-def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO Solver :=
+def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO SMTLibSolver :=
   return ⟨IO.FS.Stream.ofBuffer b, .none⟩
 
 /-! ## Internal helpers -/
@@ -127,7 +148,7 @@ private def emitln (str : String) : SolverM Unit := do
   solver.smtLibInput.putStr s!"{str}\n"
   solver.smtLibInput.flush
 
-/-- Convert a `Term` to its SMT-LIB string, using the `SolverState` cache. -/
+/-- Convert a `Term` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
 def termToSMTString (t : Term) : SolverM String := do
   if let (.some s) := (← get).termStrings.get? t then return s
   match Strata.SMTDDM.termToString t with
@@ -136,7 +157,7 @@ def termToSMTString (t : Term) : SolverM String := do
     return s
   | .error msg => throw (IO.userError s!"Solver.termToSMTString failed: {msg}")
 
-/-- Convert a `TermType` to its SMT-LIB string, using the `SolverState` cache. -/
+/-- Convert a `TermType` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
 def typeToSMTString (ty : TermType) : SolverM String := do
   if let (.some s) := (← get).typeStrings.get? ty then return s
   match Strata.SMTDDM.termTypeToString ty with

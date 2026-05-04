@@ -1,0 +1,189 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.DL.SMT.Solver
+
+/-!
+# Abstract Solver Interface
+
+Defines `AbstractSolver τ σ m`, a generic solver interface parameterized by an
+opaque term type `τ`, an opaque sort type `σ`, and a monad `m`. All operations
+that can fail return `Except String`. The monad `m` captures any state or
+effects the backend needs.
+
+For the incremental SMT-LIB backend, `τ = SMT.Term`, `σ = SMT.TermType`,
+`m = StateT IncrementalSolverState IO`.
+
+## Design
+
+- `declareNew` allows shadowing: declaring the same name twice creates two
+  distinct variables. The backend handles disambiguation internally.
+- Models return keys as `(String × Nat)` where `Nat` is the shadow depth
+  (0 = most recently declared).
+- Quantifier bound variables are scoped via a callback pattern.
+- Terms are session-independent and can be stored and replayed across sessions.
+- Sorts are first-class: backends can create and pass their own sort
+  representations via `intSort`, `boolSort`, `bitvecSort`, `arraySort`, etc.
+-/
+
+namespace Strata.SMT
+
+public section
+
+/-- Handles for a single datatype constructor returned by `declareDatatype`.
+    - `constr` is the constructor function (use with `mkApp` to build values)
+    - `tester` is the recognizer predicate (use with `mkApp` to test membership)
+    - `selectors` are the field accessors in declaration order -/
+structure DatatypeConstructorHandles (τ : Type) where
+  constr : τ
+  tester : τ
+  selectors : List τ
+
+/-- Result of declaring a datatype: the sort and handles for each constructor. -/
+structure DatatypeInfo (τ : Type) (σ : Type) where
+  sort : σ
+  constructors : List (DatatypeConstructorHandles τ)
+
+/-- Abstract solver interface parameterized by term type `τ`, sort type `σ`,
+and monad `m`.
+
+All term constructors are fallible. Solvers might not accept certain constructs
+(e.g., wrong sorts, unsupported combinations) and we need to surface the issue
+precisely via `Except String`. -/
+structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
+  -- Configuration
+  setLogic : String → m Unit
+  setOption : String → String → m Unit
+  comment : String → m Unit
+
+  -- Sort constructors
+  boolSort : m σ
+  intSort : m σ
+  realSort : m σ
+  stringSort : m σ
+  bitvecSort : Nat → m σ
+  arraySort : σ → σ → m (Except String σ)
+
+  -- Sort conversion from Strata's TermType
+  termTypeToSort : TermType → m σ
+
+  -- Literal / leaf constructors
+  mkBool : Bool → m τ
+  mkInt : Int → m τ
+  mkPrim : TermPrim → m τ
+
+  /-- Fallback for operations not covered by specific mk* methods
+      (e.g. bitvectors, strings, regex). The backend receives the raw `Op`,
+      the already-encoded arguments, and the result sort. -/
+  mkAppOp : Op → List τ → σ → m (Except String τ)
+
+  -- Boolean operations
+  mkAnd : List τ → m (Except String τ)
+  mkOr : List τ → m (Except String τ)
+  mkNot : τ → m (Except String τ)
+  mkImplies : τ → τ → m (Except String τ)
+
+  -- Arithmetic operations
+  mkAdd : List τ → m (Except String τ)
+  mkSub : List τ → m (Except String τ)
+  mkMul : List τ → m (Except String τ)
+  mkDiv : τ → τ → m (Except String τ)
+  mkMod : τ → τ → m (Except String τ)
+  mkNeg : τ → m (Except String τ)
+  mkAbs : τ → m (Except String τ)
+
+  -- Comparison operations
+  mkEq : List τ → m (Except String τ)
+  mkLt : List τ → m (Except String τ)
+  mkLe : List τ → m (Except String τ)
+  mkGt : List τ → m (Except String τ)
+  mkGe : List τ → m (Except String τ)
+
+  -- Conditional
+  mkIte : τ → τ → τ → m (Except String τ)
+
+  -- Array operations
+  mkSelect : τ → τ → m (Except String τ)
+  mkStore : τ → τ → τ → m (Except String τ)
+
+  -- Function application (for uninterpreted functions)
+  mkApp : τ → List τ → m (Except String τ)
+
+  /-- Declare a new variable. Shadowing is allowed: declaring the same name
+      twice creates two distinct variables. The backend handles disambiguation
+      internally. -/
+  declareNew : String → σ → m τ
+
+  /-- Declare an uninterpreted function. -/
+  declareFun : String → List σ → σ → m (Except String τ)
+
+  /-- Define an interpreted function with a body term. -/
+  defineFun : String → List (String × σ) → σ → τ → m (Except String Unit)
+
+  /-- Declare a new sort with the given arity. Returns the declared sort. -/
+  declareSort : String → Nat → m (Except String σ)
+
+  /-- Declare an algebraic datatype.
+      Takes the datatype name, type parameter names, and a callback that
+      receives `(selfSort, typeParamSorts)` and returns the constructors.
+      Returns the declared sort and constructor/tester/selector handles.
+      This callback pattern (like `mkForall`) allows recursive and parametric
+      datatypes: the sort being declared does not exist yet when selectors
+      need to reference it. -/
+  declareDatatype : String → List String →
+    (σ → List σ → Except String (List (String × List (String × σ)))) →
+    m (Except String (DatatypeInfo τ σ))
+
+  /-- Declare mutually recursive algebraic datatypes.
+      Takes a list of `(name, typeParams)` and a callback that receives
+      `(selfSorts, typeParamSorts)` and returns constructors for each datatype.
+      Returns the declared sorts and constructor/tester/selector handles. -/
+  declareDatatypes : List (String × List String) →
+    (List σ → List (List σ) → Except String (List (List (String × List (String × σ))))) →
+    m (Except String (List (DatatypeInfo τ σ)))
+
+  /-- Construct a universally quantified term.
+      Takes name-sort pairs for bound variables and a monadic callback that
+      receives the bound variable terms and returns the body and trigger groups.
+      The callback is monadic so callers can encode sub-terms using the
+      bound variable handles. Bound variables cannot escape the quantifier scope. -/
+  mkForall : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
+
+  /-- Construct an existentially quantified term. Same callback pattern as `mkForall`. -/
+  mkExists : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
+
+  -- Session operations
+
+  /-- Assert a term (must be Bool-typed). -/
+  assert : τ → m (Except String Unit)
+
+  /-- Check satisfiability of the current assertions. -/
+  checkSat : m (Except String Decision)
+
+  /-- Check satisfiability under additional assumptions. -/
+  checkSatAssuming : List τ → m (Except String Decision)
+
+  /-- Retrieve the model after a `sat` result.
+      Keys are `(name, shadow_depth)` where 0 = most recently declared. -/
+  getModel : m (Except String (List ((String × Nat) × τ)))
+
+  /-- Get values of specific terms in the current model. -/
+  getValue : List τ → m (Except String (List (τ × τ)))
+
+  /-- Convert a term to its SMT-LIB string representation, making model values inspectable.
+      The returned string must be valid SMT-LIB syntax. -/
+  termToSMTLibString : τ → m (Except String String)
+
+  /-- Reset the solver session to its initial state. -/
+  reset : m Unit
+
+  /-- Close the solver session and release resources. -/
+  close : m Unit
+
+end
+
+end Strata.SMT

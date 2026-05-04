@@ -197,6 +197,10 @@ structure VerifyOptions where
   outputSarif : Bool
   /-- Print elapsed time for each verification sub-step. -/
   profile : Bool
+  /-- Use the incremental solver backend (stdin/stdout) instead of the
+      batch pipeline (write file, run solver). Opt-in; the batch pipeline
+      remains the default. -/
+  incremental : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -216,6 +220,7 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
+  incremental := false
   pathCap := .none
 }
 

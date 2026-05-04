@@ -177,7 +177,7 @@ private theorem extractTriggerGroup_sizeOf (t ti : Term) (h : ti ∈ extractTrig
   · simp_all
 
 /-- Every term nested in `extractTriggers t` has `sizeOf ≤ sizeOf t`. -/
-private theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
+theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
     (hts : ts ∈ extractTriggers t) (hti : ti ∈ ts) :
     sizeOf ti ≤ sizeOf t := by
   unfold extractTriggers at hts

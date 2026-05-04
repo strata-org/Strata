@@ -146,7 +146,7 @@ directly, which avoids the ambiguity that arises when parsing at the
 
 Returns a list of (key-string, value-Term) pairs on success.
 -/
-private def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
+def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
   let inputCtx := Strata.Parser.stringInputContext "solver-model" modelStr
   let op ←
     try Strata.Elab.parseCategoryFromDialect
@@ -174,7 +174,7 @@ Process a parsed model (list of key-string / value-Term pairs) against the
 expected variables, matching each variable's SMT-encoded name to its
 value in the model.
 -/
-private def processModel {P : PureExpr} [ToFormat P.Ident]
+def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
     (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
