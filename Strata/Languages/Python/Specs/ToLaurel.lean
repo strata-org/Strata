@@ -479,7 +479,7 @@ def buildSpecBody (allArgs : Array Arg)
       val := .Block stmts.toList none,
       source := fileSource
   }
-  return .Transparent body
+  return .Opaque [] (some body) [{ val := .All, source := none }]
 
 /-! ## Declaration Translation -/
 

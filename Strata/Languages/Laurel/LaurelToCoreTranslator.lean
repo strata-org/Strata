@@ -73,10 +73,9 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
 /-- Abort the Core program by setting the superfluous-errors flag and returning a dummy type. -/
-private def throwTypeDiagnostic (ty : HighTypeMd) (msg : String) : TranslateM LMonoTy := do
-  emitDiagnostic (diagnosticFromSource ty.source msg)
+private def invalidCore : TranslateM LMonoTy := do
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-  return .tcons "Error" []
+  return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-
 Translate Laurel HighType to Core Type
@@ -103,8 +102,11 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .Unknown => throwTypeDiagnostic ty "could not infer type"
-  | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
+  | .Unknown => invalidCore
+  | _ => do
+    emitDiagnostic (diagnosticFromSource ty.source "cannot translate type to Core: not supported yet" DiagnosticType.StrataBug)
+    invalidCore
+
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
@@ -625,12 +627,16 @@ structure LaurelTranslateOptions where
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
   profile : Bool := false
-  deriving Inhabited
+
+instance : Inhabited LaurelTranslateOptions where
+  default := {}
 
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}
   verifyOptions : Core.VerifyOptions := .default
-  deriving Inhabited
+
+instance : Inhabited LaurelVerifyOptions where
+  default := {}
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.

@@ -340,7 +340,7 @@ def main() -> None:
 "
   let (laurel, output) ← toLaurel pythonCmd program
   let calcAdd := manglePythonMethod "Calculator" "add"
-  assertHasBody laurel calcAdd
+  assertOpaque laurel calcAdd
   unless containsSubstr output s!"{calcAdd}(" do
     throw <| IO.userError s!"Expected '{calcAdd}(' in Laurel output but not found"
 
