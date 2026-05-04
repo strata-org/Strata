@@ -51,11 +51,18 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     { val := .Intersection (tys.map (resolveAliasType amap · visited)), source := ty.source }
   | _ => ty
 
+def resolveAliasVariable (amap : AliasMap) (v : VariableMd) : VariableMd :=
+  match v.val with
+  | .Declare param => ⟨.Declare { param with type := resolveAliasType amap param.type }, v.source⟩
+  | _ => v
+
 /-- Resolve aliases in expression type positions. -/
 def resolveAliasExprNode (amap : AliasMap) (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
-  | .LocalVariable n ty init =>
-    { val := .LocalVariable n (resolveAliasType amap ty) init, source := expr.source }
+  | .Assign targets value =>
+    ⟨.Assign (targets.map (resolveAliasVariable amap)) value, expr.source⟩
+  | .Var (.Declare param) =>
+    ⟨.Var (.Declare { param with type := resolveAliasType amap param.type }), expr.source⟩
   | .Quantifier mode param trigger body =>
     { val := .Quantifier mode { param with type := resolveAliasType amap param.type } trigger body, source := expr.source }
   | .AsType t ty => { val := .AsType t (resolveAliasType amap ty), source := expr.source }

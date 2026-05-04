@@ -1,8 +1,8 @@
-test_class_methods.py(34, 4): ✔️ always true if reached - main_assert(471)_17
+test_class_methods.py(34, 4): ✔️ always true if reached - main_assert(471)_13
 test_class_methods.py(34, 4): ✔️ always true if reached - get_owner should return Alice
-test_class_methods.py(34, 4): ✔️ always true if reached - main_assert(564)_19
+test_class_methods.py(34, 4): ✔️ always true if reached - main_assert(564)_15
 test_class_methods.py(34, 4): ✔️ always true if reached - get_balance should return 100
-test_class_methods.py(34, 4): ✔️ always true if reached - main_assert(678)_21
+test_class_methods.py(34, 4): ✔️ always true if reached - main_assert(678)_17
 test_class_methods.py(34, 4): ✔️ always true if reached - set_balance should update balance
 test_class_methods.py(31, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_methods.py(31, 4): ✔️ always true if reached - assert_opt_name_none_or_str

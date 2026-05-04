@@ -52,7 +52,7 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
     body := .Opaque [] none []
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
-  return bare (.StaticCall holeName (inputs.map (fun p => bare (.Identifier p.name))))
+  return bare (.StaticCall holeName (inputs.map (fun p => bare (.Var (.Local p.name)))))
 
 /-- Replace a deterministic `.Hole` with a call to a fresh uninterpreted function.
     Non-hole nodes pass through unchanged; recursion is handled by `mapStmtExprM`. -/

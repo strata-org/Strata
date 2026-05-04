@@ -62,6 +62,7 @@ partial def highTypeValToArg : HighType → Arg
     | [] => laurelOp "compositeType" #[ident "Unknown"]
     | t :: _ => highTypeToArg t
   | .Unknown => laurelOp "compositeType" #[ident "Unknown"]
+  | .MultiValuedExpr _ => laurelOp "compositeType" #[ident "Unknown"]
 
 end
 
@@ -80,6 +81,12 @@ private def operationName : Operation → String
 partial def stmtExprToArg (s : StmtExprMd) : Arg :=
   stmtExprValToArg s.val
 where
+  variableToArg : Variable → Arg
+    | .Local name => laurelOp "identifier" #[ident name.text]
+    | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
+    -- Declare is handled specially in the `Assign [⟨.Declare …⟩]` case of `stmtExprValToArg`.
+    -- This fallback drops the type; it should not be reached in normal operation.
+    | .Declare param => laurelOp "identifier" #[ident param.name.text]
   stmtExprValToArg : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
@@ -90,23 +97,37 @@ where
     | .LiteralString s => laurelOp "string" #[.strlit sr s]
     | .Hole true _ => laurelOp "hole"
     | .Hole false _ => laurelOp "nondetHole"
-    | .Identifier name => laurelOp "identifier" #[ident name.text]
+    | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
     | .Block stmts label =>
       let stmtArgs := stmts.map stmtExprToArg |>.toArray
       match label with
       | none => laurelOp "block" #[semicolonSep stmtArgs]
       | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
-    | .LocalVariable name ty init =>
-      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg ty]))
-      let initOpt := optionArg (init.map fun e => laurelOp "initializer" #[stmtExprToArg e])
-      laurelOp "varDecl" #[ident name.text, typeOpt, initOpt]
+    | .Var (.Declare param) =>
+      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
+      let initOpt := optionArg none
+      laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
+    | .Assign [⟨.Declare param, _⟩] value =>
+      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
+      let initOpt := optionArg (some (laurelOp "initializer" #[stmtExprToArg value]))
+      laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
     | .Assign targets value =>
-      -- Grammar only supports single-target assign; use first target or placeholder
-      let targetArg := match targets with
-        | t :: _ => stmtExprToArg t
-        | [] => laurelOp "identifier" #[ident "_"]
-      laurelOp "assign" #[targetArg, stmtExprToArg value]
-    | .FieldSelect target field =>
+      if targets.length > 1 then
+        let targetArgs := targets.map fun t =>
+          match t.val with
+          | .Declare param => laurelOp "assignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
+          | .Local name => laurelOp "assignTargetVar" #[ident name.text]
+          | .Field target fieldName =>
+            match target.val with
+            | .Var (.Local name) => laurelOp "assignTargetField" #[ident name.text, ident fieldName.text]
+            | _ => laurelOp "assignTargetVar" #[ident "_"]
+        laurelOp "multiAssign" #[commaSep targetArgs.toArray, stmtExprToArg value]
+      else
+        let targetArg := match targets with
+          | t :: _ => variableToArg t.val
+          | [] => laurelOp "identifier" #[ident "_"]
+        laurelOp "assign" #[targetArg, stmtExprToArg value]
+    | .Var (.Field target field) =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]
@@ -358,6 +379,12 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Datatype ty => formatDatatypeDefinition ty
   | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
 
+def formatVariable (v : Variable) : Format :=
+  formatArg (stmtExprToArg ⟨.Var v, none⟩)
+
+def formatVariableMd (v : VariableMd) : Format :=
+  formatArg (stmtExprToArg ⟨.Var v.val, v.source⟩)
+
 def formatConstant (c : Constant) : Format :=
   "const " ++ format c.name ++ ": " ++ formatHighType c.type ++
   match c.initializer with
@@ -375,6 +402,8 @@ instance : Std.ToFormat CompositeType where format := formatCompositeType
 instance : Std.ToFormat ConstrainedType where format := formatConstrainedType
 instance : Std.ToFormat DatatypeConstructor where format := formatDatatypeConstructor
 instance : Std.ToFormat DatatypeDefinition where format := formatDatatypeDefinition
+instance : Std.ToFormat Variable where format := formatVariable
+instance : Std.ToFormat VariableMd where format := formatVariableMd
 instance : Std.ToFormat Constant where format := formatConstant
 instance : Std.ToFormat TypeDefinition where format := formatTypeDefinition
 instance : Std.ToFormat Program where format := formatProgram

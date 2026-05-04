@@ -27,7 +27,7 @@ private def eliminateValueReturnNode (outParam : Identifier) (stmt : StmtExprMd)
   match stmt.val with
   | .Return (some value) =>
     -- Synthesized nodes use default metadata since no diagnostics should be reported on them
-    let target : StmtExprMd := { val := .Identifier outParam, source := none }
+    let target : VariableMd := { val := .Local outParam, source := none }
     let assign : StmtExprMd := { val := .Assign [target] value, source := none }
     let ret : StmtExprMd := { val := .Return none, source := stmt.source }
     { val := .Block [assign, ret] none, source := none }

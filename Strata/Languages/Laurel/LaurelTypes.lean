@@ -27,7 +27,7 @@ def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Id
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
-      | _ => { val := HighType.Unknown, source := proc.name.source }
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     | .unresolved source => { val := HighType.Unknown, source := source }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
@@ -48,9 +48,10 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralString _ => ⟨ .TString, source ⟩
   | .LiteralDecimal _ => ⟨ .TReal, source ⟩
   -- Variables
-  | .Identifier id => (model.get id).getType
+  | .Var (.Local id) => (model.get id).getType
+  | .Var (.Declare _) => ⟨ .TVoid, source ⟩
   -- Field access
-  | .FieldSelect _ fieldName => (model.get fieldName).getType
+  | .Var (.Field _ fieldName) => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
@@ -78,7 +79,6 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         computeExprType model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
-  | .LocalVariable _ _ _ => ⟨ .TVoid, source ⟩
   | .While _ _ _ _ => ⟨ .TVoid, source ⟩
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩

@@ -33,7 +33,7 @@ happens after Phase 1, the `ResolvedNode` values in the map contain the fully
 resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 
 ### Definition nodes (introduce a name into scope)
-- `StmtExpr.LocalVariable` — local variable declaration
+- `Variable.Declare` — local variable declaration (in `Assign` targets or `Var`)
 - `StmtExpr.Quantifier` — quantifier-bound variable
 - `Parameter` — procedure parameter
 - `Procedure` — procedure definition
@@ -43,10 +43,10 @@ resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 - `Constant` — named constant
 
 ### Reference nodes (use a name)
-- `StmtExpr.Identifier` — variable reference
+- `StmtExpr.Var (.Local ...)` — variable reference
 - `StmtExpr.StaticCall` — static procedure call
 - `StmtExpr.InstanceCall` — instance method call
-- `StmtExpr.FieldSelect` — field access
+- `StmtExpr.Var (.Field ...)` — field access
 - `StmtExpr.New` — object creation (references a type)
 - `StmtExpr.Exit` — exit a labelled block
 - `HighType.UserDefined` — type reference
@@ -272,7 +272,7 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
   match target.val with
-  | .Identifier ref =>
+  | .Var (.Local ref) =>
     match s.scope.get? ref.text with
     | some (_, node) =>
       match node.getType.val with
@@ -347,6 +347,9 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
+  | .MultiValuedExpr tys =>
+    let tys' ← tys.mapM resolveHighType
+    pure (.MultiValuedExpr tys')
   | other => pure other
   return { val := val', source := ty.source }
 
@@ -363,11 +366,6 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     withScope do
       let stmts' ← stmts.mapM resolveStmtExpr
       pure (.Block stmts' label)
-  | .LocalVariable name ty init =>
-    let ty' ← resolveHighType ty
-    let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let name' ← defineNameCheckDup name (.var name ty')
-    pure (.LocalVariable name' ty' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
     let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
@@ -382,17 +380,60 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
   | .LiteralDecimal v => pure (.LiteralDecimal v)
-  | .Identifier ref =>
+  | .Var (.Local ref) =>
     let ref' ← resolveRef ref source
-    pure (.Identifier ref')
+    pure (.Var (.Local ref'))
+  | .Var (.Declare param) =>
+    let ty' ← resolveHighType param.type
+    let name' ← defineNameCheckDup param.name (.var param.name ty')
+    pure (.Var (.Declare ⟨name', ty'⟩))
   | .Assign targets value =>
-    let targets' ← targets.mapM resolveStmtExpr
+    let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+      let ⟨vv, vs⟩ := v
+      match vv with
+      | .Local ref =>
+        let ref' ← resolveRef ref source
+        pure (⟨.Local ref', vs⟩ : VariableMd)
+      | .Field target fieldName =>
+        let target' ← resolveStmtExpr target
+        let fieldName' ← resolveFieldRef target' fieldName source
+        pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
+      | .Declare param =>
+        let ty' ← resolveHighType param.type
+        let name' ← defineNameCheckDup param.name (.var param.name ty')
+        pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
     let value' ← resolveStmtExpr value
+    -- Check that LHS target count matches the number of outputs from the RHS
+    let expectedOutputCount ← match value'.val with
+      | .StaticCall callee _ => do
+        let s ← get
+        match s.scope.get? callee.text with
+        | some (_, .staticProcedure proc) => pure (some proc.outputs.length)
+        | some (_, .instanceProcedure _ proc) => pure (some proc.outputs.length)
+        | _ => pure none
+      | .InstanceCall _ callee _ => do
+        let s ← get
+        match s.scope.get? callee.text with
+        | some (_, .instanceProcedure _ proc) => pure (some proc.outputs.length)
+        | some (_, .staticProcedure proc) => pure (some proc.outputs.length)
+        | _ => pure none
+      | _ => pure none
+    match expectedOutputCount with
+    | some expected =>
+      if targets'.length != expected then
+        let calleeName := match value'.val with
+          | .StaticCall callee _ => callee.text
+          | .InstanceCall _ callee _ => callee.text
+          | _ => "unknown"
+        let diag := diagnosticFromSource source
+          s!"Assignment target count mismatch: {targets'.length} targets but '{calleeName}' returns {expected} values"
+        modify fun s => { s with errors := s.errors.push diag }
+    | none => pure ()
     pure (.Assign targets' value')
-  | .FieldSelect target fieldName =>
+  | .Var (.Field target fieldName) =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    pure (.FieldSelect target' fieldName')
+    pure (.Var (.Field target' fieldName'))
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
@@ -634,6 +675,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
     args.foldl collectHighType map
   | .Pure base => collectHighType map base
   | .Intersection tys => tys.foldl collectHighType map
+  | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map
 
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
@@ -648,23 +690,25 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .LocalVariable name ty init =>
-    let map := register map name (.var name ty)
-    let map := collectHighType map ty
-    match init with
-    | some i => collectStmtExpr map i
-    | none => map
   | .While cond invs dec body =>
     let map := collectStmtExpr map cond
     let map := invs.foldl collectStmtExpr map
     let map := match dec with | some d => collectStmtExpr map d | none => map
     collectStmtExpr map body
   | .Return val => match val with | some v => collectStmtExpr map v | none => map
-  | .Identifier _ => map
+  | .Var (.Local _) => map
+  | .Var (.Declare param) =>
+    let map := register map param.name (.var param.name param.type)
+    collectHighType map param.type
   | .Assign targets value =>
-    let map := targets.foldl collectStmtExpr map
+    let map := targets.foldl (fun map t =>
+      match t.val with
+      | .Declare param =>
+        let map := register map param.name (.var param.name param.type)
+        collectHighType map param.type
+      | _ => map) map
     collectStmtExpr map value
-  | .FieldSelect target _ => collectStmtExpr map target
+  | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target
     collectStmtExpr map newVal
@@ -771,6 +815,11 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
   program.staticProcedures.foldl (collectProcedure · · .staticProcedure) map
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
+
+
+/-- A default ResolvedNode used as a placeholder during pre-registration.
+    It will be overwritten with the real node when the definition is fully resolved. -/
+private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:

@@ -1,4 +1,6 @@
-procedure main() {
+procedure main()
+  opaque
+{
     var x: int := 5;
     var y: int := 3;
 
