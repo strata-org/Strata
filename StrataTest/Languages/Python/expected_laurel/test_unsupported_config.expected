@@ -1,3 +1,4 @@
+test_unsupported_config.py(8, 4): ✅ pass - Assert No UnCaught Exception
 test_unsupported_config.py(9, 8): ❓ unknown - assert(178)
-DETAIL: 0 passed, 0 failed, 1 inconclusive
+DETAIL: 1 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

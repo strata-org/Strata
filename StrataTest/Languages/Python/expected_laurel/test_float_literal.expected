@@ -1,5 +1,4 @@
 test_float_literal.py(2, 4): ✅ pass - assert(16)
-test_float_literal.py(3, 11): ✅ pass - Check PGt exception
 test_float_literal.py(3, 4): ✅ pass - float literal
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

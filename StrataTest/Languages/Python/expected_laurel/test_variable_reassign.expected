@@ -1,17 +1,13 @@
 test_variable_reassign.py(3, 4): ✅ pass - assert(44)
 test_variable_reassign.py(4, 4): ✅ pass - initial value
 test_variable_reassign.py(6, 4): ✅ pass - after reassignment
-test_variable_reassign.py(7, 8): ✅ pass - Check PAdd exception
 test_variable_reassign.py(8, 4): ✅ pass - after increment
 test_variable_reassign.py(11, 4): ✅ pass - assert(223)
 test_variable_reassign.py(12, 4): ✅ pass - assert(242)
-test_variable_reassign.py(13, 10): ✅ pass - Check PLt exception
-test_variable_reassign.py(14, 16): ❓ unknown - Check PAdd exception
-test_variable_reassign.py(15, 12): ❓ unknown - Check PAdd exception
 test_variable_reassign.py(16, 4): ❓ unknown - loop sum should be 10
 test_variable_reassign.py(19, 4): ✅ pass - assert(398)
 test_variable_reassign.py(20, 4): ✅ pass - assert(415)
 test_variable_reassign.py(25, 4): ✅ pass - should be 100
 test_variable_reassign.py(32, 4): ✅ pass - should be 200
-DETAIL: 12 passed, 0 failed, 3 inconclusive
+DETAIL: 10 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

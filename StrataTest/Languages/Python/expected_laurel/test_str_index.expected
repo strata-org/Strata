@@ -1,0 +1,5 @@
+test_str_index.py(2, 4): ✅ pass - assert(26)
+test_str_index.py(3, 4): ✅ pass - first char
+test_str_index.py(4, 4): ✅ pass - middle char
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

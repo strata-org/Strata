@@ -1,6 +1,4 @@
-test_cmp_lt.py(2, 11): ✅ pass - Check PLt exception
 test_cmp_lt.py(2, 4): ✅ pass - less than
-test_cmp_lt.py(3, 11): ✅ pass - Check PNot exception
 test_cmp_lt.py(3, 4): ✅ pass - not less than
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

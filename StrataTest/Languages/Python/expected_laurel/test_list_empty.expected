@@ -1,6 +1,5 @@
 test_list_empty.py(3, 4): ✅ pass - assert(39)
 test_list_empty.py(4, 4): ✅ pass - assume_assume(58)_calls_PIn_0
-test_list_empty.py(5, 16): ✅ pass - Check PAdd exception
 test_list_empty.py(6, 4): ✅ pass - empty list
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

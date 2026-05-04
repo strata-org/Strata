@@ -1,6 +1,4 @@
-test_nested_calls.py(2, 11): ✅ pass - Check PMul exception
 test_nested_calls.py(1, 22): ✅ pass - (double ensures) Return type constraint
-test_nested_calls.py(5, 11): ✅ pass - Check PAdd exception
 test_nested_calls.py(4, 23): ✅ pass - (add_one ensures) Return type constraint
 test_nested_calls.py(8, 4): ✅ pass - (double requires) Type constraint of x
 test_nested_calls.py(8, 4): ✅ pass - assert(107)
@@ -17,5 +15,5 @@ test_nested_calls.py(16, 4): ✅ pass - assert(309)
 test_nested_calls.py(17, 4): ✅ pass - (double requires) Type constraint of x
 test_nested_calls.py(17, 4): ✅ pass - assert(333)
 test_nested_calls.py(18, 4): ❓ unknown - double(add_one(4)) should be 10
-DETAIL: 16 passed, 0 failed, 3 inconclusive
+DETAIL: 14 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

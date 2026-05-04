@@ -1,0 +1,5 @@
+test_try_except_catch.py(3, 4): ✅ pass - Assert No UnCaught Exception
+test_try_except_catch.py(2, 4): ✅ pass - assert(33)
+test_try_except_catch.py(8, 4): ✅ pass - caught exception
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

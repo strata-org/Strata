@@ -1,8 +1,4 @@
-test_nested_list.py(3, 4): ✅ pass - assert_assert(54)_calls_Any_get_0
-test_nested_list.py(3, 4): ✅ pass - assert_assert(54)_calls_Any_get_1
 test_nested_list.py(3, 4): ✅ pass - nested access 0,0
-test_nested_list.py(4, 4): ✅ pass - assert_assert(100)_calls_Any_get_0
-test_nested_list.py(4, 4): ✅ pass - assert_assert(100)_calls_Any_get_1
 test_nested_list.py(4, 4): ✅ pass - nested access 1,1
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

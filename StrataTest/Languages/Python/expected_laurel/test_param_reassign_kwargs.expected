@@ -1,8 +1,7 @@
-test_param_reassign_kwargs.py(2, 11): ✅ pass - Check PAdd exception
 test_param_reassign_kwargs.py(1, 59): ✅ pass - (greet ensures) Return type constraint
 test_param_reassign_kwargs.py(6, 4): ✅ pass - (greet requires) Type constraint of name
 test_param_reassign_kwargs.py(6, 4): ✅ pass - (greet requires) Type constraint of greeting
 test_param_reassign_kwargs.py(6, 4): ✅ pass - assert(137)
 test_param_reassign_kwargs.py(7, 4): ❓ unknown - kwargs call
-DETAIL: 5 passed, 0 failed, 1 inconclusive
+DETAIL: 4 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

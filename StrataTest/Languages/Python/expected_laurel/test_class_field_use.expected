@@ -1,5 +1,4 @@
-test_class_field_use.py(14, 4): ✔️ always true if reached - Check PMul exception
-test_class_field_use.py(14, 4): ✔️ always true if reached - assert(302)
-test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+test_class_field_use.py(14, 4): ✔️ always true if reached (always true if reached on 1 path, fail (❗path unreachable) on 1 path) - assert(302)
+test_class_field_use.py(15, 4): ✔️ always true if reached (always true if reached on 1 path, fail (❗path unreachable) on 1 path) - Doubling of buffer did not work
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

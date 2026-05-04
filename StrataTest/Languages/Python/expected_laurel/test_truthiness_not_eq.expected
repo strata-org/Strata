@@ -1,22 +1,12 @@
-test_truthiness_not_eq.py(6, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(6, 4): ✅ pass - assert(181)
-test_truthiness_not_eq.py(7, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(7, 4): ✅ pass - assert(208)
-test_truthiness_not_eq.py(10, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(10, 4): ✅ pass - assert(259)
-test_truthiness_not_eq.py(11, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(11, 4): ✅ pass - assert(288)
-test_truthiness_not_eq.py(14, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(14, 4): ✅ pass - assert(340)
-test_truthiness_not_eq.py(15, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(15, 4): ✅ pass - assert(368)
-test_truthiness_not_eq.py(18, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(18, 4): ✅ pass - assert(421)
-test_truthiness_not_eq.py(19, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(19, 4): ✅ pass - assert(449)
-test_truthiness_not_eq.py(22, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(22, 4): ✅ pass - assert(501)
-test_truthiness_not_eq.py(23, 12): ✅ pass - Check PNot exception
 test_truthiness_not_eq.py(23, 4): ✅ pass - assert(529)
-DETAIL: 20 passed, 0 failed, 0 inconclusive
+DETAIL: 10 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

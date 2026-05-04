@@ -1,14 +1,11 @@
 test_for_loop.py(3, 4): ✅ pass - assert(64)
 test_for_loop.py(4, 4): ✅ pass - assume_assume(83)_calls_PIn_0
-test_for_loop.py(5, 16): ❓ unknown - Check PAdd exception
 test_for_loop.py(6, 4): ❓ unknown - sum of list should be 15
 test_for_loop.py(11, 4): ✅ pass - assert(274)
 test_for_loop.py(12, 4): ✅ pass - assume_assume(293)_calls_PIn_0
-test_for_loop.py(13, 11): ✅ pass - Check PGt exception
-test_for_loop.py(14, 20): ❓ unknown - Check PAdd exception
 test_for_loop.py(15, 4): ❓ unknown - should count 3 items greater than 3
 test_for_loop.py(20, 4): ✅ pass - assert(512)
 test_for_loop.py(21, 4): ✅ pass - assume_assume(531)_calls_PIn_0
 test_for_loop.py(25, 4): ❓ unknown (pass on 1 path, unknown on 2 paths) - should have found 30
-DETAIL: 7 passed, 0 failed, 5 inconclusive
+DETAIL: 6 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

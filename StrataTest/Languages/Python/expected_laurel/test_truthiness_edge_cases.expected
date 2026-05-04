@@ -1,60 +1,31 @@
-test_truthiness_edge_cases.py(17, 12): ✅ pass - Check PNot exception
 test_truthiness_edge_cases.py(17, 4): ✅ pass - assert(546)
-test_truthiness_edge_cases.py(20, 12): ✅ pass - Check PNot exception
 test_truthiness_edge_cases.py(20, 4): ✅ pass - assert(598)
-test_truthiness_edge_cases.py(21, 12): ✅ pass - Check PNot exception
 test_truthiness_edge_cases.py(21, 4): ✅ pass - assert(629)
-test_truthiness_edge_cases.py(29, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(29, 4): ✅ pass - assert(910)
-test_truthiness_edge_cases.py(30, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(30, 4): ✅ pass - assert(945)
-test_truthiness_edge_cases.py(31, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(31, 4): ✅ pass - assert(982)
-test_truthiness_edge_cases.py(34, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(34, 4): ✅ pass - assert(1041)
-test_truthiness_edge_cases.py(35, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(35, 4): ✅ pass - assert(1076)
-test_truthiness_edge_cases.py(38, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(38, 4): ✅ pass - assert(1130)
-test_truthiness_edge_cases.py(39, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(39, 4): ✅ pass - assert(1162)
-test_truthiness_edge_cases.py(42, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(42, 4): ✅ pass - assert(1221)
-test_truthiness_edge_cases.py(43, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(43, 4): ✅ pass - assert(1249)
-test_truthiness_edge_cases.py(46, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(46, 4): ✅ pass - assert(1300)
-test_truthiness_edge_cases.py(47, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(47, 4): ✅ pass - assert(1328)
-test_truthiness_edge_cases.py(50, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(50, 4): ✅ pass - assert(1378)
-test_truthiness_edge_cases.py(51, 12): ✅ pass - Check PAnd exception
 test_truthiness_edge_cases.py(51, 4): ✅ pass - assert(1406)
-test_truthiness_edge_cases.py(59, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(59, 4): ✅ pass - assert(1688)
-test_truthiness_edge_cases.py(60, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(60, 4): ✅ pass - assert(1723)
-test_truthiness_edge_cases.py(61, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(61, 4): ✅ pass - assert(1758)
-test_truthiness_edge_cases.py(64, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(64, 4): ✅ pass - assert(1816)
-test_truthiness_edge_cases.py(65, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(65, 4): ✅ pass - assert(1846)
-test_truthiness_edge_cases.py(68, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(68, 4): ✅ pass - assert(1902)
-test_truthiness_edge_cases.py(69, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(69, 4): ✅ pass - assert(1939)
-test_truthiness_edge_cases.py(72, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(72, 4): ✅ pass - assert(1990)
-test_truthiness_edge_cases.py(73, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(73, 4): ✅ pass - assert(2016)
-test_truthiness_edge_cases.py(76, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(76, 4): ✅ pass - assert(2068)
-test_truthiness_edge_cases.py(77, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(77, 4): ✅ pass - assert(2094)
-test_truthiness_edge_cases.py(80, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(80, 4): ✅ pass - assert(2144)
-test_truthiness_edge_cases.py(81, 12): ✅ pass - Check POr exception
 test_truthiness_edge_cases.py(81, 4): ✅ pass - assert(2170)
-DETAIL: 58 passed, 0 failed, 0 inconclusive
+DETAIL: 29 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

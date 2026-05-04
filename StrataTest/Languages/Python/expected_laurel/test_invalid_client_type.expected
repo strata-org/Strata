@@ -1,2 +1,3 @@
-DETAIL: 0 passed, 0 failed, 0 inconclusive
+test_invalid_client_type.py(9, 0): ✅ pass - Assert No UnCaught Exception
+DETAIL: 1 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

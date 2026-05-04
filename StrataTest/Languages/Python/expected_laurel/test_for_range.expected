@@ -1,13 +1,8 @@
-test_for_range.py(10, 0): ✅ pass - set_i_calls_range_0
 test_for_range.py(3, 0): ✅ pass - set_i_calls_range_0
-test_for_range.py(4, 11): ✅ pass - Check PLt exception
 test_for_range.py(4, 4): ✅ pass - assert(46)
-test_for_range.py(5, 11): ✅ pass - Check PGe exception
 test_for_range.py(5, 4): ✅ pass - assert(63)
-test_for_range.py(6, 4): ✅ pass - set_j_calls_Any_get_0
-test_for_range.py(7, 11): ✅ pass - Check PLt exception
+test_for_range.py(10, 0): ✅ pass - set_i_calls_range_0
 test_for_range.py(7, 4): ✅ pass - assert(101)
-test_for_range.py(10, 15): ✅ pass - Check PNeg exception
 test_for_range.py(13, 0): ✅ pass - assert(156)
-DETAIL: 11 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

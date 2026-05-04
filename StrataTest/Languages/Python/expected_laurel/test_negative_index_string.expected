@@ -1,0 +1,4 @@
+test_negative_index_string.py(2, 4): ✅ pass - assert(16)
+test_negative_index_string.py(3, 4): ✅ pass - negative string index
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

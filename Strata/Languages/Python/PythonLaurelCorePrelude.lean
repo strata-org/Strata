@@ -49,7 +49,8 @@ datatype Error () {
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
   IndexError (IndexError_msg : string),
-  RePatternError (Re_msg : string)
+  RePatternError (Re_msg : string),
+  UnknownError ()
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////

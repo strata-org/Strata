@@ -1,0 +1,6 @@
+test_try_catch_multiple_exceptions.py(20, 0): ✅ pass - Assert No UnCaught Exception
+test_try_catch_multiple_exceptions.py(18, 0): ✅ pass - assert(219)
+test_try_catch_multiple_exceptions.py(37, 0): ✅ pass - assert(456)
+test_try_catch_multiple_exceptions.py(39, 0): ❓ unknown - Assert No UnCaught Exception
+DETAIL: 3 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive
