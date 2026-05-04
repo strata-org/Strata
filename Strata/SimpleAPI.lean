@@ -270,7 +270,7 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     single `CoreTransformState`, so fresh variable counters accumulate across
     passes and cached analyses (e.g., call graphs) can be reused. -/
 def Core.runTransforms (p : Core.Program) (passes : List Core.TransformPass)
-    : Except String Core.Program :=
+    : Except Core.Transform.Err Core.Program :=
   Core.Transform.run p (fun prog => do
     let mut program := prog
     for pass in passes do
@@ -281,7 +281,7 @@ def Core.runTransforms (p : Core.Program) (passes : List Core.TransformPass)
 Transform a Core program to inline some or all procedure calls.
 -/
 def Core.inlineProcedures (p : Core.Program) (opts : Core.InlineTransformOptions)
-    : Except String Core.Program :=
+    : Except Core.Transform.Err Core.Program :=
   Core.runTransforms p [.inlineProcedures opts]
 
 /--
@@ -295,7 +295,7 @@ def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
 Transform a Core program to replace each procedure call with assertions and
 assumptions about its contract.
 -/
-def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :=
+def Core.callElimUsingContract (p : Core.Program) : Except Core.Transform.Err Core.Program :=
   Core.runTransforms p [.callElim]
 
 /--
@@ -303,7 +303,7 @@ Transform a Core program to keep only the named procedures and their
 transitive callees, removing everything else.
 -/
 def Core.filterProcedures (p : Core.Program) (targetProcs : List String)
-    : Except String Core.Program :=
+    : Except Core.Transform.Err Core.Program :=
   Core.runTransforms p [.filterProcedures targetProcs]
 
 /--
@@ -311,7 +311,7 @@ Transform a Core program to remove axiom declarations that are irrelevant
 to the named functions (based on call graph analysis).
 -/
 def Core.removeIrrelevantAxioms (p : Core.Program) (functions : List String)
-    : Except String Core.Program :=
+    : Except Core.Transform.Err Core.Program :=
   Core.runTransforms p [.removeIrrelevantAxioms functions]
 
 /-! ### Analysis of Core programs -/

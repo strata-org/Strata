@@ -33,7 +33,7 @@ private def parseElimAndPrint (input : String) : IO Unit := do
   | .ok program =>
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    let (program, _) := inferHoleTypes model program
+    let (program, _, _) := inferHoleTypes model program
     let (program, _) := eliminateHoles program
     for proc in program.staticProcedures do
       IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))

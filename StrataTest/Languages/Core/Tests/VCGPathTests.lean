@@ -13,11 +13,16 @@ namespace Strata
 private def getEvalStats (program : Strata.Program)
     (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
-  match Core.typeCheckAndEval options coreProgram with
+  let coreProgram ← IO.ofExcept (Core.typeCheck options coreProgram)
+  match Core.buildEnv options coreProgram with
   | .error _ => return ({}, 0)
-  | .ok (envs, stats) =>
-    let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
-    return (stats, numObligations)
+  | .ok (E, declStats) =>
+    match Core.Program.eval E with
+    | .error _ => return ({}, 0)
+    | .ok (envs, evalStats) =>
+      let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
+      let stats := declStats.merge evalStats
+      return (stats, numObligations)
 
 private def statsLine (stats : Statistics) (numObs : Nat) : String :=
   let merged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_merged}"

@@ -179,7 +179,7 @@ Obligation: main_caller_ensures_4_2573
 Property: assert
 Result: ❓ unknown
 Model:
-(g@5, 5) (z@3, 10) (g@3, 0) (z@5, 0)
+(g@5, 5) (g@3, 0) (z@3, 10) (z@5, 0)
 -/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" callerPgm
