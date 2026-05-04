@@ -108,7 +108,7 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
           if vc.isSuccess then return .match
           else if vc.isFailure then return .noMatch
           else return match vc.outcome with
-            | .error msg => .smtError s!"impl: {msg}"
+            | .error err => .smtError s!"impl: {err}"
             | _ => .smtError "unknown"
 
 def main (args : List String) : IO UInt32 := do
