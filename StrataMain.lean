@@ -566,6 +566,30 @@ private def deriveBaseName (file : String) : String :=
   | none     => name
 
 
+/-- Write SMT-style user-error diagnostics to stdout and `user_errors.txt`,
+    and return a human-readable location suffix (e.g., " at line 42, col 5"). -/
+private def reportUserCodeError (range : SourceRange) (msg : String)
+    (mfm : Option (String × Lean.FileMap)) (filePath : String) : IO String := do
+  let location := if range.isNone then "" else
+    match mfm with
+    | some (_, fm) =>
+      let pos := fm.toPosition range.start
+      s!" at line {pos.line}, col {pos.column}"
+    | none => ""
+  let mut lines := #[
+    s!"(set-info :file {Strata.escapeSMTStringLit filePath})"
+  ]
+  unless range.isNone do
+    lines := lines.push s!"(set-info :start {range.start})"
+    lines := lines.push s!"(set-info :stop {range.stop})"
+  lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
+  for line in lines do
+    IO.println line
+  IO.FS.Handle.mk "user_errors.txt" .write >>= fun h =>
+    for line in lines do
+      h.putStrLn line
+  return location
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -615,34 +639,25 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let warningSummaryFile := pflags.getString "warning-summary"
+    let pipelineResult ← Strata.pythonAndSpecToLaurel (specDir := specDir)
+          filePath dispatchModules pyspecModules
+          sourcePath
+          (profile := profile)
+    let pyspecWarnings := pipelineResult.warnings
+    if !quiet then
+      Strata.Python.PipelineMessage.printSummary pyspecWarnings
+    if let some warnFile := warningSummaryFile then
+      Strata.Python.PipelineMessage.writeSummaryJson pyspecWarnings warnFile
     let combinedLaurel ←
-      match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
-                (specDir := specDir) (profile := profile)
-                (quiet := quiet)
-                (warningSummaryFile := warningSummaryFile) |>.toBaseIO with
-      | .ok r => pure r
-      | .error (.userCode range msg) =>
-        let location := if range.isNone then "" else
-          match mfm with
-          | some (_, fm) =>
-            let pos := fm.toPosition range.start
-            s!" at line {pos.line}, col {pos.column}"
-          | none => ""
-        let filePath' := sourcePath.getD filePath
-        let mut lines := #[
-          s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
-        ]
-        unless range.isNone do
-          lines := lines.push s!"(set-info :start {range.start})"
-          lines := lines.push s!"(set-info :stop {range.stop})"
-        lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
-        for line in lines do
-          IO.println line
-        IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
+      match pipelineResult with
+      | .success r _ =>
+        pure r
+      | .failure (.userCode range msg) _ =>
+        let location ← reportUserCodeError range msg mfm (sourcePath.getD filePath)
         exitPyAnalyzeUserError s!"{msg}{location}"
-      | .error (.knownLimitation msg) =>
+      | .failure (.knownLimitation msg) _ =>
         exitPyAnalyzeKnownLimitation msg
-      | .error (.internal msg) =>
+      | .failure (.internal msg) _ =>
         exitPyAnalyzeInternalError msg
 
     if verbose then
@@ -1377,15 +1392,15 @@ def pyInterpretCommand : Command where
       | none => pure 10000
 
     let (core, _diags) ←
-      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") |>.toBaseIO with
-      | .ok laurel =>
+      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") with
+      | .success laurel _ =>
         if let some dir := keepDir then
           IO.FS.createDirAll dir
           IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))
         match ← Strata.translateCombinedLaurel laurel with
         | (some core, diags) => pure (core, diags)
         | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
-      | .error msg => exitFailure (toString msg)
+      | .failure msg _ => exitFailure (toString msg)
     if let some dir := keepDir then
       IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
     let core ← match Core.typeCheck Core.VerifyOptions.quiet core

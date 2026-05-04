@@ -554,9 +554,9 @@ def pyTranslateLaurel
     (specDir : System.FilePath := ".")
     : EIO String (Core.Program × List DiagnosticModel) := do
   let laurel ←
-    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
-    | .ok r => pure r
-    | .error err => throw (toString err)
+    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) with
+    | .success r _ => pure r
+    | .failure err _ => throw (toString err)
   let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"

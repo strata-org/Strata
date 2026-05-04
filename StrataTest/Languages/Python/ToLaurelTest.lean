@@ -92,6 +92,234 @@ private def runTestWarningKinds (sigs : Array Signature) (modulePrefix : String 
   for err in result.errors do
     IO.println s!"{err.kind.phase}.{err.kind.category}: {err.message}"
 
+/-- Helper to make a function signature with preconditions. -/
+private def mkFuncSigWithPrecond (name : String) (returnType : SpecType)
+    (preconditions : Array Assertion) (args : Array Arg := #[]) : Signature :=
+  .functionDecl {
+    loc := loc, nameLoc := loc, name := name
+    args := { args := args, kwonly := #[] }
+    returnType := returnType
+    isOverload := false
+    preconditions := preconditions, postconditions := #[]
+  }
+
+/-- Helper to make a function signature with postconditions. -/
+private def mkFuncSigWithPostcond (name : String) (returnType : SpecType)
+    (postconditions : Array SpecExpr) : Signature :=
+  .functionDecl {
+    loc := loc, nameLoc := loc, name := name
+    args := { args := #[], kwonly := #[] }
+    returnType := returnType
+    isOverload := false
+    preconditions := #[], postconditions := postconditions
+  }
+
+
+/-! ## All function params and returns map to Any -/
+
+/--
+info: procedure returns_int(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure returns_bool(a:UserDefined(Any), b:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure returns_real(flag:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure with_kwonly(x:UserDefined(Any), verbose:UserDefined(Any)) returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  mkFuncSig "returns_int" (identType .builtinsInt)
+    (args := #[mkArg "x" (identType .builtinsStr)]),
+  mkFuncSig "returns_bool" (identType .builtinsBool)
+    (args := #[mkArg "a" (identType .builtinsInt),
+               mkArg "b" (identType .builtinsFloat)]),
+  mkFuncSig "returns_real" (identType .builtinsFloat)
+    (args := #[mkArg "flag" (identType .builtinsBool)]),
+  mkFuncSig "with_kwonly" (identType .builtinsStr)
+    (args := #[mkArg "x" (identType .builtinsInt)])
+    (kwonly := #[mkArg "verbose" (identType .builtinsBool) (default := some .none)])
+]
+
+/-! ## Complex types (Any, List, Dict, bytes) -/
+
+/--
+info: procedure takes_any(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure takes_list(items:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure returns_dict() returns(result:UserDefined(Any))
+procedure typed_list() returns(result:UserDefined(Any))
+procedure typed_dict() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  mkFuncSig "takes_any" (identType .builtinsInt)
+    (args := #[mkArg "x" (identType .typingAny)]),
+  mkFuncSig "takes_list" (identType .builtinsBool)
+    (args := #[mkArg "items" (identType .typingList)]),
+  mkFuncSig "returns_dict" (identType .typingDict),
+  mkFuncSig "typed_list"
+    (SpecType.ident loc .typingList #[identType .builtinsStr]),
+  mkFuncSig "typed_dict"
+    (SpecType.ident loc .typingDict
+      #[identType .builtinsStr, identType .builtinsInt])
+]
+
+/-! ## Literal types, TypedDict, and string-literal unions → Any -/
+
+/--
+info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(f : builtins.str)' approximated as DictStrAny in type 'TypedDict(f : builtins.str)'
+procedure int_literal_ret() returns(result:UserDefined(Any))
+procedure str_literal_ret() returns(result:UserDefined(Any))
+procedure typed_dict_ret() returns(result:UserDefined(Any))
+procedure str_enum() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  mkFuncSig "int_literal_ret" (SpecType.intLiteral loc 42),
+  mkFuncSig "str_literal_ret"
+    (SpecType.stringLiteral loc "hello"),
+  mkFuncSig "typed_dict_ret"
+    (SpecType.typedDict loc #["f"]
+      #[identType .builtinsStr] #[true]),
+  mkFuncSig "str_enum"
+    (mkUnion #[SpecType.stringLiteral loc "A", SpecType.stringLiteral loc "B",
+               SpecType.stringLiteral loc "C"])
+]
+
+/-! ## Optional type patterns (Union[None, T]) → Any -/
+
+/--
+info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(x : builtins.str)' approximated as DictStrAny in type 'Union[_types.NoneType, TypedDict(x : builtins.str)]'
+procedure opt_str() returns(result:UserDefined(Any))
+procedure opt_int() returns(result:UserDefined(Any))
+procedure opt_bool(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure opt_typed_dict() returns(result:UserDefined(Any))
+procedure opt_str_enum() returns(result:UserDefined(Any))
+procedure opt_int_enum() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  mkFuncSig "opt_str"
+    (mkUnion #[noneType, identType .builtinsStr]),
+  mkFuncSig "opt_int"
+    (mkUnion #[noneType, identType .builtinsInt]),
+  mkFuncSig "opt_bool"
+    (mkUnion #[noneType, identType .builtinsBool])
+    (args := #[mkArg "x"
+      (mkUnion #[noneType, identType .builtinsStr])]),
+  mkFuncSig "opt_typed_dict"
+    (mkUnion #[noneType,
+      SpecType.typedDict loc #["x"] #[identType .builtinsStr] #[true]]),
+  mkFuncSig "opt_str_enum"
+    (mkUnion #[noneType, SpecType.stringLiteral loc "A",
+               SpecType.stringLiteral loc "B"]),
+  mkFuncSig "opt_int_enum"
+    (mkUnion #[noneType, SpecType.intLiteral loc 1, SpecType.intLiteral loc 2])
+]
+
+/-! ## Error cases (updated to verify MessageKind) -/
+
+/--
+info: procedure f() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest
+  #[mkFuncSig "f"
+    (identType (PythonIdent.mk "foo" "Bar"))]
+
+/--
+info: procedure f() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest
+  #[mkFuncSig "f"
+    (mkUnion #[identType .builtinsStr,
+               identType .builtinsInt])]
+
+/--
+info: warning: pySpecToLaurel.unsupportedUnion: No type tester for 'foo.Bar' in type 'Union[_types.NoneType, foo.Bar]'
+procedure f() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest
+  #[mkFuncSig "f"
+    (mkUnion #[noneType,
+      identType (PythonIdent.mk "foo" "Bar")])]
+
+/-! ## Class and type definitions -/
+
+/--
+info: type MyClass
+type MyAlias
+procedure my_func(x:UserDefined(Any), y:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure MyClass@get_value() returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  mkFuncSig "my_func" (identType .builtinsBool)
+    (args := #[mkArg "x" (identType .builtinsInt),
+               mkArg "y" (identType .builtinsStr) (some .none)]),
+  .classDef {
+    loc := loc, name := "MyClass"
+    methods := #[
+      { loc := loc, nameLoc := loc, name := "get_value"
+        args := { args := #[mkArg "self" (identType .builtinsStr)], kwonly := #[] }
+        returnType := identType .builtinsStr
+        isOverload := false
+        preconditions := #[]
+        postconditions := #[] }
+    ]
+  },
+  .typeDef {
+    loc := loc, nameLoc := loc
+    name := "MyAlias"
+    definition := identType .builtinsStr
+  }
+]
+
+/-! ## NoneType and void return -/
+
+/--
+info: procedure returns_none() returns(result:UserDefined(Any))
+procedure takes_none(x:UserDefined(Any)) returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  mkFuncSig "returns_none" noneType,
+  mkFuncSig "takes_none" noneType
+    (args := #[mkArg "x" noneType])
+]
+
+/-! ## Class types as UserDefined -/
+
+/--
+info: type Foo
+procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Any))
+-/
+#guard_msgs in
+#eval runTest #[
+  .classDef {
+    loc := loc, name := "Foo"
+    methods := #[]
+  },
+  mkFuncSig "uses_class" (identType (PythonIdent.mk "" "Foo"))
+    (args := #[mkArg "x" (identType (PythonIdent.mk "" "Foo"))])
+]
+
+/-! ## Empty input -/
+
+#guard_msgs in
+#eval runTest #[]
+
+/-! ## Overload dispatch and method registry -/
+
+/-- Helper to make an @overload function signature. -/
+private def mkOverload (name : String) (returnType : SpecType)
+    (args : Array Arg := #[]) : Signature :=
+  .functionDecl {
+    loc := loc, nameLoc := loc, name := name
+    args := { args := args, kwonly := #[] }
+    returnType := returnType
+    isOverload := true
+    preconditions := #[], postconditions := #[]
+  }
+
 /-- Run signaturesToLaurel and print the full result: Laurel output,
     dispatch table, and method registry. Sorts by key for stable output. -/
 private def runFullTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do

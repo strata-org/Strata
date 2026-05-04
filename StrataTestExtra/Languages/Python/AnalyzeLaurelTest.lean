@@ -86,9 +86,9 @@ private meta def runAnalyze
   let laurel ←
     match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
-        (specDir := tmpDir) |>.toBaseIO with
-    | .ok r => pure r
-    | .error err => return .error (toString err)
+        (specDir := tmpDir) with
+    | .success r _ => pure r
+    | .failure err _ => return .error (toString err)
   match ← Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
@@ -109,9 +109,9 @@ private meta def runAnalyzeAndVerify
   let laurel ←
     match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
-        (specDir := tmpDir) |>.toBaseIO with
-    | .ok r => pure r
-    | .error err => return .error (toString err)
+        (specDir := tmpDir) with
+    | .success r _ => pure r
+    | .failure err _ => return .error (toString err)
   let (coreProgramOption, _) ← Strata.translateCombinedLaurel laurel
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
@@ -250,9 +250,9 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
         match ← Strata.pythonAndSpecToLaurel testIon.toString
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
-            (specDir := tmpDir) |>.toBaseIO with
-        | .ok r => pure r
-        | .error err => return some s!"test_class_any_as_composite.py: {err}"
+            (specDir := tmpDir) with
+        | .success r _ => pure r
+        | .failure err _ => return some s!"test_class_any_as_composite.py: {err}"
       match ← Strata.translateCombinedLaurel laurel with
       | (some core, []) =>
         match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
@@ -375,9 +375,9 @@ recursively translates subclasses, so the type
     let combined ←
       match ← Strata.pythonAndSpecToLaurel testIon.toString
           (dispatchModules := #["servicelib"])
-          (specDir := tmpDir) |>.toBaseIO with
-      | .ok r => pure r
-      | .error err => throw <| IO.userError s!"pyAnalyzeLaurel failed: {err}"
+          (specDir := tmpDir) with
+      | .success r _ => pure r
+      | .failure err _ => throw <| IO.userError s!"pyAnalyzeLaurel failed: {err}"
     let result := Laurel.resolve combined
     unless result.errors.isEmpty do
       let msgs := result.errors.toList.map (·.message)
