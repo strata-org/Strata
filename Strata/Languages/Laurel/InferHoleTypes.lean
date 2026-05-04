@@ -66,7 +66,9 @@ mutual
 private def inferArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : InferHoleM (List StmtExprMd) :=
   args.mapM (inferExpr · expectedType)
 
-private def inferArgsTyped (args : List StmtExprMd) (types : List HighTypeMd) : InferHoleM (List StmtExprMd) := do
+private def inferArgsTyped (args : List StmtExprMd) (types : List HighTypeMd) (source : Option FileRange) : InferHoleM (List StmtExprMd) := do
+  if args.length != types.length then
+    return ← args.mapM (inferExpr · ⟨.Unknown, source⟩)
   let mut result : List StmtExprMd := []
   let mut i := 0
   for a in args do
@@ -115,8 +117,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       return ⟨.PrimitiveOp op (← inferArgs args argType), source⟩
   | .StaticCall callee args =>
       let args' ← match calleeParamTypes model callee with
-        | some paramTypes => inferArgsTyped args paramTypes
-        | none => inferArgs args defaultHoleType
+        | some paramTypes => inferArgsTyped args paramTypes source
+        | none => inferArgs args ⟨ .Unknown, source ⟩
       return ⟨.StaticCall callee args', source⟩
   | .InstanceCall target callee args =>
       return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩) callee (← inferArgs args ⟨ .Unknown, source ⟩), source⟩
