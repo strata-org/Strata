@@ -350,6 +350,7 @@ where
 
       -- Process calls to heap mutating procedures
       let (newAssign, suffixes) ← do
+        -- Detect calls and add a heap argument if needed
         let (v', addedHeap) <- match _hv : v.val with
           | .StaticCall callee args => do
             let args' <- args.mapM recurse
@@ -378,6 +379,7 @@ where
           | .Declare param => Variable.Local param.name
           | x => x
 
+        -- Make sure the result of the StmtExpr is still the same
         let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
           then updateStatements ++ [⟨ StmtExpr.Var $ variableAsRef $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
           else updateStatements
