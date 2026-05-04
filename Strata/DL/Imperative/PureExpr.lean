@@ -49,6 +49,10 @@ class HasBool (P : PureExpr) where
   ff : P.Expr
   tt_is_not_ff: tt ≠ ff
   boolTy : P.Ty
+  /-- Returns true if the expression is a true boolean value (ignoring metadata). -/
+  isTrue : P.Expr → Bool
+  /-- Returns true if the expression is a false boolean value (ignoring metadata). -/
+  isFalse : P.Expr → Bool
 
 class HasNot (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr

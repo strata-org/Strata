@@ -68,14 +68,27 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) :=
       -- created by CoreGenM.
       -- All variables now have Unit metadata; we substitute by name.
       let old_id : Expression.Ident := { name := i1, metadata := () }
-      let new_expr : Expression.Expr := .fvar () { name := i2, metadata := () } .none
+      let new_expr : Expression.Expr := .fvar Strata.SourceRange.none { name := i2, metadata := () } .none
       e.substFvar old_id new_expr)
     e1
 
+private def normalizeMetadata (e : Expression.Expr) : Expression.Expr :=
+  match e with
+  | .const _ c => .const Strata.SourceRange.none c
+  | .op _ o ty => .op Strata.SourceRange.none o ty
+  | .bvar _ i => .bvar Strata.SourceRange.none i
+  | .fvar _ name ty => .fvar Strata.SourceRange.none name ty
+  | .abs _ name ty e' => .abs Strata.SourceRange.none name ty (normalizeMetadata e')
+  | .quant _ qk name ty tr e' => .quant Strata.SourceRange.none qk name ty (normalizeMetadata tr) (normalizeMetadata e')
+  | .app _ e1 e2 => .app Strata.SourceRange.none (normalizeMetadata e1) (normalizeMetadata e2)
+  | .ite _ c t f => .ite Strata.SourceRange.none (normalizeMetadata c) (normalizeMetadata t) (normalizeMetadata f)
+  | .eq _ e1 e2 => .eq Strata.SourceRange.none (normalizeMetadata e1) (normalizeMetadata e2)
+
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst)).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd)).eraseTypes == e1.eraseTypes
+  let norm := fun e => (substExpr e map.vars.fst |> normalizeMetadata).eraseTypes
+  norm e1 == (normalizeMetadata e2).eraseTypes &&
+  (substExpr e2 map.vars.snd |> normalizeMetadata).eraseTypes == (normalizeMetadata e1).eraseTypes
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=

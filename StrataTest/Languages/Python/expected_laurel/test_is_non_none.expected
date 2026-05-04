@@ -1,15 +1,7 @@
 DETAIL: Unsupported construct: `is` is only supported with None
 AST: Strata.Python.expr.Compare
-  { start := { byteIdx := 61 }, stop := { byteIdx := 67 } }
-  (Strata.Python.expr.Name
-    { start := { byteIdx := 61 }, stop := { byteIdx := 62 } }
-    { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }, val := "x" }
-    (Strata.Python.expr_context.Load { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }))
-  { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } },
-    val := #[Strata.Python.cmpop.Is { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }] }
-  { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } },
-    val := #[Strata.Python.expr.Name
-               { start := { byteIdx := 66 }, stop := { byteIdx := 67 } }
-               { ann := { start := { byteIdx := 0 }, stop := { byteIdx := 0 } }, val := "y" }
-               (Strata.Python.expr_context.Load { start := { byteIdx := 0 }, stop := { byteIdx := 0 } })] }
+  ()
+  (Strata.Python.expr.Name () { ann := (), val := "x" } (Strata.Python.expr_context.Load ()))
+  { ann := (), val := #[Strata.Python.cmpop.Is ()] }
+  { ann := (), val := #[Strata.Python.expr.Name () { ann := (), val := "y" } (Strata.Python.expr_context.Load ())] }
 RESULT: Known limitation

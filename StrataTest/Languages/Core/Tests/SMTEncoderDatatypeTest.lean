@@ -24,6 +24,8 @@ This file contains unit tests for SMT datatype encoding.
 
 namespace Core
 
+private abbrev sr := Strata.SourceRange.none
+
 section DatatypeTests
 
 open Lambda
@@ -117,7 +119,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int])))
+  (.fvar sr (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 2: Recursive datatype (List) - using List type
@@ -130,7 +132,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int])))
+  (.fvar sr (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
@@ -143,7 +145,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"tree", ()⟩) (.some (.tcons "TestTree" [.bool])))
+  (.fvar sr (⟨"tree", ()⟩) (.some (.tcons "TestTree" [.bool])))
   [treeDatatype]
 
 -- Test 4: Parametric datatype instantiation - List Int
@@ -156,7 +158,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"intList", ()⟩) (.some (.tcons "TestList" [.int])))
+  (.fvar sr (⟨"intList", ()⟩) (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
@@ -169,7 +171,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"boolList", ()⟩) (.some (.tcons "TestList" [.bool])))
+  (.fvar sr (⟨"boolList", ()⟩) (.some (.tcons "TestList" [.bool])))
   [listDatatype]
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
@@ -182,7 +184,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"intTree", ()⟩) (.some (.tcons "TestTree" [.int])))
+  (.fvar sr (⟨"intTree", ()⟩) (.some (.tcons "TestTree" [.int])))
   [treeDatatype]
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
@@ -198,7 +200,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"listOfOption", ()⟩) (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
+  (.fvar sr (⟨"listOfOption", ()⟩) (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
   [optionDatatype, listDatatype]
 
 /-! ## Constructor Application Tests -/
@@ -211,7 +213,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.op () (⟨"None", ()⟩) (.some (.tcons "TestOption" [.int])))
+  (.op sr (⟨"None", ()⟩) (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 9: Some constructor (single-argument)
@@ -222,7 +224,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"Some", ()⟩) (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
+  (.app sr (.op sr (⟨"Some", ()⟩) (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst sr 42))
   [optionDatatype]
 
 -- Test 10: Cons constructor (multi-argument)
@@ -233,10 +235,10 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app ()
-    (.app () (.op () (⟨"Cons", ()⟩) (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
-      (.intConst () 1))
-    (.op () (⟨"Nil", ()⟩) (.some (.tcons "TestList" [.int]))))
+  (.app sr
+    (.app sr (.op sr (⟨"Cons", ()⟩) (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
+      (.intConst sr 1))
+    (.op sr (⟨"Nil", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Tester Function Tests  -/
@@ -251,8 +253,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"TestOption..isNone", ()⟩) (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
-    (.fvar () (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int]))))
+  (.app sr (.op sr (⟨"TestOption..isNone", ()⟩) (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
+    (.fvar sr (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 12: isCons tester
@@ -265,8 +267,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"TestList..isCons", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) .bool)))
-    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
+  (.app sr (.op sr (⟨"TestList..isCons", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) .bool)))
+    (.fvar sr (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Destructor Function Tests -/
@@ -281,8 +283,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"TestOption..val", ()⟩) (.some (.arrow (.tcons "TestOption" [.int]) .int)))
-    (.fvar () (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int]))))
+  (.app sr (.op sr (⟨"TestOption..val", ()⟩) (.some (.arrow (.tcons "TestOption" [.int]) .int)))
+    (.fvar sr (⟨"x", ()⟩) (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 14: Cons head destructor
@@ -295,8 +297,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"TestList..head", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) .int)))
-    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
+  (.app sr (.op sr (⟨"TestList..head", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) .int)))
+    (.fvar sr (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 -- Test 15: Cons tail destructor
@@ -309,8 +311,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (⟨"TestList..tail", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
-    (.fvar () (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
+  (.app sr (.op sr (⟨"TestList..tail", ()⟩) (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
+    (.fvar sr (⟨"xs", ()⟩) (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Dependency Order Tests -/
@@ -373,7 +375,7 @@ info: (declare-datatype Root (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (⟨"diamondVar", ()⟩) (.some (.tcons "Diamond" [])))
+  (.fvar sr (⟨"diamondVar", ()⟩) (.some (.tcons "Diamond" [])))
   [rootDatatype, rightDatatype, leftDatatype, diamondDatatype]
 
 -- Test 17: Mutually recursive datatypes (RoseTree/Forest)
@@ -413,7 +415,7 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
-  (.fvar () (⟨"tree", ()⟩) (.some (.tcons "RoseTree" [.int])))
+  (.fvar sr (⟨"tree", ()⟩) (.some (.tcons "RoseTree" [.int])))
   [[roseTreeDatatype, forestDatatype]]
 
 -- Test 19: Mix of mutual and non-mutual datatypes
@@ -430,7 +432,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
-  (.fvar () (⟨"optionTree", ()⟩) (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
+  (.fvar sr (⟨"optionTree", ()⟩) (.some (.tcons "TestOption" [.tcons "RoseTree" [.int]])))
   [[optionDatatype], [roseTreeDatatype, forestDatatype]]
 
 /-! ## Recursive Function Axiom Tests -/
@@ -448,12 +450,12 @@ def intListDatatype : LDatatype Unit :=
 private def intListTy := LMonoTy.tcons "IntList" []
 
 private def listLenBody : LExpr CoreLParams.mono :=
-  let xs := LExpr.fvar () ⟨"xs", ()⟩ (.some intListTy)
-  let isNil_xs := LExpr.app () (LExpr.op () ⟨"isNil", ()⟩ (.some (LMonoTy.arrow intListTy .bool))) xs
-  let tl_xs := LExpr.app () (LExpr.op () ⟨"IntList..tl", ()⟩ (.some (LMonoTy.arrow intListTy intListTy))) xs
-  let listLen_tl := LExpr.app () (LExpr.op () ⟨"listLen", ()⟩ (.some (LMonoTy.arrow intListTy .int))) tl_xs
-  let one_plus := LExpr.app () (LExpr.app () (LExpr.op () ⟨"Int.Add", ()⟩ (.some (LMonoTy.arrow .int (LMonoTy.arrow .int .int)))) (LExpr.intConst () 1)) listLen_tl
-  LExpr.ite () isNil_xs (LExpr.intConst () 0) one_plus
+  let xs := LExpr.fvar sr ⟨"xs", ()⟩ (.some intListTy)
+  let isNil_xs := LExpr.app sr (LExpr.op sr ⟨"isNil", ()⟩ (.some (LMonoTy.arrow intListTy .bool))) xs
+  let tl_xs := LExpr.app sr (LExpr.op sr ⟨"IntList..tl", ()⟩ (.some (LMonoTy.arrow intListTy intListTy))) xs
+  let listLen_tl := LExpr.app sr (LExpr.op sr ⟨"listLen", ()⟩ (.some (LMonoTy.arrow intListTy .int))) tl_xs
+  let one_plus := LExpr.app sr (LExpr.app sr (LExpr.op sr ⟨"Int.Add", ()⟩ (.some (LMonoTy.arrow .int (LMonoTy.arrow .int .int)))) (LExpr.intConst sr 1)) listLen_tl
+  LExpr.ite sr isNil_xs (LExpr.intConst sr 0) one_plus
 
 private def listLenFunc : Lambda.LFunc CoreLParams :=
   { name := "listLen",
@@ -506,8 +508,8 @@ info: (declare-datatype IntList (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithRecFunc
-  (.app () (.op () "listLen" (.some (LMonoTy.arrow intListTy .int)))
-    (.op () "Nil" (.some intListTy)))
+  (.app sr (.op sr "listLen" (.some (LMonoTy.arrow intListTy .int)))
+    (.op sr "Nil" (.some intListTy)))
   [[intListDatatype]]
   listLenFunc
 

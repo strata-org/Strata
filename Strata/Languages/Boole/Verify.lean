@@ -75,7 +75,7 @@ private def withTypeBVars (xs : List String) (k : TranslateM α) : TranslateM α
 
 private def withBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
   let old := (← get).bvars
-  let fresh := xs.toArray.map (fun n => (.fvar () (mkIdent n) none : Core.Expression.Expr))
+  let fresh := xs.toArray.map (fun n => (.fvar Strata.SourceRange.none (mkIdent n) none : Core.Expression.Expr))
   modify fun s => { s with bvars := old ++ fresh }
   try
     let out ← k
@@ -124,7 +124,7 @@ private def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression
   let xs := (← get).bvars
   if i < xs.size then
     match xs[(xs.size - i - 1)]? with
-    | some (.bvar _ _) => return (.bvar () i)
+    | some (.bvar _ _) => return (.bvar Strata.SourceRange.none i)
     | some e => return e
     | none => throwAt m s!"Unknown bound variable with index {i}"
   else
@@ -166,7 +166,7 @@ private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData 
   return #[fileRangeElt]
 
 private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
-  Lambda.LExpr.mkApp () op args
+  Lambda.LExpr.mkApp Strata.SourceRange.none op args
 
 private def typeRange : Boole.Type → SourceRange
   | .bvar m _ => m
@@ -236,13 +236,13 @@ private def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Cor
 def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
-  return .app () iop a
+  let iop : Core.Expression.Expr := .op Strata.SourceRange.none ⟨s!"Int.{op}", ()⟩ none
+  return .app Strata.SourceRange.none iop a
 
 def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+  let iop : Core.Expression.Expr := .op Strata.SourceRange.none ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
 private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
@@ -256,11 +256,11 @@ private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
 
 private def toCoreBvUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let n ← bvWidth m ty
-  return .app () (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) a
+  return .app Strata.SourceRange.none (.op Strata.SourceRange.none ⟨s!"Bv{n}.{op}", ()⟩ none) a
 
 private def toCoreBvBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let n ← bvWidth m ty
-  return mkCoreApp (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) [a, b]
+  return mkCoreApp (.op Strata.SourceRange.none ⟨s!"Bv{n}.{op}", ()⟩ none) [a, b]
 
 private def toCoreExtensionalEq
     (m : SourceRange)
@@ -269,13 +269,13 @@ private def toCoreExtensionalEq
   match ty with
   | .Map _ _ keyTy =>
       let keyTy' ← toCoreMonoType keyTy
-      let idx : Core.Expression.Expr := .bvar () 0
+      let idx : Core.Expression.Expr := .bvar Strata.SourceRange.none 0
       let a := Lambda.LExpr.liftBVars 1 a
       let b := Lambda.LExpr.liftBVars 1 b
       let lhs := mkCoreApp Core.mapSelectOp [a, idx]
       let rhs := mkCoreApp Core.mapSelectOp [b, idx]
       let trigger := lhs
-      return .quant () .all "" (some keyTy') trigger (.eq () lhs rhs)
+      return .quant Strata.SourceRange.none .all "" (some keyTy') trigger (.eq Strata.SourceRange.none lhs rhs)
   | _ =>
       throwAt m s!"Extensional equality is currently only supported for Map types, got: {repr ty}"
 
@@ -299,10 +299,10 @@ def toCoreQuant
     (body : Boole.Expr) : TranslateM Core.Expression.Expr := do
   let decls := declListToList ds
   let tys ← decls.mapM fun (.bind_mk _ _ _ ty) => toCoreMonoType ty
-  let qBVars : Array Core.Expression.Expr := (decls.toArray.mapIdx fun i _ => .bvar () i)
+  let qBVars : Array Core.Expression.Expr := (decls.toArray.mapIdx fun i _ => .bvar Strata.SourceRange.none i)
   let body' ← withBVarExprs qBVars (toCoreExpr body)
   let q := if isForall then Lambda.QuantifierKind.all else Lambda.QuantifierKind.exist
-  return tys.foldr (fun ty acc => .quant () q "" (some ty) (.bvar () 0) acc) body'
+  return tys.foldr (fun ty acc => .quant Strata.SourceRange.none q "" (some ty) (.bvar Strata.SourceRange.none 0) acc) body'
 
 /--
 Normalize Boole quantifier surface-syntax variants to a single lowering path.
@@ -335,30 +335,30 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .fvar m i =>
     let id := mkIdent (← getFVarName m i)
     if (← getFVarIsOp m i) then
-      return .op () id none
+      return .op Strata.SourceRange.none id none
     else
-      return .fvar () id none
+      return .fvar Strata.SourceRange.none id none
   | .bvar m i => getBVarExpr m i
-  | .app _ f a => return .app () (← toCoreExpr f) (← toCoreExpr a)
-  | .not _ a => return .app () Core.boolNotOp (← toCoreExpr a)
-  | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst () 1 n
-  | .bv8Lit _ ⟨_, n⟩ => return .bitvecConst () 8 n
-  | .bv16Lit _ ⟨_, n⟩ => return .bitvecConst () 16 n
-  | .bv32Lit _ ⟨_, n⟩ => return .bitvecConst () 32 n
-  | .bv64Lit _ ⟨_, n⟩ => return .bitvecConst () 64 n
-  | .natToInt _ ⟨_, n⟩ => return .intConst () (Int.ofNat n)
-  | .if _ _ c t f => return .ite () (← toCoreExpr c) (← toCoreExpr t) (← toCoreExpr f)
+  | .app _ f a => return .app Strata.SourceRange.none (← toCoreExpr f) (← toCoreExpr a)
+  | .not _ a => return .app Strata.SourceRange.none Core.boolNotOp (← toCoreExpr a)
+  | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 1 n
+  | .bv8Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 8 n
+  | .bv16Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 16 n
+  | .bv32Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 32 n
+  | .bv64Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 64 n
+  | .natToInt _ ⟨_, n⟩ => return .intConst Strata.SourceRange.none (Int.ofNat n)
+  | .if _ _ c t f => return .ite Strata.SourceRange.none (← toCoreExpr c) (← toCoreExpr t) (← toCoreExpr f)
   | .map_get _ _ _ a i => return mkCoreApp Core.mapSelectOp [← toCoreExpr a, ← toCoreExpr i]
   | .map_set _ _ _ a i v => return mkCoreApp Core.mapUpdateOp [← toCoreExpr a, ← toCoreExpr i, ← toCoreExpr v]
-  | .btrue _ => return .true ()
-  | .bfalse _ => return .false ()
+  | .btrue _ => return .true Strata.SourceRange.none
+  | .bfalse _ => return .false Strata.SourceRange.none
   | .and _ a b => return mkCoreApp Core.boolAndOp [← toCoreExpr a, ← toCoreExpr b]
   | .or _ a b => return mkCoreApp Core.boolOrOp [← toCoreExpr a, ← toCoreExpr b]
   | .equiv _ a b => return mkCoreApp Core.boolEquivOp [← toCoreExpr a, ← toCoreExpr b]
   | .implies _ a b => return mkCoreApp Core.boolImpliesOp [← toCoreExpr a, ← toCoreExpr b]
   | .ext_equal m ty a b => return ← toCoreExtensionalEq m ty (← toCoreExpr a) (← toCoreExpr b)
-  | .equal _ _ a b => return .eq () (← toCoreExpr a) (← toCoreExpr b)
-  | .not_equal _ _ a b => return .app () Core.boolNotOp (.eq () (← toCoreExpr a) (← toCoreExpr b))
+  | .equal _ _ a b => return .eq Strata.SourceRange.none (← toCoreExpr a) (← toCoreExpr b)
+  | .not_equal _ _ a b => return .app Strata.SourceRange.none Core.boolNotOp (.eq Strata.SourceRange.none (← toCoreExpr a) (← toCoreExpr b))
   | .le m ty a b => toCoreTypedBin m ty "Le" (← toCoreExpr a) (← toCoreExpr b)
   | .lt m ty a b => toCoreTypedBin m ty "Lt" (← toCoreExpr a) (← toCoreExpr b)
   | .ge m ty a b => toCoreTypedBin m ty "Ge" (← toCoreExpr a) (← toCoreExpr b)
@@ -423,8 +423,8 @@ private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRa
     let n := (← get).globalVarCounter
     modify fun st => { st with globalVarCounter := n + 1 }
     let initName := mkIdent s!"init_{id.name}_{n}"
-    newBVarsRev := (.fvar () id none : Core.Expression.Expr) :: newBVarsRev
-    outRev := Core.Statement.init id ty (.det (.fvar () initName none)) (← toCoreMetaData m) :: outRev
+    newBVarsRev := (.fvar Strata.SourceRange.none id none : Core.Expression.Expr) :: newBVarsRev
+    outRev := Core.Statement.init id ty (.det (.fvar Strata.SourceRange.none initName none)) (← toCoreMetaData m) :: outRev
   modify fun st => { st with bvars := st.bvars ++ newBVarsRev.reverse.toArray }
   return outRev.reverse
 
@@ -462,7 +462,7 @@ private def constructProcArgsPrefix (n : String)
   let (modifiesTyped, readOnlyGlobals) ← getGlobalParamPrefix n
   let modifiesArgs := modifiesTyped.map fun (id, _) => Core.CallArg.inoutArg id
   let readOnlyArgs := readOnlyGlobals.map
-    fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
+    fun (id, _) => Core.CallArg.inArg (Lambda.LExpr.fvar Strata.SourceRange.none id none : Core.Expression.Expr)
   return modifiesArgs ++ readOnlyArgs
 
 def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
@@ -476,7 +476,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     | _ => return .block "var" out (← toCoreMetaData m)
   | .initStatement m ty ⟨_, n⟩ e =>
     let rhs ← toCoreExpr e
-    modify fun st => { st with bvars := st.bvars.push (.fvar () (mkIdent n) none) }
+    modify fun st => { st with bvars := st.bvars.push (.fvar Strata.SourceRange.none (mkIdent n) none) }
     return Core.Statement.init (mkIdent n) (← toCoreType ty) (.det rhs) (← toCoreMetaData m)
   | .assign m _ lhs rhs =>
     let rec lhsParts (lhs : BooleDDM.Lhs SourceRange) : TranslateM (String × List Core.Expression.Expr) := do
@@ -487,7 +487,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         return (n, (← toCoreExpr i) :: isRev)
     let (n, idxsRev) ← lhsParts lhs
     let idxs := idxsRev.reverse
-    let base := .fvar () (mkIdent n) none
+    let base := .fvar Strata.SourceRange.none (mkIdent n) none
     return Core.Statement.set (mkIdent n) (nestMapSet base idxs (← toCoreExpr rhs)) (← toCoreMetaData m)
   | .assume m ⟨_, l?⟩ e =>
     return Core.Statement.assume (← defaultLabel m "assume" l?) (← toCoreExpr e) (← toCoreMetaData m)
@@ -557,14 +557,14 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         inputsMono.map (fun (id, mty) => (id, .forAll [] mty))
       let inputNames := bsList.map bindingName
       let pair ← (withBVars inputNames do
-        let mut precondsRev : List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) := []
+        let mut precondsRev : List (DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata) := []
         for p in pres.toList do
           match p with
           | .requires_spec _ _ _ cond =>
-            precondsRev := { expr := ← toCoreExpr cond, md := () } :: precondsRev
+            precondsRev := { expr := ← toCoreExpr cond, md := Strata.SourceRange.none } :: precondsRev
           | _ => pure ()
         let bodyExpr ← toCoreExpr body
-        return (precondsRev.reverse, bodyExpr) : TranslateM (List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) × Core.Expression.Expr))
+        return (precondsRev.reverse, bodyExpr) : TranslateM (List (DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata) × Core.Expression.Expr))
       let (preconds, bodyExpr) := pair
       let funcTy := Lambda.LMonoTy.mkArrow outputMono ((inputsMono.map (·.2)).reverse)
       let decl : Imperative.PureFunc Core.Expression := {
@@ -578,7 +578,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         preconditions := preconds
       }
       -- Keep function name in local scope for subsequent statements.
-      modify fun st => { st with bvars := st.bvars.push (.op () (mkIdent n) (some funcTy)) }
+      modify fun st => { st with bvars := st.bvars.push (.op Strata.SourceRange.none (mkIdent n) (some funcTy)) }
       return .funcDecl decl (← toCoreMetaData m)
   | .for_statement m v init guard step invs body =>
     let (id, ty) ← toCoreMonoBind v
@@ -596,16 +596,16 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     let limitExpr ← toCoreExpr limit
     withBVars [id.name] do
       let initExpr ← toCoreExpr init
-      let guard := mkCoreApp Core.intLeOp [.fvar () id none, limitExpr]
+      let guard := mkCoreApp Core.intLeOp [.fvar Strata.SourceRange.none id none, limitExpr]
       let stepExpr ← ((match step? with
-        | none => pure (.intConst () 1)
+        | none => pure (.intConst Strata.SourceRange.none 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
         m id ty
         initExpr
         guard
-        (mkCoreApp Core.intAddOp [.fvar () id none, stepExpr])
+        (mkCoreApp Core.intAddOp [.fvar Strata.SourceRange.none id none, stepExpr])
         (← toCoreInvariants invs)
         body
   | .for_down_to_by_statement m v init limit ⟨_, step?⟩ invs body =>
@@ -613,16 +613,16 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     let limitExpr ← toCoreExpr limit
     withBVars [id.name] do
       let initExpr ← toCoreExpr init
-      let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar () id none]
+      let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar Strata.SourceRange.none id none]
       let stepExpr ← ((match step? with
-        | none => pure (.intConst () 1)
+        | none => pure (.intConst Strata.SourceRange.none 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
         m id ty
         initExpr
         guard
-        (mkCoreApp Core.intSubOp [.fvar () id none, stepExpr])
+        (mkCoreApp Core.intSubOp [.fvar Strata.SourceRange.none id none, stepExpr])
         (← toCoreInvariants invs)
         body
   termination_by SizeOf.sizeOf s
@@ -711,7 +711,7 @@ private def lowerPureFuncDef
       | .casesBinding _ _ _ => true
       | _ => false
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
-    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
+    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, Strata.SourceRange.none⟩)
     let body ← withBVars inputNames (toCoreExpr body)
     let attr :=
       if inline then #[.inline]
@@ -865,7 +865,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
         let siblingBvars := prevNames.map fun sn =>
-          (.op () (mkIdent sn) none : Core.Expression.Expr)
+          (.op Strata.SourceRange.none (mkIdent sn) none : Core.Expression.Expr)
         let f ← withBVarExprs siblingBvars.toArray
           (lowerPureFuncDef m n tys bs ret pres body false)
         return ({ f with isRecursive := true } :: acc, prevNames ++ [n])

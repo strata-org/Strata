@@ -215,7 +215,8 @@ end
 
 def listToExpr (l: ListMap CoreLabel Core.Procedure.Check) : Core.Expression.Expr :=
   match l with
-  | _ => .true ()
+  -- CBMC does not track source locations; SourceRange.none is used for synthesized expressions.
+  | _ => .true Strata.SourceRange.none
 
 def createContractSymbolFromAST (func : Core.Procedure) : Except String CBMCSymbol := do
   let location : Location := {

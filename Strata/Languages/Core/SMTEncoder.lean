@@ -629,6 +629,47 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
                     Lambda abstractions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
         else
+        let (ctx, isNew) ←
+          if func.isRecursive then
+            .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+          else match func.body with
+          | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+          | some body =>
+            -- Substitute the formals in the function body with appropriate
+            -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
+            let bvars := (List.range formals.length).map (fun i => LExpr.bvar Strata.SourceRange.none i)
+            let body := LExpr.substFvarsLifting body (formals.zip bvars)
+            let (term, ctx) ← toSMTTerm E bvs body ctx
+            .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+        -- For recursive functions, generate per-constructor axioms
+        let recAxioms ← if func.isRecursive && isNew then
+            Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
+          else .ok []
+        let allAxioms := func.axioms ++ recAxioms
+        if isNew then
+          -- To ensure termination, we add the axioms only for new functions
+          -- Get the function's type patterns (input types + output type)
+          let inputPatterns := func.inputs.values
+          let outputPattern := func.output
+          let allPatterns := inputPatterns ++ [outputPattern]
+
+          -- Extract type instantiations by matching patterns against concrete types
+          let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
+          let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
+            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
+            .ok (acc_map.insert tyVar smtTy)
+          ) Map.empty
+          -- Add all axioms for this function to the context, with types binding for the type variables in the expr
+          -- Save the original tySubst to restore after processing axioms
+          let savedSubst := ctx.tySubst
+          let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
+            let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
+              let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+              .ok (new_ctx.addAxiom axiom_term)
+          ) ctx
+          let ctx := ctx.restoreSubst savedSubst
+          .ok (.app (Op.uf uf), smt_outty, ctx)
+        else
           let (ctx, isNew) ←
             if func.isRecursive then
               .ok (ctx.addUF uf, !ctx.ufs.contains uf)
@@ -637,13 +678,13 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             | some body =>
               -- Substitute the formals in the function body with appropriate
               -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
-              let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
+              let bvars := (List.range formals.length).map (fun i => LExpr.bvar Strata.SourceRange.none i)
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
               let (term, ctx) ← toSMTTerm E bvs body ctx
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
           -- For recursive functions, generate per-constructor axioms
           let recAxioms ← if func.isRecursive && isNew then
-              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
+              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval Strata.SourceRange.none
             else .ok []
           let allAxioms := func.axioms ++ recAxioms
           if isNew then
@@ -797,42 +838,42 @@ and render them with the correct Core data structure.
 def smtTermToLExpr (t : Strata.SMT.Term)
     (constructorNames : Std.HashSet String := {}) : LExpr CoreLParams.mono :=
   match t with
-  | .prim (.bool b)       => .boolConst () b
-  | .prim (.int i)        => .intConst () i
-  | .prim (.real d)       => .realConst () d.toRat
-  | .prim (.bitvec b)     => .bitvecConst () _ b
-  | .prim (.string s)     => .strConst () s
+  | .prim (.bool b)       => .boolConst Strata.SourceRange.none b
+  | .prim (.int i)        => .intConst Strata.SourceRange.none i
+  | .prim (.real d)       => .realConst Strata.SourceRange.none d.toRat
+  | .prim (.bitvec b)     => .bitvecConst Strata.SourceRange.none _ b
+  | .prim (.string s)     => .strConst Strata.SourceRange.none s
   | .var v                =>
     -- Zero-arg constructors arrive as plain variables from the SMT solver.
     -- Mark them with `.op` so the formatter can emit `Name()`.
     if constructorNames.contains v.id then
-      .op () v.id none
+      .op Strata.SourceRange.none v.id none
     else
-      .fvar () v.id none
+      .fvar Strata.SourceRange.none v.id none
   | .app (.core (.uf uf)) args _retTy =>
     -- Constructor names use `.op` so the formatter can distinguish them
     -- from plain variables (e.g., `Nil` constructor must not be .fvar)
     let fnExpr : LExpr CoreLParams.mono :=
       if constructorNames.contains uf.id then
-        .op () uf.id none
+        .op Strata.SourceRange.none uf.id none
       else
-        .fvar () uf.id none
-    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+        .fvar Strata.SourceRange.none uf.id none
+    args.foldl (fun acc arg => .app Strata.SourceRange.none acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
-    let fnExpr : LExpr CoreLParams.mono := .op () name none
-    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+    let fnExpr : LExpr CoreLParams.mono := .op Strata.SourceRange.none name none
+    args.foldl (fun acc arg => .app Strata.SourceRange.none acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app op args _ =>
     -- Generic fallback for other ops: render as op name applied to args
     let opName := op.mkName
-    let fnExpr : LExpr CoreLParams.mono := .op () opName none
-    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
-  | .none _ty             => .op () "none" none
-  | .some inner           => .app () (.op () "some" none) (smtTermToLExpr inner constructorNames)
+    let fnExpr : LExpr CoreLParams.mono := .op Strata.SourceRange.none opName none
+    args.foldl (fun acc arg => .app Strata.SourceRange.none acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .none _ty             => .op Strata.SourceRange.none "none" none
+  | .some inner           => .app Strata.SourceRange.none (.op Strata.SourceRange.none "some" none) (smtTermToLExpr inner constructorNames)
   | .quant _ _ _ _        =>
     -- Quantifiers in model values are unusual; fall back to string repr
     let s := match Strata.SMTDDM.termToString t with
              | .ok s => s | .error _ => repr t |>.pretty
-    .fvar () s none
+    .fvar Strata.SourceRange.none s none
 
 /--
 Extract the set of datatype constructor names from an `SMT.Context`.

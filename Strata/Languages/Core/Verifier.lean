@@ -588,6 +588,43 @@ def LExprModel.format (model : LExprModel) : Format :=
 instance : ToFormat LExprModel where
   format := LExprModel.format
 
+/-- Verification result for diagnosis -/
+inductive DiagnosisResultType
+  | refuted
+  | counterexample
+  | unknown
+  deriving Repr, Inhabited
+
+/-- Context for a diagnosed failure -/
+structure DiagnosisContext where
+  pathCondition : List Expression.Expr := []
+  deriving Inhabited
+
+/-- Report for a diagnosed failure -/
+structure DiagnosisReport where
+  result : Except DiagnosisResultType Unit
+  context : DiagnosisContext
+  deriving Inhabited
+
+/-- Result of diagnosing a single sub-expression -/
+structure DiagnosedFailure where
+  expression : Expression.Expr
+  isRefuted : Bool
+  report : DiagnosisReport
+  deriving Inhabited
+
+/-- Full diagnosis result -/
+structure DiagnosisResult where
+  diagnosedFailures : List DiagnosedFailure
+  statePathCondition : List Expression.Expr := []
+  deriving Inhabited
+
+/-- Diagnosis information for verification failures -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  diagnosedFailures : List DiagnosedFailure := []
+  statePathCondition : List Expression.Expr := []
+
 /--
 A collection of all information relevant to a verification condition's
 analysis.
@@ -599,9 +636,29 @@ structure VCResult where
   verbose : VerboseMode := .normal
   checkLevel : CheckLevel := .minimal
   checkMode : VerificationMode := .deductive
+  diagnosis : Option DiagnosisInfo := .none
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with the outcome, if the outcome was a failure. -/
   lexprModel : LExprModel := []
+
+/-- Simplified verification report for display and API use -/
+structure VerificationReport where
+  label : String
+  outcome : Except String VCOutcome
+  diagnosis : Option DiagnosisInfo := none
+  obligation : Option (Imperative.ProofObligation Expression) := none
+
+/-- Procedure-level verification report grouping multiple checks -/
+structure ProcedureReport where
+  procedureName : String
+  results : List VerificationReport
+
+/-- Convert VCResult to VerificationReport -/
+def vcResultToVerificationReport (vcResult : VCResult) : VerificationReport :=
+  { label := vcResult.obligation.label
+    outcome := vcResult.outcome
+    diagnosis := vcResult.diagnosis
+    obligation := some vcResult.obligation }
 
 /-- Mask outcome properties that were not requested.
     When the evaluator resolves a check that wasn't requested by the
@@ -734,8 +791,9 @@ private def vcResultGroupKey (r : VCResult) (uid : Nat) : String × Nat :=
     if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
     else
       let related := Imperative.getRelatedFileRanges r.obligation.metadata
-      let relatedKey := related.foldl (fun acc r => s!"{acc}+{repr r}") ""
-      (s!"{displayLabel}@{repr fr}{relatedKey}", uid)
+      let frKey := s!"{repr fr.file}:{fr.range.start.byteIdx}:{fr.range.stop.byteIdx}"
+      let relatedKey := related.foldl (fun acc r => s!"{acc}+{repr r.file}:{r.range.start.byteIdx}:{r.range.stop.byteIdx}") ""
+      (s!"{displayLabel}@{frKey}{relatedKey}", uid)
   | none => (s!"{displayLabel}@__unique_{uid}", uid + 1)
 
 /-- Merge `VCResults` that originate from the same assertion (identified by

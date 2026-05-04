@@ -167,7 +167,7 @@ procedure test_all_expressions() {
 
 -- The test below should return an error and the SMT code.
 /--
-info: error: Invalid pattern each pattern expression must be a function application
+info: error: Invalid pattern at (): each pattern expression must be a function application
 (declare-fun f (Int) Bool)
 (push 1)
 (assert (not (forall ((y Int)) (! (> y 0) :pattern (y)))))

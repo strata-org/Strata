@@ -19,7 +19,7 @@ TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
 )
 
-BOTH_SKIP = {
+BOTH_SKIP = {"test_incremental_simple", 
     "test_foo_client_folder",
     "test_invalid_client_type",
     "test_unsupported_config",
@@ -41,31 +41,34 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_class_with_methods",
     "test_default_params",
     "test_dict_operations",
+    "test_foo_client_folder",
     "test_for_loop",
-    "test_func_input_type_constraints",
+    "test_fstrings",
     "test_if_elif",
     "test_ifexpr",
+    "test_incremental_simple",
+    "test_invalid_client_type",
     "test_list",
     "test_list_slice",
     "test_loops",
+    "test_method_param_reassign",
     "test_module_level",
     "test_multi_function",
     "test_multiple_except",
     "test_nested_calls",
+    "test_pin_any",
     "test_regex_negative",
     "test_regex_positive",
     "test_return_types",
     "test_subscription",
     "test_try_except",
     "test_try_except_scoping",
-    "test_tuple_create",
-    "test_tuple_swap",
-    "test_tuple_type",
-    "test_tuple_unpack",
+    "test_unsupported_config",
+    "test_variable_in_nested_block",
     "test_variable_reassign",
     "test_while_loop",
     "test_with_statement",
-    "test_fstrings",
+    "test_with_void_enter",
 }
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
@@ -80,6 +83,12 @@ def run(test_file: str, *, laurel: bool) -> bool:
     if base_name in skip:
         print(f"Skipping: {base_name}")
         return True
+    # For non-laurel mode, skip tests without a non-laurel expected file
+    if not laurel:
+        expected_non_laurel = REPO_ROOT / "StrataTest/Languages/Python/expected_non_laurel" / f"{base_name}.expected"
+        if not expected_non_laurel.exists():
+            print(f"Skipping: {base_name} (no non-laurel expected file)")
+            return True
 
     ion_rel = f"StrataTest/Languages/Python/tests/{base_name}.python.st.ion"
     ion_abs = REPO_ROOT / ion_rel

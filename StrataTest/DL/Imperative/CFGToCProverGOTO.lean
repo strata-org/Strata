@@ -54,6 +54,8 @@ instance : Imperative.HasBool LExprTP where
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
   tt_is_not_ff := by simp
   boolTy := .tcons "bool" []
+  isTrue := fun e => match e with | .const _ (.boolConst true) => true | _ => false
+  isFalse := fun e => match e with | .const _ (.boolConst false) => true | _ => false
 
 instance : Imperative.HasIdent LExprTP where
   ident s := ⟨s, ()⟩

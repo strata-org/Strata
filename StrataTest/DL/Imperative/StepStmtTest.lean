@@ -44,6 +44,8 @@ instance : HasBool MiniPureExpr where
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
+  isTrue := fun e => match e with | .tt => true | _ => false
+  isFalse := fun e => match e with | .ff => true | _ => false
 
 instance : HasNot MiniPureExpr where
   not := .not
