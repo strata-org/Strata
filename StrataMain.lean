@@ -10,6 +10,7 @@ import Lean.Parser.Extension
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
+import Strata.DDM.Integration.Java.GenDDM
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.ProgramEval
@@ -849,10 +850,10 @@ def javaGenCommand : Command where
       match ← Strata.readStrataFile fm v[0] with
       | .dialect d => pure d
       | .program _ => exitFailure "Expected a dialect file, not a program file."
-    match Strata.Java.generateDialect d v[1] with
+    match Strata.Java.DDM.generateDialect d v[1] with
     | .ok files =>
-      Strata.Java.writeJavaFiles v[2] v[1] files
-      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+      Strata.Java.DDM.writeJavaFiles v[2] v[1] files
+      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.DDM.packageToPath v[1]}"
     | .error msg =>
       exitFailure s!"Error generating Java: {msg}"
 
