@@ -410,6 +410,12 @@ def boolEquivFunc : WFLFunc T :=
 def boolNotFunc : WFLFunc T :=
   unaryOp "Bool.Not" Bool.not
 
+def wrapImplications [Inhabited T.Metadata]
+    (implications : List (T.Metadata × LExpr T.mono))
+    (ob : LExpr T.mono) : LExpr T.mono :=
+  implications.foldr (fun (md, lhs) acc =>
+    .app md (.app md (@boolImpliesFunc T).opExpr lhs) acc) ob
+
 /-! ### Safe (preconditioned) operations -/
 
 section

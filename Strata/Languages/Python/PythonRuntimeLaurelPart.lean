@@ -353,7 +353,7 @@ function List_get_non_neg (l : ListAny, i : int) : Any
 {
   if ListAny..isListAny_nil(l) then from_None()
   else if  i == 0 then ListAny..head!(l)
-  else List_get(ListAny..tail!(l), i - 1)
+  else List_get_non_neg(ListAny..tail!(l), i - 1)
 };
 
 function List_get (l : ListAny, i : int) : Any
@@ -420,7 +420,7 @@ function List_set_non_neg (l : ListAny, i : int, v: Any) : ListAny
 {
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then ListAny_cons(v, ListAny..tail!(l))
-  else ListAny_cons(ListAny..head!(l), List_set(ListAny..tail!(l), i - 1, v))
+  else ListAny_cons(ListAny..head!(l), List_set_non_neg(ListAny..tail!(l), i - 1, v))
 };
 
 function List_set (l : ListAny, i : int, v: Any) : ListAny

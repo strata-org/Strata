@@ -56,6 +56,7 @@ program Core;
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (xs : IntList) : int
+decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };

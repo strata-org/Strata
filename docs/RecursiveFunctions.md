@@ -30,9 +30,32 @@ rec function listLen (@[cases] xs : IntList) : int
 ```
 
 The `@[cases]` annotation tells the axiom generator which parameter drives the
-recursion. Only one `@[cases]` parameter is allowed per function.
+per-constructor axiom generation (partial evaluation). Only one `@[cases]`
+parameter is allowed per function.
 
 Recursive functions cannot be marked `inline`.
+
+### The `decreases` Clause
+
+An optional `decreases` clause specifies which parameter is used as the
+termination measure. It appears after the preconditions and before the body:
+
+```
+rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
+  decreases ys
+{
+  if IntList..isNil(xs) then 0
+  else if IntList..isNil(ys) then 0
+  else 1 + zipLen(IntList..tl(xs), IntList..tl(ys))
+};
+```
+
+- If `decreases` is omitted, the `@[cases]` parameter is used as the termination
+  measure (this is the common case where both coincide).
+- If `decreases` is provided, it overrides only the termination check. The
+  `@[cases]` parameter still controls per-constructor axiom generation.
+- The `decreases` expression must name a parameter whose type is a known ADT.
+- `@[cases]` is always required, even when `decreases` is provided.
 
 ### Mutually Recursive Functions
 
@@ -110,15 +133,34 @@ the SMT output is:
 There is no axiom for `Nil` because the PE fully reduces `listLen(Nil)` to `0`,
 so the encoder emits it as a concrete equality rather than a quantified axiom.
 
+## Termination Checking
+
+Termination checking is always on for all `rec` functions. It verifies that
+recursive calls pass a structurally smaller argument by encoding a well-founded
+ordering on ADTs using `adtRank` functions.
+
+For each recursive function, the TermCheck pipeline phase:
+
+1. Generates a `D..adtRank : D → Int` uninterpreted function and per-constructor
+   axioms establishing that recursive fields have strictly smaller rank.
+2. Generates a `f$$term` verification procedure that asserts
+   `adtRank(callArg) < adtRank(callerParam)` at each recursive call site,
+   guarded by the path condition through `ite` branches.
+
+A function that fails its termination check will produce an `unknown` or `fail`
+result on its `_terminates_` obligations. Non-terminating definitions like
+`f(xs) = f(xs)` or `f(xs) = f(Cons(1, xs))` are caught this way.
+
 ## Current Limitations
 
-- **ADT recursion only:** The `@[cases]` mechanism only supports structural
-  recursion on algebraic datatypes. Recursion on other types (e.g., `int`) or
-  non-structural recursion patterns are not supported.
-- **No termination checking:** Recursive functions are accepted without verifying
-  that they terminate. Unsound axioms can result from non-terminating definitions.
+- **ADT recursion only:** The `@[cases]` and `decreases` mechanisms only support
+  structural recursion on algebraic datatypes. Recursion on other types
+  (e.g., `int`) or non-structural recursion patterns are not yet supported.
+  Arbitrary integer measures and lexicographic orderings are planned.
 - **Monomorphic SMT encoding only:** Polymorphic recursive functions are not yet
   supported at the SMT encoding level. This applies to both single and mutually
   recursive functions.
 - **Top-level only:** Recursive functions must be declared at the program level;
   recursive function statements (local declarations) are not supported.
+- **No procedure termination checking:** Self-recursive procedures do not yet
+  have termination checking support.

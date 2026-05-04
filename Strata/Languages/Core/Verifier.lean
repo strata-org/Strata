@@ -17,6 +17,7 @@ public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
+import Strata.Transform.TerminationCheck
 import Strata.Transform.LoopElim
 import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
@@ -853,12 +854,12 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
-      let targets := ps ++ ps.map PrecondElim.wfProcName
+      let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and ANF encoding.
