@@ -331,8 +331,8 @@ where
         return ⟨ .Return v', source ⟩
     | .Assign targets v =>
 
-      let processFieldAssignments :
-        TransformM (List (AstNode Variable) × List (AstNode StmtExpr)) :=
+      -- Process field targets
+      let (processedTargets, updateStatements) <-
         targets.attach.foldlM (init := ([], [])) fun (accTargets, accStmts) ⟨t, _⟩ =>
           match _htv : t.val with
           | .Field target fieldName => do
@@ -348,40 +348,42 @@ where
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
-      let (v', addedHeap) <- match _hv : v.val with
-        | .StaticCall callee args => do
-          let args' <- args.mapM recurse
-          let calleeWritesHeap ← writesHeap callee
-          let calleeReadsHeap ← readsHeap callee
-          if calleeWritesHeap then
-            pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, true)
-          else if calleeReadsHeap then
-            pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, false)
-          else
-            pure (⟨ .StaticCall callee args', v.source ⟩, false)
-        | .InstanceCall callTarget _callee args => do
-          let _callTarget' ← recurse callTarget
-          let _args' <- args.mapM recurse
-          pure (⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩, false)
-        | _ =>
-          pure (<- recurse v, false)
+      -- Process calls to heap mutating procedures
+      let (newAssign, suffixes) ← do
+        let (v', addedHeap) <- match _hv : v.val with
+          | .StaticCall callee args => do
+            let args' <- args.mapM recurse
+            let calleeWritesHeap ← writesHeap callee
+            let calleeReadsHeap ← readsHeap callee
+            if calleeWritesHeap then
+              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, true)
+            else if calleeReadsHeap then
+              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, false)
+            else
+              pure (⟨ .StaticCall callee args', v.source ⟩, false)
+          | .InstanceCall callTarget _callee args => do
+            let _callTarget' ← recurse callTarget
+            let _args' <- args.mapM recurse
+            pure (⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩, false)
+          | _ =>
+            pure (<- recurse v, false)
+        let allTargets := if addedHeap
+          then ⟨ Variable.Local heapVar, v.source ⟩ :: processedTargets
+          else processedTargets
+        let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source ⟩
 
-      let (processedTargets, updateStatements) <- processFieldAssignments
-      let allTargets := if addedHeap
-        then ⟨ Variable.Local heapVar, v.source ⟩ :: processedTargets
-        else processedTargets
-      let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source ⟩
+        -- Convert a Declare variable to a Local reference (stripping the type).
+        -- Non-Declare variables pass through unchanged.
+        let variableAsRef(var: Variable): Variable := match var with
+          | .Declare param => Variable.Local param.name
+          | x => x
 
-      -- Convert a Declare variable to a Local reference (stripping the type).
-      -- Non-Declare variables pass through unchanged.
-      let variableAsRef(var: Variable): Variable := match var with
-        | .Declare param => Variable.Local param.name
-        | x => x
+        let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
+          then updateStatements ++ [⟨ StmtExpr.Var $ variableAsRef $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
+          else updateStatements
+        pure (newAssign, suffixes)
 
-      let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
-        then updateStatements ++ [⟨ StmtExpr.Var $ variableAsRef $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
-        else updateStatements
-
+      -- Create a block if necessary
       if suffixes.length > 0 then
         return ⟨ StmtExpr.Block (newAssign :: suffixes) none, source ⟩
       else
