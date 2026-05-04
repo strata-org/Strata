@@ -1,3 +1,8 @@
+> **Note:** The canonical reference for recursive function syntax is now the
+> [Strata Core Language Definition](verso/LangDefDoc.lean) (Section 4, "Recursive Functions").
+> SMT encoding details are in [Transforms and Analysis](verso/TransformsDoc.lean).
+> This file is retained for additional detail not yet migrated. It may be removed in the future.
+
 # Recursive Functions in Strata
 
 This document describes the recursive function infrastructure in Strata Core.
