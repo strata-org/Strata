@@ -13,7 +13,9 @@ namespace Strata
 namespace Laurel
 
 def operatorsProgram := r"
-procedure testArithmetic() {
+procedure testArithmetic()
+  opaque
+{
     var a: int := 10;
     var b: int := 3;
     var x: int := a - b;
@@ -26,7 +28,9 @@ procedure testArithmetic() {
     assert r == 2
 };
 
-procedure testLogical() {
+procedure testLogical()
+  opaque
+{
     var t: bool := true;
     var f: bool := false;
     var a: bool := t && f;
@@ -39,13 +43,17 @@ procedure testLogical() {
     assert f ==> t
 };
 
-procedure testUnary() {
+procedure testUnary()
+  opaque
+{
     var x: int := 5;
     var y: int := -x;
     assert y == 0 - 5
 };
 
-procedure testTruncatingDiv() {
+procedure testTruncatingDiv()
+  opaque
+{
     assert 7 /t 3 == 2;
     assert 7 %t 3 == 1;
     assert (0 - 7) /t 3 == 0 - 2;
