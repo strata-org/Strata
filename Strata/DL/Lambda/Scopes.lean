@@ -74,7 +74,7 @@ def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
         (k, (ty1, mkIte cond e1 e2)) ::
       Scope.merge cond rest (m2.erase k)
   where mkIte (cond tru fals : LExpr T.mono) : LExpr T.mono :=
-    if tru == fals then tru
+    if tru.eraseMetadata == fals.eraseMetadata then tru
     else (LExpr.ite (default : T.Metadata) cond tru fals)
 
 

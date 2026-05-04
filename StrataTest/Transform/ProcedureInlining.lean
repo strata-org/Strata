@@ -75,8 +75,8 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) :=
 
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 (map.vars.fst)).eraseTypes == e2.eraseTypes &&
-  (substExpr e2 (map.vars.snd)).eraseTypes == e1.eraseTypes
+  (substExpr e1 (map.vars.fst)).eraseTypes.eraseMetadata == e2.eraseTypes.eraseMetadata &&
+  (substExpr e2 (map.vars.snd)).eraseTypes.eraseMetadata == e1.eraseTypes.eraseMetadata
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=

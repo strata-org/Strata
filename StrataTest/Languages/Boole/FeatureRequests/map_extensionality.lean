@@ -106,4 +106,4 @@ private def expectedQuantifiedMapExtensionalityCapture : Core.Expression.Expr :=
     (.quant ExprSourceLoc.none .all "" (some mapIntInt) (.bvar ExprSourceLoc.none 0)
       (.quant ExprSourceLoc.none .all "" (some .int) lhs (.eq ExprSourceLoc.none lhs rhs)))
 
-#guard loweredQuantifiedMapExtensionalityCapture? == some expectedQuantifiedMapExtensionalityCapture
+#guard (loweredQuantifiedMapExtensionalityCapture?.map (·.eraseMetadata)) == some expectedQuantifiedMapExtensionalityCapture.eraseMetadata

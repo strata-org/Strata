@@ -66,13 +66,10 @@ instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
     | some primaryLoc =>
       -- Collect related locations from all other non-none provenance entries,
       -- including their own relatedLocs.
-      -- Note: BEq SourceRange always returns true, so compare fields directly.
-      let sameRange (a b : ExprSourceLoc) : Bool :=
-        a.uri == b.uri && a.range.start == b.range.start && a.range.stop == b.range.stop
       let related := priority.foldl (init := primaryLoc.relatedLocs) fun acc prov =>
         match nonNoneLoc prov with
         | some loc =>
-          if sameRange loc primaryLoc then acc
+          if loc == primaryLoc then acc
           else (loc.uri, loc.range) :: (loc.relatedLocs ++ acc)
         | none => acc
       { primaryLoc with relatedLocs := related }

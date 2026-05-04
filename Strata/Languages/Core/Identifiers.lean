@@ -23,13 +23,7 @@ structure ExprSourceLoc where
   range : Strata.SourceRange
   /-- Additional source locations accumulated during substitution (e.g. call-site arguments). -/
   relatedLocs : List (Option Strata.Uri × Strata.SourceRange) := []
-deriving Inhabited, Repr
-
-/-- Expression source locations are considered equal for the purpose of expression comparison,
-    so that semantically identical expressions with different source positions are treated as equal. -/
-axiom ExprSourceLoc.eq_trivial : ∀ (a b : ExprSourceLoc), a = b
-
-instance : DecidableEq ExprSourceLoc := fun a b => isTrue (ExprSourceLoc.eq_trivial a b)
+deriving Inhabited, Repr, DecidableEq, BEq
 
 namespace ExprSourceLoc
 

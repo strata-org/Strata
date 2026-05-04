@@ -73,7 +73,7 @@ private structure ExprKey where
   expr : Expression.Expr
 
 private instance : BEq ExprKey where
-  beq a b := a.expr == b.expr
+  beq a b := a.expr.eqModuloMeta b.expr
 
 private instance : Hashable ExprKey where
   hash k := LExpr.hashExpr k.expr
@@ -127,7 +127,7 @@ where
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
     | some (target, replacement) =>
-      if e == target then (h, replacement) else (h, e)
+      if e.eqModuloMeta target then (h, replacement) else (h, e)
     | none => (h, e)
 
 /-- Collect all subexpression hashes from an expression,
