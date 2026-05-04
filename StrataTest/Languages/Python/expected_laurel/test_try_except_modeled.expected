@@ -1,0 +1,16 @@
+test_try_except_modeled.py(8, 4): ✅ pass - assert(337)
+test_try_except_modeled.py(10, 8): ✅ pass - set_result_calls_Any_get_0
+test_try_except_modeled.py(13, 4): ✅ pass - dict access should succeed
+test_try_except_modeled.py(6, 30): ✅ pass - (test_try_dict_access ensures) Return type constraint
+test_try_except_modeled.py(17, 4): ✅ pass - assert(541)
+test_try_except_modeled.py(18, 4): ✅ pass - assert(557)
+test_try_except_modeled.py(19, 4): ✅ pass - assert(572)
+test_try_except_modeled.py(21, 17): ✅ pass - Check PAdd exception
+test_try_except_modeled.py(24, 4): ✅ pass - addition should succeed
+test_try_except_modeled.py(16, 29): ✅ pass - (test_try_arithmetic ensures) Return type constraint
+test_try_except_modeled.py(32, 4): ✅ pass - assert(950)
+test_try_except_modeled.py(35, 12): ✅ pass - set_result_calls_Any_get_0
+test_try_except_modeled.py(38, 4): ✅ pass - nested dict access should succeed
+test_try_except_modeled.py(30, 37): ✅ pass - (test_try_nested_dict_access ensures) Return type constraint
+DETAIL: 14 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
