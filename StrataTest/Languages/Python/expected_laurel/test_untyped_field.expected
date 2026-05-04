@@ -1,0 +1,4 @@
+test_untyped_field.py(8, 4): ✔️ always true if reached - untyped field
+test_untyped_field.py(12, 4): ✖️ always false if reached - untyped field must fail
+DETAIL: 1 passed, 1 failed, 0 inconclusive
+RESULT: Failures found
