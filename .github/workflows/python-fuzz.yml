@@ -259,6 +259,19 @@ jobs:
               console.log('Issue already exists for this seed, skipping.');
               return;
             }
+            // Extract failing source code from the fuzz log (between "--- Source code ---" markers)
+            const fs = require('fs');
+            let sourceSnippet = '';
+            try {
+              const log = fs.readFileSync('/tmp/fuzz_pr.log', 'utf8');
+              const sourceMatch = log.match(/--- Source code ---\n([\s\S]*?)(?=\n---)/);
+              if (sourceMatch) {
+                sourceSnippet = sourceMatch[1].substring(0, 2000);
+              }
+            } catch (e) { /* log not available */ }
+            const sourceSection = sourceSnippet
+              ? [`### Generated program`, '```python', sourceSnippet, '```', '']
+              : [];
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -271,6 +284,7 @@ jobs:
                 `**PR:** #${context.issue.number}`,
                 `**Merge base also fails:** yes`,
                 ``,
+                ...sourceSection,
                 `### Reproduce`,
                 `\`\`\`bash`,
                 `cd Tools/Python`,
