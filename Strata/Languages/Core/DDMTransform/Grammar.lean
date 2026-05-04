@@ -103,9 +103,8 @@ fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
 
-// TODO: seq_empty is not yet supported in the grammar because the DDM parser
-// cannot currently handle 0-ary polymorphic functions (no arguments to infer
-// the type parameter from). The Factory definition exists for programmatic use.
+fn seq_empty (A : Type) : Sequence A =>
+  "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
 fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>

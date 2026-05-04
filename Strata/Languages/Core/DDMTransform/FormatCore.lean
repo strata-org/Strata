@@ -289,13 +289,21 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
 
 /-- Handle 0-ary operations -/
 def handleZeroaryOps {M} [Inhabited M] (name : String)
+    (opTy : Option Lambda.LMonoTy := none)
     : ToCSTM M (CoreDDM.Expr M) :=
   open Core in
   match CoreOp.ofString name with
   | .re .All => pure (.re_all default)
   | .re .AllChar => pure (.re_allchar default)
   | .re .None => pure (.re_none default)
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
+  | .seq .Empty => do
+    match opTy with
+    | some (.tcons "Sequence" [elemTy]) =>
+      let ety ← lmonoTyToCoreType elemTy
+      pure (.seq_empty default ety)
+    | _ =>
+      let ety := CoreType.tvar default unknownTypeVar
+      pure (.seq_empty default ety)
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
@@ -497,6 +505,7 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
 
 def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
+    (opTy : Option Lambda.LMonoTy := none)
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
   -- User-defined functions: check bound vars first (local funcDecl via
@@ -513,7 +522,7 @@ def lopToExpr {M} [Inhabited M]
   | none =>
     -- Either a built-in or an invalid operation.
     match args with
-    | [] => handleZeroaryOps name
+    | [] => handleZeroaryOps name opTy
     | [arg] => handleUnaryOps name arg
     | [arg1, arg2] => handleBinaryOps name arg1 arg2
     | [arg1, arg2, arg3] => handleTernaryOps name arg1 arg2 arg3
@@ -551,7 +560,7 @@ partial def lexprToExpr {M} [Inhabited M]
         pure (.fvar default (ctx.allFreeVars.size))
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
-  | .op _ name _ => lopToExpr name.name []
+  | .op _ name ty => lopToExpr name.name [] ty
   | .app _ _ _ => lappToExpr e qLevel
   | .abs _ prettyName ty body => labsToExpr prettyName ty body (qLevel + 1)
   | .quant _ qkind _ ty trigger body =>

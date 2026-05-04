@@ -432,9 +432,7 @@ def seqLengthFunc : WFLFunc CoreLParams :=
     ])
 
 /- An empty `Sequence` constructor with type `∀a. Sequence a`.
-   NOTE: This is registered in the Factory for programmatic use, but is not yet
-   parseable from `.st` files because the DDM grammar cannot currently handle
-   0-ary polymorphic functions (no arguments to infer the type parameter from). -/
+   `Sequence.empty<A>()` returns an empty sequence of element type `A`. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [
