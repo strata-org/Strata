@@ -193,9 +193,8 @@ private def addTermProcToCallGraph (name : String) : CoreTransformM Unit :=
 
 /-- Result of generating adtRank declarations for a mutual datatype block. -/
 private structure AdtRankDecls where
-  funcDecls : List Decl
+  namedDecls : List (String × Decl)
   axioms : List (String × Expression.Expr)
-  adtNames : List String
 
 /-- Generate adtRank function declarations and axiom expressions for all
     datatypes in the mutual block containing `adtName`. -/
@@ -204,15 +203,14 @@ private def mkAdtRankDecls
     (md : Imperative.MetaData Expression)
     : AdtRankDecls :=
   match tf.toList.find? (fun b => b.any (fun d => d.name == adtName)) with
-  | none => ⟨[], [], []⟩
+  | none => ⟨[], []⟩
   | some block =>
-    { funcDecls := block.map fun dt =>
-        Decl.func (mkAdtRankFunc (T := CoreLParams) dt) md
+    { namedDecls := block.map fun dt =>
+        (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt) md)
       axioms := block.flatMap fun dt =>
         let axioms := mkAdtRankAxioms (T := CoreLParams) dt block ()
         axioms.mapIdx fun i ax =>
-          (s!"{adtRankFuncName dt.name}_{i}", ax)
-      adtNames := block.map (·.name) }
+          (s!"{adtRankFuncName dt.name}_{i}", ax) }
 
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking procedures for each `recFuncBlock`. -/
@@ -257,29 +255,25 @@ where
           let ty ← func.inputs.values[idx]?
           pure (func.name.name, idx, ty)
         -- Step 3: Generate adtRank UF declarations and per-constructor axioms.
-        -- `newAdtRank` emits UF decls only for datatypes not yet in the program.
-        -- `allAdtRank` collects all axioms this block needs — each $$term proc
-        -- embeds axioms as preconditions, so it needs the full set even if the
-        -- UF decls were emitted by a previous block.
-        -- `collectAdtRank` deduplicates internally because mutual blocks can
-        -- map multiple function types to the same mutual datatype block.
+        -- `allAdtRank` is computed once for all datatypes in this block.
+        -- `newFuncDecls` filters to only UF decls not yet emitted, while
+        -- axioms are always taken from the full set (each $$term proc embeds
+        -- all axioms as preconditions even if UF decls were emitted earlier).
         let allAdtNames := funcDecreasesMap.map (fun (_, _, ty) => adtNameOf ty)
           |>.eraseDups
-        let newAdtNames := allAdtNames.filter (fun n => !emittedAdtRank.contains n)
-        let collectAdtRank (adtNames : List String) : AdtRankDecls :=
+        let allAdtRank : AdtRankDecls :=
           let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
-            adtNames.foldl (init := ({}, [])) fun (seen, acc) adtName =>
+            allAdtNames.foldl (init := ({}, [])) fun (seen, acc) adtName =>
               if seen.contains adtName then (seen, acc)
               else
                 let r := mkAdtRankDecls adtName tf md
-                (r.adtNames.foldl (fun s n => s.insert n) seen, r :: acc)
+                (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc)
           let results := revResults.reverse
-          { funcDecls := results.flatMap (·.funcDecls)
-            axioms := results.flatMap (·.axioms)
-            adtNames := results.flatMap (·.adtNames) }
-        let newAdtRank := collectAdtRank newAdtNames
-        let emittedAdtRank := newAdtRank.adtNames.foldl (fun s n => s.insert n) emittedAdtRank
-        let allAdtRank := collectAdtRank allAdtNames
+          { namedDecls := results.flatMap (·.namedDecls)
+            axioms := results.flatMap (·.axioms) }
+        let newFuncDecls := allAdtRank.namedDecls.filterMap
+          fun (n, d) => if emittedAdtRank.contains n then none else some d
+        let emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
         incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
         -- Step 4: Generate a $$term procedure per function with adtRank
         -- decrease assertions at each recursive call site.
@@ -294,10 +288,10 @@ where
           | none => return none
         -- Step 5: Splice adtRank decls before the rec block, term procs after.
         let (changed, rest') ← transformDecls rest tf emittedAdtRank
-        if newAdtRank.funcDecls.isEmpty && termDecls.isEmpty then
+        if newFuncDecls.isEmpty && termDecls.isEmpty then
           return (changed, d :: rest')
         else
-          return (true, newAdtRank.funcDecls ++ [d] ++ termDecls ++ rest')
+          return (true, newFuncDecls ++ [d] ++ termDecls ++ rest')
       | .type (.data block) _md => do
         let tf' : @TypeFactory Unit := tf.push block
         let (changed, rest') ← transformDecls rest tf' emittedAdtRank

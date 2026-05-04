@@ -80,7 +80,7 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   concreteEval : Option (MetadataT → List ExprT → Option ExprT) := .none
   axioms   : List ExprT := []  -- For axiomatic definitions
   preconditions : List (FuncPrecondition ExprT MetadataT) := []
-  measure  : Option ExprT := .none
+  measure  : Option ExprT := .none -- Termination measure expression (from `decreases` clause)
 
 def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] (f : Func IdentT ExprT TyT MetadataT) : Format :=
   let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
