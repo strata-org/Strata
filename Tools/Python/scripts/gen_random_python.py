@@ -226,13 +226,36 @@ def _gen_str_concat():
     )
 
 def _gen_if_else():
-    """If/else with a known branch outcome."""
-    cond_val = _rand_bool()
+    """If/else with a known branch outcome, using compound boolean conditions."""
     a, b = _rand_int(), _rand_int()
+    # Pick a random condition style
+    style = random.choice(["simple", "and", "or", "not", "none_check"])
+    if style == "simple":
+        cond_val = _rand_bool()
+        cond_expr = str(cond_val)
+    elif style == "and":
+        x, y = _rand_bool(), _rand_bool()
+        cond_val = x and y
+        cond_expr = f"{x} and {y}"
+    elif style == "or":
+        x, y = _rand_bool(), _rand_bool()
+        cond_val = x or y
+        cond_expr = f"{x} or {y}"
+    elif style == "not":
+        x = _rand_bool()
+        cond_val = not x
+        cond_expr = f"not {x}"
+    else:  # none_check
+        use_none = _rand_bool()
+        if use_none:
+            cond_val = False
+            cond_expr = "None is not None"
+        else:
+            cond_val = True
+            cond_expr = "None is None"
     expected = a if cond_val else b
     return (
-        f"    cond: bool = {cond_val}\n"
-        f"    if cond:\n"
+        f"    if {cond_expr}:\n"
         f"        r: int = {a}\n"
         f"    else:\n"
         f"        r: int = {b}\n"
