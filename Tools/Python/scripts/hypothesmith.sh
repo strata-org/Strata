@@ -125,7 +125,7 @@ ANALYZE_TIMEOUT=90
 # Prerequisite checks
 # ---------------------------------------------------------------------------
 
-if [ ! -x "$PYTHON" ]; then
+if ! command -v "$PYTHON" &>/dev/null; then
   echo "ERROR: Python venv not found at $TOOLS_PY/.venv"
   echo "Set up with:"
   echo "  python3 -m venv $TOOLS_PY/.venv"
