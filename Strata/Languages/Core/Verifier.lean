@@ -511,7 +511,7 @@ def dischargeObligationIncremental
   (_label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
-  : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) :=
+  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) :=
   open _root_.Strata.SMT.IncrementalSolver in do
   let baseFlags := getSolverFlags options
   let needsIncremental := satisfiabilityCheck && validityCheck
@@ -525,7 +525,7 @@ def dischargeObligationIncremental
     | _ => #[]
   let allFlags := solverSpecificFlags ++ baseFlags
   let solverState ← spawn options.solver allFlags
-  let action : _root_.Strata.SMT.IncrementalSolverM (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
+  let action : _root_.Strata.SMT.IncrementalSolverM (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
     let solver := _root_.Strata.SMT.IncrementalSolver.mkAbstractSolver
     -- Unwrap an Except String result, throwing on error
     let unwrapResult (label : String) (r : Except String Unit)
@@ -1301,7 +1301,7 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
     by this function so it does not know about SMT-LIB or any specific solver. -/
 abbrev DischargeFn :=
   List Term → Term → SMT.Context → Bool → Bool → List VarDefinition → List VarDeclaration →
-  IO (Except Format (SMT.Result × SMT.Result × EncoderState))
+  IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState))
 
 /-- A `CoreSMTSolver` encapsulates the strategy for discharging all proof
     obligations extracted from a CoreSMT program. The pipeline is parametrized
@@ -1362,11 +1362,10 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (varDeclarations : List VarDeclaration := [])
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-  let ans ←
-      IO.toEIO
-        (fun e => DiagnosticModel.fromFormat f!"{e}")
-        (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-          varDefinitions varDeclarations)
+  let ans ← IO.toEIO
+      (fun e => DiagnosticModel.fromFormat f!"{e}")
+      (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+        varDefinitions varDeclarations)
   match ans with
   | .error solverError =>
     let vcError : VCError := match solverError with
