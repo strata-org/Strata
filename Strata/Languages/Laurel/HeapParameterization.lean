@@ -163,6 +163,33 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   | .datatypeDefinition _ => true
   | _ => false
 
+/-- Compute a stable string tag for a `HighType`, used to derive per-type
+    Box constructor / destructor names. Designed so two structurally distinct
+    types never produce the same tag. -/
+private partial def highTypeTag : HighType → String
+  | .TVoid => "void"
+  | .TBool => "bool"
+  | .TInt => "int"
+  | .TFloat64 => "float64"
+  | .TReal => "real"
+  | .TString => "string"
+  | .THeap => "heap"
+  | .TBv n => s!"bv{n}"
+  | .UserDefined name => name.text
+  | .TCore name => name
+  | .TSeq et => s!"Seq_{highTypeTag et.val}"
+  | .TArray et => s!"Array_{highTypeTag et.val}"
+  | .TSet et => s!"Set_{highTypeTag et.val}"
+  | .TMap k v => s!"Map_{highTypeTag k.val}_{highTypeTag v.val}"
+  | .TTypedField vt => s!"Field_{highTypeTag vt.val}"
+  | .Pure base => s!"Pure_{highTypeTag base.val}"
+  | .Intersection types =>
+    "Intersection_" ++ String.intercalate "_" (types.map (highTypeTag ·.val))
+  | .Applied base args =>
+    "Applied_" ++ String.intercalate "_"
+      (highTypeTag base.val :: args.map (highTypeTag ·.val))
+  | .Unknown => "unknown"
+
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
     for Composite types, uses "Box..compositeVal!". -/
@@ -177,6 +204,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
   | .TCore name => s!"Box..{name}Val!"
+  | .TSeq et => s!"Box..Seq_{highTypeTag et.val}Val!"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -193,6 +221,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
   | .TCore name => s!"Box..{name}"
+  | .TSeq et => s!"BoxSeq_{highTypeTag et.val}"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
@@ -210,6 +239,9 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
+  | .TSeq et =>
+        let tag := highTypeTag et.val
+        some { name := s!"BoxSeq_{tag}", args := [{ name := s!"Seq_{tag}Val", type := ⟨ty, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/

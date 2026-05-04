@@ -58,6 +58,7 @@ def extractGo (pc : PathConditions Expression) : Statements →
       let propType := match md.getPropertyType with
         | some s => if s == MetaData.divisionByZero then .divisionByZero
                     else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else if s == MetaData.outOfBoundsAccess then .outOfBoundsAccess
                     else .assert
         | none => .assert
       extractGo pc rest (acc.push (ProofObligation.mk label propType pc e md))

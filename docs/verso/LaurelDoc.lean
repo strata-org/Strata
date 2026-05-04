@@ -110,6 +110,155 @@ type. Algebraic datatypes can be encoded using composite and constrained types.
 
 {docstring Strata.Laurel.TypeDefinition}
 
+# Sequences and Arrays
+
+Laurel provides two collection types that share a subscript syntax but differ in their
+semantics:
+
+- `Seq<T>` — immutable value sequences. Operations like functional update produce new
+  sequences, leaving the input unchanged. Variables of type `Seq<T>` are compared by value.
+- `Array<T>` — mutable heap-backed arrays. Assigning an array to a new variable creates an
+  alias; mutations through one reference are visible through all others.
+
+Currently `Array<T>` is supported only for `T = int`; other element types are
+rejected by the pre-pass validator. `Seq<T>` supports any element type.
+
+## Sequence literals
+
+Square-bracket literals construct a `Seq<T>`:
+
+```
+var s: Seq<int> := [1, 2, 3];
+```
+
+The empty literal `[]` produces `Sequence.empty()`.
+
+## Subscript syntax
+
+The expression `s[i]` reads the element at index `i`:
+
+```
+assert s[0] == 1;
+```
+
+On a `Seq<T>`, `s[i := v]` produces a new sequence with index `i` set to `v`:
+
+```
+var t: Seq<int> := s[0 := 99];  // t differs from s at index 0
+```
+
+On an `Array<T>`, `a[i] := v` updates the array in place:
+
+```
+var a: Array<int> := [1, 2, 3];
+a[0] := 42;
+assert a[0] == 42;
+```
+
+Out-of-bounds access is a verification obligation. `Sequence.select`,
+`Sequence.update`, `Sequence.take`, and `Sequence.drop` carry preconditions
+that the index or length argument is in range; the subscript sugar inherits
+them. The solver will emit a proof obligation at each subscript site — both
+in imperative code and in pure positions like `requires`/`ensures` clauses,
+quantifier bodies, and function bodies. If the index cannot be shown to be
+in bounds, verification fails with an `outOfBoundsAccess` diagnostic. This
+matches how division by zero is checked.
+
+## Sequence operations
+
+The `Sequence` namespace exposes the following operations:
+
+- `Sequence.empty()` — the empty sequence
+- `Sequence.build(s, v)` — append `v` to the end of `s`
+- `Sequence.select(s, i)` — read index `i`; equivalent to `s[i]`
+- `Sequence.update(s, i, v)` — functional update; equivalent to `s[i := v]`
+- `Sequence.length(s)` — length
+- `Sequence.append(s1, s2)` — concatenate two sequences
+- `Sequence.contains(s, v)` — membership test
+- `Sequence.take(s, n)` — prefix of length `n`
+- `Sequence.drop(s, n)` — suffix after the first `n` elements
+
+## Array length
+
+`Array.length(a)` returns the length of an array. It is internally desugared to
+`Sequence.length(a#$data)` and requires its argument to be of type `Array<T>`.
+
+## Array to sequence conversion
+
+`Sequence.fromArray(a)` returns a `Seq<T>` snapshot of an `Array<T>`'s current
+contents. The snapshot is independent: subsequent mutations to the array are
+not reflected in the returned sequence.
+
+```
+var a: Array<int> := [1, 2, 3];
+var s: Seq<int> := Sequence.fromArray(a);
+a[0] := 99;
+assert s[0] == 1;   // the snapshot still holds the original value
+assert a[0] == 99;
+```
+
+This is the supported idiom for extracting values out of an array. Laurel does
+not support implicit `Array<T>` → `Seq<T>` conversion. There is no corresponding
+`Seq<T>` → `Array<T>` conversion; constructing an array from a literal or from
+another array requires `new`.
+
+## Common mistakes
+
+A pre-pass validator flags five common misuses with helpful messages:
+
+- Using `a[i := v]` (functional update) on an `Array<T>`:
+
+  ```
+  var a: Array<int> := [1, 2, 3];
+  var b: Array<int> := a[0 := 99];
+  //                   ~~~~~~~~~~
+  // error: `a[i := v]` is not supported on `Array<T>`: arrays are mutable.
+  ```
+
+- Using `s[i] := v` (destructive update) on a `Seq<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  s[0] := 42;
+  // ~~~~
+  // error: `s[i] := v` is not allowed: sequences (`Seq<T>`) are immutable.
+  ```
+
+- Calling `Array.length` on something that is not an `Array<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  assert Array.length(s) == 3;
+  //     ~~~~~~~~~~~~~~~
+  // error: `Array.length` requires an argument of type `Array<T>`, got `Seq<int>`.
+  ```
+
+- Calling `Sequence.fromArray` on something that is not an `Array<T>`:
+
+  ```
+  var s: Seq<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(s);
+  //                 ~~~~~~~~~~~~~~~~~~~~~
+  // error: `Sequence.fromArray` requires an argument of type `Array<T>`,
+  //        got `Seq<int>`.
+  ```
+
+- Declaring `Array<T>` with a `T` other than `int` (current SMT limitation):
+
+  ```
+  var a: Array<bool> := [true, false];
+  //     ~~~~~~~~~~~
+  // error: `Array<T>` is currently only supported for `T = int`.
+  ```
+
+## Internal representation
+
+Arrays are represented internally by a synthetic `$Array` composite with a single
+`$data: Seq<int>` field (the `int` element type matches the current
+`Array<int>`-only restriction). The `$` prefix is a naming convention used for
+compiler-internal names to avoid collisions with user-declared types. The
+`$Array` composite is only injected into programs that actually use `Array<T>`.
+
 # Expressions and Statements
 
 Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like

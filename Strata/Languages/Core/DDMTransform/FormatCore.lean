@@ -295,10 +295,12 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | .re .All => pure (.re_all default)
   | .re .AllChar => pure (.re_allchar default)
   | .re .None => pure (.re_none default)
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
-  | _ => do
-    ToCSTM.logError "lopToExpr" "0-ary op not found" name
-    pure (.re_none default)
+  -- Any other 0-ary op (e.g. `Sequence.empty`, which is polymorphic and not
+  -- yet parseable in raw Core source) is rendered as a generic call. This
+  -- matches the fallback already used by `handleUnaryOps` and
+  -- `handleBinaryOps`, and avoids silently substituting `re.none()` for
+  -- unrelated ops.
+  | _ => mkGenericCall "handleZeroaryOps" name []
 
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)

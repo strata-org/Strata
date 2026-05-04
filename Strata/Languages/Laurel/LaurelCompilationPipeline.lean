@@ -11,6 +11,8 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.SubscriptElim
+import Strata.Languages.Laurel.ValidateSubscriptUsage
 import Strata.Languages.Core.Verifier
 import Strata.Util.Profile
 import Strata.Util.Statistics
@@ -90,6 +92,11 @@ structure LaurelPass where
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 private def laurelPipeline : Array LaurelPass := #[
+  { name := "SubscriptElim"
+    needsResolves := true
+    run := fun p m =>
+      let (p', diags) := subscriptElim m p
+      (p', diags, {}) },
   { name := "FilterNonCompositeModifies"
     run := fun p m =>
       let (p', diags) := filterNonCompositeModifies m p
@@ -138,14 +145,17 @@ private def laurelPipeline : Array LaurelPass := #[
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
-program, the semantic model, accumulated diagnostics, and merged statistics.
+program, the semantic model, accumulated diagnostics, merged statistics, and
+a flag that indicates whether compilation should skip Core translation to
+avoid emitting confusing follow-on errors (true when the Subscript-usage
+validator flagged any `Seq<T>`/`Array<T>` misuse).
 
 When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
 program state after each named Laurel pass is written to
 `{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses (options : LaurelTranslateOptions) (program : Program)
-    : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
+    : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics × Bool) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types
@@ -165,10 +175,12 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   emit "TypeAliasElim" "laurel.st" program
 
   let diamondErrors := validateDiamondFieldAccesses model program
+  let subscriptErrors := validateSubscriptUsage model program
+  let skipCore := !subscriptErrors.isEmpty
 
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := resolutionErrors ++ diamondErrors
+  let mut allDiags : List DiagnosticModel := resolutionErrors ++ diamondErrors ++ subscriptErrors
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
@@ -184,7 +196,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
       model := result.model
     emit pass.name "laurel.st" program
 
-  return (program, model, allDiags, allStats)
+  return (program, model, allDiags, allStats, skipCore)
 
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
@@ -195,7 +207,14 @@ Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     : IO TranslateResultWithLaurel :=
   runPipelineM options.keepAllFilesPrefix do
-    let (program, model, passDiags, stats) ← runLaurelPasses options program
+    let (program, model, passDiags, stats, skipCore) ← runLaurelPasses options program
+    -- When the Subscript-usage validator flagged a misuse of `Seq<T>` or
+    -- `Array<T>`, skip Core translation. The validator has already emitted
+    -- the helpful Laurel-layer diagnostic; running Core translation would
+    -- produce confusing follow-on errors (e.g. Core type-checking failures
+    -- on the rewritten program) that obscure the real problem.
+    if skipCore then
+      return (none, passDiags, program, stats)
     let ordered := orderProgram program
 
     let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }

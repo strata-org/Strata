@@ -446,7 +446,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
-      -- Assert-like property (assert, divisionByZero, arithmeticOverflow)
+      -- Assert-like property (i.e. passes vacuously on unreachable paths).
       if checkMode == .deductive then
         match o.validityProperty with
         | .unsat => "pass"
