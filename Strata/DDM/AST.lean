@@ -105,6 +105,10 @@ inductive TypeExprF (α : Type) where
   /-- A polymorphic type variable (universally quantified).
       Used for polymorphic function type parameters -/
 | tvar (ann : α) (name : String)
+  /-- A fresh unification variable generated at a generic call site.
+      Created per call site to instantiate tvar nodes; resolved after argument elaboration.
+      Never appears in final elaborated output. -/
+| uvar (ann : α) (id : Nat)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : α) (fvar : FreeVarIndex) (args : Array (TypeExprF α))
   /-- A function type. -/
@@ -117,6 +121,7 @@ def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
 | .tvar ann _ => ann
+| .uvar ann _ => ann
 | .fvar ann _ _ => ann
 | .arrow ann _ _ => ann
 
@@ -128,7 +133,8 @@ protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :
   | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .fvar n f args => .fvar n f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .bvar n idx => .bvar n (idx + count)
-  | .tvar n name => .tvar n name  -- tvar doesn't use indices
+  | .tvar n name => .tvar n name
+  | .uvar n id => .uvar n id
   | .arrow n a r => .arrow n (a.incIndices count) (r.incIndices count)
 
 /-- Return true if type expression has a bound variable. -/
@@ -137,6 +143,7 @@ protected def hasUnboundVar {α} (bindingCount : Nat := 0) : TypeExprF α → Bo
 | .fvar _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .bvar _ idx => idx ≥ bindingCount
 | .tvar _ _ => true
+| .uvar _ _ => true
 | .arrow _ a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
 termination_by e => e
 
@@ -154,6 +161,7 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
     .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .bvar n idx => bindings n idx
   | .tvar n name => pure (.tvar n name)
+  | .uvar n id => pure (.uvar n id)
   | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
@@ -168,6 +176,7 @@ def mapAnnM {α β} {m} [Monad m] (t : TypeExprF α) (f : α → m β)
       (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)
   | .bvar ann index => return .bvar (← f ann) index
   | .tvar ann name => return .tvar (← f ann) name
+  | .uvar ann id => return .uvar (← f ann) id
   | .fvar ann fv args =>
     return .fvar (← f ann) fv
       (← args.attach.mapM fun ⟨e, _⟩ => e.mapAnnM f)

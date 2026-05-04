@@ -281,6 +281,7 @@ private protected def mformat : TypeExprF α → StrataFormat
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
 | .bvar _ idx => .bvar idx
 | .tvar _ name => mf!"{name}"
+| .uvar _ id => mf!"?{id}"
 | .fvar _ idx a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
 | .arrow _ a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"

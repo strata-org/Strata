@@ -128,6 +128,8 @@ private protected def toExpr {α} [ToExpr α] : TypeExprF α → Lean.Expr
   astAnnExpr! bvar ann (toExpr idx)
 | .tvar ann name =>
   astAnnExpr! tvar ann (toExpr name)
+| .uvar _ id =>
+  panic! s!"TypeExprF.uvar (id={id}) should never appear in final elaborated output"
 | .fvar ann idx a =>
   let ae := arrayToExpr levelZero (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
   astAnnExpr! fvar ann (toExpr idx) ae

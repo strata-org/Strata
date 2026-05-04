@@ -80,7 +80,7 @@ the head is in a normal form.
 -/
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .tvar .. => e
+  | .arrow .. | .ident .. | .tvar .. | .uvar .. => e
   | .fvar _ idx args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
@@ -146,6 +146,10 @@ structure ElabContext where
 structure ElabState where
   -- Errors found in elaboration.
   errors : Array Message := #[]
+  -- Counter for generating fresh unification variable IDs.
+  nextUVarId : Nat := 0
+  -- Solved unification variables: maps uvar id → concrete TypeExpr.
+  uvarMap : Std.HashMap Nat TypeExpr := {}
 
 @[reducible, expose]
 def ElabM α := ReaderT ElabContext (StateM ElabState) α
@@ -330,7 +334,7 @@ N.B. This expects that macros have already been expanded in e.
 -/
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .bvar .. | .tvar .. => e
+  | .arrow .. | .ident .. | .bvar .. | .tvar .. | .uvar .. => e
   | .fvar _ idx args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -355,6 +359,12 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
   | .tvar _ n1, .tvar _ n2 => return n1 == n2
   | .tvar _ _, _ => return true
   | _, .tvar _ _ => return true
+  -- uvar: resolve from state; unbound uvars match anything
+  | .uvar _ id, other | other, .uvar _ id => do
+    let uvarMap := (← get).uvarMap
+    match uvarMap.get? id with
+    | some bound => checkExpressionType tctx bound other
+    | none => return true
   | .ident _ iq ia, .ident _ rq ra =>
     if p : iq = rq ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
@@ -440,8 +450,8 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors isTypeP argLevel0 ea tctx exprSyntax ia args
-    | .tvar _ _ =>
-      -- tvar inferred types are passed through; type inference will catch mismatches
+    | .tvar _ _ | .uvar _ _ =>
+      -- tvar/uvar inferred types are passed through; type inference will catch mismatches
       pure args
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
@@ -454,8 +464,8 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors isTypeP argLevel0 ea tctx exprSyntax ia args
-    | .tvar _ _ =>
-      -- tvar inferred types are passed through; type inference will catch mismatches
+    | .tvar _ _ | .uvar _ _ =>
+      -- tvar/uvar inferred types are passed through; type inference will catch mismatches
       pure args
     | ih =>
       logErrorMF exprLoc mf!"Encountered {ih} expression when {expectedType} expected."
@@ -485,6 +495,17 @@ partial def unifyTypes
   | .tvar _ _ =>
     -- tvar nodes are passed through without attempting unification
     pure args
+  | .uvar _ id =>
+    -- Fresh unification variable: bind to inferred type if unbound, or check consistency.
+    let uvarMap := (← get).uvarMap
+    match uvarMap.get? id with
+    | none =>
+      modify fun s => { s with uvarMap := s.uvarMap.insert id inferredType }
+      pure args
+    | some bound =>
+      if !(← checkExpressionType tctx inferredType bound) then
+        logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat bound)} expected." (globalContext? := some tctx.globalContext)
+      pure args
   | .arrow _ ea er =>
     match inferredType with
     | .ident .. | .bvar .. | .fvar .. =>
@@ -501,11 +522,52 @@ partial def unifyTypes
       -- pass the compatibility check and the concrete type will take precedence.
       let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax inferredType args
       unifyTypes isTypeP argLevel0 er tctx exprSyntax inferredType res
+    | .uvar _ _ =>
+      -- uvar inferred types are passed through; they will be resolved after call site elaboration
+      pure args
     | .arrow _ ia ir =>
       let res ← unifyTypes isTypeP argLevel0 ea tctx exprSyntax ia args
       unifyTypes isTypeP argLevel0 er tctx exprSyntax ir res
 
 end
+
+/-- Replace all tvar nodes in `tp` with fresh uvar nodes, one fresh id per unique tvar name.
+    Uvars are recorded in ElabState and solved when arguments are elaborated via unifyTypes. -/
+def freshenTVars (loc : SourceRange) (tp : TypeExpr) : ElabM TypeExpr := do
+  let names := collectNames tp #[]
+  let mut mapping : Std.HashMap String Nat := {}
+  for name in names do
+    let id ← modifyGet fun s => (s.nextUVarId, { s with nextUVarId := s.nextUVarId + 1 })
+    mapping := mapping.insert name id
+  return substitute mapping tp
+  where
+    collectNames : TypeExpr → Array String → Array String
+      | .tvar _ name, acc => if acc.contains name then acc else acc.push name
+      | .arrow _ a r, acc => collectNames r (collectNames a acc)
+      | .ident _ _ args, acc => args.foldl (fun a e => collectNames e a) acc
+      | .fvar _ _ args, acc => args.foldl (fun a e => collectNames e a) acc
+      | .bvar _ _, acc | .uvar _ _, acc => acc
+    substitute (mapping : Std.HashMap String Nat) : TypeExpr → TypeExpr
+      | .tvar _ name => match mapping.get? name with
+          | some id => .uvar loc id
+          | none => .tvar loc name
+      | .arrow n a r => .arrow n (substitute mapping a) (substitute mapping r)
+      | .ident n q args => .ident n q (args.map (substitute mapping))
+      | .fvar n idx args => .fvar n idx (args.map (substitute mapping))
+      | other => other
+
+/-- Walk `tp` and replace any solved uvar nodes with their concrete type from ElabState.
+    Bound types are always concrete (no nested uvars), so one lookup per uvar suffices. -/
+def resolveUVars (tp : TypeExpr) : ElabM TypeExpr := do
+  let uvarMap := (← get).uvarMap
+  return go uvarMap tp
+  where
+    go (uvarMap : Std.HashMap Nat TypeExpr) : TypeExpr → TypeExpr
+      | .uvar _ id => (uvarMap.get? id).getD (.uvar default id)
+      | .arrow n a r => .arrow n (go uvarMap a) (go uvarMap r)
+      | .ident n q args => .ident n q (args.map (go uvarMap))
+      | .fvar n idx args => .fvar n idx (args.map (go uvarMap))
+      | other => other
 
 abbrev ElabArgFn := TypingContext → Syntax → ElabM Tree
 
@@ -1157,10 +1219,8 @@ partial def elabSyntaxArg
     : ElabM (Vector (Option Tree) argc) := do
   match getKind argIdx with
   | .preType expectedType =>
-    let (tree, success) ← runChecked <| elabExpr tctx astx
+    let ((tree, inferredType), success) ← runChecked <| elabExprAndType tctx astx
     if success then
-      let expr := tree.info.asExpr!.expr
-      let inferredType ← inferType tctx expr
       let dialects := (← read).dialects
       let resolveArg (i : Nat) : Option Arg := do
           assert! i < argIdx.val
@@ -1176,10 +1236,8 @@ partial def elabSyntaxArg
     else
       return trees
   | .typeExpr expectedType =>
-    let (tree, success) ← runChecked <| elabExpr tctx astx
+    let ((tree, inferredType), success) ← runChecked <| elabExprAndType tctx astx
     if success then
-      let expr := tree.info.asExpr!.expr
-      let inferredType ← inferType tctx expr
       let trees ← unifyTypes isTypeP argIdx
         expectedType tctx astx inferredType trees
       assert! trees[argIdx].isNone
@@ -1656,10 +1714,10 @@ where
       let info : SeqInfo := { inputCtx := tctx, loc := loc, sep := sep, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSeqInfo info) args
 
-partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
+partial def elabExprAndType (tctx : TypingContext) (stx : Syntax) : ElabM (Tree × TypeExpr) := do
   match stx.getKind with
   | `Init.exprParen =>
-    elabExpr tctx stx[1]
+    elabExprAndType tctx stx[1]
   | `Init.exprIdent =>
     let some loc := mkSourceRange? stx
       | panic! "exprIdent missing source location"
@@ -1673,7 +1731,8 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
       match k with
       | .expr _ =>
         let info : ExprInfo := { toElabInfo := einfo, expr := .bvar loc idx }
-        return .node (.ofExprInfo info) #[]
+        let tree := .node (.ofExprInfo info) #[]
+        return (tree, ← inferType tctx info.expr)
       | .type _ _params _ =>
         logErrorMF loc mf!"{name} is a type when an expression is required."
         return default
@@ -1688,7 +1747,8 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
         | logError loc s!"{name} is a type when expression required."
           return default
       let info : ExprInfo := { toElabInfo := einfo, expr := .fvar loc idx }
-      return .node (.ofExprInfo info) #[]
+      let tree := .node (.ofExprInfo info) #[]
+      return (tree, ← inferType tctx info.expr)
   | `Init.exprApp => do
     let some loc := mkSourceRange? stx
       | panic! "exprApp missing source location"
@@ -1713,9 +1773,12 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let .expr tp := k
       | logError fnLoc s!"Expression expected."
         return default
+    -- Freshen any tvar nodes in the function type so each call site gets unique
+    -- unification variables. This is a no-op for non-generic functions.
+    let freshTp ← freshenTVars loc tp
     let (argTypes, r) ← do
       let tctx := TypingContext.empty tctx.globalContext
-      match tctx.applyNArgs tp args.size with
+      match tctx.applyNArgs freshTp args.size with
       | .error (a, r) =>
         if a.size = 0 then
           logError fnLoc s!"Expected function"
@@ -1734,10 +1797,12 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
             resultScope := none
           }
     let args ← runSyntaxElaborator getKind se tctx ⟨args, Eq.refl args.size⟩
+    -- Resolve the return type: substitute any solved uvar nodes with concrete types.
+    let resolvedReturnType ← resolveUVars r
     let e := args.toArray.foldl (init := fvar) fun e t =>
       .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
-    return .node (.ofExprInfo info) args.toArray
+    return (.node (.ofExprInfo info) args.toArray, resolvedReturnType)
   | _ => do
     let some loc := mkSourceRange? stx
       | panic! "evalExpr missing source location"
@@ -1763,7 +1828,11 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     -- N.B. Every subterm gets the function location.
     let e := args.toArray.foldl (init := ExprF.fn loc i) fun e t => .app loc e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
-    return .node (.ofExprInfo info) args.toArray
+    let tree := .node (.ofExprInfo info) args.toArray
+    return (tree, ← inferType tctx info.expr)
+
+partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
+  Prod.fst <$> elabExprAndType tctx stx
 
 end
 
