@@ -731,7 +731,7 @@ rec function bad (xs : IntList) : int
 };
 #end
 
-/-- error:  recursive function 'bad' requires a 'decreases' clause or a '@[cases]' parameter for termination checking -/
+/-- error: recursive function 'bad' requires a 'decreases' clause or a '@[cases]' parameter for termination checking -/
 #guard_msgs in
 #eval verify noCasesNoDecreasesPgm (options := .quiet)
 
@@ -752,7 +752,7 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 };
 #end
 
-/-- error:  recursive function 'bad': decreasing parameter type 'int' is not a known datatype -/
+/-- error: recursive function 'bad': decreasing parameter type 'int' is not a known datatype -/
 #guard_msgs in
 #eval verify decreasesNonADTPgm (options := .quiet)
 
