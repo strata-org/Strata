@@ -29,11 +29,6 @@ namespace Laurel
 
 public section
 
-
-private def bareType (v : HighType) : HighTypeMd := ⟨v, none⟩
-private def voidType : HighTypeMd := bareType .TVoid
-private def defaultHoleType : HighTypeMd := bareType .Unknown
-
 /-- Compute the expected type for an argument of a comparison operator
     by looking at the first non-hole sibling. -/
 private def inferComparisonArgType (model : SemanticModel) (args : List StmtExprMd) (source: Option FileRange) : HighTypeMd :=
@@ -56,7 +51,7 @@ inductive InferHoleTypesStats where
 
 structure InferHoleState where
   model : SemanticModel
-  currentOutputType : HighTypeMd := ⟨.Unknown, none⟩
+  currentOutputType : HighTypeMd
   statistics : Statistics := {}
   diagnostics : List DiagnosticModel := []
 
@@ -123,12 +118,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | .InstanceCall target callee args =>
       return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩) callee (← inferArgs args ⟨ .Unknown, source ⟩), source⟩
   | .ReferenceEquals lhs rhs =>
-      return ⟨.ReferenceEquals (← inferExpr lhs defaultHoleType) (← inferExpr rhs defaultHoleType), source⟩
+      return ⟨.ReferenceEquals (← inferExpr lhs ⟨ .Unknown, source ⟩) (← inferExpr rhs ⟨ .Unknown, source ⟩), source⟩
   | .IfThenElse cond th el =>
       let el' ← match el with
         | some e => pure (some (← inferExpr e expectedType))
         | none => pure none
-      return ⟨.IfThenElse (← inferExpr cond (bareType .TBool)) (← inferExpr th expectedType) el', source⟩
+      return ⟨.IfThenElse (← inferExpr cond ⟨ .TBool, source ⟩) (← inferExpr th expectedType) el', source⟩
   | .Block stmts label =>
       return ⟨.Block (← inferBlockStmts stmts expectedType) label, source⟩
   | .Assign targets value =>
@@ -137,28 +132,28 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
           | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, none⟩ fieldName), target.source⟩
           | .Declare param => param.type
-        | _ => defaultHoleType
+        | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩
   | .While cond invs dec body =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
         | none => pure none
-      return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), source⟩
+      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩), source⟩
   | .Assert ⟨condExpr, summary⟩ =>
-      return ⟨.Assert { condition := ← inferExpr condExpr (bareType .TBool), summary }, source⟩
-  | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), source⟩
+      return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary }, source⟩
+  | .Assume cond => return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source⟩
   | .Old v => return ⟨.Old (← inferExpr v expectedType), source⟩
-  | .Fresh v => return ⟨.Fresh (← inferExpr v defaultHoleType), source⟩
-  | .Assigned n => return ⟨.Assigned (← inferExpr n defaultHoleType), source⟩
-  | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p defaultHoleType), source⟩
-  | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f defaultHoleType), source⟩
+  | .Fresh v => return ⟨.Fresh (← inferExpr v ⟨ .Unknown, source ⟩), source⟩
+  | .Assigned n => return ⟨.Assigned (← inferExpr n ⟨ .Unknown, source ⟩), source⟩
+  | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType) (← inferExpr p ⟨ .Unknown, source ⟩), source⟩
+  | .ContractOf ty f => return ⟨.ContractOf ty (← inferExpr f ⟨ .Unknown, source ⟩), source⟩
   | .Quantifier mode p trigger b =>
       let trigger' ← match trigger with
         | some t => pure (some (← inferExpr t ⟨ .Unknown, source ⟩))
         | none => pure none
-      return ⟨.Quantifier mode p trigger' (← inferExpr b (bareType .TBool)), source⟩
+      return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩), source⟩
   | _ => return expr
 end
 
