@@ -27,7 +27,7 @@ namespace Core
 namespace TermCheck
 
 open Lambda
-open Strata (DiagnosticModel)
+open Strata (DiagnosticModel FileRange)
 open Strata.DL.Util (FuncAttr)
 open Core.Transform
 
@@ -234,20 +234,23 @@ where
         -- cannot generate them for polymorphic datatypes yet. The user-facing
         -- error is in Env.addFactoryFunc; when that restriction is lifted,
         -- this filter must be updated to handle polymorphic adtRank generation.
+        let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
+        let throwErr (msg : String) : CoreTransformM Unit :=
+          throw (DiagnosticModel.withRange fileRange msg)
         for func in funcs do
           if func.typeArgs.isEmpty then
             match getDecreasesIdx func with
             | none =>
-              throw (s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking")
+              throwErr s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
             | some idx =>
               match func.inputs.values[idx]? with
               | some (.tcons n _) =>
                 if (tf.getType n).isNone then
-                  throw (s!"recursive function '{func.name.name}': decreasing parameter type '{n}' is not a known datatype")
+                  throwErr s!"recursive function '{func.name.name}': decreasing parameter type '{n}' is not a known datatype"
               | some _ =>
-                throw (s!"recursive function '{func.name.name}': decreasing parameter must have a datatype type")
+                throwErr s!"recursive function '{func.name.name}': decreasing parameter must have a datatype type"
               | none =>
-                throw (s!"recursive function '{func.name.name}': decreasing parameter index {idx} is out of range")
+                throwErr s!"recursive function '{func.name.name}': decreasing parameter index {idx} is out of range"
         -- Step 2: Build a map from function name to (decreasing param index, type).
         let funcDecreasesMap := funcs.filterMap fun func => do
           if !func.typeArgs.isEmpty then none
