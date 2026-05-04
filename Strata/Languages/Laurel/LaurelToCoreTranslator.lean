@@ -411,17 +411,21 @@ def translateStmt (stmt : StmtExprMd)
           -- Function call: translate as a normal expression assignment
           let coreExpr ← translateExpr value
           let mut result : List Core.Statement := []
-          for target in targets do
+          match targets with
+          | [target] =>
             match target.val with
-            | .Declare param =>
-              let coreType := LTy.forAll [] (← translateType param.type)
-              let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
-              result := result ++ [Core.Statement.init ident coreType (.det coreExpr) md]
-            | .Local name =>
-              let ident : Core.CoreIdent := ⟨name.text, ()⟩
-              result := result ++ [Core.Statement.set ident coreExpr md]
-            | .Field _ _ => pure () -- already handled above
-          return result
+              | .Declare param =>
+                let coreType := LTy.forAll [] (← translateType param.type)
+                let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+                result := result ++ [Core.Statement.init ident coreType (.det coreExpr) md]
+              | .Local name =>
+                let ident : Core.CoreIdent := ⟨name.text, ()⟩
+                result := result ++ [Core.Statement.set ident coreExpr md]
+              | .Field _ _ => pure () -- already handled above
+            return result
+          | _ =>
+            modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+            default
         else
           translateCallTargets callee.text args
       | .InstanceCall _target callee args =>
