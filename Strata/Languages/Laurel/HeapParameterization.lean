@@ -379,7 +379,10 @@ where
 
         -- Make sure the result of the StmtExpr is still the same
         let suffixes: List (AstNode StmtExpr) := if valueUsed && targets.length == 1
-          then updateStatements ++ [⟨ StmtExpr.Var $ variableAsRef $ if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
+          then updateStatements ++ [⟨ StmtExpr.Var $ variableAsRef $
+            -- ! is valid because
+            -- have : allTargets.length >= targets.length + if addedHeap then 1 else 0 := by sorry;
+            if addedHeap then allTargets[1]!.val else allTargets[0]!.val, source⟩]
           else updateStatements
         pure (newAssign, suffixes)
 
