@@ -5,9 +5,9 @@
 # Runs the three phases of cloud-compatible SMT solving for a Python file:
 #
 #   1. Generate — convert .py to Strata Ion, run `strata pyAnalyzeLaurel
-#      --no-solve` to produce a manifest + .smt2 files.
+#      --no-solve` to produce .smt2 files.
 #   2. Solve    — run an SMT solver on every .smt2 file (in parallel).
-#   3. Reconcile — run `strata reconcile` against the manifest + .result
+#   3. Reconcile — run `strata reconcile` against the .smt2 + .result
 #      files and produce the final report.
 #
 # By default, everything runs locally (the Solve phase fans out over
@@ -26,7 +26,7 @@
 #   ./ssr_py.sh [options] <input.py>
 #
 # Options:
-#   -o, --output-dir <dir>   Where to place the manifest, .smt2, .result files
+#   -o, --output-dir <dir>   Where to place the .smt2, .result files
 #                            (default: ./ssr_out/<basename>)
 #   -s, --solver <cmd>       SMT solver command. Receives the .smt2 path as
 #                            the first arg; its stdout becomes the .result.
@@ -153,7 +153,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # -------- phase 1: generate --------
 # Compiles the Python source to an Ion file (if needed) and runs
-# `strata pyAnalyzeLaurel --no-solve` to emit manifest.json + *.smt2.
+# `strata pyAnalyzeLaurel --no-solve` to emit *.smt2 files.
 
 ION_FILE="$OUTPUT_DIR/input.python.st.ion"
 
@@ -191,8 +191,6 @@ generate_phase() {
     exit 3
   fi
   info "Generate phase complete. Log: $OUTPUT_DIR/generate.log"
-
-  [ -f "$OUTPUT_DIR/manifest.json" ] || die_internal "strata did not produce $OUTPUT_DIR/manifest.json"
 }
 
 # -------- phase 2: solve --------
