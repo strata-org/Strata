@@ -571,7 +571,10 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .arg "mode" },
             { name := "warning-summary",
               help := "Write PySpec warning summary as JSON to <file>.",
-              takesArg := .arg "file" }]
+              takesArg := .arg "file" },
+            { name := "skip-verification",
+              help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
+              takesArg := .none }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -649,6 +652,31 @@ def pyAnalyzeLaurelCommand : Command where
     if verbose then
       IO.println "\n==== Core Program ===="
       IO.print (Core.formatProgram coreProgram)
+
+    -- When --skip-verification is set, report translation diagnostics and exit
+    -- without running SMT verification (stages 3-4).
+    if pflags.getBool "skip-verification" then do
+      if !laurelTranslateErrors.isEmpty then
+        IO.eprintln "\n==== Errors ===="
+        for err in laurelTranslateErrors do
+          IO.eprintln err
+      if outputSarif then
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
+          | none => Map.empty
+        Core.Sarif.writeSarifOutput .deductive files #[] (filePath ++ ".sarif")
+      let nStrataBug := laurelTranslateErrors.filter (·.type == .StrataBug) |>.length
+      let nNotYetImpl := laurelTranslateErrors.filter (·.type == .NotYetImplemented) |>.length
+      let nUserError := laurelTranslateErrors.filter (·.type == .UserError) |>.length
+      let nWarning := laurelTranslateErrors.filter (·.type == .Warning) |>.length
+      let counts := s!"{nUserError} user errors, {nWarning} warnings, {nNotYetImpl} not yet implemented, {nStrataBug} internal errors"
+      if nStrataBug > 0 then
+        exitPyAnalyzeInternalError s!"Translation produced internal errors. {counts}"
+      else if nNotYetImpl > 0 then
+        exitPyAnalyzeKnownLimitation s!"Translation encountered unsupported constructs. {counts}"
+      else
+        printPyAnalyzeResult "Analysis success" counts
+      return
 
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
