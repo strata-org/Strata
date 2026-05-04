@@ -742,7 +742,7 @@ def pyAnalyzeToGotoCommand : Command where
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
     match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
-    | .error e => exitInternalError e
+    | .error e => exitInternalError (toString e)
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
       let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
@@ -1345,7 +1345,8 @@ def pyInterpretCommand : Command where
         IO.Process.exit ExitCode.userError
     match core.run with
     | .ok E =>
-      let outputNames := match Core.Program.Procedure.find? core ⟨"__main__", ()⟩ with
+      let mainProc := Core.Program.Procedure.find? core ⟨"__main__", ()⟩
+      let outputNames := match mainProc with
         | some p => p.header.outputs.keys.map (·.name)
         | none => []
       let (lhs, exprEnv) := Core.Env.genVars outputNames E.exprEnv

@@ -41,7 +41,7 @@ function lenHelper<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyMutualPgm) |>.snd |>.isEmpty
 
 /--
-error: ❌ Type checking error.
+error: ❌ Symbolic evaluation error.
 Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
@@ -71,7 +71,7 @@ decreases n
 #end
 
 /--
-error: ❌ Type checking error.
+error: ❌ Symbolic evaluation error.
 Recursive function 'isEven' requires a @[cases] parameter
 -/
 #guard_msgs in

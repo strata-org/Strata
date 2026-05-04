@@ -672,6 +672,8 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.str_substr   => return Core.strSubstrOp
   | _, q`Core.str_toregex  => return Core.strToRegexOp
   | _, q`Core.str_inregex  => return Core.strInRegexOp
+  | _, q`Core.str_prefixof => return Core.strPrefixOfOp
+  | _, q`Core.str_suffixof => return Core.strSuffixOfOp
   | _, q`Core.re_all       => return Core.reAllOp
   | _, q`Core.re_allchar   => return Core.reAllCharOp
   | _, q`Core.re_range     => return Core.reRangeOp

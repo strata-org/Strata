@@ -84,7 +84,7 @@
       ]
     },
     "function-call": {
-      "match": "\\b(Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
+      "match": "\\b(Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|str\\.prefixof|str\\.suffixof|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
       "captures": {
         "1": { "name": "support.function.builtin.core-st" }
       }

@@ -194,6 +194,9 @@ def mkCoreType (s: String): HighTypeMd :=
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
   { val := expr, source := none }
 
+/-- A wildcard modifies list, meaning the procedure may modify anything. -/
+def wildcardModifies : List StmtExprMd := [mkStmtExprMd .All]
+
 /-- Create a StmtExprMd with source location metadata. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (source : Option FileRange) : StmtExprMd :=
   { val := expr, source := source }
@@ -2219,17 +2222,14 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     let (bodyTrans, newCtx) ← match body with
     | some body =>
         let (bodyBlock, newCtx) ←  translateFunctionBody ctx funcDecl.kwargsName inputs body
-        if typeConstraintPostcondition.isEmpty then
-            pure $ (Body.Transparent bodyBlock, newCtx)
-        else
-            pure $ (Body.Opaque typeConstraintPostcondition bodyBlock [], newCtx)
+        pure $ (Body.Opaque typeConstraintPostcondition bodyBlock wildcardModifies, newCtx)
     | _ =>  pure $ (Body.Opaque [] none [], ctx)
 
     let renamedInputs := inputs.map fun p =>
       if p.name.text == "self" then p
       else { p with name := mkId ("$in_" ++ p.name.text) }
 
-    -- Create procedure with transparent body (no contracts for now)
+    -- Create procedure
     let proc : Procedure := {
       name := { text := funcDecl.name, source := sourceRangeToSource ctx.filePath sourceRange }
       inputs := renamedInputs
@@ -2417,7 +2417,7 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     preconditions := [{ condition := mkStmtExprMd (StmtExpr.LiteralBool true) }]
     isFunctional := false
     decreases := none
-    body := .Opaque [] .none []
+    body := .Opaque [] .none wildcardModifies
   }
   (decl, proc)
 
@@ -2561,8 +2561,8 @@ structure PreludeInfo where
   maybeExceptionFunctions : List String := []
   /-- Procedure names (non-function callables) -/
   procedureNames : List String := []
-  /-- Names of procedures with transparent bodies (can be inlined). -/
-  inlinableProcedures : Std.HashSet String := {}
+  /-- Names of procedures that should generate calls (have transparent bodies or preconditions). -/
+  callableProcedures : Std.HashSet String := {}
   /-- Maps Python-visible names to their structured symbol info.
       Includes both canonical Laurel names and unprefixed aliases. -/
   importedSymbols : Std.HashMap String ImportedSymbol := {}
@@ -2652,9 +2652,12 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
-  inlinableProcedures :=
+  callableProcedures :=
     prog.staticProcedures.foldl (init := {}) fun s p =>
-      if p.body.isTransparent then s.insert p.name.text else s
+      match p.body with
+      | .Transparent _ => s.insert p.name.text
+      | .Opaque _ (some _) _ => s.insert p.name.text
+      | _ => if !p.preconditions.isEmpty then s.insert p.name.text else s
 
 /-- Merge two `PreludeInfo` values by concatenating each field. -/
 def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
@@ -2665,7 +2668,7 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   functions := a.functions ++ b.functions
   maybeExceptionFunctions := a.maybeExceptionFunctions ++ b.maybeExceptionFunctions
   procedureNames := a.procedureNames ++ b.procedureNames
-  inlinableProcedures := b.inlinableProcedures.fold (init := a.inlinableProcedures) fun s n => s.insert n
+  callableProcedures := b.callableProcedures.fold (init := a.callableProcedures) fun s n => s.insert n
   importedSymbols := b.importedSymbols.fold (init := a.importedSymbols) fun m k v => m.insert k v
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
@@ -2834,7 +2837,7 @@ def pythonToLaurel (info : PreludeInfo)
     outputs := [{ name := PyLauFuncReturnVar, type := AnyTy }],
     preconditions := [],
     decreases := none,
-    body := .Transparent bodyBlock
+    body := .Opaque [] (some bodyBlock) wildcardModifies
     isFunctional := false
   }
 
@@ -2853,7 +2856,7 @@ def pythonToLaurel (info : PreludeInfo)
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none []
+        body := .Opaque [] none wildcardModifies
         isFunctional := false }
     procedures := procedures.push
       { name := { text := compositeToStringAnyName ct.name.text }
@@ -2861,7 +2864,7 @@ def pythonToLaurel (info : PreludeInfo)
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none []
+        body := .Opaque [] none wildcardModifies
         isFunctional := false }
 
   let program : Laurel.Program := {

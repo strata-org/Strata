@@ -41,9 +41,9 @@ def callElimCmd (cmd: Command)
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
-        let some p := (← get).currentProgram | throw "program not available"
+        let some p := (← get).currentProgram | throw (Strata.DiagnosticModel.fromMessage "program not available")
 
-        let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
+        let some proc := Program.Procedure.find? p procName | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
 
         -- Identify output parameters that also appear as input parameters
         -- and are referenced via "old" in postconditions.
@@ -71,7 +71,7 @@ def callElimCmd (cmd: Command)
         let oldTys ← oldVars.mapM fun id => do
           match proc.header.inputs.find? id with
           | some ty => pure (Lambda.LTy.forAll [] ty)
-          | none => throw s!"failed to find type for {Std.format id}"
+          | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format id}")
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
         let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
         let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
@@ -124,7 +124,7 @@ def callElimCmd (cmd: Command)
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
         | .some cg, .some callerName =>
-          let cg' ← cg.decrementEdge callerName procName
+          let cg' ← (cg.decrementEdge callerName procName).mapError Strata.DiagnosticModel.fromMessage
           set { σ with
               cachedAnalyses := { σ.cachedAnalyses with
                 callGraph := .some cg'}}

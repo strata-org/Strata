@@ -98,9 +98,7 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
     | .Transparent b => (collectExprMd b).run {} |>.2
     | .Opaque postconds impl modif =>
-        -- A non-empty modifies clause implies the procedure reads and writes the heap;
-        -- no need to inspect the body further in that case.
-        if !modif.isEmpty then
+        if impl.isNone && !modif.isEmpty then
           { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
         else
           let r1 := postconds.foldl (fun (acc : AnalysisResult) (pc : Condition) =>
@@ -245,7 +243,7 @@ Returns the qualified field name "DeclaringType.fieldName".
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : Option String :=
   match model.get fieldName with
     | .field owner _ => owner.text ++ "." ++ fieldName.text
-    | .unresolved => none
+    | .unresolved _ => none
     | _ => dbg_trace s!"BUG: resolveQualifiedFieldName {fieldName} did resolved to something other than a field"; none
 
 /--
