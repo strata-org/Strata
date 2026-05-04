@@ -115,9 +115,9 @@ def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean
   let ruleId := vcr.obligation.label
   let relatedLocations := extractRelatedLocations files vcr.obligation.metadata
   match vcr.outcome with
-  | .error msg =>
+  | .error err =>
     let level := .error
-    let messageText := s!"Verification error: {msg}"
+    let messageText := s!"Verification error: {err}"
     let message : Strata.Sarif.Message := { text := messageText }
     let locations := match extractLocation files vcr.obligation.metadata with
       | some loc => #[locationToSarif loc]
