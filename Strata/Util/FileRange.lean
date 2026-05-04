@@ -104,7 +104,7 @@ def DiagnosticModel.withRange (fr : FileRange) (msg : Format) (type : Diagnostic
 /-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
 def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
   let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if dm.fileRange.range.isNone then
+  if rangeStr.isEmpty then
     f!"{dm.message}"
   else
     f!"{rangeStr} {dm.message}"
