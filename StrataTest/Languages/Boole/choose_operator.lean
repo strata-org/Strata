@@ -15,8 +15,8 @@ Near-upstream anchors from `differential_status.md`:
   `trigger_loops`: https://github.com/verus-lang/verus/blob/main/examples/trigger_loops.rs
 - Gap: `choose` operator not faithfully translated
 - Intended encoding: `havoc z; assume (∃ z' . g(z')) ==> g(z);`
-- Current status: this seed verifies using a manual `havoc` + `assume` stand-in
-- Remaining gap: direct `choose` surface syntax and faithful lowering
+- Status: implemented — `w := choose z: T . pred(z)` desugars to
+  `havoc w; assume pred[z/w]` in the Boole lowering.
 -/
 
 private def chooseOperatorSeed : Strata.Program :=
@@ -25,35 +25,22 @@ program Boole;
 
 function good(z: int, x: int) : bool;
 
-// Target shape once Boole has direct `choose` syntax:
-//
-// procedure choose_seed(x: int) returns (w: int)
-// spec {
-//   requires ∃ z: int . good(z, x);
-//   ensures good(w, x);
-// }
-// {
-//   w := choose z: int . good(z, x);
-// };
-
 procedure choose_seed(x: int) returns (w: int)
 spec {
   requires ∃ z: int . good(z, x);
   ensures good(w, x);
 }
 {
-  havoc w;
-  // TODO(feature:choose): allow `w := choose z: int . good(z, x);`.
-  assume good(w, x);
+  w := choose z: int :: good(z, x);
 };
 #end
 
 /-- info:
-Obligation: choose_seed_ensures_1_1077
+Obligation: choose_seed_ensures_1_809
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval Strata.Boole.verify "cvc5" chooseOperatorSeed (options :=.quiet)
+#eval Strata.Boole.verify "cvc5" chooseOperatorSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect chooseOperatorSeed := by
   gen_smt_vcs

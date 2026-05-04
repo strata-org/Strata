@@ -201,6 +201,7 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | .bv32 _ => return .bitvec 32
   | .bv64 _ => return .bitvec 64
   | .Map _ v k => return .tcons "Map" [← toCoreMonoType k, ← toCoreMonoType v]
+  | .Sequence _ elem => return .tcons "Sequence" [← toCoreMonoType elem]
   | _ => throwAt (typeRange t) s!"Unsupported Boole type: {repr t}"
 
 def toCoreType (t : Boole.Type) : TranslateM Core.Expression.Ty := do
@@ -339,6 +340,9 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
     else
       return .fvar () id none
   | .bvar m i => getBVarExpr m i
+  | .let_in_expr _ _bind value body =>
+    let value' ← toCoreExpr value
+    withBVarExprs #[value'] (toCoreExpr body)
   | .app _ f a => return .app () (← toCoreExpr f) (← toCoreExpr a)
   | .not _ a => return .app () Core.boolNotOp (← toCoreExpr a)
   | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst () 1 n
@@ -376,8 +380,43 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .bvshl  m ty a b => toCoreBvBin m ty "Shl"  (← toCoreExpr a) (← toCoreExpr b)
   | .bvushr m ty a b => toCoreBvBin m ty "UShr" (← toCoreExpr a) (← toCoreExpr b)
   | .bvsshr m ty a b => toCoreBvBin m ty "SShr" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvslt  m ty a b => toCoreBvBin m ty "SLt"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsle  m ty a b => toCoreBvBin m ty "SLe"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsgt  m ty a b => toCoreBvBin m ty "SGt"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsge  m ty a b => toCoreBvBin m ty "SGe"  (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
       return oldifyExpr (← get).currentInoutNames (← toCoreExpr a)
+  -- Sequence operations (Core Grammar, inherited by Boole)
+  | .seq_length _ _ s       => return mkCoreApp Core.seqLengthOp  [← toCoreExpr s]
+  | .seq_select  _ _ s i    => return mkCoreApp Core.seqSelectOp  [← toCoreExpr s, ← toCoreExpr i]
+  | .seq_take    _ _ s n    => return mkCoreApp Core.seqTakeOp    [← toCoreExpr s, ← toCoreExpr n]
+  | .seq_drop    _ _ s n    => return mkCoreApp Core.seqDropOp    [← toCoreExpr s, ← toCoreExpr n]
+  | .seq_append  _ _ s1 s2  => return mkCoreApp Core.seqAppendOp  [← toCoreExpr s1, ← toCoreExpr s2]
+  | .seq_build   _ _ s v    => return mkCoreApp Core.seqBuildOp   [← toCoreExpr s, ← toCoreExpr v]
+  | .seq_update  _ _ s i v  => return mkCoreApp Core.seqUpdateOp  [← toCoreExpr s, ← toCoreExpr i, ← toCoreExpr v]
+  | .seq_contains _ _ s v   => return mkCoreApp Core.seqContainsOp [← toCoreExpr s, ← toCoreExpr v]
+  -- Sequence operations (Boole Verus-style additions — not in Core Grammar)
+  -- Sequence.skip(s, n)      = drop first n elements
+  -- Sequence.dropFirst(s)    = drop first element
+  -- Sequence.subrange(s,lo,hi) = take(drop(s,lo), hi-lo)
+  | .seq_skip      _ _ s n     => return mkCoreApp Core.seqDropOp   [← toCoreExpr s, ← toCoreExpr n]
+  | .seq_drop_first _ _ s      => return mkCoreApp Core.seqDropOp   [← toCoreExpr s, .intConst () 1]
+  | .seq_subrange  _ _ s lo hi => do
+      let s'  ← toCoreExpr s
+      let lo' ← toCoreExpr lo
+      let hi' ← toCoreExpr hi
+      let intSub : Core.Expression.Expr := .op () ⟨"Int.Sub", ()⟩ none
+      return mkCoreApp Core.seqTakeOp
+        [mkCoreApp Core.seqDropOp [s', lo'], mkCoreApp intSub [hi', lo']]
+  -- Lambda abstraction: `fun x : T => body`  →  Core .abs
+  | .lambda _ _ decls body => do
+      let declsList := declListToList decls
+      let tys ← declsList.mapM fun (.bind_mk _ _ _ ty) => toCoreMonoType ty
+      let bvars : Array Core.Expression.Expr := declsList.toArray.mapIdx fun i _ => .bvar () i
+      let body' ← withBVarExprs bvars (toCoreExpr body)
+      return tys.foldr (fun ty acc => .abs () "" (some ty) acc) body'
+  -- Function application: `(f)(x)`  →  Core .app
+  | .apply_expr _ _ _ f x => return .app () (← toCoreExpr f) (← toCoreExpr x)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
@@ -508,6 +547,14 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .condDet _ expr => pure (.det (← toCoreExpr expr))
       | .condNondet _ => pure .nondet
     return .ite cond thenb elseb (← toCoreMetaData m)
+  | .choose_assign m ⟨_, lhs⟩ _v pred =>
+    let lhsExpr : Core.Expression.Expr := .fvar () (mkIdent lhs) none
+    let predExpr ← withBVarExprs #[lhsExpr] (toCoreExpr pred)
+    let md ← toCoreMetaData m
+    let label ← defaultLabel m "choose" none
+    let havocStmt := Core.Statement.havoc (mkIdent lhs) md
+    let assumeStmt := Core.Statement.assume label predExpr md
+    return .block label [havocStmt, assumeStmt] md
   | .havoc_statement m ⟨_, n⟩ =>
     return Core.Statement.havoc (mkIdent n) (← toCoreMetaData m)
   | .while_statement m g _ invs b =>
@@ -678,6 +725,7 @@ private def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (Bo
   for e in elts.toList do
     match e with
     | .modifies_spec _ _ => pure ()
+    | .decreases_spec _ _ => pure ()
     | .requires_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
       let md ← toCoreMetaData em
       reqs := (← defaultLabel em s!"{pname}_requires" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free?, md := md }) :: reqs
@@ -745,7 +793,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
-  | .boole_procedure _ _ _ _ _ _ _ | .command_procedure _ _ _ _ _ _ => []
+  | .boole_procedure _ _ _ _ _ _ _ _ | .command_procedure _ _ _ _ _ _ => []
   | .command_datatypes _ ⟨_, decls⟩ => decls.toList.map (fun _ => false)
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
@@ -815,7 +863,7 @@ private def translateProcedureDecl
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
-  | .boole_procedure m nameAnn targsAnn ins outsAnn specAnn bodyAnn =>
+  | .boole_procedure m nameAnn targsAnn ins outsAnn _decr specAnn bodyAnn =>
     let n := nameAnn.val
     let tys := match targsAnn.val with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
@@ -917,7 +965,7 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : S
           match (toCoreMonoType ty).run' { gctx := gctx, fvarIsOp := fvarIsOp } with
           | .ok mty => varTypes := varTypes.insert n mty
           | .error _ => pure ()
-      | .boole_procedure _ nameAnn _ _ _ specAnn _ =>
+      | .boole_procedure _ nameAnn _ _ _ _ specAnn _ =>
         let mods ← collectModifiesFromSpec fileName nameAnn.val specAnn.val varTypes
         if !mods.isEmpty then modMap := modMap.insert nameAnn.val mods
       | .command_procedure _ nameAnn _ _ specAnn _ =>

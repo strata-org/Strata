@@ -17,22 +17,12 @@ Near-upstream anchors from `differential_status.md`:
   `guide/quants`: https://github.com/verus-lang/verus/blob/main/examples/guide/quants.rs
   `broadcast_proof`: https://github.com/verus-lang/verus/blob/main/examples/broadcast_proof.rs
   `guide/higher_order_fns`: https://github.com/verus-lang/verus/blob/main/examples/guide/higher_order_fns.rs
-- Current status: Core has `Sequence` support, but Boole does not yet lower
-  Boole `Sequence` types end to end
-- Remaining gap: model-type coverage such as `Thread`, `Cell`, `Rwlock`, etc.,
-  plus deciding how much stub generation is still needed after translation
-  pruning
+- Remaining gap: model-type coverage such as `Thread`, `Cell`, `Rwlock`
 -/
 
 private def abstractTypesAndStubsSeed : Strata.Program :=
 #strata
 program Boole;
-
-// Target shape: model/library coverage that still matters after pruning older
-// sequence/pervasive scaffolding from translation output.
-//
-// The Boole frontend still rejects Boole `Sequence` types, so this seed keeps
-// abstract stubs for now.
 
 type Thread;
 type Cell;
@@ -52,8 +42,12 @@ spec {
 };
 #end
 
-#guard_msgs (drop info) in
-#eval Strata.Boole.verify "cvc5" abstractTypesAndStubsSeed
+/-- info:
+Obligation: assert_2_1035
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" abstractTypesAndStubsSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect abstractTypesAndStubsSeed := by
   gen_smt_vcs
