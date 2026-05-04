@@ -256,6 +256,17 @@ theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome)
   have ⟨h1 , h2⟩ := (Option.any_eq_true_iff_get _ _).mp h
   exact ⟨h1, h2⟩
 
+theorem isSome_denoteFunSortNil (h : (denoteSort sctx out).isSome) :
+    (denoteFunSort sctx [] out).isSome := by
+  simp only [denoteFunSort]; exact h
+
+theorem isSome_denoteFunSortCons (hA : (denoteSort sctx a.ty).isSome)
+    (hAs : (denoteFunSort sctx as out).isSome) :
+    (denoteFunSort sctx (a :: as) out).isSome := by
+  simp only [denoteFunSort, Option.pure_def, Option.bind_eq_bind,
+              Option.isSome_bind, Option.isSome_some, Option.any_true]
+  exact (Option.any_eq_true_iff_get _ _).mpr ⟨hA, hAs⟩
+
 theorem arrow_of_denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     have has := denoteFunSortCons_isSome h
     (denoteFunSort sctx (a :: as) out).get h sΓ =
@@ -523,7 +534,7 @@ def bindExistsVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
 
-def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
+@[expose] def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
@@ -538,19 +549,49 @@ def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
       let ft' := buildQuant bindVar ctx' vs hTys' (hvs ▸ bodyFt)
       bindVar (n := n) (ty := ty) ctx (denoteFunSortCons_isSome hTys).left ft' tdi
 
-def buildExists (ctx : Context) (vs : List TermVar)
+@[expose] def buildExists (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
   buildQuant bindExistsVar ctx vs hTys bodyFt tdi
 
-def buildForall (ctx : Context) (vs : List TermVar)
+@[expose] def buildForall (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
   buildQuant bindForallVar ctx vs hTys bodyFt tdi
+
+/-- Equation lemma: `buildForall` on a cons-list equals a nested application. -/
+theorem buildForall_cons {ctx : Context} {v : TermVar} {vs : List TermVar}
+    (hTys : (denoteFunSort ctx.sctx (v :: vs) (.prim .bool)).isSome)
+    (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := (v :: vs).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop) :
+    let hSingle : (denoteFunSort ctx.sctx [v] (.prim .bool)).isSome :=
+      have ⟨hv, _⟩ := denoteFunSortCons_isSome hTys
+      isSome_denoteFunSortCons hv (by simp [denoteFunSort, denoteSort, denotePrimSort])
+    let hArgs := (denoteFunSortCons_isSome hTys).right
+    let ctx' : Context := { sctx := ctx.sctx, tctx := { vs := v :: ctx.tctx.vs, ufs := ctx.tctx.ufs } }
+    have hvs : (v :: vs).reverse ++ ctx.tctx.vs = vs.reverse ++ ctx'.tctx.vs :=
+      List.reverse_cons ▸ List.append_assoc _ _ _ ▸ rfl
+    buildForall ctx (v :: vs) hTys bodyFt =
+      buildForall ctx [v] hSingle (buildForall ctx' vs hArgs (hvs ▸ bodyFt)) := by
+  cases v; rfl
+
+/-- Equation lemma: `buildExists` on a cons-list equals a nested application. -/
+theorem buildExists_cons {ctx : Context} {v : TermVar} {vs : List TermVar}
+    (hTys : (denoteFunSort ctx.sctx (v :: vs) (.prim .bool)).isSome)
+    (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := (v :: vs).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop) :
+    let hSingle : (denoteFunSort ctx.sctx [v] (.prim .bool)).isSome :=
+      have ⟨hv, _⟩ := denoteFunSortCons_isSome hTys
+      isSome_denoteFunSortCons hv (by simp [denoteFunSort, denoteSort, denotePrimSort])
+    let hArgs := (denoteFunSortCons_isSome hTys).right
+    let ctx' : Context := { sctx := ctx.sctx, tctx := { vs := v :: ctx.tctx.vs, ufs := ctx.tctx.ufs } }
+    have hvs : (v :: vs).reverse ++ ctx.tctx.vs = vs.reverse ++ ctx'.tctx.vs :=
+      List.reverse_cons ▸ List.append_assoc _ _ _ ▸ rfl
+    buildExists ctx (v :: vs) hTys bodyFt =
+      buildExists ctx [v] hSingle (buildExists ctx' vs hArgs (hvs ▸ bodyFt)) := by
+  cases v; rfl
 
 mutual
 
@@ -962,6 +1003,46 @@ where
       none
 
 end
+
+/-- For same-kind quantifiers, flattening one nested binder into the outer binder
+    list is semantically a no-op. -/
+noncomputable def denoteTerm_quant_coalesce (ctx : Context) (qk : QuantifierKind)
+    (v : TermVar) (args2 : List TermVar) (tr tr' tr2 e2 : Term) :
+    denoteTerm ctx (.quant qk ([v] ++ args2) tr' e2) =
+      denoteTerm ctx (.quant qk [v] tr (.quant qk args2 tr2 e2)) := by
+  cases v; rename_i id ty
+  suffices h : ∀ (qk : QuantifierKind),
+    denoteTerm ctx (.quant qk ({ id, ty } :: args2) tr' e2) =
+    denoteTerm ctx (.quant qk [{ id, ty }] tr (.quant qk args2 tr2 e2)) from by
+    cases qk <;> exact h _
+  intro qk; cases qk <;> {
+    unfold denoteTerm
+    split
+    · rename_i h_lhs
+      have ⟨h_v, h_args2⟩ := denoteFunSortCons_isSome h_lhs
+      have h_rhs : (denoteFunSort ctx.sctx [{ id, ty }] (TermType.prim TermPrimType.bool)).isSome :=
+        isSome_denoteFunSortCons h_v (by simp [denoteFunSort, denoteSort, denotePrimSort])
+      rw [dif_pos h_rhs]
+      simp only [Option.pure_def, Option.bind_eq_bind]
+      unfold denoteTerm
+      rw [dif_pos h_args2]
+      simp only [Option.pure_def, Option.bind_eq_bind, Option.bind_assoc]
+      -- At this point we need to unify contexts. Use congr with the list proof.
+      have heq : ({ id, ty } :: args2).reverse ++ ctx.tctx.vs = args2.reverse ++ ({ id, ty } :: ctx.tctx.vs) := by
+        simp [List.reverse_cons, List.append_assoc]
+      sorry
+    · rename_i h_lhs
+      by_cases h_rhs : (denoteFunSort ctx.sctx [{ id, ty }] (TermType.prim TermPrimType.bool)).isSome
+      · rw [dif_pos h_rhs]
+        have ⟨h_v, _⟩ := denoteFunSortCons_isSome h_rhs
+        have h_args2_none : ¬ (denoteFunSort ctx.sctx args2 (TermType.prim TermPrimType.bool)).isSome :=
+          fun h => h_lhs (isSome_denoteFunSortCons h_v h)
+        simp only [Option.pure_def, Option.bind_eq_bind]
+        unfold denoteTerm
+        rw [dif_neg h_args2_none]
+        simp
+      · rw [dif_neg h_rhs]
+  }
 
 /--
 Interpret a ground boolean term in the empty context.

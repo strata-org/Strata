@@ -190,7 +190,7 @@ def Term.typeOf : Term → TermType
   | .quant _ _ _ _ => .bool
 
 
-def Term.isLiteral : Term → Bool
+@[expose] def Term.isLiteral : Term → Bool
   | .prim _
   | .none _               => true
   | .some t               => t.isLiteral
