@@ -89,7 +89,6 @@ private def emptyMd : Option String := none
 
 /-- Wrap a StmtExpr value with empty metadata -/
 private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none⟩
-private def bareVar (v : Variable) : VariableMd := ⟨v, none⟩
 
 /-- Wrap a HighType value with empty metadata -/
 private def bareType (v : HighType) : HighTypeMd := ⟨v, none⟩
@@ -280,7 +279,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let callResultType ← computeType expr
       let liftedCall := [
         ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
-        ⟨.Assign [bareVar (.Local callResultVar)] seqCall, source⟩
+        ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
       ]
       modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
       return bare (.Var (.Local callResultVar))
@@ -302,14 +301,14 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqThen ← transformExpr thenBranch
         let thenPrepends ← takePrepends
-        let thenBlock := bare (.Block (thenPrepends ++ [⟨.Assign [bareVar (.Local condVar)] seqThen, source⟩]) none)
+        let thenBlock := bare (.Block (thenPrepends ++ [⟨.Assign [⟨ .Local condVar, source⟩] seqThen, source⟩]) none)
         -- Process else-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqElse ← match elseBranch with
           | some e => do
               let se ← transformExpr e
               let elsePrepends ← takePrepends
-              pure (some (bare (.Block (elsePrepends ++ [⟨.Assign [bareVar (.Local condVar)] se, source⟩]) none)))
+              pure (some (bare (.Block (elsePrepends ++ [⟨.Assign [⟨ .Local condVar, source⟩] se, source⟩]) none)))
           | none => pure none
         -- Restore outer state
         modify fun s => { s with subst := savedSubst, prependedStmts := savedPrepends }
