@@ -91,9 +91,9 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
         (c', σ)
       | some false =>
         let σ := EC.addWarning σ (.AssumeFail label e)
-        (c', EC.addPathCondition σ [(label, e)])
+        (c', EC.addPathCondition σ [.assumption label e])
       | none =>
-        (c', EC.addPathCondition σ [(label, e)])
+        (c', EC.addPathCondition σ [.assumption label e])
 
     | .cover label e md =>
       let (e, σ) := EC.preprocess σ c e
@@ -112,6 +112,94 @@ def Cmds.eval [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : Cmds P ×
     let (c, σ) := Cmd.eval σ c
     let (crest, σ) := Cmds.eval σ crest
     (c :: crest, σ)
+
+--------------------------------------------------------------------
+
+def stuck {P S} [EC : EvalContext P S] (σ : S) (message : String) : S :=
+  EC.updateError σ (.Misc message)
+
+/--
+Concrete execution for an Imperative Command.
+
+This currently has substantial overlap with `eval`,
+but it is likely to diverge further in the future,
+especially when we add an oracle to make choices for non-deterministic elements.
+-/
+def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S :=
+  match EC.lookupError σ with
+  | some _ => σ
+  | none =>
+    match c with
+    | .init x ty e _ =>
+      match EC.lookup σ x with
+      | none =>
+        match e with
+        | .det expr =>
+          let (expr, σ) := EC.preprocess σ c expr
+          let expr := EC.eval σ expr
+          EC.update σ x ty expr
+        | .nondet =>
+          -- Unconstrained initialization - generate a fresh value
+          -- Reading the value of this variable will cause execution to get stuck,
+          -- but this still allows the common pattern of initializing a variable
+          -- and then immediately overwriting it with a deterministic value.
+          let (expr, σ) := EC.genFreeVar σ x ty
+          EC.update σ x ty expr
+      | some (xv, xty) => EC.updateError σ (.InitVarExists (x, xty) xv)
+
+    | .set x e _ =>
+      match EC.lookup σ x with
+      | none =>
+        match e with
+        | .det expr => EC.updateError σ (.AssignVarNotExists x expr)
+        | .nondet => EC.updateError σ (.HavocVarNotExists x)
+      | some (_xv, xty) =>
+        match e with
+        | .det expr =>
+          let (expr, σ) := EC.preprocess σ c expr
+          let expr := EC.eval σ expr
+          EC.update σ x xty expr
+        | .nondet =>
+          -- See .init comment above
+          let (expr, σ) := EC.genFreeVar σ x xty
+          EC.update σ x xty expr
+
+    | .assert label e _ =>
+      let (e, σ) := EC.preprocess σ c e
+      let e := EC.eval σ e
+      match EC.denoteBool e with
+      | some true =>
+        σ
+      | some false =>
+        EC.updateError σ (.AssertFail label e)
+      | none =>
+        EC.updateError σ (.Misc f!"assert ({label}) condition did not reduce to bool")
+
+    | .assume label e _ =>
+      let (e, σ) := EC.preprocess σ c e
+      let e := EC.eval σ e
+      match EC.denoteBool e with
+      | some true =>
+        σ
+      | some false =>
+        EC.updateError σ (.Misc f!"assume ({label}) condition is false")
+      | none =>
+        EC.updateError σ (.Misc f!"assume ({label}) condition did not reduce to bool")
+
+    | .cover _ _ _ =>
+      -- In the future we can record when a cover is true
+      -- and assert it was hit at least once later on
+      EC.updateError σ (.Misc s!"cover is not yet supported")
+
+/--
+Concrete execution for Imperative's Commands.
+-/
+def Cmds.run [BEq P.Ident] [EvalContext P S] (σ : S) (cs : Cmds P) : S :=
+  match cs with
+  | [] => σ
+  | c :: crest =>
+    let σ := Cmd.run σ c
+    Cmds.run σ crest
 
 ---------------------------------------------------------------------
 

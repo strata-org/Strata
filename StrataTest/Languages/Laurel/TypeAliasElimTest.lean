@@ -27,7 +27,7 @@ private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := none }
 
 /-- Helper: construct a minimal procedure. -/
 private def mkProc (name : String) (inputs : List Parameter) (outputs : List Parameter)
-    (body : Body := .Transparent ⟨.Block [] none, none, .empty⟩) : Procedure :=
+    (body : Body := .Transparent ⟨.Block [] none, none⟩) : Procedure :=
   { name := mkId name, inputs, outputs, preconditions := [], decreases := none,
     isFunctional := false, body }
 
@@ -49,7 +49,7 @@ private def chainedProgram : Program :=
       mkProc "test"
         [{ name := mkId "x", type := mkTy (.UserDefined (mkId "B")) }]
         [{ name := mkId "r", type := mkTy (.UserDefined (mkId "A")) }]
-        (.Transparent ⟨.Return (some ⟨.Identifier (mkId "x"), none, .empty⟩), none, .empty⟩)
+        (.Transparent ⟨.Return (some ⟨.Identifier (mkId "x"), none⟩), none⟩)
     ]
     staticFields := []
     types := [
@@ -111,7 +111,7 @@ private def procSigProgram : Program :=
         [{ name := mkId "a", type := mkTy (.UserDefined (mkId "MyInt")) },
          { name := mkId "b", type := mkTy (.UserDefined (mkId "MyBool")) }]
         [{ name := mkId "r", type := mkTy (.UserDefined (mkId "MyInt")) }]
-        (.Transparent ⟨.Return (some ⟨.Identifier (mkId "a"), none, .empty⟩), none, .empty⟩)
+        (.Transparent ⟨.Return (some ⟨.Identifier (mkId "a"), none⟩), none⟩)
     ]
     staticFields := []
     types := [

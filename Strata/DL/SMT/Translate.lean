@@ -5,8 +5,8 @@
 -/
 module
 
-public import Lean.Expr
-public import Lean.ToExpr
+import Lean.Meta.Basic
+
 public import Strata.Languages.Core.SMTEncoder
 
 public section

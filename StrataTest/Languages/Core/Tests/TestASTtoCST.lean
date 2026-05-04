@@ -652,7 +652,7 @@ private def lambdaIdentityPgm : Core.Program := { decls := [
 info: program Core;
 
 function intID () : int -> int {
-  lambda __q0 : int :: __q0
+  fun __q0 : int => __q0
 }
 -/
 #guard_msgs in
@@ -669,7 +669,7 @@ private def lambdaNestedPgm : Core.Program := { decls := [
 info: program Core;
 
 function constFn () : int -> int -> int {
-  lambda __q0 : int :: lambda __q1 : int :: __q0
+  fun __q0 : int => fun __q1 : int => __q0
 }
 -/
 #guard_msgs in
@@ -685,10 +685,95 @@ private def lambdaNamedPgm : Core.Program := { decls := [
 info: program Core;
 
 function namedLam () : int -> int {
-  lambda x : int :: x
+  fun x : int => x
 }
 -/
 #guard_msgs in
 #eval formatCore lambdaNamedPgm
+
+-- Lambda applied to an argument (expression application)
+private def lambdaAppliedPgm : Core.Program := { decls := [
+  .func { name := "test", typeArgs := [], inputs := [],
+          output := .int,
+          body := some (.app () (.abs () "x" (.some .int) (.bvar () 0)) (.intConst () 5)) } .empty
+]}
+
+/--
+info: program Core;
+
+function test () : int {
+  (fun x : int => x)(5)
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaAppliedPgm
+
+-- Multi-binding lambda (curried): fun x : int => fun y : int => x + y
+private def lambdaMultiBindPgm : Core.Program := { decls := [
+  .func { name := "add", typeArgs := [], inputs := [],
+          output := .arrow .int (.arrow .int .int),
+          body := some (.abs () "x" (.some .int)
+            (.abs () "y" (.some .int)
+              (.app () (.app () Core.intAddOp (.bvar () 1)) (.bvar () 0)))) } .empty
+]}
+
+/--
+info: program Core;
+
+function add () : int -> int -> int {
+  fun x : int => fun y : int => x + y
+}
+-/
+#guard_msgs in
+#eval formatCore lambdaMultiBindPgm
+
+-- Higher-order lambda: lambda that takes a function argument
+private def lambdaHigherOrderPgm : Core.Program := { decls := [
+  .func { name := "applyFn", typeArgs := [], inputs := [],
+          output := .arrow (.arrow .int .int) (.arrow .int .int),
+          body := some (.abs () "f" (.some (.arrow .int .int))
+            (.abs () "x" (.some .int)
+              (.app () (.bvar () 1) (.bvar () 0)))) } .empty
+]}
+
+/-- info: program Core;
+
+function applyFn () : int -> int -> int -> int {
+  fun f : int -> int => fun x : int => f(x)
+}-/
+#guard_msgs in
+#eval formatCore lambdaHigherOrderPgm
+
+-------------------------------------------------------------------------------
+
+private def strPrefixSuffixPgm : Program :=
+#strata
+program Core;
+
+procedure TestPrefixSuffix(s1 : string, s2 : string)
+spec {
+  requires str.prefixof(s1, s2);
+  ensures str.suffixof(s1, s2) || str.prefixof(s1, s2);
+}
+{
+  assert [prefix_holds]: str.prefixof(s1, s2);
+  assert [either]: str.suffixof(s1, s2) || str.prefixof(s1, s2);
+};
+#end
+
+/--
+info: program Core;
+
+procedure TestPrefixSuffix (s1 : string, s2 : string)
+spec {
+  requires [TestPrefixSuffix_requires_0]: str.prefixof(s1, s2);
+  ensures [TestPrefixSuffix_ensures_1]: str.suffixof(s1, s2) || str.prefixof(s1, s2);
+  } {
+  assert [prefix_holds]: str.prefixof(s1, s2);
+  assert [either]: str.suffixof(s1, s2) || str.prefixof(s1, s2);
+};
+-/
+#guard_msgs in
+#eval ASTtoCST strPrefixSuffixPgm
 
 end Strata.Test

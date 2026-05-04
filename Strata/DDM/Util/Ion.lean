@@ -12,7 +12,6 @@ public import Strata.DDM.Util.Ion.SymbolTable
 
 import all Strata.DDM.Util.ByteArray
 import all Strata.DDM.Util.Fin
-import Strata.DDM.Util.Ion.Deserialize
 import Strata.DDM.Util.Ion.JSON
 
 public section

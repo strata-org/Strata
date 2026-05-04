@@ -4,7 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Lean.Environment
 public import Strata.DDM.Elab.LoadedDialects
 import Strata.DDM.BuiltinDialects
 

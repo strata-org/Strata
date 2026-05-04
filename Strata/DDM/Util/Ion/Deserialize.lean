@@ -7,7 +7,6 @@ module
 
 public import Strata.DDM.Util.Ion.AST
 
-import Strata.DDM.Util.ByteArray
 import Strata.Util.DecideProp
 
 open Strata (decideProp)

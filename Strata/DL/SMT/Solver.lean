@@ -9,6 +9,7 @@ public import Strata.DL.SMT.DDMTransform.Translate
 public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.TermType
 public import Strata.Languages.Core.Options
+import Strata.DDM.Format
 import Std.Data.HashMap
 
 /-!

@@ -2249,7 +2249,7 @@ theorem core_seq_inner_star
 theorem core_block_inner_star
     {π : String → Option Procedure}
     {φ : CoreEval → PureFunc Expression → CoreEval}
-    (inner inner' : CoreConfig) (label : String)
+    (inner inner' : CoreConfig) (label : Option String)
     (h : CoreStepStar π φ inner inner') :
     CoreStepStar π φ (.block label inner) (.block label inner') :=
   StepStmtStar_to_CoreStepStar
@@ -2374,57 +2374,37 @@ theorem stmts_allAssert_preserves_store
                   | step h _ => exact nomatch h
         exact (ih ρ₁ (fun s' hs' => h_all s' (.tail _ hs')) h_r).trans h_store₁
 
-/-! ## hasFailure preservation (Core-specific) -/
+/-! ## hasFailure preservation (Core-specific)
 
-theorem core_step_preserves_noFailure
-    (c₁ c₂ : CoreConfig)
-    (hv : ∀ (a : AssertId Expression) (cfg : CoreConfig),
-      CoreStepStar π φ c₁ cfg →
-      coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
-    (hnf : c₁.getEnv.hasFailure = Bool.false)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.getEnv.hasFailure = Bool.false := by
-  induction hstep with
-  | step_cmd hcmd =>
-    cases hcmd with
-    | cmd_sem heval =>
-      cases heval with
-      | eval_assert_fail hff _ =>
-        have htt := hv ⟨_, _⟩ _ .refl ⟨rfl, rfl⟩
-        simp only [Config.getEval, Config.getStore] at htt
-        rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-      | _ => simp_all [Config.getEnv]
-    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        simp only [Config.getEnv, Bool.or_false]; exact hnf
-  | step_block => simp [Config.getEnv]; exact hnf
-  | step_ite_true _ _ => exact hnf
-  | step_ite_false _ _ => exact hnf
-  | step_loop_enter _ _ => exact hnf
-  | step_loop_exit _ _ => exact hnf
-  | step_ite_nondet_true => exact hnf
-  | step_ite_nondet_false => exact hnf
-  | step_loop_nondet_enter => exact hnf
-  | step_loop_nondet_exit => exact hnf
-  | step_exit => exact hnf
-  | step_funcDecl => simp [Config.getEnv]; exact hnf
-  | step_typeDecl => exact hnf
-  | step_stmts_nil => exact hnf
-  | step_stmts_cons => exact hnf
-  | step_seq_inner h ih =>
-    exact ih
-      (fun a cfg hr hat => hv a (.seq cfg _)
-        (core_seq_inner_star _ _ _ hr) hat) hnf
-  | step_seq_done => exact hnf
-  | step_seq_exit => exact hnf
-  | step_block_body h ih =>
-    exact ih
-      (fun a cfg hr hat => hv a (.block _ cfg)
-        (core_block_inner_star _ _ _ hr) hat) hnf
-  | step_block_done => exact hnf
-  | step_block_exit_none => exact hnf
-  | step_block_exit_match _ => exact hnf
-  | step_block_exit_mismatch _ => exact hnf
+    `core_noFailure_preserved` reduces to the abstract Imperative
+    `step_preserves_noFailure` applied to each step of the multi-step
+    derivation, with `coreIsAtAssert` playing the role of the
+    `IsAtAssert` parameter. -/
+
+private theorem coreIsAtAssert_of_inv_mem
+    {g m inv body md} {ρ : Env Expression} {lbl e}
+    (hmem : (lbl, e) ∈ inv) :
+    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
+
+private theorem coreIsAtAssert_seq_of_inner
+    {inner : CoreConfig} {ss a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.seq inner ss) a := h
+
+private theorem coreIsAtAssert_block_of_inner
+    {label} {inner : CoreConfig} {a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label inner) a := h
+
+private theorem evalCommand_failure_implies_assert_ff
+    {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
+    {ρ : Env Expression} {c : Command} {σ'}
+    (hcmd : EvalCommand π φ ρ.eval ρ.store c σ' true) :
+    ∃ a : AssertId Expression,
+      coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
+      ρ.eval ρ.store a.expr = some HasBool.ff := by
+  cases hcmd with
+  | cmd_sem heval =>
+    cases heval with
+    | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
 
 theorem core_noFailure_preserved
     (c₁ c₂ : CoreConfig)
@@ -2450,9 +2430,69 @@ theorem core_noFailure_preserved
   | step _ mid _ hstep hrest ih =>
     exact ih
       (fun a cfg h hat => hvalid a _ (.step hstep h) hat)
-      (core_step_preserves_noFailure π φ _ _
-        (fun a cfg hcs hat => hvalid a _ hcs hat)
+      (Imperative.step_preserves_noFailure
+        (P := Expression) (extendEval := EvalPureFunc φ)
+        coreIsAtAssert
+        evalCommand_failure_implies_assert_ff
+        coreIsAtAssert_of_inv_mem
+        coreIsAtAssert_seq_of_inner
+        coreIsAtAssert_block_of_inner
+        _ _
+        (fun a cfg hr hat => hvalid a cfg (StepStmtStar_to_CoreStepStar hr) hat)
         hf₀ hstep)
+
+/-! ## mapExprs identity -/
+
+private theorem block_mapExpr_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    Imperative.Block.mapExpr id (Command.mapExpr id) ss = ss := by
+  induction ss with
+  | nil => simp [Imperative.Block.mapExpr]
+  | cons s rest ih =>
+    simp only [Imperative.Block.mapExpr, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+private theorem list_mapExprs_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    ss.map (Statement.mapExprs id) = ss := by
+  induction ss with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [List.map_cons, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+private theorem Command.mapExpr_id (c : Command) : Command.mapExpr id c = c := by
+  cases c with
+  | cmd c =>
+    cases c with
+    | assert _ _ _ | assume _ _ _ | cover _ _ _ => simp [Command.mapExpr]
+    | init n ty e md => cases e <;> simp [Command.mapExpr]
+    | set n e md => cases e <;> simp [Command.mapExpr]
+  | call pname args md =>
+    simp [Command.mapExpr]
+    induction args with
+    | nil => rfl
+    | cons h t ih => simp [ih]; cases h <;> rfl
+
+theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := by
+  induction s using Stmt.inductionOn with
+  | cmd_case c =>
+    simp only [Statement.mapExprs, Imperative.Stmt.mapExpr]
+    exact congrArg Stmt.cmd (Command.mapExpr_id c)
+  | block_case l ss md ih =>
+    simp [Statement.mapExprs, Imperative.Stmt.mapExpr, block_mapExpr_id_of_forall ih]
+  | ite_case cond tss ess md iht ihe =>
+    cases cond <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
+                          block_mapExpr_id_of_forall iht, block_mapExpr_id_of_forall ihe]
+  | loop_case guard measure inv body md ihb =>
+    cases guard <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
+                           block_mapExpr_id_of_forall ihb]
+  | exit_case l md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+  | funcDecl_case decl md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+  | typeDecl_case tc md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+
+theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
+  exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
 
 end Core
 
