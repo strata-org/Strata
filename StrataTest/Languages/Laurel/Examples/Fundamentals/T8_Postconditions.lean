@@ -21,7 +21,9 @@ procedure opaqueBody(x: int) returns (r: int)
   else { r := 1 }
 };
 
-procedure callerOfOpaqueProcedure() {
+procedure callerOfOpaqueProcedure()
+  opaque
+{
   var x: int := opaqueBody(3);
   assert x > 0;
   assert x == 3
