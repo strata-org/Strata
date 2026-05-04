@@ -1,3 +1,8 @@
+> **Note:** The canonical reference for verification modes is now
+> [Transforms and Analysis](verso/TransformsDoc.lean).
+> This file is retained for the detailed error classification table not yet migrated.
+> It may be removed in the future.
+
 # Verification Modes
 
 Strata supports three verification modes, selected via `--check-mode`:

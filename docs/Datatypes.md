@@ -1,3 +1,7 @@
+> **Note:** The canonical reference for datatypes is now the
+> [Strata Core Language Definition](verso/LangDefDoc.lean) (Section 4, "Type Declarations").
+> This file is retained for additional detail not yet migrated. It may be removed in the future.
+
 # Datatypes in Strata
 
 This document describes the datatype system in Strata Core.
