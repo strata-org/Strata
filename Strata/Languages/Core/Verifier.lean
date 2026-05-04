@@ -53,6 +53,9 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
+    (property : String := "assert")
+    (resolvedSat : Option String := none)
+    (resolvedVal : Option String := none)
     (varDefinitions : List Core.VarDefinition := [])
     (varDeclarations : List Core.VarDeclaration := []) :
     SolverM (List String × EncoderState) := do
@@ -133,6 +136,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let rawMsg := md.getPropertySummary.getD label
   let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
   Solver.setInfo "final-message" s!"\"{escaped}\""
+  -- Emit the property type so reconcile can classify without a manifest.
+  Solver.setInfo "property" s!"\"{property}\""
+  -- Emit evaluator-resolved results (if any) so reconcile knows which
+  -- checks were already decided before the solver ran.
+  if let some r := resolvedSat then
+    Solver.setInfo "resolved-sat" s!"\"{r}\""
+  if let some r := resolvedVal then
+    Solver.setInfo "resolved-val" s!"\"{r}\""
 
   return (ids, estate)
 
@@ -147,6 +158,21 @@ open Lambda Strata.SMT
 
 public section
 
+/-- Short verdict string for embedding in SMT2 `set-info` directives. -/
+def verdictString : Imperative.SMT.Result Core.Expression.Ident → String
+  | .sat _ => "sat"
+  | .unsat => "unsat"
+  | .unknown _ => "unknown"
+  | .err _ => "err"
+
+/-- Property type as a short string for embedding in SMT2 `set-info`. -/
+def propertyString (p : Imperative.PropertyType) : String :=
+  match p with
+  | .cover => "cover"
+  | .assert => "assert"
+  | .divisionByZero => "divisionByZero"
+  | .arithmeticOverflow => "arithmeticOverflow"
+
 /-- Replace characters that are problematic on common filesystems
     (parens, quotes, spaces, path separators, and Windows-invalid characters
     such as `< > : | ? *`) with underscores or remove them.
@@ -158,7 +184,7 @@ def sanitizeFilename (s : String) : String :=
          || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
     else some c
 
-private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
+def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
@@ -201,6 +227,9 @@ def dischargeObligation
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
   (label : String)
+  (property : String := "assert")
+  (resolvedSat : Option String := none)
+  (resolvedVal : Option String := none)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
@@ -216,7 +245,9 @@ def dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
-      (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
+      (label := label) (property := property)
+      (resolvedSat := resolvedSat) (resolvedVal := resolvedVal)
+      (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -887,7 +918,7 @@ def coreAbstractedPhases (procs : Option (List String) := none)
   (corePipelinePhases procs options moreFns).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
-private def buildSolverLog (satResult valResult : SMT.Result)
+def buildSolverLog (satResult valResult : SMT.Result)
     (satisfiabilityCheck validityCheck : Bool)
     (satPhaseLog valPhaseLog : List SolverPhaseLog) : Array SolverPhaseLog :=
   let sat : Array SolverPhaseLog :=
@@ -908,6 +939,34 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- Build a `VCResult` from raw solver results, applying phase validation,
+solver log construction, and outcome masking. This is the single source of
+truth for turning `(satResult, valResult)` into a classified `VCResult`,
+used by both the integrated verifier (`getObligationResult`) and the
+reconcile path (`reconcileOne`). -/
+def buildVCResult
+    (obligation : ProofObligation Expression)
+    (satResult valResult : SMT.Result)
+    (satisfiabilityCheck validityCheck : Bool)
+    (phases : List AbstractedPhase)
+    (options : VerifyOptions)
+    (lexprModel : LExprModel := []) : VCResult :=
+  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+  let (adjVal, valPhaseLog) := valResult.adjustForPhases phases obligation
+  let smtLog := buildSolverLog satResult valResult
+    satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+  let rawOutcome : VCOutcome := {
+    satisfiabilityProperty := adjSat,
+    validityProperty := adjVal,
+    solverLog := #[smtLog] }
+  let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
+  { obligation,
+    outcome := .ok outcome,
+    verbose := options.verbose,
+    checkLevel := options.checkLevel,
+    checkMode := options.checkMode,
+    lexprModel }
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -918,6 +977,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
     (phases : List AbstractedPhase)
+    (peSatResult? : Option Core.SMT.Result := none)
+    (peValResult? : Option Core.SMT.Result := none)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
     : EIO DiagnosticModel VCResult := do
@@ -944,7 +1005,11 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             obligation.metadata
             filename.toString
           assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-          (label := obligation.label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
+          (label := obligation.label)
+          (property := SMT.propertyString obligation.property)
+          (resolvedSat := peSatResult?.map SMT.verdictString)
+          (resolvedVal := peValResult?.map SMT.verdictString)
+          (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -953,17 +1018,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
     -- Convert unvalidated sat results to unknown when phases require validation
-    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
-    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
-    -- Build solver log: raw solver results followed by phase validation logs
-    let smtLog := buildSolverLog satResult validityResult
-      satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-    let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := adjSat,
-      validityProperty := adjVal,
-      solverLog := #[smtLog] }
-    let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-    -- Extract model from sat results (using raw solver results)
+    -- and build the classified VCResult.
     let model := match satResult, validityResult with
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
@@ -971,14 +1026,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     -- Filter out managed variables from model display
     let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
     let model := model.filter fun (name, _) => !managedVarNames.contains name.name
-    let result := { obligation,
-                    outcome := .ok outcome,
-                    estate,
-                    verbose := options.verbose,
-                    checkLevel := options.checkLevel,
-                    checkMode := options.checkMode,
-                    lexprModel := model }
-    return result
+    let result := buildVCResult obligation satResult validityResult
+      satisfiabilityCheck validityCheck phases options (lexprModel := model)
+    return { result with estate }
 
 
 def verifySingleEnv (oblProgram : Program)
@@ -1075,6 +1125,7 @@ def verifySingleEnv (oblProgram : Program)
       let t4 ← IO.monoNanosNow
       let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+                    peSatResult? peValResult?
                     (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
       solverNs := solverNs + (t5 - t4)

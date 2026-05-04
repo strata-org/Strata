@@ -329,10 +329,11 @@ def Core.verifyProgram
     (prefixPhases : List Core.PipelinePhase := [])
     (keepAllFilesPrefix : Option String := none)
     : EIO String Core.VCResults := do
-  let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
-    EIO.toIO (IO.Error.userError ∘ toString)
+  let runVerification (tempDir : System.FilePath) : IO Core.VCResults := do
+    let results ← EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
         (keepAllFilesPrefix := keepAllFilesPrefix))
+    pure results
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification

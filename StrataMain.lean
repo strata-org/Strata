@@ -12,6 +12,7 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.Reconcile
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
@@ -1284,7 +1285,7 @@ def verifyCommand : Command where
         else if pgm.dialect == "Boole" then
           Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
         else
-          verify pgm inputCtx proceduresToVerify opts
+          Strata.verify pgm inputCtx proceduresToVerify opts
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
@@ -1309,6 +1310,60 @@ def verifyCommand : Command where
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
+
+/-- Reconcile: read `.smt2` files and solver `.result` files from a directory,
+    produce the final verification report. See `docs/CloudSolving.md`. -/
+def reconcileCommand : Command where
+  name := "reconcile"
+  args := []
+  flags := [
+    { name := "vc-directory",
+      help := "Directory containing .smt2 and solver .result files (required).",
+      takesArg := .arg "dir" },
+    { name := "check-mode",
+      help := s!"Check mode: {Core.VerificationMode.options}.",
+      takesArg := .arg "mode" },
+    { name := "check-level",
+      help := s!"Check level: {Core.CheckLevel.options}.",
+      takesArg := .arg "level" },
+    { name := "verbose", help := "Enable verbose output." },
+    { name := "quiet", help := "Suppress default output." },
+    { name := "sarif",
+      help := "Write results as SARIF to <vc-directory>/reconcile.sarif." }
+  ]
+  help := "Reconcile solver results with .smt2 files."
+  callback := fun _v pflags => do
+    let vcDirStr ← match pflags.getString "vc-directory" with
+      | .some d => pure d
+      | .none => exitFailure "--vc-directory is required for reconcile."
+    let vcDir : System.FilePath := ⟨vcDirStr⟩
+    let checkMode ← match pflags.getString "check-mode" with
+      | .none => pure Core.VerificationMode.deductive
+      | .some s => match Core.VerificationMode.ofString? s with
+        | .some m => pure m
+        | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {Core.VerificationMode.options}."
+    let checkLevel ← match pflags.getString "check-level" with
+      | .none => pure Core.CheckLevel.minimal
+      | .some s => match Core.CheckLevel.ofString? s with
+        | .some l => pure l
+        | .none => exitFailure s!"Invalid check level: '{s}'. Must be {Core.CheckLevel.options}."
+    let verbose : Core.VerboseMode :=
+      if pflags.getBool "verbose" then .normal
+      else if pflags.getBool "quiet" then .quiet
+      else .normal
+    let options : Core.VerifyOptions :=
+      { Core.VerifyOptions.default with
+        checkMode, checkLevel, verbose }
+    let vcResults ← Core.reconcileDirectory vcDir options
+    if pflags.getBool "sarif" then
+      let files := Map.empty
+      let outputPath := (vcDir / "reconcile.sarif").toString
+      Core.Sarif.writeSarifOutput options.checkMode files vcResults outputPath
+    for vcResult in vcResults do
+      let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata none
+      println! f!"{posStr} [{vcResult.obligation.label}]: \
+                    {vcResult.formatOutcome}"
+    printPyAnalyzeSummary vcResults options.checkMode
 
 def pyInterpretCommand : Command where
   name := "pyInterpret"
@@ -1364,7 +1419,7 @@ def pyInterpretCommand : Command where
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, reconcileCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
