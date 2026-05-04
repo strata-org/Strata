@@ -12,7 +12,7 @@ public import Strata.Languages.Laurel.Laurel
 Concise helpers for constructing `StmtExprMd` values, reducing boilerplate
 in the Python-to-Laurel translator and other Laurel code generators.
 
-Each builder takes optional `source` and `md` parameters so callers can
+Each builder takes an optional `source` parameter so callers can
 attach source locations when available.
 
 ## Type-safe builders (`Typed` namespace)
@@ -28,13 +28,11 @@ namespace Strata.Laurel
 
 public section
 
-/-- Default metadata with unknown file range. -/
-def defaultMd : MetaData := .empty
 
-/-- Build a StmtExprMd from a StmtExpr with optional source and metadata. -/
+/-- Build a StmtExprMd from a StmtExpr with optional source. -/
 @[inline] def mkNode (e : StmtExpr) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  { val := e, source := source, md := md }
+    : StmtExprMd :=
+  { val := e, source := source }
 
 /-- A Laurel `StmtExprMd` tagged with its `HighType`. -/
 structure TypedExpr (tp : HighType) where
@@ -46,120 +44,111 @@ instance : CoeOut (TypedExpr tp) StmtExprMd where
 
 /-! ## Untyped builders (return StmtExprMd) -/
 
-def litInt (n : Int) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.LiteralInt n) source md
-def litStr (s : String) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.LiteralString s) source md
-def litBool (b : Bool) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.LiteralBool b) source md
-def ident (name : String) (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Identifier name) source md
-def fieldSelect (obj : StmtExprMd) (field : String) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.FieldSelect obj field) source md
-def call (name : String) (args : List StmtExprMd) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.StaticCall name args) source md
-def primOp (op : Operation) (args : List StmtExprMd) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.PrimitiveOp op args) source md
+def litInt (n : Int) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.LiteralInt n) source
+def litStr (s : String) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.LiteralString s) source
+def litBool (b : Bool) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.LiteralBool b) source
+def ident (name : String) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Identifier name) source
+def fieldSelect (obj : StmtExprMd) (field : String) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.FieldSelect obj field) source
+def call (name : String) (args : List StmtExprMd) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.StaticCall name args) source
+def primOp (op : Operation) (args : List StmtExprMd) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.PrimitiveOp op args) source
 def localVar (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none)
-    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.LocalVariable name ty init) source md
+    (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.LocalVariable name ty init) source
 def assign (targets : List StmtExprMd) (value : StmtExprMd)
-    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Assign targets value) source md
+    (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Assign targets value) source
 def assert_ (cond : TypedExpr .TBool) (summary : Option String := none)
-    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Assert { condition := cond.expr, summary }) source md
-def assume_ (cond : TypedExpr .TBool) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Assume cond.expr) source md
+    (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Assert { condition := cond.expr, summary }) source
+def assume_ (cond : TypedExpr .TBool) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Assume cond.expr) source
 def block (stmts : List StmtExprMd) (label : Option String := none)
-    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Block stmts label) source md
+    (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Block stmts label) source
 def ifThenElse (cond : TypedExpr .TBool) (thenBranch : StmtExprMd)
-    (elseBranch : Option StmtExprMd := none) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.IfThenElse cond.expr thenBranch elseBranch) source md
-def exit_ (label : String) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Exit label) source md
-def return_ (value : Option StmtExprMd := none) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Return value) source md
-def new_ (className : Identifier) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.New className) source md
-def hole (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode .Hole source md
-def nondetHole (ty : Option HighTypeMd := none) (source : Option FileRange := none)
-    (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.Hole false ty) source md
+    (elseBranch : Option StmtExprMd := none) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.IfThenElse cond.expr thenBranch elseBranch) source
+def exit_ (label : String) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Exit label) source
+def return_ (value : Option StmtExprMd := none) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Return value) source
+def new_ (className : Identifier) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.New className) source
+def hole (source : Option FileRange := none) : StmtExprMd :=
+  mkNode .Hole source
+def nondetHole (ty : Option HighTypeMd := none) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Hole false ty) source
 def while_ (cond : StmtExprMd) (invs : List StmtExprMd := [])
     (dec : Option StmtExprMd := none) (body : StmtExprMd)
-    (source : Option FileRange := none) (md : MetaData := defaultMd) : StmtExprMd :=
-  mkNode (.While cond invs dec body) source md
+    (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.While cond invs dec body) source
 
 /-! ## Type-safe builders -/
 
 namespace Typed
 
 /-- Typed literal int. -/
-def litInt (n : Int) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TInt :=
-  ⟨mkNode (.LiteralInt n) source md⟩
+def litInt (n : Int) (source : Option FileRange := none) : TypedExpr .TInt :=
+  ⟨mkNode (.LiteralInt n) source⟩
 /-- Typed literal string. -/
-def litStr (s : String) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TString :=
-  ⟨mkNode (.LiteralString s) source md⟩
+def litStr (s : String) (source : Option FileRange := none) : TypedExpr .TString :=
+  ⟨mkNode (.LiteralString s) source⟩
 /-- Typed literal bool. -/
-def litBool (b : Bool) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.LiteralBool b) source md⟩
+def litBool (b : Bool) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.LiteralBool b) source⟩
 /-- Typed identifier. -/
-def ident (name : String) (tp : HighType) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr tp :=
-  ⟨mkNode (.Identifier name) source md⟩
+def ident (name : String) (tp : HighType) (source : Option FileRange := none) : TypedExpr tp :=
+  ⟨mkNode (.Identifier name) source⟩
 /-- Typed static call. -/
 def call (name : String) (args : List StmtExprMd) (tp : HighType)
-    (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr tp :=
-  ⟨mkNode (.StaticCall name args) source md⟩
+    (source : Option FileRange := none) : TypedExpr tp :=
+  ⟨mkNode (.StaticCall name args) source⟩
 /-- Boolean negation. -/
-def not (x : TypedExpr .TBool) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Not [x.expr]) source md⟩
+def not (x : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Not [x.expr]) source⟩
 /-- Boolean and. -/
-def and (x y : TypedExpr .TBool) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .And [x.expr, y.expr]) source md⟩
+def and (x y : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .And [x.expr, y.expr]) source⟩
 /-- Boolean or. -/
-def or (x y : TypedExpr .TBool) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Or [x.expr, y.expr]) source md⟩
+def or (x y : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Or [x.expr, y.expr]) source⟩
 /-- Boolean implies. -/
-def implies (x y : TypedExpr .TBool) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Implies [x.expr, y.expr]) source md⟩
+def implies (x y : TypedExpr .TBool) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Implies [x.expr, y.expr]) source⟩
 /-- Equality. -/
-def eq (x y : TypedExpr tp) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Eq [x.expr, y.expr]) source md⟩
+def eq (x y : TypedExpr tp) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Eq [x.expr, y.expr]) source⟩
 /-- Less than. -/
-def lt (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Lt [x, y]) source md⟩
+def lt (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Lt [x, y]) source⟩
 /-- Less than or equal. -/
-def leq (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Leq [x, y]) source md⟩
+def leq (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Leq [x, y]) source⟩
 /-- Greater than or equal. -/
-def geq (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Geq [x, y]) source md⟩
+def geq (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Geq [x, y]) source⟩
 /-- Greater than. -/
-def gt (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TBool :=
-  ⟨mkNode (.PrimitiveOp .Gt [x, y]) source md⟩
+def gt (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TBool :=
+  ⟨mkNode (.PrimitiveOp .Gt [x, y]) source⟩
 /-- Integer addition. -/
-def add (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TInt :=
-  ⟨mkNode (.PrimitiveOp .Add [x, y]) source md⟩
+def add (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TInt :=
+  ⟨mkNode (.PrimitiveOp .Add [x, y]) source⟩
 /-- Integer subtraction. -/
-def sub (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TInt :=
-  ⟨mkNode (.PrimitiveOp .Sub [x, y]) source md⟩
+def sub (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TInt :=
+  ⟨mkNode (.PrimitiveOp .Sub [x, y]) source⟩
 /-- String concatenation. -/
-def strConcat (x y : StmtExprMd) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr .TString :=
-  ⟨mkNode (.PrimitiveOp .StrConcat [x, y]) source md⟩
+def strConcat (x y : StmtExprMd) (source : Option FileRange := none) : TypedExpr .TString :=
+  ⟨mkNode (.PrimitiveOp .StrConcat [x, y]) source⟩
 /-- If-then-else (expression, returns typed value). -/
-def ite (cond : TypedExpr .TBool) (t e : TypedExpr tp) (source : Option FileRange := none) (md : MetaData := defaultMd) : TypedExpr tp :=
-  ⟨mkNode (.IfThenElse cond.expr t.expr (some e.expr)) source md⟩
+def ite (cond : TypedExpr .TBool) (t e : TypedExpr tp) (source : Option FileRange := none) : TypedExpr tp :=
+  ⟨mkNode (.IfThenElse cond.expr t.expr (some e.expr)) source⟩
 
 end Typed
 

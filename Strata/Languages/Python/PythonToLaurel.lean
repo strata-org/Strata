@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Laurel.Builders
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
