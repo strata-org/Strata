@@ -435,47 +435,14 @@ where
       all_goals (try have := AstNode.sizeOf_val_lt exprMd)
       all_goals (try have := AstNode.sizeOf_val_lt v)
       all_goals (try term_by_mem)
-      all_goals (try omega)
       all_goals (try (cases exprMd; simp_all; omega))
-      -- For sub-expressions of StaticCall/InstanceCall inside Assign value:
-      all_goals (try (
-        have : sizeOf args < sizeOf v := by
-          have h1 := AstNode.sizeOf_val_lt v
-          rw [_hv] at h1; simp at h1; omega
-        term_by_mem))
-      -- For target inside Field in single-target case and multi-target Field recursion:
-      all_goals (try (
-        have := AstNode.sizeOf_val_lt targetHead
-        have : sizeOf target < sizeOf targetHead.val := by
-          cases targetHead with | mk val _ _ =>
-            simp only []
-            subst_vars
-            omega
-        omega))
-      -- For field inner expressions in attach-based mapM:
-      all_goals (try (
-        have := List.sizeOf_lt_of_mem ‹_›
-        have := AstNode.sizeOf_val_lt t
-        have : sizeOf t.val = sizeOf (Variable.Field target fieldName) := by exact congrArg sizeOf _htv
-        omega))
-      -- For field inner expressions in attach-based foldlM:
+      -- For field inner expressions in attach-based:
       all_goals (try (
         have := List.sizeOf_lt_of_mem ‹_›
         have := AstNode.sizeOf_val_lt t
         have : sizeOf t.val = sizeOf (Variable.Field target fieldName) := by exact congrArg sizeOf _htv
         simp_all
         omega))
-      -- For callTarget/args inside InstanceCall/StaticCall in value:
-      all_goals (try (
-        have : sizeOf callTarget < sizeOf v := by
-          have h1 := AstNode.sizeOf_val_lt v
-          rw [_hv] at h1; simp at h1; omega
-        omega))
-      all_goals (try (
-        have : sizeOf args < sizeOf v := by
-          have h1 := AstNode.sizeOf_val_lt v
-          rw [_hv] at h1; simp at h1; omega
-        term_by_mem))
       -- Remaining goals
       all_goals (
         cases exprMd with | mk val src mmd =>
