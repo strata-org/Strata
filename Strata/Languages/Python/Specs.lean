@@ -1136,14 +1136,34 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
                        (decorators : Array (expr SourceRange))
                        (returns : Option (expr SourceRange)) : PySpecM FunctionDecl := do
   let mut overload : Bool := false
+  -- Collect icontract preconditions and postconditions from decorators
+  let mut icontractRequires : Array (expr SourceRange) := #[]
+  let mut icontractEnsures : Array (expr SourceRange) := #[]
   for pyd in decorators do
-    let (success, d) ← runChecked <| pySpecValue pyd
-    if success then
-      match d with
-      | .typingOverload =>
-        overload := true
-      | _ =>
-        specError pyd.ann s!"Decorator {repr d} not supported."
+    -- Check for @icontract.require(lambda ...: cond) or @icontract.ensure(lambda ...: cond)
+    match pyd with
+    | .Call _ (.Attribute _ (.Name _ ⟨_, "icontract"⟩ (.Load _)) ⟨_, attr⟩ (.Load _)) args _ =>
+      if args.val.size ≥ 1 then
+        match args.val[0]! with
+        | .Lambda _ _lamArgs lamBody =>
+          if attr == "require" then
+            icontractRequires := icontractRequires.push lamBody
+          else if attr == "ensure" then
+            icontractEnsures := icontractEnsures.push lamBody
+          else
+            specWarning pyd.ann s!"Unknown icontract decorator: icontract.{attr}"
+        | _ =>
+          specWarning pyd.ann s!"icontract.{attr} expects a lambda argument"
+      else
+        specWarning pyd.ann s!"icontract.{attr} requires at least one argument"
+    | _ =>
+      let (success, d) ← runChecked <| pySpecValue pyd
+      if success then
+        match d with
+        | .typingOverload =>
+          overload := true
+        | _ =>
+          specError pyd.ann s!"Decorator {repr d} not supported."
 
   let .mk_arguments _ ⟨_, posonly⟩ ⟨_, posArgs⟩ ⟨_, vararg⟩ ⟨_, kwonly⟩ ⟨_, kw_defaults⟩ ⟨_, kwarg⟩ ⟨_, defaults⟩ := arguments
   assert! posonly.size = 0
@@ -1206,7 +1226,21 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
         match returns with
         | none => pure <| .ident fnLoc .typingAny
         | some tp => pySpecType tp
-  let as ← collectAssertions argDecls returnType <|
+  let as ← collectAssertions argDecls returnType <| do
+    -- Process icontract @require decorators as preconditions
+    for reqExpr in icontractRequires do
+      let formula ← transAssertExpr reqExpr
+      let message := #[MessagePart.str (toString (repr reqExpr))]
+      modify fun s => { s with
+        assertions := s.assertions.push { message, formula }
+      }
+    -- Process icontract @ensure decorators as postconditions
+    for ensExpr in icontractEnsures do
+      let formula ← transAssertExpr ensExpr
+      modify fun s => { s with
+        postconditions := s.postconditions.push formula
+      }
+    -- Process body assertions (assert statements)
     if overload then
       -- Overload stubs should have `...` as their only body statement.
       unless body.size = 1 &&
