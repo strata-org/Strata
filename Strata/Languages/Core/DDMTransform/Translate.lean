@@ -687,6 +687,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.re_none      => return Core.reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
+/-- Build the URI for the current translation unit. -/
+private def getUri : TransM Uri := do
+  return .file (← StateT.get).inputCtx.fileName
+
 mutual
 
 /-- Shared binding setup for lambdas and quantifiers: translates the declaration list,
@@ -698,7 +702,8 @@ def withScopedBindings
   TransM (ListMap Core.Expression.Ident Core.Expression.Ty × TransBindings × Core.Expression.Expr) := do
     let xsArray ← translateDeclList bindings xsa
     let n := xsArray.size
-    let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar () (n - 1 - i)))
+    let m := ExprSourceLoc.ofUriRange (← getUri) xsa.ann
+    let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar m (n - 1 - i)))
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
     let b ← translateExpr p xbindings bodya
@@ -710,10 +715,11 @@ def translateLambda
   (bindings : TransBindings) (xsa : Arg) (bodya : Arg) :
   TransM Core.Expression.Expr := do
     let (xsArray, _, b) ← withScopedBindings p bindings xsa bodya
+    let m := ExprSourceLoc.ofUriRange (← getUri) xsa.ann
     let buildLambda := fun (name, ty) e =>
       match ty with
       | .forAll [] mty =>
-        .abs () name.name (.some mty) e
+        .abs m name.name (.some mty) e
       | _ => panic! s!"Expected monomorphic type in lambda, got: {ty}" -- nopanic:ok
     return xsArray.foldr buildLambda (init := b)
 
@@ -724,10 +730,11 @@ def translateQuantifier
   (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
   TransM Core.Expression.Expr := do
     let (xsArray, xbindings, b) ← withScopedBindings p bindings xsa bodya
+    let m := ExprSourceLoc.ofUriRange (← getUri) xsa.ann
 
     -- Handle triggers if present
     let triggers ← match triggersa with
-      | none => pure (LExpr.noTrigger ())
+      | none => pure (LExpr.noTrigger m)
       | some tsa => translateTriggers p xbindings tsa
 
     -- Create one quantifier constructor per variable
@@ -738,8 +745,8 @@ def translateQuantifier
         let triggers := if first then
             triggers
           else
-            LExpr.noTrigger ()
-        (.quant () qk name.name (.some mty) triggers e, false)
+            LExpr.noTrigger m
+        (.quant m qk name.name (.some mty) triggers e, false)
       | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
 
     return xsArray.foldr buildQuantifier (init := (b, true)) |>.1
@@ -749,10 +756,11 @@ def translateTriggerGroup (p: Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .op op := arg
     | TransM.error s!"translateTriggerGroup expected op, got {repr arg}"
+  let m := ExprSourceLoc.ofUriRange (← getUri) op.ann
   match op.name, op.args with
   | q`Core.trigger, #[tsa] => do
    let ts  ← translateCommaSep (fun t => translateExpr p bindings t) tsa
-   return ts.foldl (fun g t => .app () (.app () Core.addTriggerOp t) g) Core.emptyTriggerGroupOp
+   return ts.foldl (fun g t => .app m (.app m Core.addTriggerOp t) g) Core.emptyTriggerGroupOp
   | _, _ => panic! s!"Unexpected operator in trigger group"
 
 partial
@@ -760,14 +768,15 @@ def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .op op := arg
     | TransM.error s!"translateTriggers expected op, got: {repr arg}"
+  let m := ExprSourceLoc.ofUriRange (← getUri) op.ann
   match op.name, op.args with
   | q`Core.triggersAtom, #[group] =>
     let g ← translateTriggerGroup p bindings group
-    return .app () (.app () Core.addTriggerGroupOp g) Core.emptyTriggersOp
+    return .app m (.app m Core.addTriggerGroupOp g) Core.emptyTriggersOp
   | q`Core.triggersPush, #[triggers, group] => do
     let ts ← translateTriggers p bindings triggers
     let g ← translateTriggerGroup p bindings group
-    return .app () (.app () Core.addTriggerGroupOp g) ts
+    return .app m (.app m Core.addTriggerGroupOp g) ts
   | _, _ => panic! s!"Unexpected operator in trigger"
 
 /-- Resolve a function from a `recFuncBlock` by its global-context index. -/
@@ -784,58 +793,60 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
+  let uri ← getUri
+  let loc (sr : SourceRange) : ExprSourceLoc := ExprSourceLoc.ofUriRange uri sr
   let (op, args) := expr.flatten
   match op, args with
   -- Constants/Literals
-  | .fn _ q`Core.btrue, [] =>
-    return .true ()
-  | .fn _ q`Core.bfalse, [] =>
-    return .false ()
-  | .fn _ q`Core.natToInt, [xa] =>
+  | .fn m q`Core.btrue, [] =>
+    return .boolConst (loc m) true
+  | .fn m q`Core.bfalse, [] =>
+    return .boolConst (loc m) false
+  | .fn m q`Core.natToInt, [xa] =>
     let n ← translateNat xa
-    return .intConst () n
-  | .fn _ q`Core.bv1Lit, [xa] =>
+    return .intConst (loc m) n
+  | .fn m q`Core.bv1Lit, [xa] =>
     let n ← translateBitVec 1 xa
-    return .bitvecConst () 1 n
-  | .fn _ q`Core.bv8Lit, [xa] =>
+    return .bitvecConst (loc m) 1 n
+  | .fn m q`Core.bv8Lit, [xa] =>
     let n ← translateBitVec 8 xa
-    return .bitvecConst () 8 n
-  | .fn _ q`Core.bv16Lit, [xa] =>
+    return .bitvecConst (loc m) 8 n
+  | .fn m q`Core.bv16Lit, [xa] =>
     let n ← translateBitVec 16 xa
-    return .bitvecConst () 16 n
-  | .fn _ q`Core.bv32Lit, [xa] =>
+    return .bitvecConst (loc m) 16 n
+  | .fn m q`Core.bv32Lit, [xa] =>
     let n ← translateBitVec 32 xa
-    return .bitvecConst () 32 n
-  | .fn _ q`Core.bv64Lit, [xa] =>
+    return .bitvecConst (loc m) 32 n
+  | .fn m q`Core.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
-    return .bitvecConst () 64 n
-  | .fn _ q`Core.strLit, [xa] =>
+    return .bitvecConst (loc m) 64 n
+  | .fn m q`Core.strLit, [xa] =>
     let x ← translateStr xa
-    return .strConst () x
-  | .fn _ q`Core.realLit, [xa] =>
+    return .strConst (loc m) x
+  | .fn m q`Core.realLit, [xa] =>
     let x ← translateReal xa
-    return .realConst () (Strata.Decimal.toRat x)
+    return .realConst (loc m) (Strata.Decimal.toRat x)
   -- Equality
-  | .fn _ q`Core.equal, [_tpa, xa, ya] =>
+  | .fn m q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-    return .eq () x y
-  | .fn _ q`Core.not_equal, [_tpa, xa, ya] =>
+    return .eq (loc m) x y
+  | .fn m q`Core.not_equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-    return (.app () Core.boolNotOp (.eq () x y))
-  | .fn _ q`Core.bvnot, [tpa, xa] =>
+    return (.app (loc m) Core.boolNotOp (.eq (loc m) x y))
+  | .fn m q`Core.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let x ← translateExpr p bindings xa
     let fn : LExpr Core.CoreLParams.mono ←
       translateFn (.some tp) q`Core.bvnot
-    return (.app () fn x)
+    return (.app (loc m) fn x)
   -- If-then-else expression
-  | .fn _ q`Core.if, [_tpa, ca, ta, fa] =>
+  | .fn m q`Core.if, [_tpa, ca, ta, fa] =>
     let c ← translateExpr p bindings ca
     let t ← translateExpr p bindings ta
     let f ← translateExpr p bindings fa
-    return .ite () c t f
+    return .ite (loc m) c t f
   -- Re.AllChar
   | .fn _ q`Core.re_allchar, [] =>
     let fn ← translateFn .none q`Core.re_allchar
@@ -849,7 +860,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn ← translateFn .none q`Core.re_all
     return fn
   -- Unary function applications
-  | .fn _ fni, [xa] =>
+  | .fn m fni, [xa] =>
     match fni with
     | q`Core.not
     | q`Core.bvextract_7_7
@@ -868,68 +879,68 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.re_comp => do
       let fn ← translateFn .none fni
       let x ← translateExpr p bindings xa
-      return .mkApp () fn [x]
+      return .mkApp (loc m) fn [x]
     | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
-  | .fn _ q`Core.neg_expr, [tpa, xa] =>
+  | .fn m q`Core.neg_expr, [tpa, xa] =>
     let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let fn ← translateFn ty q`Core.neg_expr
     let x ← translateExpr p bindings xa
-    return .mkApp () fn [x]
-  | .fn _ q`Core.safeneg_expr, [tpa, xa] =>
+    return .mkApp (loc m) fn [x]
+  | .fn m q`Core.safeneg_expr, [tpa, xa] =>
     let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let fn ← translateFn ty q`Core.safeneg_expr
     let x ← translateExpr p bindings xa
-    return .mkApp () fn [x]
+    return .mkApp (loc m) fn [x]
   -- Strings
-  | .fn _ q`Core.str_concat, [xa, ya] =>
+  | .fn m q`Core.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
-     return .mkApp () Core.strConcatOp [x, y]
-  | .fn _ q`Core.str_substr, [xa, ia, na] =>
+     return .mkApp (loc m) Core.strConcatOp [x, y]
+  | .fn m q`Core.str_substr, [xa, ia, na] =>
      let x ← translateExpr p bindings xa
      let i ← translateExpr p bindings ia
      let n ← translateExpr p bindings na
-     return .mkApp () Core.strSubstrOp [x, i, n]
+     return .mkApp (loc m) Core.strSubstrOp [x, i, n]
   | .fn _ q`Core.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
      match x with
-     | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
+     | .fvar m' ident ty => return .fvar m' (Core.CoreIdent.mkOld ident.name) ty
      | _ => TransM.error s!"old: expected an identifier, got {x}"
-  | .fn _ q`Core.map_get, [_ktp, _vtp, ma, ia] =>
+  | .fn m q`Core.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapSelectOp, but specialized
      let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Select) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
-     let m ← translateExpr p bindings ma
+     let mv ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
-     return .mkApp () fn [m, i]
-  | .fn _ q`Core.map_set, [_ktp, _vtp, ma, ia, xa] =>
+     return .mkApp (loc m) fn [mv, i]
+  | .fn m q`Core.map_set, [_ktp, _vtp, ma, ia, xa] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Core.mapUpdateOp, but specialized
      let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Update) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
-     let m ← translateExpr p bindings ma
+     let mv ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
-     return .mkApp () fn [m, i, x]
+     return .mkApp (loc m) fn [mv, i, x]
   -- Seq operations
   -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
-  | .fn _ q`Core.seq_length, [_atp, sa] =>
+  | .fn m q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Length)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int]))
      let s ← translateExpr p bindings sa
-     return .mkApp () fn [s]
-  | .fn _ q`Core.seq_select, [_atp, sa, ia] =>
+     return .mkApp (loc m) fn [s]
+  | .fn m q`Core.seq_select, [_atp, sa, ia] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Select)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety]))
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
-     return .mkApp () fn [s, i]
-  | .fn _ q`Core.seq_append, [_atp, s1a, s2a] =>
+     return .mkApp (loc m) fn [s, i]
+  | .fn m q`Core.seq_append, [_atp, s1a, s2a] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Append)
@@ -937,16 +948,16 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
            [Core.seqTy ety, Core.seqTy ety]))
      let s1 ← translateExpr p bindings s1a
      let s2 ← translateExpr p bindings s2a
-     return .mkApp () fn [s1, s2]
-  | .fn _ q`Core.seq_build, [_atp, sa, va] =>
+     return .mkApp (loc m) fn [s1, s2]
+  | .fn m q`Core.seq_build, [_atp, sa, va] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Build)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
-     return .mkApp () fn [s, v]
-  | .fn _ q`Core.seq_update, [_atp, sa, ia, va] =>
+     return .mkApp (loc m) fn [s, v]
+  | .fn m q`Core.seq_update, [_atp, sa, ia, va] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Update)
@@ -955,16 +966,16 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      let v ← translateExpr p bindings va
-     return .mkApp () fn [s, i, v]
-  | .fn _ q`Core.seq_contains, [_atp, sa, va] =>
+     return .mkApp (loc m) fn [s, i, v]
+  | .fn m q`Core.seq_contains, [_atp, sa, va] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Contains)
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool]))
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
-     return .mkApp () fn [s, v]
-  | .fn _ q`Core.seq_take, [_atp, sa, na] =>
+     return .mkApp (loc m) fn [s, v]
+  | .fn m q`Core.seq_take, [_atp, sa, na] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Take)
@@ -972,8 +983,8 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
            [.int, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
-     return .mkApp () fn [s, n]
-  | .fn _ q`Core.seq_drop, [_atp, sa, na] =>
+     return .mkApp (loc m) fn [s, n]
+  | .fn m q`Core.seq_drop, [_atp, sa, na] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Drop)
@@ -981,15 +992,15 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
            [.int, Core.seqTy ety]))
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
-     return .mkApp () fn [s, n]
+     return .mkApp (loc m) fn [s, n]
   -- Lambda abstraction
   | .fn _ q`Core.lambda, [_, xsa, ba] =>
     translateLambda p bindings xsa ba
   -- Expression application: (f)(x)
-  | .fn _ q`Core.apply_expr, [_, _, fa, xa] => do
+  | .fn m q`Core.apply_expr, [_, _, fa, xa] => do
     let f ← translateExpr p bindings fa
     let x ← translateExpr p bindings xa
-    return .app () f x
+    return .app (loc m) f x
   -- Quantifiers
   | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
@@ -1000,19 +1011,19 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.existsT, [xsa, tsa, ba] =>
     translateQuantifier .exist p bindings xsa (.some tsa) ba
   -- Binary function applications (monomorphic)
-  | .fn _ fni, [xa, ya] =>
+  | .fn m fni, [xa, ya] =>
     let fn ← translateFn .none fni
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-    return .mkApp () fn [x, y]
-  | .fn _ q`Core.re_loop, [xa, ya, za] =>
+    return .mkApp (loc m) fn [x, y]
+  | .fn m q`Core.re_loop, [xa, ya, za] =>
     let fn ← translateFn .none q`Core.re_loop
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     let z ← translateExpr p bindings za
-    return .mkApp () fn [x, y, z]
+    return .mkApp (loc m) fn [x, y, z]
   -- Binary function applications (polymorphic)
-  | .fn _ fni, [tpa, xa, ya] =>
+  | .fn m fni, [tpa, xa, ya] =>
     match fni with
     | q`Core.add_expr
     | q`Core.sub_expr
@@ -1053,21 +1064,21 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
         let fn ← translateFn (.some ty) fni
         let x ← translateExpr p bindings xa
         let y ← translateExpr p bindings ya
-        return .mkApp () fn [x, y]
+        return .mkApp (loc m) fn [x, y]
     | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
-  | .bvar _ i, argsa => do
+  | .bvar m i, argsa => do
     if i < bindings.boundVars.size then
       let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
       match argsa with
       | [] =>
         match expr with
-        | .bvar m _ => return .bvar m i
+        | .bvar _ _ => return .bvar (loc m) i
         | _ => return expr
       | _ =>
         let args ← translateExprs p bindings argsa.toArray
-        return .mkApp () expr args.toList
+        return .mkApp (loc m) expr args.toList
     else
       -- Bound variable index exceeds boundVars - check if it's a local function
       let funcIndex := i - bindings.boundVars.size
@@ -1079,18 +1090,18 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
           | [] => return func.opExpr
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
-            return .mkApp () func.opExpr args.toList
+            return .mkApp (loc m) func.opExpr args.toList
         | .recFuncBlock funcs _md =>
           let func ← resolveRecFunc funcs funcIndex
           match argsa with
           | [] => return func.opExpr
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
-            return .mkApp () func.opExpr args.toList
+            return .mkApp (loc m) func.opExpr args.toList
         | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
       else
         TransM.error s!"translateExpr out-of-range bound variable: {i}"
-  | .fvar _ i, [] =>
+  | .fvar m i, [] =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     let ty? ← match p.globalContext.kindOf! i with
@@ -1099,24 +1110,24 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     match decl with
     | .func func _md =>
       -- 0-ary Function
-      return (.op () func.name ty?)
+      return (.op (loc m) func.name ty?)
     | .recFuncBlock funcs _md =>
       let func ← resolveRecFunc funcs i
-      return (.op () func.name ty?)
+      return (.op (loc m) func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
-  | .fvar _ i, argsa =>
+  | .fvar m i, argsa =>
     -- Call of a function declared/defined in Core.
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     match decl with
     | .func func _md =>
       let args ← translateExprs p bindings argsa.toArray
-      return .mkApp () func.opExpr args.toList
+      return .mkApp (loc m) func.opExpr args.toList
     | .recFuncBlock funcs _md =>
       let func ← resolveRecFunc funcs i
       let args ← translateExprs p bindings argsa.toArray
-      return .mkApp () func.opExpr args.toList
+      return .mkApp (loc m) func.opExpr args.toList
     | _ =>
      TransM.error s!"translateExpr unimplemented fvar decl: {format decl} \nargs:{repr argsa}"
   | op, args =>
@@ -1180,7 +1191,7 @@ def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBi
     return ((s :: stmts), bindings)
 
 def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
-    (md : MetaData Core.Expression):
+    (md : MetaData Core.Expression) (sr : SourceRange):
   TransM ((List Core.Statement) × TransBindings) := do
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
@@ -1189,14 +1200,14 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
     let (stmts, bindings) ← initVarStmts tpids bindings md
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
-                      return ((LExpr.fvar () id (ty.toMonoType h)): LExpr Core.CoreLParams.mono)
+                      return ((LExpr.fvar sr id (ty.toMonoType h)): LExpr Core.CoreLParams.mono)
                     else
                       TransM.error s!"translateVarStatement requires {id} to have a monomorphic type, but it has type {ty}")
     let bbindings := bindings.boundVars ++ newVars
     return (stmts, { bindings with boundVars := bbindings })
 
 def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg)
-    (md : MetaData Core.Expression):
+    (md : MetaData Core.Expression) (sr : SourceRange):
   TransM ((List Core.Statement) × TransBindings) := do
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
@@ -1205,7 +1216,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let lhs ← translateIdent Core.CoreIdent args[1]!
     let val ← translateExpr p bindings args[2]!
     let ty := (.forAll [] mty)
-    let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar () lhs mty
+    let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar sr lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty (.det val) md], { bindings with boundVars := bbindings })
 
@@ -1243,7 +1254,7 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
       let args ← checkOpArg specElt q`Core.requires_spec 3
       let _l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
       let e ← translateExpr p bindings args[2]!
-      return (acc ++ [⟨e, ()⟩], count + 1)
+      return (acc ++ [⟨e, ExprSourceLoc.ofUriRange (← getUri) op.ann⟩], count + 1)
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 
@@ -1254,9 +1265,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
 
   match op.name, op.args with
   | q`Core.varStatement, declsa =>
-    translateVarStatement bindings declsa (← getOpMetaData op)
+    translateVarStatement bindings declsa (← getOpMetaData op) op.ann
   | q`Core.initStatement, args =>
-    translateInitStatement p bindings args (← getOpMetaData op)
+    translateInitStatement p bindings args (← getOpMetaData op) op.ann
   | q`Core.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea
@@ -1351,8 +1362,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
-    let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
-    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+    let funcBinding : LExpr Core.CoreLParams.mono := .op op.ann name (some funcType)
+    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar op.ann v ty))).toArray
 
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
     -- Translate preconditions
@@ -1561,9 +1572,9 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let pname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let (sig, ret) ← translateBindingsPartitioned bindings op.args[2]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar op.ann v ty))).toArray
   let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
-    (fun (v, ty) => (LExpr.fvar () v ty))
+    (fun (v, ty) => (LExpr.fvar op.ann v ty))
   let out_bindings := out_bindings_only.toArray
   let origBindings := bindings
   let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
@@ -1674,7 +1685,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar op.ann v ty))).toArray
   let orig_bbindings := bindings.boundVars
   let bbindings := bindings.boundVars ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
@@ -1721,12 +1732,12 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
   let typeArgs ← translateTypeArgs fnOp.args[1]!
   let (sig, casesIdx) ← translateBindingsWithCases preBindings fnOp.args[2]!
   let ret ← translateLMonoTy preBindings fnOp.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar fnOp.ann v ty))).toArray
   -- Build boundVars matching the DDM elaborator's typing context.
   -- @[declareFn] accumulates sibling bvars across NewlineSepBy children.
   -- Self-reference goes through fvar (from @[preRegisterFunctions]), not bvar.
   let tyArgPlaceholders := typeArgs.map fun (ta : TyIdentifier) =>
-    LExpr.op () (ta : Core.CoreIdent) .none
+    LExpr.op fnOp.ann (ta : Core.CoreIdent) .none
   let bbindings := preBindings.boundVars ++ siblingExprs ++ tyArgPlaceholders ++ in_bindings
   let bodyBindings := { preBindings with boundVars := bbindings }
   let casesAttr := match casesIdx with

@@ -20,6 +20,9 @@ open Imperative
 open Std (ToFormat Format format)
 open Std.Format
 
+-- nosourcerange-file: typeclass defaults and operator constructors use ExprSourceLoc.none
+-- because they build expressions programmatically, not from parsed source.
+
 public section
 
 ---------------------------------------------------------------------
@@ -100,7 +103,8 @@ theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) 
 def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
   args.filterMap fun
     | .inArg e => some e
-    | .inoutArg id => some (Lambda.LExpr.fvar () id none)
+    -- Synthesized variable reference from an identifier; no source location available
+    | .inoutArg id => some (Lambda.LExpr.fvar ExprSourceLoc.none id none)
     | .outArg _ => none
 
 end CallArg

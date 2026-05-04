@@ -83,6 +83,11 @@ through `to_core` to test the nondet loop elimination path.
 
 open Strata in
 open Strata.C_Simp in
+private def csimpOpExpr (op : Core.CoreOp) : Expression.Expr :=
+  .op () op.toString none
+
+open Strata in
+open Strata.C_Simp in
 private def nondetLoopProgram : C_Simp.Program :=
   let md : Imperative.MetaData Expression := .empty
   let i : Expression.Ident := ⟨"i", ()⟩
@@ -92,11 +97,11 @@ private def nondetLoopProgram : C_Simp.Program :=
   let zero : Expression.Expr := .intConst () 0
   let one : Expression.Expr := .intConst () 1
   let intTy : Lambda.LTy := .forAll [] (.tcons "int" [])
-  let iLeN : Expression.Expr := .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Le⟩)) iExpr) nExpr
-  let iAddOne : Expression.Expr := .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Add⟩)) iExpr) one
+  let iLeN : Expression.Expr := .app () (.app () (csimpOpExpr (.numeric ⟨.int, .Le⟩)) iExpr) nExpr
+  let iAddOne : Expression.Expr := .app () (.app () (csimpOpExpr (.numeric ⟨.int, .Add⟩)) iExpr) one
   { funcs := [{
     name := ⟨"nondetLoop", ()⟩,
-    pre := .app () (.app () (Core.coreOpExpr (.numeric ⟨.int, .Ge⟩)) nExpr) zero,
+    pre := .app () (.app () (csimpOpExpr (.numeric ⟨.int, .Ge⟩)) nExpr) zero,
     post := .true (),
     ret_ty := .tcons "int" [],
     inputs := ListMap.ofList [(n, .tcons "int" [])],

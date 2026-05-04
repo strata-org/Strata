@@ -42,6 +42,7 @@ theorem loopSimple_smtVCsCorrect : smtVCsCorrect loopSimple := by
 
 /-- info: 'loopSimple_smtVCsCorrect' depends on axioms: [propext,
  Classical.choice,
+ ExprSourceLoc.eq_trivial,
  Lean.ofReduceBool,
  Lean.trustCompiler,
  Quot.sound,

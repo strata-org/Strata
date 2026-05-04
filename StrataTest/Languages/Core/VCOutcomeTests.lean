@@ -205,7 +205,7 @@ private def unknownResult : Result := .unknown (some [])
 
 /-- A dummy obligation for testing phase validation. -/
 private def dummyObligation : Imperative.ProofObligation Core.Expression :=
-  { label := "test", property := .assert, assumptions := [], obligation := .true (), metadata := {} }
+  { label := "test", property := .assert, assumptions := [], obligation := Core.true, metadata := {} }
 
 /-- info: false -/
 #guard_msgs in #eval needsValidation [preservingPhase] dummyObligation
@@ -258,14 +258,14 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[.assumption "callElimAssume_post" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "callElimAssume_post" Core.true]],
+    obligation := Core.true, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[.assumption "precond_x_positive" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "precond_x_positive" Core.true]],
+    obligation := Core.true, metadata := {} }
 
 -- Combined Core phases: clean obligation preserves sat
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] cleanObligation).1 == satResult

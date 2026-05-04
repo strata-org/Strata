@@ -6,6 +6,7 @@
 
 import Strata.MetaVerifier
 import Strata.Languages.Boole.Verify
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 open Strata
 open Lambda
@@ -82,7 +83,7 @@ spec {
 
 private def mkExprApp (f : Core.Expression.Expr) (args : List Core.Expression.Expr) :
     Core.Expression.Expr :=
-  Lambda.LExpr.mkApp () f args
+  Lambda.LExpr.mkApp ExprSourceLoc.none f args
 
 private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.Expr := do
   let booleProg <- (Strata.Boole.getProgram quantifiedMapExtensionalityCaptureSeed).toOption
@@ -99,10 +100,10 @@ private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.
 
 private def expectedQuantifiedMapExtensionalityCapture : Core.Expression.Expr :=
   let mapIntInt := Core.mapTy .int .int
-  let lhs := mkExprApp Core.mapSelectOp [.bvar () 2, .bvar () 0]
-  let rhs := mkExprApp Core.mapSelectOp [.bvar () 1, .bvar () 0]
-  .quant () .all "" (some mapIntInt) (.bvar () 0)
-    (.quant () .all "" (some mapIntInt) (.bvar () 0)
-      (.quant () .all "" (some .int) lhs (.eq () lhs rhs)))
+  let lhs := mkExprApp Core.mapSelectOp [.bvar ExprSourceLoc.none 2, .bvar ExprSourceLoc.none 0]
+  let rhs := mkExprApp Core.mapSelectOp [.bvar ExprSourceLoc.none 1, .bvar ExprSourceLoc.none 0]
+  .quant ExprSourceLoc.none .all "" (some mapIntInt) (.bvar ExprSourceLoc.none 0)
+    (.quant ExprSourceLoc.none .all "" (some mapIntInt) (.bvar ExprSourceLoc.none 0)
+      (.quant ExprSourceLoc.none .all "" (some .int) lhs (.eq ExprSourceLoc.none lhs rhs)))
 
 #guard loweredQuantifiedMapExtensionalityCapture? == some expectedQuantifiedMapExtensionalityCapture

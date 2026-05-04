@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.DDMTransform.Translate
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 -- Tests for Core.Program → CST Conversion
 -- This file tests one-direction conversion: AST → CST using the old
@@ -645,7 +646,7 @@ private def formatCore (p : Core.Program) : IO Unit :=
 private def lambdaIdentityPgm : Core.Program := { decls := [
   .func { name := "intID", typeArgs := [], inputs := [],
           output := .arrow .int .int,
-          body := some (.abs () "" (.some .int) (.bvar () 0)) } .empty
+          body := some (.abs ExprSourceLoc.none "" (.some .int) (.bvar ExprSourceLoc.none 0)) } .empty
 ]}
 
 /--
@@ -661,8 +662,8 @@ function intID () : int -> int {
 private def lambdaNestedPgm : Core.Program := { decls := [
   .func { name := "constFn", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
-          body := some (.abs () "" (.some .int)
-            (.abs () "" (.some .int) (.bvar () 1))) } .empty
+          body := some (.abs ExprSourceLoc.none "" (.some .int)
+            (.abs ExprSourceLoc.none "" (.some .int) (.bvar ExprSourceLoc.none 1))) } .empty
 ]}
 
 /--
@@ -678,7 +679,7 @@ function constFn () : int -> int -> int {
 private def lambdaNamedPgm : Core.Program := { decls := [
   .func { name := "namedLam", typeArgs := [], inputs := [],
           output := .arrow .int .int,
-          body := some (.abs () "x" (.some .int) (.bvar () 0)) } .empty
+          body := some (.abs ExprSourceLoc.none "x" (.some .int) (.bvar ExprSourceLoc.none 0)) } .empty
 ]}
 
 /--
@@ -695,7 +696,7 @@ function namedLam () : int -> int {
 private def lambdaAppliedPgm : Core.Program := { decls := [
   .func { name := "test", typeArgs := [], inputs := [],
           output := .int,
-          body := some (.app () (.abs () "x" (.some .int) (.bvar () 0)) (.intConst () 5)) } .empty
+          body := some (.app ExprSourceLoc.none (.abs ExprSourceLoc.none "x" (.some .int) (.bvar ExprSourceLoc.none 0)) (.intConst ExprSourceLoc.none 5)) } .empty
 ]}
 
 /--
@@ -712,9 +713,9 @@ function test () : int {
 private def lambdaMultiBindPgm : Core.Program := { decls := [
   .func { name := "add", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
-          body := some (.abs () "x" (.some .int)
-            (.abs () "y" (.some .int)
-              (.app () (.app () Core.intAddOp (.bvar () 1)) (.bvar () 0)))) } .empty
+          body := some (.abs ExprSourceLoc.none "x" (.some .int)
+            (.abs ExprSourceLoc.none "y" (.some .int)
+              (.app ExprSourceLoc.none (.app ExprSourceLoc.none Core.intAddOp (.bvar ExprSourceLoc.none 1)) (.bvar ExprSourceLoc.none 0)))) } .empty
 ]}
 
 /--
@@ -731,9 +732,9 @@ function add () : int -> int -> int {
 private def lambdaHigherOrderPgm : Core.Program := { decls := [
   .func { name := "applyFn", typeArgs := [], inputs := [],
           output := .arrow (.arrow .int .int) (.arrow .int .int),
-          body := some (.abs () "f" (.some (.arrow .int .int))
-            (.abs () "x" (.some .int)
-              (.app () (.bvar () 1) (.bvar () 0)))) } .empty
+          body := some (.abs ExprSourceLoc.none "f" (.some (.arrow .int .int))
+            (.abs ExprSourceLoc.none "x" (.some .int)
+              (.app ExprSourceLoc.none (.bvar ExprSourceLoc.none 1) (.bvar ExprSourceLoc.none 0)))) } .empty
 ]}
 
 /-- info: program Core;

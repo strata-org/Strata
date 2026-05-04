@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Function
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 /-! ## Tests for Core Function -/
 
@@ -20,7 +21,7 @@ open LTy.Syntax LExpr.SyntaxMono
                         typeArgs := ["a", "b"],
                         inputs := [(⟨"w", ()⟩, mty[int]), (⟨"x", ()⟩, mty[%a]), (⟨"y", ()⟩, mty[%b]), (⟨"z", ()⟩, mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar () (⟨"x", ()⟩) none) } : Function)
+                        body := some (LExpr.fvar ExprSourceLoc.none (⟨"x", ()⟩) none) } : Function)
          return format type
 
 end Core

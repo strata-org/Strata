@@ -17,19 +17,26 @@ public section
 
 namespace Core
 
-/-- expressions that can't be reduced when evaluating -/
+-- nosourcerange-file: proof terms must match synthesized expressions that use ExprSourceLoc.none
+-- (canonical forms in semantic definitions represent abstract values, not parsed source terms).
+
+/-- Expressions that can't be reduced when evaluating.
+    These are canonical forms used in semantic definitions; they carry no source location
+    because they represent abstract values, not parsed source terms. -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const () _)
-  | bvar  :  Value (.bvar () _)
-  | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _ _)
+  | const :  Value (.const ExprSourceLoc.none _)
+  | bvar  :  Value (.bvar ExprSourceLoc.none _)
+  | op    :  Value (.op ExprSourceLoc.none _ _)
+  | abs   :  Value (.abs ExprSourceLoc.none _ _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
+-- Semantic typeclass instances construct canonical expressions with no source location.
+
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
+  mkFvar := (.fvar ExprSourceLoc.none · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -39,18 +46,18 @@ instance : HasSubstFvar Core.Expression where
   substFvars := Lambda.LExpr.substFvars
 
 instance : HasIntOrder Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
-  zero        := .intConst () 0
+  eq    e1 e2 := .eq ExprSourceLoc.none e1 e2
+  lt    e1 e2 := .app ExprSourceLoc.none (.app ExprSourceLoc.none Core.intLtOp e1) e2
+  zero        := .intConst ExprSourceLoc.none 0
   intTy       := .forAll [] (.tcons "int" [])
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
 
 @[expose, match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+def Core.true : Core.Expression.Expr := .boolConst ExprSourceLoc.none Bool.true
 @[expose, match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+def Core.false : Core.Expression.Expr := .boolConst ExprSourceLoc.none Bool.false
 
 instance : HasBool Core.Expression where
   tt := Core.true
@@ -62,7 +69,7 @@ instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  | e => Lambda.LExpr.app ExprSourceLoc.none (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
 @[expose] abbrev CoreEval := SemanticEval Expression
 @[expose] abbrev CoreStore := SemanticStore Expression
@@ -187,12 +194,12 @@ def updatedStates
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
-/-- The evaluator handles old expressions correctly
--- It should specify the exact expression form that would map to the old store
--- This can be used to implement more general two-state functions, as in Dafny
--- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
--- where this condition will be asserted at procedures utilizing those two-state functions
--/
+/-- The evaluator handles old expressions correctly.
+It should specify the exact expression form that would map to the old store.
+This can be used to implement more general two-state functions, as in Dafny
+https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
+where this condition will be asserted at procedures utilizing those two-state functions.
+Synthesized `old` variable references carry no source location. -/
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
@@ -200,10 +207,10 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+            δ σ (.fvar ExprSourceLoc.none (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
           -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ v))
+            δ σ (.fvar ExprSourceLoc.none (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 

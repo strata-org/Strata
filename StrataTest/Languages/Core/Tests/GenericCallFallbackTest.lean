@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.DDMTransform.ASTtoCST
+-- nosourcerange-file: test fixtures build Core expressions directly, no source locations
 
 /-! Tests for the generic call fallback in ASTtoCST.
 
@@ -23,16 +24,16 @@ namespace Strata.Test.GenericCallFallback
 open Strata Core Lambda
 
 private def mkOp (name : String) : Core.Expression.Expr :=
-  LExpr.op () ⟨name, ()⟩ none
+  LExpr.op ExprSourceLoc.none ⟨name, ()⟩ none
 
 private def mkFvar (name : String) : Core.Expression.Expr :=
-  LExpr.fvar () ⟨name, ()⟩ none
+  LExpr.fvar ExprSourceLoc.none ⟨name, ()⟩ none
 
 private def mkApp (fn arg : Core.Expression.Expr) : Core.Expression.Expr :=
-  LExpr.app () fn arg
+  LExpr.app ExprSourceLoc.none fn arg
 
 private def mkStrConst (s : String) : Core.Expression.Expr :=
-  LExpr.const () (.strConst s)
+  LExpr.const ExprSourceLoc.none (.strConst s)
 
 private def mkCall1 (opName : String) (a : Core.Expression.Expr) : Core.Expression.Expr :=
   mkApp (mkOp opName) a

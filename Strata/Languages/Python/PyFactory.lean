@@ -11,6 +11,9 @@ public import Strata.Languages.Python.Regex.ReToCore
 namespace Strata
 namespace Python
 
+-- nosourcerange-file: expressions synthesized by the Python factory (regex patterns, error
+-- constructors) are generated programmatically, not parsed from source.
+
 public section
 
 -------------------------------------------------------------------------------
@@ -80,10 +83,10 @@ private def mkModeBoolFunc (name : String) (mode : MatchMode) :
       attr := #[.evalIfCanonical 0],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst () pattern, sExpr] =>
+          | [LExpr.strConst _ pattern, sExpr] =>
             let (regexExpr, maybe_err) := pythonRegexToCore pattern mode
             match maybe_err with
-            | none => .some (LExpr.mkApp () (.op () "Str.InRegEx" (some mty[string → (regex → bool)])) [sExpr, regexExpr])
+            | none => .some (LExpr.mkApp ExprSourceLoc.none (.op ExprSourceLoc.none "Str.InRegEx" (some mty[string → (regex → bool)])) [sExpr, regexExpr])
             | some _ => .none
           | _ => .none)
       }
@@ -103,16 +106,16 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
       attr := #[.evalIfCanonical 0],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst () s] =>
+          | [LExpr.strConst _ s] =>
             let (_, maybe_err) := pythonRegexToCore s .fullmatch -- mode irrelevant: errors come from parseTop before mode-specific compilation
             match maybe_err with
             | none =>
-              .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])
+              .some (LExpr.mkApp ExprSourceLoc.none (.op ExprSourceLoc.none "NoError" (some mty[Error])) [])
             | some (ParseError.unimplemented ..) =>
-              .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])
+              .some (LExpr.mkApp ExprSourceLoc.none (.op ExprSourceLoc.none "NoError" (some mty[Error])) [])
             | some (ParseError.patternError msg ..) =>
-              .some (LExpr.mkApp () (.op () "RePatternError" (some mty[string → Error]))
-                  [.strConst () (toString msg)])
+              .some (LExpr.mkApp ExprSourceLoc.none (.op ExprSourceLoc.none "RePatternError" (some mty[string → Error]))
+                  [.strConst ExprSourceLoc.none (toString msg)])
           | _ => .none)
       }
 

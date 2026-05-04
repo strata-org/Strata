@@ -29,6 +29,8 @@ The pass walks procedure bodies via `anfEncodeProgram`, hoisting duplicated
 subexpressions into `var` declarations prepended to the body.
 -/
 
+-- nosourcerange-file: ANF-synthesized fresh variables have no source location
+
 public section
 
 namespace Core.ANFEncoder
@@ -199,7 +201,7 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
     let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
     let freshTy := dup.typeOf
-    let freshVar : Expression.Expr := .fvar () freshName freshTy
+    let freshVar : Expression.Expr := .fvar ExprSourceLoc.none freshName freshTy
     let ty : Expression.Ty := match freshTy with
       | some mty => LTy.forAll [] mty
       | none => LTy.forAll ["α"] (.ftvar "α")

@@ -16,6 +16,8 @@ public section
 
 /-! # Procedure Body Verification Correctness Proof -/
 
+-- nosourcerange-file: proof terms must match synthesized expressions that use ExprSourceLoc.none.
+
 namespace ProcBodyVerifyCorrect
 
 open Core Core.ProcBodyVerify Imperative Lambda Transform Core.WF
@@ -300,7 +302,8 @@ private theorem PrefixStepsOK_nondet_init_map
         exact h_nodup.1 (heq ▸ List.mem_map_of_mem (f := Prod.fst) hmem)
 
 /-- For a deterministic init `init oldG ty (.det (fvar id))`, if `id` has a value
-    in the pre-state, `oldG` is none, and `oldG ≠ id`, then it steps correctly. -/
+    in the pre-state, `oldG` is none, and `oldG ≠ id`, then it steps correctly.
+    The `fvar` uses `ExprSourceLoc.none` to match the synthesized init from `ProcBodyVerify`. -/
 private theorem PrefixStepsOK_det_init_cons
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (id : Expression.Ident) (oldG : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
@@ -312,21 +315,21 @@ private theorem PrefixStepsOK_det_init_cons
     (h_id_eq_old : (prefixInitEnv rest ρ).store id = (prefixInitEnv rest ρ).store oldG)
     (h_ne : oldG ≠ id) :
     PrefixStepsOK π φ
-      (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ := by
+      (Statement.init oldG ty (.det (LExpr.fvar ExprSourceLoc.none id none)) #[] :: rest) ρ := by
   constructor
   · exact h_rest
   · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
-    have h_none : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store oldG = none :=
+    have h_none : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar ExprSourceLoc.none id none)) #[] :: rest) ρ).store oldG = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
-    have h_id_val : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store id =
+    have h_id_val : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar ExprSourceLoc.none id none)) #[] :: rest) ρ).store id =
         (prefixInitEnv rest ρ).store id := by
       rw [prefixInitEnv_store_other _ _ _ id oldG rfl h_ne]
     rw [Option.isSome_iff_exists] at h_old_some
     obtain ⟨v, hv⟩ := h_old_some
-    have h_getFvar : HasFvar.getFvar (LExpr.fvar () id none : Expression.Expr) = some id := by
+    have h_getFvar : HasFvar.getFvar (LExpr.fvar ExprSourceLoc.none id none : Expression.Expr) = some id := by
       simp [HasFvar.getFvar]
-    have h_eval : ρ.eval (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store
-        (LExpr.fvar () id none) = some v := by
+    have h_eval : ρ.eval (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar ExprSourceLoc.none id none)) #[] :: rest) ρ).store
+        (LExpr.fvar ExprSourceLoc.none id none) = some v := by
       rw [h_wfVar _ _ _ h_getFvar, h_id_val, h_id_eq_old, hv]
     exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
@@ -351,7 +354,7 @@ private theorem PrefixStepsOK_det_init_map
     : PrefixStepsOK π φ
         (entries.map fun (id, ty) =>
           Statement.init (CoreIdent.mkOld id.name) (Lambda.LTy.forAll [] ty)
-            (.det (LExpr.fvar () id none)) #[]) ρ := by
+            (.det (LExpr.fvar ExprSourceLoc.none id none)) #[]) ρ := by
   induction entries with
   | nil => exact trivial
   | cons e rest ih =>
@@ -480,7 +483,7 @@ theorem procToVerifyStmt_structure
     Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]
   let oldInoutInits := proc.header.getInoutParams.toList.map fun (id, ty) =>
     Statement.init (CoreIdent.mkOld id.name) (Lambda.LTy.forAll [] ty)
-      (.det (LExpr.fvar () id none)) #[]
+      (.det (LExpr.fvar ExprSourceLoc.none id none)) #[]
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
   refine ⟨prefixStmts, h_eq.symm, ?_, ?_⟩
