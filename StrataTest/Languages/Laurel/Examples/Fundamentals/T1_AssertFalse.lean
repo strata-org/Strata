@@ -13,7 +13,9 @@ namespace Strata
 namespace Laurel
 
 def program := r"
-procedure foo() {
+procedure foo()
+  opaque
+{
     assert true;
     assert false;
 //  ^^^^^^^^^^^^ error: assertion does not hold
@@ -21,7 +23,9 @@ procedure foo() {
 //  ^^^^^^^^^^^^ error: assertion does not hold
 };
 
-procedure bar() {
+procedure bar()
+  opaque
+{
     assume false;
     assert false
 };

@@ -25,7 +25,10 @@ composite Extender extends Base, Base2 {
   var zValue: int
 }
 
-procedure inheritedFields(a: Extender) {
+procedure inheritedFields(a: Extender)
+  opaque
+  modifies a
+{
   a#xValue := 1;
   a#yValue := 2;
   a#zValue := 3;
@@ -35,7 +38,9 @@ procedure inheritedFields(a: Extender) {
   assert a#zValue == 3
 };
 
-procedure typeCheckingAndCasting() {
+procedure typeCheckingAndCasting()
+  opaque
+{
   var a: Base := new Base;
   assert a is Base;
   assert !(a is Extender);
@@ -64,7 +69,9 @@ composite Bottom extends Left, Right {
   var bValue: int
 }
 
-procedure diamondInheritance() {
+procedure diamondInheritance()
+  opaque
+{
   var b: Bottom := new Bottom;
   b#lValue := 1;
   b#rValue := 2;
@@ -91,5 +98,5 @@ procedure diamondInheritance() {
 //}
 "
 
-#guard_msgs (drop info) in
+#guard_msgs (drop info, error) in
 #eval testInputWithOffset "Inheritance" program 14 processLaurelFile

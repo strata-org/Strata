@@ -122,11 +122,11 @@ inductive ResolvedNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
-  | unresolved
+  | unresolved (referenceSource: Option FileRange)
   deriving Repr
 
 instance : Inhabited ResolvedNode where
-  default := ResolvedNode.unresolved
+  default := ResolvedNode.unresolved none
 
 /-- Return the constructor tag of a `ResolvedNode`. -/
 def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
@@ -142,7 +142,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
-  | .unresolved           => .unresolved
+  | .unresolved _          => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
@@ -151,10 +151,8 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
- | .unresolved =>
-    -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", none ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, none ⟩
+ | .unresolved source => ⟨ .Unknown, source ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; default
 
 /-! ## Resolution result -/
 
@@ -175,7 +173,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
       | .parameter _ => true
       | .datatypeConstructor _ _ => true
       | .constant _ => true
-      | .unresolved => true -- functions calls are more permissive, so true avoids possibly incorrect errors
+      | .unresolved _ => true -- functions calls are more permissive, so true avoids possibly incorrect errors
       | node =>
           dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
           false
@@ -225,18 +223,6 @@ private def freshId : ResolveM Nat := do
   set { s with nextId := id + 1 }
   return id
 
-/-- Register a definition: assign a fresh ID to the identifier and record it in scope with its ResolvedNode. -/
-def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
-  let resolutionName := overrideResolutionName.getD iden.text
-  let (name', uniqueId) ← match iden.uniqueId with
-    | some uid => pure (iden, uid)
-    | none =>
-      let id ← freshId
-      pure ({ iden with uniqueId := some (id) }, id)
-
-  modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node),
-                           currentScopeNames := s.currentScopeNames.insert resolutionName }
-  return name'
 
 /-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope.
     Inserts an `.unresolved` node so subsequent references still resolve without cascading errors. -/
@@ -245,9 +231,21 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
   if (← get).currentScopeNames.contains resolutionName then
     let diag := diagnosticFromSource iden.source s!"Duplicate definition '{resolutionName}' is already defined in this scope"
     modify fun s => { s with errors := s.errors.push diag }
-    defineName iden .unresolved overrideResolutionName
+    defineName iden (.unresolved iden.source) overrideResolutionName
   else
     defineName iden node overrideResolutionName
+  where
+  defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+    let resolutionName := overrideResolutionName.getD iden.text
+    let (name', uniqueId) ← match iden.uniqueId with
+      | some uid => pure (iden, uid)
+      | none =>
+        let id ← freshId
+        pure ({ iden with uniqueId := some (id) }, id)
+
+    modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node),
+                             currentScopeNames := s.currentScopeNames.insert resolutionName }
+    return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
@@ -534,15 +532,19 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
-/-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
+/-- Resolve a procedure: resolve its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← defineName proc.name (.staticProcedure proc)
+  let procName' ← resolveRef proc.name
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    if !proc.isFunctional && body'.isTransparent then
+      let diag := diagnosticFromSource proc.name.source
+        s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
+      modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -554,12 +556,16 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
 def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let ty' ← resolveHighType field.type
   let qualifiedName := ownerName.text ++ "." ++ field.name.text
-  let name' ← defineName field.name (.field ownerName { field with type := ty' }) (some qualifiedName)
+  let resolved ← resolveRef qualifiedName
+  -- Keep the original field name text; only take the uniqueId from resolution.
+  -- resolveRef returns text = "Owner.field" (the qualified lookup key), but the
+  -- field's own name should stay unqualified.
+  let name' := { field.name with uniqueId := resolved.uniqueId }
   return { name := name', isMutable := field.isMutable, type := ty' }
 
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← defineName proc.name (.instanceProcedure typeName proc)
+  let procName' ← resolveRef proc.name
   withScope do
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
@@ -568,6 +574,10 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    if !proc.isFunctional && body'.isTransparent then
+      let diag := diagnosticFromSource proc.name.source
+        s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
+      modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
@@ -580,7 +590,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
 def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
-    let ctName' ← defineName ct.name (.compositeType ct)
+    let ctName' ← resolveRef ct.name
     let extending' ← ct.extending.mapM (resolveRef · none (expected := #[.compositeType]))
     let fields' ← ct.fields.mapM (resolveField ctName')
     -- Build per-type scope BEFORE resolving instance procedures, so that
@@ -604,40 +614,41 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
-    let ctName' ← defineName ct.name (.constrainedType ct)
+    let ctName' ← resolveRef ct.name
     let base' ← resolveHighType ct.base
     -- The valueName (e.g. `x` in `constrained nat = x: int where x >= 0`) must be
     -- in scope when resolving the constraint and witness expressions.
     let (valueName', constraint', witness') ← withScope do
-      let valueName' ← defineName ct.valueName (.quantifierVar ct.valueName base')
+      let valueName' ← defineNameCheckDup ct.valueName (.quantifierVar ct.valueName base')
       let constraint' ← resolveStmtExpr ct.constraint
       let witness' ← resolveStmtExpr ct.witness
       return (valueName', constraint', witness')
     return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
-    let dtName' ← defineName dt.name (.datatypeDefinition dt)
+    let dtName' ← resolveRef dt.name
     let ctors' ← dt.constructors.mapM fun ctor => do
-      let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
-      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
+      let ctorName' ← resolveRef ctor.name
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
-        let destructorId ← defineName p.name (.parameter p) (some (dt.destructorName p))
-        -- unsafeDestructorId
-        _ ← defineName p.name (.parameter p) (some (dt.unsafeDestructorName p))
+        let resolved ← resolveRef (dt.destructorName p)
+        -- Keep the original parameter name; only take the uniqueId from resolution.
+        -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
+        -- parameter's own name should stay unqualified.
+        let destructorId := { p.name with uniqueId := resolved.uniqueId }
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
-    let taName' ← defineName ta.name (.typeAlias { ta with target := target' })
+    let taName' ← resolveRef ta.name
     return .Alias { name := taName', target := target' }
 
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
   let init' ← c.initializer.mapM resolveStmtExpr
-  let name' ← defineName c.name (.constant c)
+  let name' ← resolveRef c.name
   return { name := name', type := ty', initializer := init' }
 
 /-! ## Phase 2: Build refToDef map from the resolved program -/
@@ -805,6 +816,7 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
+
 /-- A default ResolvedNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
 private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
@@ -822,17 +834,20 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       let _ ← defineNameCheckDup ct.name (.compositeType ct)
       for field in ct.fields do
         let qualifiedName := ct.name.text ++ "." ++ field.name.text
-        let _ ← defineNameCheckDup field.name placeholderNode (some qualifiedName)
+        let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
       for proc in ct.instanceProcedures do
-        let _ ← defineNameCheckDup proc.name placeholderNode
+        let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
     | .Constrained ct =>
       let _ ← defineNameCheckDup ct.name (.constrainedType ct)
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
+        _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
+        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineName p.name placeholderNode (some (dt.destructorName p))
+          let _ ← defineNameCheckDup p.name (.parameter p) (some (dt.destructorName p))
+          -- unsafeDestructorId
+          let _ ← defineNameCheckDup p.name (.parameter p) (some (dt.unsafeDestructorName p))
     | .Alias ta =>
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
   -- Pre-register constants

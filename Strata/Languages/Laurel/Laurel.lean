@@ -378,7 +378,7 @@ instance : Inhabited (AstNode Variable) where
   default := { val := .Local default, source := none }
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.Unknown, source := none }
+  default := { val := HighType.Unknown, source := some { file := .file "HighTypeMd default", range := default} }
 
 instance : Inhabited StmtExprMd where
   default := { val := default, source := none }

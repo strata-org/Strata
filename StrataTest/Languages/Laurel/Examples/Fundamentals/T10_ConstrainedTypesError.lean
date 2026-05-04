@@ -24,7 +24,9 @@ function badFunc(): nat { -1 };
 //       ^^^^^^^ error: constrained return types on functions are not yet supported
 
 // Caller of constrained function — body is inlined, caller sees actual value
-procedure callerGood() {
+procedure callerGood()
+  opaque
+{
   var x: int := goodFunc();
   assert x >= 0
 };

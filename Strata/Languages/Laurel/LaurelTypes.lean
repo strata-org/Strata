@@ -21,6 +21,18 @@ no inference is performed.
 
 namespace Strata.Laurel
 
+def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
+  match model.get callee with
+    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
+    | .parameter p => p.type
+    | .staticProcedure proc => match proc.outputs with
+      | [singleOutput] => singleOutput.type
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+    | .unresolved source => { val := HighType.Unknown, source := source }
+    | astNode =>
+      dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
+      default
+
 /--
 Compute the HighType of a StmtExpr given a type environment, type definitions, and procedure list.
 No inference is performed — all types are determined by annotations on parameters
@@ -43,17 +55,8 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
-  | .StaticCall callee _ => match model.get callee with
-    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
-    | .parameter p => p.type
-    | .staticProcedure proc => match proc.outputs with
-      | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
-    | .unresolved => { val := HighType.Unknown, source := none }
-    | astNode =>
-      dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
-      default
-  | .InstanceCall _ _ _ => default -- TODO: implement
+  | .StaticCall callee _ => getCallType source model callee
+  | .InstanceCall _ callee _ => getCallType source model callee
   -- Operators
   | .PrimitiveOp op args =>
       match args with
