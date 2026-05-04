@@ -123,7 +123,7 @@ type int := bool;
 #end
 
 /--
-error:  ❌ Type checking error.
+error: ❌ Type checking error.
 This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
