@@ -323,6 +323,7 @@ private def createUnreachableAssertObligations
       let propType := match md.getPropertyType with
         | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero
                     else if s == Imperative.MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else if s == Imperative.MetaData.outOfBoundsAccess then .outOfBoundsAccess
                     else .assert
         | _ => .assert
       (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))

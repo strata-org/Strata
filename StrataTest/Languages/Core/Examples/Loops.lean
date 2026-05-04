@@ -379,10 +379,10 @@ before_loop$_15:
 loop_entry$_1:
   assert [inv$_12]: x >= 0;
   assert [inv$_13]: x <= n;
-  assert [inv$_14]: n < re.none();
+  assert [inv$_14]: n < top;
 
 -- Errors encountered during conversion:
-Unsupported construct in lopToExpr: 0-ary op not found: top
+Unsupported construct in handleZeroaryOps: unknown operation, rendering as generic call: top
 Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;

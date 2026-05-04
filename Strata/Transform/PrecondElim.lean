@@ -63,8 +63,11 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-- Classify a function precondition into a property type for SARIF reporting.
     For functions with multiple preconditions (e.g., SafeSDiv has both div-by-zero
-    and overflow), the precondition index distinguishes them. -/
-private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : Option String :=
+    and overflow), the precondition index distinguishes them.
+
+    Exposed (not `private`) so that tests can verify the classification for each
+    partial op without having to inspect metadata on generated asserts. -/
+def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : Option String :=
   match CoreOp.ofString funcName with
   | .numeric ⟨_, .SafeDiv⟩ | .numeric ⟨_, .SafeMod⟩
   | .numeric ⟨_, .SafeDivT⟩ | .numeric ⟨_, .SafeModT⟩ =>
@@ -75,6 +78,8 @@ private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : O
   | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeNeg⟩
   | .bv ⟨_, .SafeUAdd⟩ | .bv ⟨_, .SafeUSub⟩ | .bv ⟨_, .SafeUMul⟩ | .bv ⟨_, .SafeUNeg⟩ =>
     some Imperative.MetaData.arithmeticOverflow
+  | .seq .Select | .seq .Update | .seq .Take | .seq .Drop =>
+    some Imperative.MetaData.outOfBoundsAccess
   | _ => none
 
 /--

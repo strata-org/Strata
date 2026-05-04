@@ -120,22 +120,27 @@ instance (n : Nat) : LambdaLeanType (.bitvec n) (BitVec n) where
 
 These build well-formed `WFLFunc`s that have no `concreteEval` or `body`. -/
 
-/-- General polymorphic unevaluated function with optional axioms.
-    Handles any arity and any number of type arguments. -/
+/-- General polymorphic unevaluated function with optional axioms and
+    preconditions. Handles any arity and any number of type arguments. -/
 @[inline]
 def polyUneval (n : T.Identifier) (typeArgs : List String)
     (inputs : List (T.Identifier × LMonoTy)) (output : LMonoTy)
     (axioms : List (LExpr T.mono) := [])
+    (preconditions :
+      List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (h_nodup : List.Nodup (inputs.map (·.1.name)) := by first | decide | grind)
     (h_ta_nodup : List.Nodup typeArgs := by grind)
     (h_inputs : ∀ ty, ty ∈ ListMap.values inputs →
       ty.freeVars ⊆ typeArgs := by first | decide | grind)
     (h_output : output.freeVars ⊆ typeArgs
       := by first | decide | grind)
+    (h_precond : ∀ p, p ∈ preconditions →
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ inputs.map (·.1.name)
+      := by first | decide | grind)
     (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true)
       := by first | decide | grind) : WFLFunc T :=
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
-     axioms := axioms }, {
+     axioms := axioms, preconditions := preconditions }, {
     arg_nodup := h_nodup
     body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
@@ -144,7 +149,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     typeArgs_nodup := h_ta_nodup
     inputs_typevars_in_typeArgs := h_inputs
     output_typevars_in_typeArgs := h_output
-    precond_freevars := by intro p hp; simp at hp
+    precond_freevars := h_precond
     typeArgs_no_gen_prefix := h_ta_no_gen
   }⟩
 
