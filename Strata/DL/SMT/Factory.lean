@@ -140,6 +140,7 @@ theorem mkSimpleTriggerIsSimple: isSimpleTrigger (mkSimpleTrigger x ty) := by
   simp [isSimpleTrigger, mkSimpleTrigger]
 
 -- Note: we could coalesce nested quantifiers here, since SMT-Lib allows multiple variables to be bound at once.
+-- TODO: Its correctness could not be proven due to its complexity. Contribution is welcome
 def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Term) : Term :=
   -- Check if we can coalesce with a nested quantifier
   match e with
