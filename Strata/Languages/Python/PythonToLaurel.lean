@@ -1717,18 +1717,25 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let summary := match msg.val with
       | some (.Constant _ (.ConString _ str) _) => some str.val
       | _ => none
-    -- Check if condition contains a Hole - if so, hoist to variable
-    let (condStmts, finalCondExpr, condCtx, isHoisted) :=
+    let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
       | .Hole =>
         let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
         let varType := mkHighTypeMd .TBool
         let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
         let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
-        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] }, true)
-      | _ => ([], condExpr, ctx, false)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
+      | _ => ([], condExpr, ctx)
 
-    let coercedCond := if isHoisted then finalCondExpr else Any_to_bool finalCondExpr
+    let isBoolTypedIdent : Bool :=
+      match finalCondExpr.val with
+      | .Identifier name =>
+        match condCtx.variableTypes.find? (fun (n, _) => n == name) with
+        | some (_, ty) => ty == PyLauType.Bool
+        | none => false
+      | _ => false
+    let coercedCond :=
+      if isBoolTypedIdent then finalCondExpr else Any_to_bool finalCondExpr
     let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := coercedCond, summary }) md
 
     -- Wrap in block if we hoisted condition
