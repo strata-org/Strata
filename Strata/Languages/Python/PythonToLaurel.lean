@@ -1254,13 +1254,12 @@ partial def translateCall (ctx : TranslationContext)
       throwUserError callRange
         s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let rawPosArgs ← args.mapM (translateExpr ctx)
-    let paramIsCompositeList := funcDecl.args.map (fun a =>
-      isCompositeType ctx (highTypeToPyLauType a.laurelType.val))
+    let paramTypeNames := funcDecl.args.map (fun a => highTypeToPyLauType a.laurelType.val)
     let mut trans_posArgs : List StmtExprMd := []
-    for (pair, paramIsComp) in (args.zip rawPosArgs).zip
-        (paramIsCompositeList ++ List.replicate args.length false) do
+    for (pair, paramTy) in (args.zip rawPosArgs).zip
+        (paramTypeNames ++ List.replicate args.length PyLauType.Any) do
       let (orig, trans) := pair
-      if paramIsComp then trans_posArgs := trans_posArgs ++ [trans]
+      if paramTy != PyLauType.Any then trans_posArgs := trans_posArgs ++ [trans]
       else trans_posArgs := trans_posArgs ++ [← coerceToAny ctx orig trans]
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
@@ -1293,14 +1292,17 @@ partial def translateCall (ctx : TranslationContext)
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
   let rawTransArgs ← args.mapM (translateExpr ctx)
-  let paramIsCompositeList := funcDecl.map (·.args.map (fun a =>
-    isCompositeType ctx (highTypeToPyLauType a.laurelType.val))) |>.getD []
-  let mut trans_args : List StmtExprMd := []
-  for (pair, paramIsComp) in (args.zip rawTransArgs).zip
-      (paramIsCompositeList ++ List.replicate args.length false) do
-    let (orig, trans) := pair
-    if paramIsComp then trans_args := trans_args ++ [trans]
-    else trans_args := trans_args ++ [← coerceToAny ctx orig trans]
+  let trans_args ← match funcDecl with
+    | none => pure rawTransArgs
+    | some fd =>
+      let paramTypeNames := fd.args.map (fun a => highTypeToPyLauType a.laurelType.val)
+      let mut result : List StmtExprMd := []
+      for (pair, paramTy) in (args.zip rawTransArgs).zip
+          (paramTypeNames ++ List.replicate args.length PyLauType.Any) do
+        let (orig, trans) := pair
+        if paramTy != PyLauType.Any then result := result ++ [trans]
+        else result := result ++ [← coerceToAny ctx orig trans]
+      pure result
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
