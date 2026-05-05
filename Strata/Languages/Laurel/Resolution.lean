@@ -213,8 +213,10 @@ structure ResolveState where
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
-  /-- True when resolving the RHS of an Assign statement (suppresses multi-output diagnostic). -/
-  inAssignRhs : Bool := false
+  /-- True when resolving inside an expression where the value is used (e.g., as an
+      argument to another call or operator). Multi-output calls are only diagnosed
+      in value context, not in statement position or direct assignment RHS. -/
+  inValueContext : Bool := false
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -404,10 +406,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-    let savedFlag := (← get).inAssignRhs
-    modify fun s => { s with inAssignRhs := true }
     let value' ← resolveStmtExpr value
-    modify fun s => { s with inAssignRhs := savedFlag }
     -- Check that LHS target count matches the number of outputs from the RHS.
     -- This fires for procedure calls (which can have multiple outputs).
     -- Functions always have exactly 1 output in the model, so single-target function calls pass trivially.
@@ -442,26 +441,30 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
+    -- Resolve arguments in value context (their results are used as values)
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let args' ← args.mapM resolveStmtExpr
-    -- Multi-output procedures must not appear in expression position: the extra
+    modify fun s => { s with inValueContext := saved }
+    -- Multi-output procedures must not appear in value context: the extra
     -- outputs (e.g. error channels) would be silently discarded.
     let s ← get
-    if !s.inAssignRhs then
-      match s.scope.get? callee'.text with
-      | some (_, .staticProcedure proc) =>
-        if proc.outputs.length > 1 then
-          let diag := diagnosticFromSource source
-            s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {proc.outputs.length} values but only one can be used here. Use a multi-target assignment instead."
-          modify fun s => { s with errors := s.errors.push diag }
-      | some (_, .instanceProcedure _ proc) =>
-        if proc.outputs.length > 1 then
-          let diag := diagnosticFromSource source
-            s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {proc.outputs.length} values but only one can be used here. Use a multi-target assignment instead."
-          modify fun s => { s with errors := s.errors.push diag }
-      | _ => pure ()
+    if s.inValueContext then
+      let outputCount := match s.scope.get? callee'.text with
+        | some (_, .staticProcedure proc) => proc.outputs.length
+        | some (_, .instanceProcedure _ proc) => proc.outputs.length
+        | _ => 0
+      if outputCount > 1 then
+        let diag := diagnosticFromSource source
+          s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {outputCount} values but only one can be used here. Use a multi-target assignment instead."
+        modify fun s => { s with errors := s.errors.push diag }
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
+    -- Resolve arguments in value context
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let args' ← args.mapM resolveStmtExpr
+    modify fun s => { s with inValueContext := saved }
     pure (.PrimitiveOp op args')
   | .New ref =>
     let ref' ← resolveRef ref source
