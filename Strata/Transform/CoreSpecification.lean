@@ -82,7 +82,7 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
   Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
-    (ProcEnvWF proc) (Stmt.block "" proc.body.toStmts #[]) a
+    (ProcEnvWF proc) (Stmt.block "" proc.body.stmts #[]) a
 
 /-- A procedure is correct with respect to its specification.
 
@@ -143,7 +143,7 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),
       ProcEnvWF proc ρ₀ →
-      CoreStepStar π φ (.stmts proc.body.toStmts ρ₀) (.terminal ρ') →
+      CoreStepStar π φ (.stmts proc.body.stmts ρ₀) (.terminal ρ') →
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →

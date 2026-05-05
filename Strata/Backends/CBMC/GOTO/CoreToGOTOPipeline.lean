@@ -259,7 +259,10 @@ def procedureToGotoCtx
     : Except Std.Format
         (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
-  let (liftedFuncs, body) ← collectFuncDecls p.body.toStmts
+  let bodyStmts ← match p.body with
+    | .structured ss => pure ss
+    | .cfg _ => throw f!"CFG body not supported for GOTO pipeline"
+  let (liftedFuncs, body) ← collectFuncDecls bodyStmts
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then
     .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."

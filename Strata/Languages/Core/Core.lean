@@ -95,7 +95,7 @@ def buildEnv (options : VerifyOptions) (program : Program)
         for func in funcs do E ← E.addFactoryFunc func
       | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
       | .proc proc _ =>
-        for stmt in proc.body.toStmts.flatMap collectFuncDecls do
+        for stmt in proc.body.stmts.flatMap collectFuncDecls do
           match E.exprEnv.addFactoryFunc stmt with
           | .ok σ' => E := { E with exprEnv := σ' }
           | .error _ => pure ()

@@ -812,8 +812,10 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
+            let bodyStmts := match proc.body with
+              | .structured ss => ss | .cfg _ => []
             let config : Imperative.RunConfig Expression Command Env :=
-              .stmts proc.body.toStmts callEnv
+              .stmts bodyStmts callEnv
             let configAfter := Imperative.runStmt ops fuel' config
             match configAfter with
             | .terminal callEnv' =>

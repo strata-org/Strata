@@ -113,7 +113,8 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       /- the assumptions from preconditions are set to have empty metadata  -/
       (.assume label check.expr check.md))
       p.spec.preconditions
-  let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ p.body.toStmts ++ postcond_asserts)
+  let bodyStmts := match p.body with | .structured ss => ss | .cfg _ => []
+  let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
   (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
 
 ---------------------------------------------------------------------

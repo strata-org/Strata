@@ -938,7 +938,9 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  let bodyCST ← blockToCST proc.body.toStmts
+  let bodyCST ← match proc.body with
+    | .structured ss => blockToCST ss
+    | .cfg _ => blockToCST []
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs arguments spec body)

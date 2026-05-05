@@ -94,13 +94,14 @@ private def renameAllLocalNames (c:Procedure)
   let proc_name := c.header.name.name
 
   -- Make a map for renaming local variables
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) c.body.toStmts
+  let bodyStmts := match c.body with | .structured ss => ss | .cfg _ => []
+  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) bodyStmts
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name
 
   -- Make a map for renaming label names
-  let labels := List.flatMap (fun s => Statement.labels s) c.body.toStmts
+  let labels := List.flatMap (fun s => Statement.labels s) bodyStmts
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
       (fun s => { name:=s, metadata := () })
@@ -117,7 +118,7 @@ private def renameAllLocalNames (c:Procedure)
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
         let s := Statement.renameLhs s old_id new_id
         Statement.replaceLabels s label_map)
-      s0) c.body.toStmts
+      s0) bodyStmts
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
       match var_map.find? id with
@@ -269,9 +270,10 @@ def inlineCallCmd
               Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
+        let procBodyStmts := match proc.body with | .structured ss => ss | .cfg _ => []
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits
-             ++ Block.setCallSiteMetadata proc.body.toStmts md
+             ++ Block.setCallSiteMetadata procBodyStmts md
              ++ outputSetStmts
 
         -- Update CallGraph if available

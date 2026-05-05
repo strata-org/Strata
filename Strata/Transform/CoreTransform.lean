@@ -332,7 +332,10 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let (changed, new_body) ← runStmtsRec f proc.body.toStmts
+        let bodyStmts ← match proc.body with
+          | .structured ss => pure ss
+          | .cfg _ => pure []
+        let (changed, new_body) ← runStmtsRec f bodyStmts
 
         if changed then
           newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)

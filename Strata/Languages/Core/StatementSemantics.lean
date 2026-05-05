@@ -318,7 +318,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
     CoreStepStar π φ
-      (.stmts p.body.toStmts ⟨σAO, δ, false⟩)
+      (.stmts p.body.stmts ⟨σAO, δ, false⟩)
       (.terminal ρ') →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧

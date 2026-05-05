@@ -291,10 +291,22 @@ inductive Procedure.Body where
   | cfg : Imperative.CFG String (Imperative.DetBlock String Command Expression) → Procedure.Body
   deriving Inhabited
 
-/-- Get the structured statements from a body, or `[]` if unstructured. -/
-def Procedure.Body.toStmts : Procedure.Body → List Statement
+/-- Extract the structured statements, or error if the body is a CFG. -/
+def Procedure.Body.getStructured : Procedure.Body → Except String (List Statement)
+  | .structured ss => .ok ss
+  | .cfg _ => .error "expected structured body, got CFG"
+
+/-- Extract statements from a structured body, or `[]` for CFG.
+    Intended for use in Prop contexts where `Except` is inconvenient. -/
+@[simp, expose] def Procedure.Body.stmts : Procedure.Body → List Statement
   | .structured ss => ss
   | .cfg _ => []
+
+/-- Get variables referenced in the body. -/
+def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
+  | .structured ss => ss.flatMap Imperative.HasVarsPure.getVars
+  | .cfg c => c.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap Imperative.HasVarsPure.getVars
 
 /-- Is this body empty (abstract)? -/
 def Procedure.Body.isEmpty : Procedure.Body → Bool
@@ -329,15 +341,13 @@ def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
   (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
-  p.body.toStmts.flatMap HasVarsPure.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
+  p.body.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
 
 instance : HasVarsPure Expression Procedure where
   getVars := Procedure.getVars
 
 instance : HasVarsPure Expression Procedure.Body where
-  getVars b := match b with
-    | .structured ss => HasVarsPure.getVars ss
-    | .cfg _ => []
+  getVars := Procedure.Body.getVars
 
 instance : HasVarsImp Expression Procedure.Body where
   definedVars b := match b with

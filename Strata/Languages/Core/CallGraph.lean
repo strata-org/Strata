@@ -253,7 +253,9 @@ end
 
 /-- Extract all procedure calls from a procedure's body -/
 def extractCallsFromProcedure (proc : Procedure) : List String :=
-  extractCallsFromStatements proc.body.toStmts
+  match proc.body with
+  | .structured ss => extractCallsFromStatements ss
+  | .cfg _ => []
 
 @[expose] abbrev ProcedureCG := CallGraph
 @[expose] abbrev FunctionCG := CallGraph

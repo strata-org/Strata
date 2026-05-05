@@ -88,8 +88,9 @@ open Core Imperative Transform
   -- Convert preconditions to assumes
   let assumes := requiresToAssumes proc.spec.preconditions
 
+  let bodyStmts := match proc.body with | .structured ss => ss | .cfg _ => []
   -- Wrap body in labeled block
-  let bodyBlock := Stmt.block bodyLabel proc.body.toStmts #[]
+  let bodyBlock := Stmt.block bodyLabel bodyStmts #[]
 
   -- Convert postconditions to asserts
   let asserts := ensuresToAsserts proc.spec.postconditions
