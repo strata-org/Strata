@@ -315,7 +315,7 @@ where
               let isLast := idx == n - 1
               let s' ← recurse s (isLast && valueUsed)
               let rest' ← processStmts (idx + 1) rest
-              -- Flatten unlabeled blocks returned by recurse so that
+              -- Flatten blocks created by recurse so that
               -- Declare targets remain in the enclosing scope.
               match s'.val with
               | .Block innerStmts (some "$inlineMe") => pure (innerStmts ++ rest')
