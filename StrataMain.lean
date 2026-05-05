@@ -969,10 +969,7 @@ def pyResolveOverloadsCommand : Command where
     let pythonFile : System.FilePath := v[0]
     let dispatchPath := v[1]
     -- Read dispatch overload table
-    let overloads ←
-      match ← readDispatchOverloads #[dispatchPath] |>.toBaseIO with
-      | .ok (r, _) => pure r
-      | .error msg => exitFailure msg
+    let (overloads, _) ← readDispatchOverloads #[dispatchPath]
     -- Convert .py to Python AST
     let stmts ←
       IO.FS.withTempFile fun _handle dialectFile => do

@@ -140,12 +140,26 @@ def pySpecParsingError : MessageKind :=
   { phase := .pySpecParsing, category := "error", impact := .internalError }
 def pySpecParsingWarning : MessageKind :=
   { phase := .pySpecParsing, category := "warning", impact := .knownLimitation }
+def pySpecReadError : MessageKind :=
+  { phase := .pySpecParsing, category := "readError", impact := .internalError }
+
+-- PySpec-to-Laurel assembly phase
+def functionSignatureError : MessageKind :=
+  { phase := .pySpecToLaurel, category := "functionSignatureError", impact := .internalError }
+def typeNameCollision : MessageKind :=
+  { phase := .pySpecToLaurel, category := "typeNameCollision", impact := .internalError }
+def procedureNameCollision : MessageKind :=
+  { phase := .pySpecToLaurel, category := "procedureNameCollision", impact := .internalError }
 
 -- Module resolution phase
 def invalidModuleName : MessageKind :=
   { phase := .moduleResolution, category := "invalidModuleName", impact := .internalWarning }
 def missingAutoResolvedPySpec : MessageKind :=
   { phase := .moduleResolution, category := "missingAutoResolvedPySpec", impact := .knownLimitation }
+def missingDispatchModule : MessageKind :=
+  { phase := .moduleResolution, category := "missingDispatchModule", impact := .userCodeIssue }
+def missingExplicitPySpec : MessageKind :=
+  { phase := .moduleResolution, category := "missingExplicitPySpec", impact := .userCodeIssue }
 
 -- Overload resolution phase
 def overloadResolveWarning : MessageKind :=

@@ -75,10 +75,8 @@ private meta def buildOverloadTable
       throw <| .userError s!"pySpecsDir failed for {pyFile}: {msg}"
     let some ionPath := pySpecOutputPath testDir outDir pyFile
       | throw <| .userError s!"Cannot derive output path for {pyFile}"
-    match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with
-    | .ok (tbl, _) => return tbl
-    | .error msg =>
-      throw <| .userError s!"readDispatchOverloads failed: {msg}"
+    let (tbl, _) ← readDispatchOverloads #[ionPath.toString]
+    return tbl
 
 /-- Parse a user Python Ion file into statements. -/
 private meta def parseStmts (ionPath : System.FilePath)
