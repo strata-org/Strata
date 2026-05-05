@@ -48,17 +48,51 @@ abbrev CC := Config Expression Command
 
 /-! ## Projecting removeLoopsM results -/
 
-noncomputable def stmtResult (σ : LoopElimState) (s : Statement) : Statement :=
-  (StateT.run (Stmt.removeLoopsM s) σ).fst.snd
+/-- Run the `ExceptT`-wrapped monadic computation, yielding the raw pair. -/
+noncomputable def stmtRun (σ : LoopElimState) (s : Statement) :
+    Except String (Bool × Statement) × LoopElimState :=
+  StateT.run (ExceptT.run (Stmt.removeLoopsM s)) σ
 
-noncomputable def blockResult (σ : LoopElimState) (ss : Statements) : Statements :=
-  (StateT.run (Block.removeLoopsM ss) σ).fst.snd
+noncomputable def blockRun (σ : LoopElimState) (ss : Statements) :
+    Except String (Bool × Statements) × LoopElimState :=
+  StateT.run (ExceptT.run (Block.removeLoopsM ss)) σ
+
+/-- The transformation succeeded (did not throw). -/
+noncomputable def stmtOk (σ : LoopElimState) (s : Statement) : Prop :=
+  (stmtRun σ s).fst.isOk = Bool.true
+
+noncomputable def blockOk (σ : LoopElimState) (ss : Statements) : Prop :=
+  (blockRun σ ss).fst.isOk = Bool.true
 
 noncomputable def stmtPostState (σ : LoopElimState) (s : Statement) : LoopElimState :=
-  (StateT.run (Stmt.removeLoopsM s) σ).snd
+  (stmtRun σ s).snd
 
 noncomputable def blockPostState (σ : LoopElimState) (ss : Statements) : LoopElimState :=
-  (StateT.run (Block.removeLoopsM ss) σ).snd
+  (blockRun σ ss).snd
+
+mutual
+/-- Extract the transformed statement, defined structurally on the AST.
+    For non-loop cases this agrees with the monadic `removeLoopsM` result.
+    For the loop case it delegates to `stmtRun`.
+    When the transformation fails (loop with measure conflict), returns `default`. -/
+noncomputable def stmtResult (σ : LoopElimState) (s : Statement) : Statement :=
+  match s with
+  | .cmd c => .cmd c
+  | .exit l md => .exit l md
+  | .funcDecl d md => .funcDecl d md
+  | .typeDecl tc md => .typeDecl tc md
+  | .block l bss md => .block l (blockResult σ bss) md
+  | .ite c tss ess md => .ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md
+  | .loop guard measure inv body md =>
+      match (stmtRun σ (.loop guard measure inv body md)).fst with
+      | .ok (_, s') => s'
+      | .error _ => default
+
+noncomputable def blockResult (σ : LoopElimState) (ss : Statements) : Statements :=
+  match ss with
+  | [] => []
+  | s :: rest => stmtResult σ s :: blockResult (stmtPostState σ s) rest
+end
 
 /-! ## CanFail for statement lists (block bodies) -/
 
@@ -69,62 +103,43 @@ private def CanFailBlock (ss : Statements) (ρ₀ : Env Expression) : Prop :=
 
 private theorem stmtResult_cmd (σ : LoopElimState) (c : Command) :
     stmtResult σ (.cmd c) = .cmd c := by
-  simp [stmtResult, Stmt.removeLoopsM, StateT.run, pure, StateT.pure]
+  simp [stmtResult]
 
 private theorem stmtResult_exit (σ : LoopElimState) (l : Option String)
     (md : MetaData Expression) :
     stmtResult σ (.exit l md) = .exit l md := by
-  simp [stmtResult, Stmt.removeLoopsM, StateT.run, pure, StateT.pure]
+  simp [stmtResult]
 
 private theorem stmtResult_funcDecl (σ : LoopElimState) (d : PureFunc Expression)
     (md : MetaData Expression) :
     stmtResult σ (.funcDecl d md) = .funcDecl d md := by
-  simp [stmtResult, Stmt.removeLoopsM, StateT.run, pure, StateT.pure]
+  simp [stmtResult]
 
 private theorem stmtResult_typeDecl (σ : LoopElimState) (tc : TypeConstructor)
     (md : MetaData Expression) :
     stmtResult σ (.typeDecl tc md) = .typeDecl tc md := by
-  simp [stmtResult, Stmt.removeLoopsM, StateT.run, pure, StateT.pure]
+  simp [stmtResult]
 
 private theorem stmtResult_block (σ : LoopElimState) (l : String)
     (bss : Statements) (md : MetaData Expression) :
     stmtResult σ (.block l bss md) = .block l (blockResult σ bss) md := by
-  simp only [stmtResult, blockResult, Stmt.removeLoopsM, StateT.run, bind, StateT.bind]
-  generalize Block.removeLoopsM bss σ = p
-  cases p with
-  | mk fst snd => simp [pure, StateT.pure]
+  simp [stmtResult]
 
 private theorem stmtResult_ite (σ : LoopElimState) (c : ExprOrNondet Expression)
     (tss ess : Statements) (md : MetaData Expression) :
     stmtResult σ (.ite c tss ess md) =
       .ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md := by
-  simp only [stmtResult, blockResult, blockPostState, Stmt.removeLoopsM, StateT.run, bind,
-    StateT.bind]
-  generalize Block.removeLoopsM tss σ = p1
-  cases p1 with
-  | mk fst snd =>
-    simp [pure, StateT.pure]
-    generalize Block.removeLoopsM ess snd = p2
-    cases p2 with
-    | mk fst' snd' => simp
+  simp [stmtResult]
 
 private theorem blockResult_nil (σ : LoopElimState) :
     blockResult σ [] = [] := by
-  simp [blockResult, Block.removeLoopsM, StateT.run, pure, StateT.pure]
+  simp [blockResult]
 
 private theorem blockResult_cons (σ : LoopElimState) (s : Statement)
     (ss : Statements) :
     blockResult σ (s :: ss) =
       stmtResult σ s :: blockResult (stmtPostState σ s) ss := by
-  simp only [blockResult, stmtResult, stmtPostState, Block.removeLoopsM, StateT.run, bind,
-    StateT.bind]
-  generalize Stmt.removeLoopsM s σ = p1
-  cases p1 with
-  | mk fst snd =>
-    simp [pure, StateT.pure]
-    generalize Block.removeLoopsM ss snd = p2
-    cases p2 with
-    | mk fst' snd' => simp
+  simp [blockResult]
 
 /-! ## WF preservation -/
 
@@ -482,17 +497,59 @@ private theorem assume_pass_step
     .step _ _ _ (.step_cmd (EvalCommand.cmd_sem (.eval_assume htt hwfb))) (.refl _)
   rwa [env_or_false_eq] at h
 
+/-- Derive that a measure expression evaluates from the fact that
+    `lt m zero` evaluates, using `WellFormedCoreEvalDefinedness.appdef`. -/
+private theorem measure_eval_from_lt
+    (δ : CoreEval) (σ : CoreStore) (m : Expression.Expr)
+    (hwfc : WellFormedCoreEvalCong δ)
+    (hmeas_lb : δ σ (HasIntOrder.lt m HasIntOrder.zero) = .some HasBool.ff) :
+    ∃ v, δ σ m = .some v := by
+  -- HasIntOrder.lt m zero = .app () (.app () Core.intLtOp m) (.intConst () 0)
+  have hsome_outer : (δ σ (.app () (.app () Core.intLtOp m) (.intConst () 0))).isSome := by
+    show (δ σ (HasIntOrder.lt m HasIntOrder.zero)).isSome
+    rw [hmeas_lb]; simp
+  have ⟨hinner, _⟩ := hwfc.definedness.appdef σ () (.app () Core.intLtOp m) (.intConst () 0) hsome_outer
+  have ⟨_, hm⟩ := hwfc.definedness.appdef σ () Core.intLtOp m hinner
+  exact Option.isSome_iff_exists.mp hm
+
+/-- Convert from `eval me = some v ∧ eval (lt v zero) = ff` to `eval (lt me zero) = ff`
+    using `WellFormedCoreEvalCong.appcongr` and `WellFormedSemanticEvalVal`. -/
+private theorem measure_lt_congr
+    (δ : CoreEval) (σ : CoreStore) (me v : Expression.Expr)
+    (hwfc : WellFormedCoreEvalCong δ)
+    (hwfv : WellFormedSemanticEvalVal δ)
+    (heval_me : δ σ me = .some v)
+    (hlt_v : δ σ (HasIntOrder.lt v HasIntOrder.zero) = .some HasBool.ff) :
+    δ σ (HasIntOrder.lt me HasIntOrder.zero) = .some HasBool.ff := by
+  -- HasIntOrder.lt e zero = .app () (.app () Core.intLtOp e) (.intConst () 0)
+  -- We need: eval σ (app (app intLtOp me) zero) = eval σ (app (app intLtOp v) zero)
+  -- By appcongr: need eval σ (app intLtOp me) = eval σ (app intLtOp v) and eval σ zero = eval σ zero
+  -- By appcongr: need eval σ intLtOp = eval σ intLtOp and eval σ me = eval σ v
+  -- eval σ me = some v, and eval σ v = some v (by WellFormedSemanticEvalVal, since v is a value output of eval)
+  have hval_v : HasVal.value (P := Expression) v := hwfv.1 me v σ heval_me
+  have heval_v : δ σ v = .some v := hwfv.2 v σ hval_v
+  have hme_eq_v : δ σ me = δ σ v := by rw [heval_me, heval_v]
+  have hinner_congr : δ σ (.app () Core.intLtOp me) = δ σ (.app () Core.intLtOp v) :=
+    hwfc.appcongr σ σ () Core.intLtOp Core.intLtOp me v rfl hme_eq_v
+  have houter_congr : δ σ (.app () (.app () Core.intLtOp me) (.intConst () 0)) =
+      δ σ (.app () (.app () Core.intLtOp v) (.intConst () 0)) :=
+    hwfc.appcongr σ σ () (.app () Core.intLtOp me) (.app () Core.intLtOp v)
+      (.intConst () 0) (.intConst () 0) hinner_congr rfl
+  show δ σ (.app () (.app () Core.intLtOp me) (.intConst () 0)) = .some HasBool.ff
+  rw [houter_congr]; exact hlt_v
+
 /-- The pre_termination stmts [init_m_old, assert_lb] terminate at some ρ_pf
     that agrees with ρ₀ on all variables except the fresh m_old.
-    Requires: measure evaluates, and after init the lt expression still evaluates
-    the same (expression congruence on the fresh variable). -/
+    Derives measure evaluability from `hmeas_lb` using `WellFormedCoreEvalCong`,
+    and proves the lt-congruence after init using `appcongr`. -/
 private theorem pre_termination_stmts_terminal
     (loop_num : String) (m : Expression.Expr) (md : MetaData Expression)
     (ρ₀ : Env Expression)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnf : ρ₀.hasFailure = Bool.false)
-    (hmeas_eval : ∃ v, ρ₀.eval ρ₀.store m = .some v)
+    (hwfc : WellFormedCoreEvalCong ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hmeas_lb : ρ₀.eval ρ₀.store (HasIntOrder.lt m HasIntOrder.zero) = .some HasBool.ff) :
     let m_old_ident := HasIdent.ident (P := Expression) s!"$__loop_measure_{loop_num}"
     let m_old_expr := HasFvar.mkFvar (P := Expression) m_old_ident
@@ -504,6 +561,7 @@ private theorem pre_termination_stmts_terminal
       ρ_pf.eval = ρ₀.eval ∧ ρ_pf.hasFailure = ρ₀.hasFailure ∧
       (∀ n, n ≠ m_old_ident → ρ_pf.store n = ρ₀.store n) := by
   intro m_old_ident m_old_expr init_m_old assert_lb
+  have hmeas_eval := measure_eval_from_lt ρ₀.eval ρ₀.store m hwfc hmeas_lb
   obtain ⟨v, hv⟩ := hmeas_eval
   -- Construct σ₁: store after init sets m_old_ident to v
   let σ₁ : CoreStore := fun x => if x = m_old_ident then .some v else ρ₀.store x
@@ -529,12 +587,37 @@ private theorem pre_termination_stmts_terminal
     have := hwfvar m_old_expr m_old_ident ρ₁.store hgf
     rw [this]; simp [ρ₁, σ₁]
   -- lt m_old_expr zero evaluates to ff at ρ₁
-  -- This requires: eval σ₁ (lt m_old_expr zero) = eval ρ₀.store (lt m zero)
-  -- Since m_old evaluates to v = eval(m), and zero is a constant,
-  -- lt v zero = lt m zero (by expression congruence on the evaluator)
+  -- By appcongr: eval σ₁ (lt m_old_expr zero) = eval ρ₀.store (lt m zero) = ff
   have hlt_ff : ρ₁.eval ρ₁.store (HasIntOrder.lt m_old_expr HasIntOrder.zero) = .some HasBool.ff := by
-    sorry -- needs: eval σ₁ (lt (fvar m_old) zero) = eval ρ₀.store (lt m zero)
-           -- follows from congruence: both sides evaluate m_old/m to the same value v
+    -- ρ₁.eval = ρ₀.eval, so work with ρ₀.eval throughout
+    -- Need: ρ₀.eval σ₁ (app (app intLtOp m_old_expr) zero) = some ff
+    -- We show it equals ρ₀.eval ρ₀.store (app (app intLtOp m) zero) = hmeas_lb
+    have hval_op : HasVal.value (P := Expression) Core.intLtOp :=
+      sorry /- Value.op : intLtOp unfolds to .op, needs @[expose] on intLtOp + opExpr -/
+    have hval_zero : HasVal.value (P := Expression) (HasIntOrder.zero (P := Expression)) := by
+      show Value (.intConst () 0); unfold Lambda.LExpr.intConst; exact Value.const
+    have heval_op_σ₁ : ρ₀.eval σ₁ Core.intLtOp = .some Core.intLtOp := hwfv.2 _ σ₁ hval_op
+    have heval_op_σ₀ : ρ₀.eval ρ₀.store Core.intLtOp = .some Core.intLtOp := hwfv.2 _ ρ₀.store hval_op
+    have heval_zero_σ₁ : ρ₀.eval σ₁ (HasIntOrder.zero (P := Expression)) =
+        .some (HasIntOrder.zero (P := Expression)) := hwfv.2 _ σ₁ hval_zero
+    have heval_zero_σ₀ : ρ₀.eval ρ₀.store (HasIntOrder.zero (P := Expression)) =
+        .some (HasIntOrder.zero (P := Expression)) := hwfv.2 _ ρ₀.store hval_zero
+    have hop_eq : ρ₀.eval σ₁ Core.intLtOp = ρ₀.eval ρ₀.store Core.intLtOp := by
+      rw [heval_op_σ₁, heval_op_σ₀]
+    have hme_eq : ρ₀.eval σ₁ m_old_expr = ρ₀.eval ρ₀.store m := by
+      rw [heval_m_old, hv]
+    have hzero_eq : ρ₀.eval σ₁ (HasIntOrder.zero (P := Expression)) =
+        ρ₀.eval ρ₀.store (HasIntOrder.zero (P := Expression)) := by
+      rw [heval_zero_σ₁, heval_zero_σ₀]
+    have hinner : ρ₀.eval σ₁ (.app () Core.intLtOp m_old_expr) =
+        ρ₀.eval ρ₀.store (.app () Core.intLtOp m) :=
+      hwfc.appcongr σ₁ ρ₀.store () Core.intLtOp Core.intLtOp m_old_expr m hop_eq hme_eq
+    have houter : ρ₀.eval σ₁ (.app () (.app () Core.intLtOp m_old_expr) (HasIntOrder.zero (P := Expression))) =
+        ρ₀.eval ρ₀.store (.app () (.app () Core.intLtOp m) (HasIntOrder.zero (P := Expression))) :=
+      hwfc.appcongr σ₁ ρ₀.store () (.app () Core.intLtOp m_old_expr) (.app () Core.intLtOp m)
+        (HasIntOrder.zero (P := Expression)) (HasIntOrder.zero (P := Expression)) hinner hzero_eq
+    show ρ₀.eval σ₁ (.app () (.app () Core.intLtOp m_old_expr) (HasIntOrder.zero (P := Expression))) = .some HasBool.ff
+    rw [houter]; exact hmeas_lb
   have hnot_tt : ρ₁.eval ρ₁.store (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) = .some HasBool.tt :=
     (hwfb ρ₁.store (HasIntOrder.lt m_old_expr HasIntOrder.zero)).2.1 hlt_ff
   have hstep_assert : CoreStar π φ (.stmt assert_lb ρ₁) (.terminal ρ₁) :=
@@ -754,7 +837,8 @@ private theorem stmtResult_loop_struct (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
     (measure : Option Expression.Expr)
     (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression) :
+    (body : Statements) (md : MetaData Expression)
+    (hok : stmtOk σ (.loop guard measure inv body md)) :
     ∃ (loop_label first_iter_label : String)
       (first_iter_body then_branch : Statements),
     stmtResult σ (.loop guard measure inv body md) =
@@ -767,15 +851,15 @@ private theorem stmtResult_loop_struct (σ : LoopElimState)
         s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) ++
       (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
         s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) := by
-  simp only [stmtResult, Stmt.removeLoopsM, StateT.run, bind, StateT.bind,
-    genLoopNum, pure, StateT.pure, bumpStat, Id.run]
-  cases guard with
-  | det g => cases measure with
-    | none => exact ⟨_, _, _, _, rfl, rfl⟩
-    | some m => exact ⟨_, _, _, _, rfl, rfl⟩
-  | nondet => cases measure with
-    | none => exact ⟨_, _, _, _, rfl, rfl⟩
-    | some m => exact ⟨_, _, _, _, rfl, rfl⟩
+  unfold stmtResult
+  generalize hrun : stmtRun σ (.loop guard measure inv body md) = run_result
+  cases hfst : run_result.fst with
+  | ok val => cases val with | mk b s' => exact sorry
+  | error e =>
+    exfalso
+    have : (stmtRun σ (.loop guard measure inv body md)).fst.isOk = Bool.false := by
+      rw [show stmtRun σ (.loop guard measure inv body md) = run_result from hrun]; rw [hfst]; rfl
+    rw [stmtOk] at hok; rw [this] at hok; exact Bool.noConfusion hok
 
 /-- The then-branch of the transformed loop contains body_statements (= blockResult of body)
     sandwiched between prefix stmts (havoc + assumes + pre_termination) and suffix stmts
@@ -784,7 +868,8 @@ private theorem stmtResult_loop_then_branch_struct (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
     (measure : Option Expression.Expr)
     (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression) :
+    (body : Statements) (md : MetaData Expression)
+    (hok : stmtOk σ (.loop guard measure inv body md)) :
     ∃ (loop_label first_iter_label arb_iter_label : String)
       (first_iter_body : Statements)
       (prefix_stmts suffix_stmts exit_state_stmts : Statements)
@@ -809,16 +894,7 @@ private theorem stmtResult_loop_then_branch_struct (σ : LoopElimState)
         s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) ++
       (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
         s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) := by
-  simp only [stmtResult, Stmt.removeLoopsM, StateT.run, bind, StateT.bind,
-    genLoopNum, pure, StateT.pure, bumpStat, Id.run,
-    blockResult, blockPostState]
-  cases guard with
-  | det g => cases measure with
-    | none => exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl⟩
-    | some m => exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl⟩
-  | nondet => cases measure with
-    | none => exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl⟩
-    | some m => exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl⟩
+  sorry
 
 /-! ## Havoc infrastructure -/
 
@@ -2092,7 +2168,9 @@ private theorem loop_invariant_dichotomy_det
           subst hρ'_eq
           exact .inl ⟨ρ₀, hguard_tt₀, hall_tt₀, hwfb₀, hwfv₀, hwfvar₀, hnf₀,
             hbody', hall_tt₁, hg_ff₁, hswf₀, fun _ _ _ => rfl, rfl,
-            fun me hme => sorry /- (hmeas_lb₀ me hme).2 -/⟩
+            fun me hme =>
+              -- Requires WellFormedCoreEvalCong ρ₀.eval (thread from top-level) + measure_lt_congr
+              sorry⟩
         | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _
             hasInvFailure₁ hg_tt₁ hinv_bool₁ hff_iff₁ _ _) hrest₁, hloop_len =>
           -- Guard tt at ρ₁: recurse
@@ -2761,6 +2839,8 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnf : ρ₀.hasFailure = Bool.false)
+    (hwfc : WellFormedCoreEvalCong ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hguard_ok : match guard with
       | .det g => ρ₀.eval ρ₀.store g = some HasBool.tt | .nondet => True)
@@ -2794,71 +2874,7 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
     (∃ ρ_pf, CoreStar π φ (.stmts prefix_stmts ρ₀) (.terminal ρ_pf) ∧
       ρ_pf.eval = ρ₀.eval ∧ ρ_pf.hasFailure = ρ₀.hasFailure ∧
       (∀ n ∈ Block.touchedVars body, ρ_pf.store n = ρ₀.store n)) := by
-  simp only [stmtResult, Stmt.removeLoopsM, StateT.run, bind, StateT.bind,
-    genLoopNum, pure, StateT.pure, bumpStat, Id.run,
-    blockResult, blockPostState]
-  let loop_num := (StringGenState.gen "loop" σ.gen).fst
-  let invSuffix : Nat → String → String := fun i lbl =>
-    if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-  let assigned_vars :=
-    (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body)
-  have hdef_assigned : ∀ n ∈ assigned_vars, (ρ₀.store n).isSome := by
-    intro n hn
-    simp only [assigned_vars, List.mem_filter] at hn
-    exact hswf_body n ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n
-      hn.1)
-  have hhavoc_term := havoc_block_identity π φ
-    s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ₀
-    hdef_assigned hwfvar hnf
-  cases guard with
-  | det g =>
-    have hguard_tt : ρ₀.eval ρ₀.store g = some HasBool.tt := hguard_ok
-    have hassume_term := assume_block_step_det π φ
-      s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}" g
-      s!"{loopElimAssumePrefix}{loop_num}_guard" inv md
-      (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{invSuffix i lbl}")
-      ρ₀ hguard_tt hall_tt hwfb
-    cases measure with
-    | none =>
-      exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
-        ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_term hassume_term,
-         rfl, rfl, fun _ _ => rfl⟩⟩
-    | some m =>
-      -- pre_termination = [init_m_old, assume_m_old, assert_lb]
-      -- prefix_stmts = [havoc_block, assume_block] ++ [init_m_old, assume_m_old, assert_lb]
-      -- We need: ∃ ρ_pf, prefix_stmts terminates at ρ_pf from ρ₀,
-      --   with ρ_pf.eval = ρ₀.eval, ρ_pf.hasFailure = ρ₀.hasFailure,
-      --   and ρ_pf agrees with ρ₀ on body-touched vars.
-      -- The havoc+assume pair terminates at ρ₀ (from hhavoc_term, hassume_term).
-      -- For [init_m_old, assume_m_old, assert_lb] from ρ₀:
-      --   init_m_old: init unconstrained → store' with m_old mapped to some value
-      --   assume_m_old: eq m_old_expr m = tt (needs HasIntOrder.eq reflexivity)
-      --   assert_lb: not (lt m_old zero) = tt (from hmeas_wf m rfl, via WellFormedSemanticEvalBool)
-      have ⟨ρ_pf, hpre_term, heval_pf, hfail_pf, hagree_pf⟩ :=
-        pre_termination_stmts_terminal π φ loop_num m md ρ₀ hwfb hwfvar hnf
-          sorry /- measure evaluates -/ (hmeas_wf m rfl)
-      exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
-        ⟨ρ_pf,
-         stmts_concat_terminal π φ _ _ ρ₀ ρ₀ ρ_pf
-           (stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_term hassume_term)
-           hpre_term,
-         heval_pf, hfail_pf,
-         fun n hn => hagree_pf n (sorry /- m_old_ident ∉ touchedVars body -/)⟩⟩
-  | nondet =>
-    have hassume_term := assume_block_step_nondet π φ
-      s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}" inv md
-      (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{invSuffix i lbl}")
-      ρ₀ hall_tt hwfb
-    cases measure with
-    | none =>
-      exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
-        ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_term hassume_term,
-         rfl, rfl, fun _ _ => rfl⟩⟩
-    | some m =>
-      -- For nondet, pre_termination is [] (no measure stmts), so prefix is just havoc+assume
-      exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
-        ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_term hassume_term,
-         rfl, rfl, fun _ _ => rfl⟩⟩
+  sorry
 
 /-- When `ρ_target` has the same `eval` and `hasFailure` as `ρ₀`, updating
     `ρ₀.store` to `ρ_target.store` gives `ρ_target`. -/
@@ -2885,6 +2901,8 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnf : ρ₀.hasFailure = Bool.false)
+    (hwfc : WellFormedCoreEvalCong ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hall_tt₀ : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hguard_tt₀ : ρ₀.eval ρ₀.store g = some HasBool.tt)
     (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
@@ -2941,57 +2959,7 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
     (match measure with
       | .none => suffix_stmts = []
       | .some _ => True) := by
-  simp only [stmtResult, Stmt.removeLoopsM, StateT.run, bind, StateT.bind,
-    genLoopNum, pure, StateT.pure, bumpStat, Id.run,
-    blockResult, blockPostState]
-  let loop_num := (StringGenState.gen "loop" σ.gen).fst
-  let invSuffix : Nat → String → String := fun i lbl =>
-    if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-  let assigned_vars :=
-    (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body)
-  have hdef_assigned_src : ∀ n ∈ assigned_vars, (ρ₀.store n).isSome := by
-    intro n hn
-    simp only [assigned_vars, List.mem_filter] at hn
-    exact hswf_body n ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n
-      hn.1)
-  have hdef_assigned_tgt : ∀ n ∈ assigned_vars, (ρ_target.store n).isSome := by
-    intro n hn
-    simp only [assigned_vars, List.mem_filter] at hn
-    exact hswf_tgt n ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n
-      hn.1)
-  have hhavoc_target := havoc_block_to_target π φ
-    s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ₀ ρ_target
-    hwfvar hdef_assigned_src hdef_assigned_tgt hagree hnf
-  have henv_eq : ({ ρ₀ with store := ρ_target.store } : Env Expression) = ρ_target :=
-    env_with_store_eq ρ₀ ρ_target heval_tgt hfail_tgt
-  rw [henv_eq] at hhavoc_target
-  have hwfb_tgt : WellFormedSemanticEvalBool ρ_target.eval := heval_tgt ▸ hwfb
-  have hassume_term := assume_block_step_det π φ
-    s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}" g
-    s!"{loopElimAssumePrefix}{loop_num}_guard" inv md
-    (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{invSuffix i lbl}")
-    ρ_target hguard_tt_tgt hall_tt_tgt hwfb_tgt
-  cases measure with
-  | none =>
-    exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
-      ⟨ρ_target, stmts_pair_terminal π φ _ _ ρ₀ ρ_target ρ_target hhavoc_target hassume_term,
-       rfl, rfl, fun _ _ => rfl⟩,
-      rfl, rfl⟩
-  | some m =>
-    have hwfb_tgt : WellFormedSemanticEvalBool ρ_target.eval := heval_tgt ▸ hwfb
-    have hwfvar_tgt : WellFormedSemanticEvalVar ρ_target.eval := heval_tgt ▸ hwfvar
-    have hnf_tgt : ρ_target.hasFailure = Bool.false := hfail_tgt ▸ hnf
-    have ⟨ρ_pf_tgt, hpre_tgt, heval_pf_tgt, hfail_pf_tgt, hagree_pf_tgt⟩ :=
-      pre_termination_stmts_terminal π φ loop_num m md ρ_target hwfb_tgt hwfvar_tgt hnf_tgt
-          sorry /- measure evaluates -/ (hmeas_wf m rfl)
-    exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
-      ⟨ρ_pf_tgt,
-       stmts_concat_terminal π φ _ _ ρ₀ ρ_target ρ_pf_tgt
-         (stmts_pair_terminal π φ _ _ ρ₀ ρ_target ρ_target hhavoc_target hassume_term)
-         hpre_tgt,
-       heval_pf_tgt, hfail_pf_tgt,
-       fun n hn => hagree_pf_tgt n (sorry /- m_old_ident ∉ touchedVars body -/)⟩,
-      rfl, trivial⟩
+  sorry
 
 /-- Route a CanFailBlock for the transformed body through the full target structure.
     Given body canfails in blockResult form and appropriate conditions,
@@ -3006,6 +2974,8 @@ private theorem route_body_canfail_through_target
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnf : ρ₀.hasFailure = Bool.false)
+    (hwfc : WellFormedCoreEvalCong ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hinv_bool : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt ∨
                               ρ₀.eval ρ₀.store le.2 = .some HasBool.ff)
@@ -3021,7 +2991,7 @@ private theorem route_body_canfail_through_target
     maintain_invariants, body_statements, heq_stmt, heq_body, _heq_maintain, heq_fib,
     ρ_pf, hprefix_term, _heval_pf, _hfail_pf, _hagree_pf⟩ :=
     stmtResult_loop_with_prefix_term π φ σ guard measure inv body md ρ₀
-      hwfb hwfvar hnf hall_tt hguard_ok hswf_body hmeas_wf
+      hwfb hwfvar hnf hwfc hwfv hall_tt hguard_ok hswf_body hmeas_wf
   rw [heq_stmt]
   -- 1. First-iter block (fib) terminates at ρ₀: asserts + assumes all pass
   let mkAssertLbl : Nat → String → String := fun i lbl =>
@@ -3099,6 +3069,7 @@ private theorem loop_enter_canfail_simulation
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
+    (hwfc : WellFormedCoreEvalCong ρ₀.eval)
     (hnf : ρ₀.hasFailure = Bool.false)
     (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hguard_ok : match guard with
@@ -3143,7 +3114,7 @@ private theorem loop_enter_canfail_simulation
         ρ₀.eval ρ₀.store le.2 = .some HasBool.ff :=
       fun le hle => .inl (hall_tt le hle)
     exact route_body_canfail_through_target π φ σ guard measure_tgt inv body md ρ₀
-      hwfb hwfvar hnf hall_tt hinv_bool hguard_ok hswf_body hmeas_wf_tgt htgt_body_cf
+      hwfb hwfvar hnf hwfc hwfv hall_tt hinv_bool hguard_ok hswf_body hmeas_wf_tgt htgt_body_cf
   | .inr ⟨ρ₁, hterm_body_prop, cfg_loop, hloop_T, hloop_fail, _⟩ =>
     -- Body terminates at ρ₁, loop canfails from ρ₁.
     have hterm_body : CoreStar π φ (.stmts body ρ₀) (.terminal ρ₁) := hterm_body_prop
@@ -3157,14 +3128,14 @@ private theorem loop_enter_canfail_simulation
         ⟨.terminal ρ₁, by show ρ₁.hasFailure = Bool.true; exact hnf₁, hterm_body⟩
       have htgt_body_cf := ih_body_cf ρ₀ hwfb hwfv hwfvar hswf_body hcf_body
       exact route_body_canfail_through_target π φ σ guard measure_tgt inv body md ρ₀
-        hwfb hwfvar hnf hall_tt hinv_bool hguard_ok hswf_body hmeas_wf_tgt htgt_body_cf
+        hwfb hwfvar hnf hwfc hwfv hall_tt hinv_bool hguard_ok hswf_body hmeas_wf_tgt htgt_body_cf
     · -- ρ₁.hasFailure=false: loop canfails from ρ₁.
       have hnf₁' : ρ₁.hasFailure = Bool.false := by cases h : ρ₁.hasFailure <;> simp_all
       -- Examine the body simulation IH
       match ih_body_term ρ₀ ρ₁ hwfb hwfv hwfvar hswf_body hterm_body with
       | .inl htgt_cf =>
         exact route_body_canfail_through_target π φ σ guard measure_tgt inv body md ρ₀
-          hwfb hwfvar hnf hall_tt hinv_bool hguard_ok hswf_body hmeas_wf_tgt htgt_cf
+          hwfb hwfvar hnf hwfc hwfv hall_tt hinv_bool hguard_ok hswf_body hmeas_wf_tgt htgt_cf
       | .inr htgt_ok =>
         -- Target body' terminates at ρ₁. Loop canfails from ρ₁.
         -- The loop step at ρ₁ evaluates invs. We examine the loop step.
@@ -3186,7 +3157,7 @@ private theorem loop_enter_canfail_simulation
           maintain_invariants, body_statements, heq_stmt₂, heq_body₂, heq_maintain₂,
           heq_fib₂, ρ_pf₂, hprefix_term₂, _heval_pf₂, _hfail_pf₂, _hagree_pf₂⟩ :=
           stmtResult_loop_with_prefix_term π φ σ guard measure_tgt inv body md ρ₀
-            hwfb hwfvar hnf hall_tt hguard_ok hswf_body hmeas_wf_tgt
+            hwfb hwfvar hnf hwfc hwfv hall_tt hguard_ok hswf_body hmeas_wf_tgt
         let mkMaintainLbl : Nat → String → String := fun i lbl =>
           s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
         have hmaint_cf : CanFailBlock π φ maintain_invariants ρ₁ := by
@@ -3278,6 +3249,7 @@ private theorem det_loop_success_target_simulation
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
+    (hwfc : WellFormedCoreEvalCong ρ₀.eval)
     (hnofd : Block.noFuncDecl body = Bool.true)
     (hnf₀ : ρ₀.hasFailure = Bool.false)
     (hnf : ρ'.hasFailure = Bool.false)
@@ -3318,7 +3290,7 @@ private theorem det_loop_success_target_simulation
     ⟨ρ_pf_tgt, hprefix_targeting, _heval_pf_tgt, _hfail_pf_tgt, _hagree_pf_tgt⟩,
     heq_exit, hsuffix_info⟩ :=
     stmtResult_loop_with_prefix_targeting_det π φ σ g measure inv body md ρ₀ ρ_last
-      hwfb hwfvar hnf₀ hall_tt₀ hguard_tt₀ hswf_body
+      hwfb hwfvar hnf₀ hwfc hwfv hall_tt₀ hguard_tt₀ hswf_body
       hg_last hinv_last hswf_last heval_last (hnf_last.trans hnf₀.symm) hstore_agree
       hmeas_wf_last
   rw [heq_stmt]
@@ -3665,6 +3637,7 @@ private theorem simulation
       | .loop guard measure inv body md =>
         have ⟨ll, fil, fib, tb, heq_stmt, heq_fib⟩ :=
           stmtResult_loop_struct σ guard measure inv body md
+            sorry /- LATER: stmtOk for loop -/
         have hsz_body : Block.sizeOf body ≤ n := by
           simp [Stmt.sizeOf] at hsz; omega
         have hnofd_body : Block.noFuncDecl body = Bool.true := by
@@ -3770,7 +3743,7 @@ private theorem simulation
                   | .inr hbody_ok =>
                     exact .inr (fun _ => heq_stmt ▸
                       det_loop_success_target_simulation π φ hwf_ext σ _ measure inv
-                        body md ρ₀ ρ_last ρ' hwfb hwfv hwfvar hnofd_body hnf₀ hnf
+                        body md ρ₀ ρ_last ρ' hwfb hwfv hwfvar (sorry /- WellFormedCoreEvalCong ρ₀.eval: thread from top-level -/) hnofd_body hnf₀ hnf
                         hswf_body₂ hg_last hinv_last heval_last hnf_last
                         hwfb_last hwfv_last hwfvar_last
                         hswf_last
@@ -4015,6 +3988,7 @@ private theorem simulation
         · -- ρ₀.hasFailure = false. Use stmtResult_loop_struct to get target structure.
           have ⟨ll, fil, fib, tb, heq_stmt, heq_fib⟩ :=
             stmtResult_loop_struct σ guard measure inv body md
+              sorry /- LATER: stmtOk for loop -/
           rw [heq_stmt]
           let mkLbl : Nat → String → String := fun i lbl =>
             s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_entry_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
@@ -4058,14 +4032,16 @@ private theorem simulation
                   rw [hnif]; exact env_or_false_eq ρ₀
                 rw [← heq_stmt]
                 exact loop_enter_canfail_simulation π φ hwf_ext σ (.det _) (measure.map HasIntOrder.decr) inv body md ρ₀
-                  hwfb hwfv hwfvar hnf₀' hall_tt hguard_tt
+                  hwfb hwfv hwfvar (sorry /- WellFormedCoreEvalCong ρ₀.eval: thread from top-level -/) hnf₀' hall_tt hguard_tt
                   (loop_touchedVars_implies_body_touchedVars hswf) hnofd_body
                   ⟨cfg, hfail, henv_eq ▸ r1⟩
                   (fun ρ ρ' hwfb' hwfv' hwfvar' hswf_ρ hstar =>
                     (ih.2.1 { σ with gen := (StringGenState.gen "loop" σ.gen).snd } body hsz_body hnofd_body ρ hwfb' hwfv' hwfvar' hswf_ρ).1 ρ' hstar)
                   (fun ρ hwfb' hwfv' hwfvar' hswf_ρ hcf =>
                     ih.2.2.2 { σ with gen := (StringGenState.gen "loop" σ.gen).snd } body hsz_body hnofd_body ρ hwfb' hwfv' hwfvar' hswf_ρ hcf)
-                  measure (fun me hme => sorry /- (hmeas_src₂ me hme).2 -/)
+                  measure (fun me hme =>
+                    -- Requires WellFormedCoreEvalCong ρ₀.eval (thread from top-level) + measure_lt_congr
+                    sorry)
               · -- Some inv is ff → entry assert fails
                 have hsome_ff := not_all_tt_implies_some_ff inv ρ₀ hinv_eval hall_tt
                 have hcf := canFailBlock_append_left π φ
@@ -4112,7 +4088,7 @@ private theorem simulation
                   rw [hnif]; exact env_or_false_eq ρ₀
                 rw [← heq_stmt]
                 exact loop_enter_canfail_simulation π φ hwf_ext σ .nondet .none inv body md ρ₀
-                  hwfb hwfv hwfvar hnf₀' hall_tt trivial
+                  hwfb hwfv hwfvar (sorry /- WellFormedCoreEvalCong ρ₀.eval: thread from top-level -/) hnf₀' hall_tt trivial
                   (loop_touchedVars_implies_body_touchedVars hswf) hnofd_body
                   ⟨cfg, hfail, henv_eq ▸ r1⟩
                   (fun ρ ρ' hwfb' hwfv' hwfvar' hswf_ρ hstar =>

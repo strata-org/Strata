@@ -116,12 +116,12 @@ encoding.
 -/
 
 /-- Generate a fresh loop number, drawing from the embedded `StringGenState`. -/
-private def genLoopNum : StateM LoopElimState String := fun s =>
+def genLoopNum : StateM LoopElimState String := fun s =>
   let (nm, gen') := StringGenState.gen "loop" s.gen
   (nm, { s with gen := gen' })
 
 /-- Increment a statistic key by `n` (default 1). -/
-private def bumpStat (key : String) (n : Nat := 1) : StateM LoopElimState Unit :=
+def bumpStat (key : String) (n : Nat := 1) : StateM LoopElimState Unit :=
   modify fun s => { s with statistics := s.statistics.increment key n }
 
 mutual
@@ -130,7 +130,7 @@ def Stmt.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (s : Stmt P C) : StateM LoopElimState (Bool × Stmt P C) :=
+  (s : Stmt P C) : ExceptT String (StateM LoopElimState) (Bool × Stmt P C) :=
   match s with
   | .loop guard measure invariants bss md => do
     let loop_num ← genLoopNum
@@ -176,14 +176,18 @@ def Stmt.removeLoopsM
           | none => pure ([], [])
           | some m =>
             let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
-            let m_old_expr     := HasFvar.mkFvar m_old_ident
-            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy (.det m) md)
-            let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
-              s!"{loopElimAssertPrefix}{loop_num}_measure_lb"
-              (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
-            let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-              s!"{loopElimAssertPrefix}{loop_num}_measure_decrease" (HasIntOrder.lt m m_old_expr) md)
-            pure ([init_m_old, assert_lb], [assert_decrease])
+            -- Check freshness: m_old_ident must not be in touchedVars of the body
+            if m_old_ident ∈ Block.touchedVars bss then
+              throw s!"Loop measure variable conflicts with body variable"
+            else
+              let m_old_expr     := HasFvar.mkFvar m_old_ident
+              let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy (.det m) md)
+              let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
+                s!"{loopElimAssertPrefix}{loop_num}_measure_lb"
+                (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
+              let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
+                s!"{loopElimAssertPrefix}{loop_num}_measure_decrease" (HasIntOrder.lt m m_old_expr) md)
+              pure ([init_m_old, assert_lb], [assert_decrease])
         let (pre, post) := termination_stmts
         let not_guard := [Stmt.cmd (HasPassiveCmds.assume
           s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)]
@@ -234,7 +238,7 @@ def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (ss : List (Stmt P C)) : StateM LoopElimState (Bool × List (Stmt P C)) :=
+  (ss : List (Stmt P C)) : ExceptT String (StateM LoopElimState) (Bool × List (Stmt P C)) :=
   match ss with
   | [] => pure (false, [])
   | s :: ss => do
@@ -255,7 +259,7 @@ open Imperative Lambda Imperative.LoopElim
 /-- Transform a list of `Core.Decl`s, eliminating loops in every procedure
     body.  Returns a `changed` flag together with the rewritten list. -/
 private def removeLoopsDecls :
-    List Core.Decl → StateM LoopElimState (Bool × List Core.Decl)
+    List Core.Decl → ExceptT String (StateM LoopElimState) (Bool × List Core.Decl)
   | [] => pure (false, [])
   | .proc proc md :: ds => do
     let (c1, body) ← Block.removeLoopsM proc.body
@@ -274,11 +278,13 @@ def loopElim (p : Core.Program) :
     Core.Transform.CoreTransformM (Bool × Core.Program) := do
   let σ ← get
   let initState : LoopElimState := { gen := σ.genState.cs }
-  let ((changed, decls), finalState) := StateT.run (removeLoopsDecls p.decls) initState
+  let (result, finalState) := StateT.run (ExceptT.run (removeLoopsDecls p.decls)) initState
   set { σ with
     genState := { σ.genState with cs := finalState.gen },
     statistics := σ.statistics.merge finalState.statistics }
-  return (changed, { decls := decls })
+  match result with
+  | .ok (changed, decls) => return (changed, { decls := decls })
+  | .error e => throw e
 
 end LoopElim
 
