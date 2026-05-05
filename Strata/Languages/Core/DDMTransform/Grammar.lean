@@ -127,6 +127,8 @@ fn str_concat (a : string, b : string) : string => "str.concat" "(" a ", " b ")"
 fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a ", " i ", " n ")";
 fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
 fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s ", " a ")";
+fn str_prefixof (s : string, t : string) : bool => "str.prefixof" "(" s ", " t ")";
+fn str_suffixof (s : string, t : string) : bool => "str.suffixof" "(" s ", " t ")";
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";
 fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 ", " s2 ")";
@@ -262,12 +264,12 @@ op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";";
 
 category Invariant;
-op invariant (e : Expr) : Invariant => "invariant" e ";";
+op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
 
 category Invariants;
 op nilInvariants : Invariants => ;
-op consInvariants(e : Expr, is : Invariants) : Invariants =>
-  "invariant " e "\n" is:0;
+op consInvariants(label : Option Label, e : Expr, is : Invariants) : Invariants =>
+  "invariant " label e "\n" is:0;
 
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";

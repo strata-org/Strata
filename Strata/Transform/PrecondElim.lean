@@ -289,7 +289,11 @@ def transformStmt (s : Statement)
     let measureAssertsEnd := match measure with
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure_end" md
-    let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
+    -- Preserve the per-invariant label in the generated preconditions' prefix.
+    -- For unlabeled invariants, fall back to the plain "loop_invariant" prefix.
+    let invAsserts := invariant.flatMap (fun (lbl, inv) =>
+      let prefix' := if lbl.isEmpty then "loop_invariant" else s!"loop_invariant_{lbl}"
+      collectPrecondAsserts F inv prefix' md)
     let guardAsserts := match guard with
       | .det g => collectPrecondAsserts F g "loop_guard" md
       | .nondet => []
@@ -315,7 +319,7 @@ def transformStmt (s : Statement)
     let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
 
     let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-      | throw s!"{func.name.name} already in factory."
+      | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
     let F' := F.push func notMem
     setFactory F'
     let decl' := { decl with preconditions := [] }
@@ -390,7 +394,7 @@ where
       | .func func md => do
         let F ← getFactory
         let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-          | throw s!"{func.name.name} already in factory."
+          | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
         let F' := F.push func notMem
         setFactory F'
         let func' := { func with preconditions := [] }
@@ -411,7 +415,7 @@ where
         let F ← getFactory
         let F' ← funcs.foldlM (init := F) fun F func =>  do
           let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-            | throw s!"{func.name.name} already in factory."
+            | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
           pure <| F.push func notMem
         setFactory F'
         let funcs' := funcs.map ({ · with preconditions := [] })
