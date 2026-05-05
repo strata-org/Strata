@@ -362,7 +362,10 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | AstNode.mk expr source =>
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr cond
+    modify fun s => { s with inValueContext := saved }
     let thenBr' ← resolveStmtExpr thenBr
     let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     pure (.IfThenElse cond' thenBr' elseBr')
@@ -371,7 +374,10 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let stmts' ← stmts.mapM resolveStmtExpr
       pure (.Block stmts' label)
   | .While cond invs dec body =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr cond
+    modify fun s => { s with inValueContext := saved }
     let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     let dec' ← dec.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
     let body' ← resolveStmtExpr body
@@ -506,10 +512,16 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let val' ← resolveStmtExpr val
     pure (.Fresh val')
   | .Assert ⟨condExpr, summary⟩ =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr condExpr
+    modify fun s => { s with inValueContext := saved }
     pure (.Assert { condition := cond', summary })
   | .Assume cond =>
+    let saved := (← get).inValueContext
+    modify fun s => { s with inValueContext := true }
     let cond' ← resolveStmtExpr cond
+    modify fun s => { s with inValueContext := saved }
     pure (.Assume cond')
   | .ProveBy val proof =>
     let val' ← resolveStmtExpr val
