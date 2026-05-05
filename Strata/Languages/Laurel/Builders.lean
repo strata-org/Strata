@@ -34,6 +34,11 @@ public section
     : StmtExprMd :=
   { val := e, source := source }
 
+/-- Build a VariableMd from a Variable with optional source. -/
+@[inline] def mkVarNode (v : Variable) (source : Option FileRange := none)
+    : VariableMd :=
+  { val := v, source := source }
+
 /-- A Laurel `StmtExprMd` tagged with its `HighType`. -/
 structure TypedExpr (tp : HighType) where
   expr : StmtExprMd
@@ -50,18 +55,20 @@ def litStr (s : String) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.LiteralString s) source
 def litBool (b : Bool) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.LiteralBool b) source
-def ident (name : String) (source : Option FileRange := none) : StmtExprMd :=
-  mkNode (.Identifier name) source
-def fieldSelect (obj : StmtExprMd) (field : String) (source : Option FileRange := none) : StmtExprMd :=
-  mkNode (.FieldSelect obj field) source
+def ident (name : Identifier) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Var (.Local name)) source
+def fieldSelect (obj : StmtExprMd) (field : Identifier) (source : Option FileRange := none) : StmtExprMd :=
+  mkNode (.Var (.Field obj field)) source
 def call (name : String) (args : List StmtExprMd) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.StaticCall name args) source
 def primOp (op : Operation) (args : List StmtExprMd) (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.PrimitiveOp op args) source
-def localVar (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none)
+def localVar (name : Identifier) (ty : HighTypeMd) (init : Option StmtExprMd := none)
     (source : Option FileRange := none) : StmtExprMd :=
-  mkNode (.LocalVariable name ty init) source
-def assign (targets : List StmtExprMd) (value : StmtExprMd)
+  match init with
+  | some i => mkNode (.Assign [mkVarNode (.Declare ⟨name, ty⟩)] i) source
+  | none => mkNode (.Var (.Declare ⟨name, ty⟩)) source
+def assign (targets : List VariableMd) (value : StmtExprMd)
     (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.Assign targets value) source
 def assert_ (cond : TypedExpr .TBool) (summary : Option String := none)
@@ -90,6 +97,14 @@ def while_ (cond : StmtExprMd) (invs : List StmtExprMd := [])
     (source : Option FileRange := none) : StmtExprMd :=
   mkNode (.While cond invs dec body) source
 
+/-- Helper to create a VariableMd for a local variable reference. -/
+def freeVar (name : Identifier) (source : Option FileRange := none) : VariableMd :=
+  mkVarNode (.Local name) source
+
+/-- Helper to create a VariableMd for a field access. -/
+def fieldVar (obj : StmtExprMd) (field : Identifier) (source : Option FileRange := none) : VariableMd :=
+  mkVarNode (.Field obj field) source
+
 /-! ## Type-safe builders -/
 
 namespace Typed
@@ -104,8 +119,8 @@ def litStr (s : String) (source : Option FileRange := none) : TypedExpr .TString
 def litBool (b : Bool) (source : Option FileRange := none) : TypedExpr .TBool :=
   ⟨mkNode (.LiteralBool b) source⟩
 /-- Typed identifier. -/
-def ident (name : String) (tp : HighType) (source : Option FileRange := none) : TypedExpr tp :=
-  ⟨mkNode (.Identifier name) source⟩
+def ident (name : Identifier) (tp : HighType) (source : Option FileRange := none) : TypedExpr tp :=
+  ⟨mkNode (.Var (.Local name)) source⟩
 /-- Typed static call. -/
 def call (name : String) (args : List StmtExprMd) (tp : HighType)
     (source : Option FileRange := none) : TypedExpr tp :=

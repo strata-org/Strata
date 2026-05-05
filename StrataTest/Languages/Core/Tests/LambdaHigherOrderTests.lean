@@ -139,7 +139,7 @@ spec {
 info:
 Obligation: TestLambdaApply_ensures_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode function 'apply' to SMT: it has function-typed parameter(s) [f]. Higher-order functions cannot be encoded to SMT. Consider marking the function as `inline`.
+Result: 🚨 SMT Encoding Error! Cannot encode function 'apply' to SMT: it has function-typed parameter(s) [f]. Higher-order functions cannot be encoded to SMT. Consider marking the function as `inline`.
 -/
 #guard_msgs in
 #eval verify lambdaApplyNoInlinePgm (options := .quiet)
@@ -167,7 +167,7 @@ spec {
 /-- info:
 Obligation: Test_ensures_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode function 'mkFn' to SMT: its body contains a lambda expression. Lambda abstractions cannot be encoded to SMT. Consider marking the function as `inline`.-/
+Result: 🚨 SMT Encoding Error! Cannot encode function 'mkFn' to SMT: its body contains a lambda expression. Lambda abstractions cannot be encoded to SMT. Consider marking the function as `inline`.-/
 #guard_msgs in
 #eval verify lambdaInBodyPgm (options := .quiet)
 
@@ -253,7 +253,7 @@ spec {
 
 /-- info: Obligation: Test_ensures_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode lambda expression to SMT. Lambda abstractions must be eliminated (e.g., by beta-reduction) before SMT encoding.
+Result: 🚨 SMT Encoding Error! Cannot encode lambda expression to SMT. Lambda abstractions must be eliminated (e.g., by beta-reduction) before SMT encoding.
 Lambda: fun x : int => x + 1-/
 #guard_msgs in
 #eval verify lambdaInAssertPgm (options := .quiet)
