@@ -36,4 +36,14 @@ def processLaurelFileWithOptions (options : LaurelVerifyOptions) (input : InputC
 def processLaurelFile (input : InputContext) : IO (Array Diagnostic) :=
   processLaurelFileWithOptions default input
 
+/-- Project-root-relative path to the `Build/` directory for intermediate files.
+    Resolved from the current working directory so it works on any machine. -/
+def buildDir : IO String := do
+  let cwd ← IO.currentDir
+  return s!"{cwd}/Build/"
+
+def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagnostic) := do
+  let dir ← buildDir
+  processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
+
 end Laurel

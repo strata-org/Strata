@@ -195,9 +195,12 @@ procedure fieldTargetInMultiAssign()
   assign c#intValue, y, var z: int := modifyHeapAndReturnMultiple(c);
   assert c#intValue == 1;
   assert y == 2;
-  assert z == 3
+  var z2: int := (z := z + 1);
+  assert z2 == 4;
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
 };
 "#
 
-#guard_msgs(drop info, error) in
+#guard_msgs (drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
