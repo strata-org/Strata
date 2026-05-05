@@ -274,6 +274,14 @@ def translateSort (ty : TermType) : TranslateM Expr := do
     let as ← as.mapM translateSort
     return mkAppN t as.toArray
 
+/--
+Translate an SMT term to a Lean expression, together with its Lean type.
+
+The first component is the actual type of the second component, not just a
+hint. Consumers use it as the type argument for generated Lean constructs such
+as `Eq` and `ite`, and helpers such as `leftAssocOp` propagate it as the result
+type of compound expressions.
+-/
 def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
   match t with
   | .var v =>
