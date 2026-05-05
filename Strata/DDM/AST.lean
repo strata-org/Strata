@@ -2285,7 +2285,7 @@ def create (dialects : DialectMap) (dialect : DialectName) (commands : Array Ope
   let globalContext :=
     match computeGlobalContext dialects commands with
     | .ok gctx => gctx
-    | .error e => panic! s!"Program.globalContext: {e}"
+    | .error e => panic! s!"Program.globalContext: {e}" -- nopanic:ok
   { dialects, dialect, commands, globalContext }
 
 end Program

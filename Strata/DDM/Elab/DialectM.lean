@@ -911,7 +911,7 @@ def elabMdCommand : DialectElab := fun tree => do
 
 def elabSetOptionCommand : DialectElab := fun tree => do
   let .isTrue _ := checkTreeSize tree 2
-    | panic! "Invalid tree size"
+    | logError tree.info.loc "setOptionCommand: unexpected tree size"; return
   let nameInfo := tree[0].info.asIdent!
   let valueInfo := tree[1].info.asIdent!
   match nameInfo.val with
