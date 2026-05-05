@@ -22,7 +22,8 @@ open Strata.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
-/-- Run only parsing + resolution and return diagnostics (no SMT verification). -/
+/-- Run only parsing + resolution and return error-level diagnostics (no SMT verification).
+    Warnings are filtered out as the test framework only matches error expectations. -/
 private def processResolution (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
@@ -32,7 +33,9 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
   | .ok program =>
     let result := resolve program
     let files := Map.insert Map.empty uri input.fileMap
-    return result.errors.toList.map (fun dm => dm.toDiagnostic files) |>.toArray
+    return result.errors.toList.map (fun dm => dm.toDiagnostic files)
+      |>.filter (fun d => d.type != DiagnosticType.Warning)
+      |>.toArray
 
 /-! ## Duplicate static procedure names -/
 

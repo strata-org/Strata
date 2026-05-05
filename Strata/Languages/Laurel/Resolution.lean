@@ -293,9 +293,14 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
 
 /-- Resolve a field reference using the target's type to build a qualified lookup key.
     Falls back to the instance type name (for `self.field` in instance methods).
-    Unresolved field names are returned as-is for later passes to handle. -/
+    If the field cannot be resolved in any type scope, emits an error diagnostic
+    and returns the field name as-is. Later passes (notably HeapParameterization)
+    may still handle the unresolved name: for composite types, field accesses are
+    converted into heap reads (`readField($heap, obj, field)`), which work even
+    when the field name cannot be resolved at parse time (e.g., dynamic attributes
+    on Python classes translated to Laurel). -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (_source : Option FileRange) : ResolveM Identifier := do
+    (source : Option FileRange) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -305,12 +310,20 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  -- Fallback: field names that can't be resolved in any type scope are
-  -- returned as-is (no error). This is intentional because:
-  -- 1. Python classes can have dynamic attributes not declared in the class body
-  -- 2. HeapParameterization converts field accesses on composite types into
-  --    heap reads (readField($heap, obj, field)), which work for any field name
-  -- 3. For non-composite types, the field access becomes a Hole (unknown value)
+  -- Emit a warning (not an error) for the unresolved field. Downstream passes
+  -- (notably HeapParameterization) may still handle the unresolved name: for
+  -- composite types, field accesses are converted into heap reads
+  -- (`readField($heap, obj, field)`), which work even when the field name
+  -- cannot be resolved at parse time (e.g., dynamic attributes on Python
+  -- classes translated to Laurel). Using a warning instead of an error lets
+  -- such pipelines proceed while still informing Laurel users of potential
+  -- issues.
+  let typeDesc := match typeName? with
+    | some tn => s!"type '{tn}'"
+    | none => "target"
+  let diag := diagnosticFromSource (source.orElse fun _ => fieldName.source)
+    s!"Field '{fieldName}' is not defined on {typeDesc}" .Warning
+  modify fun s => { s with errors := s.errors.push diag }
   return fieldName
 
 /-- Save and restore scope around a block (for lexical scoping). -/
