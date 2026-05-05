@@ -19,15 +19,88 @@ changes!**
 
 ## Prerequisites
 
-1. **Lean4**: Strata is built on Lean4; see the build specified in the
+1. **Lean4**: Strata is built on Lean4; see the version specified in the
    `lean-toolchain` file.
 
-   You can install Lean4 by following the instructions [here](https://lean-lang.org/).
+   Install Lean4 by following the instructions at [lean-lang.org](https://lean-lang.org/).
 
-2. **SMT Solver**: Analysis tools in Strata use SMT solvers for program
-   verification.
-   - Install an SMT solver. You can use any solver you want, but the unit
-     tests assume `cvc5` is on your `PATH` [cvc5](https://cvc5.github.io/).
+2. **SMT Solvers**: The verification pipeline and tests require SMT solvers
+   on your `PATH`.
+
+   - **cvc5** (required): [cvc5.github.io](https://cvc5.github.io/)
+   - **z3** (required by some tests): [github.com/Z3Prover/z3](https://github.com/Z3Prover/z3)
+
+3. **Python 3.11+** (required for Python-related tests and the `strata`
+   Python tooling):
+
+4. **Java JDK** (required for Java code generation tests):
+
+5. **ion-java jar** (required for the Java/Ion integration test):
+
+### Installing dependencies
+
+#### SMT Solvers
+
+Download static builds (single binary, no library dependencies):
+
+```bash
+# cvc5 (adjust URL for your OS/arch)
+# See https://github.com/cvc5/cvc5/releases for all platforms
+wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-x86_64-static.zip
+unzip cvc5-Linux-x86_64-static.zip
+cp cvc5-Linux-x86_64-static/bin/cvc5 /usr/local/bin/
+
+# z3
+# See https://github.com/Z3Prover/z3/releases for all platforms
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+unzip z3-4.15.2-x64-glibc-2.39.zip
+cp z3-4.15.2-x64-glibc-2.39/bin/z3 /usr/local/bin/
+```
+
+On macOS (Apple Silicon), use the `arm64` variants and prefer the **static**
+build to avoid dynamic library issues:
+
+```bash
+# cvc5 static for macOS arm64
+wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.3.3/cvc5-macOS-arm64-static.zip
+unzip cvc5-macOS-arm64-static.zip
+cp cvc5-macOS-arm64-static/bin/cvc5 /usr/local/bin/
+
+# z3 for macOS arm64
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-arm64-osx-15.7.3.zip
+unzip z3-4.16.0-arm64-osx-15.7.3.zip
+cp z3-4.16.0-arm64-osx-15.7.3/bin/z3 /usr/local/bin/
+```
+
+#### Python
+
+Python 3.11 or later is required. Install the Strata Python package:
+
+```bash
+pip install ./Tools/Python
+```
+
+This provides the `strata-python` tooling used by the Python verification
+pipeline and tests.
+
+#### Java (for code generation tests)
+
+A JDK (11+) providing `javac` must be on your `PATH`. Additionally,
+download the ion-java jar used by the Java/Ion integration test:
+
+```bash
+wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
+  https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+```
+
+### Verifying your setup
+
+```bash
+cvc5 --version    # should print version info
+z3 --version      # should print version info
+python3 --version # should be 3.11+
+javac --version   # should be 11+
+```
 
 ## Build
 
@@ -43,6 +116,19 @@ To build executable files only and omit proof checks that might take a long time
 
 ```bash
 lake build strata:exe strata StrataToCBMC StrataCoreToGoto
+```
+
+### Running specific test subsets
+
+```bash
+# Run all tests except Python (which requires the Python package)
+lake test -- --exclude Languages.Python
+
+# Run only Python tests (requires `pip install ./Tools/Python`)
+lake test -- Languages.Python
+
+# Run all tests
+lake test
 ```
 
 ## Running Analyses on Existing Strata Programs
