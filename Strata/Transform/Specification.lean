@@ -79,7 +79,7 @@ namespace Specification
 
 /-- Bundles the abstract ingredients for small-step statement semantics,
     parameterized by a shared pure-expression system `P`. -/
-structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
+structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
@@ -101,7 +101,7 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
-abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop)
     (storeWF : Stmt P CmdT → Env P → Prop := fun _ _ => True) : Lang P :=
@@ -109,12 +109,12 @@ abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, storeWF⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
     (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasVal P]
 variable (L : Lang P)
 
 
@@ -364,7 +364,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P']
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P'] [HasIntOrder P']
 variable (extendEval : ExtendEval P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/
@@ -767,7 +767,7 @@ abbrev Lang.imperativeBlock : Lang P where
   getEnv := Config.getEnv
   storeWF := fun _ _ => True
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] in
+omit [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasVal P] in
 private theorem mapM_noFuncDecl
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true)

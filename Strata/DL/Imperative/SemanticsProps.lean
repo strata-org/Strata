@@ -17,14 +17,14 @@ namespace Imperative
 public section
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P]:
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]:
   EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
   | eval_assert_fail _ => rfl
 
 theorem eval_stmt_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.store = ρ'.store := by
   intro Heval
   unfold EvalStmtSmall at Heval
@@ -38,7 +38,7 @@ theorem eval_stmt_assert_store_cst
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 theorem eval_stmt_assert_eval_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.eval = ρ'.eval := by
   intro Heval
   unfold EvalStmtSmall at Heval
@@ -49,7 +49,7 @@ theorem eval_stmt_assert_eval_cst
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 theorem eval_stmts_assert_store_cst
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtsSmall P (EvalCmd P) extendEval ρ [(.cmd (Cmd.assert l e md))] ρ' → ρ.store = ρ'.store := by
   intro Heval
   -- Use stmts_cons_step inversion: the singleton list steps through
@@ -76,7 +76,7 @@ theorem eval_stmts_assert_store_cst
   exact eval_stmt_assert_store_cst hstmt
 
 theorem eval_stmt_assert_eq_of_pure_expr_eq
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] :
   WellFormedSemanticEvalBool ρ.eval →
   (EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l1 e md1)) ρ' ↔
   EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l2 e md2)) ρ') := by
@@ -108,7 +108,7 @@ same `store` and `eval` in the output).
 private theorem step_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasNot P] [HasIntOrder P]
   {c c' : Config P CmdT}
   (hstep : StepStmt P EvalCmd extendEval c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -146,7 +146,7 @@ theorem EvalStmtSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -162,7 +162,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -177,7 +177,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
 theorem StepStmtStar_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasNot P] [HasIntOrder P]
   {c c' : Config P CmdT}
   (hstar : StepStmtStar P EvalCmd extendEval c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -190,7 +190,7 @@ theorem EvalStmtSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
   ∃ ρ₂', EvalStmtSmall P EvalCmd extendEval ρ₂ s ρ₂' ∧
@@ -201,7 +201,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
   ∃ ρ₂', EvalStmtsSmall P EvalCmd extendEval ρ₂ ss ρ₂' ∧
@@ -229,7 +229,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
 /-! ### Assert elimination -/
 
 theorem eval_stmts_assert_elim
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
   ∃ ρ'', EvalStmtsSmall P (EvalCmd P) extendEval ρ cmds ρ'' ∧
@@ -270,7 +270,7 @@ theorem eval_stmts_assert_elim
         exact absurd (EvalStmtsSmall_hasFailure_monotone htail hf1) (by simp [Hf])
 
 theorem assert_elim
-  [HasFvar P] [HasBool P] [HasNot P] :
+  [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
   EvalStmtsSmall P (EvalCmd P) extendEval ρ [.cmd (.assert l3 e md3)] ρ' := by
@@ -378,7 +378,7 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
 
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [HasIntOrder P]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ v ∈ HasVarsPure.getVars e →
   EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
@@ -401,7 +401,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
 
 theorem eval_cmd_set_comm'
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [HasIntOrder P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
@@ -420,7 +420,7 @@ theorem eval_cmd_set_comm'
 
 theorem eval_cmd_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [HasIntOrder P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
@@ -437,7 +437,7 @@ theorem eval_cmd_set_comm
 
 theorem eval_stmt_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [HasIntOrder P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr ρ.eval →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
@@ -459,7 +459,7 @@ theorem eval_stmt_set_comm
 
 theorem eval_stmts_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [HasIntOrder P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalExprCongr ρ.eval →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
@@ -498,7 +498,7 @@ and the command-evaluation parameter. -/
 section ReflTransTHelpers
 
 variable {P : PureExpr} {CmdT : Type}
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasNot P] [HasIntOrder P]
   {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
 
 /-- Invert a `.seq` execution reaching terminal in `ReflTransT`: the inner

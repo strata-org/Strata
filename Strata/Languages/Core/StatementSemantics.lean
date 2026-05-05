@@ -43,6 +43,7 @@ instance : HasIntOrder Core.Expression where
   lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
   zero        := .intConst () 0
   intTy       := .forAll [] (.tcons "int" [])
+  decr  e     := .app () (.app () Core.intSubOp e) (.intConst () 1)
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩

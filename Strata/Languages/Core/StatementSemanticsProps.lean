@@ -55,7 +55,7 @@ theorem TouchVarsEmpty :
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   {extendEval : ExtendEval P}
   { ρ ρ' : Env P }
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
   intro H
   match H with

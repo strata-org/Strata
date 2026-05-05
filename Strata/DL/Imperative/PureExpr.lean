@@ -62,12 +62,14 @@ class HasImp (P : PureExpr) extends HasBool P where
 /-- Integer ordering primitives.
     `zero` is the lower-bound constant for well-foundedness (measure ≥ 0).
     `intTy` is the type of integer expressions, for variable declarations.
+    `decr` produces an expression strictly less than its argument (for measure decrement).
     `ge` is derivable as `HasNot.not (lt b a)` and is therefore omitted. -/
 class HasIntOrder (P : PureExpr) where
   eq    : P.Expr → P.Expr → P.Expr
   lt    : P.Expr → P.Expr → P.Expr
   zero  : P.Expr
   intTy : P.Ty
+  decr  : P.Expr → P.Expr
 
 class HasIdent (P : PureExpr) where
   ident : String → P.Ident
