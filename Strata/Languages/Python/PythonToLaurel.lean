@@ -991,6 +991,21 @@ partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRan
     pure <| mkStmtExprMd (.Hole)
   else pure translated
 
+/-- Coerce each argument whose corresponding parameter type is Any.
+    Arguments aligned with non-Any parameters are kept unchanged. -/
+partial def coerceArgsToAny (ctx : TranslationContext)
+    (args : List (Python.expr SourceRange))
+    (rawTransArgs : List StmtExprMd)
+    (fd : PythonFunctionDecl) : Except TranslationError (List StmtExprMd) := do
+  let paramTypeNames := fd.args.map (fun a => highTypeToPyLauType a.laurelType.val)
+  let mut result : List StmtExprMd := []
+  for (pair, paramTy) in (args.zip rawTransArgs).zip
+      (paramTypeNames ++ List.replicate args.length PyLauType.Any) do
+    let (orig, trans) := pair
+    if paramTy != PyLauType.Any then result := result ++ [trans]
+    else result := result ++ [← coerceToAny ctx orig trans]
+  pure result
+
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
       Except TranslationError (String × Option (Python.expr SourceRange) × Bool) := do
   match func with
@@ -1272,13 +1287,7 @@ partial def translateCall (ctx : TranslationContext)
       throwUserError callRange
         s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let rawPosArgs ← args.mapM (translateExpr ctx)
-    let paramTypeNames := funcDecl.args.map (fun a => highTypeToPyLauType a.laurelType.val)
-    let mut trans_posArgs : List StmtExprMd := []
-    for (pair, paramTy) in (args.zip rawPosArgs).zip
-        (paramTypeNames ++ List.replicate args.length PyLauType.Any) do
-      let (orig, trans) := pair
-      if paramTy != PyLauType.Any then trans_posArgs := trans_posArgs ++ [trans]
-      else trans_posArgs := trans_posArgs ++ [← coerceToAny ctx orig trans]
+    let trans_posArgs ← coerceArgsToAny ctx args rawPosArgs funcDecl
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
     let trans_dictArgs := remainingParams.map fun arg =>
@@ -1312,15 +1321,7 @@ partial def translateCall (ctx : TranslationContext)
   let rawTransArgs ← args.mapM (translateExpr ctx)
   let trans_args ← match funcDecl with
     | none => pure rawTransArgs
-    | some fd =>
-      let paramTypeNames := fd.args.map (fun a => highTypeToPyLauType a.laurelType.val)
-      let mut result : List StmtExprMd := []
-      for (pair, paramTy) in (args.zip rawTransArgs).zip
-          (paramTypeNames ++ List.replicate args.length PyLauType.Any) do
-        let (orig, trans) := pair
-        if paramTy != PyLauType.Any then result := result ++ [trans]
-        else result := result ++ [← coerceToAny ctx orig trans]
-      pure result
+    | some fd => coerceArgsToAny ctx args rawTransArgs fd
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
