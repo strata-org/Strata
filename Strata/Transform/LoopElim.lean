@@ -177,15 +177,13 @@ def Stmt.removeLoopsM
           | some m =>
             let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
             let m_old_expr     := HasFvar.mkFvar m_old_ident
-            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
-            let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
-              s!"{loopElimAssumePrefix}{loop_num}_measure" (HasIntOrder.eq m_old_expr m) md)
+            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy (.det m) md)
             let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
               s!"{loopElimAssertPrefix}{loop_num}_measure_lb"
               (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
             let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
               s!"{loopElimAssertPrefix}{loop_num}_measure_decrease" (HasIntOrder.lt m m_old_expr) md)
-            pure ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
+            pure ([init_m_old, assert_lb], [assert_decrease])
         let (pre, post) := termination_stmts
         let not_guard := [Stmt.cmd (HasPassiveCmds.assume
           s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)]
@@ -210,8 +208,8 @@ def Stmt.removeLoopsM
     -- Count assert/assume statements generated for this loop:
     --   entry_invariants, entry_invariant_assumes, guard_assumes, inv_assumes,
     --   maintain_invariants, exit_guard, invariant_assumes,
-    --   plus from measure: assume_m_old, assert_lb, assert_decrease
-    let measureAssertAssumes := if measure.isSome then 3 else 0
+    --   plus from measure: assert_lb, assert_decrease
+    let measureAssertAssumes := if measure.isSome then 2 else 0
     let numAssertAssumes := entry_invariants.length + entry_invariant_assumes.length +
       guard_assumes.length + inv_assumes.length + maintain_invariants.length +
       exit_guard.length + invariant_assumes.length + measureAssertAssumes

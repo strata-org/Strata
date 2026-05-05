@@ -49,7 +49,7 @@ abbrev Lang.kleene : Lang P where
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
   getEnv := KleeneConfig.getEnv
-  storeWF := fun _ _ => True
+  initEnvWF := fun _ _ => True
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 

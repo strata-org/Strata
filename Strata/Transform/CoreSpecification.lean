@@ -38,7 +38,8 @@ open Core Imperative
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
-    (fun s ρ => ∀ n ∈ Stmt.touchedVars s, (ρ.store n).isSome)
+    (fun s ρ => (∀ n ∈ Stmt.touchedVars s, (ρ.store n).isSome) ∧
+                WellFormedCoreEvalCong ρ.eval)
 
 /-! ## Well-formed program state at the entry of procedure -/
 

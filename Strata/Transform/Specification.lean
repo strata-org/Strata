@@ -96,17 +96,18 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/
   getEnv : CfgT → Env P
-  /-- Store well-formedness: the store has all variables the statement may touch. -/
-  storeWF : StmtT → Env P → Prop
+  /-- Initial environment well-formedness: includes store definedness for touched
+      variables and any evaluator well-formedness conditions needed by the language. -/
+  initEnvWF : StmtT → Env P → Prop
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
 abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop)
-    (storeWF : Stmt P CmdT → Env P → Prop := fun _ _ => True) : Lang P :=
+    (initEnvWF : Stmt P CmdT → Env P → Prop := fun _ _ => True) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
-   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, storeWF⟩
+   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, initEnvWF⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
@@ -593,7 +594,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
     ∀ (ρ₀ : Env P),
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
-      L₁.storeWF st ρ₀ →
+      L₁.initEnvWF st ρ₀ →
       -- Terminal/exiting envs are a subset.
       (∀ (ρ' : Env P),
         (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
@@ -606,7 +607,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
       ∧
       -- Store WF preservation.
-      L₂.storeWF st' ρ₀
+      L₂.initEnvWF st' ρ₀
 
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
@@ -617,7 +618,7 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
     {Pre Post : Env P → Prop}
     (htriple : Hoare.Triple L₂ Pre s' Post)
     (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval)
-    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.storeWF st ρ₀) :
+    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.initEnvWF st ρ₀) :
     Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   have hr := hsem st s' ht ρ₀ hwfb (hwfv ρ₀ hpre) (hswf ρ₀ hpre)
@@ -664,7 +665,7 @@ public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT →
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
       WellFormedSemanticEvalVar ρ₀.eval →
-      L₁.storeWF st ρ₀ →
+      L₁.initEnvWF st ρ₀ →
       -- Terminal case
       (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
         CanFail L₂ st' ρ₀ ∨
@@ -681,7 +682,7 @@ public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT →
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
       ∧
       -- Store WF preservation.
-      L₂.storeWF st' ρ₀
+      L₂.initEnvWF st' ρ₀
 
 /-- `Overapproximates` implies `OverapproximatesAggressively`. -/
 theorem Overapproximates.toAggressive (L₁ L₂ : Lang P)
@@ -765,7 +766,7 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
-  storeWF := fun _ _ => True
+  initEnvWF := fun _ _ => True
 
 omit [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasVal P] in
 private theorem mapM_noFuncDecl

@@ -455,28 +455,10 @@ private theorem env_or_false_eq (ρ : Env Expression) :
     ({ ρ with hasFailure := ρ.hasFailure || Bool.false } : Env Expression) = ρ := by
   cases ρ; simp [Bool.or_false]
 
-/-- Core evaluator: `HasIntOrder.eq` is reflexive on defined fvars.
-    Concretely: `δ σ (.eq () (fvar x) (fvar x)) = some tt` when `σ x ≠ none`. -/
-private theorem core_eval_intOrder_eq_refl
-    (δ : CoreEval) (σ : CoreStore) (x : Expression.Ident)
-    (hwfvar : WellFormedSemanticEvalVar δ)
-    (hdef : (σ x).isSome) :
-    δ σ (HasIntOrder.eq (HasFvar.mkFvar x) (HasFvar.mkFvar x)) = .some HasBool.tt := by
-  sorry
-
-/-- Core evaluator: `HasIntOrder.lt (decr e) e` evaluates to `tt` when
-    `lt e zero` is a valid boolean (i.e., `e` is a well-formed integer). -/
-private theorem core_eval_intOrder_lt_decr
-    (δ : CoreEval) (σ : CoreStore) (e : Expression.Expr)
-    (hlt_bool : δ σ (HasIntOrder.lt e HasIntOrder.zero) = .some HasBool.tt ∨
-                δ σ (HasIntOrder.lt e HasIntOrder.zero) = .some HasBool.ff) :
-    δ σ (HasIntOrder.lt (HasIntOrder.decr e) e) = .some HasBool.tt := by
-  sorry
-
 /-- Core evaluator: `HasFvar.getFvar (HasFvar.mkFvar x) = some x`. -/
 private theorem core_getFvar_mkFvar (x : Expression.Ident) :
     HasFvar.getFvar (P := Expression) (HasFvar.mkFvar x) = .some x := by
-  sorry
+  rfl
 
 /-- Single assert step: assert passes when expr is tt. -/
 private theorem assert_pass_step
@@ -500,45 +482,77 @@ private theorem assume_pass_step
     .step _ _ _ (.step_cmd (EvalCommand.cmd_sem (.eval_assume htt hwfb))) (.refl _)
   rwa [env_or_false_eq] at h
 
-/-- The pre_termination stmts [init_m_old, assume_m_old, assert_lb] terminate
-    at some ρ_pf that agrees with ρ₀ on all variables except the fresh m_old. -/
+/-- The pre_termination stmts [init_m_old, assert_lb] terminate at some ρ_pf
+    that agrees with ρ₀ on all variables except the fresh m_old.
+    Requires: measure evaluates, and after init the lt expression still evaluates
+    the same (expression congruence on the fresh variable). -/
 private theorem pre_termination_stmts_terminal
     (loop_num : String) (m : Expression.Expr) (md : MetaData Expression)
     (ρ₀ : Env Expression)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnf : ρ₀.hasFailure = Bool.false)
+    (hmeas_eval : ∃ v, ρ₀.eval ρ₀.store m = .some v)
     (hmeas_lb : ρ₀.eval ρ₀.store (HasIntOrder.lt m HasIntOrder.zero) = .some HasBool.ff) :
     let m_old_ident := HasIdent.ident (P := Expression) s!"$__loop_measure_{loop_num}"
     let m_old_expr := HasFvar.mkFvar (P := Expression) m_old_ident
-    let init_m_old := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
-    let assume_m_old := Stmt.cmd (HasPassiveCmds.assume
-      s!"{loopElimAssumePrefix}{loop_num}_measure" (HasIntOrder.eq m_old_expr m) md)
+    let init_m_old := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy (.det m) md)
     let assert_lb := Stmt.cmd (HasPassiveCmds.assert
       s!"{loopElimAssertPrefix}{loop_num}_measure_lb"
       (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
-    ∃ ρ_pf, CoreStar π φ (.stmts [init_m_old, assume_m_old, assert_lb] ρ₀) (.terminal ρ_pf) ∧
+    ∃ ρ_pf, CoreStar π φ (.stmts [init_m_old, assert_lb] ρ₀) (.terminal ρ_pf) ∧
       ρ_pf.eval = ρ₀.eval ∧ ρ_pf.hasFailure = ρ₀.hasFailure ∧
       (∀ n, n ≠ m_old_ident → ρ_pf.store n = ρ₀.store n) := by
-  intro m_old_ident m_old_expr init_m_old assume_m_old assert_lb
-  sorry
-
-/-- The post_termination stmt [assert_decrease] terminates when the measure
-    has been decremented (from step_loop_enter semantics). -/
-private theorem post_termination_assert_decrease_terminal
-    (loop_num : String) (m : Expression.Expr) (md : MetaData Expression)
-    (ρ : Env Expression)
-    (hwfb : WellFormedSemanticEvalBool ρ.eval)
-    (hmeas_lb : ρ.eval ρ.store (HasIntOrder.lt m HasIntOrder.zero) = .some HasBool.tt ∨
-                ρ.eval ρ.store (HasIntOrder.lt m HasIntOrder.zero) = .some HasBool.ff) :
-    let m_old_ident := HasIdent.ident (P := Expression) s!"$__loop_measure_{loop_num}"
-    let m_old_expr := HasFvar.mkFvar (P := Expression) m_old_ident
-    let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-      s!"{loopElimAssertPrefix}{loop_num}_measure_decrease"
-      (HasIntOrder.lt m m_old_expr) md)
-    CoreStar π φ (.stmts [assert_decrease] ρ) (.terminal ρ) := by
-  intro m_old_ident m_old_expr assert_decrease
-  sorry
+  intro m_old_ident m_old_expr init_m_old assert_lb
+  obtain ⟨v, hv⟩ := hmeas_eval
+  -- Construct σ₁: store after init sets m_old_ident to v
+  let σ₁ : CoreStore := fun x => if x = m_old_ident then .some v else ρ₀.store x
+  have hinit_cmd : Imperative.EvalCmd (P := Expression) ρ₀.eval ρ₀.store
+      (Imperative.Cmd.init m_old_ident HasIntOrder.intTy (.det m) md) σ₁ false := by
+    cases h : ρ₀.store m_old_ident with
+    | none =>
+      exact .eval_init hv (.init h (by simp [σ₁]) (by intro y hy; simp [σ₁, Ne.symm hy])) hwfvar
+    | some v' =>
+      exact .eval_reinit hv (.update h (by simp [σ₁]) (by intro y hy; simp [σ₁, Ne.symm hy])) hwfvar
+  -- After init: env is { ρ₀ with store := σ₁ }
+  let ρ₁ : Env Expression := { ρ₀ with store := σ₁ }
+  have hstep_init : CoreStar π φ
+      (.stmt init_m_old ρ₀) (.terminal ρ₁) := by
+    have h : CoreStar π φ (.stmt init_m_old ρ₀)
+        (.terminal { ρ₀ with store := σ₁, hasFailure := ρ₀.hasFailure || false }) :=
+      .step _ _ _ (.step_cmd (EvalCommand.cmd_sem hinit_cmd)) (.refl _)
+    simp only [Bool.or_false] at h; exact h
+  -- Now prove assert_lb passes at ρ₁.
+  -- m_old_expr evaluates to v at ρ₁ (by WellFormedSemanticEvalVar + getFvar)
+  have heval_m_old : ρ₁.eval ρ₁.store m_old_expr = .some v := by
+    have hgf := core_getFvar_mkFvar m_old_ident
+    have := hwfvar m_old_expr m_old_ident ρ₁.store hgf
+    rw [this]; simp [ρ₁, σ₁]
+  -- lt m_old_expr zero evaluates to ff at ρ₁
+  -- This requires: eval σ₁ (lt m_old_expr zero) = eval ρ₀.store (lt m zero)
+  -- Since m_old evaluates to v = eval(m), and zero is a constant,
+  -- lt v zero = lt m zero (by expression congruence on the evaluator)
+  have hlt_ff : ρ₁.eval ρ₁.store (HasIntOrder.lt m_old_expr HasIntOrder.zero) = .some HasBool.ff := by
+    sorry -- needs: eval σ₁ (lt (fvar m_old) zero) = eval ρ₀.store (lt m zero)
+           -- follows from congruence: both sides evaluate m_old/m to the same value v
+  have hnot_tt : ρ₁.eval ρ₁.store (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) = .some HasBool.tt :=
+    (hwfb ρ₁.store (HasIntOrder.lt m_old_expr HasIntOrder.zero)).2.1 hlt_ff
+  have hstep_assert : CoreStar π φ (.stmt assert_lb ρ₁) (.terminal ρ₁) :=
+    assert_pass_step π φ _ _ md ρ₁ hnot_tt hwfb
+  -- Combine: stmts [init, assert] from ρ₀ terminates at ρ₁
+  exact ⟨ρ₁,
+    ReflTrans_Transitive _ _ _ _
+      (.step _ _ _ .step_stmts_cons (.refl _))
+      (ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ _ hstep_init)
+        (.step _ _ _ .step_seq_done
+          (.step _ _ _ .step_stmts_cons
+            (ReflTrans_Transitive _ _ _ _
+              (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ _ hstep_assert)
+              (.step _ _ _ .step_seq_done
+                (.step _ _ _ .step_stmts_nil (.refl _))))))),
+    rfl, by simp [ρ₁, Bool.or_false, hnf],
+    fun n hn => by simp [ρ₁, σ₁, hn]⟩
 
 /-- Execute a list of passive assert/assume statements that all pass. -/
 private theorem stmts_passive_all_pass
@@ -2077,7 +2091,8 @@ private theorem loop_invariant_dichotomy_det
           have hρ'_eq : ρ' = ρ₁ := by rw [hρ'_eq_raw]; cases ρ₁; simp [Bool.or_false]
           subst hρ'_eq
           exact .inl ⟨ρ₀, hguard_tt₀, hall_tt₀, hwfb₀, hwfv₀, hwfvar₀, hnf₀,
-            hbody', hall_tt₁, hg_ff₁, hswf₀, fun _ _ _ => rfl, rfl, hmeas_lb₀⟩
+            hbody', hall_tt₁, hg_ff₁, hswf₀, fun _ _ _ => rfl, rfl,
+            fun me hme => sorry /- (hmeas_lb₀ me hme).2 -/⟩
         | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _
             hasInvFailure₁ hg_tt₁ hinv_bool₁ hff_iff₁ _ _) hrest₁, hloop_len =>
           -- Guard tt at ρ₁: recurse
@@ -2819,9 +2834,9 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
       --   init_m_old: init unconstrained → store' with m_old mapped to some value
       --   assume_m_old: eq m_old_expr m = tt (needs HasIntOrder.eq reflexivity)
       --   assert_lb: not (lt m_old zero) = tt (from hmeas_wf m rfl, via WellFormedSemanticEvalBool)
-      have hmeas_lb := hmeas_wf m rfl
       have ⟨ρ_pf, hpre_term, heval_pf, hfail_pf, hagree_pf⟩ :=
-        pre_termination_stmts_terminal π φ loop_num m md ρ₀ hwfb hwfvar hnf hmeas_lb
+        pre_termination_stmts_terminal π φ loop_num m md ρ₀ hwfb hwfvar hnf
+          sorry /- measure evaluates -/ (hmeas_wf m rfl)
       exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
         ⟨ρ_pf,
          stmts_concat_terminal π φ _ _ ρ₀ ρ₀ ρ_pf
@@ -2963,12 +2978,12 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
        rfl, rfl, fun _ _ => rfl⟩,
       rfl, rfl⟩
   | some m =>
-    have hmeas_lb := hmeas_wf m rfl
     have hwfb_tgt : WellFormedSemanticEvalBool ρ_target.eval := heval_tgt ▸ hwfb
     have hwfvar_tgt : WellFormedSemanticEvalVar ρ_target.eval := heval_tgt ▸ hwfvar
     have hnf_tgt : ρ_target.hasFailure = Bool.false := hfail_tgt ▸ hnf
     have ⟨ρ_pf_tgt, hpre_tgt, heval_pf_tgt, hfail_pf_tgt, hagree_pf_tgt⟩ :=
-      pre_termination_stmts_terminal π φ loop_num m md ρ_target hwfb_tgt hwfvar_tgt hnf_tgt hmeas_lb
+      pre_termination_stmts_terminal π φ loop_num m md ρ_target hwfb_tgt hwfvar_tgt hnf_tgt
+          sorry /- measure evaluates -/ (hmeas_wf m rfl)
     exact ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
       ⟨ρ_pf_tgt,
        stmts_concat_terminal π φ _ _ ρ₀ ρ_target ρ_pf_tgt
@@ -4050,7 +4065,7 @@ private theorem simulation
                     (ih.2.1 { σ with gen := (StringGenState.gen "loop" σ.gen).snd } body hsz_body hnofd_body ρ hwfb' hwfv' hwfvar' hswf_ρ).1 ρ' hstar)
                   (fun ρ hwfb' hwfv' hwfvar' hswf_ρ hcf =>
                     ih.2.2.2 { σ with gen := (StringGenState.gen "loop" σ.gen).snd } body hsz_body hnofd_body ρ hwfb' hwfv' hwfvar' hswf_ρ hcf)
-                  measure hmeas_src₂
+                  measure (fun me hme => sorry /- (hmeas_src₂ me hme).2 -/)
               · -- Some inv is ff → entry assert fails
                 have hsome_ff := not_all_tt_implies_some_ff inv ρ₀ hinv_eval hall_tt
                 have hcf := canFailBlock_append_left π φ
@@ -4301,15 +4316,15 @@ theorem loopElim_overapproximatesAggressive
   intro st st' ht ρ₀ hwfb hwfv hwfvar hswf
   simp at ht; subst ht
   have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st)).1
-    σ st (Nat.le_refl _) sorry /- LATER: noFuncDecl -/ ρ₀ hwfb hwfv hwfvar hswf
-  refine ⟨?_, ?_, ?_, sorry /- LATER: storeWF preservation -/⟩
+    σ st (Nat.le_refl _) sorry /- LATER: noFuncDecl -/ ρ₀ hwfb hwfv hwfvar hswf.1
+  refine ⟨?_, ?_, ?_, sorry /- LATER: initEnvWF preservation -/⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
   · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
   · intro ⟨cfg, hfail, hreach⟩
     by_cases hnf₀ : ρ₀.hasFailure = Bool.true
     · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
     · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st)).1
-        σ st (Nat.le_refl _) ρ₀ hwfb hwfv hwfvar hswf ⟨cfg, hfail, hreach⟩
+        σ st (Nat.le_refl _) ρ₀ hwfb hwfv hwfvar hswf.1 ⟨cfg, hfail, hreach⟩
 
 end Core.LoopElim
 
