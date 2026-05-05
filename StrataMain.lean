@@ -574,10 +574,7 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
       satisfiabilityProperty := satResult
       validityProperty := valResult
     }
-    let diagnosis := r.diagnosisInfo.map fun d =>
-      { isRefuted := d.isRefuted,
-        statePathCondition := d.statePathCondition : Core.DiagnosisInfo }
-    { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
+    { obligation := r.obligation, outcome := .ok vcOutcome }
 
 /-- Verify a Core program using the incremental CoreSMT engine. -/
 private def verifyIncremental
