@@ -170,7 +170,7 @@ procedure P () {
 #end
 
 /--
-error:  ❌ Type checking error.
+error: ❌ Type checking error.
 Type 'T' is already declared
 -/
 #guard_msgs in

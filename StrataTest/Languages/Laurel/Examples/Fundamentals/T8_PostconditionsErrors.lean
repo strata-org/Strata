@@ -25,7 +25,9 @@ function opaqueFunction(x: int) returns (r: int)
   x
 };
 
-procedure callerOfOpaqueFunction() {
+procedure callerOfOpaqueFunction()
+  opaque
+{
   var x: int := opaqueFunction(3);
   assert x > 0;
 // The following assertion should fail but does not

@@ -29,15 +29,20 @@ A call argument is either an input expression, an in-out variable, or an
 output variable.
 -/
 inductive CallArg (P : PureExpr) where
+  /-- An input argument: a by-value expression. -/
   | inArg (e : P.Expr)
+  /-- An input-output argument: a mutable variable passed by reference. -/
   | inoutArg (id : P.Ident)
+  /-- An output-only argument: a variable whose final value is returned to the caller. -/
   | outArg (id : P.Ident)
 
 /--
 Extend Imperative's commands by adding a procedure call.
 -/
 inductive CmdExt (P : PureExpr) where
+  /-- A standard imperative command. -/
   | cmd (c : Imperative.Cmd P)
+  /-- A procedure call with the given name and arguments. -/
   | call (procName : String) (args : List (CallArg P))
          (md : MetaData P)
 
