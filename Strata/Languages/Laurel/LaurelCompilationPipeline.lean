@@ -180,9 +180,12 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     -- Run resolve after the pass if needed
     if pass.needsResolves then
       let result := resolve program (some model)
-      if !result.errors.isEmpty then
-        panic! s!"Internal error: resolution after '{pass.name}' introduced {result.errors.size} new error(s). \
-                  This indicates a compiler bug in the '{pass.name}' pass."
+      let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      if !newErrors.isEmpty then
+        let newDiags := newErrors.toList.map fun d =>
+          { d with message :=
+              s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}" }
+        return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program
