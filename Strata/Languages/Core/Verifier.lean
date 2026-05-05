@@ -1080,10 +1080,9 @@ def verifySingleEnv (oblProgram : Program)
     -- Need the solver for at least one check
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
     let needValCheck := validityCheck && peValResult?.isNone
-    let t2 ← IO.monoNanosNow
-    let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-    let t3 ← IO.monoNanosNow
-    smtEncodeNs := smtEncodeNs + (t3 - t2)
+    let (maybeTerms, encNs) ← measureNanos fun () =>
+      ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
+    smtEncodeNs := smtEncodeNs + encNs
     match maybeTerms with
     | .error err =>
       let result := { obligation,
@@ -1156,9 +1155,10 @@ def verify (program : Program)
     let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
     for pp in pipelinePhases do
-      let (result, newState) := Transform.runWith current (fun prog => do
-        let (_, next) ← pp.transform prog
-        return next) state
+      let (result, newState) ← profileStep profile s!"    {pp.phase.name}" do
+        pure <| Transform.runWith current (fun prog => do
+          let (_, next) ← pp.transform prog
+          return next) state
       match result with
       | .ok next =>
         current := next
