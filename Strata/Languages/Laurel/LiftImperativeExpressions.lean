@@ -297,8 +297,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         targets := [⟨.Local v, source⟩]
       let liftedCall := declarations ++ [⟨.Assign targets seqCall, source⟩]
       modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
-      -- The last output is the procedure's return value
-      let resultVar := match targets.getLast? with
+      -- The first output is the procedure's primary return value
+      let resultVar := match targets.head? with
         | some t => match t.val with | .Local n => n | _ => s!"$c_bug"
         | none => s!"$c_bug"
       return bare (.Var (.Local resultVar))

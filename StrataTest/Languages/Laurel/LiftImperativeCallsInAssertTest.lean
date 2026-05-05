@@ -92,4 +92,24 @@ procedure test() {
 };
 "
 
+/-! ## Multi-output imperative calls in assert are lifted with all targets -/
+
+/--
+info: procedure multi_out(x: int)
+  returns (r: int, extra: int)
+{ r := x + 1; extra := x + 2 };
+procedure test()
+{ var $c_0: int; var $c_1: int; assign $c_0, $c_1 := multi_out(5); assert $c_0 == 6 };
+-/
+#guard_msgs in
+#eval! printLifted r"
+procedure multi_out(x: int) returns (r: int, extra: int) {
+  r := x + 1;
+  extra := x + 2
+};
+procedure test() {
+  assert multi_out(5) == 6
+};
+"
+
 end Laurel
