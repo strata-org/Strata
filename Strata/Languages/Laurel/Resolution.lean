@@ -390,6 +390,8 @@ private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) 
   | _, .MultiValuedExpr _ => pure ()  -- arity mismatch already reported separately
   | .UserDefined _, _ => pure ()  -- subtype relationships not tracked here
   | _, .UserDefined _ => pure ()  -- subtype relationships not tracked here
+  | .TCore _, _ => pure ()  -- pass-through Core types not checked during resolution
+  | _, .TCore _ => pure ()  -- pass-through Core types not checked during resolution
   | _, _ =>
     if !highEq expected actual then
       let expectedStr := toString (formatHighTypeVal expected.val)
