@@ -1,2 +1,4 @@
-DETAIL: output length and lhs length mismatch
+DETAIL: test_procedure_in_assert.py(355-379) ❌ Type checking error.
+Impossible to unify (arrow Any Any) with (arrow Error $__ty205).
+First mismatch: Any with Error.
 RESULT: Internal error

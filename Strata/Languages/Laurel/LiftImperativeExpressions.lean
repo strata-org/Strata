@@ -277,15 +277,31 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
     if model.isFunction callee then
       return seqCall
     else
-      -- Imperative call in expression position: lift it like an assignment
-      let callResultVar ← freshCondVar
-      let callResultType ← computeType expr
-      let liftedCall := [
-        ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
-        ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
-      ]
+      -- Imperative call in expression position: lift it like an assignment.
+      -- Create one LHS target per output so the target count matches the procedure signature.
+      let outputs := match model.get callee with
+        | .staticProcedure proc => proc.outputs
+        | .instanceProcedure _ proc => proc.outputs
+        | _ => []
+      let mut declarations : List StmtExprMd := []
+      let mut targets : List VariableMd := []
+      for out in outputs do
+        let v ← freshCondVar
+        declarations := declarations ++ [⟨.Var (.Declare ⟨v, out.type⟩), source⟩]
+        targets := targets ++ [⟨.Local v, source⟩]
+      -- Fallback: if no outputs found, use a single target with the computed type
+      if targets.isEmpty then
+        let v ← freshCondVar
+        let ty ← computeType expr
+        declarations := [⟨.Var (.Declare ⟨v, ty⟩), source⟩]
+        targets := [⟨.Local v, source⟩]
+      let liftedCall := declarations ++ [⟨.Assign targets seqCall, source⟩]
       modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
-      return bare (.Var (.Local callResultVar))
+      -- The last output is the procedure's return value
+      let resultVar := match targets.getLast? with
+        | some t => match t.val with | .Local n => n | _ => s!"$c_bug"
+        | none => s!"$c_bug"
+      return bare (.Var (.Local resultVar))
 
   | .IfThenElse cond thenBranch elseBranch =>
       let model :=  (← get).model
