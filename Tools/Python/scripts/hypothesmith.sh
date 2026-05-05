@@ -312,6 +312,13 @@ run_semantic_tests() {
     # then Strata's semantic model disagrees with CPython. This is the
     # most interesting kind of bug to find — analogous to CBMC finding a
     # counterexample to the CSmith checksum assertion.
+    #
+    # The grep matches "N failed" in the DETAIL line, which means the solver
+    # *proved* the assertion does not hold (found a counterexample). This is
+    # distinct from "inconclusive" (solver couldn't determine either way),
+    # which is not treated as a failure here.
+    # TODO: Once pyInterpret (#869) is available, use it for concrete
+    # pass/fail comparison with CPython (no unknown middle ground).
     if echo "$output" | grep -qE '[1-9][0-9]* failed'; then
       echo "  FAIL (verification): $base"
       echo "  Strata reports a failing assertion on a program that CPython"
