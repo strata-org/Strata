@@ -1553,12 +1553,9 @@ def fromIonFragmentCommands (f : Ion.Fragment) : Except String (Array Operation)
 
 def fromIonFragment (f : Ion.Fragment)
       (dialects : DialectMap)
-      (dialect : DialectName) : Except String Program :=
-  return {
-    dialects := dialects
-    dialect := dialect
-    commands := ← fromIonFragmentCommands f
-  }
+      (dialect : DialectName) : Except String Program := do
+  let commands ← fromIonFragmentCommands f
+  return .create dialects dialect commands
 
 /--
 Decodes bytes in the Ion format into a single Strata program.

@@ -113,6 +113,9 @@ deriving BEq, Inhabited, Repr
 
 namespace TypeExprF
 
+/-- An anonymous type placeholder used when type checking is skipped. -/
+def skip {α} (loc : α) : TypeExprF α := .tvar loc ""
+
 def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
@@ -1339,6 +1342,8 @@ structure Dialect where
   -- Names of dialects that are imported into this dialect
   imports : Array DialectName
   declarations : Array Decl := #[]
+  /-- When false, type inference and unification are skipped during elaboration. -/
+  typecheck : Bool := true
   cache : Std.HashMap String Decl :=
     declarations.foldl (init := {}) fun m d => m.insert d.name d
 
@@ -2240,6 +2245,11 @@ def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) :
 
 end GlobalContext
 
+def computeGlobalContext (dialects : DialectMap) (commands : Array Operation)
+    : Except String GlobalContext :=
+  commands.foldl (init := (Except.ok {} : Except String GlobalContext))
+    fun acc cmd => acc.bind (·.addCommand dialects cmd)
+
 structure Program where
   mk ::
   /-- Map from dialect names to the dialect definition. -/
@@ -2249,11 +2259,7 @@ structure Program where
   /-- Top level commands in file. -/
   commands : Array Operation := #[]
   /-- Final global context for program. -/
-  globalContext : GlobalContext :=
-    match commands.foldl (init := (Except.ok {} : Except String GlobalContext))
-        fun acc cmd => acc.bind (·.addCommand dialects cmd) with
-    | .ok gctx => gctx
-    | .error e => panic! s!"Program.globalContext: {e}" -- nopanic:ok
+  globalContext : GlobalContext
 
 namespace Program
 
@@ -2261,7 +2267,7 @@ instance : BEq Program where
   beq x y := x.dialect == y.dialect && x.commands == y.commands
 
 instance : Inhabited Program where
-  default := private { dialects := .empty, dialect := default }
+  default := private { dialects := .empty, dialect := default, globalContext := {} }
 
 def addCommand (env : Program) (cmd : Operation) : Program :=
   { env with
@@ -2276,7 +2282,11 @@ This creates a program.  It is added in addition to `Program.mk` to simplify the
 `ToExpr Program` instance.
 -/
 def create (dialects : DialectMap) (dialect : DialectName) (commands : Array Operation) : Program :=
-  { dialects, dialect, commands }
+  let globalContext :=
+    match computeGlobalContext dialects commands with
+    | .ok gctx => gctx
+    | .error e => panic! s!"Program.globalContext: {e}"
+  { dialects, dialect, commands, globalContext }
 
 end Program
 

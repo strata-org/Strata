@@ -488,11 +488,8 @@ def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
   | .error msg => throw msg
 
 /-- Converts Python spec signatures to a DDM program for serialization. -/
-def toDDMProgram (sigs : Array Signature) : Strata.Program := {
-    dialects := DDM.PythonSpecs_map
-    dialect := DDM.PythonSpecs.name
-    commands := sigs.map fun s => s.toDDM.toAst
-  }
+def toDDMProgram (sigs : Array Signature) : Strata.Program :=
+  .create DDM.PythonSpecs_map DDM.PythonSpecs.name (sigs.map fun s => s.toDDM.toAst)
 
 /-- Writes Python spec signatures to a DDM Ion file. -/
 def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
