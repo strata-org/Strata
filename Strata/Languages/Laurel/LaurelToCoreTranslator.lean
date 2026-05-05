@@ -101,6 +101,14 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
+  | .MultiValuedExpr _ =>
+    -- Multi-valued expressions (multi-output procedure calls) are handled
+    -- by the assignment translator which extracts individual outputs.
+    -- If we reach here, use a placeholder that the unifier will resolve.
+    let s ← get
+    let id := s.nextId
+    set { s with nextId := id + 1 }
+    return .ftvar s!"$__ty_unused_{id}"
   | .Unknown => invalidCoreType
   | _ => do
     emitDiagnostic (diagnosticFromSource ty.source "cannot translate type to Core: not supported yet" DiagnosticType.StrataBug)
@@ -421,8 +429,21 @@ def translateStmt (stmt : StmtExprMd)
       let translateCallTargets (calleeName : String) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
-        let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-        return inits ++ [Core.Statement.call calleeName (coreArgs.map .inArg ++ outArgs) md]
+        -- Pad LHS with unused variables for extra outputs (e.g., $heap)
+        let outputs := match model.get calleeName with
+          | .staticProcedure proc => proc.outputs
+          | .instanceProcedure _ proc => proc.outputs
+          | _ => []
+        let mut extraInits : List Core.Statement := []
+        let mut fullLhs := lhs
+        for out in outputs.drop lhs.length do
+          let id ← freshId
+          let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+          let coreType := LTy.forAll [] (← translateType out.type)
+          extraInits := extraInits ++ [Core.Statement.init unusedIdent coreType .nondet md]
+          fullLhs := fullLhs ++ [unusedIdent]
+        let outArgs : List (Core.CallArg Core.Expression) := fullLhs.map .outArg
+        return inits ++ extraInits ++ [Core.Statement.call calleeName (coreArgs.map .inArg ++ outArgs) md]
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
