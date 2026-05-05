@@ -27,7 +27,9 @@ function listLen(xs: IntList): int {
   else 1 + listLen(IntList..tail!(xs))
 };
 
-procedure testListLen() {
+procedure testListLen()
+  opaque
+{
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert listLen(xs) == 2
 };
@@ -43,7 +45,9 @@ function listLenOdd(xs: IntList): bool {
   else listLenEven(IntList..tail!(xs))
 };
 
-procedure testMutualRecursion() {
+procedure testMutualRecursion()
+  opaque
+{
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert listLenEven(xs) == true
 };

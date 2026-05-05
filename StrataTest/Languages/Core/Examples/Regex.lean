@@ -182,14 +182,14 @@ str.in.re("a", bad_re_loop(1))
 info:
 Obligation: assert_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Result: 🚨 SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: re.loop(re.range("a", "z"), 1, bvar!0)
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0
 Context: Global scope:
 
 Obligation: assert_1
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Result: 🚨 SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: re.loop(re.range("a", "z"), 1, bvar!0)
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0
 Context: Global scope:
