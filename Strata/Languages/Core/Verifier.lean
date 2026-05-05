@@ -55,89 +55,114 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
     (varDeclarations : List Core.VarDeclaration := []) :
-    SolverM (List String × EncoderState) := do
+    SolverM (List String × EncoderState × Std.HashMap String Nat) := do
   Solver.setLogic "ALL"
-  prelude
-  let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
-  ctx.emitDatatypes
+
+  let timing : Std.HashMap String Nat := {}
+
+  let ((), timing) ← recordNanos "encodeCore.prelude" timing do
+    prelude
+
+  let ((), timing) ← recordNanos "encodeCore.emitDatatypes" timing do
+    let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
+    ctx.emitDatatypes
+
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
-  -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
-  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
-  -- Pre-populate encoder state with managed variable names so encodeTerm
-  -- recognizes them without emitting declare-fun
-  let estate := if managedNames.isEmpty then estate
-    else
-      let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
-      managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with ufs := estate.ufs.insert uf uf.id }
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+
+  let (estate, timing) ← recordNanos "encodeCore.encodeUFs" timing do
+    -- Filter out managed variables from UF declarations (they will be emitted separately)
+    let ufsToDecl := if managedNames.isEmpty then ctx.ufs
+      else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+    pure estate
+
+  let (estate, timing) ← recordNanos "encodeCore.encodeFunctions" timing do
+    -- Pre-populate encoder state with managed variable names so encodeTerm
+    -- recognizes them without emitting declare-fun
+    let estate := if managedNames.isEmpty then estate
+      else
+        let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+        managedUfs.foldl (init := estate) fun estate uf =>
+          { estate with ufs := estate.ufs.insert uf uf.id }
+    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
+    pure estate
+
+  let ((_axms, estate), timing) ← recordNanos "encodeCore.encodeAxioms" timing do
+    ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+
   for id in _axms do
     Solver.assert id
   -- Emit variable declarations as declare-fun
   for decl in varDeclarations do
     Solver.declareFun decl.name [] decl.ty
-  -- Emit variable definitions as define-fun (macro expansions, not constraints)
-  let estate ← varDefinitions.foldlM (init := estate) fun estate def_ => do
-    let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
-    Solver.defineFunTerm def_.name [] def_.ty bodyEnc
-    pure estate
-  -- Assert assumption terms
-  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm) |>.run estate
+
+  let (estate, timing) ← recordNanos "encodeCore.defineFunTerms" timing do
+    -- Emit variable definitions as define-fun (macro expansions, not constraints)
+    varDefinitions.foldlM (init := estate) fun estate def_ => do
+      let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
+      Solver.defineFunTerm def_.name [] def_.ty bodyEnc
+      pure estate
+
+  let ((assumptionIds, estate), timing) ← recordNanos "encodeCore.encodeAssumptions" timing do
+    -- Assert assumption terms
+    assumptionTerms.mapM (encodeTerm) |>.run estate
+
   for id in assumptionIds do
     Solver.assert id
-  -- Encode the obligation term Q (not negated)
-  let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
-  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
+  let ((obligationId, estate), timing) ← recordNanos "encodeCore.encodeObligation" timing do
+    -- Encode the obligation term Q (not negated)
+    (encodeTerm obligationTerm) |>.run estate
 
-  -- Choose encoding strategy: use check-sat-assuming only when doing both checks
-  let bothChecks := satisfiabilityCheck && validityCheck
+  let (ids, timing) ← recordNanos "encodeCore.epilog" timing do
+    let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+      if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
-  if bothChecks then
-    -- Satisfiability check: P ∧ Q satisfiable?
-    Solver.comment "Satisfiability"
-    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("sat-message", "Property can be satisfied"))
-    let obligationStr ← Solver.termToSMTString obligationId
-    let _ ← Solver.checkSatAssuming [obligationStr] ids
+    -- Choose encoding strategy: use check-sat-assuming only when doing both checks
+    let bothChecks := satisfiabilityCheck && validityCheck
 
-    -- Validity check: P ∧ ¬Q satisfiable?
-    Solver.comment "Validity"
-    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("unsat-message", "Property is always true"))
-    let negObligationStr := s!"(not {obligationStr})"
-    let _ ← Solver.checkSatAssuming [negObligationStr] ids
-  else
-    if satisfiabilityCheck then
-      -- P ∧ Q satisfiable?
+    if bothChecks then
+      -- Satisfiability check: P ∧ Q satisfiable?
       Solver.comment "Satisfiability"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", "Property can be satisfied"))
-      Solver.assert obligationId
-      let _ ← Solver.checkSat ids
-    else if validityCheck then
-      -- P ∧ ¬Q satisfiable?
+      let obligationStr ← Solver.termToSMTString obligationId
+      let _ ← Solver.checkSatAssuming [obligationStr] ids
+
+      -- Validity check: P ∧ ¬Q satisfiable?
       Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", "Property is always true"))
-      Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
-      let _ ← Solver.checkSat ids
+      let negObligationStr := s!"(not {obligationStr})"
+      let _ ← Solver.checkSatAssuming [negObligationStr] ids
+    else
+      if satisfiabilityCheck then
+        -- P ∧ Q satisfiable?
+        Solver.comment "Satisfiability"
+        Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+          (message := ("sat-message", "Property can be satisfied"))
+        Solver.assert obligationId
+        let _ ← Solver.checkSat ids
+      else if validityCheck then
+        -- P ∧ ¬Q satisfiable?
+        Solver.comment "Validity"
+        Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+          (message := ("unsat-message", "Property is always true"))
+        Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
+        let _ ← Solver.checkSat ids
 
-  -- Emit the property summary (or label) as the final message in the SMT-LIB output.
-  -- Use `setInfoString` so the value is quoted and escaped per SMT-LIB 2.6+
-  -- (doubled `""` for embedded quotes). C-style `\"` escaping would be rejected
-  -- by SMT-LIB consumers: backslash is a literal character in string contexts,
-  -- and the following `"` would close the string.
-  let rawMsg := md.getPropertySummary.getD label
-  Solver.setInfoString "final-message" rawMsg
+    -- Emit the property summary (or label) as the final message in the SMT-LIB output.
+    -- Use `setInfoString` so the value is quoted and escaped per SMT-LIB 2.6+
+    -- (doubled `""` for embedded quotes). C-style `\"` escaping would be rejected
+    -- by SMT-LIB consumers: backslash is a literal character in string contexts,
+    -- and the following `"` would close the string.
+    let rawMsg := md.getPropertySummary.getD label
+    Solver.setInfoString "final-message" rawMsg
+    pure ids
 
-  return (ids, estate)
+  return (ids, estate, timing)
 
 end -- public section
 end Strata.SMT.Encoder
@@ -206,7 +231,7 @@ def dischargeObligation
   (label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
-  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
+  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState × Std.HashMap String Nat)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
   let needsIncremental := satisfiabilityCheck && validityCheck
@@ -941,7 +966,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (phases : List AbstractedPhase)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
-    : EIO DiagnosticModel VCResult := do
+    : EIO DiagnosticModel (VCResult × Std.HashMap String Nat) := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
@@ -973,13 +998,14 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       | .crash d   => .solverCrash d
     dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
                  {if options.verbose >= VerboseMode.debug then prog else ""}"
-    return { obligation := obligation,
-             outcome := Except.error vcError,
-             verbose := options.verbose,
-             checkLevel := options.checkLevel,
-             checkMode := options.checkMode,
-             lexprModel := [] }
-  | .ok (satResult, validityResult, estate) =>
+    return (
+      { obligation := obligation
+        outcome := Except.error vcError
+        verbose := options.verbose
+        checkLevel := options.checkLevel
+        checkMode := options.checkMode
+        lexprModel := [] }, {})
+  | .ok (satResult, validityResult, estate, timing) =>
     -- Convert unvalidated sat results to unknown when phases require validation
     let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
     let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
@@ -1006,7 +1032,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     checkLevel := options.checkLevel,
                     checkMode := options.checkMode,
                     lexprModel := model }
-    return result
+    return (result, timing)
 
 
 def verifySingleEnv (oblProgram : Program)
@@ -1034,10 +1060,9 @@ def verifySingleEnv (oblProgram : Program)
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)
-  let mut preprocessNs : Nat := 0
-  let mut smtEncodeNs : Nat := 0
-  let mut solverNs : Nat := 0
+  let mut timingNs : Std.HashMap String Nat := {}
   let mut peResolvedCount : Nat := 0
+
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1054,7 +1079,8 @@ def verifySingleEnv (oblProgram : Program)
     let t0 ← IO.monoNanosNow
     let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
     let t1 ← IO.monoNanosNow
-    preprocessNs := preprocessNs + (t1 - t0)
+    timingNs := timingNs.insert "preprocessObligations" (timingNs.getD "preprocessObligations" 0 + (t1 - t0))
+
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
@@ -1082,7 +1108,8 @@ def verifySingleEnv (oblProgram : Program)
     let needValCheck := validityCheck && peValResult?.isNone
     let (maybeTerms, encNs) ← measureNanos fun () =>
       ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-    smtEncodeNs := smtEncodeNs + encNs
+    timingNs := timingNs.insert "smtEncoding" (timingNs.getD "smtEncoding" 0 + encNs)
+
     match maybeTerms with
     | .error err =>
       let result := { obligation,
@@ -1099,11 +1126,15 @@ def verifySingleEnv (oblProgram : Program)
     | .ok (assumptionTerms, varDefs, varDecls, obligationTerm, ctx, encStats) =>
       stats := stats.merge encStats
       let t4 ← IO.monoNanosNow
-      let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+      let (result, timing) ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
                     (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
-      solverNs := solverNs + (t5 - t4)
+      timingNs := timingNs.insert "solverFileWriting" (timingNs.getD "solverFileWriting" 0 + (t5 - t4))
+
+      for (key, val) in timing do
+        timingNs := timingNs.insert key (timingNs.getD key 0 + val)
+
       -- Merge evaluator results with solver results
       let result := match result.outcome with
         | .ok solverOutcome =>
@@ -1119,10 +1150,20 @@ def verifySingleEnv (oblProgram : Program)
           let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         if options.stopOnFirstError then break
+
   if profile then
-    let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
-    let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
-    let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs (timingNs.getD "preprocessObligations" 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs (timingNs.getD "smtEncoding" 0)}ms" |>.toBaseIO)
+    -- Print encodeCore.* sub-timings
+    let encodeCoreEntries := timingNs.toList.filter (·.1.startsWith "encodeCore.")
+      |>.mergeSort (fun a b => a.1 < b.1)
+    for (key, val) in encodeCoreEntries do
+      let suffix := key.drop "encodeCore.".length
+      let _ ← (IO.println s!"[profile]         {suffix}: {nsToMs val}ms" |>.toBaseIO)
+    -- Print dischargeObligation-level timings (encodeCore total, runSolver)
+    let _ ← (IO.println s!"[profile]       encodeCore: {nsToMs (timingNs.getD "dischargeObligation.encodeSMT (encodeCore)" 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]       runSolver: {nsToMs (timingNs.getD "dischargeObligation.runSolver" 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs (timingNs.getD "solverFileWriting" 0)}ms" |>.toBaseIO)
     let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
   return (results, stats)
 
@@ -1154,11 +1195,15 @@ def verify (program : Program)
     let mut current := program
     let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
+    have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
+      ⟨(.error default, Transform.CoreTransformState.emp)⟩
     for pp in pipelinePhases do
-      let (result, newState) ← profileStep profile s!"    {pp.phase.name}" do
-        pure <| Transform.runWith current (fun prog => do
+      let ((result, newState), passNs) ← measureNanos fun () =>
+        Transform.runWith current (fun prog => do
           let (_, next) ← pp.transform prog
           return next) state
+      if profile then
+        let _ ← (IO.println s!"[profile]     {pp.phase.name}: {nsToMs passNs}ms" |>.toBaseIO)
       match result with
       | .ok next =>
         current := next

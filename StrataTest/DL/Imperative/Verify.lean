@@ -58,7 +58,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                 "cvc5" filename.toString
                 #["--produce-models"] false false true false)
         match ans with
-        | Except.ok (_, result, estate) =>
+        | Except.ok (_, result, estate, _) =>
            let vcres := { obligation, result, estate }
            results := results.push vcres
            if result ≠ .unsat then

@@ -10,6 +10,7 @@ import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DDM.Elab
 import Strata.DDM.Format
+import Strata.Util.Profile
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.EvalContext
 
@@ -301,29 +302,37 @@ When two-sided checking is enabled, the generated SMT file will contain two
 and the return value includes both decisions.
 -/
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
-  (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
+  (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState × Std.HashMap String Nat))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool)
   (skipSolver : Bool := false) :
-  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState × Std.HashMap String Nat)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
+  let timing : Std.HashMap String Nat := {}
+
   -- encodeSMT (which calls encodeCore) emits check-sat commands internally
-  let ((_ids, estate), _solverState) ← encodeSMT.run solver
+  let (((_ids, estate, encTiming), _solverState), timing) ←
+    recordNanos "dischargeObligation.encodeSMT (encodeCore)" timing do
+      encodeSMT.run solver
+  -- Merge encodeCore's internal timing into ours
+  let timing := encTiming.fold (init := timing) fun acc k v => acc.insert k v
 
   if printFilename then IO.println s!"Wrote problem to {filename}."
 
   if skipSolver then
-    return .ok (.unknown, .unknown, estate)
+    return .ok (.unknown, .unknown, estate, timing)
 
-  let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
+  let (solver_output, timing) ← recordNanos "dischargeObligation.runSolver" timing do
+    runSolver smtsolver (#[filename] ++ solver_options)
+
   match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
   | .error e => return .error e
-  | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate)
+  | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate, timing)
 
 ---------------------------------------------------------------------
 end -- public section
