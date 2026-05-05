@@ -103,14 +103,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     -- Satisfiability check: P ∧ Q satisfiable?
     Solver.comment "Satisfiability"
     Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("sat-message", s!"\"Property can be satisfied\""))
+      (message := ("sat-message", "Property can be satisfied"))
     let obligationStr ← Solver.termToSMTString obligationId
     let _ ← Solver.checkSatAssuming [obligationStr] ids
 
     -- Validity check: P ∧ ¬Q satisfiable?
     Solver.comment "Validity"
     Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("unsat-message", s!"\"Property is always true\""))
+      (message := ("unsat-message", "Property is always true"))
     let negObligationStr := s!"(not {obligationStr})"
     let _ ← Solver.checkSatAssuming [negObligationStr] ids
   else
@@ -118,21 +118,24 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       -- P ∧ Q satisfiable?
       Solver.comment "Satisfiability"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-        (message := ("sat-message", s!"\"Property can be satisfied\""))
+        (message := ("sat-message", "Property can be satisfied"))
       Solver.assert obligationId
       let _ ← Solver.checkSat ids
     else if validityCheck then
       -- P ∧ ¬Q satisfiable?
       Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-        (message := ("unsat-message", s!"\"Property is always true\""))
+        (message := ("unsat-message", "Property is always true"))
       Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
   -- Emit the property summary (or label) as the final message in the SMT-LIB output.
+  -- Use `setInfoString` so the value is quoted and escaped per SMT-LIB 2.6+
+  -- (doubled `""` for embedded quotes). C-style `\"` escaping would be rejected
+  -- by SMT-LIB consumers: backslash is a literal character in string contexts,
+  -- and the following `"` would close the string.
   let rawMsg := md.getPropertySummary.getD label
-  let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
-  Solver.setInfo "final-message" s!"\"{escaped}\""
+  Solver.setInfoString "final-message" rawMsg
 
   return (ids, estate)
 

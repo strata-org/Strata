@@ -128,13 +128,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       return ⟨.Block (← inferBlockStmts stmts expectedType) label, source⟩
   | .Assign targets value =>
       let targetType := match targets with
-        | target :: _ => computeExprType model target
+        | target :: _ => match target.val with
+          | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
+          | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, none⟩ fieldName), target.source⟩
+          | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩
-  | .LocalVariable name ty init =>
-      match init with
-      | some initExpr => return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), source⟩
-      | none => return expr
   | .While cond invs dec body =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
