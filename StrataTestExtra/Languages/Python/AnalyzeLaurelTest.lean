@@ -197,6 +197,8 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_annotation_dispatch.py" .success,
   .mk "test_constructor_dispatch.py" .success,
   .mk "test_reassign_dispatch.py" .success,
+  -- Composite argument passed to untyped (Any) parameter: coercion must prevent type error
+  .mk "test_composite_arg_to_any_param.py" .success,
   -- Known failing tests:
   -- With @ separator, Storage_put_item is no longer a known symbol, so it
   -- falls through to the default Any type. These should produce an

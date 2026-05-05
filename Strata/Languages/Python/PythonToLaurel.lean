@@ -1253,7 +1253,15 @@ partial def translateCall (ctx : TranslationContext)
     if args.length > funcDecl.args.length then
       throwUserError callRange
         s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
-    let trans_posArgs ← args.mapM (translateExpr ctx)
+    let rawPosArgs ← args.mapM (translateExpr ctx)
+    let paramIsCompositeList := funcDecl.args.map (fun a =>
+      isCompositeType ctx (highTypeToPyLauType a.laurelType.val))
+    let mut trans_posArgs : List StmtExprMd := []
+    for (pair, paramIsComp) in (args.zip rawPosArgs).zip
+        (paramIsCompositeList ++ List.replicate args.length false) do
+      let (orig, trans) := pair
+      if paramIsComp then trans_posArgs := trans_posArgs ++ [trans]
+      else trans_posArgs := trans_posArgs ++ [← coerceToAny ctx orig trans]
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
     let trans_dictArgs := remainingParams.map fun arg =>
@@ -1284,7 +1292,15 @@ partial def translateCall (ctx : TranslationContext)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
-  let trans_args ← args.mapM (translateExpr ctx)
+  let rawTransArgs ← args.mapM (translateExpr ctx)
+  let paramIsCompositeList := funcDecl.map (·.args.map (fun a =>
+    isCompositeType ctx (highTypeToPyLauType a.laurelType.val))) |>.getD []
+  let mut trans_args : List StmtExprMd := []
+  for (pair, paramIsComp) in (args.zip rawTransArgs).zip
+      (paramIsCompositeList ++ List.replicate args.length false) do
+    let (orig, trans) := pair
+    if paramIsComp then trans_args := trans_args ++ [trans]
+    else trans_args := trans_args ++ [← coerceToAny ctx orig trans]
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
