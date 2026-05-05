@@ -326,7 +326,14 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .UserDefined ref =>
     let ref' ← resolveRef ref ty.source
       (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
-    pure (.UserDefined ref')
+    -- If the reference resolved to the wrong kind, treat the type as Unknown to avoid cascading errors
+    let s ← get
+    let kindOk : Bool := match s.scope.get? ref.text with
+      | some (_, node) => node.kind == .unresolved ||
+          (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains node.kind)
+      | none => true  -- unresolved references already reported
+    if kindOk then pure (HighType.UserDefined ref')
+    else pure HighType.Unknown
   | .TTypedField vt =>
     let vt' ← resolveHighType vt
     pure (.TTypedField vt')
@@ -353,40 +360,119 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | other => pure other
   return { val := val', source := ty.source }
 
-def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
+/-- Emit a type mismatch diagnostic. -/
+private def typeMismatch (source : Option FileRange) (expected : String) (actual : HighTypeMd) : ResolveM Unit := do
+  let actualStr := toString (formatHighTypeVal actual.val)
+  let diag := diagnosticFromSource source s!"Type mismatch: expected {expected}, but got '{actualStr}'"
+  modify fun s => { s with errors := s.errors.push diag }
+
+/-- Check that a type is boolean, emitting a diagnostic if not. -/
+private def checkBool (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
+  match ty.val with
+  | .TBool | .Unknown => pure ()
+  | .UserDefined _ => pure ()  -- constrained types may wrap bool
+  | _ => typeMismatch source "bool" ty
+
+/-- Check that a type is numeric (int, real, or float64), emitting a diagnostic if not. -/
+private def checkNumeric (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
+  match ty.val with
+  | .TInt | .TReal | .TFloat64 | .Unknown => pure ()
+  | .UserDefined _ => pure ()  -- constrained types may wrap numeric types
+  | _ => typeMismatch source "a numeric type" ty
+
+/-- Check that two types are compatible, emitting a diagnostic if not.
+    UserDefined types are always considered compatible with each other since
+    subtype relationships (inheritance) are not tracked during resolution. -/
+private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
+  match expected.val, actual.val with
+  | .Unknown, _ => pure ()
+  | _, .Unknown => pure ()
+  | _, .MultiValuedExpr _ => pure ()  -- arity mismatch already reported separately
+  | .UserDefined _, _ => pure ()  -- subtype relationships not tracked here
+  | _, .UserDefined _ => pure ()  -- subtype relationships not tracked here
+  | _, _ =>
+    if !highEq expected actual then
+      let expectedStr := toString (formatHighTypeVal expected.val)
+      let actualStr := toString (formatHighTypeVal actual.val)
+      let diag := diagnosticFromSource source s!"Type mismatch: expected '{expectedStr}', but got '{actualStr}'"
+      modify fun s => { s with errors := s.errors.push diag }
+
+/-- Get the type of a resolved variable reference from scope. -/
+private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
+  let s ← get
+  match s.scope.get? ref.text with
+  | some (_, node) => pure node.getType
+  | none => pure { val := .Unknown, source := ref.source }
+
+/-- Get the call return type and parameter types for a callee from scope. -/
+private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
+  let s ← get
+  match s.scope.get? callee.text with
+  | some (_, .staticProcedure proc) =>
+    let retTy := match proc.outputs with
+      | [singleOutput] => singleOutput.type
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+    pure (retTy, proc.inputs.map (·.type))
+  | some (_, .instanceProcedure _ proc) =>
+    let retTy := match proc.outputs with
+      | [singleOutput] => singleOutput.type
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+    pure (retTy, proc.inputs.map (·.type))
+  | some (_, .datatypeConstructor t _) =>
+    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
+    if (callee.text.splitOn "..is").length > 1 then
+      pure ({ val := .TBool, source := callee.source }, [])
+    else
+      pure ({ val := .UserDefined t, source := callee.source }, [])
+  | some (_, .parameter p) => pure (p.type, [])
+  | some (_, .constant c) => pure (c.type, [])
+  | _ => pure ({ val := .Unknown, source := callee.source }, [])
+
+def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
   match _: exprMd with
   | AstNode.mk expr source =>
-  let val' ← match _: expr with
+  let (val', ty) ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
-    let cond' ← resolveStmtExpr cond
-    let thenBr' ← resolveStmtExpr thenBr
-    let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    pure (.IfThenElse cond' thenBr' elseBr')
+    let (cond', condTy) ← resolveStmtExpr cond
+    checkBool cond'.source condTy
+    let (thenBr', thenTy) ← resolveStmtExpr thenBr
+    let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; do
+      let (e', _) ← resolveStmtExpr a.val; pure e')
+    pure (.IfThenElse cond' thenBr' elseBr', thenTy)
   | .Block stmts label =>
     withScope do
-      let stmts' ← stmts.mapM resolveStmtExpr
-      pure (.Block stmts' label)
+      let results ← stmts.mapM resolveStmtExpr
+      let stmts' := results.map (·.1)
+      let lastTy := match results.getLast? with
+        | some (_, ty) => ty
+        | none => { val := .TVoid, source := source }
+      pure (.Block stmts' label, lastTy)
   | .While cond invs dec body =>
-    let cond' ← resolveStmtExpr cond
-    let invs' ← invs.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let dec' ← dec.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let body' ← resolveStmtExpr body
-    pure (.While cond' invs' dec' body')
-  | .Exit target => pure (.Exit target)
+    let (cond', condTy) ← resolveStmtExpr cond
+    checkBool cond'.source condTy
+    let invs' ← invs.attach.mapM (fun a => have := a.property; do
+      let (e', _) ← resolveStmtExpr a.val; pure e')
+    let dec' ← dec.attach.mapM (fun a => have := a.property; do
+      let (e', _) ← resolveStmtExpr a.val; pure e')
+    let (body', _) ← resolveStmtExpr body
+    pure (.While cond' invs' dec' body', { val := .TVoid, source := source })
+  | .Exit target => pure (.Exit target, { val := .TVoid, source := source })
   | .Return val => do
-    let val' ← val.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    pure (.Return val')
-  | .LiteralInt v => pure (.LiteralInt v)
-  | .LiteralBool v => pure (.LiteralBool v)
-  | .LiteralString v => pure (.LiteralString v)
-  | .LiteralDecimal v => pure (.LiteralDecimal v)
+    let val' ← val.attach.mapM (fun a => have := a.property; do
+      let (e', _) ← resolveStmtExpr a.val; pure e')
+    pure (.Return val', { val := .TVoid, source := source })
+  | .LiteralInt v => pure (.LiteralInt v, { val := .TInt, source := source })
+  | .LiteralBool v => pure (.LiteralBool v, { val := .TBool, source := source })
+  | .LiteralString v => pure (.LiteralString v, { val := .TString, source := source })
+  | .LiteralDecimal v => pure (.LiteralDecimal v, { val := .TReal, source := source })
   | .Var (.Local ref) =>
     let ref' ← resolveRef ref source
-    pure (.Var (.Local ref'))
+    let ty ← getVarType ref
+    pure (.Var (.Local ref'), ty)
   | .Var (.Declare param) =>
     let ty' ← resolveHighType param.type
     let name' ← defineNameCheckDup param.name (.var param.name ty')
-    pure (.Var (.Declare ⟨name', ty'⟩))
+    pure (.Var (.Declare ⟨name', ty'⟩), { val := .TVoid, source := source })
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
       let ⟨vv, vs⟩ := v
@@ -395,14 +481,14 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         let ref' ← resolveRef ref source
         pure (⟨.Local ref', vs⟩ : VariableMd)
       | .Field target fieldName =>
-        let target' ← resolveStmtExpr target
+        let (target', _) ← resolveStmtExpr target
         let fieldName' ← resolveFieldRef target' fieldName source
         pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
       | .Declare param =>
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-    let value' ← resolveStmtExpr value
+    let (value', valueTy) ← resolveStmtExpr value
     -- Check that LHS target count matches the number of outputs from the RHS.
     -- This fires for procedure calls (which can have multiple outputs).
     -- Functions always have exactly 1 output in the model, so single-target function calls pass trivially.
@@ -424,84 +510,144 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let diag := diagnosticFromSource source
         s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
       modify fun s => { s with errors := s.errors.push diag }
-    pure (.Assign targets' value')
+    -- Type check: for single-target assignments, check value type matches target type
+    -- Skip when value type is void (RHS is a statement like while/return that doesn't produce a value)
+    if targets'.length == 1 && valueTy.val != HighType.TVoid then
+      if let some target := targets'.head? then
+        let targetTy := match target.val with
+          | .Local ref => do
+            let s ← get
+            match s.scope.get? ref.text with
+            | some (_, node) => pure node.getType
+            | none => pure { val := HighType.Unknown, source := ref.source : HighTypeMd }
+          | .Declare param => pure param.type
+          | .Field _ fieldName => do
+            let s ← get
+            match s.scope.get? fieldName.text with
+            | some (_, node) => pure node.getType
+            | none => pure { val := HighType.Unknown, source := fieldName.source : HighTypeMd }
+        let tTy ← targetTy
+        checkAssignable source tTy valueTy
+    pure (.Assign targets' value', valueTy)
   | .Var (.Field target fieldName) =>
-    let target' ← resolveStmtExpr target
+    let (target', _) ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    pure (.Var (.Field target' fieldName'))
+    let ty ← getVarType fieldName
+    pure (.Var (.Field target' fieldName'), ty)
   | .PureFieldUpdate target fieldName newVal =>
-    let target' ← resolveStmtExpr target
+    let (target', targetTy) ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    let newVal' ← resolveStmtExpr newVal
-    pure (.PureFieldUpdate target' fieldName' newVal')
+    let (newVal', _) ← resolveStmtExpr newVal
+    pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
-    let args' ← args.mapM resolveStmtExpr
-    pure (.StaticCall callee' args')
+    let results ← args.mapM resolveStmtExpr
+    let args' := results.map (·.1)
+    let argTypes := results.map (·.2)
+    let (retTy, paramTypes) ← getCallInfo callee
+    -- Check argument types match parameter types
+    for (argTy, paramTy) in argTypes.zip paramTypes do
+      checkAssignable source paramTy argTy
+    pure (.StaticCall callee' args', retTy)
   | .PrimitiveOp op args =>
-    let args' ← args.mapM resolveStmtExpr
-    pure (.PrimitiveOp op args')
+    let results ← args.mapM resolveStmtExpr
+    let args' := results.map (·.1)
+    let argTypes := results.map (·.2)
+    let resultTy := match op with
+      | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
+      | .Lt | .Leq | .Gt | .Geq => HighType.TBool
+      | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
+        match argTypes.head? with
+        | some headTy => headTy.val
+        | none => HighType.TInt
+      | .StrConcat => HighType.TString
+    -- Type check operands
+    match op with
+    | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
+      for aTy in argTypes do checkBool source aTy
+    | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
+      for aTy in argTypes do checkNumeric source aTy
+    | .Eq | .Neq | .StrConcat => pure ()
+    pure (.PrimitiveOp op args', { val := resultTy, source := source })
   | .New ref =>
     let ref' ← resolveRef ref source
       (expected := #[.compositeType, .datatypeDefinition])
-    pure (.New ref')
-  | .This => pure .This
+    -- If the reference resolved to the wrong kind, use Unknown type to avoid cascading errors
+    let s ← get
+    let kindOk : Bool := match s.scope.get? ref.text with
+      | some (_, node) => node.kind == .unresolved ||
+          (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
+      | none => true
+    let ty := if kindOk then { val := HighType.UserDefined ref', source := source }
+              else { val := HighType.Unknown, source := source }
+    pure (.New ref', ty)
+  | .This => pure (.This, { val := .Unknown, source := source })
   | .ReferenceEquals lhs rhs =>
-    let lhs' ← resolveStmtExpr lhs
-    let rhs' ← resolveStmtExpr rhs
-    pure (.ReferenceEquals lhs' rhs')
+    let (lhs', _) ← resolveStmtExpr lhs
+    let (rhs', _) ← resolveStmtExpr rhs
+    pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
-    let target' ← resolveStmtExpr target
+    let (target', _) ← resolveStmtExpr target
     let ty' ← resolveHighType ty
-    pure (.AsType target' ty')
+    pure (.AsType target' ty', ty')
   | .IsType target ty =>
-    let target' ← resolveStmtExpr target
+    let (target', _) ← resolveStmtExpr target
     let ty' ← resolveHighType ty
-    pure (.IsType target' ty')
+    pure (.IsType target' ty', { val := .TBool, source := source })
   | .InstanceCall target callee args =>
-    let target' ← resolveStmtExpr target
+    let (target', _) ← resolveStmtExpr target
     let callee' ← resolveRef callee source
       (expected := #[.instanceProcedure, .staticProcedure])
-    let args' ← args.mapM resolveStmtExpr
-    pure (.InstanceCall target' callee' args')
+    let results ← args.mapM resolveStmtExpr
+    let args' := results.map (·.1)
+    let argTypes := results.map (·.2)
+    let (retTy, paramTypes) ← getCallInfo callee
+    -- Check argument types match parameter types (skip first param which is 'self')
+    let callParamTypes := match paramTypes with | _ :: rest => rest | [] => []
+    for (argTy, paramTy) in argTypes.zip callParamTypes do
+      checkAssignable source paramTy argTy
+    pure (.InstanceCall target' callee' args', retTy)
   | .Quantifier mode param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
-      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
-      let body' ← resolveStmtExpr body
-      pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; do
+        let (e', _) ← resolveStmtExpr pv.val; pure e')
+      let (body', _) ← resolveStmtExpr body
+      pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
   | .Assigned name =>
-    let name' ← resolveStmtExpr name
-    pure (.Assigned name')
+    let (name', _) ← resolveStmtExpr name
+    pure (.Assigned name', { val := .TBool, source := source })
   | .Old val =>
-    let val' ← resolveStmtExpr val
-    pure (.Old val')
+    let (val', valTy) ← resolveStmtExpr val
+    pure (.Old val', valTy)
   | .Fresh val =>
-    let val' ← resolveStmtExpr val
-    pure (.Fresh val')
+    let (val', _) ← resolveStmtExpr val
+    pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
-    let cond' ← resolveStmtExpr condExpr
-    pure (.Assert { condition := cond', summary })
+    let (cond', condTy) ← resolveStmtExpr condExpr
+    checkBool cond'.source condTy
+    pure (.Assert { condition := cond', summary }, { val := .TVoid, source := source })
   | .Assume cond =>
-    let cond' ← resolveStmtExpr cond
-    pure (.Assume cond')
+    let (cond', condTy) ← resolveStmtExpr cond
+    checkBool cond'.source condTy
+    pure (.Assume cond', { val := .TVoid, source := source })
   | .ProveBy val proof =>
-    let val' ← resolveStmtExpr val
-    let proof' ← resolveStmtExpr proof
-    pure (.ProveBy val' proof')
+    let (val', valTy) ← resolveStmtExpr val
+    let (proof', _) ← resolveStmtExpr proof
+    pure (.ProveBy val' proof', valTy)
   | .ContractOf ty fn =>
-    let fn' ← resolveStmtExpr fn
-    pure (.ContractOf ty fn')
-  | .Abstract => pure .Abstract
-  | .All => pure .All
+    let (fn', _) ← resolveStmtExpr fn
+    pure (.ContractOf ty fn', { val := .Unknown, source := source })
+  | .Abstract => pure (.Abstract, { val := .Unknown, source := source })
+  | .All => pure (.All, { val := .Unknown, source := source })
   | .Hole det type => match type with
     | some ty =>
       let ty' ← resolveHighType ty
-      pure (.Hole det ty')
-    | none => pure (.Hole det none)
-  return { val := val', source := source }
+      pure (.Hole det ty', ty')
+    | none => pure (.Hole det none, { val := .Unknown, source := source })
+  return ({ val := val', source := source }, ty)
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 
@@ -511,21 +657,21 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
-/-- Resolve a procedure body. -/
-def resolveBody (body : Body) : ResolveM Body := do
+/-- Resolve a procedure body. Returns the resolved body and its type. -/
+def resolveBody (body : Body) : ResolveM (Body × HighTypeMd) := do
   match body with
   | .Transparent b =>
-    let b' ← resolveStmtExpr b
-    return .Transparent b'
+    let (b', ty) ← resolveStmtExpr b
+    return (.Transparent b', ty)
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    let impl' ← impl.mapM resolveStmtExpr
-    let mods' ← mods.mapM resolveStmtExpr
-    return .Opaque posts' impl' mods'
+    let posts' ← posts.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
+    let impl' ← impl.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let mods' ← mods.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    return (.Opaque posts' impl' mods', { val := .TVoid, source := none })
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    return .Abstract posts'
-  | .External => return .External
+    let posts' ← posts.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
+    return (.Abstract posts', { val := .TVoid, source := none })
+  | .External => return (.External, { val := .TVoid, source := none })
 
 /-- Resolve a procedure: resolve its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
@@ -533,14 +679,22 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
-    let dec' ← proc.decreases.mapM resolveStmtExpr
-    let body' ← resolveBody proc.body
+    let pres' ← proc.preconditions.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
+    let dec' ← proc.decreases.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
       modify fun s => { s with errors := s.errors.push diag }
-    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    -- Check body type matches declared output type for functional procedures with transparent bodies
+    if proc.isFunctional && body'.isTransparent then
+      match proc.outputs with
+      | [singleOutput] =>
+        -- Only check when body produces a value (not void from return/while/assign)
+        if bodyTy.val != HighType.TVoid then
+          checkAssignable proc.name.source singleOutput.type bodyTy
+      | _ => pure ()
+    let invokeOn' ← proc.invokeOn.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
@@ -566,14 +720,21 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
-    let dec' ← proc.decreases.mapM resolveStmtExpr
-    let body' ← resolveBody proc.body
+    let pres' ← proc.preconditions.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
+    let dec' ← proc.decreases.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
       modify fun s => { s with errors := s.errors.push diag }
-    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    -- Check body type matches declared output type for functional procedures with transparent bodies
+    if proc.isFunctional && body'.isTransparent then
+      match proc.outputs with
+      | [singleOutput] =>
+        if bodyTy.val != HighType.TVoid then
+          checkAssignable proc.name.source singleOutput.type bodyTy
+      | _ => pure ()
+    let invokeOn' ← proc.invokeOn.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -615,8 +776,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- in scope when resolving the constraint and witness expressions.
     let (valueName', constraint', witness') ← withScope do
       let valueName' ← defineNameCheckDup ct.valueName (.quantifierVar ct.valueName base')
-      let constraint' ← resolveStmtExpr ct.constraint
-      let witness' ← resolveStmtExpr ct.witness
+      let (constraint', _) ← resolveStmtExpr ct.constraint
+      let (witness', _) ← resolveStmtExpr ct.witness
       return (valueName', constraint', witness')
     return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
@@ -642,7 +803,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
-  let init' ← c.initializer.mapM resolveStmtExpr
+  let init' ← c.initializer.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
   let name' ← resolveRef c.name
   return { name := name', type := ty', initializer := init' }
 
