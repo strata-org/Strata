@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+-- nosourcerange-file: defines ExprSourceLoc.none and its elaborator/test infrastructure
 module
 
 public import Strata.DL.Lambda.LExprTypeEnv

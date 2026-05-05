@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+-- nosourcerange-file: synthesized expressions for environment operations and path conditions
 module
 
 public import Strata.Languages.Core.Program

@@ -140,7 +140,7 @@ def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr :
   emitDiagnostic d
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
   let id ← freshId
-  return LExpr.fvar ExprSourceLoc.none (⟨s!"DUMMY_VAR_{id}", ()⟩) none
+  return LExpr.fvar ExprSourceLoc.none (⟨s!"DUMMY_VAR_{id}", ()⟩) none -- nosourcerange: synthesized dummy for error recovery
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
@@ -607,9 +607,9 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
     -- Synthesized conjunction of postconditions; no single source location applies
-    | [] => .const ExprSourceLoc.none (.boolConst true)
+    | [] => .const ExprSourceLoc.none (.boolConst true) -- nosourcerange: synthesized true literal for empty postconditions
     | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp ExprSourceLoc.none boolAndOp [acc, x]) e
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp ExprSourceLoc.none boolAndOp [acc, x]) e -- nosourcerange: synthesized conjunction node
   let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
