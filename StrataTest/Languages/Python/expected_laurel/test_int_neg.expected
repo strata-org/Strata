@@ -2,7 +2,6 @@ test_int_neg.py(2, 4): ✅ pass - assert(24)
 test_int_neg.py(3, 13): ✅ pass - Check PNeg exception
 test_int_neg.py(3, 4): ✅ pass - assert(39)
 test_int_neg.py(4, 16): ✅ pass - Check PNeg exception
-test_int_neg.py(4, 4): ✅ pass - assert_assert(55)_calls_Any_to_bool_0
 test_int_neg.py(4, 4): ✅ pass - int negation
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

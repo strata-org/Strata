@@ -7,7 +7,6 @@ module
 
 public import Strata.DDM.Elab.Env
 public import Strata.DDM.Format
-import Strata.DDM.Util.ByteArray
 import Strata.Util.DecideProp
 
 open Lean
@@ -123,7 +122,7 @@ private def strataIsIdFirst (c : Char) : Bool :=
   c.isAlpha || c == '_' || c == '$'
 
 private def strataIsIdRest (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '$'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '$' || c == '@'
 
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
   strataIsIdFirst c || isIdBeginEscape c

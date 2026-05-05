@@ -26,7 +26,7 @@ open Core Lambda
 def intModelPgm : Program :=
 #strata
 program Core;
-procedure P() returns () {
+procedure P() {
   var x : int;
   havoc x;
   assert [must_be_42]: (x == 42);
@@ -39,13 +39,15 @@ Obligation: must_be_42
 Property: assert
 Result: ❌ fail
 Model:
-($__x1, 0)
+(x@1, 0)
 -/
 #guard_msgs in
 #eval verify intModelPgm (options := .models)
 
 -- The model value is an intConst
-/-- info: failures=1 all_int=true -/
+/--
+info: failures=1 all_int=true
+-/
 #guard_msgs in
 #eval do
   let results ← verify intModelPgm (options := .models)
@@ -64,7 +66,7 @@ Model:
 def boolModelPgm : Program :=
 #strata
 program Core;
-procedure P() returns () {
+procedure P() {
   var b : bool;
   havoc b;
   assert [must_be_true]: b;
@@ -77,7 +79,7 @@ Obligation: must_be_true
 Property: assert
 Result: ❌ fail
 Model:
-($__b1, false)
+(b@1, false)
 -/
 #guard_msgs in
 #eval verify boolModelPgm (options := .models)
@@ -90,7 +92,7 @@ def datatypeModelPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure P() returns () {
+procedure P() {
   var xs : List int;
   havoc xs;
   assert [must_be_cons]: List..isCons(xs);
@@ -103,7 +105,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-($__xs1, Nil)
+(xs@1, Nil)
 -/
 #guard_msgs in
 #eval verify datatypeModelPgm (options := .models)
@@ -116,7 +118,7 @@ def datatypeModelPgm2 : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure P() returns () {
+procedure P() {
   var xs : List int;
   havoc xs;
   assert [must_be_cons]: List..isNil(xs);
@@ -129,7 +131,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-($__xs1, Cons(0, Nil))
+(xs@1, Cons(0, Nil))
 -/
 #guard_msgs in
 #eval verify datatypeModelPgm2 (options := .models)
@@ -142,7 +144,7 @@ def eitherModelPgm : Program :=
 #strata
 program Core;
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
-procedure P() returns () {
+procedure P() {
   var e : Either int bool;
   havoc e;
   assert [must_be_left]: Either..isLeft(e);
@@ -155,7 +157,7 @@ Obligation: must_be_left
 Property: assert
 Result: ❌ fail
 Model:
-($__e1, Right(true))
+(e@1, Right(true))
 -/
 #guard_msgs in
 #eval verify eitherModelPgm (options := .models)
@@ -170,7 +172,7 @@ Model:
 def quantModelPgm : Program :=
 #strata
 program Core;
-procedure P(x : int) returns ()
+procedure P(x : int)
 spec {
   ensures [bad]: (forall q : int :: q < x);
 }
@@ -184,7 +186,7 @@ Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, 0)
+(x@1, 0)
 -/
 #guard_msgs in
 #eval verify quantModelPgm (options := .models)

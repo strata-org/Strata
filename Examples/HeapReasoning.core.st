@@ -18,7 +18,6 @@ function isString(v: Box): bool;
 function isRef(v: Box): bool;
 
 // Replace by allocation time, one tick per 1) allocation 2) method call, const for each Ref = allocation time, prove disjointness by proving that the allocation is greater
-var tickingClock: int;
 function allocationTime(r: Ref): int;
 
 // TODO: What happens if allocating in an if-expression
@@ -68,7 +67,7 @@ axiom [nextFieldType]: forall s: Struct :: isContainerStruct(s) ==> (isRef(s[nex
 function Container_ctorModifiesFrame(h: Heap, testedRef: Ref, r: Ref, methodEntryTime: int): bool {
   testedRef == r || (allocationTime(testedRef) >= methodEntryTime)
 }
-procedure Container_ctor(heap: Heap, r: Ref, initialLychee: int, initialPineapple: int, initialNext: Ref) returns (newHeap: Heap)
+procedure Container_ctor(inout tickingClock: int, heap: Heap, r: Ref, initialLychee: int, initialPineapple: int, initialNext: Ref, out newHeap: Heap)
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
@@ -120,7 +119,7 @@ function UpdateContainersModifiesFrame(h: Heap, testedRef: Ref, ref1: Ref, metho
 }
 
 // Annotated with "modifies ref1"
-procedure UpdateContainers(heap: Heap, ref1: Ref, ref2: Ref) returns (newHeap: Heap)
+procedure UpdateContainers(inout tickingClock: int, heap: Heap, ref1: Ref, ref2: Ref, out newHeap: Heap)
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
@@ -190,10 +189,8 @@ function MainModifiesFrame(h: Heap, testedRef: Ref, methodEntryTime: int): bool 
 }
 
 // annotated with "modifies {}"
-procedure Main(heap: Heap) returns (newHeap: Heap)
+procedure Main(inout tickingClock: int, heap: Heap, out newHeap: Heap)
 spec {
-  modifies tickingClock;
-
   free requires tickingClock >= 0;
   ensures tickingClock >= old tickingClock;
 
@@ -211,7 +208,7 @@ spec {
   assume allocationTime(c1) == tickingClock;
   assume isContainer(c1);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
-  call heap_var := Container_ctor(heap_var, c1, 0, 1, null);
+  call Container_ctor(inout tickingClock, heap_var, c1, 0, 1, null, out heap_var);
 
   assert [c1Lychees0]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 0;
   assert [c1Pineapple1]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 1;
@@ -221,7 +218,7 @@ spec {
   assume allocationTime(c2) == tickingClock;
   assume isContainer(c2);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
-  call heap_var := Container_ctor(heap_var, c2, 0, 0, null);
+  call Container_ctor(inout tickingClock, heap_var, c2, 0, 0, null, out heap_var);
 
   // c1.next := c2
   assert MainModifiesFrame(heap_var, c1, methodEntryTime);       // We can do that since the ticking clock has increased
@@ -233,7 +230,7 @@ spec {
   var rhs2: Box := BoxingRef(c1);
   heap_var := heap_var[c2 := heap_var[c2][nextField := rhs2]];
 
-  call heap_var := UpdateContainers(heap_var, c1, c2);
+  call UpdateContainers(inout tickingClock, heap_var, c1, c2, out heap_var);
 
   assert [c1Lychees1]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 1;
   assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 2;

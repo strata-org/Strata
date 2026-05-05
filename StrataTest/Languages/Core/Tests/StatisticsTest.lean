@@ -22,9 +22,7 @@ def statsPgm : Strata.Program :=
 #strata
 program Core;
 
-var g : bool;
-
-procedure Test(x : bool) returns (y : bool)
+procedure Test(inout g : bool, x : bool, out y : bool)
 spec {
   ensures (y == x);
 }
@@ -34,10 +32,9 @@ spec {
 #end
 
 /--
-info: [statistics] Evaluator.factoryOps: 284
-[statistics] Evaluator.globalVars: 1
+info: [statistics] Evaluator.factoryOps: 286
 [statistics] Evaluator.procedures: 1
-[statistics] Evaluator.simulatedStmts: 3
+[statistics] Evaluator.simulatedStmts: 2
 [statistics] Evaluator.verificationEnvironments: 1
 -/
 #guard_msgs in
@@ -59,7 +56,7 @@ program Core;
 function add(a : int, b : int) : int
 { a + b }
 
-procedure P1(x : int) returns (y : int)
+procedure P1(x : int, out y : int)
 spec {
   ensures (y == add(x, 1));
 }
@@ -67,7 +64,7 @@ spec {
   y := add(x, 1);
 };
 
-procedure P2(x : int) returns (y : int)
+procedure P2(x : int, out y : int)
 spec {
   ensures (y == add(x, 2));
 }
@@ -77,7 +74,7 @@ spec {
 #end
 
 /--
-info: [statistics] Evaluator.factoryOps: 284
+info: [statistics] Evaluator.factoryOps: 286
 [statistics] Evaluator.functions: 1
 [statistics] Evaluator.procedures: 2
 [statistics] Evaluator.simulatedStmts: 4

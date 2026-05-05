@@ -72,16 +72,6 @@ C are already well-typed.
     let (decl', C, Env) ←
       match decl with
 
-      | .var x ty val md =>
-        let (s', Env) ← Statement.typeCheck C Env program .none [Statement.init x ty val md]
-        match s' with
-        | [Statement.init x' ty' val' _] => .ok (Decl.var x' ty' val' md, C, Env)
-        | _ => .error <| DiagnosticModel.withRange fileRange f!"Implementation error! \
-                         Statement typeChecker returned the following: \
-                         {Format.line}\
-                         {s'}{Format.line}
-                         Declaration: {decl}"
-
       | .type td md => try
           match td with
           | .con tc =>

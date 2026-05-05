@@ -1,6 +1,4 @@
-test_multi_assign.py(3, 4): ✅ pass - assert_assert(43)_calls_Any_to_bool_0
 test_multi_assign.py(3, 4): ✅ pass - multi assign a
-test_multi_assign.py(4, 4): ✅ pass - assert_assert(79)_calls_Any_to_bool_0
 test_multi_assign.py(4, 4): ✅ pass - multi assign b
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

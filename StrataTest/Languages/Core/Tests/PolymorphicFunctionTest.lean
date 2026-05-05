@@ -45,7 +45,7 @@ program Core;
 
 function identity<a>(x : a) : a;
 
-procedure TestIdentityInt() returns ()
+procedure TestIdentityInt()
 spec {
   ensures true;
 }
@@ -61,7 +61,7 @@ spec {
 info: ok: program Core;
 
 function identity<$__ty0> (x : $__ty0) : $__ty0;
-procedure TestIdentityInt () returns ()
+procedure TestIdentityInt ()
 spec {
   ensures [TestIdentityInt_ensures_0]: true;
   } {
@@ -69,7 +69,7 @@ spec {
   var y : int;
   x := 42;
   y := identity(x);
-  };
+};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram singleTypeParamIntPgm)).fst)
@@ -84,7 +84,7 @@ program Core;
 
 function makePair<a, b>(x : a, y : b) : Map a b;
 
-procedure TestMakePair() returns ()
+procedure TestMakePair()
 spec {
   ensures true;
 }
@@ -98,13 +98,13 @@ spec {
 info: ok: program Core;
 
 function makePair<$__ty0, $__ty1> (x : $__ty0, y : $__ty1) : Map $__ty0 $__ty1;
-procedure TestMakePair () returns ()
+procedure TestMakePair ()
 spec {
   ensures [TestMakePair_ensures_0]: true;
   } {
   var m : (Map int bool);
   m := makePair(42, true);
-  };
+};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram multiTypeParamUsePgm)).fst)
@@ -120,7 +120,7 @@ program Core;
 function apply<a, b>(f : a -> b, x : a) : b;
 function intToBool(x : int) : bool;
 
-procedure TestApply() returns ()
+procedure TestApply()
 spec {
   ensures true;
 }
@@ -135,13 +135,13 @@ info: ok: program Core;
 
 function apply<$__ty0, $__ty1> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1;
 function intToBool (x : int) : bool;
-procedure TestApply () returns ()
+procedure TestApply ()
 spec {
   ensures [TestApply_ensures_0]: true;
   } {
   var result : bool;
   result := apply(intToBool, 42);
-  };
+};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram arrowTypeParamUsePgm)).fst)
@@ -157,7 +157,7 @@ program Core;
 function identity<a>(x : a) : a;
 function makePair<a, b>(x : a, y : b) : Map a b;
 
-procedure TestDifferentInstantiations() returns ()
+procedure TestDifferentInstantiations()
 spec {
   ensures true;
 }
@@ -172,13 +172,13 @@ info: ok: program Core;
 
 function identity<$__ty0> (x : $__ty0) : $__ty0;
 function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
-procedure TestDifferentInstantiations () returns ()
+procedure TestDifferentInstantiations ()
 spec {
   ensures [TestDifferentInstantiations_ensures_0]: true;
   } {
   var m : (Map int bool);
   m := makePair(identity(42), identity(true));
-  };
+};
 -/
 #guard_msgs in
 #eval (Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram differentInstantiationsPgm)).fst)
@@ -193,7 +193,7 @@ program Core;
 
 function eq<a>(x : a, y : a) : bool;
 
-procedure TestEqTypeMismatch() returns ()
+procedure TestEqTypeMismatch()
 spec {
   ensures true;
 }
@@ -204,7 +204,7 @@ spec {
 #end
 
 /--
-info: error: (4726-4749) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4619-4642) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in

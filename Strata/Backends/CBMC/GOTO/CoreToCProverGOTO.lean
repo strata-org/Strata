@@ -10,6 +10,7 @@ public import Strata.Backends.CBMC.GOTO.DefaultSymbols
 public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 public import Strata.DL.Imperative.ToCProverGOTO
 public import Strata.Languages.Core.Verifier
+import Lean.Parser.Types
 
 public section
 

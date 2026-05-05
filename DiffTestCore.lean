@@ -70,7 +70,7 @@ def StrataResult.toStr : StrataResult → String
 /-- Build a Core program that asserts str.in.re(testStr, regexExpr). -/
 def mkProgText (testStr : String) (regexStr : String) : String :=
   "program Core;\n" ++
-  "procedure main() returns () {\n" ++
+  "procedure main() {\n" ++
   s!"  assert [match_check]: (str.in.re(\"{escapeForCore testStr}\", {regexStr}));\n" ++
   "};"
 
@@ -108,7 +108,7 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
           if vc.isSuccess then return .match
           else if vc.isFailure then return .noMatch
           else return match vc.outcome with
-            | .error msg => .smtError s!"impl: {msg}"
+            | .error err => .smtError s!"impl: {err}"
             | _ => .smtError "unknown"
 
 def main (args : List String) : IO UInt32 := do

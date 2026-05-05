@@ -1,5 +1,4 @@
 test_any_to_str.py(5, 4): ✅ pass - assert(72)
-test_any_to_str.py(6, 4): ✅ pass - assert_assert(87)_calls_Any_to_bool_0
 test_any_to_str.py(6, 4): ✅ pass - Any assigned to str
-DETAIL: 3 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

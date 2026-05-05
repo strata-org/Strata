@@ -1,10 +1,8 @@
 test_bool_not.py(2, 4): ✅ pass - assert(25)
 test_bool_not.py(3, 4): ✅ pass - assert(44)
 test_bool_not.py(4, 11): ✅ pass - Check PNot exception
-test_bool_not.py(4, 4): ✅ pass - assert_assert(64)_calls_Any_to_bool_0
 test_bool_not.py(4, 4): ✅ pass - not false
 test_bool_not.py(5, 11): ✅ pass - Check PNot exception
-test_bool_not.py(5, 4): ✅ pass - assert_assert(94)_calls_Any_to_bool_0
 test_bool_not.py(5, 4): ✅ pass - double negation
-DETAIL: 8 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

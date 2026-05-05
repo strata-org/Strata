@@ -1,10 +1,7 @@
 test_var_swap.py(2, 4): ✅ pass - assert(25)
 test_var_swap.py(3, 4): ✅ pass - assert(40)
 test_var_swap.py(4, 4): ✅ pass - assert(55)
-test_var_swap.py(7, 11): ✅ pass - assert_assert(97)_calls_PAnd_0
 test_var_swap.py(7, 11): ✅ pass - Check PAnd exception
-test_var_swap.py(7, 4): ✅ pass - assert_assert(90)_calls_PAnd_0
-test_var_swap.py(7, 4): ✅ pass - assert_assert(90)_calls_Any_to_bool_1
 test_var_swap.py(7, 4): ✅ pass - swap
-DETAIL: 8 passed, 0 failed, 0 inconclusive
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

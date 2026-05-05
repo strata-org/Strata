@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
+public import Strata.Util.Name
 
 public section
 
@@ -49,12 +50,17 @@ instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMono
 
 ---------------------------------------------------------------------
 
+private def formatCoreEntry : PathConditionEntry Expression → Format
+  | .assumption label expr => f!"({label}, {expr.eraseTypes})"
+  | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e.eraseTypes})"
+  | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+
 def PathCondition.format (p : PathCondition Expression) : Format :=
   match p with
   | [] => ""
-  | [(k, v)] => f!"({k}, {v.eraseTypes})"
-  | (k, v) :: rest =>
-    (f!"({k}, {v.eraseTypes}){Format.line}") ++ ListMap.format' rest
+  | [e] => formatCoreEntry e
+  | e :: rest =>
+    (f!"{formatCoreEntry e}{Format.line}") ++ PathCondition.format rest
 
 def PathConditions.format (ps : PathConditions Expression) : Format :=
   match ps with
@@ -62,9 +68,14 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
   | p :: prest =>
     f!"{PathCondition.format p}{Format.line}" ++ PathConditions.format prest
 
+private def entryExprs : PathConditionEntry Expression → List Expression.Expr
+  | .assumption _ e => [e]
+  | .varDecl _ _ (.det e) => [e]
+  | .varDecl _ _ .nondet => []
+
 def PathCondition.getVars (p : PathCondition Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  p.map (fun (_, e) => Lambda.LExpr.freeVars e) |> .flatten |> .eraseDups
+  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> .eraseDups
 
 def PathConditions.getVars (ps : PathConditions Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
@@ -79,7 +90,10 @@ def ProofObligation.getVars (d : ProofObligation Expression)
 def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligation Expression :=
   { label := d.label,
     property := d.property,
-    assumptions := d.assumptions.map (fun m => (m.map (fun (label, expr) => (label, expr.eraseTypes)))),
+    assumptions := d.assumptions.map (fun m => m.map (fun
+      | .assumption label expr => .assumption label expr.eraseTypes
+      | .varDecl name ty (.det e) => .varDecl name ty (.det e.eraseTypes)
+      | .varDecl name ty .nondet => .varDecl name ty .nondet)),
     obligation := d.obligation.eraseTypes,
     metadata := d.metadata
     }
@@ -139,6 +153,7 @@ structure Env where
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
+  pathCap : Option Nat := .none
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -151,7 +166,8 @@ def Env.init (empty_factory:=false): Env :=
     distinct := [],
     pathConditions := [],
     warnings := []
-    deferred := ∅ }
+    deferred := ∅
+    pathCap := .none }
 
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
@@ -161,7 +177,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
@@ -171,14 +187,14 @@ instance : ToFormat Env where
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
-Create a substitution map from all non-global variables to their values.
+Create a substitution map from all variables to their values.
 -/
 def oldLocalVarSubst (E : Env) : SubstMap :=
   let m := (E.exprEnv.state.dropOldest).toSingleMap
   m.map (fun (i, _, e) => (i, e))
 
 /--
-Append `subst` map to a non-global substitution map.
+Append `subst` map to a substitution map.
 -/
 def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E
@@ -242,23 +258,21 @@ def Env.addToContext
     : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
--- TODO: prove uniqueness, add different prefix
+-- TODO: prove uniqueness
 def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × Lambda.EvalConfig CoreLParams :=
-  let new_idx := c.gen
-  let c := c.incGen
-  let new_var := c.varPrefix ++ x ++ toString new_idx
+  let (new_var, c) := c.genSym x
   (⟨new_var, ()⟩, c)
 
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
-  let (new_var, config) := Env.genSym x σ.config
+  -- If `x` is already bound in the state, mark it used so that findUnique
+  -- skips the bare name and avoids self-referential substitutions
+  -- (e.g. havoc x generating fvar "x" when x is in scope).
+  let config := if σ.state.find? (⟨x, ()⟩ : CoreIdent) |>.isSome
+    then { σ.config with usedNames := σ.config.usedNames.insert x }
+    else σ.config
+  let (new_var, config) := Env.genSym x config
   let σ : Lambda.LState CoreLParams := { σ with config := config }
-  -- let known_vars := Lambda.LState.knownVars σ
-  -- if new_var ∈ known_vars then
-  --   panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
-  --            Known variables: {Std.format σ.knownVars}"
-  -- else
-  --   (new_var, σ)
   (new_var, σ)
 
 def Env.genVar (x : Expression.Ident) (E : Env) : Expression.Ident × Env :=
@@ -318,8 +332,12 @@ def Env.insertFreeVarsInOldestScope
 
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
-  let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
-  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite () cond (LExpr.false ()) (LExpr.true ())) e))
+  let wrapAssumption (ant : Expression.Expr) : PathConditionEntry Expression → PathConditionEntry Expression
+    | .assumption label e => .assumption label (mkImplies ant e)
+    | entry => entry
+  let negCond := LExpr.ite () cond (LExpr.false ()) (LExpr.true ())
+  let pc1' := pc1.map (wrapAssumption cond)
+  let pc2' := pc2.map (wrapAssumption negCond)
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
   LExpr.ite () ant con (LExpr.true ())
@@ -333,7 +351,7 @@ def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
   let pc2 := E2.pathConditions.newest
   let pc_merged := PathCondition.merge cond pc1 pc2
   let pcs := pcs1.pop
-  let pcs := Maps.addInNewest pcs pc_merged
+  let pcs := pcs.addInNewest pc_merged
   let deferred := E1.deferred.append E2.deferred
   { E1 with exprEnv := exprEnv, pathConditions := pcs, deferred := deferred }
 

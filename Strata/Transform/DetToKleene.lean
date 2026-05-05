@@ -38,11 +38,17 @@ def StmtToKleeneStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
         (.seq (.assume "false_cond" (Imperative.HasNot.not c) md) e)
     | .nondet =>
       return .choice t e
-  | .loop guard _measure _inv bss md => do
-    let b ← BlockToKleeneStmt bss
-    match guard with
-    | .det g => return .loop (.seq (.assume "guard" g md) b)
-    | .nondet => return .loop b
+  | .loop guard _measure inv bss md => do
+    -- With invariant checking in `StepStmt`, the deterministic semantics
+    -- can signal `hasFailure` when a loop invariant evaluates to `ff`,
+    -- but Kleene has no invariants and cannot reproduce that failure.
+    -- To keep this transform sound, only translate loops with no invariants.
+    if !inv.isEmpty then none
+    else
+      let b ← BlockToKleeneStmt bss
+      match guard with
+      | .det g => return .loop (.seq (.assume "guard" g md) b)
+      | .nondet => return .loop b
   | .typeDecl _ _ => none
   | .exit _ _ => none
   | .funcDecl _ _ => none

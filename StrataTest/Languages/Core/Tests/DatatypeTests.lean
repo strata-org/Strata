@@ -26,7 +26,7 @@ program Core;
 datatype Option (a : Type) { None(), Some(OptionVal: a) };
 datatype List (a : Type) { Nil(), Cons(hd: a, tl: List a) };
 
-procedure TestNestedPolyDestructor() returns ()
+procedure TestNestedPolyDestructor()
 spec {
   ensures true;
 }
@@ -46,7 +46,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram nestedPolyDestructorPgm) |>.snd |>.isEmpty
 
@@ -90,7 +92,7 @@ program Core;
 datatype Hidden (a : Type) { HiddenValue(hiddenField: a) };
 datatype Container (a : Type) { Empty(), WithHidden(hiddenPart: Hidden a, visiblePart: a) };
 
-procedure TestHiddenTypeRecursion() returns ()
+procedure TestHiddenTypeRecursion()
 spec {
   ensures true;
 }
@@ -110,7 +112,9 @@ spec {
 };
 #end
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram hiddenTypeRecursionPgm) |>.snd |>.isEmpty
 

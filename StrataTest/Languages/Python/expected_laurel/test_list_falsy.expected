@@ -1,6 +1,4 @@
 test_list_falsy.py(3, 4): ✅ pass - assert(39)
-test_list_falsy.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_list_falsy.py(6, 4): ✅ pass - assert_assert(79)_calls_Any_to_bool_0
 test_list_falsy.py(6, 4): ✅ pass - empty list is falsy
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

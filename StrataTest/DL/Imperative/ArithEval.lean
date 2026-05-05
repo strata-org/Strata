@@ -125,7 +125,9 @@ def deferObligation (s : State) (ob : ProofObligation PureExpr) : State :=
 
 def ProofObligation.freeVars (ob : ProofObligation PureExpr) : List String :=
   let assum_typedvars :=
-      ob.assumptions.flatMap (fun e => e.values.flatMap (fun i => i.freeVars))
+      ob.assumptions.flatMap (fun e => e.filterMap (fun
+        | .assumption _ expr => some expr
+        | _ => none) |>.flatMap (fun i => i.freeVars))
   (assum_typedvars.map (fun (v, _) => v)) ++
   (ob.obligation.freeVars.map (fun (v, _) => v))
 

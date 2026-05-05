@@ -16,19 +16,15 @@ Translates Core procedures and functions into CProver GOTO contexts.
 ### Known limitations
 
 #### Program-level declarations (`Core.Decl`)
-- **`Decl.var`** (global variables): Emitted as GOTO symbol table entries with
-  `isStaticLifetime := true`. Optional initializers are translated to the symbol's
-  `value` field.
 - **`Decl.ax`** (axioms): Emitted as ASSUME instructions at the start of each
   procedure body.
 - **`Decl.distinct`**: Emitted as pairwise `!=` ASSUME instructions at the
   start of each procedure body.
 
 #### Procedure contracts (`Core.Procedure.Spec`)
-Preconditions, postconditions, and modifies clauses are now emitted as
-`#spec_requires`, `#spec_ensures`, and `#spec_assigns` named sub-expressions
-on the code type in the symbol table. These are recognized by
-`goto-instrument --apply-code-contracts` (DFCC).
+Preconditions and postconditions are emitted as `#spec_requires` and
+`#spec_ensures` named sub-expressions on the code type in the symbol table.
+These are recognized by `goto-instrument --apply-code-contracts` (DFCC).
 
 The following are not yet handled:
 - **`free requires`/`free ensures`**: Silently skipped (not emitted as contract
@@ -84,7 +80,8 @@ private partial def unwrapCmdExt
     .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn))
+      (i.map (fun (l, e) => (l, renameExpr rn e))) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
     .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
@@ -145,7 +142,9 @@ private partial def coreStmtsToGoto
   | [] => return trans
   | stmt :: rest =>
     let trans ← match stmt with
-      | .cmd (.call lhs procName args _md) =>
+      | .cmd (.call procName callArgs _md) =>
+        let lhs := Core.CallArg.getLhs callArgs
+        let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
         let argExprs ← renamedArgs.mapM toExpr
@@ -218,7 +217,7 @@ private partial def coreStmtsToGoto
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let mut backGuard := CProverGOTO.Expr.true
-          for inv in invariants do
+          for (_, inv) in invariants do
             let inv_expr ← toExpr (renameExpr rn inv)
             backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
           match measure with
@@ -257,8 +256,6 @@ def procedureToGotoCtx
     (axioms : List Core.Axiom := [])
     (distincts :
       List (Core.Expression.Ident × List Core.Expression.Expr) := [])
-    (varTypes :
-      Core.Expression.Ident → Option Core.Expression.Ty := fun _ => none)
     : Except Std.Format
         (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
@@ -351,16 +348,6 @@ def procedureToGotoCtx
     let postJson ← (postGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
-  if !p.spec.modifies.isEmpty then
-    let mut modGoto : List CProverGOTO.Expr := []
-    for ident in p.spec.modifies do
-      let ty ← match varTypes ident with
-        | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
-        | _ => pure .Integer
-      modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
-    let modJson ← (modGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
-    contracts := contracts ++ [("#spec_assigns",
-      Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
   let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=
@@ -478,7 +465,7 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
   let distincts := tcPgm.decls.filterMap fun d => match d with
     | .distinct name es _ => some (name, es) | _ => none
   match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
-        (varTypes := tcPgm.getVarTy?) with
+        with
   | .error e => throw s!"{e}"
   | .ok (ctx, liftedFuncs) =>
     let extraSyms ← match collectExtraSymbols tcPgm with
@@ -512,7 +499,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
   let inlined ← match Core.Transform.run program (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
-    | .error msg => throw msg
+    | .error msg => throw (toString msg)
   let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg

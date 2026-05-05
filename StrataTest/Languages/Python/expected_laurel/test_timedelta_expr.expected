@@ -4,7 +4,6 @@ test_timedelta_expr.py(4, 0): ✅ pass - (Origin_timedelta_Requires)days_pos
 test_timedelta_expr.py(4, 0): ✅ pass - (Origin_timedelta_Requires)hours_pos
 test_timedelta_expr.py(5, 18): ✅ pass - Check PSub exception
 test_timedelta_expr.py(6, 7): ✅ pass - Check PLe exception
-test_timedelta_expr.py(6, 0): ✅ pass - assert_assert(140)_calls_Any_to_bool_0
 test_timedelta_expr.py(6, 0): ✅ pass - assert(140)
-DETAIL: 8 passed, 0 failed, 0 inconclusive
+DETAIL: 7 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -6,9 +6,9 @@
 ;; Keywords
 (defvar core-st-keywords
   '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
-    "decreases" "while" "call" "exit" "free" "modifies" "ensures"
-    "requires" "spec" "procedure" "returns" "type" "const" "function"
-    "inline" "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
+    "decreases" "while" "out" "inout" "call" "exit" "free" "ensures"
+    "requires" "spec" "procedure" "type" "const" "function" "inline"
+    "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
     "program"))
 
 (defvar core-st-types
@@ -25,9 +25,9 @@
   '(    "Sequence.length" "Sequence.select" "Sequence.append"
     "Sequence.build" "Sequence.update" "Sequence.contains"
     "Sequence.take" "Sequence.drop" "str.len" "str.concat" "str.substr"
-    "str.to.re" "str.in.re" "re.allchar" "re.all" "re.range" "re.concat"
-    "re.*" "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
-    "Int.DivT" "Int.ModT"))
+    "str.to.re" "str.in.re" "str.prefixof" "str.suffixof" "re.allchar"
+    "re.all" "re.range" "re.concat" "re.*" "re.+" "re.loop" "re.union"
+    "re.inter" "re.comp" "re.none" "Int.DivT" "Int.ModT"))
 
 ;; Font-lock rules
 (defvar core-st-font-lock-keywords

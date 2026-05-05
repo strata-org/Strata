@@ -16,8 +16,8 @@ import Strata.Languages.Core.Identifiers
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.SMTEncoder
 import Strata.Languages.Core.Verifier
-import Strata.DL.Lambda.TestGen
-import Strata.DL.Lambda.PlausibleHelpers
+import StrataTest.DL.Lambda.TestGen
+import StrataTest.DL.Lambda.PlausibleHelpers
 import Plausible.Gen
 
 /-! This file does random testing of Strata Core operations registered in factory, by

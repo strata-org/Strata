@@ -22,6 +22,13 @@ open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
 ---------------------------------------------------------------------
 
+-- In a call statement, every inout parameter (which appear in both inputs and outputs of the call) must be
+-- matched with a simple variable of the same name
+private def areInoutArgsValid (proc : Procedure) (args : List Expression.Expr) : Bool :=
+  (proc.header.inputs.toList.zip args).all fun ((paramId, _), arg) =>
+    !(ListMap.keys proc.header.outputs).contains paramId ||  -- not inout, or …
+    match arg with | .fvar _ id _ => id == paramId | _ => false  -- … is fvar with same name
+
 /--
 Type checker for Strata Core commands.
 
@@ -36,7 +43,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c
     .ok (.cmd c, Env)
-  | .call lhs pname args md => try
+  | .call pname callArgs md => try
+    let lhs := CallArg.getLhs callArgs
+    let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
      | none => .error <| md.toDiagnosticF f!"[{c}]: Procedure {pname} not found!"
@@ -49,6 +58,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
        else if args.length != proc.header.inputs.length then
          .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's arguments!\
                    Here is the expected signature: {proc.header.inputs}"
+       else if !areInoutArgsValid proc args then
+         .error <| md.toDiagnosticF f!"[{c}]: In-out arguments (parameters appearing in \
+                   both inputs and outputs) must be simple variable references"
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.
@@ -71,7 +83,8 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
            let Env := Env.updateSubst S
-           let s' := .call lhs pname args' md
+           let newCallArgs := CallArg.replaceInArgs callArgs args'
+           let s' := .call pname newCallArgs md
            .ok (s', Env)
       catch e =>
         -- Add source location to error messages if not already present.
@@ -144,14 +157,14 @@ where
             let (ma, Env) ← LExpr.resolve C Env m |>.mapError DiagnosticModel.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
-          let (it, Env) ← invariant.foldlM (fun (acc, E) i => do
+          let (it, Env) ← invariant.foldlM (fun (acc, E) (lbl, i) => do
             let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
             let (ia, E') ← LExpr.resolve C E i |>.mapError DiagnosticModel.fromFormat
             if ia.toLMonoTy == .tcons "bool" [] then
-              .ok (acc ++ [ia], E')
+              .ok (acc ++ [(lbl, ia)], E')
             else
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
-          ) ([], Env)
+          ) (([] : List (String × _)), Env)
           let mty := mt.map LExpr.toLMonoTy
           match mty with
           | none | some (.tcons "int" []) =>
@@ -159,7 +172,8 @@ where
             let guarda' : ExprOrNondet Expression := match guarda with
               | some e => .det e.unresolved
               | none => .nondet
-            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
+            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved)
+              (it.map (fun (lbl, e) => (lbl, e.unresolved))) tb md
             .ok (s', Env, C)
           | _ =>
             .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
@@ -240,8 +254,11 @@ def Command.subst (S : Subst) (c : Command) : Command :=
       .cmd $ .assume label (b.applySubst S) md
     | .cover label b md =>
       .cmd $ .cover label (b.applySubst S) md
-  | .call lhs pname args md =>
-    .call lhs pname (args.map (fun a => a.applySubst S)) md
+  | .call pname callArgs md =>
+    .call pname (callArgs.map fun
+      | .inArg e => .inArg (e.applySubst S)
+      | .inoutArg id => .inoutArg id
+      | .outArg id => .outArg id) md
 
 /--
 Apply type substitution `S` to a statement.
@@ -260,7 +277,8 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .ite cond tss ess md =>
     .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
+    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m)
+      (i.map (fun (l, e) => (l, e.applySubst S))) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with

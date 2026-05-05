@@ -12,7 +12,7 @@ namespace Strata
 def assertionNames :=
 #strata
 program Core;
-procedure Test(x : int) returns ()
+procedure Test(x : int)
 spec {
   requires x == 1;
 }
@@ -23,7 +23,9 @@ spec {
 
 -- Translation from DDM AST to Strata Core AST
 
-/-- info: true -/
+/--
+info: true
+-/
 #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram assertionNames) |>.snd |>.isEmpty
@@ -31,12 +33,12 @@ spec {
 /--
 info: program Core;
 
-procedure Test (x : int) returns ()
+procedure Test (x : int)
 spec {
   requires [Test_requires_0]: x == 1;
   } {
   assert [assert_0]: x == 1;
-  };
+};
 -/
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram assertionNames) |>.fst
@@ -49,9 +51,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-Test_requires_0: $__x0 == 1
+Test_requires_0: x@1 == 1
 Obligation:
-$__x0 == 1
+x@1 == 1
 
 ---
 info:

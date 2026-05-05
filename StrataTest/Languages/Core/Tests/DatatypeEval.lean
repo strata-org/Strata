@@ -18,7 +18,7 @@ datatype Any () {
   from_bool (as_bool : bool)
 };
 
-procedure test () returns ()
+procedure test ()
 {
   var b: bool;
   assert [constr_tester_cancel]: Any..isfrom_bool(from_bool(b));
@@ -55,7 +55,7 @@ datatype Any () {
   from_bool (as_bool : bool)
 };
 
-procedure test () returns ()
+procedure test ()
 {
   var b: bool;
   assume (b == true);
@@ -72,16 +72,16 @@ VCs:
 Label: assert_constr_destr_cancel_calls_Any..as_bool_0
 Property: assert
 Assumptions:
-assume_0: $__b0 == true
+assume_0: b == true
 Obligation:
 true
 
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-assume_0: $__b0 == true
+assume_0: b == true
 Obligation:
-$__b0
+b
 
 ---
 info:

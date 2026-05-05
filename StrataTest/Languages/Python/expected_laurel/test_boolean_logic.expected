@@ -1,50 +1,25 @@
 test_boolean_logic.py(3, 4): ✅ pass - assert(34)
 test_boolean_logic.py(4, 4): ✅ pass - assert(53)
-test_boolean_logic.py(5, 11): ✅ pass - assert_assert(80)_calls_PAnd_0
 test_boolean_logic.py(5, 11): ✅ pass - Check PAnd exception
-test_boolean_logic.py(5, 4): ✅ pass - assert_assert(73)_calls_PAnd_0
-test_boolean_logic.py(5, 4): ✅ pass - assert_assert(73)_calls_Any_to_bool_1
 test_boolean_logic.py(5, 4): ✅ pass - True and True should be True
-test_boolean_logic.py(6, 11): ✅ pass - assert_assert(131)_calls_PAnd_0
 test_boolean_logic.py(6, 11): ✅ pass - Check PNot exception
-test_boolean_logic.py(6, 4): ✅ pass - assert_assert(124)_calls_PAnd_0
-test_boolean_logic.py(6, 4): ✅ pass - assert_assert(124)_calls_Any_to_bool_1
 test_boolean_logic.py(6, 4): ✅ pass - True and False should be False
-test_boolean_logic.py(9, 11): ✅ pass - assert_assert(208)_calls_POr_0
 test_boolean_logic.py(9, 11): ✅ pass - Check POr exception
-test_boolean_logic.py(9, 4): ✅ pass - assert_assert(201)_calls_POr_0
-test_boolean_logic.py(9, 4): ✅ pass - assert_assert(201)_calls_Any_to_bool_1
 test_boolean_logic.py(9, 4): ✅ pass - True or False should be True
-test_boolean_logic.py(10, 11): ✅ pass - assert_assert(258)_calls_POr_0
 test_boolean_logic.py(10, 11): ✅ pass - Check PNot exception
-test_boolean_logic.py(10, 4): ✅ pass - assert_assert(251)_calls_POr_0
-test_boolean_logic.py(10, 4): ✅ pass - assert_assert(251)_calls_Any_to_bool_1
 test_boolean_logic.py(10, 4): ✅ pass - False or False should be False
 test_boolean_logic.py(13, 11): ✅ pass - Check PNot exception
-test_boolean_logic.py(13, 4): ✅ pass - assert_assert(320)_calls_Any_to_bool_0
 test_boolean_logic.py(13, 4): ✅ pass - not False should be True
 test_boolean_logic.py(14, 11): ✅ pass - Check PNot exception
-test_boolean_logic.py(14, 4): ✅ pass - assert_assert(365)_calls_Any_to_bool_0
 test_boolean_logic.py(14, 4): ✅ pass - not not True should be True
 test_boolean_logic.py(17, 4): ✅ pass - assert(444)
 test_boolean_logic.py(18, 4): ✅ pass - assert(460)
 test_boolean_logic.py(19, 4): ✅ pass - assert(476)
-test_boolean_logic.py(21, 7): ✅ pass - assert_assert(500)_calls_PAnd_0
 test_boolean_logic.py(21, 7): ✅ pass - Check PAnd exception
-test_boolean_logic.py(21, 4): ✅ pass - ite_cond_calls_PAnd_0
-test_boolean_logic.py(21, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
-test_boolean_logic.py(25, 4): ✅ pass - assert_assert(570)_calls_Any_to_bool_0
 test_boolean_logic.py(25, 4): ✅ pass - combined and condition failed
-test_boolean_logic.py(27, 7): ✅ pass - assert_assert(630)_calls_POr_0
 test_boolean_logic.py(27, 7): ✅ pass - Check POr exception
-test_boolean_logic.py(27, 4): ✅ pass - ite_cond_calls_POr_0
-test_boolean_logic.py(27, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
-test_boolean_logic.py(31, 4): ✅ pass - assert_assert(700)_calls_Any_to_bool_0
 test_boolean_logic.py(31, 4): ✅ pass - combined or condition failed
 test_boolean_logic.py(33, 7): ✅ pass - Check PNot exception
-test_boolean_logic.py(33, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_boolean_logic.py(37, 4): ✅ pass - assert_assert(825)_calls_Any_to_bool_0
 test_boolean_logic.py(37, 4): ✅ pass - not condition failed
-test_boolean_logic.py(39, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 48 passed, 0 failed, 0 inconclusive
+DETAIL: 23 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

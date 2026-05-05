@@ -9,7 +9,7 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.DDM.BuiltinDialects
 public import Strata.DDM.Elab.LoadedDialects
-import Strata.DDM.Util.Ion.Serialize
+import Strata.DDM.Util.Ion
 import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Lean
 

@@ -87,12 +87,13 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
   | _, _ =>
     .error ".some and .none mismatch"
 
-private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
+private def alphaEquivLoopInvs (l1 l2 : List (String × Expression.Expr)) (map : IdMap)
     : Except Format Bool :=
   if l1.length != l2.length then
     .error "invariant lists have different lengths"
   else
-    return (l1.zip l2).all (fun (a, b) => alphaEquivExprs a b map)
+    return (l1.zip l2).all (fun ((lbl1, a), (lbl2, b)) =>
+      lbl1 == lbl2 && alphaEquivExprs a b map)
 
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
@@ -146,7 +147,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
-    else if ¬ (← alphaEquivExprsList i1 i2 map) then
+    else if ¬ (← alphaEquivLoopInvs i1 i2 map) then
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
@@ -158,7 +159,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
-    | .call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _ =>
+    | .call procName1 callArgs1 _, .call procName2 callArgs2 _ =>
+      let lhs1 := Core.CallArg.getLhs callArgs1
+      let lhs2 := Core.CallArg.getLhs callArgs2
+      let args1 := Core.CallArg.getInArgs callArgs1
+      let args2 := Core.CallArg.getInArgs callArgs2
       if procName1 ≠ procName2 then
         .error "Procedure name does not match"
       else if lhs1.length ≠ lhs2.length then
@@ -231,7 +236,7 @@ def translate (t : Strata.Program) : Core.Program :=
 def runInlineCall (p : Core.Program) : Core.Program :=
   match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
   | ⟨.ok (_,res), _⟩ => res
-  | ⟨.error e, _⟩ => panic! e
+  | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
     : Except Format Bool := do
@@ -255,25 +260,25 @@ def checkInlining (prog : Core.Program) (progAns : Core.Program)
 def Test1 :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   y := !x;
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
-  call b_out := f(b_in);
+  call f(b_in, out b_out);
 };
 #end
 
 def Test1Ans :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   y := !x;
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
   inlined: {
@@ -286,14 +291,16 @@ procedure h() returns () {
 
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test1) (translate Test1Ans)
 
 def Test2 :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   body: {
     if (x) {
       exit body;
@@ -302,10 +309,10 @@ procedure f(x : bool) returns (y : bool) {
   }
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
-  call b_out := f(b_in);
+  call f(b_in, out b_out);
   _exit: {}
 };
 #end
@@ -313,7 +320,7 @@ procedure h() returns () {
 def Test2Ans :=
 #strata
 program Core;
-procedure f(x : bool) returns (y : bool) {
+procedure f(x : bool, out y : bool) {
   body: {
     if (x) {
       exit body;
@@ -322,7 +329,7 @@ procedure f(x : bool) returns (y : bool) {
   }
 };
 
-procedure h() returns () {
+procedure h() {
   var b_in : bool;
   var b_out : bool;
   inlined: {
@@ -342,7 +349,9 @@ procedure h() returns () {
 
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test2) (translate Test2Ans)
 
@@ -352,16 +361,16 @@ procedure h() returns () {
 def Test3 :=
 #strata
 program Core;
-procedure f(x : int) returns (y : int) {
+procedure f(x : int, out y : int) {
   y := x;
 };
 
-procedure g() returns () {
+procedure g() {
   var f_out : int;
   if (true) {
-    call f_out := f(1);
+    call f(1, out f_out);
   } else {
-    call f_out := f(2);
+    call f(2, out f_out);
   }
 };
 #end
@@ -369,11 +378,11 @@ procedure g() returns () {
 def Test3Ans :=
 #strata
 program Core;
-procedure f(x : int) returns (y : int) {
+procedure f(x : int, out y : int) {
   y := x;
 };
 
-procedure g() returns () {
+procedure g() {
   var f_out : int;
   if (true) {
     inlined1: {
@@ -393,7 +402,9 @@ procedure g() returns () {
 };
 #end
 
-/-- info: ok: true -/
+/--
+info: ok: true
+-/
 #guard_msgs in
 #eval checkInlining (translate Test3) (translate Test3Ans)
 
@@ -401,12 +412,12 @@ procedure g() returns () {
 def TestRecursiveCall :=
 #strata
 program Core;
-procedure a1() returns () {
+procedure a1() {
 };
-procedure a2() returns () {
+procedure a2() {
 };
 
-procedure f() returns () {
+procedure f() {
   call a1();
   call a2();
   call f();
@@ -445,14 +456,14 @@ info: true, some CallGraph(callees: [("a1", []),
 def TestThreeChain :=
 #strata
 program Core;
-procedure leaf(x : int) returns (y : int) {
+procedure leaf(x : int, out y : int) {
   y := x + 1;
 };
-procedure mid(a : int) returns (b : int) {
-  call b := leaf(a);
+procedure mid(a : int, out b : int) {
+  call leaf(a, out b);
 };
-procedure top(n : int) returns (r : int) {
-  call r := mid(n);
+procedure top(n : int, out r : int) {
+  call mid(n, out r);
 };
 #end
 

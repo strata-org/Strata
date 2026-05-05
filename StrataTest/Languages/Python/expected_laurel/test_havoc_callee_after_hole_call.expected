@@ -1,13 +1,10 @@
-test_havoc_callee_after_hole_call.py(7, 0): ✅ pass - assert_assert(115)_calls_Any_to_bool_0
-test_havoc_callee_after_hole_call.py(7, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(12, 0): ✅ pass - assert_assert(230)_calls_Any_to_bool_0
+test_havoc_callee_after_hole_call.py(8, 0): ❓ unknown - expected unknown because xs should be havocked
 test_havoc_callee_after_hole_call.py(12, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(17, 0): ✅ pass - assert_assert(363)_calls_Any_to_bool_0
-test_havoc_callee_after_hole_call.py(17, 0): ❓ unknown - expected unknown because xs should be havocked
-test_havoc_callee_after_hole_call.py(21, 0): ✅ pass - assert_assert(486)_calls_Any_to_bool_0
-test_havoc_callee_after_hole_call.py(21, 0): ✅ pass - expected pass nothing should be havocked
-test_havoc_callee_after_hole_call.py(23, 0): ✅ pass - callElimAssert_requires_5
-test_havoc_callee_after_hole_call.py(26, 0): ✅ pass - assert_assert(612)_calls_Any_to_bool_0
-test_havoc_callee_after_hole_call.py(26, 0): ❓ unknown - expected unknown because heap should be havocked
-DETAIL: 7 passed, 0 failed, 4 inconclusive
+test_havoc_callee_after_hole_call.py(16, 0): ✔️ always true if reached - chained call: receiver not havocked (chained attribute is not a Name)
+test_havoc_callee_after_hole_call.py(20, 0): ✔️ always true if reached - unrelated variable: nothing should be havocked
+test_havoc_callee_after_hole_call.py(25, 0): ✔️ always true if reached - composite arg: heap not havocked (out of scope)
+test_havoc_callee_after_hole_call.py(30, 0): ❓ unknown - expected unknown because argument locals should be havocked
+test_havoc_callee_after_hole_call.py(36, 0): ❓ unknown - assume_assume(1193)_calls_PIn_0
+test_havoc_callee_after_hole_call.py(37, 4): ✔️ always true if reached - for-loop over unmodeled iterator should not crash
+DETAIL: 4 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

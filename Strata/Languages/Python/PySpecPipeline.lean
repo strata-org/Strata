@@ -51,18 +51,31 @@ public structure PySpecLaurelResult where
 private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceRange
   | .none => .Constant default (.ConNone default) default
 
-/-- Convert a pyspec Arg to a PythonFunctionDecl arg tuple. -/
-private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
-  -- Map each SpecType atom to its PyLauType tag.
-  -- Multi-atom types (e.g., Optional[str] = [NoneType, str]) produce
-  -- multiple entries so getUnionTypeConstraint generates a disjunction.
-  let tys := arg.type.atoms.toList.filterMap fun a => match a with
-    | .ident nm _ => Python.PythonIdent.toPyLauType? nm
-    | _ => none
-  -- Fall back to ["Any"] if no atoms were recognized (unknown types
-  -- should not generate constraints).
-  let tys := if tys.isEmpty then ["Any"] else tys
-  {name := arg.name, md := default, tys := tys, default := arg.default.map specDefaultToExpr}
+/-- Compute `laurelType` for a pyspec parameter.
+    Mirrors `specTypeToLaurelType` in ToLaurel.lean: builtins → `Any`,
+    other single-ident types → `UserDefined(prefixedName)`.
+    Uses the type's own module (not the function's module) to derive the
+    Laurel prefix, so cross-module type references resolve correctly. -/
+private def specArgLaurelType (arg : Python.Specs.Arg) : Laurel.HighTypeMd :=
+  match arg.type.asIdent with
+  | some id =>
+    if id ∈ Python.Specs.ToLaurel.builtinIdents then
+      Python.AnyTy
+    else
+      Python.mkHighTypeMd (.UserDefined { text := id.toLaurelName })
+  | none => Python.AnyTy
+
+/-- Convert a pyspec Arg to a PythonFunctionDecl arg info.
+    `typeTesters` is empty because `buildSpecBody` already generates type
+    assertions in the procedure body — call-site preconditions would be
+    redundant. -/
+private def specArgToFuncDeclArg (arg : Python.Specs.Arg) : Python.PyArgInfo :=
+  { name := arg.name,
+    source := none,
+    laurelType := specArgLaurelType arg,
+    typeTesters := #[],
+    default := arg.default.map specDefaultToExpr
+  }
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
@@ -70,29 +83,33 @@ private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls
     : Except String Python.PythonFunctionDecl := do
   let kwargsArgs ← Python.Specs.ToLaurel.expandKwargsArgs args.kwargs
   let allArgs := args.args ++ args.kwonly ++ kwargsArgs
-  pure { name, args := allArgs.toList.map specArgToFuncDeclArg,
-         kwargsName := none, ret := none }
+  pure {
+    name,
+    args := allArgs.toList.map specArgToFuncDeclArg,
+    kwargsName := none,
+    ret := none
+  }
 
 /-- Extract PythonFunctionDecl entries from pyspec signatures.
     Handles both top-level functions and class methods.
     Strips `self` from class methods and expands `**kwargs` TypedDict fields. -/
 private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
-    (modulePrefix : String) : Except String (List Python.PythonFunctionDecl) := do
-  let prefixName (n : String) := if modulePrefix.isEmpty then n else modulePrefix ++ "_" ++ n
-  let mut result : List Python.PythonFunctionDecl := []
+    (modulePrefix : String) : Except String (Array Python.PythonFunctionDecl) := do
+  let funcPrefix := if modulePrefix.isEmpty then "" else modulePrefix ++ "_"
+  let mut result : Array Python.PythonFunctionDecl := #[]
   for sig in sigs do
     match sig with
     | .functionDecl func =>
       if !func.isOverload then
-        result := result ++ [← funcDeclToFunctionDecl (prefixName func.name) func.args]
+        result := result.push (← funcDeclToFunctionDecl (funcPrefix ++ func.name) func.args)
     | .classDef cls =>
-      let clsName := prefixName cls.name
+      let clsName := funcPrefix ++ cls.name
       for method in cls.methods do
         if method.args.args.size == 0 then
           throw s!"Method '{cls.name}.{method.name}' has no arguments (expected 'self' as first parameter)"
         let posArgs := method.args.args.extract 1 method.args.args.size  -- strip self
         let decl ← funcDeclToFunctionDecl (clsName ++ "@" ++ method.name) { method.args with args := posArgs }
-        result := result ++ [decl]
+        result := result.push decl
     | _ => pure ()
   return result
 
@@ -100,7 +117,10 @@ private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
 
 private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
   new.fold (init := old) fun o name n =>
-    o.alter name fun s => some <| s.getD {} |>.union n
+    o.alter name fun s =>
+      let existing := s.getD {}
+      some { paramName := existing.paramName <|> n.paramName
+             entries := existing.entries.union n.entries }
 
 
 
@@ -118,7 +138,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
-  let mut funcSigs : List Python.PythonFunctionDecl := []
+  let mut funcSigs : Array Python.PythonFunctionDecl := #[]
   let mut allTypeAliases : Std.HashMap String String := {}
   let mut allExhaustiveClasses : Std.HashSet String := {}
   let mut allWarnings : Array Python.Specs.SpecError := #[]
@@ -169,7 +189,8 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
-           functionSignatures := funcSigs, typeAliases := allTypeAliases
+           functionSignatures := funcSigs.toList,
+           typeAliases := allTypeAliases
            exhaustiveClasses := allExhaustiveClasses
            pyspecWarnings := allWarnings }
 
@@ -188,11 +209,7 @@ public def readDispatchOverloads
     let (overloads, errors) :=
       Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     allWarnings := allWarnings ++ errors
-    for (funcName, fnOverloads) in overloads do
-      let existing := tbl.getD funcName {}
-      tbl := tbl.insert funcName
-        (fnOverloads.fold (init := existing)
-          fun acc k v => acc.insert k v)
+    tbl := mergeOverloads tbl overloads
   return (tbl, allWarnings)
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
@@ -276,7 +293,7 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
       m.insert name (.compositeType name)
   -- Register procedures under their Laurel names
   let symbols := merged.procedures.fold (init := symbols) fun m name sig =>
-    let inlinable := merged.inlinableProcedures.contains name
+    let inlinable := merged.callableProcedures.contains name
     m.insert name (.procedure name sig inlinable)
   -- Register functions under their Laurel names
   let symbols := merged.functions.foldl (init := symbols) fun m name =>
@@ -291,7 +308,7 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
       let syms := merged.procedures.fold (init := syms) fun s name sig =>
         if name.startsWith (prefixed ++ "@") then
           let unprefixedName := unprefixed ++ name.drop prefixed.length
-          let inlinable := merged.inlinableProcedures.contains name
+          let inlinable := merged.callableProcedures.contains name
           s.insert unprefixedName (.procedure name sig inlinable)
         else s
       -- Function aliases
@@ -362,8 +379,7 @@ public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, profile } combined
-      (keepAllFilesPrefix := keepAllFilesPrefix)
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, profile } combined
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
@@ -454,7 +470,7 @@ public def pythonAndSpecToLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
-    match Python.pythonToLaurel' preludeInfo stmts metadataPath result.overloads with
+    match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
         throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")

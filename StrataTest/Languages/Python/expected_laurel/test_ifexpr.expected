@@ -1,6 +1,4 @@
 test_ifexpr.py(2, 23): ✅ pass - Check PGt exception
-test_ifexpr.py(2, 0): ✅ pass - set_result_calls_Any_to_bool_0
-test_ifexpr.py(3, 0): ✅ pass - assert_assert(56)_calls_Any_to_bool_0
 test_ifexpr.py(3, 0): ✅ pass - assert(56)
-DETAIL: 4 passed, 0 failed, 0 inconclusive
+DETAIL: 2 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
