@@ -275,17 +275,21 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
   | none =>
     return .error (mkError output)
 
+/-- Emit a block of `set-info` attributes describing the source location and
+    an optional application-specific `(name, rawValue)` pair. `message.snd` is
+    a raw Lean string; it will be quoted and SMT-LIB-escaped (doubled `""`)
+    before emission. -/
 def addLocationInfo {P : PureExpr} [BEq P.Ident]
   (md : Imperative.MetaData P) (message : String × String)
   : Strata.SMT.SolverM Unit := do
   match Imperative.getFileRange md with
     | .some fileRange => do
-      Strata.SMT.Solver.setInfo "file" s!"\"{format fileRange.file}\""
+      Strata.SMT.Solver.setInfoString "file" (toString (format fileRange.file))
       Strata.SMT.Solver.setInfo "start" s!"{fileRange.range.start}"
       Strata.SMT.Solver.setInfo "stop" s!"{fileRange.range.stop}"
       -- TODO: the following should probably be stored in metadata so it can be
       -- set in an application-specific way.
-      Strata.SMT.Solver.setInfo message.fst message.snd
+      Strata.SMT.Solver.setInfoString message.fst message.snd
     | .none => pure ()
 
 /--
