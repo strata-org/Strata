@@ -15,8 +15,6 @@ public import Strata.DDM.Util.SourceRange
 namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
--- nosourcerange-file: typeclass defaults and operator constructors use ExprSourceLoc.none
--- because they build expressions programmatically, not from parsed source.
 
 public section
 

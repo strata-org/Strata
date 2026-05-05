@@ -32,6 +32,11 @@ def none : ExprSourceLoc := { uri := .none, range := Strata.SourceRange.none, re
 
 def isNone (loc : ExprSourceLoc) : Bool := loc.uri.isNone ∧ loc.range.isNone ∧ loc.relatedLocs.isEmpty
 
+/-- Marker for expressions synthesized programmatically. The `origin` string identifies
+    the synthesis context (e.g. "smt-model", "anf", "transform"). -/
+def synthesized (origin : String) : ExprSourceLoc :=
+  { uri := some (.file s!"<synthesized:{origin}>"), range := Strata.SourceRange.none }
+
 /-- Build from a `SourceRange` with no URI. -/
 def ofRange (sr : Strata.SourceRange) : ExprSourceLoc := { uri := .none, range := sr }
 
@@ -60,9 +65,6 @@ instance : Coe Strata.SourceRange ExprSourceLoc where
 end -- public section
 
 namespace Core
-
--- nosourcerange-file: typeclass defaults and identifier constructors use ExprSourceLoc.none
--- because they build expressions programmatically, not from parsed source.
 
 public section
 

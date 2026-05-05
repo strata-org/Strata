@@ -49,8 +49,7 @@ block "verify_P" {
 ```
 -/
 
--- nosourcerange-file: synthesized expressions from the procedure body verification transform
--- (old-value snapshots, parameter initializations) have no source location.
+-- Synthesized expressions carry ExprSourceLoc.synthesized "proc-body-verify" provenance.
 
 namespace Core.ProcBodyVerify
 
@@ -85,8 +84,8 @@ open Core Imperative Transform
   -- Initialize old variables of in-out parameters (those in both inputs and outputs).
   let oldInoutInits ← proc.header.getInoutParams.mapM fun (id,ty) => do
     let oldG := CoreIdent.mkOld id.name
-    -- Synthesized variable reference for old-value initialization; no source location
-    let e : Core.Expression.Expr := .fvar ExprSourceLoc.none id none
+    -- Synthesized variable reference for old-value initialization
+    let e : Core.Expression.Expr := .fvar (ExprSourceLoc.synthesized "proc-body-verify") id none
     return (Statement.init oldG (Lambda.LTy.forAll [] ty) (.det e) #[])
 
   -- Convert preconditions to assumes

@@ -20,9 +20,6 @@ open Imperative
 open Std (ToFormat Format format)
 open Std.Format
 
--- nosourcerange-file: typeclass defaults and operator constructors use ExprSourceLoc.none
--- because they build expressions programmatically, not from parsed source.
-
 public section
 
 ---------------------------------------------------------------------

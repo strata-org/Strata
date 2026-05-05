@@ -15,9 +15,6 @@ public import Strata.DL.Imperative.Stmt
 
 public section
 
--- nosourcerange-file: Boole-to-Core translation synthesizes Core expressions without source locations
--- because Boole AST nodes do not carry source range metadata.
-
 namespace Strata.Boole
 
 open Lambda

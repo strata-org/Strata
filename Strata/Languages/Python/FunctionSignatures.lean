@@ -10,9 +10,6 @@ public import Strata.Languages.Core.Core
 namespace Strata
 namespace Python
 
--- nosourcerange-file: function signature helpers synthesize default-value expressions
--- programmatically; these carry ExprSourceLoc.none.
-
 public section
 
 /-- A type identifier in the Strata Core prelude for Python. -/
@@ -153,13 +150,14 @@ def addCoreDecls : SignatureM Unit := do
 end
 
 /-- Build a `None` value expression for a given `OrNone` type.
-    Synthesized expression; no source location available. -/
+    Synthesized expression for default parameter values. -/
 def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
   if !ty.endsWith "OrNone" then
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else
+    let loc := ExprSourceLoc.synthesized "python-default-value"
     let mkNoneExpr (ty : String) : Core.Expression.Expr :=
-      .app ExprSourceLoc.none (.op ExprSourceLoc.none (ty ++ "_mk_none") none) (.op ExprSourceLoc.none "None_none" none)
+      .app loc (.op loc (ty ++ "_mk_none") none) (.op loc "None_none" none)
     match ty with
     | "StrOrNone" => mkNoneExpr "StrOrNone"
     | "BoolOrNone" => mkNoneExpr "BoolOrNone"

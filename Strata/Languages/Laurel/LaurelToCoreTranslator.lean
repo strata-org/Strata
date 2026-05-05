@@ -37,9 +37,6 @@ open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp r
 
 namespace Strata.Laurel
 
--- nosourcerange-file: Laurel-to-Core translation synthesizes Core expressions from Laurel AST nodes;
--- synthesized expressions use ExprSourceLoc.none when no source location is available.
-
 open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
@@ -54,7 +51,7 @@ private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
 private def exprSourceLocOf (node : AstNode α) : ExprSourceLoc :=
   match node.source with
   | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
-  | none => ExprSourceLoc.none
+  | none => ExprSourceLoc.none -- nosourcerange: AST node has no source info
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -627,13 +624,13 @@ where
     | [p] =>
       let sr := match p.name.source with
         | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
-        | none => ExprSourceLoc.none
+        | none => ExprSourceLoc.none -- nosourcerange: AST node has no source info
       return LExpr.allTr sr p.name.text (some (← translateType p.type)) trigger body
     | p :: rest => do
       let inner ← buildQuants rest body trigger
       let sr := match p.name.source with
         | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
-        | none => ExprSourceLoc.none
+        | none => ExprSourceLoc.none -- nosourcerange: AST node has no source info
       return LExpr.all sr p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
