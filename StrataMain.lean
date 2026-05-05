@@ -562,7 +562,7 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
 /-- Convert a CoreSMTResult to a Core.VCResult -/
 private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Core.VCResult :=
   match r.error with
-  | some msg => { obligation := r.obligation, outcome := .error msg }
+  | some msg => { obligation := r.obligation, outcome := .error (.encoding msg) }
   | none =>
     let toResult (d : Strata.SMT.Decision) : Imperative.SMT.Result Core.Expression.Ident := match d with
       | .sat => .sat []
