@@ -213,6 +213,8 @@ structure ResolveState where
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
+  /-- True when resolving the RHS of an Assign statement (suppresses multi-output diagnostic). -/
+  inAssignRhs : Bool := false
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -421,7 +423,10 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
+    let savedFlag := (← get).inAssignRhs
+    modify fun s => { s with inAssignRhs := true }
     let value' ← resolveStmtExpr value
+    modify fun s => { s with inAssignRhs := savedFlag }
     -- Check that LHS target count matches the number of outputs from the RHS.
     -- This fires for procedure calls (which can have multiple outputs).
     -- Functions always have exactly 1 output in the model, so single-target function calls pass trivially.
@@ -457,6 +462,22 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
     let args' ← args.mapM resolveStmtExpr
+    -- Multi-output procedures must not appear in expression position: the extra
+    -- outputs (e.g. error channels) would be silently discarded.
+    let s ← get
+    if !s.inAssignRhs then
+      match s.scope.get? callee'.text with
+      | some (_, .staticProcedure proc) =>
+        if proc.outputs.length > 1 then
+          let diag := diagnosticFromSource source
+            s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {proc.outputs.length} values but only one can be used here. Use a multi-target assignment instead."
+          modify fun s => { s with errors := s.errors.push diag }
+      | some (_, .instanceProcedure _ proc) =>
+        if proc.outputs.length > 1 then
+          let diag := diagnosticFromSource source
+            s!"Multi-output procedure '{callee'.text}' used in expression position; it returns {proc.outputs.length} values but only one can be used here. Use a multi-target assignment instead."
+          modify fun s => { s with errors := s.errors.push diag }
+      | _ => pure ()
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
     let args' ← args.mapM resolveStmtExpr
