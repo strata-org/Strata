@@ -54,7 +54,19 @@ inductive MessageImpact where
   | knownLimitation
   /-- An issue detected in the user's Python source code. -/
   | userCodeIssue
+  /-- The tool was invoked with invalid arguments or the on-disk pyspecs
+      are invalid (e.g., missing module, unreadable file). -/
+  | configurationError
   deriving BEq, DecidableEq, Hashable, Ord, Repr
+
+/-- Whether this impact level should abort the pipeline. Fatal impacts
+    indicate that the pipeline output would be incomplete or incorrect. -/
+def MessageImpact.isFatal : MessageImpact → Bool
+  | .internalError => true
+  | .configurationError => true
+  | .internalWarning => false
+  | .knownLimitation => false
+  | .userCodeIssue => false
 
 instance : ToString MessageImpact where
   toString
@@ -62,6 +74,7 @@ instance : ToString MessageImpact where
     | .internalWarning => "internalWarning"
     | .knownLimitation => "knownLimitation"
     | .userCodeIssue => "userCodeIssue"
+    | .configurationError => "configurationError"
 
 /-- A categorized message kind with phase, category, and impact. -/
 structure MessageKind where
@@ -141,7 +154,7 @@ def pySpecParsingError : MessageKind :=
 def pySpecParsingWarning : MessageKind :=
   { phase := .pySpecParsing, category := "warning", impact := .knownLimitation }
 def pySpecReadError : MessageKind :=
-  { phase := .pySpecParsing, category := "readError", impact := .internalError }
+  { phase := .pySpecParsing, category := "readError", impact := .configurationError }
 
 -- PySpec-to-Laurel assembly phase
 def functionSignatureError : MessageKind :=
@@ -157,9 +170,9 @@ def invalidModuleName : MessageKind :=
 def missingAutoResolvedPySpec : MessageKind :=
   { phase := .moduleResolution, category := "missingAutoResolvedPySpec", impact := .knownLimitation }
 def missingDispatchModule : MessageKind :=
-  { phase := .moduleResolution, category := "missingDispatchModule", impact := .userCodeIssue }
+  { phase := .moduleResolution, category := "missingDispatchModule", impact := .configurationError }
 def missingExplicitPySpec : MessageKind :=
-  { phase := .moduleResolution, category := "missingExplicitPySpec", impact := .userCodeIssue }
+  { phase := .moduleResolution, category := "missingExplicitPySpec", impact := .configurationError }
 
 -- Overload resolution phase
 def overloadResolveWarning : MessageKind :=

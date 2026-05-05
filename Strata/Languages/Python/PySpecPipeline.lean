@@ -52,19 +52,18 @@ public structure PipelineState where
 /-- Monad for pipeline steps that accumulate messages. -/
 public abbrev PipelineM := StateT PipelineState BaseIO
 
-/-- Add a non-fatal message to the pipeline state. -/
-def addMessage (kind : Python.MessageKind) (message : String)
+/-- Emit a pipeline message. Sets `shouldAbort` if the kind's impact is fatal. -/
+def emitMessage (kind : Python.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : PipelineM Unit :=
-  modify fun s => { s with messages := s.messages.push { file, loc, kind, message } }
+  modify fun s => { s with
+    messages := s.messages.push { file, loc, kind, message },
+    shouldAbort := s.shouldAbort || kind.impact.isFatal }
 
 /-- Append a batch of messages to the pipeline state. -/
 def addMessages (msgs : Array Python.PipelineMessage) : PipelineM Unit :=
-  modify fun s => { s with messages := s.messages ++ msgs }
-
-/-- Record a fatal error: add the message and set the abort flag. -/
-def fatalPipelineError (kind : Python.MessageKind) (message : String)
-    (file : System.FilePath := default) (loc : SourceRange := default) : PipelineM Unit :=
-  modify fun s => { s with messages := s.messages.push { file, loc, kind, message }, shouldAbort := true }
+  modify fun s => { s with
+    messages := s.messages ++ msgs,
+    shouldAbort := s.shouldAbort || msgs.any (·.kind.impact.isFatal) }
 
 /-! ### Private Helpers -/
 
@@ -167,7 +166,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg =>
-        fatalPipelineError .pySpecReadError msg (file := ionFile)
+        emitMessage .pySpecReadError msg (file := ionFile)
         continue
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
@@ -178,7 +177,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
     match extractFunctionSignatures sigs modulePrefix with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg =>
-      fatalPipelineError .functionSignatureError msg (file := ionFile)
+      emitMessage .functionSignatureError msg (file := ionFile)
     for td in program.types do
       combinedTypes := combinedTypes.push (td, ionPath)
     for proc in program.staticProcedures do
@@ -194,7 +193,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
       | .Alias ta => ta.name
     match seenTypes.get? ident.text with
     | some prevFile =>
-      fatalPipelineError .typeNameCollision s!"'{ident.text}' already defined in {prevFile}"
+      emitMessage .typeNameCollision s!"'{ident.text}' already defined in {prevFile}"
         (file := srcFile) (loc := ident.source.map (·.range) |>.getD default)
     | none =>
       seenTypes := seenTypes.insert ident.text srcFile
@@ -204,7 +203,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
   for (proc, srcFile) in combinedProcedures do
     match seenProcs[proc.name.text]? with
     | some prevFile =>
-      fatalPipelineError .procedureNameCollision s!"'{proc.name.text}' already defined in {prevFile}"
+      emitMessage .procedureNameCollision s!"'{proc.name.text}' already defined in {prevFile}"
         (file := srcFile) (loc := proc.name.source.map (·.range) |>.getD default)
     | none =>
       seenProcs := seenProcs.insert proc.name.text srcFile
@@ -238,7 +237,7 @@ private def readDispatchOverloadsM
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg =>
-        fatalPipelineError .pySpecReadError msg (file := ionFile)
+        emitMessage .pySpecReadError msg (file := ionFile)
         continue
     let (overloads, errors) := Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     addMessages errors
@@ -258,7 +257,7 @@ private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
     : PipelineM (Option (String × String)) := do
   match Python.Specs.ModuleName.ofString modName with
   | .error _ =>
-    addMessage .invalidModuleName s!"invalid module name '{modName}', skipping" (file := specDir)
+    emitMessage .invalidModuleName s!"invalid module name '{modName}', skipping" (file := specDir)
     return none
   | .ok mod =>
     match ← mod.specIonPath specDir with
@@ -296,7 +295,7 @@ public def resolveAndBuildLaurelPrelude
   let (dispatchEntries, missing) ← resolveModules dispatchModules specDir
   if missing.size > 0 then
     for m in missing do
-      fatalPipelineError .missingDispatchModule
+      emitMessage .missingDispatchModule
         s!"Dispatch module '{m}' not found in {specDir}" (file := specDir)
     return default
   let dispatchPaths := dispatchEntries.map (·.2)
@@ -304,7 +303,7 @@ public def resolveAndBuildLaurelPrelude
   let resolveState :=
     Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
   for w in resolveState.warnings do
-    addMessage .overloadResolveWarning w (file := specDir)
+    emitMessage .overloadResolveWarning w (file := specDir)
   -- Auto-resolved (warn on miss)
   let (autoSpecEntries, missing) ←
     if dispatchModules.size > 0 then
@@ -312,13 +311,13 @@ public def resolveAndBuildLaurelPrelude
       resolveModules resolvedMods specDir
     else pure (#[], #[])
   for m in missing do
-    addMessage .missingAutoResolvedPySpec
+    emitMessage .missingAutoResolvedPySpec
       s!"auto-resolved pyspec not found for module '{m}'" (file := specDir)
   -- Explicit pyspec modules (fatal on miss)
   let (explicitEntries, missing) ← resolveModules pyspecModules specDir
   if missing.size > 0 then
     for m in missing do
-      fatalPipelineError .missingExplicitPySpec
+      emitMessage .missingExplicitPySpec
         s!"PySpec module '{m}' not found in {specDir}" (file := specDir)
     return default
   buildPySpecLaurelM (autoSpecEntries ++ explicitEntries) dispatchOverloads
