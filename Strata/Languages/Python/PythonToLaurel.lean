@@ -993,7 +993,8 @@ partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRan
 
 /-- Coerce each argument whose corresponding parameter type is Any.
     Arguments aligned with non-Any parameters are kept unchanged.
-    When `fd` is `none`, all arguments are coerced to Any. -/
+    When `fd` is `none` or the argument index exceeds the parameter list,
+    the argument is left unchanged (we cannot determine the target type). -/
 partial def coerceArgsToAny (ctx : TranslationContext)
     (args : List (Python.expr SourceRange))
     (rawTransArgs : List StmtExprMd)
@@ -1004,7 +1005,7 @@ partial def coerceArgsToAny (ctx : TranslationContext)
   (args.zip rawTransArgs).zipIdx.mapM fun ((orig, trans), i) =>
     match paramTypeNames[i]? with
     | some ty => if ty == PyLauType.Any then coerceToAny ctx orig trans else pure trans
-    | none    => coerceToAny ctx orig trans
+    | none    => pure trans
 
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
       Except TranslationError (String × Option (Python.expr SourceRange) × Bool) := do
