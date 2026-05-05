@@ -180,7 +180,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
     -- Run resolve after the pass if needed
     if pass.needsResolves then
       let result := resolve program (some model)
-      let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
@@ -190,8 +189,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
               type := .StrataBug }
         emit pass.name "laurel.st" program
         return (program, model, allDiags ++ newDiags, allStats)
-      program := result.program
-      model := result.model
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program
