@@ -399,6 +399,20 @@ private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) 
       let diag := diagnosticFromSource source s!"Type mismatch: expected '{expectedStr}', but got '{actualStr}'"
       modify fun s => { s with errors := s.errors.push diag }
 
+/-- Check that an expression is single-valued (not a multi-output procedure call).
+    Emits an error if the expression has MultiValuedExpr type. -/
+private def checkSingleValued (expr : StmtExprMd) (ty : HighTypeMd) : ResolveM Unit := do
+  match ty.val with
+  | .MultiValuedExpr _ =>
+    let calleeName := match expr.val with
+      | .StaticCall callee _ => callee.text
+      | .InstanceCall _ callee _ => callee.text
+      | _ => "expression"
+    let diag := diagnosticFromSource expr.source
+      s!"Multi-output procedure '{calleeName}' used in expression position"
+    modify fun s => { s with errors := s.errors.push diag }
+  | _ => pure ()
+
 /-- Get the type of a resolved variable reference from scope. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
   let s ← get
@@ -543,6 +557,9 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
     let results ← args.mapM resolveStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
+    -- Check that no argument is a multi-output procedure call
+    for (arg, argTy) in results do
+      checkSingleValued arg argTy
     let resultTy := match op with
       | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
       | .Lt | .Leq | .Gt | .Geq => HighType.TBool
