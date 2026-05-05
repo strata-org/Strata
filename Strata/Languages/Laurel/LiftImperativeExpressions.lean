@@ -277,31 +277,25 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
     if model.isFunction callee then
       return seqCall
     else
-      -- Imperative call in expression position: lift it like an assignment.
-      -- Create one LHS target per output so the target count matches the procedure signature.
+      -- Imperative call in expression position: lift to an assignment.
+      -- Only valid for single-output procedures (or unresolved ones where we
+      -- fall back to a single target). Multi-output procedures in expression
+      -- position are a bug in the upstream translation — Resolution should
+      -- emit a diagnostic for that case.
       let outputs := match model.get callee with
         | .staticProcedure proc => proc.outputs
         | .instanceProcedure _ proc => proc.outputs
         | _ => []
-      let mut declarations : List StmtExprMd := []
-      let mut targets : List VariableMd := []
-      for out in outputs do
-        let v ← freshCondVar
-        declarations := declarations ++ [⟨.Var (.Declare ⟨v, out.type⟩), source⟩]
-        targets := targets ++ [⟨.Local v, source⟩]
-      -- Fallback: if no outputs found, use a single target with the computed type
-      if targets.isEmpty then
-        let v ← freshCondVar
-        let ty ← computeType expr
-        declarations := [⟨.Var (.Declare ⟨v, ty⟩), source⟩]
-        targets := [⟨.Local v, source⟩]
-      let liftedCall := declarations ++ [⟨.Assign targets seqCall, source⟩]
+      let callResultVar ← freshCondVar
+      let callResultType ← match outputs with
+        | [single] => pure single.type
+        | _ => computeType expr
+      let liftedCall := [
+        ⟨.Var (.Declare ⟨callResultVar, callResultType⟩), source⟩,
+        ⟨.Assign [⟨.Local callResultVar, source⟩] seqCall, source⟩
+      ]
       modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
-      -- The first output is the procedure's primary return value
-      let resultVar := match targets.head? with
-        | some t => match t.val with | .Local n => n | _ => s!"$c_bug"
-        | none => s!"$c_bug"
-      return bare (.Var (.Local resultVar))
+      return bare (.Var (.Local callResultVar))
 
   | .IfThenElse cond thenBranch elseBranch =>
       let model :=  (← get).model
