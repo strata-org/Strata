@@ -64,3 +64,46 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
     (.app .eq [(.app .str_concat [(.prim (.string "hi")), (.prim (.string " there"))] (.prim .string)),
                (.prim (.string "hi there"))]
       (.prim .bool))
+
+/-- info: "a" ++ "b" ++ "c" = "abc" -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_concat
+         [(.prim (.string "a")), (.prim (.string "b")), (.prim (.string "c"))]
+         (.prim .string)),
+       (.prim (.string "abc"))]
+      (.prim .bool))
+
+-- Malformed string terms are rejected up front, matching `Denote.denoteTerm`.
+-- Using `.prim (.bool _)` (which translates to type `Prop`) for the
+-- non-string operand keeps the expected error message stable independent of
+-- how `.prim (.int _)` happens to be typed by the translator.
+
+/-- error: Error: expected String type, got 'Prop' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_length [(.prim (.bool true))] (.prim .int)),
+       (.prim (.int 0))]
+      (.prim .bool))
+
+/-- error: Error: str_concat expects at least two operands, got '1' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_concat [(.prim (.string "hi"))] (.prim .string)),
+       (.prim (.string "hi"))]
+      (.prim .bool))
+
+/-- error: Error: expected String type, got 'Prop' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .str_concat [(.prim (.bool true)), (.prim (.string "hi"))] (.prim .string)),
+       (.prim (.string "hi"))]
+      (.prim .bool))
