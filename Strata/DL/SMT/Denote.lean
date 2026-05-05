@@ -18,6 +18,11 @@ currently supported. The core entry point is `denoteTerm`, which builds a
 `TermDenoteResult` describing both the type of a term and a semantic interpreter
 for it. The surrounding infrastructure tracks the well-formedness of
 term and uninterpreted-function contexts so that evaluation is safe.
+
+The denotation uses propositional extensionality (`propext`) and
+`Classical.propDecidable` (excluded middle) to make `if`-then-`else` over
+`Prop`-valued conditions definable. Downstream correctness proofs
+(see `FactoryCorrect.lean`) inherit these dependencies.
 -/
 
 open Strata.SMT

@@ -17,11 +17,10 @@ This module proves that the simplifications performed by `Factory` functions
 preserve the denotational semantics directly in terms of the functional
 denotation (`denoteBoolTermAux`, `denoteIntTermAux`).
 
-For boolean operations, results use `∃ p', ... ∧ (p' ↔ expected)` because
-`denoteTerm` maps booleans to `Prop` and propositional double-negation
-elimination is not definitional.
-
-For integer operations, results use direct equality.
+These proofs rely on propositional extensionality (`propext`) and classical
+excluded middle (`Classical.em`, `Classical.not_not`), since `denoteTerm` maps
+booleans to `Prop` and the Factory rewrites produce logically equivalent but
+not definitionally equal propositions.
 -/
 
 open Strata.SMT
@@ -29,7 +28,7 @@ open Strata.SMT
 /-! ## Infrastructure -/
 
 /-- The unique `TermDenoteInput` for the empty context. -/
-private noncomputable abbrev tdi₀ : TermDenoteInput ({} : Context) :=
+private abbrev tdi₀ : TermDenoteInput ({} : Context) :=
   ⟨[], ⟨rfl, fun _ hi => nomatch hi⟩, ⟨[], []⟩,
    ⟨⟨rfl, fun _ hi => nomatch hi⟩, ⟨rfl, fun _ hi => nomatch hi⟩⟩⟩
 
@@ -84,17 +83,20 @@ private theorem denoteStringTermAux_extract {t : Term} {s : String}
 /-! ## Lemma: denoteBoolTermAux for .app .not -/
 
 /-- If `denoteBoolTermAux (.app .not [t'] ty) = some p`, then there exists `q`
-    such that `denoteBoolTermAux t' = some q` and `p ↔ ¬q`. -/
+    such that `denoteBoolTermAux t' = some q` and `p = ¬q`. -/
 private theorem denoteBoolTermAux_not_inv {t' : Term} {ty : TermType} {p : Prop}
     (h : denoteBoolTermAux (.app .not [t'] ty) = some p) :
-    ∃ q, denoteBoolTermAux t' = some q ∧ (p ↔ ¬q) := by
+    ∃ q, denoteBoolTermAux t' = some q ∧ p = ¬q := by
   unfold denoteBoolTermAux at h ⊢
   conv at h => simp only [denoteTerm]
   revert h
   generalize denoteTerm {} t' = res'
   intro h
   match res' with
-  | some ⟨.prim .bool, rfl, g⟩ => exact ⟨g tdi₀, by simp, by simp at h; rw [h]⟩
+  | some ⟨.prim .bool, rfl, g⟩ =>
+    refine ⟨g tdi₀, by simp, ?_⟩
+    simp at h
+    rw [h]
   | some ⟨.prim .int, _, _⟩ | some ⟨.prim .string, _, _⟩
   | some ⟨.prim (.bitvec _), _, _⟩ | some ⟨.prim .real, _, _⟩
   | some ⟨.prim .regex, _, _⟩ | some ⟨.prim .trigger, _, _⟩
@@ -117,17 +119,10 @@ private theorem denoteBoolTermAux_eq {t : Term} {p₁ p₂ : Prop}
     (h₁ : denoteBoolTermAux t = some p₁) (h₂ : denoteBoolTermAux t = some p₂) :
     p₁ = p₂ := by grind
 
-/-- `denoteBoolTermAux` of a primitive `Bool` term is `True`/`False` accordingly. -/
+/-- `denoteBoolTermAux` of a boolean literal denotes `b = true`. -/
 private theorem denoteBool_prim_bool (b : Bool) :
-    ∃ p, denoteBoolTermAux (.prim (.bool b)) = some p ∧ (p ↔ b = true) := by
-  by_cases hd : b = true
-  · exact ⟨True, by rw [hd]; rfl, iff_of_true trivial hd⟩
-  · exact ⟨False, by rw [eq_false_of_ne_true hd]; rfl, iff_of_false not_false hd⟩
-
-/-- For bool literal terms `.prim (.bool b₁) ≠ .prim (.bool b₂)` implies `b₁ ≠ b₂`. -/
-private theorem prim_bool_ne_of_term_ne {b₁ b₂ : Bool}
-    (h : (.prim (.bool b₁) : Term) ≠ .prim (.bool b₂)) : b₁ ≠ b₂ := by
-  intro heq; apply h; rw [heq]
+    denoteBoolTermAux (.prim (.bool b)) = some (b = true) := by
+  cases b <;> simp [denoteBoolTermAux, denoteTerm]
 
 /-- If `denoteBoolTermAux t = some p` and `t.isLiteral`, there exists `b` such
     that `t = .prim (.bool b)` and `p ↔ b = true`. -/
@@ -212,26 +207,17 @@ private theorem denoteStringTermAux_literal_form {t : Term} {s : String}
 /-- `Factory.not` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.not_correct {t : Term} {p : Prop}
     (h : denoteBoolTermAux t = some p) :
-    ∃ p', denoteBoolTermAux (Factory.not t) = some p' ∧ (p' ↔ ¬p) := by
+    denoteBoolTermAux (Factory.not t) = some (¬p) := by
   unfold Factory.not
   split
-  · -- Case: t = .prim (.bool b)
-    rename_i b
-    cases b
-    · exact ⟨True, rfl, by
-        simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte,
-                   Option.pure_def, Option.some.injEq, eq_iff_iff, false_iff] at h
-        grind⟩
-    · exact ⟨False, rfl, by
-        simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def,
-                   Option.some.injEq, eq_iff_iff, true_iff] at h
-        grind⟩
-  · -- Case: t = .app .not [t'] _
-    obtain ⟨q, hq, hpq⟩ := denoteBoolTermAux_not_inv h
-    exact ⟨q, hq, by rw [hpq]; exact Classical.not_not.symm⟩
-  · -- Default: .app .not [t] .bool
-    obtain ⟨f, hdt, hiff⟩ := denoteBoolTermAux_extract h
-    exact ⟨¬ f tdi₀, by simp [denoteBoolTermAux, denoteTerm, hdt], not_congr hiff⟩
+  · rename_i b
+    have hp := denoteBoolTermAux_eq h (denoteBool_prim_bool b)
+    cases b <;> simp [denoteBoolTermAux, denoteTerm, hp]
+  · obtain ⟨q, hq, hpq⟩ := denoteBoolTermAux_not_inv h
+    rw [hpq, Classical.not_not]; exact hq
+  · obtain ⟨f, hdt, hiff⟩ := denoteBoolTermAux_extract h
+    simp [denoteBoolTermAux, denoteTerm, hdt]
+    rw [propext hiff]
 
 /-! ## Factory.opposites spec -/
 
@@ -250,105 +236,108 @@ private theorem Factory.opposites_spec {t₁ t₂ : Term}
 /-- `Factory.and` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.and_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
     (h₁ : denoteBoolTermAux t₁ = some p₁) (h₂ : denoteBoolTermAux t₂ = some p₂) :
-    ∃ p', denoteBoolTermAux (Factory.and t₁ t₂) = some p' ∧ (p' ↔ p₁ ∧ p₂) := by
+    denoteBoolTermAux (Factory.and t₁ t₂) = some (p₁ ∧ p₂) := by
   unfold Factory.and
   split
   · rename_i hcond
     rcases or_decide_true hcond with heq | heq
     · subst heq; cases denoteBoolTermAux_eq h₁ h₂
-      exact ⟨p₁, h₁, by grind⟩
-    · subst heq; simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def,
-                             Option.some.injEq, eq_iff_iff, true_iff] at h₂
-      exact ⟨p₁, h₁, by grind⟩
+      rw [h₁]; simp
+    · subst heq
+      have hp₂ := denoteBoolTermAux_eq h₂ (denoteBool_prim_bool true)
+      rw [h₁, hp₂]; simp
   · split
     · rename_i hcond; subst hcond
-      simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def,
-                 Option.some.injEq, eq_iff_iff, true_iff] at h₁
-      exact ⟨p₂, h₂, by grind⟩
+      have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool true)
+      rw [h₂, hp₁]; simp
     · split
       · rename_i hcond
-        refine ⟨False, rfl, ?_⟩
         rcases or3_decide_true hcond with hf | hf | hf
         · subst hf
-          simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte,
-                     Option.pure_def, Option.some.injEq, eq_iff_iff, false_iff] at h₁
-          grind
+          have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool false)
+          rw [hp₁]; simp [denoteBoolTermAux, denoteTerm]
         · subst hf
-          simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte,
-                     Option.pure_def, Option.some.injEq, eq_iff_iff, false_iff] at h₂
-          grind
-        · refine ⟨False.elim, ?_⟩
-          rcases Factory.opposites_spec hf with ⟨_, _, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
-          · obtain ⟨_, hq, hiff⟩ := denoteBoolTermAux_not_inv h₂
-            cases denoteBoolTermAux_eq hq h₁; grind
-          · obtain ⟨_, hq, hiff⟩ := denoteBoolTermAux_not_inv h₁
-            cases denoteBoolTermAux_eq hq h₂; grind
+          have hp₂ := denoteBoolTermAux_eq h₂ (denoteBool_prim_bool false)
+          rw [hp₂]; simp [denoteBoolTermAux, denoteTerm]
+        · rcases Factory.opposites_spec hf with ⟨_, _, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
+          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₂
+            have hpq := denoteBoolTermAux_eq hq h₁
+            rw [heq, hpq]; simp [denoteBoolTermAux, denoteTerm]
+          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₁
+            have hpq := denoteBoolTermAux_eq hq h₂
+            rw [heq, hpq]; simp [denoteBoolTermAux, denoteTerm]
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
-        exact ⟨f₁ tdi₀ ∧ f₂ tdi₀,
-               by simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂],
-               and_congr hiff₁ hiff₂⟩
+        simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
+        rw [propext hiff₁, propext hiff₂]
 
 /-! ## Factory.or correctness -/
 
 /-- `Factory.or` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.or_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
     (h₁ : denoteBoolTermAux t₁ = some p₁) (h₂ : denoteBoolTermAux t₂ = some p₂) :
-    ∃ p', denoteBoolTermAux (Factory.or t₁ t₂) = some p' ∧ (p' ↔ p₁ ∨ p₂) := by
+    denoteBoolTermAux (Factory.or t₁ t₂) = some (p₁ ∨ p₂) := by
   unfold Factory.or
   split
   · rename_i hcond
     rcases or_decide_true hcond with heq | heq
     · subst heq; cases denoteBoolTermAux_eq h₁ h₂
-      exact ⟨p₁, h₁, by grind⟩
+      rw [h₁]; simp
     · subst heq
-      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte,
-                 Option.pure_def, Option.some.injEq, eq_iff_iff, false_iff] at h₂
-      exact ⟨p₁, h₁, by grind⟩
+      have hp₂ := denoteBoolTermAux_eq h₂ (denoteBool_prim_bool false)
+      rw [h₁, hp₂]; simp
   · split
     · rename_i hcond; subst hcond
-      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte,
-                 Option.pure_def, Option.some.injEq, eq_iff_iff, false_iff] at h₁
-      exact ⟨p₂, h₂, by grind⟩
+      have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool false)
+      rw [h₂, hp₁]; simp
     · split
       · rename_i hcond
-        refine ⟨True, rfl, ?_⟩
         rcases or3_decide_true hcond with ht | ht | ht
         · subst ht
-          simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def,
-                     Option.some.injEq, eq_iff_iff, true_iff] at h₁
-          grind
+          have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool true)
+          rw [hp₁]; simp [denoteBoolTermAux, denoteTerm]
         · subst ht
-          simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def,
-                     Option.some.injEq, eq_iff_iff, true_iff] at h₂
-          grind
-        · refine ⟨fun _ => ?_, fun _ => trivial⟩
-          rcases Factory.opposites_spec ht with ⟨_, _, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
-          · obtain ⟨_, hq, hiff⟩ := denoteBoolTermAux_not_inv h₂
-            cases denoteBoolTermAux_eq hq h₁
-            exact (Classical.em p₁).elim Or.inl (Or.inr ∘ hiff.mpr)
-          · obtain ⟨_, hq, hiff⟩ := denoteBoolTermAux_not_inv h₁
-            cases denoteBoolTermAux_eq hq h₂
-            exact (Classical.em p₂).elim Or.inr (Or.inl ∘ hiff.mpr)
+          have hp₂ := denoteBoolTermAux_eq h₂ (denoteBool_prim_bool true)
+          rw [hp₂]; simp [denoteBoolTermAux, denoteTerm]
+        · rcases Factory.opposites_spec ht with ⟨_, _, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
+          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₂
+            have hpq := denoteBoolTermAux_eq hq h₁
+            rw [heq, hpq]
+            simp [denoteBoolTermAux, denoteTerm]
+            cases Classical.em p₁ with
+            | inl h => exact Or.inl h
+            | inr h => exact Or.inr h
+          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₁
+            have hpq := denoteBoolTermAux_eq hq h₂
+            rw [heq, hpq]
+            simp [denoteBoolTermAux, denoteTerm]
+            cases Classical.em p₂ with
+            | inl h => exact Or.inr h
+            | inr h => exact Or.inl h
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
-        exact ⟨f₁ tdi₀ ∨ f₂ tdi₀,
-               by simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂],
-               or_congr hiff₁ hiff₂⟩
+        simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
+        rw [propext hiff₁, propext hiff₂]
 
 /-! ## Factory.implies correctness -/
 
 /-- `Factory.implies` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.implies_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
     (h₁ : denoteBoolTermAux t₁ = some p₁) (h₂ : denoteBoolTermAux t₂ = some p₂) :
-    ∃ p', denoteBoolTermAux (Factory.implies t₁ t₂) = some p' ∧ (p' ↔ (p₁ → p₂)) := by
+    denoteBoolTermAux (Factory.implies t₁ t₂) = some (p₁ → p₂) := by
   unfold Factory.implies
-  obtain ⟨np₁, hnot, hiff_not⟩ := Factory.not_correct h₁
-  obtain ⟨p', hor, hiff_or⟩ := Factory.or_correct hnot h₂
-  refine ⟨p', hor, hiff_or.trans ?_⟩
-  rw [hiff_not]
-  exact ⟨fun h hp => h.elim (absurd hp) id,
-         fun h => (Classical.em p₁).elim (fun hp => Or.inr (h hp)) Or.inl⟩
+  have hnot := Factory.not_correct h₁
+  have hor := Factory.or_correct hnot h₂
+  rw [hor]
+  congr 1
+  apply propext
+  constructor
+  · intro h hp₁; cases h with
+    | inl hnp₁ => contradiction
+    | inr hp₂ => exact hp₂
+  · intro h; by_cases hp₁ : p₁
+    · exact Or.inr (h hp₁)
+    · exact Or.inl hp₁
 
 /-! ## Integer Factory correctness -/
 
@@ -452,7 +441,7 @@ theorem Factory.intMod_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
 /-- `Factory.intLe` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.intLe_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
     (h₁ : denoteIntTermAux t₁ = some n₁) (h₂ : denoteIntTermAux t₂ = some n₂) :
-    ∃ p, denoteBoolTermAux (Factory.intLe t₁ t₂) = some p ∧ (p ↔ n₁ ≤ n₂) := by
+    denoteBoolTermAux (Factory.intLe t₁ t₂) = some (n₁ ≤ n₂) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intLe Factory.intcmp
@@ -460,14 +449,13 @@ theorem Factory.intLe_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   · next i₁ i₂ =>
     simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
                heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
-    exact (denoteBool_prim_bool _).imp fun _ ⟨h1, h2⟩ => ⟨h1, h2.trans (by simp)⟩
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
+    rw [denoteBool_prim_bool]; simp
+  · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
 /-- `Factory.intLt` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.intLt_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
     (h₁ : denoteIntTermAux t₁ = some n₁) (h₂ : denoteIntTermAux t₂ = some n₂) :
-    ∃ p, denoteBoolTermAux (Factory.intLt t₁ t₂) = some p ∧ (p ↔ n₁ < n₂) := by
+    denoteBoolTermAux (Factory.intLt t₁ t₂) = some (n₁ < n₂) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intLt Factory.intcmp
@@ -475,14 +463,13 @@ theorem Factory.intLt_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   · next i₁ i₂ =>
     simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
                heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
-    exact (denoteBool_prim_bool _).imp fun _ ⟨h1, h2⟩ => ⟨h1, h2.trans (by simp)⟩
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
+    rw [denoteBool_prim_bool]; simp
+  · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
 /-- `Factory.intGe` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.intGe_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
     (h₁ : denoteIntTermAux t₁ = some n₁) (h₂ : denoteIntTermAux t₂ = some n₂) :
-    ∃ p, denoteBoolTermAux (Factory.intGe t₁ t₂) = some p ∧ (p ↔ n₁ ≥ n₂) := by
+    denoteBoolTermAux (Factory.intGe t₁ t₂) = some (n₁ ≥ n₂) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intGe Factory.intcmp
@@ -490,14 +477,13 @@ theorem Factory.intGe_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   · next i₁ i₂ =>
     simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
                heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
-    exact (denoteBool_prim_bool _).imp fun _ ⟨h1, h2⟩ => ⟨h1, h2.trans (by simp)⟩
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
+    rw [denoteBool_prim_bool]; simp
+  · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
 /-- `Factory.intGt` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.intGt_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
     (h₁ : denoteIntTermAux t₁ = some n₁) (h₂ : denoteIntTermAux t₂ = some n₂) :
-    ∃ p, denoteBoolTermAux (Factory.intGt t₁ t₂) = some p ∧ (p ↔ n₁ > n₂) := by
+    denoteBoolTermAux (Factory.intGt t₁ t₂) = some (n₁ > n₂) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intGt Factory.intcmp
@@ -505,9 +491,8 @@ theorem Factory.intGt_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   · next i₁ i₂ =>
     simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
                heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
-    exact (denoteBool_prim_bool _).imp fun _ ⟨h1, h2⟩ => ⟨h1, h2.trans (by simp)⟩
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
+    rw [denoteBool_prim_bool]; simp
+  · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
 /-! ## Bitvector Factory correctness -/
 
@@ -671,7 +656,7 @@ private theorem BitVec.overflows_neg_eq_negOverflow {n : Nat} (x : BitVec n) :
 /-- `Factory.bvslt` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvslt_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvslt t₁ t₂) = some p ∧ (p ↔ BitVec.slt x y = true) := by
+    denoteBoolTermAux (Factory.bvslt t₁ t₂) = some (BitVec.slt x y = true) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvslt Factory.bvcmp
@@ -683,13 +668,12 @@ theorem Factory.bvslt_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
     simp only [BitVec.ofNat_toNat_self]
     exact denoteBool_prim_bool _
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-- `Factory.bvsle` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvsle_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvsle t₁ t₂) = some p ∧ (p ↔ BitVec.sle x y = true) := by
+    denoteBoolTermAux (Factory.bvsle t₁ t₂) = some (BitVec.sle x y = true) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvsle Factory.bvcmp
@@ -701,13 +685,12 @@ theorem Factory.bvsle_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
     simp only [BitVec.ofNat_toNat_self]
     exact denoteBool_prim_bool _
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-- `Factory.bvult` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvult_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvult t₁ t₂) = some p ∧ (p ↔ x < y) := by
+    denoteBoolTermAux (Factory.bvult t₁ t₂) = some (x < y) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvult Factory.bvcmp
@@ -718,14 +701,13 @@ theorem Factory.bvult_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     obtain ⟨hmn₂, hf₂⟩ := hdt₂
     subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
     simp only [BitVec.ofNat_toNat_self]
-    exact (denoteBool_prim_bool _).imp fun _ ⟨h1, h2⟩ => ⟨h1, h2.trans BitVec.ult_iff_lt⟩
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+    rw [denoteBool_prim_bool]; simp [BitVec.ult_iff_lt]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-- `Factory.bvule` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvule_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvule t₁ t₂) = some p ∧ (p ↔ x ≤ y) := by
+    denoteBoolTermAux (Factory.bvule t₁ t₂) = some (x ≤ y) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvule Factory.bvcmp
@@ -739,16 +721,15 @@ theorem Factory.bvule_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     simp only [BitVec.ofNat_toNat_self]
     have hule_iff : BitVec.ule b₁ b₂ = true ↔ b₁ ≤ b₂ := by
       rw [BitVec.ule_eq_decide]; exact ⟨of_decide_eq_true, decide_eq_true⟩
-    exact (denoteBool_prim_bool _).imp fun _ ⟨h1, h2⟩ => ⟨h1, h2.trans hule_iff⟩
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+    rw [denoteBool_prim_bool]; simp [hule_iff]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-! ## Bitvector overflow correctness -/
 
 /-- `Factory.bvnego` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvnego_correct {n : Nat} {t : Term} {x : BitVec n}
     (h : denoteBVTermAux n t = some x) :
-    ∃ p, denoteBoolTermAux (Factory.bvnego t) = some p ∧ (p ↔ BitVec.negOverflow x = true) := by
+    denoteBoolTermAux (Factory.bvnego t) = some (BitVec.negOverflow x = true) := by
   obtain ⟨f, hdt, rfl⟩ := denoteBVTermAux_extract h
   unfold Factory.bvnego
   split
@@ -759,14 +740,12 @@ theorem Factory.bvnego_correct {n : Nat} {t : Term} {x : BitVec n}
     subst hmn; subst hf
     rw [BitVec.overflows_neg_eq_negOverflow]
     exact denoteBool_prim_bool _
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt]
+  · simp [denoteBoolTermAux, denoteTerm, hdt]
 
 /-- `Factory.bvsaddo` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvsaddo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvsaddo t₁ t₂) = some p ∧
-         (p ↔ BitVec.saddOverflow x y = true) := by
+    denoteBoolTermAux (Factory.bvsaddo t₁ t₂) = some (BitVec.saddOverflow x y = true) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvsaddo Factory.bvso
@@ -779,14 +758,12 @@ theorem Factory.bvsaddo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     rename_i b₂ b₁
     rw [overflows_eq_saddOverflow]
     exact denoteBool_prim_bool _
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-- `Factory.bvssubo` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvssubo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvssubo t₁ t₂) = some p ∧
-         (p ↔ BitVec.ssubOverflow x y = true) := by
+    denoteBoolTermAux (Factory.bvssubo t₁ t₂) = some (BitVec.ssubOverflow x y = true) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvssubo Factory.bvso
@@ -799,14 +776,12 @@ theorem Factory.bvssubo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     rename_i b₂ b₁
     rw [overflows_eq_ssubOverflow]
     exact denoteBool_prim_bool _
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
 /-- `Factory.bvsmulo` preserves `denoteBoolTermAux` semantics. -/
 theorem Factory.bvsmulo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.bvsmulo t₁ t₂) = some p ∧
-         (p ↔ BitVec.smulOverflow x y = true) := by
+    denoteBoolTermAux (Factory.bvsmulo t₁ t₂) = some (BitVec.smulOverflow x y = true) := by
   obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvsmulo Factory.bvso
@@ -819,42 +794,31 @@ theorem Factory.bvsmulo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     rename_i b₂ b₁
     rw [overflows_eq_smulOverflow]
     exact denoteBool_prim_bool _
-  · refine ⟨_, ?_, Iff.rfl⟩
-    simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
+  · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
 
-/-! ## eq correctness
-
-We prove correctness for `Factory.eq` in three regimes:
-* syntactically equal arguments (Factory returns `true`);
-* both arguments are literals with `t₁ ≠ t₂` (Factory returns `false` —
-  correct because literals of the same type denote distinct values);
-* otherwise (Factory returns `.app .eq [t₁, t₂] .bool`). -/
+/-! ## eq correctness -/
 
 /-- `Factory.eq` preserves `denoteBoolTermAux` semantics on boolean arguments. -/
 theorem Factory.eq_correct_bool {t₁ t₂ : Term} {p₁ p₂ : Prop}
     (h₁ : denoteBoolTermAux t₁ = some p₁) (h₂ : denoteBoolTermAux t₂ = some p₂) :
-    ∃ p, denoteBoolTermAux (Factory.eq t₁ t₂) = some p ∧ (p ↔ (p₁ ↔ p₂)) := by
+    denoteBoolTermAux (Factory.eq t₁ t₂) = some (p₁ ↔ p₂) := by
   unfold Factory.eq
   split
   · rename_i heq
     subst heq
     cases denoteBoolTermAux_eq h₁ h₂
-    exact ⟨True, rfl, iff_of_true trivial Iff.rfl⟩
+    simp [denoteBoolTermAux, denoteTerm]
   · rename_i hne
     split
-    · -- Both literals, t₁ ≠ t₂: Factory returns `false`, must show `¬ (p₁ ↔ p₂)`.
-      rename_i hlit
+    · rename_i hlit
       simp [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       obtain ⟨b₁, ht₁, hbp₁⟩ := denoteBoolTermAux_literal_form h₁ hl₁
       obtain ⟨b₂, ht₂, hbp₂⟩ := denoteBoolTermAux_literal_form h₂ hl₂
-      refine ⟨False, rfl, iff_of_false not_false ?_⟩
-      -- t₁ = .prim (.bool b₁), t₂ = .prim (.bool b₂), t₁ ≠ t₂, so b₁ ≠ b₂
       have hbne : b₁ ≠ b₂ := by
         intro heq; apply hne; rw [ht₁, ht₂, heq]
+      simp [denoteBoolTermAux, denoteTerm]
       intro hiff
-      -- hbp₁ : p₁ ↔ b₁ = true, hbp₂ : p₂ ↔ b₂ = true
-      -- hiff : p₁ ↔ p₂ contradicts b₁ ≠ b₂.
       apply hbne
       have : (b₁ = true) ↔ (b₂ = true) := hbp₁.symm.trans (hiff.trans hbp₂)
       cases b₁ <;> cases b₂ <;> grind
@@ -874,36 +838,32 @@ theorem Factory.eq_correct_bool {t₁ t₂ : Term} {p₁ p₂ : Prop}
              · simp_all)
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
-        refine ⟨f₁ tdi₀ = f₂ tdi₀, ?_, ?_⟩
-        · simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
-                     Option.bind_some, hdt₁, hdt₂, denoteTerms, chainable, chainable.go]
-          rfl
-        · constructor
-          · intro heq; rw [show p₁ = f₁ tdi₀ from (propext hiff₁).symm,
-                            show p₂ = f₂ tdi₀ from (propext hiff₂).symm, heq]
-          · intro hiff
-            rw [propext hiff₁, propext hiff₂] at *
-            exact propext hiff
+        have h1 := propext hiff₁
+        have h2 := propext hiff₂
+        subst h1; subst h2
+        simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
+                   Option.bind_some, hdt₁, hdt₂, denoteTerms, chainable, chainable.go,
+                   dif_pos trivial]
+        exact congrArg some (propext ⟨fun h => h ▸ Iff.rfl, propext⟩)
 
 /-- `Factory.eq` preserves `denoteBoolTermAux` semantics on integer arguments. -/
 theorem Factory.eq_correct_int {t₁ t₂ : Term} {n₁ n₂ : Int}
     (h₁ : denoteIntTermAux t₁ = some n₁) (h₂ : denoteIntTermAux t₂ = some n₂) :
-    ∃ p, denoteBoolTermAux (Factory.eq t₁ t₂) = some p ∧ (p ↔ n₁ = n₂) := by
+    denoteBoolTermAux (Factory.eq t₁ t₂) = some (n₁ = n₂) := by
   unfold Factory.eq
   split
   · rename_i heq
     subst heq
     cases Option.some.inj (h₁.symm.trans h₂)
-    exact ⟨True, rfl, iff_of_true trivial rfl⟩
+    simp [denoteBoolTermAux, denoteTerm]
   · rename_i hne
     split
-    · -- Both literals, t₁ ≠ t₂: Factory returns `false`, must show `n₁ ≠ n₂`.
-      rename_i hlit
+    · rename_i hlit
       simp [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       have ht₁ := denoteIntTermAux_literal_form h₁ hl₁
       have ht₂ := denoteIntTermAux_literal_form h₂ hl₂
-      refine ⟨False, rfl, iff_of_false not_false ?_⟩
+      simp [denoteBoolTermAux, denoteTerm]
       intro heq; subst heq; apply hne; rw [ht₁, ht₂]
     · split
       iterate 3
@@ -921,7 +881,6 @@ theorem Factory.eq_correct_int {t₁ t₂ : Term} {n₁ n₂ : Int}
              · simp_all)
       · obtain ⟨f₁, hdt₁, rfl⟩ := denoteIntTermAux_extract h₁
         obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
-        refine ⟨f₁ tdi₀ = f₂ tdi₀, ?_, Iff.rfl⟩
         simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, denoteTerms, chainable, chainable.go]
         rfl
@@ -929,22 +888,21 @@ theorem Factory.eq_correct_int {t₁ t₂ : Term} {n₁ n₂ : Int}
 /-- `Factory.eq` preserves `denoteBoolTermAux` semantics on bitvector arguments. -/
 theorem Factory.eq_correct_bv {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
     (h₁ : denoteBVTermAux n t₁ = some x) (h₂ : denoteBVTermAux n t₂ = some y) :
-    ∃ p, denoteBoolTermAux (Factory.eq t₁ t₂) = some p ∧ (p ↔ x = y) := by
+    denoteBoolTermAux (Factory.eq t₁ t₂) = some (x = y) := by
   unfold Factory.eq
   split
   · rename_i heq
     subst heq
     cases Option.some.inj (h₁.symm.trans h₂)
-    exact ⟨True, rfl, iff_of_true trivial rfl⟩
+    simp [denoteBoolTermAux, denoteTerm]
   · rename_i hne
     split
-    · -- Both literals, t₁ ≠ t₂: Factory returns `false`, must show `x ≠ y`.
-      rename_i hlit
+    · rename_i hlit
       simp [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       have ht₁ := denoteBVTermAux_literal_form h₁ hl₁
       have ht₂ := denoteBVTermAux_literal_form h₂ hl₂
-      refine ⟨False, rfl, iff_of_false not_false ?_⟩
+      simp [denoteBoolTermAux, denoteTerm]
       intro heq; subst heq; apply hne; rw [ht₁, ht₂]
     · split
       iterate 3
@@ -962,7 +920,6 @@ theorem Factory.eq_correct_bv {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
              · simp_all)
       · obtain ⟨f₁, hdt₁, rfl⟩ := denoteBVTermAux_extract h₁
         obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
-        refine ⟨f₁ tdi₀ = f₂ tdi₀, ?_, Iff.rfl⟩
         simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, denoteTerms, chainable, chainable.go]
         rfl
@@ -970,22 +927,21 @@ theorem Factory.eq_correct_bv {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
 /-- `Factory.eq` preserves `denoteBoolTermAux` semantics on string arguments. -/
 theorem Factory.eq_correct_string {t₁ t₂ : Term} {s₁ s₂ : String}
     (h₁ : denoteStringTermAux t₁ = some s₁) (h₂ : denoteStringTermAux t₂ = some s₂) :
-    ∃ p, denoteBoolTermAux (Factory.eq t₁ t₂) = some p ∧ (p ↔ s₁ = s₂) := by
+    denoteBoolTermAux (Factory.eq t₁ t₂) = some (s₁ = s₂) := by
   unfold Factory.eq
   split
   · rename_i heq
     subst heq
     cases Option.some.inj (h₁.symm.trans h₂)
-    exact ⟨True, rfl, iff_of_true trivial rfl⟩
+    simp [denoteBoolTermAux, denoteTerm]
   · rename_i hne
     split
-    · -- Both literals, t₁ ≠ t₂: Factory returns `false`, must show `s₁ ≠ s₂`.
-      rename_i hlit
+    · rename_i hlit
       simp [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       have ht₁ := denoteStringTermAux_literal_form h₁ hl₁
       have ht₂ := denoteStringTermAux_literal_form h₂ hl₂
-      refine ⟨False, rfl, iff_of_false not_false ?_⟩
+      simp [denoteBoolTermAux, denoteTerm]
       intro heq; subst heq; apply hne; rw [ht₁, ht₂]
     · split
       iterate 3
@@ -1003,7 +959,6 @@ theorem Factory.eq_correct_string {t₁ t₂ : Term} {s₁ s₂ : String}
              · simp_all)
       · obtain ⟨f₁, hdt₁, rfl⟩ := denoteStringTermAux_extract h₁
         obtain ⟨f₂, hdt₂, rfl⟩ := denoteStringTermAux_extract h₂
-        refine ⟨f₁ tdi₀ = f₂ tdi₀, ?_, Iff.rfl⟩
         simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, denoteTerms, chainable, chainable.go]
         rfl
@@ -1016,28 +971,24 @@ theorem Factory.ite_correct_bool {t₁ t₂ t₃ : Term} {p₁ p₂ p₃ : Prop}
     (h₁ : denoteBoolTermAux t₁ = some p₁)
     (h₂ : denoteBoolTermAux t₂ = some p₂)
     (h₃ : denoteBoolTermAux t₃ = some p₃) :
-    ∃ p, denoteBoolTermAux (Factory.ite t₁ t₂ t₃) = some p ∧
-         (p ↔ (if p₁ then p₂ else p₃)) := by
+    denoteBoolTermAux (Factory.ite t₁ t₂ t₃) = some (if p₁ then p₂ else p₃) := by
   unfold Factory.ite
   split
   · rename_i hcond
     rcases or_decide_true hcond with ht | heq
     · subst ht
-      simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def,
-                 Option.some.injEq, eq_iff_iff, true_iff] at h₁
-      exact ⟨p₂, h₂, by simp [if_pos h₁]⟩
+      have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool true)
+      rw [h₂, hp₁, if_pos rfl]
     · subst heq
       cases denoteBoolTermAux_eq h₂ h₃
-      refine ⟨p₂, h₂, ?_⟩
+      rw [h₂]
       by_cases hp₁ : p₁ <;> simp [hp₁]
   · split
     · rename_i _ hf; subst hf
-      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte,
-                 Option.pure_def, Option.some.injEq, eq_iff_iff, false_iff] at h₁
-      exact ⟨p₃, h₃, by rw [if_neg h₁]⟩
+      have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool false)
+      rw [h₃, hp₁, if_neg (by decide)]
     · split
       · exfalso
-        -- t₂ = .some t₂' case; but denote of `.some` has option type, not bool
         simp only [denoteBoolTermAux, denoteTerm] at h₂
         split at h₂
         · rename_i heq
@@ -1046,15 +997,13 @@ theorem Factory.ite_correct_bool {t₁ t₂ t₃ : Term} {p₁ p₂ p₃ : Prop}
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
         obtain ⟨f₃, hdt₃, hiff₃⟩ := denoteBoolTermAux_extract h₃
-        refine ⟨(if f₁ tdi₀ then f₂ tdi₀ else f₃ tdi₀), ?_, ?_⟩
-        · simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
-                     Option.bind_some, hdt₁, hdt₂, hdt₃]
-          rfl
-        · by_cases hp₁ : p₁
-          · rw [if_pos hp₁]
-            simp only [if_pos (hiff₁.mpr hp₁)]; exact hiff₂
-          · rw [if_neg hp₁]
-            simp only [if_neg (fun h => hp₁ (hiff₁.mp h))]; exact hiff₃
+        simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
+                   Option.bind_some, hdt₁, hdt₂, hdt₃, dif_pos trivial]
+        by_cases hp₁ : p₁
+        · rw [if_pos hp₁, if_pos (hiff₁.mpr hp₁)]
+          exact congrArg some (propext hiff₂)
+        · rw [if_neg hp₁, if_neg (fun h => hp₁ (hiff₁.mp h))]
+          exact congrArg some (propext hiff₃)
 
 open Classical in
 /-- `Factory.ite` preserves `denoteIntTermAux` semantics for integer branches. -/
@@ -1088,8 +1037,8 @@ theorem Factory.ite_correct_int {t₁ t₂ t₃ : Term} {p₁ : Prop} {n₂ n₃
         simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, hdt₃]
         by_cases hp₁ : p₁
-        · rw [if_pos hp₁]; congr 1; simp [if_pos (hiff₁.mpr hp₁)]
-        · rw [if_neg hp₁]; congr 1; simp [if_neg (fun h => hp₁ (hiff₁.mp h))]
+        · rw [if_pos hp₁]; simp [if_pos (hiff₁.mpr hp₁)]
+        · rw [if_neg hp₁]; simp [if_neg (fun h => hp₁ (hiff₁.mp h))]
 
 open Classical in
 /-- `Factory.ite` preserves `denoteBVTermAux` semantics for bitvector branches. -/
@@ -1177,9 +1126,7 @@ theorem Factory.zero_extend_correct {m n : Nat} {t : Term} {x : BitVec m}
     obtain ⟨hkm, hf⟩ := hdt
     subst hkm; subst hf
     grind [denoteBVTermAux, denoteTerm, Option.pure_def, Nat.add_comm]
-  · -- t is not a literal .prim (.bitvec ...); Factory dispatches on t.typeOf
-    -- Factory returns `.app (.zero_extend n) [t] (.bitvec (n + m))`
-    grind [denoteBVTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind]
+  · grind [denoteBVTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind]
 
 /-! ## Factory.app correctness (UF) -/
 
