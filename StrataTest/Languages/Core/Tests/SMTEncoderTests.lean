@@ -370,6 +370,71 @@ info: (set-logic ALL)
     else ""
   IO.print smt
 
+/-! ## Regression: `:final-message` must escape embedded double quotes by
+    doubling them (`""`) per SMT-LIB 2.6+, not with C-style `\"` escaping.
+
+    Before the fix, a property summary containing `"` would render as
+    `(set-info :final-message "... \"FOO\" ...")` which SMT-LIB parsers
+    reject: the backslash is a literal character in string contexts, and
+    the following `"` closes the string, leaving `FOO\"...` outside as
+    unexpected tokens. See
+    https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf
+    §3.1.2. -/
+
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "Expected len(kwargs[""JobName""]) >= 1, got stringLen(kwargs[JobName])")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let msg := "Expected len(kwargs[\"JobName\"]) >= 1, got stringLen(kwargs[JobName])"
+  let md : Imperative.MetaData Core.Expression :=
+    Imperative.MetaData.empty.withPropertySummary msg
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "test"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  IO.print smt
+
+/-! A backslash in the property summary is a *literal* character in SMT-LIB
+    2.6+ strings (no special meaning), so no escape is needed. -/
+
+/--
+info: (set-info :final-message "path/with\backslash")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression :=
+    Imperative.MetaData.empty.withPropertySummary "path/with\\backslash"
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "test"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  for line in smt.splitOn "\n" do
+    if line.startsWith "(set-info :final-message" then
+      IO.println line
+
 /-! ## SMT encoding of str.prefixof / str.suffixof -/
 
 /--
