@@ -480,26 +480,12 @@ public def Python.PipelineMessage.toSummaryJson
     ("totalWarnings", .num warnings.size)
   ]
 
-/-- Print a human-readable warning summary to stderr. -/
-public def Python.PipelineMessage.printSummary
-    (warnings : Array Python.PipelineMessage)
-    (verbose : Bool := false) : BaseIO Unit := do
-  if warnings.size > 0 then
-    let _ ← IO.eprintln
-      s!"{warnings.size} PySpec translation warning(s)" |>.toBaseIO
-    if verbose then
-      for err in warnings do
-        let _ ← IO.eprintln s!"  {err.file}: {err.kind}: {err.message}" |>.toBaseIO
-
 /-- Write a JSON warning summary to a file. -/
 public def Python.PipelineMessage.writeSummaryJson
     (warnings : Array Python.PipelineMessage)
-    (path : System.FilePath) : BaseIO Unit := do
+    (path : System.FilePath) : IO Unit := do
   let json := Python.PipelineMessage.toSummaryJson warnings
-  match ← IO.FS.writeFile path (json.compress ++ "\n") |>.toBaseIO with
-  | .ok () => pure ()
-  | .error e =>
-    let _ ← IO.eprintln s!"warning: failed to write warning summary to {path}: {e}" |>.toBaseIO
+  IO.FS.writeFile path (json.compress ++ "\n")
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
@@ -513,9 +499,7 @@ public def Python.PipelineMessage.writeSummaryJson
     `.py` source and you want line numbers to refer to the original).
 
     Returns a `PythonToLaurelResult` containing either the Laurel program
-    or a fatal error, along with any accumulated warnings. Callers are
-    responsible for printing warnings or writing JSON summaries using
-    `PipelineMessage.printSummary` and `PipelineMessage.writeSummaryJson`. -/
+    or a fatal error, along with any accumulated warnings. -/
 public def pythonAndSpecToLaurel
     (pythonIonPath : String)
     (dispatchModules : Array String := #[])

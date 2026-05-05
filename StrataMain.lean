@@ -644,8 +644,11 @@ def pyAnalyzeLaurelCommand : Command where
           sourcePath
           (profile := profile)
     let pyspecWarnings := pipelineResult.warnings
-    if !quiet then
-      Strata.Python.PipelineMessage.printSummary pyspecWarnings
+    if !quiet && pyspecWarnings.size > 0 then
+      IO.eprintln s!"{pyspecWarnings.size} PySpec translation warning(s)"
+      if verbose then
+        for err in pyspecWarnings do
+          IO.eprintln s!"  {err.file}: {err.kind}: {err.message}"
     if let some warnFile := warningSummaryFile then
       Strata.Python.PipelineMessage.writeSummaryJson pyspecWarnings warnFile
     let combinedLaurel ←
