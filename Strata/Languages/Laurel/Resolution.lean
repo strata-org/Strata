@@ -360,9 +360,17 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | other => pure other
   return { val := val', source := ty.source }
 
+/-- Format a type for use in diagnostics. -/
+private def formatType (ty : HighTypeMd) : String :=
+  match ty.val with
+  | .MultiValuedExpr tys =>
+    let parts := tys.map (fun t => toString (formatHighTypeVal t.val))
+    "(" ++ ", ".intercalate parts ++ ")"
+  | other => toString (formatHighTypeVal other)
+
 /-- Emit a type mismatch diagnostic. -/
 private def typeMismatch (source : Option FileRange) (expected : String) (actual : HighTypeMd) : ResolveM Unit := do
-  let actualStr := toString (formatHighTypeVal actual.val)
+  let actualStr := formatType actual
   let diag := diagnosticFromSource source s!"Type mismatch: expected {expected}, but got '{actualStr}'"
   modify fun s => { s with errors := s.errors.push diag }
 
@@ -387,31 +395,16 @@ private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) 
   match expected.val, actual.val with
   | .Unknown, _ => pure ()
   | _, .Unknown => pure ()
-  | _, .MultiValuedExpr _ => pure ()  -- arity mismatch already reported separately
   | .UserDefined _, _ => pure ()  -- subtype relationships not tracked here
   | _, .UserDefined _ => pure ()  -- subtype relationships not tracked here
   | .TCore _, _ => pure ()  -- pass-through Core types not checked during resolution
   | _, .TCore _ => pure ()  -- pass-through Core types not checked during resolution
   | _, _ =>
     if !highEq expected actual then
-      let expectedStr := toString (formatHighTypeVal expected.val)
-      let actualStr := toString (formatHighTypeVal actual.val)
+      let expectedStr := formatType expected
+      let actualStr := formatType actual
       let diag := diagnosticFromSource source s!"Type mismatch: expected '{expectedStr}', but got '{actualStr}'"
       modify fun s => { s with errors := s.errors.push diag }
-
-/-- Check that an expression is single-valued (not a multi-output procedure call).
-    Emits an error if the expression has MultiValuedExpr type. -/
-private def checkSingleValued (expr : StmtExprMd) (ty : HighTypeMd) : ResolveM Unit := do
-  match ty.val with
-  | .MultiValuedExpr _ =>
-    let calleeName := match expr.val with
-      | .StaticCall callee _ => callee.text
-      | .InstanceCall _ callee _ => callee.text
-      | _ => "expression"
-    let diag := diagnosticFromSource expr.source
-      s!"Multi-output procedure '{calleeName}' used in expression position"
-    modify fun s => { s with errors := s.errors.push diag }
-  | _ => pure ()
 
 /-- Get the type of a resolved variable reference from scope. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
@@ -515,7 +508,8 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
       modify fun s => { s with errors := s.errors.push diag }
     -- Type check: for single-target assignments, check value type matches target type
     -- Skip when value type is void (RHS is a statement like while/return that doesn't produce a value)
-    if targets'.length == 1 && valueTy.val != HighType.TVoid then
+    -- Skip when there's an arity mismatch (already reported above)
+    if targets'.length == 1 && targets'.length == expectedOutputCount && valueTy.val != HighType.TVoid then
       if let some target := targets'.head? then
         let targetTy := match target.val with
           | .Local ref => do
@@ -557,9 +551,6 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
     let results ← args.mapM resolveStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
-    -- Check that no argument is a multi-output procedure call
-    for (arg, argTy) in results do
-      checkSingleValued arg argTy
     let resultTy := match op with
       | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
       | .Lt | .Leq | .Gt | .Geq => HighType.TBool
@@ -574,7 +565,12 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
       for aTy in argTypes do checkBool source aTy
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
       for aTy in argTypes do checkNumeric source aTy
-    | .Eq | .Neq | .StrConcat => pure ()
+    | .Eq | .Neq =>
+      -- Check that operands are compatible with each other
+      match argTypes with
+      | [lhsTy, rhsTy] => checkAssignable source rhsTy lhsTy
+      | _ => pure ()
+    | .StrConcat => pure ()
     pure (.PrimitiveOp op args', { val := resultTy, source := source })
   | .New ref =>
     let ref' ← resolveRef ref source
