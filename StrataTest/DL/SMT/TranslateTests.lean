@@ -103,3 +103,25 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
          (.prim .int)),
        (.prim (.int 6))]
       (.prim .bool))
+
+-- `.app .mod` is strictly binary in the SMT-Lib `Ints` theory and in
+-- `Denote.denoteTerm`, so `translateTerm` now rejects any other arity rather
+-- than silently lowering e.g. `.app .mod [x, y, z]` to `(x % y) % z`.
+
+/-- info: 10 % 3 = 1 -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .mod [(.prim (.int 10)), (.prim (.int 3))] (.prim .int)),
+       (.prim (.int 1))]
+      (.prim .bool))
+
+/-- error: Error: 'mod' expects exactly two operands, got '3' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .mod [(.prim (.int 10)), (.prim (.int 3)), (.prim (.int 2))] (.prim .int)),
+       (.prim (.int 1))]
+      (.prim .bool))

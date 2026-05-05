@@ -337,8 +337,12 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     leftAssocOp mkIntMul as
   | .app .div as _ =>
     leftAssocOp mkIntDiv as
+  | .app .mod [x, y] _ =>
+    let (α, x) ← translateTerm x
+    let (_, y) ← translateTerm y
+    return (α, mkApp2 mkIntMod x y)
   | .app .mod as _ =>
-    leftAssocOp mkIntMod as
+    throw m!"Error: 'mod' expects exactly two operands, got '{as.length}'"
   | .app .abs [a] _ =>
     let (_, a) ← translateTerm a
     let c := mkApp2 mkIntLT a (toExpr (0 : Int))
