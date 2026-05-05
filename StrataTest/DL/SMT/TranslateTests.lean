@@ -41,3 +41,26 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #guard_msgs in
 #eval
   elabQuery {} [] (.app .eq [(.app .abs [(.prim (.int (-5)))] (.prim .int)), (.prim (.int 5))] (.prim .bool))
+
+-- SMT-Lib theory of strings: literals and the operations supported by
+-- `Denote.lean` (`str_length`, `str_concat`).
+
+/-- info: "hi" = "hi" -/
+#guard_msgs in
+#eval
+  elabQuery {} [] (.app .eq [(.prim (.string "hi")), (.prim (.string "hi"))] (.prim .bool))
+
+/-- info: Int.ofNat "hello".length = 5 -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq [(.app .str_length [(.prim (.string "hello"))] (.prim .int)), (.prim (.int 5))]
+      (.prim .bool))
+
+/-- info: "hi" ++ " there" = "hi there" -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq [(.app .str_concat [(.prim (.string "hi")), (.prim (.string " there"))] (.prim .string)),
+               (.prim (.string "hi there"))]
+      (.prim .bool))

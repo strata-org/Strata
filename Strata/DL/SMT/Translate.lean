@@ -243,6 +243,19 @@ private def mkBitVecAppend (w v : Nat) : Expr :=
          (mkBitVec w) (mkBitVec v) (mkBitVec (w + v))
          (mkApp2 (.const ``BitVec.instHAppendHAddNat []) (toExpr w) (toExpr v))
 
+private def mkStringAppend : Expr :=
+  mkApp4 (.const ``HAppend.hAppend [0, 0, 0])
+         mkString mkString mkString
+         (mkApp2 (.const ``instHAppendOfAppend [0]) mkString
+                 (.const ``instAppendString []))
+
+/--
+Length of a string as an `Int` (via `Int.ofNat`), matching the semantics used
+in `Denote.lean`.
+-/
+private def mkStringLength (s : Expr) : Expr :=
+  .app (.const ``Int.ofNat []) (.app (.const ``String.length []) s)
+
 def symbolToName (s : String) : Name :=
   -- Quote the string if a natural translation to Name fails
   if s.toName == .anonymous then
@@ -488,6 +501,14 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (α, x) ← translateTerm x
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
+  -- SMT-Lib theory of strings
+  | .prim (.string s) =>
+    return (mkString, toExpr s)
+  | .app .str_length [s] _ =>
+    let (_, s) ← translateTerm s
+    return (mkInt, mkStringLength s)
+  | .app .str_concat as _ =>
+    leftAssocOp mkStringAppend as
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
