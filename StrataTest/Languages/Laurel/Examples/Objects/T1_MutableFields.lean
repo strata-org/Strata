@@ -195,6 +195,7 @@ procedure fieldTargetInMultiAssign()
   assign c#intValue, y, var z: int := modifyHeapAndReturnMultiple(c);
   assert c#intValue == 1;
   assert y == 2;
+  // This looks convoluted but it is to ensure that z is still in scope after the transformation
   var z2: int := (z := z + 1);
   assert z2 == 4;
   assert false

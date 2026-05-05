@@ -315,7 +315,11 @@ where
               let isLast := idx == n - 1
               let s' ← recurse s (isLast && valueUsed)
               let rest' ← processStmts (idx + 1) rest
-              pure (s' :: rest')
+              -- Flatten unlabeled blocks returned by recurse so that
+              -- Declare targets remain in the enclosing scope.
+              match s'.val with
+              | .Block innerStmts (some "$inlineMe") => pure (innerStmts ++ rest')
+              | _ => pure (s' :: rest')
           termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
         return ⟨ .Block stmts' label, source ⟩
@@ -389,7 +393,7 @@ where
 
       -- Create a block if necessary
       if suffixes.length > 0 then
-        return ⟨ StmtExpr.Block (newAssign :: suffixes) none, source ⟩
+        return ⟨ StmtExpr.Block (newAssign :: suffixes) (some "$inlineMe"), source ⟩
       else
         return newAssign
 
