@@ -191,6 +191,23 @@ declared.  This includes transitive imports of the dialect being imported.
 Imports the dialect _ident_.
 :::
 
+## Dialect Options
+
+Dialect options configure elaboration behavior for programs using the dialect.
+
+:::paragraph
+`dialect_option` _name_ _value_`;`
+
+Sets the dialect option _name_ to _value_.
+:::
+
+The following options are supported:
+
+- `typecheck` (`on` | `off`, default `on`): When set to `off`, the elaborator
+  skips type inference and unification for expression arguments. Implicit type
+  parameter slots are filled with anonymous type placeholders. Variable name
+  resolution and global context population still operate normally.
+
 ## Syntactic Categories
 
 Syntactic categories are introduced by the `category` declaration:
