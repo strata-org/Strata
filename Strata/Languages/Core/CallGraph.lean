@@ -253,7 +253,7 @@ end
 
 /-- Extract all procedure calls from a procedure's body -/
 def extractCallsFromProcedure (proc : Procedure) : List String :=
-  extractCallsFromStatements proc.body
+  extractCallsFromStatements proc.body.toStmts
 
 @[expose] abbrev ProcedureCG := CallGraph
 @[expose] abbrev FunctionCG := CallGraph

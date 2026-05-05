@@ -217,8 +217,8 @@ def anfEncodeProgram (p : Program) : Bool × Program :=
   let (revDecls, _, changed) := p.decls.foldl (fun (acc, idx, changed) decl =>
     match decl with
     | .proc proc md =>
-      let (body', idx') := anfEncodeBody proc.body idx
-      (.proc { proc with body := body' } md :: acc, idx', changed || idx' > idx)
+      let (body', idx') := anfEncodeBody proc.body.toStmts idx
+      (.proc { proc with body := .structured body' } md :: acc, idx', changed || idx' > idx)
     | other => (other :: acc, idx, changed)
   ) ([], 0, false)
   (changed, { decls := revDecls.reverse })

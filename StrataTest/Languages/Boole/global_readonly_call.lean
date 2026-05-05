@@ -66,7 +66,7 @@ private def callHelper (p : Strata.Program) : Except String (List String) := do
   return cp.decls.filterMap fun d =>
     match d with
     | .proc p _ =>
-      p.body.findSome? fun
+      p.body.toStmts.findSome? fun
         | .block _ stmts _ => stmts.findSome? fun
           | .cmd (.call pname args _) =>
             some s!"call {pname}({", ".intercalate (args.map fmtCallArg)})"
@@ -141,41 +141,41 @@ spec {
 
 
 VCs:
-Label: inc_ensures_1_2418
+Label: inc_ensures_1_2426
 Property: assert
 Assumptions:
-inc_requires_0_2400: z@1 > 0
+inc_requires_0_2408: z@1 > 0
 Obligation:
 true
 
-Label: callElimAssert_inc_requires_0_2400_6
+Label: callElimAssert_inc_requires_0_2408_6
 Property: assert
 Assumptions:
-main_caller_requires_2_2534: z@3 == 10
-main_caller_requires_3_2554: g@3 == 0
+main_caller_requires_2_2542: z@3 == 10
+main_caller_requires_3_2562: g@3 == 0
 Obligation:
 z@3 > 0
 
-Label: main_caller_ensures_4_2573
+Label: main_caller_ensures_4_2581
 Property: assert
 Assumptions:
-main_caller_requires_2_2534: z@3 == 10
-main_caller_requires_3_2554: g@3 == 0
-callElimAssume_inc_ensures_1_2418_7: g@5 == g@3 + 5 + z@5
+main_caller_requires_2_2542: z@3 == 10
+main_caller_requires_3_2562: g@3 == 0
+callElimAssume_inc_ensures_1_2426_7: g@5 == g@3 + 5 + z@5
 Obligation:
 g@5 == 15
 
 ---
 info:
-Obligation: inc_ensures_1_2418
+Obligation: inc_ensures_1_2426
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_inc_requires_0_2400_6
+Obligation: callElimAssert_inc_requires_0_2408_6
 Property: assert
 Result: ✅ pass
 
-Obligation: main_caller_ensures_4_2573
+Obligation: main_caller_ensures_4_2581
 Property: assert
 Result: ❓ unknown
 Model:

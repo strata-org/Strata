@@ -103,7 +103,7 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       .ok (axiomPc ++ [.assumption a.name a.e], allObs)
     | .proc proc _md => do
       let globalPc : PathConditions Expression := [axiomPc]
-      let obs ← extractFromStatements globalPc proc.body
+      let obs ← extractFromStatements globalPc proc.body.toStmts
       .ok (axiomPc, allObs ++ obs)
     | _ => .ok (axiomPc, allObs)
   return allObs

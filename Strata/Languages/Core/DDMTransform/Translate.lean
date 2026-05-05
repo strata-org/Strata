@@ -1583,7 +1583,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                               outputs := ret },
                   spec := { preconditions := requires,
                             postconditions := ensures },
-                  body := body
+                  body := .structured body
                 }
                 md,
           origBindings)
@@ -1602,7 +1602,7 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
                               outputs := [] },
                   spec := { preconditions := [],
                             postconditions := [] },
-                  body := body
+                  body := .structured body
                 }
                 md,
           bindings)

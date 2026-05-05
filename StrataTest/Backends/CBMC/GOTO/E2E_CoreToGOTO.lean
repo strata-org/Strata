@@ -350,7 +350,7 @@ private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
   let Env := Lambda.TEnv.default
   let procs := cprog.decls.filterMap fun d => d.getProc?
   let p := procs[0]!
-  let p' : Core.Procedure := { p with body := injectPropertySummary p.body summary }
+  let p' : Core.Procedure := { p with body := .structured (injectPropertySummary p.body.toStmts summary) }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'
   let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")

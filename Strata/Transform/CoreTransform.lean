@@ -332,10 +332,10 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let (changed, new_body) ← runStmtsRec f proc.body
+        let (changed, new_body) ← runStmtsRec f proc.body.toStmts
 
         if changed then
-          newDecls := newDecls.set i (Decl.proc { proc with body := new_body } md)
+          newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
           anyChanged := true
           modify (fun σ => { σ with
             currentProgram := .some { decls := newDecls }

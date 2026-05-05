@@ -7,6 +7,7 @@ module
 
 
 public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Imperative.BasicBlock
 public import Strata.Languages.Core.Statement
 
 ---------------------------------------------------------------------
@@ -278,21 +279,43 @@ def Procedure.Spec.updateCheckExprs
   | e :: erest, c :: crest =>
     { c with expr := e } :: go erest crest
 
+/-- The body of a Core procedure: either structured (a list of statements) or
+unstructured (a control-flow graph of basic blocks). An empty structured body
+(`structured []`) represents an abstract/bodyless procedure. -/
+inductive Procedure.Body where
+  /-- A structured body: a sequential list of statements. -/
+  | structured : List Statement → Procedure.Body
+  /-- An unstructured body: a control-flow graph of deterministic basic blocks.
+      Labels are strings; each block contains Core commands and ends with a
+      deterministic transfer (conditional goto or finish). -/
+  | cfg : Imperative.CFG String (Imperative.DetBlock String Command Expression) → Procedure.Body
+  deriving Inhabited
+
+/-- Get the structured statements from a body, or `[]` if unstructured. -/
+def Procedure.Body.toStmts : Procedure.Body → List Statement
+  | .structured ss => ss
+  | .cfg _ => []
+
+/-- Is this body empty (abstract)? -/
+def Procedure.Body.isEmpty : Procedure.Body → Bool
+  | .structured ss => ss.isEmpty
+  | .cfg _ => false
+
 /--
 A Strata Core procedure: the main verification unit.
 
 A procedure consists of a header (name, type parameters, input/output signatures),
-a specification (contract), and an optional body (list of statements). If the body
-is empty, the procedure is abstract and can only be reasoned about via its contract.
-If the body is present, it is verified against the specification.
+a specification (contract), and an optional body (list of statements or a CFG).
+If the body is empty, the procedure is abstract and can only be reasoned about
+via its contract. If the body is present, it is verified against the specification.
 -/
 structure Procedure where
   /-- The procedure header: name, type parameters, and parameter signatures. -/
   header : Procedure.Header
   /-- The procedure's contract: modifies clause, preconditions, and postconditions. -/
   spec   : Procedure.Spec
-  /-- The procedure body. Empty for abstract (bodyless) procedures. -/
-  body   : List Statement
+  /-- The procedure body. -/
+  body   : Procedure.Body := .structured []
   deriving Inhabited
 
 ---------------------------------------------------------------------
@@ -306,21 +329,39 @@ def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
   (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
-  p.body.flatMap HasVarsPure.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
+  p.body.toStmts.flatMap HasVarsPure.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
 
 instance : HasVarsPure Expression Procedure where
   getVars := Procedure.getVars
+
+instance : HasVarsPure Expression Procedure.Body where
+  getVars b := match b with
+    | .structured ss => HasVarsPure.getVars ss
+    | .cfg _ => []
+
+instance : HasVarsImp Expression Procedure.Body where
+  definedVars b := match b with
+    | .structured ss => HasVarsImp.definedVars ss
+    | .cfg _ => []
+  modifiedVars b := match b with
+    | .structured ss => HasVarsImp.modifiedVars ss
+    | .cfg _ => []
 
 instance : HasVarsImp Expression Procedure where
   definedVars := Procedure.definedVars
   modifiedVars := Procedure.modifiedVars
 
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
-  { p with body := Statements.eraseTypes p.body, spec := p.spec }
+  let body' := match p.body with
+    | .structured ss => .structured (Statements.eraseTypes ss)
+    | .cfg c => .cfg c
+  { p with body := body', spec := p.spec }
 
-/-- Remove all metadata from procedure. -/
 def Procedure.stripMetaData (p : Procedure) : Procedure :=
-  { p with body := Imperative.Block.stripMetaData p.body }
+  let body' := match p.body with
+    | .structured ss => .structured (Imperative.Block.stripMetaData ss)
+    | .cfg c => .cfg c
+  { p with body := body' }
 
 /-- Transitive variable lookup for procedures.
     This is a version that looks into the body,

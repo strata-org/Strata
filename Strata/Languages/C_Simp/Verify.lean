@@ -172,7 +172,7 @@ def loop_elimination_function(f : C_Simp.Function) : Core.Procedure :=
               outputs := [("return", f.ret_ty)]},
               spec := {preconditions := core_preconditions,
                        postconditions := core_postconditions},
-                       body := f.body.map loop_elimination_statement}
+                       body := .structured (f.body.map loop_elimination_statement)}
 
 
 def loop_elimination(program : C_Simp.Program) : Core.Program :=

@@ -346,7 +346,7 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : Except String CB
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let stmtJsons ← (func.body.mapM (stmtToJson (I:=CoreLParams) · loc))
+  let stmtJsons ← (func.body.toStmts.mapM (stmtToJson (I:=CoreLParams) · loc))
 
   let implValue := Json.mkObj [
     ("id", "code"),

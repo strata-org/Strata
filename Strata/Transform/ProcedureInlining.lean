@@ -94,13 +94,13 @@ private def renameAllLocalNames (c:Procedure)
   let proc_name := c.header.name.name
 
   -- Make a map for renaming local variables
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) c.body
+  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) c.body.toStmts
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name
 
   -- Make a map for renaming label names
-  let labels := List.flatMap (fun s => Statement.labels s) c.body
+  let labels := List.flatMap (fun s => Statement.labels s) c.body.toStmts
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
       (fun s => { name:=s, metadata := () })
@@ -117,7 +117,7 @@ private def renameAllLocalNames (c:Procedure)
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
         let s := Statement.renameLhs s old_id new_id
         Statement.replaceLabels s label_map)
-      s0) c.body
+      s0) c.body.toStmts
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
       match var_map.find? id with
@@ -128,7 +128,7 @@ private def renameAllLocalNames (c:Procedure)
       | .some id' => (id',ty)
       | .none => panic! "unreachable")
     }
-  return ({ c with body := new_body, header := new_header }, var_map)
+  return ({ c with body := .structured new_body, header := new_header }, var_map)
 
 
 /-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
@@ -271,7 +271,7 @@ def inlineCallCmd
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits
-             ++ Block.setCallSiteMetadata proc.body md
+             ++ Block.setCallSiteMetadata proc.body.toStmts md
              ++ outputSetStmts
 
         -- Update CallGraph if available

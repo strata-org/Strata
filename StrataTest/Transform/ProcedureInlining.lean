@@ -215,13 +215,13 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 end
 
 private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
-  if p1.body.length ≠ p2.body.length then
+  if p1.body.toStmts.length ≠ p2.body.toStmts.length then
     .error (s!"# statements do not match: in {p1.header.name}, "
-        ++ s!"inlined fn one has {p1.body.length}"
-        ++ s!" whereas the answer has {p2.body.length}")
+        ++ s!"inlined fn one has {p1.body.toStmts.length}"
+        ++ s!" whereas the answer has {p2.body.toStmts.length}")
   else
     let newmap:IdMap := IdMap.mk ([], []) []
-    let stmts := (p1.body.zip p2.body)
+    let stmts := (p1.body.toStmts.zip p2.body.toStmts)
     let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
         alphaEquivStatement s1 s2 map)
       newmap stmts

@@ -241,8 +241,8 @@ def loopElim (p : Program) : Program × Statistics :=
   let (decls, stats) := p.decls.foldl (fun (acc, stats) d =>
     match d with
     | .proc proc md =>
-      let (body, st) := StateT.run (Block.removeLoopsM proc.body) {}
-      ((.proc { proc with body := body } md) :: acc, stats.merge st.statistics)
+      let (body, st) := StateT.run (Block.removeLoopsM proc.body.toStmts) {}
+      ((.proc { proc with body := .structured body } md) :: acc, stats.merge st.statistics)
     | other => (other :: acc, stats)) ([], {})
   ({ decls := decls.reverse }, stats)
 

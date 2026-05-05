@@ -30,8 +30,8 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
-  let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
-  let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
+  let modifiedVars := (Imperative.Block.modifiedVars proc.body.toStmts).eraseDups
+  let definedVars := (Imperative.Block.definedVars proc.body.toStmts).eraseDups
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v => v ∉ allowedVars)
   if !disallowed.isEmpty then
@@ -111,7 +111,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
   -- error messages.
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) proc.body
+  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) proc.body.toStmts
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.
@@ -126,7 +126,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                     outputs := out_mty_sig }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
                                    postconditions := finalPostconditions }
-  let new_proc := { proc with header := new_hdr, spec := new_spec, body := annotated_body }
+  let new_proc := { proc with header := new_hdr, spec := new_spec, body := .structured annotated_body }
 
   return (new_proc, finalEnv)
 

@@ -174,7 +174,7 @@ def mkContractWFProc (F : @Lambda.Factory CoreLParams) (proc : Procedure)
     some <| .proc {
       header := { proc.header with name := ⟨wfProcName name, ()⟩, noFilter := true }
       spec := { preconditions := [], postconditions := [] }
-      body := body
+      body := .structured body
     } md
   else
     none
@@ -230,7 +230,7 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function)
         noFilter := true
       }
       spec := { preconditions := [], postconditions := [] }
-      body := wfStmts
+      body := .structured wfStmts
     } md)
 
 /-! ## Statement transformation -/
@@ -377,16 +377,16 @@ where
       match d with
       | .proc proc md => do
         let F ← getFactory
-        let (changed, body') ← transformStmts proc.body
+        let (changed, body') ← transformStmts proc.body.toStmts
         setFactory F
-        let proc' := { proc with body := body' }
+        let proc' := { proc with body := .structured body' }
         let procDecl := Decl.proc proc' md
         let (changed', rest') ← transformDecls rest
         match mkContractWFProc F proc md with
         | some wfDecl => do
           incrementStat s!"{Stats.wfProceduresGenerated}"
           incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+            (match wfDecl with | .proc p _ => p.body.toStmts.length | _ => 0)
 
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
           return (true, wfDecl :: procDecl :: rest')
@@ -406,7 +406,7 @@ where
         | some wfDecl => do
           incrementStat s!"{Stats.wfProceduresGenerated}"
           incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+            (match wfDecl with | .proc p _ => p.body.toStmts.length | _ => 0)
 
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
           return (true, wfDecl :: funcDecl :: rest')
@@ -431,7 +431,7 @@ where
           | some wfDecl => do
             incrementStat s!"{Stats.wfProceduresGenerated}"
             incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-              (match wfDecl with | .proc p _ => p.body.length | _ => 0)
+              (match wfDecl with | .proc p _ => p.body.toStmts.length | _ => 0)
 
             addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
             return some wfDecl
