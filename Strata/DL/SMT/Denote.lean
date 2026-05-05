@@ -529,7 +529,7 @@ def bindExistsVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
         { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ, tΓ := { ufs := tdi.tΓ.ufs, vs := vΓ' }, htΓ := { hv := hv', huf := tdi.htΓ.huf } }
       ft' tdi'
 
-@[expose] def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
+def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
@@ -544,14 +544,14 @@ def bindExistsVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
       let ft' := buildQuant bindVar ctx' vs hTys' (hvs ▸ bodyFt)
       bindVar (n := n) (ty := ty) ctx (denoteFunSortCons_isSome hTys).left ft' tdi
 
-@[expose] def buildExists (ctx : Context) (vs : List TermVar)
+def buildExists (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
   buildQuant bindExistsVar ctx vs hTys bodyFt tdi
 
-@[expose] def buildForall (ctx : Context) (vs : List TermVar)
+def buildForall (ctx : Context) (vs : List TermVar)
     (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
@@ -915,7 +915,7 @@ where
       else
         none
 
-@[expose] noncomputable def rightAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
+noncomputable def rightAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let ft ← go ts
@@ -1251,4 +1251,3 @@ noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (con
   let ufs := ctx.ufs.toList.reverse
   let ifs := ctx.ifs.toList.reverse
   (denoteBoolTermFromContext uss iss ufs ifs t).map PLift.down
-

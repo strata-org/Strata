@@ -82,21 +82,17 @@ private theorem denoteStringTermAux_extract {t : Term} {s : String}
 
 /-! ## Lemma: denoteBoolTermAux for .app .not -/
 
-/-- If `denoteBoolTermAux (.app .not [t'] ty) = some p`, then there exists `q`
-    such that `denoteBoolTermAux t' = some q` and `p = ¬q`. -/
+/-- Invert `denoteBoolTermAux` of a negation: the inner term denotes `¬p`. -/
 private theorem denoteBoolTermAux_not_inv {t' : Term} {ty : TermType} {p : Prop}
     (h : denoteBoolTermAux (.app .not [t'] ty) = some p) :
-    ∃ q, denoteBoolTermAux t' = some q ∧ p = ¬q := by
+    denoteBoolTermAux t' = some (¬ p) := by
   unfold denoteBoolTermAux at h ⊢
   conv at h => simp only [denoteTerm]
   revert h
   generalize denoteTerm {} t' = res'
   intro h
   match res' with
-  | some ⟨.prim .bool, rfl, g⟩ =>
-    refine ⟨g tdi₀, by simp, ?_⟩
-    simp at h
-    rw [h]
+  | some ⟨.prim .bool, rfl, g⟩ => simp_all; grind
   | some ⟨.prim .int, _, _⟩ | some ⟨.prim .string, _, _⟩
   | some ⟨.prim (.bitvec _), _, _⟩ | some ⟨.prim .real, _, _⟩
   | some ⟨.prim .regex, _, _⟩ | some ⟨.prim .trigger, _, _⟩
@@ -213,8 +209,7 @@ theorem Factory.not_correct {t : Term} {p : Prop}
   · rename_i b
     have hp := denoteBoolTermAux_eq h (denoteBool_prim_bool b)
     cases b <;> simp [denoteBoolTermAux, denoteTerm, hp]
-  · obtain ⟨q, hq, hpq⟩ := denoteBoolTermAux_not_inv h
-    rw [hpq, Classical.not_not]; exact hq
+  · exact denoteBoolTermAux_not_inv h
   · obtain ⟨f, hdt, hiff⟩ := denoteBoolTermAux_extract h
     simp [denoteBoolTermAux, denoteTerm, hdt]
     rw [propext hiff]
@@ -260,12 +255,12 @@ theorem Factory.and_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
           have hp₂ := denoteBoolTermAux_eq h₂ (denoteBool_prim_bool false)
           rw [hp₂]; simp [denoteBoolTermAux, denoteTerm]
         · rcases Factory.opposites_spec hf with ⟨_, _, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
-          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₂
+          · have hq := denoteBoolTermAux_not_inv h₂
             have hpq := denoteBoolTermAux_eq hq h₁
-            rw [heq, hpq]; simp [denoteBoolTermAux, denoteTerm]
-          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₁
+            rw [← hpq]; simp [denoteBoolTermAux, denoteTerm]
+          · have hq := denoteBoolTermAux_not_inv h₁
             have hpq := denoteBoolTermAux_eq hq h₂
-            rw [heq, hpq]; simp [denoteBoolTermAux, denoteTerm]
+            rw [← hpq]; simp [denoteBoolTermAux, denoteTerm]
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
         simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
@@ -300,20 +295,20 @@ theorem Factory.or_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
           have hp₂ := denoteBoolTermAux_eq h₂ (denoteBool_prim_bool true)
           rw [hp₂]; simp [denoteBoolTermAux, denoteTerm]
         · rcases Factory.opposites_spec ht with ⟨_, _, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
-          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₂
+          · have hq := denoteBoolTermAux_not_inv h₂
             have hpq := denoteBoolTermAux_eq hq h₁
-            rw [heq, hpq]
-            simp [denoteBoolTermAux, denoteTerm]
-            cases Classical.em p₁ with
-            | inl h => exact Or.inl h
-            | inr h => exact Or.inr h
-          · obtain ⟨q, hq, heq⟩ := denoteBoolTermAux_not_inv h₁
-            have hpq := denoteBoolTermAux_eq hq h₂
-            rw [heq, hpq]
+            rw [← hpq]
             simp [denoteBoolTermAux, denoteTerm]
             cases Classical.em p₂ with
             | inl h => exact Or.inr h
             | inr h => exact Or.inl h
+          · have hq := denoteBoolTermAux_not_inv h₁
+            have hpq := denoteBoolTermAux_eq hq h₂
+            rw [← hpq]
+            simp [denoteBoolTermAux, denoteTerm]
+            cases Classical.em p₁ with
+            | inl h => exact Or.inl h
+            | inr h => exact Or.inr h
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
         simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
