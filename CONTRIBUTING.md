@@ -186,6 +186,8 @@ comments (`/- .. -/`) interspersed with the code.
 
 # Submitting a Pull Request
 
+## What is a desirable shape of your pull request?
+
 * **Focused Changes**: Create small, focused PRs that address a single
 issue or implement a specific feature.
 
@@ -202,6 +204,24 @@ Exceptions are possible, but only when absolutely necessary.
 * **Documentation**: Add relevant documentation and comments to your
 code. Please refer to the [Syntactic Style
 Guidelines](#syntactic-style-guidelines).
+
+## Two-step review, and finding a shepherd
+
+For security reasons, Strata's continuous integration policy only allows running
+internal benchmarks if the pull request was created from a branch in
+strata-org/Strata, not from a fork.
+As an external contributor, you will need to find a "shepherd" who can
+(1) move your branch to strata-org/Strata, and
+(2) recreate a pull request that will launch all continuous integration
+checks.
+We recommend the following two steps to deliver your patch to Strata.
+First, put your patch in your own fork and open a pull request to strata-org/Strata.
+The CI checks for internal benchmarks will fail, but please ignore
+this and solicit and address review comments.
+Second, once the review comments are resolved, ask one of your reviewers to shepherd your pull request.
+They will copy your branch into strata-org/Strata and create a new pull request that
+will run the full internal benchmarks.
+If the internal benchmark results look good, your patch is finally good to go.
 
 # Filing an Issue
 

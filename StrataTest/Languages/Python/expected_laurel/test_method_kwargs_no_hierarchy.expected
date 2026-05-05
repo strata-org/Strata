@@ -8,6 +8,5 @@ test_method_kwargs_no_hierarchy.py(11, 18): ✅ pass - (Calculator@add requires)
 test_method_kwargs_no_hierarchy.py(11, 4): ✅ pass - assert(254)
 test_method_kwargs_no_hierarchy.py(12, 4): ❓ unknown - assert(286)
 test_method_kwargs_no_hierarchy.py(8, 14): ✅ pass - (main ensures) Return type constraint
-test_method_kwargs_no_hierarchy.py(8, 0): ❓ unknown - postcondition_1
-DETAIL: 8 passed, 0 failed, 3 inconclusive
+DETAIL: 8 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

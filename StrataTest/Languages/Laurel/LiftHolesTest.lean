@@ -33,7 +33,7 @@ private def parseElimAndPrint (input : String) : IO Unit := do
   | .ok program =>
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    let (program, _) := inferHoleTypes model program
+    let (program, _, _) := inferHoleTypes model program
     let (program, _) := eliminateHoles program
     for proc in program.staticProcedures do
       IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
@@ -53,7 +53,7 @@ procedure test()
 procedure test() { var x: int := 1 + <?> };
 "
 
--- Bare Hole as LocalVariable initializer → replaced with call (no longer preserved as havoc).
+-- Bare Hole as Assign Declare initializer → replaced with call (no longer preserved as havoc).
 /--
 info: function $hole_0()
   returns ($result: int)

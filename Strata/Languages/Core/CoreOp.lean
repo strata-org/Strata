@@ -160,12 +160,13 @@ def BoolOpKind.ofString? (s : String) : Option BoolOpKind := lookupKind names s
 /-! ### String Operations -/
 
 inductive StrOpKind where
-  | Length | Concat | Substr | ToRegEx | InRegEx
+  | Length | Concat | Substr | ToRegEx | InRegEx | PrefixOf | SuffixOf
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def StrOpKind.names : List (StrOpKind × String) :=
   [(.Length, "Length"), (.Concat, "Concat"), (.Substr, "Substr"),
-   (.ToRegEx, "ToRegEx"), (.InRegEx, "InRegEx")]
+   (.ToRegEx, "ToRegEx"), (.InRegEx, "InRegEx"),
+   (.PrefixOf, "PrefixOf"), (.SuffixOf, "SuffixOf")]
 
 def StrOpKind.toString (k : StrOpKind) : String := lookupName names k
 instance : ToString StrOpKind := ⟨StrOpKind.toString⟩

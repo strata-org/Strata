@@ -50,7 +50,7 @@ private def testMapStmtExprId (input : String) : IO Unit := do
   else
     IO.println s!"MISMATCH\nbefore:\n{before}\nafter:\n{after}"
 
--- Exercises: IfThenElse, Block, LocalVariable, While, Return, Assign,
+-- Exercises: IfThenElse, Block, Var Declare, While, Return, Assign,
 -- PrimitiveOp, Assert, Assume, Forall, Exists, LiteralInt, LiteralBool, Identifier.
 def testProgram : String := r"
 procedure test(x: int, b: bool) returns (r: int)
