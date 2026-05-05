@@ -41,3 +41,10 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #guard_msgs in
 #eval
   elabQuery {} [] (.app .eq [(.app .abs [(.prim (.int (-5)))] (.prim .int)), (.prim (.int 5))] (.prim .bool))
+
+/-- info: (if 0 = 0 then 0 else 1) = 0 -/
+#guard_msgs in
+#eval
+  let c := .app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool)
+  let t := .app .ite [c, (.prim (.int 0)), (.prim (.int 1))] (.prim .int)
+  elabQuery {} [] (.app .eq [t, (.prim (.int 0))] (.prim .bool))

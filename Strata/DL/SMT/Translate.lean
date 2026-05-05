@@ -325,7 +325,7 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (as, a) := ((a :: as).dropLast, (a :: as).getLast?.get rfl)
     return (mkProp, as.foldr mkArrow a)
   | .prim (.int x) =>
-    return (mkProp, toExpr x)
+    return (mkInt, toExpr x)
   | .app .neg [a] _ =>
     let (_, a) ← translateTerm a
     return (mkInt, .app mkIntNeg a)
