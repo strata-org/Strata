@@ -45,12 +45,17 @@ A Strata Core declaration.
 Note: constants are 0-ary functions.
  -/
 inductive Decl where
+  /-- A type declaration (abstract type, type synonym, or algebraic datatype). -/
   | type (t : TypeDecl) (md : MetaData Core.Expression)
+  /-- An axiom declaration. -/
   | ax   (a : Axiom) (md : MetaData Core.Expression)
-  -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
+  /-- A `distinct` assertion: the given expressions are pairwise distinct. -/
   | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression)
+  /-- A procedure declaration. -/
   | proc (d : Procedure) (md : MetaData Core.Expression)
+  /-- A function declaration. -/
   | func (f : Function) (md : MetaData Core.Expression)
+  /-- A mutually recursive function block. -/
   | recFuncBlock (fs : List Function) (md : MetaData Core.Expression)
   deriving Inhabited
 
@@ -159,8 +164,9 @@ def Decl.formatWithMetaData (decl : Decl) : Format :=
 
 @[expose] abbrev Decls := List Decl
 
-/-- A Core.Program -/
+/-- A Core.Program is an ordered list of declarations. -/
 structure Program where
+  /-- The declarations that make up this program. -/
   { decls : Decls }
 
 @[expose]

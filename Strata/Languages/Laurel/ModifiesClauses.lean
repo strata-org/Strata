@@ -103,10 +103,10 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   let entries := extractModifiesEntries model modifiesExprs
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
-  let obj := mkMd <| .Identifier objName
-  let fld := mkMd <| .Identifier fldName
-  let heapIn := mkMd <| .Identifier heapInName
-  let heapOut := mkMd <| .Identifier heapOutName
+  let obj := mkMd <| .Var (.Local objName)
+  let fld := mkMd <| .Var (.Local fldName)
+  let heapIn := mkMd <| .Var (.Local heapInName)
+  let heapOut := mkMd <| .Var (.Local heapOutName)
       -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
   let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
   let objRef := mkMd <| .StaticCall "Composite..ref!" [obj]
@@ -146,6 +146,9 @@ may modify anything on the heap), and the modifies list is simply cleared.
 If the procedure has a `$heap` but no modifies clause, adds a postcondition
 that all allocated objects are preserved between heaps:
   `forall $obj: Composite, $fld: Field => $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)`
+
+If the modifies clause uses a wildcard (`*`), the frame condition is skipped
+entirely — the procedure may modify anything.
 -/
 def transformModifiesClauses (model: SemanticModel)
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
@@ -160,7 +163,7 @@ def transformModifiesClauses (model: SemanticModel)
         let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
-          | some frame => postconds ++ [{ condition := frame : Condition }]
+          | some frame => postconds ++ [{ condition := frame, summary := "modifies clause" }]
           | none => postconds
         .ok { proc with body := .Opaque postconds' impl [] }
       else

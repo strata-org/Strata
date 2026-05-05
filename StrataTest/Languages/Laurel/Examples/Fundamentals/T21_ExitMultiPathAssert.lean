@@ -12,7 +12,9 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 def exitMultiPathProgram := r"
-procedure foo(x: int) {
+procedure foo(x: int)
+  opaque
+{
   {
     if x == 0 then {
       exit myBlock
