@@ -18,6 +18,11 @@ currently supported. The core entry point is `denoteTerm`, which builds a
 `TermDenoteResult` describing both the type of a term and a semantic interpreter
 for it. The surrounding infrastructure tracks the well-formedness of
 term and uninterpreted-function contexts so that evaluation is safe.
+
+The denotation uses propositional extensionality (`propext`) and
+`Classical.propDecidable` (excluded middle) to make `if`-then-`else` over
+`Prop`-valued conditions definable. Downstream correctness proofs
+(see `FactoryCorrect.lean`) inherit these dependencies.
 -/
 
 open Strata.SMT
@@ -137,7 +142,7 @@ def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
 mutual
 
 /-- Interpret primitive SMT types as Lean types, when supported. -/
-def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
+@[expose] def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
   match pty with
   | .bool => return fun _ => Prop
   | .int => return fun _ => Int
@@ -191,7 +196,7 @@ Interpret an SMT `TermType` as a Lean `Type`, when supported.
 
 Returns `none` when we lack an interpretation (e.g. for reals).
 -/
-def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
+@[expose] def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
   match ty with
   | .prim pty => denotePrimSort sctx pty
   | .option ty =>
@@ -255,6 +260,7 @@ theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome)
               Option.isSome_bind, Option.isSome_some, Option.any_true] at h
   have ⟨h1 , h2⟩ := (Option.any_eq_true_iff_get _ _).mp h
   exact ⟨h1, h2⟩
+
 
 theorem arrow_of_denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     have has := denoteFunSortCons_isSome h
@@ -552,6 +558,7 @@ def buildForall (ctx : Context) (vs : List TermVar)
     : Prop :=
   buildQuant bindForallVar ctx vs hTys bodyFt tdi
 
+
 mutual
 
 /-
@@ -563,7 +570,7 @@ Noncomputable because of `ite` case. Two conditions are needed to make this func
 Attempt to interpret a single SMT term under `ctx`, returning its Lean type
 and semantics when successful.
 -/
-noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
+@[expose] noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
   match t with
   -- Variable lookup: if `v` is declared in `ctx.tctx.vs` and its sort can be
   -- interpreted, return the corresponding semantic value from `tdi.tΓ.vs`.
@@ -877,7 +884,7 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
 /--
 Interpret every term in a list, short-circuiting if any sub-term fails.
 -/
-noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (TermDenoteResult ctx)) := do
+@[expose] noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (TermDenoteResult ctx)) := do
   match ts with
   | [] => return []
   | a :: as =>
@@ -885,7 +892,7 @@ noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (T
     let as ← denoteTerms ctx as
     return a :: as
 
-noncomputable def leftAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
+@[expose] noncomputable def leftAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let t₁ :: t₂ :: ts := ts | none
@@ -935,7 +942,7 @@ where
       else
         none
 
-noncomputable def chainable (ctx ty h)
+@[expose] noncomputable def chainable (ctx ty h)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → Prop)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let t₁ :: t₂ :: ts := ts | none
@@ -949,7 +956,7 @@ noncomputable def chainable (ctx ty h)
   else
     none
 
-noncomputable def chainable.go (ctx ty h)
+@[expose] noncomputable def chainable.go (ctx ty h)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → Prop)
     (ft : TermDenoteInput ctx → Prop) (ft₁ : (tdi : TermDenoteInput ctx) → (denoteSort ctx.sctx ty).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do match ts with
@@ -963,20 +970,36 @@ noncomputable def chainable.go (ctx ty h)
 
 end
 
+
 /--
 Interpret a ground boolean term in the empty context.
 -/
-@[simp]
-noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
+@[expose, simp] noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
   let some ⟨.prim .bool, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
 Interpret a ground integer term in the empty context.
 -/
-@[simp]
-noncomputable def denoteIntTermAux (t : Term) : Option Int := do
+@[expose, simp] noncomputable def denoteIntTermAux (t : Term) : Option Int := do
   let some ⟨.prim .int, _, fi⟩ := denoteTerm {} t | none
+  return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+
+/--
+Interpret a ground bitvector term in the empty context.
+-/
+@[expose, simp] noncomputable def denoteBVTermAux (n : Nat) (t : Term) : Option (BitVec n) := do
+  let some ⟨.prim (.bitvec m), _, fi⟩ := denoteTerm {} t | none
+  if h : m = n then
+    return h ▸ fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  else
+    none
+
+/--
+Interpret a ground string term in the empty context.
+-/
+@[expose, simp] noncomputable def denoteStringTermAux (t : Term) : Option String := do
+  let some ⟨.prim .string, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
