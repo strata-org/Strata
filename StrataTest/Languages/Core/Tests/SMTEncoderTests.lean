@@ -370,6 +370,91 @@ info: (set-logic ALL)
     else ""
   IO.print smt
 
+/-! ## Regression: `:final-message` / `:sat-message` / `:unsat-message`
+    must escape embedded double quotes by doubling them (`""`) per
+    SMT-LIB 2.6+, not with C-style `\"` escaping.
+
+    Before the fix, a property summary containing `"` would render as
+    `(set-info :final-message "... \"FOO\" ...")` which SMT-LIB parsers
+    reject: the backslash is a literal character in string contexts, and
+    the following `"` closes the string, leaving `FOO\"...` outside as
+    unexpected tokens. See
+    https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf
+    §3.1.2. -/
+
+/-- Run `encodeCore` on a trivial `true` obligation with the given metadata
+    and check flags, and return the resulting SMT-LIB text. -/
+private def captureEncodeCore (md : Imperative.MetaData Core.Expression)
+    (satCheck validityCheck : Bool) (label : String := "test") : IO String := do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := satCheck) (validityCheck := validityCheck) (label := label))
+  let contents ← b.get
+  return if h : contents.data.IsValidUTF8
+         then String.fromUTF8 contents.data h
+         else ""
+
+/-- Metadata carrying only a property summary (no file range). -/
+private def summaryMd (summary : String) : Imperative.MetaData Core.Expression :=
+  Imperative.MetaData.empty.withPropertySummary summary
+
+/-- Metadata carrying only a file range (no property summary); used to
+    exercise `addLocationInfo`. -/
+private def fileRangeMd (file : String) : Imperative.MetaData Core.Expression :=
+  let fr : Strata.FileRange := ⟨.file file, Strata.SourceRange.none⟩
+  Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+
+/-! Embedded double quotes in the property summary must be doubled (`""`). -/
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "Expected len(kwargs[""JobName""]) >= 1, got stringLen(kwargs[JobName])")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let smt ← captureEncodeCore
+    (summaryMd "Expected len(kwargs[\"JobName\"]) >= 1, got stringLen(kwargs[JobName])")
+    false true
+  IO.print smt
+
+/-! A backslash in the property summary is a *literal* character in SMT-LIB
+    2.6+ strings (no special meaning), so no escape is needed. -/
+/--
+info: (set-info :final-message "path/with\backslash")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let smt ← captureEncodeCore (summaryMd "path/with\\backslash") false true
+  for line in smt.splitOn "\n" do
+    if line.startsWith "(set-info :final-message" then
+      IO.println line
+
+/-! In full-check mode (both satisfiability and validity), `addLocationInfo`
+    emits `:sat-message` and `:unsat-message`. These values must not carry
+    pre-wrapping literal quote characters — before the fix, the
+    `bothChecks` branch passed `"\"Property can be satisfied\""` which, once
+    `setInfoString` re-quoted it, rendered as `"""Property..."""` (a
+    well-formed SMT-LIB string whose content has literal leading and
+    trailing `"`). -/
+/--
+info: (set-info :sat-message "Property can be satisfied")
+(set-info :unsat-message "Property is always true")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let smt ← captureEncodeCore (fileRangeMd "test.st") true true
+  for line in smt.splitOn "\n" do
+    if line.startsWith "(set-info :sat-message"
+        ∨ line.startsWith "(set-info :unsat-message" then
+      IO.println line
+
 /-! ## SMT encoding of str.prefixof / str.suffixof -/
 
 /--
