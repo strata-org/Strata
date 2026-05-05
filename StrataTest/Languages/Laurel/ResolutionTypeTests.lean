@@ -40,7 +40,7 @@ def multiOutputInExpr := r"
 procedure multi(x: int) returns (a: int, b: int) opaque;
 procedure test() opaque {
   assert multi(1) == 1
-//       ^^^^^^^^ error: Multi-output procedure 'multi' used in expression position
+//       ^^^^^^^^^^^^^ error: expected 'int', but got '(int, int)'
 };
 "
 
