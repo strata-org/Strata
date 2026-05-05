@@ -491,24 +491,11 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
     let (value', valueTy) ← resolveStmtExpr value
-    -- Check that LHS target count matches the number of outputs from the RHS.
-    -- This fires for procedure calls (which can have multiple outputs).
-    -- Functions always have exactly 1 output in the model, so single-target function calls pass trivially.
-    let expectedOutputCount ← match value'.val with
-      | .StaticCall callee _ => do
-        let s ← get
-        match s.scope.get? callee.text with
-        | some (_, .staticProcedure proc) => pure proc.outputs.length
-        | some (_, .instanceProcedure _ proc) => pure proc.outputs.length
-        | _ => pure 1
-      | .InstanceCall _ callee _ => do
-        let s ← get
-        match s.scope.get? callee.text with
-        | some (_, .instanceProcedure _ proc) => pure proc.outputs.length
-        | some (_, .staticProcedure proc) => pure proc.outputs.length
-        | _ => pure 1
-      | _ => pure 1
-    if targets'.length != expectedOutputCount then
+    -- Check that LHS target count matches the RHS arity (derived from the value type).
+    let expectedOutputCount := match valueTy.val with
+      | .MultiValuedExpr tys => tys.length
+      | _ => 1
+    if valueTy.val != HighType.TVoid && targets'.length != expectedOutputCount then
       let diag := diagnosticFromSource source
         s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
       modify fun s => { s with errors := s.errors.push diag }
