@@ -23,9 +23,14 @@ open Lambda.LTy.Syntax
 
 public section
 
-/-- Metadata for Python-to-Core synthesized expressions. The Python AST carries source
-    positions but the current translator does not yet propagate them to Core expressions. -/
+/-- Source location for intermediate sub-expressions synthesized during Python-to-Core
+    translation (e.g. operator wrappers, curried applications) that do not correspond
+    to a single Python AST node. -/
 private abbrev pySynthLoc : ExprSourceLoc := ExprSourceLoc.synthesized "python-to-core"
+
+/-- Build an `ExprSourceLoc` that carries the actual Python source position. -/
+private def pyLoc (filePath : String) (sr : SourceRange) : ExprSourceLoc :=
+  ExprSourceLoc.ofUriRange (.file filePath) sr
 
 -- Some hard-coded things we'll need to fix later:
 
@@ -122,13 +127,13 @@ def PyIntToInt (i : Python.int SourceRange) : Int :=
   | .IntPos _ n => n.val
   | .IntNeg _ n => -n.val
 
-def PyConstToCore (c: Python.constant SourceRange) : Core.Expression.Expr :=
+def PyConstToCore (loc : ExprSourceLoc) (c: Python.constant SourceRange) : Core.Expression.Expr :=
   match c with
-  | .ConString _ s => .strConst pySynthLoc s.val
-  | .ConPos _ i => .intConst pySynthLoc i.val
-  | .ConNeg _ i => .intConst pySynthLoc (-i.val)
-  | .ConBytes _ _b => .const pySynthLoc (.strConst "") -- TODO: fix
-  | .ConFloat _ f => .strConst pySynthLoc (f.val)
+  | .ConString _ s => .strConst loc s.val
+  | .ConPos _ i => .intConst loc i.val
+  | .ConNeg _ i => .intConst loc (-i.val)
+  | .ConBytes _ _b => .const loc (.strConst "") -- TODO: fix
+  | .ConFloat _ f => .strConst loc (f.val)
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
 def PyAliasToCoreExpr (a : Python.alias SourceRange) : Core.Expression.Expr :=
@@ -498,6 +503,7 @@ partial def handleDict (translation_ctx: TranslationContext) (sr : SourceRange) 
   {stmts := res , expr := dict, post_stmts := []}
 
 partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : PyExprTranslated :=
+  let loc := pyLoc translation_ctx.filePath e.toAst.ann
   if h : substitution_records.isSome && (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).isSome then
     have hr : (List.find? (fun r => PyExprIdent r.pyExpr e) substitution_records.get!).isSome = true := by rw [Bool.and_eq_true] at h; exact h.2
     let record := (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).get hr
@@ -506,20 +512,20 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
     match e with
     | .Call _ f args kwords =>
       panic! s!"Call should be handled at stmt level: \n(func: {repr f}) \n(Records: {repr substitution_records}) \n(AST: {repr e.toAst})"
-    | .Constant _ c _ => {stmts := [], expr :=  PyConstToCore c}
+    | .Constant _ c _ => {stmts := [], expr :=  PyConstToCore loc c}
     | .Name _ n _ =>
       match n.val with
-      | "AssertionError" | "Exception" => {stmts := [], expr := .strConst pySynthLoc n.val}
+      | "AssertionError" | "Exception" => {stmts := [], expr := .strConst loc n.val}
       | s =>
         match translation_ctx.variableTypes.find? (λ p => p.fst == s) with
         | .some p =>
           if translation_ctx.expectedType == some (.tcons "bool" []) && p.snd == (.tcons "DictStrAny" []) then
-            let a := .fvar pySynthLoc n.val none
-            let e := .app pySynthLoc (Core.coreOpExpr (.bool .Not)) (.eq pySynthLoc (.app pySynthLoc (.op pySynthLoc "dict_str_any_length" none) a) (.intConst pySynthLoc 0))
+            let a := .fvar loc n.val none
+            let e := .app loc (Core.coreOpExpr (.bool .Not)) (.eq loc (.app loc (.op pySynthLoc "dict_str_any_length" none) a) (.intConst loc 0))
             {stmts := [], expr := e}
           else
-            {stmts := [], expr := .fvar pySynthLoc n.val none}
-        | .none => {stmts := [], expr := .fvar pySynthLoc n.val none}
+            {stmts := [], expr := .fvar loc n.val none}
+        | .none => {stmts := [], expr := .fvar loc n.val none}
     | .JoinedStr _ ss => PyExprToCore translation_ctx ss.val[0]! -- TODO: need to actually join strings
     | .BinOp _ lhs op rhs =>
       let lhs := (PyExprToCore translation_ctx lhs)
@@ -541,9 +547,9 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       match op.val with
       | #[v] => match v with
         | Strata.Python.cmpop.Eq _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq pySynthLoc lhs.expr rhs.expr)}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq loc lhs.expr rhs.expr)}
         | Strata.Python.cmpop.In _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := .app pySynthLoc (.app pySynthLoc (.op pySynthLoc "str_in_dict_str_any" none) lhs.expr) rhs.expr}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := .app loc (.app pySynthLoc (.op pySynthLoc "str_in_dict_str_any" none) lhs.expr) rhs.expr}
         | Strata.Python.cmpop.Lt _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleLt translation_ctx lhs.expr rhs.expr}
         | Strata.Python.cmpop.LtE _ =>
@@ -563,22 +569,23 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
       | _ => panic! "Unsupported UnaryOp: {repr e}"
     | .Subscript sr_sub v slice _ =>
       let sub_md := sourceRangeToMetaData translation_ctx.filePath sr_sub
+      let sub_loc := pyLoc translation_ctx.filePath sr_sub
       let l := PyExprToCore translation_ctx v
       let k := PyExprToCore translation_ctx slice
       -- TODO: we need to plumb the type of `v` here
       match l.expr with
       | .fvar _ ⟨"keys", _⟩ _ =>
-          {stmts := l.stmts ++ k.stmts, expr := .app pySynthLoc (.app pySynthLoc (.op pySynthLoc "list_str_get" none) l.expr) k.expr}
+          {stmts := l.stmts ++ k.stmts, expr := .app sub_loc (.app pySynthLoc (.op pySynthLoc "list_str_get" none) l.expr) k.expr}
       | .fvar _ ⟨"blended_cost", _⟩ _ =>
-          {stmts := l.stmts ++ k.stmts, expr := .app pySynthLoc (.app pySynthLoc (.op pySynthLoc "dict_str_any_get_str" none) l.expr) k.expr}
+          {stmts := l.stmts ++ k.stmts, expr := .app sub_loc (.app pySynthLoc (.op pySynthLoc "dict_str_any_get_str" none) l.expr) k.expr}
       | _ =>
         match translation_ctx.expectedType with
         | .some (.tcons "ListStr" []) =>
-          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app pySynthLoc (.app pySynthLoc (.op pySynthLoc "str_in_dict_str_any" none) k.expr) l.expr) sub_md
-          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app pySynthLoc (.app pySynthLoc (.op pySynthLoc "dict_str_any_get_list_str" none) l.expr) k.expr}
+          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app sub_loc (.app pySynthLoc (.op pySynthLoc "str_in_dict_str_any" none) k.expr) l.expr) sub_md
+          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app sub_loc (.app pySynthLoc (.op pySynthLoc "dict_str_any_get_list_str" none) l.expr) k.expr}
         | _ =>
-          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app pySynthLoc (.app pySynthLoc (.op pySynthLoc "str_in_dict_str_any" none) k.expr) l.expr) sub_md
-          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app pySynthLoc (.app pySynthLoc (.op pySynthLoc "dict_str_any_get" none) l.expr) k.expr}
+          let access_check : Core.Statement := .assert "subscript_bounds_check" (.app sub_loc (.app pySynthLoc (.op pySynthLoc "str_in_dict_str_any" none) k.expr) l.expr) sub_md
+          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app sub_loc (.app pySynthLoc (.op pySynthLoc "dict_str_any_get" none) l.expr) k.expr}
     | .List _ elmts _ =>
       match elmts.val[0]! with
       | .Constant _ expr _ => match expr with
