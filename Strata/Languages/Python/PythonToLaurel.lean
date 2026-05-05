@@ -1336,6 +1336,66 @@ def freeVarExpr (name: String) := mkStmtExprMd (.Var (.Local name))
 def maybeExceptVar := freeVarMd "maybe_except"
 def nullcall_var := freeVarMd "nullcall_ret"
 
+/-- Walk an expression tree and extract any nested multi-output procedure calls
+    into preceding multi-target assignments. Returns (preamble, rewritten expr).
+    Uses a mutable counter for unique variable names. -/
+partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
+    : StateM Nat (List StmtExprMd × StmtExprMd) := do
+  match e.val with
+  | .StaticCall callee args =>
+    if withException ctx callee.text then
+      -- Multi-output call: extract into a temp assignment and add exception check
+      let n ← get
+      set (n + 1)
+      let varName := s!"$mo_{n}"
+      let varDecl := mkVarDeclInit varName AnyTy AnyNone
+      let assign := mkStmtExprMd (StmtExpr.Assign
+        [mkVariableMd (.Local varName), maybeExceptVar] e)
+      let varRef := mkStmtExprMd (StmtExpr.Var (.Local varName))
+      return ([varDecl, assign], varRef)
+    else
+      -- Recurse into arguments
+      let mut preamble : List StmtExprMd := []
+      let mut newArgs : List StmtExprMd := []
+      for arg in args do
+        let (pre, arg') ← extractMultiOutputCalls ctx arg
+        preamble := preamble ++ pre
+        newArgs := newArgs ++ [arg']
+      if preamble.isEmpty then
+        return ([], e)
+      else
+        return (preamble, mkStmtExprMdWithLoc (.StaticCall callee.text newArgs) e.source)
+  | .PrimitiveOp op args =>
+    let mut preamble : List StmtExprMd := []
+    let mut newArgs : List StmtExprMd := []
+    for arg in args do
+      let (pre, arg') ← extractMultiOutputCalls ctx arg
+      preamble := preamble ++ pre
+      newArgs := newArgs ++ [arg']
+    if preamble.isEmpty then
+      return ([], e)
+    else
+      return (preamble, mkStmtExprMdWithLoc (.PrimitiveOp op newArgs) e.source)
+  | .IfThenElse cond thenBr elseBr =>
+    let (preCond, cond') ← extractMultiOutputCalls ctx cond
+    let (preThen, then') ← extractMultiOutputCalls ctx thenBr
+    let preElse ← elseBr.mapM (extractMultiOutputCalls ctx)
+    let allPre := preCond ++ preThen ++ (preElse.map Prod.fst).getD []
+    if allPre.isEmpty then
+      return ([], e)
+    else
+      return (allPre, mkStmtExprMdWithLoc
+        (.IfThenElse cond' then' (preElse.map Prod.snd)) e.source)
+  | _ => return ([], e)
+
+/-- Translate an expression and extract any nested multi-output calls into
+    preceding statements. -/
+def translateExprExtractingCalls (ctx : TranslationContext) (e : Python.expr SourceRange)
+    (counter : Nat) : Except TranslationError (List StmtExprMd × StmtExprMd × Nat) := do
+  let expr ← translateExpr ctx e
+  let ((preamble, expr'), cnt) := (extractMultiOutputCalls ctx expr).run counter
+  return (preamble, expr', cnt)
+
 partial def translateAssign  (ctx : TranslationContext)
                              (lhs: Python.expr SourceRange)
                              (annotation: Option (Python.expr SourceRange) )
@@ -1371,7 +1431,7 @@ partial def translateAssign  (ctx : TranslationContext)
     | .Attribute _ (.Name _ name _) _ _ => name.val == "self" && ctx.currentClassName.isSome
     | _ => false
   let rhsCtx := if isSelfFieldAssign then {ctx with suppressDispatch := true} else ctx
-  let rhs_trans ←  translateExpr rhsCtx rhs
+  let (moExtracts, rhs_trans, _) ← translateExprExtractingCalls rhsCtx rhs 0
   -- When an unmodeled call produces a Hole, also havoc maybe_except since
   -- the call is a black box that could throw any exception.
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
@@ -1400,6 +1460,11 @@ partial def translateAssign  (ctx : TranslationContext)
         return (newctx, [initStmt] ++ exceptHavoc, true)
     | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc, false)
   }
+  -- When the RHS is a direct multi-output call (top-level), translateAssign
+  -- already handles it with multi-target assignment. Don't double-extract.
+  let moExtracts := match rhs_trans.val with
+    | .StaticCall callee _ => if withException ctx callee.text then [] else moExtracts
+    | _ => moExtracts
   let mut newctx := ctx
   match lhs with
     | .Name _ n _ =>
@@ -1439,7 +1504,7 @@ partial def translateAssign  (ctx : TranslationContext)
             {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, className.text)]}
         | _=> newctx
         if n.val ∈ newctx.variableTypes.unzip.1 then
-          return (newctx, assignStmts, true)
+          return (newctx, moExtracts ++ assignStmts, true)
         else
           let inferType ← inferExprType ctx rhs
           let type := match annotation with
@@ -1451,7 +1516,7 @@ partial def translateAssign  (ctx : TranslationContext)
                if isKnownType ctx annStr then annStr else inferType
           let initStmt := mkVarDeclInit n.val AnyTy AnyNone
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
-          return (newctx, initStmt :: assignStmts, true)
+          return (newctx, moExtracts ++ (initStmt :: assignStmts), true)
     | .Subscript _ _ _ _ =>
         match getSubscriptList lhs with
         | target :: slices =>
@@ -1460,7 +1525,7 @@ partial def translateAssign  (ctx : TranslationContext)
             let source := sourceRangeToSource ctx.filePath lhs.toAst.ann
             let anySetsExpr := mkStmtExprMdWithLoc (StmtExpr.StaticCall "Any_sets!" [ListAny_mk slices, target, rhs_trans]) source
             let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [← stmtExprToVar target] anySetsExpr) source]
-            return (ctx,assignStmts, false)
+            return (ctx, moExtracts ++ assignStmts, false)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
     | .Attribute _ obj attr _ =>
       match obj with
@@ -1480,11 +1545,11 @@ partial def translateAssign  (ctx : TranslationContext)
               else pure rhs_trans
             | none => pure rhs_trans
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') source
-          return (ctx, [assignStmt], true)
+          return (ctx, moExtracts ++ [assignStmt], true)
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [← stmtExprToVar targetExpr] rhs_trans) source
-          return (ctx, [assignStmt], true)
+          return (ctx, moExtracts ++ [assignStmt], true)
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
     | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
 
@@ -1587,13 +1652,16 @@ partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) :
     mkExceptionCheckAssert mbe s!"Check {funcName} exception"
 
 /-- Check whether an expression tree contains a `StaticCall` to a user-defined
-    function (procedure).  Such calls are disallowed in pure contexts (e.g.
-    assert bodies), so exception-check assertions that embed them must first
-    extract the expression into a temporary variable.  See issue #1000. -/
+    function (procedure) or a multi-output prelude procedure.  Such calls are
+    disallowed in pure contexts (e.g. assert bodies), so exception-check
+    assertions that embed them must first extract the expression into a
+    temporary variable.  See issue #1000. -/
 partial def containsUserCall (ctx : TranslationContext) (e : StmtExprMd) : Bool :=
   match e.val with
   | .StaticCall callee args =>
-    callee.text ∈ ctx.userFunctions || args.any (containsUserCall ctx)
+    callee.text ∈ ctx.userFunctions ||
+    withException ctx callee.text ||
+    args.any (containsUserCall ctx)
   | .PrimitiveOp _ args => args.any (containsUserCall ctx)
   | .IfThenElse cond thenBranch elseBranch =>
     containsUserCall ctx cond || containsUserCall ctx thenBranch ||
@@ -1621,10 +1689,18 @@ def withExceptionChecks (ctx : TranslationContext)
     (result : TranslationContext × List StmtExprMd)
     : TranslationContext × List StmtExprMd :=
   let (newctx, stmts) := result
-  let rhs_exprs := stmts.flatMap fun s =>
-    match s.val with | .Assign _ value => [value] | _ => []
+  -- Generate exception checks for the last assignment's RHS.
+  -- Insert them just before the last statement (after any preamble declarations).
+  let rhs_exprs := match stmts.getLast? with
+    | some s => match s.val with | .Assign _ value => [value] | _ => []
+    | none => []
   let exceptionCheck := rhs_exprs.flatMap $ getExceptionAssertions ctx
-  (newctx, exceptionCheck ++ stmts)
+  if exceptionCheck.isEmpty then
+    (newctx, stmts)
+  else
+    let preamble := stmts.dropLast
+    let last := stmts.getLast?.toList
+    (newctx, preamble ++ exceptionCheck ++ last)
 
 mutual
 
