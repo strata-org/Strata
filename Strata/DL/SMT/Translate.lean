@@ -491,16 +491,20 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
-    let a :: as := as | throw m!"Error: expected at least two arguments for '{op}', got '{as.length}'"
+    let a :: b :: as := as
+      | throw m!"Error: expected at least two arguments for '{op}', got '{as.length}'"
     let (α, a) ← translateTerm a
+    let (_, b) ← translateTerm b
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
-    return (α, as.foldl (mkApp2 op) a)
+    return (α, as.foldl (mkApp2 op) (mkApp2 op a b))
   leftAssocOpBitVec (op : Nat → Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
-    let a :: as := as | throw m!"Error: expected at least two arguments for BitVec op, got '{as.length}'"
+    let a :: b :: as := as
+      | throw m!"Error: expected at least two arguments for BitVec op, got '{as.length}'"
     let (α, a) ← translateTerm a
+    let (_, b) ← translateTerm b
     let op := op (← getBitVecWidth α)
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
-    return (α, as.foldl (mkApp2 op) a)
+    return (α, as.foldl (mkApp2 op) (mkApp2 op a b))
 
 /--
 Translate assumptions and a conclusion into a right-associated implication

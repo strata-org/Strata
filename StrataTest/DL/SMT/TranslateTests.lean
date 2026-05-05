@@ -41,3 +41,65 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #guard_msgs in
 #eval
   elabQuery {} [] (.app .eq [(.app .abs [(.prim (.int (-5)))] (.prim .int)), (.prim (.int 5))] (.prim .bool))
+
+-- `leftAssocOp` and `leftAssocOpBitVec` require at least two operands,
+-- matching the existing error message and `Denote.leftAssoc`.  Singletons
+-- used to silently pass through the first operand; now they throw.
+
+/-- error: Error: expected at least two arguments for 'HAdd.hAdd', got '1' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .add [(.prim (.int 0))] (.prim .int)),
+       (.prim (.int 0))]
+      (.prim .bool))
+
+/-- error: Error: expected at least two arguments for 'And', got '1' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .and
+      [(.app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool))]
+      (.prim .bool))
+
+/-- error: Error: expected at least two arguments for BitVec op, got '1' -/
+#guard_msgs in
+#eval
+  let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
+  elabQuery {} []
+    (.quant .all [a] a
+      (.app .eq
+        [(.app .bvadd [(.var a)] (.prim (.bitvec 8))), (.var a)]
+        (.prim .bool)))
+
+/-- error: Error: expected at least two arguments for BitVec op, got '1' -/
+#guard_msgs in
+#eval
+  let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
+  elabQuery {} []
+    (.quant .all [a] a
+      (.app .eq
+        [(.app .bvand [(.var a)] (.prim (.bitvec 8))), (.var a)]
+        (.prim .bool)))
+
+-- Empty-operand lists are still rejected, as before.
+
+/-- error: Error: expected at least two arguments for 'HAdd.hAdd', got '0' -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq [(.app .add [] (.prim .int)), (.prim (.int 0))] (.prim .bool))
+
+-- Binary and ternary uses still produce the expected left-associated Expr.
+
+/-- info: 1 + 2 + 3 = 6 -/
+#guard_msgs in
+#eval
+  elabQuery {} []
+    (.app .eq
+      [(.app .add
+         [(.prim (.int 1)), (.prim (.int 2)), (.prim (.int 3))]
+         (.prim .int)),
+       (.prim (.int 6))]
+      (.prim .bool))
