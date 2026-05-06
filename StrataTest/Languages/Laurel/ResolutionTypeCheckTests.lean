@@ -34,7 +34,7 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
     let files := Map.insert Map.empty uri input.fileMap
     return result.errors.toList.map (fun dm => dm.toDiagnostic files) |>.toArray
 
-/-! ## Non-boolean condition in if-then-else -/
+/-! ## Non-boolean conditions -/
 
 def ifCondNotBool := r"
 function foo(x: int): int {
@@ -44,9 +44,7 @@ function foo(x: int): int {
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "IfCondNotBool" ifCondNotBool 39 processResolution
-
-/-! ## Non-boolean condition in assert -/
+#eval testInputWithOffset "IfCondNotBool" ifCondNotBool 44 processResolution
 
 def assertCondNotBool := r"
 procedure baz() opaque {
@@ -57,9 +55,7 @@ procedure baz() opaque {
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssertCondNotBool" assertCondNotBool 49 processResolution
-
-/-! ## Non-boolean condition in assume -/
+#eval testInputWithOffset "AssertCondNotBool" assertCondNotBool 54 processResolution
 
 def assumeCondNotBool := r"
 procedure qux() opaque {
@@ -70,58 +66,7 @@ procedure qux() opaque {
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssumeCondNotBool" assumeCondNotBool 59 processResolution
-
-/-! ## Non-boolean operand in logical and -/
-
-def logicalAndNotBool := r"
-function foo(x: int, y: bool): bool {
-  x && y
-//^^^^^^ error: expected bool, but got 'int'
-};
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "LogicalAndNotBool" logicalAndNotBool 69 processResolution
-
-/-! ## Assignment type mismatch -/
-
-def assignTypeMismatch := r"
-procedure foo() opaque {
-  var x: int := true
-//^^^^^^^^^^^^^^^^^^ error: expected 'int', but got 'bool'
-};
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "AssignTypeMismatch" assignTypeMismatch 79 processResolution
-
-/-! ## Function return type mismatch -/
-
-def returnTypeMismatch := r"
-function foo(): int {
-//       ^^^ error: expected 'int', but got 'bool'
-  true
-};
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "ReturnTypeMismatch" returnTypeMismatch 89 processResolution
-
-/-! ## Static call argument type mismatch -/
-
-def callArgTypeMismatch := r"
-function bar(x: int): int { x };
-function foo(): int {
-  bar(true)
-//^^^^^^^^^ error: expected 'int', but got 'bool'
-};
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "CallArgTypeMismatch" callArgTypeMismatch 99 processResolution
-
-/-! ## Non-boolean condition in while loop -/
+#eval testInputWithOffset "AssumeCondNotBool" assumeCondNotBool 64 processResolution
 
 def whileCondNotBool := r"
 procedure wh() opaque {
@@ -132,9 +77,21 @@ procedure wh() opaque {
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "WhileCondNotBool" whileCondNotBool 109 processResolution
+#eval testInputWithOffset "WhileCondNotBool" whileCondNotBool 74 processResolution
 
-/-! ## Non-numeric operand in comparison -/
+/-! ## Logical operator type checks -/
+
+def logicalAndNotBool := r"
+function foo(x: int, y: bool): bool {
+  x && y
+//^^^^^^ error: expected bool, but got 'int'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "LogicalAndNotBool" logicalAndNotBool 84 processResolution
+
+/-! ## Numeric operator type checks -/
 
 def comparisonNotNumeric := r"
 function cmp(x: string, y: int): bool {
@@ -144,6 +101,98 @@ function cmp(x: string, y: int): bool {
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "ComparisonNotNumeric" comparisonNotNumeric 121 processResolution
+#eval testInputWithOffset "ComparisonNotNumeric" comparisonNotNumeric 94 processResolution
+
+/-! ## Assignment type checks -/
+
+def assignTypeMismatch := r"
+procedure foo() opaque {
+  var x: int := true
+//^^^^^^^^^^^^^^^^^^ error: expected 'int', but got 'bool'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "AssignTypeMismatch" assignTypeMismatch 104 processResolution
+
+/-! ## Function return type checks -/
+
+def returnTypeMismatch := r"
+function foo(): int {
+//       ^^^ error: expected 'int', but got 'bool'
+  true
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "ReturnTypeMismatch" returnTypeMismatch 114 processResolution
+
+/-! ## Call argument type checks -/
+
+def callArgTypeMismatch := r"
+function bar(x: int): int { x };
+function foo(): int {
+  bar(true)
+//^^^^^^^^^ error: expected 'int', but got 'bool'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "CallArgTypeMismatch" callArgTypeMismatch 124 processResolution
+
+/-! ## Equality operator type checks -/
+
+def equalityTypeMismatch := r"
+function cmp(x: int, y: string): bool {
+  x == y
+//^^^^^^ error: Operands of '==' have incompatible types 'int' and 'string'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "EqualityTypeMismatch" equalityTypeMismatch 134 processResolution
+
+/-! ## Multi-output procedures -/
+
+def multiOutputInExpr := r"
+procedure multi(x: int) returns (a: int, b: int) opaque;
+procedure test() opaque {
+  assert multi(1) == 1
+//       ^^^^^^^^^^^^^ error: Operands of '==' have incompatible types '(int, int)' and 'int'
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "MultiOutputInExpr" multiOutputInExpr 146 processResolution
+
+def assignTargetCountMismatch := r"
+procedure multi() returns (a: int, b: int) opaque;
+procedure test() opaque {
+  var x: int := multi()
+//^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch:1 targets but right-hand side produces 2 values
+};
+"
+
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "AssignTargetCountMismatch" assignTargetCountMismatch 156 processResolution
+
+/-! ## UserDefined type pass-through (known limitation)
+
+UserDefined types skip strict assignability checks because subtype/inheritance
+relationships are not tracked during resolution. This test documents that
+cross-type assignments are silently accepted today. When hierarchy tracking
+lands, this test should be updated to expect a rejection. -/
+
+def userDefinedPassThrough := r"
+composite Dog { }
+composite Cat { }
+procedure test() opaque {
+  var x: Dog := new Cat
+};
+"
+
+-- This should produce NO diagnostics (UserDefined types are not checked against each other)
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "UserDefinedPassThrough" userDefinedPassThrough 170 processResolution
 
 end Laurel
