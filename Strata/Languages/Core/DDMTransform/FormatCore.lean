@@ -869,6 +869,44 @@ partial def invariantsToCST {M} [Inhabited M]
     let restCST ← invariantsToCST rest
     pure (.consInvariants default labelAnn exprCST restCST)
 
+/-- Convert a `DetTransferCmd` to a CST statement (if-then-else for condGoto, skip for finish). -/
+partial def transferToCST {M} [Inhabited M]
+    (t : Imperative.DetTransferCmd String Expression) : ToCSTM M (Option (CoreDDM.Statement M)) := do
+  match t with
+  | .condGoto cond lt lf _ => do
+    let condCST ← lexprToExpr cond 0
+    let gotoTrue : CoreDDM.Statement M := .exit_statement default ⟨default, lt⟩
+    let gotoFalse : CoreDDM.Statement M := .exit_statement default ⟨default, lf⟩
+    let thenBlock : CoreDDM.Block M := .block default ⟨default, #[gotoTrue]⟩
+    let elseBlock : Else M := .else1 default (.block default ⟨default, #[gotoFalse]⟩)
+    pure (some (.if_statement default (.condDet default condCST) thenBlock elseBlock))
+  | .finish _ => pure none
+
+/-- Convert a single `DetBlock` to a CST block (commands + transfer). -/
+partial def detBlockToCST {M} [Inhabited M]
+    (blk : Imperative.DetBlock String Core.Command Expression)
+    : ToCSTM M (CoreDDM.Block M) := do
+  modify ToCSTContext.pushScope
+  let cmdStmts ← blk.cmds.toArray.mapM (stmtToCST ∘ Imperative.Stmt.cmd)
+  let transferStmt ← transferToCST blk.transfer
+  let allStmts := match transferStmt with
+    | some s => cmdStmts.push s
+    | none => cmdStmts
+  modify ToCSTContext.popScope
+  pure (.block default ⟨default, allStmts⟩)
+
+/-- Convert a `DetCFG` to a CST block (sequence of labeled blocks). -/
+partial def detCFGToCST {M} [Inhabited M] (cfg : Core.DetCFG)
+    : ToCSTM M (CoreDDM.Block M) := do
+  modify ToCSTContext.pushScope
+  let mut stmts : Array (CoreDDM.Statement M) := #[]
+  for (label, blk) in cfg.blocks do
+    let labelAnn : Ann String M := ⟨default, label⟩
+    let blockCST ← detBlockToCST blk
+    stmts := stmts.push (.block_statement default labelAnn blockCST)
+  modify ToCSTContext.popScope
+  pure (.block default ⟨default, stmts⟩)
+
 partial def measureToCST {M} [Inhabited M]
     (measure : Option (Lambda.LExpr CoreLParams.mono)) :
     ToCSTM M (Ann (Option (Measure M)) M) := do
@@ -940,7 +978,7 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, some (Spec.spec_mk default specAnn)⟩
   let bodyCST ← match proc.body with
     | .structured ss => blockToCST ss
-    | .cfg _ => blockToCST []
+    | .cfg c => detCFGToCST c
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs arguments spec body)
