@@ -114,11 +114,11 @@ private def renameAllLocalNames (c:Procedure)
   -- a later old_id. The iteration is intentionally sequential because each step also
   -- renames LHS variables and labels.
   let new_body := List.map (fun (s0:Statement) =>
-    var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-        let s := Statement.substFvar s old_id (.fvar () new_id .none)
-        let s := Statement.renameLhs s old_id new_id
-        Statement.replaceLabels s label_map)
-      s0) bodyStmts
+        var_map.foldl (fun (s:Statement) (old_id,new_id) =>
+            let s := Statement.substFvar s old_id (.fvar () new_id .none)
+            let s := Statement.renameLhs s old_id new_id
+            Statement.replaceLabels s label_map)
+          s0) bodyStmts
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
       match var_map.find? id with
@@ -270,7 +270,13 @@ def inlineCallCmd
               Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
-        let procBodyStmts := match proc.body with | .structured ss => ss | .cfg _ => []
+        -- Cannot inline unstructured (CFG) bodies into structured code.
+        -- CFG-level inlining is a separate, more complex pass that operates
+        -- entirely in the CFG domain (graph splicing).
+        let procBodyStmts ← match proc.body with
+        | .cfg _ => return .none
+        | .structured ss => pure ss
+
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits
              ++ Block.setCallSiteMetadata procBodyStmts md
