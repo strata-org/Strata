@@ -767,30 +767,27 @@ Execute a CFG by following control flow from the entry block.
     Returns the list of commands executed (as statements) for compatibility
     with the structured interpreter. -/
 private def runCFG (cfg : Core.DetCFG) (fuel : Nat) (env : Env)
-    (ops : Imperative.RunOps Expression Command Env) : List Statement × Env :=
-  go cfg.entry fuel env []
+    (ops : Imperative.RunOps Expression Command Env) : Env :=
+  go cfg.entry fuel env
 where
-  go (label : String) (fuel : Nat) (env : Env) (acc : List Statement) : List Statement × Env :=
+  go (label : String) (fuel : Nat) (env : Env) : Env :=
     match fuel with
-    | 0 => (acc.reverse, env)
+    | 0 => env
     | fuel' + 1 =>
       match cfg.blocks.lookup label with
-      | none => (acc.reverse, env)
+      | none => env
       | some blk =>
-        -- Execute commands in the block
         let cmdStmts := blk.cmds.map (Imperative.Stmt.cmd ·)
-        let config := Imperative.runStmt ops fuel' (.stmts cmdStmts env)
-        match config with
+        match Imperative.runStmt ops fuel' (.stmts cmdStmts env) with
         | .terminal env' =>
-          -- Evaluate transfer
           match blk.transfer with
-          | .finish _ => (acc.reverse ++ cmdStmts, env')
+          | .finish _ => env'
           | .condGoto cond lt lf _ =>
             match ops.evalExpr env' cond with
-            | some (.boolConst _ true) => go lt fuel' env' (acc ++ cmdStmts)
-            | some (.boolConst _ false) => go lf fuel' env' (acc ++ cmdStmts)
-            | _ => (acc.reverse ++ cmdStmts, env')
-        | _ => (acc.reverse, env)
+            | some (.boolConst _ true) => go lt fuel' env'
+            | some (.boolConst _ false) => go lf fuel' env'
+            | _ => env'
+        | _ => env
 
 /--
 The resulting Env is the original passed in Env with the output variables copied back into it.
@@ -850,7 +847,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                 Imperative.runStmt ops fuel' config
               | .cfg cfgBody =>
                 -- Interpret CFG by following control flow from the entry block.
-                .terminal (runCFG cfgBody fuel' callEnv ops).2
+                .terminal (runCFG cfgBody fuel' callEnv ops)
             match callEnvAfter with
             | .terminal callEnv' =>
               match callEnv'.error with
