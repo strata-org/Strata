@@ -253,12 +253,6 @@ inductive OutputMode where
   | verbose
   deriving BEq, DecidableEq, Repr
 
-/-- Immutable configuration for a pipeline run. -/
-structure PipelineContext where
-  outputMode : OutputMode
-  pipelineStartTime : Nat
-  skipTiming : Bool := false
-
 /-- Timing entry for a single phase. -/
 structure PhaseTimingEntry where
   phase : Phase
@@ -274,34 +268,49 @@ structure PipelineState where
   currentPhase : Phase := {}
   messageCountAtPhaseStart : Nat := 0
 
-/-- The pipeline monad: reader for config, state for accumulated messages and timing. -/
-public abbrev PipelineM := ReaderT PipelineContext (StateT PipelineState BaseIO)
+/-- Pipeline context carrying immutable config and mutable state via IORef.
+    This design allows any monad with BaseIO access to use pipeline capabilities
+    by passing a PipelineContext value directly. -/
+public structure PipelineContext where
+  outputMode : OutputMode
+  pipelineStartTime : Nat
+  skipTiming : Bool := false
+  stateRef : IO.Ref PipelineState
+
+/-- The pipeline monad: a reader over PipelineContext with BaseIO. -/
+public abbrev PipelineM := ReaderT PipelineContext BaseIO
 
 /-- Nanoseconds to milliseconds with rounding. -/
 def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
 
 /-- Get elapsed nanoseconds since pipeline start. -/
-def elapsedNs : PipelineM Nat := do
-  let ctx ← read
+def PipelineContext.elapsedNs (ctx : PipelineContext) : BaseIO Nat := do
   let now ← IO.monoNanosNow
   return now - ctx.pipelineStartTime
 
+/-- Get the current pipeline state. -/
+def PipelineContext.getState (ctx : PipelineContext) : BaseIO PipelineState :=
+  ctx.stateRef.get
+
+/-- Modify the pipeline state. -/
+def PipelineContext.modifyState (ctx : PipelineContext) (f : PipelineState → PipelineState) : BaseIO Unit :=
+  ctx.stateRef.modify f
+
 /-- Print to stderr and flush. -/
-private def eprintlnFlush (msg : String) : PipelineM Unit := do
+private def eprintlnFlush (msg : String) : BaseIO Unit := do
   let _ ← (do IO.eprintln msg; (← IO.getStderr).flush : IO Unit).toBaseIO
 
 /-- End the current phase: record end time, print [warnings] summary in profile mode. -/
-private def endCurrentPhase : PipelineM Unit := do
-  let s ← get
+def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
+  let s ← ctx.stateRef.get
   if s.currentPhase.path.isEmpty then return
-  let now ← elapsedNs
-  let ctx ← read
+  let now ← ctx.elapsedNs
   let timing := s.timing
   if h : timing.size > 0 then
     let lastIdx := timing.size - 1
     let last := timing[lastIdx]
     let timing' := timing.set lastIdx { last with end_ns := some now }
-    modify fun st => { st with timing := timing' }
+    ctx.stateRef.modify fun st => { st with timing := timing' }
   if ctx.outputMode == .profile then
     let newMsgs := s.messages.extract s.messageCountAtPhaseStart s.messages.size
     if newMsgs.size > 0 then
@@ -313,27 +322,40 @@ private def endCurrentPhase : PipelineM Unit := do
       eprintlnFlush s!"{indent}[warnings] {s.currentPhase.leaf}: {summary}"
 
 /-- Start a new phase. Implicitly ends the previous phase at the same or deeper depth. -/
-public def startPhase (phase : Phase) : PipelineM Unit := do
-  let s ← get
+public def PipelineContext.startPhase (ctx : PipelineContext) (phase : Phase) : BaseIO Unit := do
+  let s ← ctx.stateRef.get
   if s.currentPhase.path.size >= phase.path.size then
-    endCurrentPhase
-  let now ← elapsedNs
-  modify fun st => { st with
+    ctx.endCurrentPhase
+  let now ← ctx.elapsedNs
+  ctx.stateRef.modify fun st => { st with
     timing := st.timing.push { phase, start_ns := now }
     currentPhase := phase
     messageCountAtPhaseStart := st.messages.size }
-  let ctx ← read
   if ctx.outputMode == .profile || ctx.outputMode == .verbose then
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
     let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
     eprintlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
 
-/-- Run PipelineM, closing any open phases at the end. -/
+/-- PipelineM wrapper for startPhase. -/
+public def startPhase (phase : Phase) : PipelineM Unit := do
+  let ctx ← read
+  ctx.startPhase phase
+
+/-- Create a PipelineContext with fresh state, run an action, close open phases,
+    and return the result along with the final state. -/
 public def PipelineM.run' (action : PipelineM α) (ctx : PipelineContext)
-    (state : PipelineState := {}) : BaseIO (α × PipelineState) := do
-  let (result, finalState) ← action.run ctx |>.run state
-  let ((), closedState) ← (endCurrentPhase : PipelineM Unit).run ctx |>.run finalState
-  return (result, closedState)
+    : BaseIO (α × PipelineState) := do
+  let result ← action.run ctx
+  ctx.endCurrentPhase
+  let finalState ← ctx.stateRef.get
+  return (result, finalState)
+
+/-- Create a fresh PipelineContext with a new state ref. -/
+public def PipelineContext.create (outputMode : OutputMode := .default)
+    (skipTiming : Bool := false) : BaseIO PipelineContext := do
+  let startTime ← IO.monoNanosNow
+  let ref ← IO.mkRef {}
+  return { outputMode, pipelineStartTime := startTime, skipTiming, stateRef := ref }
 
 end Strata.Pipeline
 end

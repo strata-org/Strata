@@ -136,11 +136,9 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
     Accumulates pipeline messages from all phases. The caller is responsible
     for printing warnings and handling the outcome (exit codes, SARIF, etc.). -/
 public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO PyAnalyzeResult := do
-  let ctx : PipelineContext := {
-    outputMode := config.outputMode
-    pipelineStartTime := ← IO.monoNanosNow
-    skipTiming := config.skipTiming
-  }
+  let ctx ← PipelineContext.create
+    (outputMode := config.outputMode)
+    (skipTiming := config.skipTiming)
   let ((outcome, stats), state) ← PipelineM.run' (runPipeline
     (PyAnalyzeConfig.filePath config)
     (PyAnalyzeConfig.specDir config)

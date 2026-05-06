@@ -46,19 +46,20 @@ public structure PySpecLaurelResult where
   deriving Inhabited
 
 /-- A default pipeline context for sub-pipelines that don't need output. -/
-private def defaultPipelineContext : BaseIO Pipeline.PipelineContext := do
-  return { outputMode := .quiet, pipelineStartTime := ← IO.monoNanosNow }
+private def defaultPipelineContext : BaseIO Pipeline.PipelineContext :=
+  Pipeline.PipelineContext.create (outputMode := .quiet)
 
 /-- Emit a pipeline message. Tags with the current phase from state.
     Sets `shouldAbort` if the kind's impact is fatal.
     In verbose mode, prints the message immediately to stderr. -/
 public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
-  let phase := (← get).currentPhase
-  modify fun s => { s with
+  let ctx ← read
+  let s ← ctx.getState
+  let phase := s.currentPhase
+  ctx.modifyState fun s => { s with
     messages := s.messages.push { file, loc, phase, kind, message },
     shouldAbort := s.shouldAbort || kind.impact.isFatal }
-  let ctx ← read
   if ctx.outputMode == .verbose then
     let tag := if kind.impact.isFatal then "error" else "warning"
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
@@ -67,10 +68,10 @@ public def emitMessage (kind : Pipeline.MessageKind) (message : String)
 /-- Append a batch of messages to the pipeline state.
     In verbose mode, prints each message immediately to stderr. -/
 public def addMessages (msgs : Array Pipeline.PipelineMessage) : Pipeline.PipelineM Unit := do
-  modify fun s => { s with
+  let ctx ← read
+  ctx.modifyState fun s => { s with
     messages := s.messages ++ msgs,
     shouldAbort := s.shouldAbort || msgs.any (·.kind.impact.isFatal) }
-  let ctx ← read
   if ctx.outputMode == .verbose then
     for msg in msgs do
       let tag := if msg.kind.impact.isFatal then "error" else "warning"
@@ -238,7 +239,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
     (overloads : OverloadTable)
     : BaseIO (PySpecLaurelResult × Pipeline.PipelineState) := do
   let ctx ← defaultPipelineContext
-  buildPySpecLaurelM pyspecEntries overloads |>.run ctx |>.run {}
+  Pipeline.PipelineM.run' (buildPySpecLaurelM pyspecEntries overloads) ctx
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 private def readDispatchOverloadsM
@@ -262,7 +263,7 @@ public def readDispatchOverloads
     (dispatchPaths : Array String)
     : BaseIO (OverloadTable × Pipeline.PipelineState) := do
   let ctx ← defaultPipelineContext
-  readDispatchOverloadsM dispatchPaths |>.run ctx |>.run {}
+  Pipeline.PipelineM.run' (readDispatchOverloadsM dispatchPaths) ctx
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` (with a warning) if the name is
@@ -546,7 +547,7 @@ public def pythonAndSpecToLaurel
   let ctx ← defaultPipelineContext
   let (result, pipelineState) ←
     profileStep profile "Resolve and build Laurel prelude"
-      ((resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir).run ctx |>.run {})
+      (Pipeline.PipelineM.run' (resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir) ctx)
   let pyspecWarnings := pipelineState.messages
 
   if pipelineState.shouldAbort then
