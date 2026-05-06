@@ -822,7 +822,7 @@ theorem smallStep_hasFailure_irrel
 /-! ## Well-paired exits: preservation and no-escape -/
 
 /-- A single step preserves `Config.exitsCoveredByBlocks`. -/
-private theorem step_preserves_exitsCoveredByBlocks
+theorem step_preserves_exitsCoveredByBlocks
     (labels : List (Option String))
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)

@@ -286,7 +286,7 @@ mutual
 /-- Collect all labeled exit targets occurring in a statement.
     Returns the list of label strings `l` for every `exit (some l) _` in the
     statement (including those nested inside blocks, ite branches, and loops). -/
-def Stmt.labels (s : Stmt P C) : List String :=
+@[expose] def Stmt.labels (s : Stmt P C) : List String :=
   match s with
   | .exit (some l) _ => [l]
   | .exit none _     => []
@@ -298,7 +298,7 @@ def Stmt.labels (s : Stmt P C) : List String :=
   | .typeDecl _ _    => []
 
 /-- Collect all labeled exit targets occurring in a block (list of statements). -/
-def Block.labels (ss : Block P C) : List String :=
+@[expose] def Block.labels (ss : Block P C) : List String :=
   match ss with
   | []       => []
   | s :: rest => Stmt.labels s ++ Block.labels rest

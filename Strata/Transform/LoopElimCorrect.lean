@@ -3888,6 +3888,110 @@ private theorem stmtOk_ite_right {σ : LoopElimState} {c : ExprOrNondet Expressi
     | error e2 => exact Bool.noConfusion h
   | error e => nomatch h
 
+/-- Self-coverage: any statement's exits are covered by any label list
+    that is non-empty and contains `some l` for each `l ∈ Stmt.labels s`. -/
+private theorem stmt_self_exitsCoveredByBlocks
+    (s : Statement) (labels : List (Option String))
+    (hlength : labels.length > 0)
+    (hcovers : ∀ l, l ∈ Stmt.labels s → .some l ∈ labels) :
+    s.exitsCoveredByBlocks labels := by
+  suffices hstmt : ∀ (s : Statement),
+      ∀ labels : List (Option String), labels.length > 0 →
+      (∀ l, l ∈ Stmt.labels s → .some l ∈ labels) →
+      s.exitsCoveredByBlocks labels from
+    hstmt s labels hlength hcovers
+  intro s'
+  induction s' using Stmt.rec (motive_2 := fun ss =>
+    ∀ labels : List (Option String), labels.length > 0 →
+      (∀ l, l ∈ Block.labels ss → .some l ∈ labels) →
+      Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss) with
+  | cmd _ => intros; trivial
+  | funcDecl _ _ => intros; trivial
+  | typeDecl _ _ => intros; trivial
+  | exit lbl md =>
+    intro labels hlength hcovers
+    cases lbl with
+    | none => exact hlength
+    | some l =>
+      show (.some l : Option String) ∈ labels
+      have heq : Stmt.labels (Stmt.exit (some l) md : Statement) = [l] := rfl
+      exact hcovers l (heq ▸ List.Mem.head _)
+  | block l bss md ih =>
+    intro labels _hlength hcovers
+    show Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (.some l :: labels) bss
+    have heq : Stmt.labels (Stmt.block l bss md : Statement) = Block.labels bss := rfl
+    exact ih (.some l :: labels) (by simp)
+      (fun lv hlv => List.mem_cons_of_mem _ (hcovers lv (heq ▸ hlv)))
+  | ite c tss ess md ih_t ih_e =>
+    intro labels hlength hcovers
+    have heq : Stmt.labels (Stmt.ite c tss ess md : Statement) =
+      Block.labels tss ++ Block.labels ess := rfl
+    exact ⟨ih_t labels hlength
+             (fun l hl => hcovers l (heq ▸ List.mem_append_left _ hl)),
+           ih_e labels hlength
+             (fun l hl => hcovers l (heq ▸ List.mem_append_right _ hl))⟩
+  | loop g m inv body md ih =>
+    intro labels hlength hcovers
+    have heq : Stmt.labels (Stmt.loop g m inv body md : Statement) = Block.labels body := rfl
+    exact ih labels hlength (fun l hl => hcovers l (heq ▸ hl))
+  | nil => intros; trivial
+  | cons s rest ih_s ih_rest =>
+    rename_i labels' hlength' hcovers'
+    have heq : Block.labels (s :: rest) = Stmt.labels s ++ Block.labels rest := rfl
+    exact ⟨ih_s labels' hlength'
+             (fun l hl => hcovers' l (heq ▸ List.mem_append_left _ hl)),
+           ih_rest labels' hlength'
+             (fun l hl => hcovers' l (heq ▸ List.mem_append_right _ hl))⟩
+
+/-- Self-coverage: any block's exits are covered by the labels extracted from
+    the block itself (via `Block.labels`), as long as the label list is
+    non-empty (to handle `exit none`). -/
+private theorem block_self_exitsCoveredByBlocks
+    (labels : List (Option String))
+    (hlength : labels.length > 0)
+    (ss : Statements)
+    (hcovers : ∀ l, l ∈ Block.labels ss → .some l ∈ labels) :
+    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss := by
+  induction ss with
+  | nil => trivial
+  | cons s rest ih =>
+    have heq : Block.labels (s :: rest) = Stmt.labels s ++ Block.labels rest := rfl
+    exact ⟨stmt_self_exitsCoveredByBlocks s labels hlength
+             (fun l hl => hcovers l (heq ▸ List.mem_append_left _ hl)),
+           ih (fun l hl => hcovers l (heq ▸ List.mem_append_right _ hl))⟩
+
+/-- If executing a block of statements reaches `.exiting (some l) ρ'`,
+    then `l` is syntactically present in `Block.labels body`. -/
+private theorem stmts_exiting_label_mem
+    (body : Statements) (l : String) (ρ ρ' : Env Expression)
+    (hstar : CoreStar π φ (.stmts body ρ) (.exiting (some l) ρ')) :
+    l ∈ Block.labels body := by
+  let labels := (none : Option String) :: (Block.labels body).map some
+  have hlength : labels.length > 0 := by simp [labels]
+  have hcovers : ∀ lv, lv ∈ Block.labels body → (.some lv : Option String) ∈ labels :=
+    fun lv hlv => List.mem_cons_of_mem _ (List.mem_map_of_mem (f := some) hlv)
+  have hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels body :=
+    block_self_exitsCoveredByBlocks labels hlength body hcovers
+  -- Multi-step preservation of exitsCoveredByBlocks
+  have hpres : ∀ c₁ c₂,
+      Config.exitsCoveredByBlocks labels c₁ →
+      StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      Config.exitsCoveredByBlocks labels c₂ := by
+    intro c₁ c₂ hwp hstar_c
+    induction hstar_c with
+    | refl => exact hwp
+    | step _ _ _ hstep _ ih =>
+      exact ih (step_preserves_exitsCoveredByBlocks Expression
+        (EvalCommand π φ) (EvalPureFunc φ) labels _ _ hstep hwp)
+  have hcov' : Config.exitsCoveredByBlocks labels (.stmts body ρ) := hcov
+  have hwp_final := hpres _ _ hcov' hstar
+  -- Config.exitsCoveredByBlocks labels (.exiting (some l) ρ') = (.some l ∈ labels)
+  have hmem : (.some l : Option String) ∈ labels := hwp_final
+  simp only [labels, List.mem_cons, List.mem_map] at hmem
+  rcases hmem with h | ⟨a, ha, heq⟩
+  · exact absurd h (by intro h; cases h)
+  · exact Option.some.inj heq ▸ ha
+
 /-- When the loop transformation succeeds, generated block labels don't collide
     with exit labels in the body. -/
 private theorem stmtOk_loop_label_fresh {σ : LoopElimState}
@@ -4381,11 +4485,16 @@ private theorem simulation
                 -- Steps 6 require freshness of generated labels w.r.t. body exit labels.
                 -- This freshness follows from stmtOk checking identifier uniqueness,
                 -- but extracting it requires unfolding the monadic computation.
-                sorry /- labeled_exit_det: routing body exit through target needs freshness:
-                   l ∉ {arb_lbl, ll} (generated labels don't collide with body exit labels).
-                   Available: hbody_exit_last, heval_last, hinv_last, hnf_last,
-                   hwfb_last, hwfv_last, hwfvar_last, hok (stmtOk σ (.loop ...)).
-                   Blocked on: lemma extracting label freshness from stmtOk. -/)
+                -- Freshness: l ∉ {arb_lbl, ll}
+                have hl_in_body := stmts_exiting_label_mem π φ body l ρ_last ρ' hbody_exit_last
+                have ⟨harb_fresh, hll_fresh⟩ := stmtOk_loop_label_fresh hok
+                have hl_ne_arb : l ≠ s!"{loopElimBlockPrefix}arbitrary_iter_facts_{(StringGenState.gen "loop" σ.gen).fst}" :=
+                  fun heq => harb_fresh (heq ▸ hl_in_body)
+                have hl_ne_ll : l ≠ s!"{loopElimBlockPrefix}loop_{(StringGenState.gen "loop" σ.gen).fst}" :=
+                  fun heq => hll_fresh (heq ▸ hl_in_body)
+                sorry /- labeled_exit_det_routing: freshness established (hl_ne_arb, hl_ne_ll).
+                   Remaining: construct execution trace through target block structure
+                   (steps 1-5 of the routing strategy). -/)
             | step_loop_nondet_exit _ _ => cases r1 with | step _ _ _ h2 _ => cases h2
             | step_loop_nondet_enter hinv_eval hff_iff =>
               -- Exiting nondet enter: source loop body exits with label lbl.
@@ -4416,11 +4525,16 @@ private theorem simulation
                     hall_tt hwfb hwfv hwfvar hnofd_body hnf henter
                 -- Target routing: same structure as det case above.
                 -- Need freshness of generated labels w.r.t. body exit labels.
-                sorry /- labeled_exit_nondet: routing body exit through target needs freshness:
-                   l ∉ {arb_lbl, ll} (generated labels don't collide with body exit labels).
-                   Available: hbody_exit_last, heval_last, hinv_last, hnf_last,
-                   hwfb_last, hwfv_last, hwfvar_last, hok (stmtOk σ (.loop ...)).
-                   Blocked on: lemma extracting label freshness from stmtOk. -/)
+                -- Freshness: l ∉ {arb_lbl, ll}
+                have hl_in_body := stmts_exiting_label_mem π φ body l ρ_last ρ' hbody_exit_last
+                have ⟨harb_fresh, hll_fresh⟩ := stmtOk_loop_label_fresh hok
+                have hl_ne_arb : l ≠ s!"{loopElimBlockPrefix}arbitrary_iter_facts_{(StringGenState.gen "loop" σ.gen).fst}" :=
+                  fun heq => harb_fresh (heq ▸ hl_in_body)
+                have hl_ne_ll : l ≠ s!"{loopElimBlockPrefix}loop_{(StringGenState.gen "loop" σ.gen).fst}" :=
+                  fun heq => hll_fresh (heq ▸ hl_in_body)
+                sorry /- labeled_exit_nondet_routing: freshness established (hl_ne_arb, hl_ne_ll).
+                   Remaining: construct execution trace through target block structure
+                   (steps 1-5 of the routing strategy). -/)
 
     -- === Block case ===
     · intro σ bss hsz hnofd_blk hok ρ₀ hwfb hwfv hwfvar hwfc hswf
@@ -4877,9 +4991,7 @@ private theorem canfail_simulation
 /-! ## Top-level theorem -/
 
 theorem loopElim_overapproximatesAggressive
-    (hwf_ext : WFEvalExtension φ) (σ : LoopElimState)
-    (hnofd : ∀ (st : Statement), Stmt.noFuncDecl st = Bool.true)
-    (hok : ∀ (st : Statement), stmtOk σ st) :
+    (hwf_ext : WFEvalExtension φ) (σ : LoopElimState) :
     Transform.OverapproximatesAggressively
       (LangCore π φ)
       (LangCore π φ)
@@ -4887,7 +4999,7 @@ theorem loopElim_overapproximatesAggressive
   intro st st' ht ρ₀ hwfb hwfv hwfvar hswf
   simp at ht; subst ht
   have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st)).1
-    σ st (Nat.le_refl _) (hnofd st) (hok st) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1
+    σ st (Nat.le_refl _) (sorry /- noFuncDecl -/) (sorry /- ok -/) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1
   refine ⟨?_, ?_, ?_, sorry /- LATER: initEnvWF preservation -/⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
   · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
@@ -4895,7 +5007,7 @@ theorem loopElim_overapproximatesAggressive
     by_cases hnf₀ : ρ₀.hasFailure = Bool.true
     · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
     · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st)).1
-        σ st (Nat.le_refl _) (hok st) (hnofd st) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1 ⟨cfg, hfail, hreach⟩
+        σ st (Nat.le_refl _) (sorry /- ok -/) (sorry /- noFuncDecl: needs top-level assumption -/) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1 ⟨cfg, hfail, hreach⟩
 
 end Core.LoopElim
 
