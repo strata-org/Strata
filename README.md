@@ -41,35 +41,43 @@ changes!**
 
 #### SMT Solvers
 
-Download static builds (single binary, no library dependencies):
+Download static builds (single binary, no library dependencies). The
+versions below are known to work; any newer release from the same links
+should also be fine.
+
+- cvc5 releases: https://github.com/cvc5/cvc5/releases
+- z3 releases: https://github.com/Z3Prover/z3/releases
+
+**Linux x86_64:**
 
 ```bash
-# cvc5 (adjust URL for your OS/arch)
-# See https://github.com/cvc5/cvc5/releases for all platforms
+# cvc5
 wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-x86_64-static.zip
 unzip cvc5-Linux-x86_64-static.zip
-cp cvc5-Linux-x86_64-static/bin/cvc5 /usr/local/bin/
+mkdir -p ~/.local/bin
+cp cvc5-Linux-x86_64-static/bin/cvc5 ~/.local/bin/
 
 # z3
-# See https://github.com/Z3Prover/z3/releases for all platforms
 wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
 unzip z3-4.15.2-x64-glibc-2.39.zip
-cp z3-4.15.2-x64-glibc-2.39/bin/z3 /usr/local/bin/
+cp z3-4.15.2-x64-glibc-2.39/bin/z3 ~/.local/bin/
+# Ensure ~/.local/bin is on your PATH (most modern distros include it by default).
 ```
 
-On macOS (Apple Silicon), use the `arm64` variants and prefer the **static**
+**macOS (Apple Silicon)** — use the `arm64` variants and prefer the **static**
 build to avoid dynamic library issues:
 
 ```bash
 # cvc5 static for macOS arm64
-wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.3.3/cvc5-macOS-arm64-static.zip
+wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-macOS-arm64-static.zip
 unzip cvc5-macOS-arm64-static.zip
 cp cvc5-macOS-arm64-static/bin/cvc5 /usr/local/bin/
 
 # z3 for macOS arm64
-wget https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-arm64-osx-15.7.3.zip
-unzip z3-4.16.0-arm64-osx-15.7.3.zip
-cp z3-4.16.0-arm64-osx-15.7.3/bin/z3 /usr/local/bin/
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-osx-15.7.3.zip
+unzip z3-4.15.2-arm64-osx-15.7.3.zip
+cp z3-4.15.2-arm64-osx-15.7.3/bin/z3 /usr/local/bin/
+# On macOS, /usr/local/bin is typically writable without sudo.
 ```
 
 #### Python
@@ -127,7 +135,7 @@ lake test -- --exclude Languages.Python
 # Run only Python tests (requires `pip install ./Tools/Python`)
 lake test -- Languages.Python
 
-# Run all tests
+# Run all tests (requires the Python package above)
 lake test
 ```
 
