@@ -750,6 +750,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
   | .command_distinct _ _ _ => []
+  | .command_cfg_procedure _ _ _ _ _ _ => []
 
 /--
 Build the symbol-class table used by `getFVarIsOp`.
@@ -884,6 +885,8 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       spec := { preconditions := [], postconditions := [] }
       body := .structured (← toCoreBlock b)
     } .empty]
+  | .command_cfg_procedure _ _ _ _ _ _ =>
+    throwAt default "CFG procedures are not supported in Boole dialect"
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 

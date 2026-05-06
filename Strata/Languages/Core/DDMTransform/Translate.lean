@@ -1609,6 +1609,121 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
 
 ---------------------------------------------------------------------
 
+/-- Translate a transfer command from the CFG syntax -/
+
+private instance : Inhabited (Imperative.DetTransferCmd String Core.Expression) := ⟨.finish⟩
+private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) := ⟨⟨[], .finish⟩⟩
+private instance : Inhabited (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := ⟨⟨"", []⟩⟩
+
+partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (Imperative.DetTransferCmd String Core.Expression) := do
+  let .op op := arg
+    | TransM.error s!"translateTransfer expected op {repr arg}"
+  match op.name with
+  | q`Core.transfer_goto =>
+    let .seq _ .comma labels := op.args[0]!
+      | TransM.error s!"translateTransfer goto expected comma-sep labels"
+    match labels.toList with
+    | [] => return .finish
+    | [l] =>
+      let label ← translateIdent String l
+      return .condGoto (Lambda.LExpr.boolConst () Bool.true) label label
+    | l1 :: l2 :: _ =>
+      let label1 ← translateIdent String l1
+      let label2 ← translateIdent String l2
+      let condName := s!"$__nondet_{bindings.gen.var_def}"
+      return .condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2
+  | q`Core.transfer_cond_goto =>
+    let cond ← translateExpr p bindings op.args[0]!
+    let lt ← translateIdent String op.args[1]!
+    let lf ← translateIdent String op.args[2]!
+    return .condGoto cond lt lf
+  | q`Core.transfer_return =>
+    return .finish
+  | _ => TransM.error s!"translateTransfer: unknown transfer {repr op.name}"
+
+/-- Translate a single CFG block -/
+partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) := do
+  let .op op := arg
+    | TransM.error s!"translateCFGBlock expected op {repr arg}"
+  let label ← translateIdent String op.args[0]!
+  -- Translate commands - handle both Seq and empty cases
+  let stmts : Array Arg := match op.args[1]! with
+    | .seq _ _ arr => arr
+    | other => #[other]  -- single statement or empty
+  let mut cmds : Array Core.Command := #[]
+  let mut bindings := bindings
+  for s in stmts do
+    -- Skip empty/null args
+    if let .op _ := s then
+      let (translated, bindings') ← translateStmt p bindings s
+      bindings := bindings'
+      for stmt in translated do
+        match stmt with
+        | .cmd c => cmds := cmds.push c
+        | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
+  let transfer ← translateTransfer p bindings op.args[2]!
+  return (label, ⟨cmds.toList, transfer⟩)
+
+/-- Translate a list of CFG blocks -/
+partial def translateCFGBlocks (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (List (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command)) := do
+  let .op op := arg
+    | TransM.error s!"translateCFGBlocks expected op {repr arg}"
+  match op.name with
+  | q`Core.cfg_blocks_one =>
+    let block ← translateCFGBlock p bindings op.args[0]!
+    return [block]
+  | q`Core.cfg_blocks_cons =>
+    let block ← translateCFGBlock p bindings op.args[0]!
+    let rest ← translateCFGBlocks p bindings op.args[1]!
+    return block :: rest
+  | _ => TransM.error s!"translateCFGBlocks: unknown {repr op.name}"
+
+/-- Translate a CFG body -/
+partial def translateCFGBody (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := do
+  let .op op := arg
+    | TransM.error s!"translateCFGBody expected op {repr arg}"
+  let entry ← translateIdent String op.args[0]!
+  let blocks ← translateCFGBlocks p bindings op.args[1]!
+  return { entry := entry, blocks := blocks }
+
+/-- Translate a procedure with CFG body -/
+def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 5
+  let pname ← translateIdent Core.CoreIdent op.args[0]!
+  let typeArgs ← translateTypeArgs op.args[1]!
+  let (sig, ret) ← translateBindingsPartitioned bindings op.args[2]!
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
+    (fun (v, ty) => (LExpr.fvar () v ty))
+  let out_bindings := out_bindings_only.toArray
+  let origBindings := bindings
+  let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
+  let bindings := { bindings with boundVars := bbindings }
+  let .option _ speca := op.args[3]!
+    | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[3]!}"
+  let (requires, ensures) ←
+    if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
+  let cfg ← translateCFGBody p bindings op.args[4]!
+  let origBindings := { origBindings with gen := bindings.gen }
+  let md ← getOpMetaData op
+  return (.proc { header := { name := pname,
+                              typeArgs := typeArgs.toList,
+                              inputs := sig,
+                              outputs := ret },
+                  spec := { preconditions := requires,
+                            postconditions := ensures },
+                  body := .cfg cfg
+                }
+                md,
+          origBindings)
+
+---------------------------------------------------------------------
+
 def translateConstant (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
@@ -2024,6 +2139,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateRecFuncBlock p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
+          | q`Core.command_cfg_procedure =>
+            translateCFGProcedure p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
         pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops
