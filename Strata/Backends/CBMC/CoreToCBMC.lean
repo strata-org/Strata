@@ -346,7 +346,9 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : Except String CB
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let bodyStmts := match func.body with | .structured ss => ss | .cfg _ => []
+  let bodyStmts ← match func.body with
+    | .structured ss => .ok ss
+    | .cfg _ => .error "Cannot translate unstructured CFG body to CBMC JSON format"
   let stmtJsons ← (bodyStmts.mapM (stmtToJson (I:=CoreLParams) · loc))
 
   let implValue := Json.mkObj [

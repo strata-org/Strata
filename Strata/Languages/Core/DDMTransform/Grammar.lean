@@ -467,6 +467,9 @@ op transfer_goto (labels : CommaSepBy Ident) : Transfer =>
   "goto " labels ";";
 
 // Conditional goto (deterministic: condition selects between two targets)
+// NOTE: We use "branch" instead of "if" to avoid ambiguity with the
+// structured if-statement syntax. The DDM parser registers tokens globally,
+// so "if (" in Transfer would conflict with "if (" in Statement.
 op transfer_cond_goto (c : Expr, lt : Ident, lf : Ident) : Transfer =>
   "branch (" c ") goto " lt " else " lf ";";
 

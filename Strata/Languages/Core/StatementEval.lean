@@ -813,7 +813,13 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
             let bodyStmts := match proc.body with
-              | .structured ss => ss | .cfg _ => []
+              | .structured ss => ss
+              | .cfg cfgBody =>
+                -- Interpret CFG by linearizing: execute blocks in order from entry.
+                -- This is a simple approximation; a full CFG interpreter would
+                -- follow control flow edges.
+                cfgBody.blocks.flatMap fun (_, blk) =>
+                  blk.cmds.map (Imperative.Stmt.cmd ·)
             let config : Imperative.RunConfig Expression Command Env :=
               .stmts bodyStmts callEnv
             let configAfter := Imperative.runStmt ops fuel' config

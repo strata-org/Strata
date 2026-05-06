@@ -299,6 +299,11 @@ def Procedure.Body.getStructured : Procedure.Body → Except String (List Statem
   | .structured ss => .ok ss
   | .cfg _ => .error "expected structured body, got CFG"
 
+/-- Extract the CFG, or error if the body is structured. -/
+def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
+  | .cfg c => .ok c
+  | .structured _ => .error "expected CFG body, got structured"
+
 /-- Extract statements from a structured body, or `[]` for CFG.
     Intended for use in Prop contexts where `Except` is inconvenient. -/
 @[simp, expose] def Procedure.Body.stmts : Procedure.Body → List Statement
