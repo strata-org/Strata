@@ -762,6 +762,37 @@ Interpret a single procedure call.
 
 Importantly, this creates a separate Env to execute the body of the procedure with,
 which initially only contains input/output variables.
+
+Execute a CFG by following control flow from the entry block.
+    Returns the list of commands executed (as statements) for compatibility
+    with the structured interpreter. -/
+private def runCFG (cfg : Core.DetCFG) (fuel : Nat) (env : Env)
+    (ops : Imperative.RunOps Expression Command Env) : List Statement × Env :=
+  go cfg.entry fuel env []
+where
+  go (label : String) (fuel : Nat) (env : Env) (acc : List Statement) : List Statement × Env :=
+    match fuel with
+    | 0 => (acc.reverse, env)
+    | fuel' + 1 =>
+      match cfg.blocks.lookup label with
+      | none => (acc.reverse, env)
+      | some blk =>
+        -- Execute commands in the block
+        let cmdStmts := blk.cmds.map (Imperative.Stmt.cmd ·)
+        let config := Imperative.runStmt ops fuel' (.stmts cmdStmts env)
+        match config with
+        | .terminal env' =>
+          -- Evaluate transfer
+          match blk.transfer with
+          | .finish _ => (acc.reverse ++ cmdStmts, env')
+          | .condGoto cond lt lf _ =>
+            match ops.evalExpr env' cond with
+            | some (.boolConst _ true) => go lt fuel' env' (acc ++ cmdStmts)
+            | some (.boolConst _ false) => go lf fuel' env' (acc ++ cmdStmts)
+            | _ => (acc.reverse ++ cmdStmts, env')
+        | _ => (acc.reverse, env)
+
+/--
 The resulting Env is the original passed in Env with the output variables copied back into it.
 -/
 def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr)
@@ -812,18 +843,15 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
-            let bodyStmts := match proc.body with
-              | .structured ss => ss
+            let callEnvAfter := match proc.body with
+              | .structured ss =>
+                let config : Imperative.RunConfig Expression Command Env :=
+                  .stmts ss callEnv
+                Imperative.runStmt ops fuel' config
               | .cfg cfgBody =>
-                -- Interpret CFG by linearizing: execute blocks in order from entry.
-                -- This is a simple approximation; a full CFG interpreter would
-                -- follow control flow edges.
-                cfgBody.blocks.flatMap fun (_, blk) =>
-                  blk.cmds.map (Imperative.Stmt.cmd ·)
-            let config : Imperative.RunConfig Expression Command Env :=
-              .stmts bodyStmts callEnv
-            let configAfter := Imperative.runStmt ops fuel' config
-            match configAfter with
+                -- Interpret CFG by following control flow from the entry block.
+                .terminal (runCFG cfgBody fuel' callEnv ops).2
+            match callEnvAfter with
             | .terminal callEnv' =>
               match callEnv'.error with
               | some _ => { E with error := callEnv'.error }
@@ -850,5 +878,3 @@ end Statement
 end Core
 
 end -- public section
-
----------------------------------------------------------------------

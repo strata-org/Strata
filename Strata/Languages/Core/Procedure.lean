@@ -360,10 +360,15 @@ instance : HasVarsPure Expression Procedure.Body where
 instance : HasVarsImp Expression Procedure.Body where
   definedVars b := match b with
     | .structured ss => HasVarsImp.definedVars ss
-    | .cfg _ => []
+    | .cfg cfgBody => cfgBody.blocks.flatMap fun (_, blk) =>
+        blk.cmds.filterMap fun | .cmd (.init n _ _ _) => some n | _ => none
   modifiedVars b := match b with
     | .structured ss => HasVarsImp.modifiedVars ss
-    | .cfg _ => []
+    | .cfg cfgBody => cfgBody.blocks.flatMap fun (_, blk) =>
+        blk.cmds.filterMap fun
+          | .cmd (.set n _ _) => some n
+          | .cmd (.init n _ _ _) => some n
+          | _ => none
 
 instance : HasVarsImp Expression Procedure where
   definedVars := Procedure.definedVars

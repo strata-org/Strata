@@ -111,8 +111,15 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
 
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
-  -- error messages.
-  let bodyStmts := match proc.body with | .structured ss => ss | .cfg _ => []
+  -- Type check body.
+  let bodyStmts := match proc.body with
+    | .structured ss => ss
+  -- For now, we skip checking CFG bodies
+  -- potential TODOs for CFGs:
+  -- * verify block labels are unique
+  -- * all variables used are declared/initialized
+  -- * target labels of transfer commands exist
+    | .cfg _ => []
   let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) bodyStmts
 
   -- Remove formals and returns from the context -- they ought to be local to
