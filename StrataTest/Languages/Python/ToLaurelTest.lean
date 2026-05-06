@@ -26,6 +26,27 @@ private def assertEq [BEq α] [ToString α] (actual expected : α) : IO Unit := 
 
 private def loc : SourceRange := default
 
+private def identType (nm : PythonIdent) : SpecType :=
+  SpecType.ident default nm
+
+private def noneType : SpecType := SpecType.noneType default
+
+private def mkUnion (types : Array SpecType) := SpecType.unionArray loc types
+
+private def mkArg (name : String) (type : SpecType) (default : Option SpecDefault := none) : Arg :=
+  { name, type, default := default }
+
+private def mkFuncSig (name : String) (returnType : SpecType)
+    (args : Array Arg := #[]) (kwonly : Array Arg := #[])
+    : Signature :=
+  .functionDecl {
+    loc := loc, nameLoc := loc, name := name
+    args := { args := args, kwonly := kwonly }
+    returnType := returnType
+    isOverload := false
+    preconditions := #[], postconditions := #[]
+  }
+
 /-! ### Output Formatting -/
 
 private def fmtHighType : HighType → String
@@ -372,7 +393,6 @@ private def list_ := SpecType.ident loc .typingList
 private def dict_ := SpecType.ident loc .typingDict
 private def listOf (t : SpecType) := SpecType.ident loc .typingList #[t]
 private def dictOf (k v : SpecType) := SpecType.ident loc .typingDict #[k, v]
-private def mkUnion (types : Array SpecType) := SpecType.unionArray loc types
 private def pyClass (name : String) := SpecType.ident loc (PythonIdent.mk "" name)
 private def externIdent (mod name : String) := PythonIdent.mk mod name
 
