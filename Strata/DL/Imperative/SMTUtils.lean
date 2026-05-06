@@ -10,7 +10,8 @@ import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DDM.Elab
 import Strata.DDM.Format
-import Strata.Util.Profile
+public import Strata.Util.Profile
+import Strata.Util.Statistics
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.EvalContext
 
@@ -293,6 +294,13 @@ def addLocationInfo {P : PureExpr} [BEq P.Ident]
       Strata.SMT.Solver.setInfoString message.fst message.snd
     | .none => pure ()
 
+/-- Timing keys tracked by `dischargeObligation`. -/
+inductive Timing where
+  | encodeSMT
+  | runSolver
+
+#derive_prefixed_toString Timing "dischargeObligation"
+
 /--
 Writes the proof obligation to file, discharge the obligation using SMT solver,
 and parse the output of the SMT solver.
@@ -300,24 +308,29 @@ and parse the output of the SMT solver.
 When two-sided checking is enabled, the generated SMT file will contain two
 `(check-sat-assuming)` commands, one for `P ∧ Q` and one for `P ∧ ¬Q`,
 and the return value includes both decisions.
+
+Returns a `TimingInfo` map recording nanosecond durations for the encoding
+(`dischargeObligation.encodeSMT (encodeCore)`) and solver execution
+(`dischargeObligation.runSolver`) phases, merged with sub-timings from
+`encodeCore`.
 -/
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
-  (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState × Std.HashMap String Nat))
+  (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState × TimingInfo))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool)
   (skipSolver : Bool := false) :
-  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState × Std.HashMap String Nat)) := do
+  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState × TimingInfo)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
-  let timing : Std.HashMap String Nat := {}
+  let timing : TimingInfo := {}
 
   -- encodeSMT (which calls encodeCore) emits check-sat commands internally
   let (((_ids, estate, encTiming), _solverState), timing) ←
-    recordNanos "dischargeObligation.encodeSMT (encodeCore)" timing do
+    recordNanos (toString Timing.encodeSMT) timing do
       encodeSMT.run solver
   -- Merge encodeCore's internal timing into ours
   let timing := encTiming.fold (init := timing) fun acc k v => acc.insert k v
@@ -327,7 +340,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   if skipSolver then
     return .ok (.unknown, .unknown, estate, timing)
 
-  let (solver_output, timing) ← recordNanos "dischargeObligation.runSolver" timing do
+  let (solver_output, timing) ← recordNanos (toString Timing.runSolver) timing do
     runSolver smtsolver (#[filename] ++ solver_options)
 
   match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with

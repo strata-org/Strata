@@ -7,23 +7,26 @@ module
 
 public import Std.Data.HashMap.Basic
 
+/-- A map from timing label to elapsed nanoseconds. -/
+public abbrev TimingInfo := Std.HashMap String Nat
+
 @[inline] public def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
 
 /-- Measure the wall-clock nanoseconds taken by a pure expression.
-    Takes a thunk to ensure the expression is not evaluated before timing starts.
-    The `t1 == 0` trick prevents hoisting `result` above t1.
-    Writing `result` to an `IO.Ref` forces its evaluation before t2 is read. -/
-public def measureNanos [Inhabited α] (expr : Unit → α) : BaseIO (α × Nat) := do
+    The `@[noinline]` prevents the compiler from hoisting `expr ()` out of
+    this function. The `IO.Ref.set` forces evaluation of `expr ()` between
+    the two timestamp reads (IO actions are sequenced). -/
+@[noinline] public def measureNanos [Inhabited α] (expr : Unit → α) : BaseIO (α × Nat) := do
   let ref ← IO.mkRef (default : α)
   let t1 ← IO.monoNanosNow
-  let result := if t1 == 0 then default else expr ()
-  ref.set result
+  ref.set (expr ())
   let t2 ← IO.monoNanosNow
+  let result ← ref.get
   pure (result, t2 - t1)
 
-/-- Run an action and return its result along with the elapsed nanoseconds. -/
+/-- Run an action and record its elapsed nanoseconds into a `TimingInfo` under the given key. -/
 @[inline] public def recordNanos {m α} [Monad m] [MonadLiftT BaseIO m]
-    (key : String) (timing : Std.HashMap String Nat) (action : m α) : m (α × Std.HashMap String Nat) := do
+    (key : String) (timing : TimingInfo) (action : m α) : m (α × TimingInfo) := do
   let t0 ← IO.monoNanosNow
   let result ← action
   let t1 ← IO.monoNanosNow

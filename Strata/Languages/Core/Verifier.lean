@@ -32,6 +32,20 @@ open Strata
 
 public section
 
+/-- Timing keys tracked by `encodeCore`. -/
+inductive Timing where
+  | prelude
+  | emitDatatypes
+  | encodeUFs
+  | encodeFunctions
+  | encodeAxioms
+  | defineFunTerms
+  | encodeAssumptions
+  | encodeObligation
+  | epilog
+
+#derive_prefixed_toString Timing "encodeCore"
+
 /-- Encode a verification condition into SMT-LIB format.
 
 This function encodes the path conditions (P) and obligation (Q) into SMT,
@@ -55,15 +69,15 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
     (varDeclarations : List Core.VarDeclaration := []) :
-    SolverM (List String × EncoderState × Std.HashMap String Nat) := do
+    SolverM (List String × EncoderState × TimingInfo) := do
   Solver.setLogic "ALL"
 
-  let timing : Std.HashMap String Nat := {}
+  let timing : TimingInfo := {}
 
-  let ((), timing) ← recordNanos "encodeCore.prelude" timing do
+  let ((), timing) ← recordNanos (toString Timing.prelude) timing do
     prelude
 
-  let ((), timing) ← recordNanos "encodeCore.emitDatatypes" timing do
+  let ((), timing) ← recordNanos (toString Timing.emitDatatypes) timing do
     let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
     ctx.emitDatatypes
 
@@ -71,14 +85,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
 
-  let (estate, timing) ← recordNanos "encodeCore.encodeUFs" timing do
+  let (estate, timing) ← recordNanos (toString Timing.encodeUFs) timing do
     -- Filter out managed variables from UF declarations (they will be emitted separately)
     let ufsToDecl := if managedNames.isEmpty then ctx.ufs
       else ctx.ufs.filter fun uf => !managedNames.contains uf.id
     let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
     pure estate
 
-  let (estate, timing) ← recordNanos "encodeCore.encodeFunctions" timing do
+  let (estate, timing) ← recordNanos (toString Timing.encodeFunctions) timing do
     -- Pre-populate encoder state with managed variable names so encodeTerm
     -- recognizes them without emitting declare-fun
     let estate := if managedNames.isEmpty then estate
@@ -89,7 +103,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
     pure estate
 
-  let ((_axms, estate), timing) ← recordNanos "encodeCore.encodeAxioms" timing do
+  let ((_axms, estate), timing) ← recordNanos (toString Timing.encodeAxioms) timing do
     ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
 
   for id in _axms do
@@ -98,25 +112,25 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   for decl in varDeclarations do
     Solver.declareFun decl.name [] decl.ty
 
-  let (estate, timing) ← recordNanos "encodeCore.defineFunTerms" timing do
+  let (estate, timing) ← recordNanos (toString Timing.defineFunTerms) timing do
     -- Emit variable definitions as define-fun (macro expansions, not constraints)
     varDefinitions.foldlM (init := estate) fun estate def_ => do
       let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
       Solver.defineFunTerm def_.name [] def_.ty bodyEnc
       pure estate
 
-  let ((assumptionIds, estate), timing) ← recordNanos "encodeCore.encodeAssumptions" timing do
+  let ((assumptionIds, estate), timing) ← recordNanos (toString Timing.encodeAssumptions) timing do
     -- Assert assumption terms
     assumptionTerms.mapM (encodeTerm) |>.run estate
 
   for id in assumptionIds do
     Solver.assert id
 
-  let ((obligationId, estate), timing) ← recordNanos "encodeCore.encodeObligation" timing do
+  let ((obligationId, estate), timing) ← recordNanos (toString Timing.encodeObligation) timing do
     -- Encode the obligation term Q (not negated)
     (encodeTerm obligationTerm) |>.run estate
 
-  let (ids, timing) ← recordNanos "encodeCore.epilog" timing do
+  let (ids, timing) ← recordNanos (toString Timing.epilog) timing do
     let ids := estate.ufs.toList.filterMap fun (uf, id) =>
       if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
@@ -231,7 +245,7 @@ def dischargeObligation
   (label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
-  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState × Std.HashMap String Nat)) := do
+  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState × TimingInfo)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
   let needsIncremental := satisfiabilityCheck && validityCheck
@@ -966,7 +980,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (phases : List AbstractedPhase)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
-    : EIO DiagnosticModel (VCResult × Std.HashMap String Nat) := do
+    : EIO DiagnosticModel (VCResult × TimingInfo) := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
@@ -1034,6 +1048,17 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return (result, timing)
 
+namespace Verifier
+
+/-- Timing keys tracked by `verifySingleEnv`. -/
+inductive Timing where
+  | preprocessObligations
+  | smtEncoding
+  | solverFileWriting
+
+#derive_prefixed_toString Timing "verifySingleEnv"
+
+end Verifier
 
 def verifySingleEnv (oblProgram : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
@@ -1060,7 +1085,7 @@ def verifySingleEnv (oblProgram : Program)
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)
-  let mut timingNs : Std.HashMap String Nat := {}
+  let mut timingNs : TimingInfo := {}
   let mut peResolvedCount : Nat := 0
 
   for obligation in obligations do
@@ -1079,7 +1104,7 @@ def verifySingleEnv (oblProgram : Program)
     let t0 ← IO.monoNanosNow
     let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
     let t1 ← IO.monoNanosNow
-    timingNs := timingNs.insert "preprocessObligations" (timingNs.getD "preprocessObligations" 0 + (t1 - t0))
+    timingNs := timingNs.insert (toString Verifier.Timing.preprocessObligations) (timingNs.getD (toString Verifier.Timing.preprocessObligations) 0 + (t1 - t0))
 
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
@@ -1108,7 +1133,7 @@ def verifySingleEnv (oblProgram : Program)
     let needValCheck := validityCheck && peValResult?.isNone
     let (maybeTerms, encNs) ← measureNanos fun () =>
       ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-    timingNs := timingNs.insert "smtEncoding" (timingNs.getD "smtEncoding" 0 + encNs)
+    timingNs := timingNs.insert (toString Verifier.Timing.smtEncoding) (timingNs.getD (toString Verifier.Timing.smtEncoding) 0 + encNs)
 
     match maybeTerms with
     | .error err =>
@@ -1130,7 +1155,7 @@ def verifySingleEnv (oblProgram : Program)
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
                     (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
-      timingNs := timingNs.insert "solverFileWriting" (timingNs.getD "solverFileWriting" 0 + (t5 - t4))
+      timingNs := timingNs.insert (toString Verifier.Timing.solverFileWriting) (timingNs.getD (toString Verifier.Timing.solverFileWriting) 0 + (t5 - t4))
 
       for (key, val) in timing do
         timingNs := timingNs.insert key (timingNs.getD key 0 + val)
@@ -1152,8 +1177,8 @@ def verifySingleEnv (oblProgram : Program)
         if options.stopOnFirstError then break
 
   if profile then
-    let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs (timingNs.getD "preprocessObligations" 0)}ms" |>.toBaseIO)
-    let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs (timingNs.getD "smtEncoding" 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs (timingNs.getD (toString Verifier.Timing.preprocessObligations) 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs (timingNs.getD (toString Verifier.Timing.smtEncoding) 0)}ms" |>.toBaseIO)
     -- Print encodeCore.* sub-timings
     let encodeCoreEntries := timingNs.toList.filter (·.1.startsWith "encodeCore.")
       |>.mergeSort (fun a b => a.1 < b.1)
@@ -1161,9 +1186,9 @@ def verifySingleEnv (oblProgram : Program)
       let suffix := key.drop "encodeCore.".length
       let _ ← (IO.println s!"[profile]         {suffix}: {nsToMs val}ms" |>.toBaseIO)
     -- Print dischargeObligation-level timings (encodeCore total, runSolver)
-    let _ ← (IO.println s!"[profile]       encodeCore: {nsToMs (timingNs.getD "dischargeObligation.encodeSMT (encodeCore)" 0)}ms" |>.toBaseIO)
-    let _ ← (IO.println s!"[profile]       runSolver: {nsToMs (timingNs.getD "dischargeObligation.runSolver" 0)}ms" |>.toBaseIO)
-    let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs (timingNs.getD "solverFileWriting" 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]       encodeCore: {nsToMs (timingNs.getD (toString Imperative.SMT.Timing.encodeSMT) 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]       runSolver: {nsToMs (timingNs.getD (toString Imperative.SMT.Timing.runSolver) 0)}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs (timingNs.getD (toString Verifier.Timing.solverFileWriting) 0)}ms" |>.toBaseIO)
     let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
   return (results, stats)
 
