@@ -390,7 +390,8 @@ private def checkNumeric (source : Option FileRange) (ty : HighTypeMd) : Resolve
 
 /-- Check that two types are compatible, emitting a diagnostic if not.
     UserDefined types are always considered compatible with each other since
-    subtype relationships (inheritance) are not tracked during resolution. -/
+    subtype relationships (inheritance) are not tracked during resolution.
+    TCore types are not checked since they are pass-through types from the Core language. -/
 private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   match expected.val, actual.val with
   | .Unknown, _ => pure ()
@@ -404,6 +405,22 @@ private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) 
       let expectedStr := formatType expected
       let actualStr := formatType actual
       let diag := diagnosticFromSource source s!"Type mismatch: expected '{expectedStr}', but got '{actualStr}'"
+      modify fun s => { s with errors := s.errors.push diag }
+
+/-- Check that two types are comparable (for == and !=), emitting a symmetric diagnostic if not. -/
+private def checkComparable (source : Option FileRange) (lhsTy : HighTypeMd) (rhsTy : HighTypeMd) : ResolveM Unit := do
+  match lhsTy.val, rhsTy.val with
+  | .Unknown, _ => pure ()
+  | _, .Unknown => pure ()
+  | .UserDefined _, _ => pure ()
+  | _, .UserDefined _ => pure ()
+  | .TCore _, _ => pure ()
+  | _, .TCore _ => pure ()
+  | _, _ =>
+    if !highEq lhsTy rhsTy then
+      let lhsStr := formatType lhsTy
+      let rhsStr := formatType rhsTy
+      let diag := diagnosticFromSource source s!"Operands of '==' have incompatible types '{lhsStr}' and '{rhsStr}'"
       modify fun s => { s with errors := s.errors.push diag }
 
 /-- Get the type of a resolved variable reference from scope. -/
@@ -566,9 +583,9 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
       for aTy in argTypes do checkNumeric source aTy
     | .Eq | .Neq =>
-      -- Check that operands are compatible with each other
+      -- Check that operands are compatible with each other (symmetric check)
       match argTypes with
-      | [lhsTy, rhsTy] => checkAssignable source rhsTy lhsTy
+      | [lhsTy, rhsTy] => checkComparable source lhsTy rhsTy
       | _ => pure ()
     | .StrConcat => pure ()
     pure (.PrimitiveOp op args', { val := resultTy, source := source })
@@ -653,6 +670,11 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 
+/-- Resolve a statement expression, discarding the synthesized type.
+    Use when only the resolved expression is needed (invariants, decreases, etc.). -/
+private def resolveStmtExprExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let (e', _) ← resolveStmtExpr e; pure e'
+
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let ty' ← resolveHighType param.type
@@ -666,12 +688,12 @@ def resolveBody (body : Body) : ResolveM (Body × HighTypeMd) := do
     let (b', ty) ← resolveStmtExpr b
     return (.Transparent b', ty)
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
-    let impl' ← impl.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
-    let mods' ← mods.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let posts' ← posts.mapM (·.mapM resolveStmtExprExpr)
+    let impl' ← impl.mapM resolveStmtExprExpr
+    let mods' ← mods.mapM resolveStmtExprExpr
     return (.Opaque posts' impl' mods', { val := .TVoid, source := none })
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
+    let posts' ← posts.mapM (·.mapM resolveStmtExprExpr)
     return (.Abstract posts', { val := .TVoid, source := none })
   | .External => return (.External, { val := .TVoid, source := none })
 
@@ -681,8 +703,8 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
-    let dec' ← proc.decreases.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExprExpr)
+    let dec' ← proc.decreases.mapM resolveStmtExprExpr
     let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -696,7 +718,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
         if bodyTy.val != HighType.TVoid then
           checkAssignable proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExprExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
@@ -722,8 +744,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e')
-    let dec' ← proc.decreases.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExprExpr)
+    let dec' ← proc.decreases.mapM resolveStmtExprExpr
     let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -736,7 +758,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
         if bodyTy.val != HighType.TVoid then
           checkAssignable proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExprExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -805,7 +827,11 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
-  let init' ← c.initializer.mapM fun e => do let (e', _) ← resolveStmtExpr e; pure e'
+  let init' ← c.initializer.mapM fun e => do
+    let (e', eTy) ← resolveStmtExpr e
+    if eTy.val != HighType.TVoid then
+      checkAssignable e'.source ty' eTy
+    pure e'
   let name' ← resolveRef c.name
   return { name := name', type := ty', initializer := init' }
 
