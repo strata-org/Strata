@@ -157,7 +157,38 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return computeExprType s.model expr
 
-/-- Check if an expression contains any assignments (recursively). -/
+/-- Check if an expression contains any assignments that are NOT inside an
+unlabeled block. Unlabeled blocks in expression position are lowered by the
+`.Block` case of `transformExpr` (prepends side-effects + returns the last
+element as the value), so assignments inside them do not need special
+rejection logic. This is used for assert/assume conditions, which should
+proceed with transformation even when an unlabeled block embeds an
+assignment (e.g. havoc from PR #1019's unmodeled call handling). -/
+def containsAssignmentOutsideUnlabeledBlock (expr : StmtExprMd) : Bool :=
+  match expr with
+  | AstNode.mk val _ =>
+  match val with
+  | .Assign .. => true
+  | .StaticCall _ args =>
+    args.attach.any (fun x => containsAssignmentOutsideUnlabeledBlock x.val)
+  | .PrimitiveOp _ args =>
+    args.attach.any (fun x => containsAssignmentOutsideUnlabeledBlock x.val)
+  -- Unlabeled blocks are lowered by `transformExpr`, assignments inside
+  -- are safely lifted as prepended side effects.
+  | .Block _ none => false
+  | .Block stmts (some _) =>
+    stmts.attach.any (fun x => containsAssignmentOutsideUnlabeledBlock x.val)
+  | .IfThenElse cond th el =>
+      containsAssignmentOutsideUnlabeledBlock cond ||
+      containsAssignmentOutsideUnlabeledBlock th ||
+      match el with
+      | some e => containsAssignmentOutsideUnlabeledBlock e
+      | none => false
+  | _ => false
+  termination_by expr
+  decreasing_by
+    all_goals ((try cases x); simp_all; try term_by_mem)
+
 def containsAssignment (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
@@ -344,8 +375,25 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return ⟨.IfThenElse seqCond seqThen seqElse, source⟩
 
   | .Block stmts labelOption =>
+      -- Recursively transform sub-expressions (creates SSA snapshots for
+      -- assignments in expression position, via the `Assign` case above).
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-      return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, source⟩
+      if labelOption.isNone then
+        match hne : newStmts with
+        | [] => return ⟨ .Block [] labelOption, source⟩
+        | head :: rest =>
+          -- Unlabeled block in expression position: hoist side-effects via
+          -- onlyKeepSideEffectStmtsAndLast (prepends asserts, var declares,
+          -- declare-assigns, drops plain assigns already processed), and
+          -- return the last element as the expression value. This lowers
+          -- the block structure so the Laurel-to-Core translator no longer
+          -- sees a Block in expression position. Pattern is commonly emitted
+          -- by PythonToLaurel: { asserts; Call } or { havoc; Hole }
+          -- (PR #1019 for unmodeled calls).
+          let _ ← onlyKeepSideEffectStmtsAndLast (head :: rest)
+          return (head :: rest).getLast (by simp)
+      else
+        return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, source⟩
 
   | .Var (.Declare param) =>
       -- If the substitution map has an entry for this variable, it was
@@ -372,9 +420,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | AstNode.mk val source =>
   match val with
   | .Assert cond =>
-      -- Do not transform assert conditions with assignments — they must be rejected.
-      -- But nondeterministic holes and imperative calls need to be lifted.
-      if !containsAssignment cond.condition then
+      -- Reject top-level assignments in assert conditions. Assignments inside
+      -- unlabeled blocks are OK because the Block case of transformExpr lifts
+      -- their side effects out as prepends.
+      if !containsAssignmentOutsideUnlabeledBlock cond.condition then
         let seqCond ← transformExpr cond.condition
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
@@ -383,9 +432,8 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         return [stmt]
 
   | .Assume cond =>
-      -- Do not transform assume conditions with assignments — they must be rejected.
-      -- But nondeterministic holes and imperative calls need to be lifted.
-      if !containsAssignment cond then
+      -- Same rationale as Assert above.
+      if !containsAssignmentOutsideUnlabeledBlock cond then
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }

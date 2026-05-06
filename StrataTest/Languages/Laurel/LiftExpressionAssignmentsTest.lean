@@ -23,10 +23,19 @@ namespace Strata.Laurel
 
 def blockStmtLiftingProgram : String := r"
 procedure assertInBlockExpr()
+  opaque
 {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };
   assert y == 1
+};
+
+procedure condAssign(x: int)
+  opaque
+{
+  var y: int := 0;
+  var z: int := (if x > 0 then { y := y + 1 } else { 0 }) + y;
+  assert z == 2
 };
 "
 
@@ -44,7 +53,11 @@ def parseLaurelAndLift (input : String) : IO Program := do
 
 /--
 info: procedure assertInBlockExpr()
-{ var x: int := 0; assert x == 0; var $x_0: int := x; x := 1; var y: int := { x }; assert y == 1 };
+  opaque
+{ var x: int := 0; assert x == 0; var $x_0: int := x; x := 1; var y: int := x; assert y == 1 };
+procedure condAssign(x: int)
+  opaque
+{ var y: int := 0; var $c_0: int; if x > 0 then { var $y_0: int := y; y := y + 1; $c_0 := y } else { $c_0 := 0 }; var z: int := $c_0 + y; assert z == 2 };
 -/
 #guard_msgs in
 #eval! do
