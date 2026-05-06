@@ -1,4 +1,3 @@
-test_class_inheritance_no_dispatch.py(24, 4): ✅ pass - callElimAssert_requires_2
 test_class_inheritance_no_dispatch.py(25, 4): ❓ unknown - assert(714)
-DETAIL: 1 passed, 0 failed, 1 inconclusive
+DETAIL: 0 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

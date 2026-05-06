@@ -72,16 +72,16 @@ VCs:
 Label: assert_constr_destr_cancel_calls_Any..as_bool_0
 Property: assert
 Assumptions:
-assume_0: $__b0 == true
+assume_0: b == true
 Obligation:
 true
 
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-assume_0: $__b0 == true
+assume_0: b == true
 Obligation:
-$__b0
+b
 
 ---
 info:

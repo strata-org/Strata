@@ -13,11 +13,16 @@ namespace Strata
 private def getEvalStats (program : Strata.Program)
     (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
-  match Core.typeCheckAndEval options coreProgram with
+  let coreProgram ← IO.ofExcept (Core.typeCheck options coreProgram)
+  match Core.buildEnv options coreProgram with
   | .error _ => return ({}, 0)
-  | .ok (envs, stats) =>
-    let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
-    return (stats, numObligations)
+  | .ok (E, declStats) =>
+    match Core.Program.eval E with
+    | .error _ => return ({}, 0)
+    | .ok (envs, evalStats) =>
+      let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
+      let stats := declStats.merge evalStats
+      return (stats, numObligations)
 
 private def statsLine (stats : Statistics) (numObs : Nat) : String :=
   let merged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_merged}"
@@ -57,16 +62,16 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: x < 0>: $__x0 < 0
+<label_ite_cond_true: x < 0>: x@1 < 0
 Obligation:
-0 - $__x0 >= 0
+0 - x@1 >= 0
 
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(x < 0)>: if $__x0 < 0 then false else true
+<label_ite_cond_false: !(x < 0)>: if x@1 < 0 then false else true
 Obligation:
-$__x0 >= 0
+x@1 >= 0
 
 Label: a
 Property: assert
@@ -103,10 +108,10 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: x < 0>: if $__x0 < 0 then $__x0 < 0 else true
-<label_ite_cond_false: !(x < 0)>: if if $__x0 < 0 then false else true then if $__x0 < 0 then false else true else true
+<label_ite_cond_true: x < 0>: if x@1 < 0 then x@1 < 0 else true
+<label_ite_cond_false: !(x < 0)>: if if x@1 < 0 then false else true then if x@1 < 0 then false else true else true
 Obligation:
-if $__x0 < 0 then 0 - $__x0 else $__x0 >= 0
+if x@1 < 0 then 0 - x@1 else x@1 >= 0
 
 Label: a
 Property: assert

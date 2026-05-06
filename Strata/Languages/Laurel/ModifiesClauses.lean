@@ -103,10 +103,10 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   let entries := extractModifiesEntries model modifiesExprs
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
-  let obj := mkMd <| .Identifier objName
-  let fld := mkMd <| .Identifier fldName
-  let heapIn := mkMd <| .Identifier heapInName
-  let heapOut := mkMd <| .Identifier heapOutName
+  let obj := mkMd <| .Var (.Local objName)
+  let fld := mkMd <| .Var (.Local fldName)
+  let heapIn := mkMd <| .Var (.Local heapInName)
+  let heapOut := mkMd <| .Var (.Local heapOutName)
       -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
   let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
   let objRef := mkMd <| .StaticCall "Composite..ref!" [obj]
@@ -125,8 +125,8 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Forall ⟨ fldName, { val := .TTypedField { val := .TInt, source := none }, source := none } ⟩ none implBody
-  let outerForall : StmtExprMd := { val := .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := none, md := proc.name.md }
+  let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .TTypedField { val := .TInt, source := none }, source := none } ⟩ none implBody
+  let outerForall : StmtExprMd := { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := proc.name.source }
   some outerForall
 
 /--
@@ -140,21 +140,30 @@ def hasHeapOut (proc : Procedure) : Bool :=
 Transform a single procedure: if it has modifies clauses, generate the frame
 condition and conjoin it with the postcondition, then clear the modifies list.
 
+If the procedure has `modifies *`, no frame condition is generated (the procedure
+may modify anything on the heap), and the modifies list is simply cleared.
+
 If the procedure has a `$heap` but no modifies clause, adds a postcondition
 that all allocated objects are preserved between heaps:
   `forall $obj: Composite, $fld: Field => $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)`
+
+If the modifies clause uses a wildcard (`*`), the frame condition is skipped
+entirely — the procedure may modify anything.
 -/
 def transformModifiesClauses (model: SemanticModel)
     (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
   match proc.body with
   | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
-      if hasHeapOut proc then
+      if hasModifiesWildcard modifiesExprs then
+        -- modifies * means the procedure can modify anything; no frame condition
+        .ok { proc with body := .Opaque postconds impl [] }
+      else if hasHeapOut proc then
         let heapInName : Identifier := "$heap_in"
         let heapName : Identifier := "$heap"
         let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
         let postconds' := match frameCondition with
-          | some frame => postconds ++ [{ condition := frame : Condition }]
+          | some frame => postconds ++ [{ condition := frame, summary := "modifies clause" }]
           | none => postconds
         .ok { proc with body := .Opaque postconds' impl [] }
       else
@@ -172,10 +181,13 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
   match body with
   | .Opaque posts impl mods =>
     let (kept, diags) := mods.foldl (fun (acc, ds) e =>
-      let ty := (computeExprType model e).val
-      if isHeapRelevantType ty then (acc ++ [e], ds)
-      else
-        (acc, ds ++ [(fileRangeToCoreMd e.source e.md).toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+      match e.val with
+      | .All => (acc ++ [e], ds)  -- wildcard is always kept
+      | _ =>
+        let ty := (computeExprType model e).val
+        if isHeapRelevantType ty then (acc ++ [e], ds)
+        else
+          (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
     ) ([], [])
     (.Opaque posts impl kept, diags)
   | other => (other, [])

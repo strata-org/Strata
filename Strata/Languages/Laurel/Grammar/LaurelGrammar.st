@@ -48,6 +48,16 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 // Assignment
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
 
+// Multi-target assignment: assign var x: int, y, var z: int := call()
+// Uses the 'assign' keyword to avoid ambiguity with other comma-separated constructs.
+category AssignTarget;
+op assignTargetDecl (name: Ident, targetType: LaurelType): AssignTarget => "var " name ": " targetType;
+op assignTargetVar (name: Ident): AssignTarget => name;
+op assignTargetField (obj: Ident, field: Ident): AssignTarget => obj "#" field;
+
+op multiAssign (targets: CommaSepBy AssignTarget, value: StmtExpr): StmtExpr
+  => @[prec(0)] "assign " targets " := " value:0;
+
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
 op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " - " rhs;
@@ -157,9 +167,14 @@ op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClau
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs;
+op modifiesWildcard: ModifiesClause => "\n  modifies *";
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
+
+category OpaqueSpec;
+op opaqueSpec(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause): OpaqueSpec =>
+  "\n  opaque" ensures modifies;
 
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
@@ -171,20 +186,18 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
-  ensures: Seq EnsuresClause,
-  modifies: Seq ModifiesClause,
+  opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

@@ -6,11 +6,14 @@
 module
 
 -- Executable with utilities for working with Strata files.
+import Lean.Parser.Extension
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.ProgramEval
+import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
@@ -49,11 +52,12 @@ All `strata` subcommands use a common exit code scheme:
 | 0    | Success            | Analysis passed, inconclusive, or `--no-solve` completed.  |
 | 1    | User error         | Bad input: invalid arguments, malformed source, etc.      |
 | 2    | Failures found     | Analysis completed and found failures.                    |
-| 3    | Internal error     | Tool bug, unexpected solver result, or translation crash. |
+| 3    | Internal error     | SMT encoding failure, solver crash, or translation bug.   |
 | 4    | Known limitation   | Intentionally unsupported language construct.             |
 
 Codes 1–2 are **user-actionable** (fix the input or the code under analysis).
-Codes 3–4 are **tool-side** (report as a bug or wait for support). -/
+Codes 3–4 are **tool-side** (report as a bug or wait for support).
+Exit 0 covers success, inconclusive results, and solver timeouts. -/
 
 namespace ExitCode
   def userError        : UInt8 := 1
@@ -505,10 +509,15 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
     exit helpers above, which are called on early pipeline failure).
-    Classification uses successive partitioning: implementation errors are
-    removed first, then the classifier partitions the rest into
+    Classification uses successive partitioning: timeouts and implementation
+    errors are removed first, then the classifier partitions the rest into
     success / failure / inconclusive (guaranteeing disjointness).
-    Unreachable count is reported as supplementary info. -/
+    Unreachable count is reported as supplementary info.
+
+    Exit-code priority (highest wins):
+    - Internal error (exit 3): encoding failures or solver crashes
+    - Failures found (exit 2): assertion violations
+    - Inconclusive / success / solver timeout (exit 0) -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     (checkMode : VerificationMode := .deductive) : IO Unit := do
   let classifier : ResultClassifier :=
@@ -517,27 +526,34 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
       { isSuccess := (·.isBugFindingSuccess)
         isFailure := (·.isBugFindingFailure) }
     | _ => {}
-  -- 1. Partition out implementation errors (broken results, not classifiable).
-  let (implError, classifiable) :=
+  -- 1. Partition out implementation errors and timeouts (not classifiable).
+  let (implError, rest1) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
+  let (timeouts, classifiable) := rest1.partition (·.isTimeout)
   -- 2. Successive partitioning via the classifier: success → failure → inconclusive.
   let (success, rest)          := classifiable.partition classifier.isSuccess
   let (failure, inconclusive)  := rest.partition classifier.isFailure
   -- 3. Unreachable is informational (not a separate partition).
   let nUnreachable  := vcResults.filter (·.isUnreachable) |>.size
   let nImplError    := implError.size
+  let nTimeout      := timeouts.size
   let nSuccess      := success.size
   let nFailure      := failure.size
   let nInconclusive := inconclusive.size
   let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
-  let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
-  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
+  let implErrorStr   := if nImplError > 0   then s!", {nImplError} internal errors" else ""
+  let timeoutStr     := if nTimeout > 0     then s!", {nTimeout} solver timeouts" else ""
+  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{timeoutStr}{implErrorStr}"
   if nImplError > 0 then
     exitPyAnalyzeInternalError s!"An unexpected result was produced. {counts}"
   else if nFailure > 0 then
     exitPyAnalyzeFailuresFound counts
   else
-    printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
+    let label :=
+      if nTimeout > 0 then "Solver timeout"
+      else if nInconclusive > 0 then "Inconclusive"
+      else "Analysis success"
+    printPyAnalyzeResult label counts
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
@@ -568,7 +584,10 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .arg "mode" },
             { name := "warning-summary",
               help := "Write PySpec warning summary as JSON to <file>.",
-              takesArg := .arg "file" }]
+              takesArg := .arg "file" },
+            { name := "skip-verification",
+              help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
+              takesArg := .none }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -646,6 +665,31 @@ def pyAnalyzeLaurelCommand : Command where
     if verbose then
       IO.println "\n==== Core Program ===="
       IO.print (Core.formatProgram coreProgram)
+
+    -- When --skip-verification is set, report translation diagnostics and exit
+    -- without running SMT verification (stages 3-4).
+    if pflags.getBool "skip-verification" then do
+      if !laurelTranslateErrors.isEmpty then
+        IO.eprintln "\n==== Errors ===="
+        for err in laurelTranslateErrors do
+          IO.eprintln err
+      if outputSarif then
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
+          | none => Map.empty
+        Core.Sarif.writeSarifOutput .deductive files #[] (filePath ++ ".sarif")
+      let nStrataBug := laurelTranslateErrors.filter (·.type == .StrataBug) |>.length
+      let nNotYetImpl := laurelTranslateErrors.filter (·.type == .NotYetImplemented) |>.length
+      let nUserError := laurelTranslateErrors.filter (·.type == .UserError) |>.length
+      let nWarning := laurelTranslateErrors.filter (·.type == .Warning) |>.length
+      let counts := s!"{nUserError} user errors, {nWarning} warnings, {nNotYetImpl} not yet implemented, {nStrataBug} internal errors"
+      if nStrataBug > 0 then
+        exitPyAnalyzeInternalError s!"Translation produced internal errors. {counts}"
+      else if nNotYetImpl > 0 then
+        exitPyAnalyzeKnownLimitation s!"Translation encountered unsupported constructs. {counts}"
+      else
+        printPyAnalyzeResult "Analysis success" counts
+      return
 
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
@@ -739,7 +783,7 @@ def pyAnalyzeToGotoCommand : Command where
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
     match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
-    | .error e => exitInternalError e
+    | .error e => exitInternalError (toString e)
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
       let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
@@ -955,7 +999,7 @@ def laurelAnalyzeCommand : Command where
     | some vcResults =>
       IO.println s!"==== RESULTS ===="
       for vc in vcResults do
-        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
+        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => toString e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
@@ -1304,8 +1348,67 @@ def verifyCommand : Command where
       else
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        -- Encoding failures, solver crashes, or per-check SMT errors (exit 3)
+        let hasImplError := vcResults.any (fun r => r.isImplementationError || r.hasSMTError)
+        -- Assertion violations that are not timeouts or internal errors (exit 2)
+        let hasFailure := vcResults.any (fun r => !r.isSuccess && !r.isTimeout && !r.isImplementationError && !r.hasSMTError)
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
-        IO.Process.exit ExitCode.failuresFound
+        if hasImplError then
+          IO.Process.exit ExitCode.internalError
+        else if hasFailure then
+          IO.Process.exit ExitCode.failuresFound
+
+def pyInterpretCommand : Command where
+  name := "pyInterpret"
+  args := [ "file" ]
+  flags := [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" }]
+            ++ laurelTranslateFlags
+  help := "Interpret a Python Ion program concretely (Python → Laurel → Core → execute)."
+  callback := fun v pflags => do
+    let filePath := v[0]
+    let keepDir := pflags.getString "keep-all-files"
+    let fuel ← match pflags.getString "fuel" with
+      | some s => match s.toNat? with
+        | .some n => pure n
+        | .none => exitFailure s!"Invalid fuel: '{s}'"
+      | none => pure 10000
+
+    let (core, _diags) ←
+      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") |>.toBaseIO with
+      | .ok laurel =>
+        if let some dir := keepDir then
+          IO.FS.createDirAll dir
+          IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))
+        match ← Strata.translateCombinedLaurel laurel with
+        | (some core, diags) => pure (core, diags)
+        | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
+      | .error msg => exitFailure (toString msg)
+    if let some dir := keepDir then
+      IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
+    let core ← match Core.typeCheck Core.VerifyOptions.quiet core
+        (moreFns := Strata.Python.ReFactory) with
+      | .ok prog => pure prog
+      | .error e =>
+        println!  s!"Core type checking failed: {e.message}"
+        IO.Process.exit ExitCode.userError
+    match core.run with
+    | .ok E =>
+      let mainProc := Core.Program.Procedure.find? core ⟨"__main__", ()⟩
+      let outputNames := match mainProc with
+        | some p => p.header.outputs.keys.map (·.name)
+        | none => []
+      let (lhs, exprEnv) := Core.Env.genVars outputNames E.exprEnv
+      let E := { E with exprEnv }
+      let E := Core.Statement.Command.runCall lhs "__main__" [] fuel E
+      match E.error with
+      | none =>
+        IO.println "Execution completed successfully."
+      | some e =>
+          IO.println s!"{Std.format e}"
+          IO.Process.exit ExitCode.failuresFound
+    | .error diag =>
+      IO.eprintln s!"Error: {diag}"
+      IO.Process.exit ExitCode.failuresFound
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
@@ -1319,7 +1422,8 @@ def commandGroups : List CommandGroup := [
                  pySpecsCommand, pySpecToLaurelCommand,
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
-                 pyTranslateLaurelCommand] },
+                 pyTranslateLaurelCommand,
+                 pyInterpretCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,

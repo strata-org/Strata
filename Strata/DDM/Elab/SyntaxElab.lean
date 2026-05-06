@@ -5,10 +5,7 @@
 -/
 module
 public import Strata.DDM.AST
-public import Std.Data.HashMap.Basic
 
-import Strata.DDM.Parser
-import Strata.DDM.Util.Lean
 import Strata.Util.DecideProp
 
 public section

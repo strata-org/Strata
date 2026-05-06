@@ -29,12 +29,13 @@ VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_safeDiv_0: !($__y1 == 0)
+precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!($__y1 == 0)
+!(y@1 == 0)
 
 ---
-info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
+info:
+Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 -/
@@ -92,16 +93,16 @@ VCs:
 Label: init_calls_List..head_0
 Property: assert
 Assumptions:
-assume_0: $__x1 == 1
+assume_0: x@1 == 1
 Obligation:
 true
 
 Label: assert_0
 Property: assert
 Assumptions:
-assume_0: $__x1 == 1
+assume_0: x@1 == 1
 Obligation:
-$__x1 == 1
+x@1 == 1
 
 ---
 info:
@@ -161,20 +162,21 @@ VCs:
 Label: foo_precond_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_foo_0: $__y1 > 0
+precond_foo_0: y@1 > 0
 Obligation:
-!($__y1 == 0)
+!(y@1 == 0)
 
 Label: foo_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_foo_0: $__y1 > 0
-precond_foo_1: $__x0 / $__y1 > 0
+precond_foo_0: y@1 > 0
+precond_foo_1: x@1 / y@1 > 0
 Obligation:
-!($__y1 == 0)
+!(y@1 == 0)
 
 ---
-info: Obligation: foo_precond_calls_Int.SafeDiv_0
+info:
+Obligation: foo_precond_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
@@ -207,18 +209,18 @@ VCs:
 Label: doubleDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_doubleDiv_0: !($__y1 == 0)
-precond_doubleDiv_1: !($__z2 == 0)
+precond_doubleDiv_0: !(y@1 == 0)
+precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!($__y1 == 0)
+!(y@1 == 0)
 
 Label: doubleDiv_body_calls_Int.SafeDiv_1
 Property: division by zero check
 Assumptions:
-precond_doubleDiv_0: !($__y1 == 0)
-precond_doubleDiv_1: !($__z2 == 0)
+precond_doubleDiv_0: !(y@1 == 0)
+precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!($__z2 == 0)
+!(z@1 == 0)
 
 ---
 info:
@@ -317,9 +319,9 @@ VCs:
 Label: set_z_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: a > 0>: $__a0 > 0
+<label_ite_cond_true: a > 0>: a@1 > 0
 Obligation:
-!($__a0 == 0)
+!(a@1 == 0)
 
 ---
 info:
@@ -355,19 +357,20 @@ VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_safeDiv_0: !($__y1 == 0)
+precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!($__y1 == 0)
+!(y@1 == 0)
 
 Label: init_calls_safeDiv_0
 Property: assert
 Assumptions:
-assume_0: !($__a2 == 0)
+assume_0: !(a@1 == 0)
 Obligation:
-!($__a2 == 0)
+!(a@1 == 0)
 
 ---
-info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
+info:
+Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
@@ -403,19 +406,20 @@ VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-precond_safeDiv_0: !($__y1 == 0)
+precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!($__y1 == 0)
+!(y@1 == 0)
 
 Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
 Assumptions:
-precond_allPositiveDiv_0: $__y2 >= 0
+precond_allPositiveDiv_0: y@2 >= 0
 Obligation:
 forall __q0 : int :: __q0 > 0 ==> !(__q0 == 0)
 
 ---
-info: Obligation: safeDiv_body_calls_Int.SafeDiv_0
+info:
+Obligation: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
@@ -499,36 +503,36 @@ VCs:
 Label: loop_guard_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-test_requires_0: !($__n0 == 0)
+test_requires_0: !(n@1 == 0)
 Obligation:
-!($__n0 == 0)
+!(n@1 == 0)
 
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-test_requires_0: !($__n0 == 0)
+test_requires_0: !(n@1 == 0)
 Obligation:
 true
 
 Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: i / n < 10>: 0 / $__n0 < 10
-assume_guard_0: $__i1 / $__n0 < 10
-assume_invariant_0_0: $__i1 >= 0
-test_requires_0: !($__n0 == 0)
+<label_ite_cond_true: i / n < 10>: 0 / n@1 < 10
+assume_guard_0: i@1 / n@1 < 10
+assume_invariant_0_0: i@1 >= 0
+test_requires_0: !(n@1 == 0)
 Obligation:
-!($__n0 == 0)
+!(n@1 == 0)
 
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i / n < 10>: 0 / $__n0 < 10
-assume_guard_0: $__i1 / $__n0 < 10
-assume_invariant_0_0: $__i1 >= 0
-test_requires_0: !($__n0 == 0)
+<label_ite_cond_true: i / n < 10>: 0 / n@1 < 10
+assume_guard_0: i@1 / n@1 < 10
+assume_invariant_0_0: i@1 >= 0
+test_requires_0: !(n@1 == 0)
 Obligation:
-$__i1 + 1 >= 0
+i@1 + 1 >= 0
 
 ---
 info:

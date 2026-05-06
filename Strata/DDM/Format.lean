@@ -5,7 +5,6 @@
 -/
 module
 
-import Std.Data.HashSet
 public import Strata.DDM.AST
 import all Strata.DDM.Util.Format
 import all Strata.DDM.Util.Nat

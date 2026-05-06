@@ -12,7 +12,9 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 def exitProgram := r"
-procedure exitSkipsRest() {
+procedure exitSkipsRest()
+  opaque
+{
     var x: int := 0;
     {
         x := 1;
@@ -21,7 +23,9 @@ procedure exitSkipsRest() {
     assert x == 1
 };
 
-procedure exitFromNestedBlock() {
+procedure exitFromNestedBlock()
+  opaque
+{
     var x: int := 0;
     {
         {

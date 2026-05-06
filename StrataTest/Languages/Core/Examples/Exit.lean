@@ -75,16 +75,16 @@ true
 Label: a6
 Property: assert
 Assumptions:
-<label_ite_cond_true: x > 0>: $__x2 > 0
+<label_ite_cond_true: x > 0>: x@2 > 0
 Obligation:
-$__x2 * 2 > $__x2
+x@2 * 2 > x@2
 
 Label: a7
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(x > 0)>: if $__x2 > 0 then false else true
+<label_ite_cond_false: !(x > 0)>: if x@2 > 0 then false else true
 Obligation:
-$__x2 <= 0
+x@2 <= 0
 
 ---
 info:

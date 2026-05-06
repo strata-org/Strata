@@ -14,7 +14,28 @@ jobs:
     runs-on: ubuntu-slim
     steps:
       - uses: prince-chrismc/label-merge-conflicts-action@21e6705eaa6aab66e4e486279389c8e3e4c465b7 # v3
+        id: label-attempt-1
+        continue-on-error: true
+        with:
+          # According to Kiro, the label-merge-conflicts-action can fail when there is a race condition.
+          # Retry once after a delay to give the backend time to catch up.  
+          conflict_label_name: "Git conflicts"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          conflict_comment: ""
+
+      - if: steps.label-attempt-1.outcome == 'failure'
+        run: sleep 15
+
+      - uses: prince-chrismc/label-merge-conflicts-action@21e6705eaa6aab66e4e486279389c8e3e4c465b7 # v3
+        id: label-attempt-2
+        continue-on-error: true
+        if: steps.label-attempt-1.outcome == 'failure'
         with:
           conflict_label_name: "Git conflicts"
           github_token: ${{ secrets.GITHUB_TOKEN }}
           conflict_comment: ""
+
+      - if: steps.label-attempt-1.outcome == 'failure' && steps.label-attempt-2.outcome == 'failure'
+        run: |
+          echo "::error::Label merge conflicts action failed after 2 attempts"
+          exit 1

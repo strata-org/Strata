@@ -144,7 +144,7 @@ f_g_ax: forall __q0 : int ::  { f(__q0) }
 g_ax: forall __q0 : int ::  { g(__q0), f(__q0) }
   g(__q0) == __q0 * 2
 Obligation:
-$__x0 >= 0 ==> f($__x0) > $__x0
+x@1 >= 0 ==> f(x@1) > x@1
 
 ---
 info:
