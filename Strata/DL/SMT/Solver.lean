@@ -10,6 +10,7 @@ public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.TermType
 public import Strata.Languages.Core.Options
 import Strata.DDM.Format
+public import Strata.DDM.Util.String
 import Std.Data.HashMap
 
 /-!
@@ -155,6 +156,15 @@ def setOption (name value : String) : SolverM Unit :=
 
 def setInfo (name value : String) : SolverM Unit :=
   emitln s!"(set-info :{name} {value})"
+
+/-- Emit `(set-info :name "...")` with the given *raw* Lean string as the
+    attribute value. The string is quoted and escaped per SMT-LIB 2.6+ rules
+    (via `Strata.escapeSMTStringLit`): embedded double quotes are doubled
+    (`""`) and non-printable characters use `\u{XXXX}` escapes. Callers must
+    NOT pre-quote or pre-escape the argument — use `setInfo` for already-
+    formatted attribute values (integers, s-expressions, etc.). -/
+def setInfoString (name value : String) : SolverM Unit :=
+  emitln s!"(set-info :{name} {Strata.escapeSMTStringLit value})"
 
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "

@@ -101,6 +101,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
+  | .MultiValuedExpr _ => invalidCoreType
   | .Unknown => invalidCoreType
   | _ => do
     emitDiagnostic (diagnosticFromSource ty.source "cannot translate type to Core: not supported yet" DiagnosticType.StrataBug)
