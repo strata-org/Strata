@@ -3888,6 +3888,34 @@ private theorem stmtOk_ite_right {σ : LoopElimState} {c : ExprOrNondet Expressi
     | error e2 => exact Bool.noConfusion h
   | error e => nomatch h
 
+/-- When the loop transformation succeeds, generated block labels don't collide
+    with exit labels in the body. -/
+private theorem stmtOk_loop_label_fresh {σ : LoopElimState}
+    {guard : ExprOrNondet Expression} {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)} {body : Statements}
+    {md : MetaData Expression}
+    (h : stmtOk σ (.loop guard measure inv body md)) :
+    let loop_num := (StringGenState.gen "loop" σ.gen).fst
+    s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}" ∉ Block.labels body ∧
+    s!"{loopElimBlockPrefix}loop_{loop_num}" ∉ Block.labels body := by
+  have hok' := h
+  unfold stmtOk at hok'
+  match hrun : (stmtRun σ (.loop guard measure inv body md)).fst with
+  | .error e => simp [hrun, Except.isOk, Except.toBool] at hok'
+  | .ok (b, s') =>
+    simp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM,
+      bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
+      ExceptT.lift, StateT.bind,
+      Functor.map, liftM, monadLift, MonadLift.monadLift,
+      modify, MonadState.modifyGet, StateT.map,
+      genLoopNum, bumpStat] at hrun
+    repeat (first
+      | (split at hrun; skip)
+      | contradiction)
+    all_goals (first
+      | (cases hrun; rename_i h; simp_all)
+      | (simp_all))
+
 /-! ## Simulation -/
 
 set_option maxHeartbeats 400000 in
@@ -4849,7 +4877,9 @@ private theorem canfail_simulation
 /-! ## Top-level theorem -/
 
 theorem loopElim_overapproximatesAggressive
-    (hwf_ext : WFEvalExtension φ) (σ : LoopElimState) :
+    (hwf_ext : WFEvalExtension φ) (σ : LoopElimState)
+    (hnofd : ∀ (st : Statement), Stmt.noFuncDecl st = Bool.true)
+    (hok : ∀ (st : Statement), stmtOk σ st) :
     Transform.OverapproximatesAggressively
       (LangCore π φ)
       (LangCore π φ)
@@ -4857,7 +4887,7 @@ theorem loopElim_overapproximatesAggressive
   intro st st' ht ρ₀ hwfb hwfv hwfvar hswf
   simp at ht; subst ht
   have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st)).1
-    σ st (Nat.le_refl _) (sorry /- noFuncDecl -/) (sorry /- ok -/) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1
+    σ st (Nat.le_refl _) (hnofd st) (hok st) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1
   refine ⟨?_, ?_, ?_, sorry /- LATER: initEnvWF preservation -/⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
   · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
@@ -4865,7 +4895,7 @@ theorem loopElim_overapproximatesAggressive
     by_cases hnf₀ : ρ₀.hasFailure = Bool.true
     · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
     · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st)).1
-        σ st (Nat.le_refl _) (sorry /- ok -/) (sorry /- noFuncDecl: needs top-level assumption -/) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1 ⟨cfg, hfail, hreach⟩
+        σ st (Nat.le_refl _) (hok st) (hnofd st) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1 ⟨cfg, hfail, hreach⟩
 
 end Core.LoopElim
 
