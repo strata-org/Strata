@@ -282,6 +282,28 @@ def Block.touchedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   | s :: srest => Stmt.touchedVars s ++ Block.touchedVars srest
 end
 
+mutual
+/-- Collect all labeled exit targets occurring in a statement.
+    Returns the list of label strings `l` for every `exit (some l) _` in the
+    statement (including those nested inside blocks, ite branches, and loops). -/
+def Stmt.labels (s : Stmt P C) : List String :=
+  match s with
+  | .exit (some l) _ => [l]
+  | .exit none _     => []
+  | .cmd _           => []
+  | .block _ bss _   => Block.labels bss
+  | .ite _ tss ess _ => Block.labels tss ++ Block.labels ess
+  | .loop _ _ _ bss _ => Block.labels bss
+  | .funcDecl _ _    => []
+  | .typeDecl _ _    => []
+
+/-- Collect all labeled exit targets occurring in a block (list of statements). -/
+def Block.labels (ss : Block P C) : List String :=
+  match ss with
+  | []       => []
+  | s :: rest => Stmt.labels s ++ Block.labels rest
+end
+
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars

@@ -124,6 +124,7 @@ def genLoopNum : StateM LoopElimState String := fun s =>
 def bumpStat (key : String) (n : Nat := 1) : StateM LoopElimState Unit :=
   modify fun s => { s with statistics := s.statistics.increment key n }
 
+
 mutual
 
 def Stmt.removeLoopsM
@@ -140,11 +141,20 @@ def Stmt.removeLoopsM
     let local_defs := Block.definedVars bss
     let assigned_vars :=
       (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
+    -- Freshness check: generated block labels must not collide with exit
+    -- targets in the loop body.  If any body `exit lbl` targets one of our
+    -- generated wrapper blocks, the semantics would be wrong (the exit would
+    -- be caught by the wrapper instead of propagating outward).
+    let arb_iter_facts_label := s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}"
+    let loop_label := s!"{loopElimBlockPrefix}loop_{loop_num}"
+    let body_exit_labels := Block.labels bss
+    if arb_iter_facts_label ∈ body_exit_labels || loop_label ∈ body_exit_labels then
+      throw s!"Generated loop block label conflicts with exit target in loop body (loop {loop_num})"
     -- All of the replaced statements reuse the metadata md.
     let havocd : Stmt P C :=
       .block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
         (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
-    let (_, body_statements) ← Block.removeLoopsM bss
+    let body_statements := bss
     -- The per-invariant source label is carried through as part of the suffix
     -- (alongside the index `i`, which guarantees uniqueness when source labels
     -- coincide or are empty) so each generated assert/assume preserves a stable
@@ -256,13 +266,26 @@ open Imperative Lambda Imperative.LoopElim
 # Specialization of removeLoopsM from Imperative.Stmt to Core
 -/
 
-/-- Transform a list of `Core.Decl`s, eliminating loops in every procedure
-    body.  Returns a `changed` flag together with the rewritten list. -/
+/-- Repeatedly apply `Block.removeLoopsM` until no more loops remain (fixpoint).
+    Uses a fuel parameter to guarantee termination (each pass eliminates at least
+    one loop, so the depth of loop nesting is a bound). -/
+private def removeLoopsBlock (fuel : Nat) (body : List (Stmt Expression Command)) :
+    ExceptT String (StateM LoopElimState) (Bool × List (Stmt Expression Command)) := do
+  match fuel with
+  | 0 => return (false, body)
+  | fuel + 1 =>
+    let (changed, result) ← Block.removeLoopsM body
+    if changed then
+      let (_, result') ← removeLoopsBlock fuel result
+      return (true, result')
+    else
+      return (false, body)
+
 private def removeLoopsDecls :
     List Core.Decl → ExceptT String (StateM LoopElimState) (Bool × List Core.Decl)
   | [] => pure (false, [])
   | .proc proc md :: ds => do
-    let (c1, body) ← Block.removeLoopsM proc.body
+    let (c1, body) ← removeLoopsBlock 100 proc.body
     let (c2, ds) ← removeLoopsDecls ds
     return (c1 || c2, .proc { proc with body := body } md :: ds)
   | d :: ds => do

@@ -327,12 +327,12 @@ Property: assert
 Obligation:
 !(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
 
-Label: entry_invariant_0_0
+Label: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Obligation:
 0 + listLen(xs@2) == listLen(xs@2)
 
-Label: entry_invariant_0_1
+Label: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Obligation:
 true
@@ -341,46 +341,46 @@ Label: set_cur_calls_IntList..tl_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@2))
-assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@2)
-assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
+loopElimAssume_loop_0_guard: !(IntList..isNil(cur@1))
+loopElimAssume_loop_0_invariant_0: acc@1 + listLen(cur@1) == listLen(xs@2)
+loopElimAssume_loop_0_invariant_1: acc@1 >= 0
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen(xs@2) == listLen(xs@2)
 Obligation:
 IntList..isCons(cur@1)
 
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@2))
-assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@2)
-assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
+loopElimAssume_loop_0_guard: !(IntList..isNil(cur@1))
+loopElimAssume_loop_0_invariant_0: acc@1 + listLen(cur@1) == listLen(xs@2)
+loopElimAssume_loop_0_invariant_1: acc@1 >= 0
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen(xs@2) == listLen(xs@2)
 Obligation:
 acc@1 + 1 + listLen(IntList..tl(cur@1)) == listLen(xs@2)
 
-Label: arbitrary_iter_maintain_invariant_0_1
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@2))
-assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@2)
-assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
+loopElimAssume_loop_0_guard: !(IntList..isNil(cur@1))
+loopElimAssume_loop_0_invariant_0: acc@1 + listLen(cur@1) == listLen(xs@2)
+loopElimAssume_loop_0_invariant_1: acc@1 >= 0
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen(xs@2) == listLen(xs@2)
 Obligation:
 acc@1 + 1 >= 0
 
 Label: equiv
 Property: assert
 Assumptions:
-assume_entry_invariant_0_0: 0 + listLen(xs@2) == listLen(xs@2)
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen(xs@2) == listLen(xs@2)
 <label_ite_cond_true: !(IntList..isNil(cur))>: if !(IntList..isNil(xs@2)) then !(IntList..isNil(xs@2)) else true
-assume_guard_0: if !(IntList..isNil(xs@2)) then !(IntList..isNil(cur@1)) else true
-assume_invariant_0_0: if !(IntList..isNil(xs@2)) then acc@1 + listLen(cur@1) == listLen(xs@2) else true
-assume_invariant_0_1: if !(IntList..isNil(xs@2)) then acc@1 >= 0 else true
-not_guard_0: if !(IntList..isNil(xs@2)) then !(!(IntList..isNil(cur@2))) else true
-invariant_0_0: if !(IntList..isNil(xs@2)) then acc@2 + listLen(cur@2) == listLen(xs@2) else true
-invariant_0_1: if !(IntList..isNil(xs@2)) then acc@2 >= 0 else true
+loopElimAssume_loop_0_guard: if !(IntList..isNil(xs@2)) then !(IntList..isNil(cur@1)) else true
+loopElimAssume_loop_0_invariant_0: if !(IntList..isNil(xs@2)) then acc@1 + listLen(cur@1) == listLen(xs@2) else true
+loopElimAssume_loop_0_invariant_1: if !(IntList..isNil(xs@2)) then acc@1 >= 0 else true
+loopElimAssume_loop_0_not_guard: if !(IntList..isNil(xs@2)) then !(!(IntList..isNil(cur@2))) else true
+loopElimAssume_loop_0_exit_invariant_0: if !(IntList..isNil(xs@2)) then acc@2 + listLen(cur@2) == listLen(xs@2) else true
+loopElimAssume_loop_0_exit_invariant_1: if !(IntList..isNil(xs@2)) then acc@2 >= 0 else true
 <label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil(xs@2)) then false else true then if !(IntList..isNil(xs@2)) then false else true else true
 Obligation:
 if !(IntList..isNil(xs@2)) then acc@2 else 0 == listLen(xs@2)
@@ -391,11 +391,11 @@ Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
@@ -403,11 +403,11 @@ Obligation: set_cur_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
