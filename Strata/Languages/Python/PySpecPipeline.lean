@@ -55,11 +55,10 @@ private def defaultPipelineContext : BaseIO Pipeline.PipelineContext :=
 public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
   let ctx ← read
-  let s ← ctx.getState
-  let phase := s.currentPhase
-  ctx.modifyState fun s => { s with
-    messages := s.messages.push { file, loc, phase, kind, message },
-    shouldAbort := s.shouldAbort || kind.impact.isFatal }
+  let phase ← ctx.currentPhaseRef.get
+  ctx.messagesRef.modify (·.push { file, loc, phase, kind, message })
+  if kind.impact.isFatal then
+    ctx.shouldAbortRef.set true
   if ctx.outputMode == .verbose then
     let tag := if kind.impact.isFatal then "error" else "warning"
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
@@ -69,9 +68,9 @@ public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     In verbose mode, prints each message immediately to stderr. -/
 public def addMessages (msgs : Array Pipeline.PipelineMessage) : Pipeline.PipelineM Unit := do
   let ctx ← read
-  ctx.modifyState fun s => { s with
-    messages := s.messages ++ msgs,
-    shouldAbort := s.shouldAbort || msgs.any (·.kind.impact.isFatal) }
+  ctx.messagesRef.modify (· ++ msgs)
+  if msgs.any (·.kind.impact.isFatal) then
+    ctx.shouldAbortRef.set true
   if ctx.outputMode == .verbose then
     for msg in msgs do
       let tag := if msg.kind.impact.isFatal then "error" else "warning"

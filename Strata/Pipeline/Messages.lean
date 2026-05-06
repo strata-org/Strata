@@ -260,22 +260,24 @@ structure PhaseTimingEntry where
   end_ns : Option Nat := none
   timeout : Bool := false
 
-/-- Mutable state accumulated during a pipeline run. -/
+/-- Snapshot of pipeline state at completion. Returned by `PipelineM.run'`. -/
 structure PipelineState where
   messages : Array PipelineMessage := #[]
   shouldAbort : Bool := false
   timing : Array PhaseTimingEntry := #[]
-  currentPhase : Phase := {}
-  messageCountAtPhaseStart : Nat := 0
 
-/-- Pipeline context carrying immutable config and mutable state via IORef.
+/-- Pipeline context carrying immutable config and mutable state as individual IORefs.
     This design allows any monad with BaseIO access to use pipeline capabilities
     by passing a PipelineContext value directly. -/
 public structure PipelineContext where
   outputMode : OutputMode
   pipelineStartTime : Nat
   skipTiming : Bool := false
-  stateRef : IO.Ref PipelineState
+  messagesRef : IO.Ref (Array PipelineMessage)
+  shouldAbortRef : IO.Ref Bool
+  timingRef : IO.Ref (Array PhaseTimingEntry)
+  currentPhaseRef : IO.Ref Phase
+  messageCountAtPhaseStartRef : IO.Ref Nat
 
 /-- The pipeline monad: a reader over PipelineContext with BaseIO. -/
 public abbrev PipelineM := ReaderT PipelineContext BaseIO
@@ -288,49 +290,42 @@ def PipelineContext.elapsedNs (ctx : PipelineContext) : BaseIO Nat := do
   let now ← IO.monoNanosNow
   return now - ctx.pipelineStartTime
 
-/-- Get the current pipeline state. -/
-def PipelineContext.getState (ctx : PipelineContext) : BaseIO PipelineState :=
-  ctx.stateRef.get
-
-/-- Modify the pipeline state. -/
-def PipelineContext.modifyState (ctx : PipelineContext) (f : PipelineState → PipelineState) : BaseIO Unit :=
-  ctx.stateRef.modify f
-
 /-- Print to stderr and flush. -/
 private def eprintlnFlush (msg : String) : BaseIO Unit := do
   let _ ← (do IO.eprintln msg; (← IO.getStderr).flush : IO Unit).toBaseIO
 
 /-- End the current phase: record end time, print [warnings] summary in profile mode. -/
 def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
-  let s ← ctx.stateRef.get
-  if s.currentPhase.path.isEmpty then return
+  let currentPhase ← ctx.currentPhaseRef.get
+  if currentPhase.path.isEmpty then return
   let now ← ctx.elapsedNs
-  let timing := s.timing
+  let timing ← ctx.timingRef.get
   if h : timing.size > 0 then
     let lastIdx := timing.size - 1
     let last := timing[lastIdx]
-    let timing' := timing.set lastIdx { last with end_ns := some now }
-    ctx.stateRef.modify fun st => { st with timing := timing' }
+    ctx.timingRef.set (timing.set lastIdx { last with end_ns := some now })
   if ctx.outputMode == .profile then
-    let newMsgs := s.messages.extract s.messageCountAtPhaseStart s.messages.size
+    let messages ← ctx.messagesRef.get
+    let msgStart ← ctx.messageCountAtPhaseStartRef.get
+    let newMsgs := messages.extract msgStart messages.size
     if newMsgs.size > 0 then
       let counts : Std.HashMap String Nat := newMsgs.foldl (init := {})
         fun acc msg => acc.alter msg.kind.category fun mv => some (mv.getD 0 + 1)
       let parts := counts.toArray.map fun (cat, n) => s!"{n} {cat}"
       let summary := String.intercalate ", " parts.toList
-      let indent := String.replicate ((s.currentPhase.depth - 1) * 2) ' '
-      eprintlnFlush s!"{indent}[warnings] {s.currentPhase.leaf}: {summary}"
+      let indent := String.replicate ((currentPhase.depth - 1) * 2) ' '
+      eprintlnFlush s!"{indent}[warnings] {currentPhase.leaf}: {summary}"
 
 /-- Start a new phase. Implicitly ends the previous phase at the same or deeper depth. -/
 public def PipelineContext.startPhase (ctx : PipelineContext) (phase : Phase) : BaseIO Unit := do
-  let s ← ctx.stateRef.get
-  if s.currentPhase.path.size >= phase.path.size then
+  let currentPhase ← ctx.currentPhaseRef.get
+  if currentPhase.path.size >= phase.path.size then
     ctx.endCurrentPhase
   let now ← ctx.elapsedNs
-  ctx.stateRef.modify fun st => { st with
-    timing := st.timing.push { phase, start_ns := now }
-    currentPhase := phase
-    messageCountAtPhaseStart := st.messages.size }
+  ctx.timingRef.modify (·.push { phase, start_ns := now })
+  ctx.currentPhaseRef.set phase
+  let messages ← ctx.messagesRef.get
+  ctx.messageCountAtPhaseStartRef.set messages.size
   if ctx.outputMode == .profile || ctx.outputMode == .verbose then
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
     let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
@@ -341,21 +336,34 @@ public def startPhase (phase : Phase) : PipelineM Unit := do
   let ctx ← read
   ctx.startPhase phase
 
-/-- Create a PipelineContext with fresh state, run an action, close open phases,
-    and return the result along with the final state. -/
+/-- Collect the current state into a PipelineState snapshot. -/
+def PipelineContext.getState (ctx : PipelineContext) : BaseIO PipelineState := do
+  let messages ← ctx.messagesRef.get
+  let shouldAbort ← ctx.shouldAbortRef.get
+  let timing ← ctx.timingRef.get
+  return { messages, shouldAbort, timing }
+
+/-- Create a fresh PipelineContext, run an action, close open phases,
+    and return the result along with the final state snapshot. -/
 public def PipelineM.run' (action : PipelineM α) (ctx : PipelineContext)
     : BaseIO (α × PipelineState) := do
   let result ← action.run ctx
   ctx.endCurrentPhase
-  let finalState ← ctx.stateRef.get
+  let finalState ← ctx.getState
   return (result, finalState)
 
-/-- Create a fresh PipelineContext with a new state ref. -/
+/-- Create a fresh PipelineContext with new state refs. -/
 public def PipelineContext.create (outputMode : OutputMode := .default)
     (skipTiming : Bool := false) : BaseIO PipelineContext := do
   let startTime ← IO.monoNanosNow
-  let ref ← IO.mkRef {}
-  return { outputMode, pipelineStartTime := startTime, skipTiming, stateRef := ref }
+  let messagesRef ← IO.mkRef #[]
+  let shouldAbortRef ← IO.mkRef false
+  let timingRef ← IO.mkRef #[]
+  let currentPhaseRef ← IO.mkRef {}
+  let messageCountAtPhaseStartRef ← IO.mkRef 0
+  return { outputMode, pipelineStartTime := startTime, skipTiming,
+           messagesRef, shouldAbortRef, timingRef,
+           currentPhaseRef, messageCountAtPhaseStartRef }
 
 end Strata.Pipeline
 end
