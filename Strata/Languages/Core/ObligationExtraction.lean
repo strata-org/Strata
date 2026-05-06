@@ -92,6 +92,35 @@ def extractFromStatements
   extractGo pathConditions ss #[]
 end
 
+/-- Extract proof obligations from a single command, accumulating path conditions. -/
+private def extractFromCmd (pc : PathConditions Expression) (cmd : Command)
+    : PathConditions Expression × Array (ProofObligation Expression) :=
+  match cmd with
+  | .cmd (.assert label e md) =>
+    let propType := match md.getPropertyType with
+      | some s => if s == MetaData.divisionByZero then .divisionByZero
+                  else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                  else .assert
+      | none => .assert
+    (pc, #[ProofObligation.mk label propType pc e md])
+  | .cmd (.cover label e md) =>
+    (pc, #[ProofObligation.mk label .cover pc e md])
+  | .cmd (.assume label e _md) =>
+    (pc.addInNewest [.assumption label e], #[])
+  | .cmd (.init name ty e _md) =>
+    (pc.addEntry (.varDecl name ty e), #[])
+  | _ => (pc, #[])
+
+/-- Extract proof obligations from a deterministic CFG by walking all blocks. -/
+def extractFromDetCFG (pc : PathConditions Expression) (cfg : DetCFG)
+    : Except String (Array (ProofObligation Expression)) :=
+  let obs := cfg.blocks.foldl (init := #[]) fun acc (_, blk) =>
+    let (_, blockObs) := blk.cmds.foldl (init := (pc, #[])) fun (curPc, obs) cmd =>
+      let (newPc, newObs) := extractFromCmd curPc cmd
+      (newPc, obs ++ newObs)
+    acc ++ blockObs
+  .ok obs
+
 /-- Extract proof obligations from a program. Axioms become global assumptions
     that are prepended to the path conditions of every obligation. -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
@@ -105,7 +134,7 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       let globalPc : PathConditions Expression := [axiomPc]
       let obs ← match proc.body with
         | .structured ss => extractFromStatements globalPc ss
-        | .cfg _ => .ok #[]
+        | .cfg c => extractFromDetCFG globalPc c
       .ok (axiomPc, allObs ++ obs)
     | _ => .ok (axiomPc, allObs)
   return allObs

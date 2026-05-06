@@ -279,6 +279,9 @@ def Procedure.Spec.updateCheckExprs
   | e :: erest, c :: crest =>
     { c with expr := e } :: go erest crest
 
+/-- A deterministic control-flow graph over Core commands and expressions. -/
+@[expose] abbrev DetCFG := Imperative.CFG String (Imperative.DetBlock String Command Expression)
+
 /-- The body of a Core procedure: either structured (a list of statements) or
 unstructured (a control-flow graph of basic blocks). An empty structured body
 (`structured []`) represents an abstract/bodyless procedure. -/
@@ -288,7 +291,7 @@ inductive Procedure.Body where
   /-- An unstructured body: a control-flow graph of deterministic basic blocks.
       Labels are strings; each block contains Core commands and ends with a
       deterministic transfer (conditional goto or finish). -/
-  | cfg : Imperative.CFG String (Imperative.DetBlock String Command Expression) → Procedure.Body
+  | cfg : DetCFG → Procedure.Body
   deriving Inhabited
 
 /-- Extract the structured statements, or error if the body is a CFG. -/
