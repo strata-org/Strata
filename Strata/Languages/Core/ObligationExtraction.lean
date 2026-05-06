@@ -45,55 +45,8 @@ def isValidObligationInput : Statements → Bool
   | s :: rest => isValidObligationStatement s && isValidObligationInput rest
 end
 
-mutual
-/-- Core recursive worker for `extractFromStatements`. Walks the statement list,
-    accumulating path conditions and collecting proof obligations. -/
-def extractGo (pc : PathConditions Expression) : Statements →
-    Array (ProofObligation Expression) →
-    Except String (Array (ProofObligation Expression))
-  | [], acc => .ok acc
-  | s :: rest, acc =>
-    match s with
-    | .cmd (.cmd (.assert label e md)) =>
-      let propType := match md.getPropertyType with
-        | some s => if s == MetaData.divisionByZero then .divisionByZero
-                    else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
-                    else .assert
-        | none => .assert
-      extractGo pc rest (acc.push (ProofObligation.mk label propType pc e md))
-
-    | .cmd (.cmd (.cover label e md)) =>
-      extractGo pc rest (acc.push (ProofObligation.mk label .cover pc e md))
-
-    | .cmd (.cmd (.assume label e _md)) =>
-      extractGo (pc.addInNewest [.assumption label e]) rest acc
-
-    | .ite .nondet thenSs elseSs _md => do
-      let thenObs ← extractFromStatements pc thenSs
-      let elseObs ← extractFromStatements pc elseSs
-      extractGo pc rest (acc ++ thenObs ++ elseObs)
-
-    | .cmd (.cmd (.init name ty e _md)) =>
-      extractGo (pc.addEntry (.varDecl name ty e)) rest acc
-
-    | _other =>
-      .error s!"ObligationExtraction: unsupported statement"
-
-/-- Extract proof obligations from a procedure body, reconstructing path
-    conditions from the program structure.
-
-    `pathConditions` accumulates the current path conditions (from `assume`
-    statements and `var` definitions) as we walk the statement tree.
-
-    Returns the extracted obligations. -/
-def extractFromStatements
-    (pathConditions : PathConditions Expression)
-    (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
-  extractGo pathConditions ss #[]
-end
-
 /-- Extract proof obligations from a single command, accumulating path conditions. -/
-private def extractFromCmd (pc : PathConditions Expression) (cmd : Command)
+def extractFromCmd (pc : PathConditions Expression) (cmd : Command)
     : PathConditions Expression × Array (ProofObligation Expression) :=
   match cmd with
   | .cmd (.assert label e md) =>
@@ -110,6 +63,40 @@ private def extractFromCmd (pc : PathConditions Expression) (cmd : Command)
   | .cmd (.init name ty e _md) =>
     (pc.addEntry (.varDecl name ty e), #[])
   | _ => (pc, #[])
+
+mutual
+/-- Core recursive worker for `extractFromStatements`. Walks the statement list,
+    accumulating path conditions and collecting proof obligations. -/
+def extractGo (pc : PathConditions Expression) : Statements →
+    Array (ProofObligation Expression) →
+    Except String (Array (ProofObligation Expression))
+  | [], acc => .ok acc
+  | s :: rest, acc =>
+    match s with
+    | .cmd c =>
+      let (newPc, newObs) := extractFromCmd pc c
+      extractGo newPc rest (acc ++ newObs)
+
+    | .ite .nondet thenSs elseSs _md => do
+      let thenObs ← extractFromStatements pc thenSs
+      let elseObs ← extractFromStatements pc elseSs
+      extractGo pc rest (acc ++ thenObs ++ elseObs)
+
+    | _other =>
+      .error s!"ObligationExtraction: unsupported statement"
+
+/-- Extract proof obligations from a procedure body, reconstructing path
+    conditions from the program structure.
+
+    `pathConditions` accumulates the current path conditions (from `assume`
+    statements and `var` definitions) as we walk the statement tree.
+
+    Returns the extracted obligations. -/
+def extractFromStatements
+    (pathConditions : PathConditions Expression)
+    (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
+  extractGo pathConditions ss #[]
+end
 
 /-- Extract proof obligations from a deterministic CFG by walking all blocks. -/
 def extractFromDetCFG (pc : PathConditions Expression) (cfg : DetCFG)
@@ -155,8 +142,6 @@ private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
     obtain ⟨hs, hrest⟩ := h
     unfold extractGo; split
     · exact extractGo_ok _ _ _ hrest
-    · exact extractGo_ok _ _ _ hrest
-    · exact extractGo_ok _ _ _ hrest
     · rename_i thenSs elseSs _
       unfold isValidObligationStatement at hs
       simp [Bool.and_eq_true] at hs
@@ -171,8 +156,8 @@ private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
         cases extractGo pc elseSs #[] with
         | error => intro _ h; simp [Except.isOk, Except.toBool] at h
         | ok v2 => intro _ _; simp; exact extractGo_ok _ _ _ hrest
-    · exact extractGo_ok _ _ _ hrest
     · unfold isValidObligationStatement at hs; simp at hs
+      split at hs <;> simp at *
 
 /-- If the input satisfies `isValidObligationInput`, then `extractFromStatements`
     never returns an error. -/
