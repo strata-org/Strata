@@ -17,26 +17,29 @@ public section
 
 namespace Core
 
--- nosourcerange-file: proof terms must match synthesized expressions that use ExprSourceLoc.none
--- (canonical forms in semantic definitions represent abstract values, not parsed source terms).
+-- Proof terms and semantic definitions use semLoc provenance
+-- (canonical forms represent abstract values, not parsed source terms).
+
+abbrev semLoc : ExprSourceLoc :=
+  { uri := some (.file "<synthesized:semantics>"), range := Strata.SourceRange.none }
 
 /-- Expressions that can't be reduced when evaluating.
-    These are canonical forms used in semantic definitions; they carry no source location
+    These are canonical forms used in semantic definitions; they carry synthesized provenance
     because they represent abstract values, not parsed source terms. -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const ExprSourceLoc.none _)
-  | bvar  :  Value (.bvar ExprSourceLoc.none _)
-  | op    :  Value (.op ExprSourceLoc.none _ _)
-  | abs   :  Value (.abs ExprSourceLoc.none _ _ _)
+  | const :  Value (.const semLoc _)
+  | bvar  :  Value (.bvar semLoc _)
+  | op    :  Value (.op semLoc _ _)
+  | abs   :  Value (.abs semLoc _ _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
--- Semantic typeclass instances construct canonical expressions with no source location.
+-- Semantic typeclass instances construct canonical expressions with synthesized provenance.
 
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar ExprSourceLoc.none · none)
+  mkFvar := (.fvar semLoc · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -46,18 +49,18 @@ instance : HasSubstFvar Core.Expression where
   substFvars := Lambda.LExpr.substFvars
 
 instance : HasIntOrder Core.Expression where
-  eq    e1 e2 := .eq ExprSourceLoc.none e1 e2
-  lt    e1 e2 := .app ExprSourceLoc.none (.app ExprSourceLoc.none Core.intLtOp e1) e2
-  zero        := .intConst ExprSourceLoc.none 0
+  eq    e1 e2 := .eq semLoc e1 e2
+  lt    e1 e2 := .app semLoc (.app semLoc Core.intLtOp e1) e2
+  zero        := .intConst semLoc 0
   intTy       := .forAll [] (.tcons "int" [])
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
 
 @[expose, match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst ExprSourceLoc.none Bool.true
+def Core.true : Core.Expression.Expr := .boolConst semLoc Bool.true
 @[expose, match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst ExprSourceLoc.none Bool.false
+def Core.false : Core.Expression.Expr := .boolConst semLoc Bool.false
 
 instance : HasBool Core.Expression where
   tt := Core.true
@@ -70,7 +73,7 @@ instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
-  | e => Lambda.LExpr.app ExprSourceLoc.none (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  | e => Lambda.LExpr.app semLoc (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
 @[expose] abbrev CoreEval := SemanticEval Expression
 @[expose] abbrev CoreStore := SemanticStore Expression
@@ -208,10 +211,10 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            δ σ (.fvar ExprSourceLoc.none (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+            δ σ (.fvar semLoc (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
           -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            δ σ (.fvar ExprSourceLoc.none (CoreIdent.mkOld v.name) none) = σ v))
+            δ σ (.fvar semLoc (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 

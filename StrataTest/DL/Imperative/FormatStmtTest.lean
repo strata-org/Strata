@@ -5,7 +5,7 @@
 -/
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.DDMTransform.FormatCore
--- nosourcerange-file: test fixtures build Core expressions directly, no source locations
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 namespace FormatStmtTest
 open Core
@@ -18,16 +18,16 @@ private abbrev Ss := List S
 private abbrev E := Expression.Expr
 
 private def intTy : Expression.Ty := .forAll [] .int
-private def x : E := .fvar ExprSourceLoc.none (⟨"x", ()⟩) (some .int)
-private def y : E := .fvar ExprSourceLoc.none (⟨"y", ()⟩) (some .int)
-private def tt : E := .boolConst ExprSourceLoc.none true
-private def int0 : E := .intConst ExprSourceLoc.none 0
-private def int1 : E := .intConst ExprSourceLoc.none 1
-private def int2 : E := .intConst ExprSourceLoc.none 2
-private def int42 : E := .intConst ExprSourceLoc.none 42
-private def xEq0 : E := .eq ExprSourceLoc.none x int0
-private def xEq5 : E := .eq ExprSourceLoc.none x (.intConst ExprSourceLoc.none 5)
-private def xEq1 : E := .eq ExprSourceLoc.none x int1
+private def x : E := .fvar (ExprSourceLoc.synthesized "test") (⟨"x", ()⟩) (some .int)
+private def y : E := .fvar (ExprSourceLoc.synthesized "test") (⟨"y", ()⟩) (some .int)
+private def tt : E := .boolConst (ExprSourceLoc.synthesized "test") true
+private def int0 : E := .intConst (ExprSourceLoc.synthesized "test") 0
+private def int1 : E := .intConst (ExprSourceLoc.synthesized "test") 1
+private def int2 : E := .intConst (ExprSourceLoc.synthesized "test") 2
+private def int42 : E := .intConst (ExprSourceLoc.synthesized "test") 42
+private def xEq0 : E := .eq (ExprSourceLoc.synthesized "test") x int0
+private def xEq5 : E := .eq (ExprSourceLoc.synthesized "test") x (.intConst (ExprSourceLoc.synthesized "test") 5)
+private def xEq1 : E := .eq (ExprSourceLoc.synthesized "test") x int1
 
 -- 1. cmd: init
 /-- info: var x : int := 0; -/

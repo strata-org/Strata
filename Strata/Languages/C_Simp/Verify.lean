@@ -24,20 +24,22 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
--- nosourcerange-file: C_Simp expressions carry Unit metadata, so no source range is available
+-- C_Simp expressions carry Unit metadata, so translated expressions use synthesized provenance
+private abbrev cSimpLoc : ExprSourceLoc := ExprSourceLoc.synthesized "c-simp"
+
 /-- Translate a C_Simp expression to a Core expression.
-    C_Simp expressions carry `Unit` metadata, so no source range is available. -/
+    C_Simp expressions carry `Unit` metadata, so translated expressions use synthesized provenance. -/
 def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
-  | .const _ c => .const ExprSourceLoc.none c
-  | .op _ o ty => .op ExprSourceLoc.none ⟨o.name, ()⟩ ty
-  | .bvar _ n => .bvar ExprSourceLoc.none n
-  | .fvar _ n ty => .fvar ExprSourceLoc.none ⟨n.name, ()⟩ ty
-  | .abs _ name ty e => .abs ExprSourceLoc.none name ty (translate_expr e)
-  | .quant _ k name ty tr e => .quant ExprSourceLoc.none k name ty (translate_expr tr) (translate_expr e)
-  | .app _ fn e => .app ExprSourceLoc.none (translate_expr fn) (translate_expr e)
-  | .ite _ c t e => .ite ExprSourceLoc.none (translate_expr c) (translate_expr t) (translate_expr e)
-  | .eq _ e1 e2 => .eq ExprSourceLoc.none (translate_expr e1) (translate_expr e2)
+  | .const _ c => .const cSimpLoc c
+  | .op _ o ty => .op cSimpLoc ⟨o.name, ()⟩ ty
+  | .bvar _ n => .bvar cSimpLoc n
+  | .fvar _ n ty => .fvar cSimpLoc ⟨n.name, ()⟩ ty
+  | .abs _ name ty e => .abs cSimpLoc name ty (translate_expr e)
+  | .quant _ k name ty tr e => .quant cSimpLoc k name ty (translate_expr tr) (translate_expr e)
+  | .app _ fn e => .app cSimpLoc (translate_expr fn) (translate_expr e)
+  | .ite _ c t e => .ite cSimpLoc (translate_expr c) (translate_expr t) (translate_expr e)
+  | .eq _ e1 e2 => .eq cSimpLoc (translate_expr e1) (translate_expr e2)
 
 def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match e with
@@ -89,7 +91,7 @@ Assumption that invariant holds on exit
 This is suitable for Symbolic Execution, but may not be suitable for
 other analyses.
 
-Synthesized expressions (measure checks, guard negations) use `ExprSourceLoc.none`
+Synthesized expressions (measure checks, guard negations) use `ExprSourceLoc.synthesized "c-simp"`
 because they have no corresponding source location.
 -/
 def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
@@ -100,7 +102,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
-      let measure_pos := (.app ExprSourceLoc.none (.app ExprSourceLoc.none (coreOpExpr (.numeric ⟨.int, .Ge⟩)) (translate_expr measure)) (.intConst ExprSourceLoc.none 0))
+      let measure_pos := (.app cSimpLoc (.app cSimpLoc (coreOpExpr (.numeric ⟨.int, .Ge⟩)) (translate_expr measure)) (.intConst cSimpLoc 0))
 
       let entry_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
@@ -113,8 +115,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes ++
          [Core.Statement.assume "assume_measure_pos" measure_pos {}]) {}
       let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (.det (translate_expr measure)) {}
-      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app ExprSourceLoc.none (.app ExprSourceLoc.none (coreOpExpr (.numeric ⟨.int, .Lt⟩)) (translate_expr measure)) (.fvar ExprSourceLoc.none "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite ExprSourceLoc.none (.app ExprSourceLoc.none (.app ExprSourceLoc.none (coreOpExpr (.numeric ⟨.int, .Le⟩)) (translate_expr measure)) (.intConst ExprSourceLoc.none 0)) (.app ExprSourceLoc.none (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) Core.true) {}
+      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app cSimpLoc (.app cSimpLoc (coreOpExpr (.numeric ⟨.int, .Lt⟩)) (translate_expr measure)) (.fvar cSimpLoc "special-name-for-old-measure-value" none)) {}
+      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite cSimpLoc (.app cSimpLoc (.app cSimpLoc (coreOpExpr (.numeric ⟨.int, .Le⟩)) (translate_expr measure)) (.intConst cSimpLoc 0)) (.app cSimpLoc (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) Core.true) {}
       let maintain_invariants : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
@@ -122,7 +124,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++
          [measure_decreases, measure_imp_not_guard] ++ maintain_invariants) {}
 
-      let not_guard : Core.Statement := .assume "not_guard" (.app ExprSourceLoc.none (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app cSimpLoc (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
@@ -142,7 +144,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
         ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
-      let not_guard : Core.Statement := .assume "not_guard" (.app ExprSourceLoc.none (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app cSimpLoc (coreOpExpr (.bool .Not)) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i (_, inv) =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}

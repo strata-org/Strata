@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
--- nosourcerange-file: synthesized expressions for environment operations and path conditions
+-- Synthesized expressions for environment operations and path conditions
 module
 
 public import Strata.Languages.Core.Program
@@ -53,19 +53,15 @@ instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
         | .Original, .Original | .ReplacementVar, .ReplacementVar
         | .Abstraction, .Abstraction => true
         | _, _ => false) |>.map (·.2)
-    let nonNoneLoc (prov : Lambda.LExpr.EvalProvenance) : Option ExprSourceLoc :=
-      match findLoc prov with
-      | some loc => if loc.isNone then none else some loc
-      | none => none
     -- Pick the primary location: prefer Original > ReplacementVar > Abstraction
     let priority := [.Original, .ReplacementVar, .Abstraction]
-    match priority.findSome? nonNoneLoc with
-    | none => ExprSourceLoc.none -- nosourcerange: no provenance entry has a valid location
+    match priority.findSome? findLoc with
+    | none => ExprSourceLoc.synthesized "env"
     | some primaryLoc =>
       -- Collect related locations from all other non-none provenance entries,
       -- including their own relatedLocs.
       let related := priority.foldl (init := primaryLoc.relatedLocs) fun acc prov =>
-        match nonNoneLoc prov with
+        match findLoc prov with
         | some loc =>
           if loc == primaryLoc then acc
           else (loc.uri, loc.range) :: (loc.relatedLocs ++ acc)
@@ -323,9 +319,8 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Unit)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
-            -- nosourcerange: synthesized fresh variable, not from parsed source
-            | none => .fvar ExprSourceLoc.none xid none
-            | some xty => .fvar ExprSourceLoc.none xid (some xty)
+            | none => .fvar (ExprSourceLoc.synthesized "env") xid none
+            | some xty => .fvar (ExprSourceLoc.synthesized "env") xid (some xty)
   (xe, E)
 
 /--
@@ -353,25 +348,25 @@ def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
-      -- nosourcerange: synthesized free variable reference for scope initialization
-      (x.fst :: acc_ids, (x.snd, .fvar ExprSourceLoc.none x.fst x.snd) :: acc_pairs))
+      (x.fst :: acc_ids, (x.snd, .fvar (ExprSourceLoc.synthesized "env") x.fst x.snd) :: acc_pairs))
     ([], [])
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
 
 
--- Synthesized path condition logic; no source location for generated connectives
+-- Synthesized path condition logic
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
   let wrapAssumption (ant : Expression.Expr) : PathConditionEntry Expression → PathConditionEntry Expression
     | .assumption label e => .assumption label (mkImplies ant e)
     | entry => entry
-  let negCond := LExpr.ite ExprSourceLoc.none cond (LExpr.boolConst ExprSourceLoc.none false) (LExpr.boolConst ExprSourceLoc.none true)
+  let envLoc := ExprSourceLoc.synthesized "env"
+  let negCond := LExpr.ite envLoc cond (LExpr.boolConst envLoc false) (LExpr.boolConst envLoc true)
   let pc1' := pc1.map (wrapAssumption cond)
   let pc2' := pc2.map (wrapAssumption negCond)
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
-  LExpr.ite ExprSourceLoc.none ant con (LExpr.boolConst ExprSourceLoc.none true)
+  LExpr.ite (ExprSourceLoc.synthesized "env") ant con (LExpr.boolConst (ExprSourceLoc.synthesized "env") true)
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
     (_h1 : E1.error.isNone) (_h2 : E2.error.isNone) : Env :=

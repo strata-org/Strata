@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
--- nosourcerange-file: defines ExprSourceLoc.none and its elaborator/test infrastructure
+-- Defines ExprSourceLoc and its elaborator/test infrastructure
 module
 
 public import Strata.DL.Lambda.LExprTypeEnv
@@ -28,15 +28,15 @@ deriving Inhabited, Repr, DecidableEq, BEq
 
 namespace ExprSourceLoc
 
-@[expose]
-def none : ExprSourceLoc := { uri := .none, range := Strata.SourceRange.none, relatedLocs := [] }
-
-def isNone (loc : ExprSourceLoc) : Bool := loc.uri.isNone ∧ loc.range.isNone ∧ loc.relatedLocs.isEmpty
-
 /-- Marker for expressions synthesized programmatically. The `origin` string identifies
-    the synthesis context (e.g. "smt-model", "anf", "transform"). -/
+    the synthesis context (e.g. "smt-model", "anf", "transform", "test"). -/
+@[expose]
 def synthesized (origin : String) : ExprSourceLoc :=
   { uri := some (.file s!"<synthesized:{origin}>"), range := Strata.SourceRange.none }
+
+/-- Default metadata for elaborated expressions from syntax (e.g. `eb[...]` notation). -/
+@[expose]
+def elabDefault : ExprSourceLoc := synthesized "elab"
 
 /-- Build from a `SourceRange` with no URI. -/
 def ofRange (sr : Strata.SourceRange) : ExprSourceLoc := { uri := .none, range := sr }
@@ -162,21 +162,22 @@ meta def elabCoreIdent : Syntax → MetaM Expr
 meta instance : MkLExprParams ⟨CoreExprMetadata, Unit⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (mkConst ``Unit)
-  -- Elaborated expressions from syntax have no runtime source range
-  defaultMetadata := return mkConst ``ExprSourceLoc.none
+  -- Elaborated expressions from syntax carry "elab" provenance
+  defaultMetadata := return mkConst ``ExprSourceLoc.elabDefault
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Unit⟩) e
 
 /--
-info: Lambda.LExpr.op ExprSourceLoc.none { name := "old", metadata := () }
+info: Lambda.LExpr.op ExprSourceLoc.elabDefault { name := "old", metadata := () }
   none : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Unit }.mono
 -/
 #guard_msgs in
 #check eb[~old]
 
 /--
-info: Lambda.LExpr.app ExprSourceLoc.none (Lambda.LExpr.op ExprSourceLoc.none { name := "old", metadata := () } none)
-  (Lambda.LExpr.fvar ExprSourceLoc.none { name := "a", metadata := () }
+info: Lambda.LExpr.app ExprSourceLoc.elabDefault
+  (Lambda.LExpr.op ExprSourceLoc.elabDefault { name := "old", metadata := () } none)
+  (Lambda.LExpr.fvar ExprSourceLoc.elabDefault { name := "a", metadata := () }
     none) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Unit }.mono
 -/
 #guard_msgs in
@@ -185,7 +186,7 @@ info: Lambda.LExpr.app ExprSourceLoc.none (Lambda.LExpr.op ExprSourceLoc.none { 
 open Lambda.LTy.Syntax in
 
 /--
-info: Lambda.LExpr.fvar ExprSourceLoc.none { name := "x", metadata := () }
+info: Lambda.LExpr.fvar ExprSourceLoc.elabDefault { name := "x", metadata := () }
   (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Unit }.mono
 -/
 #guard_msgs in

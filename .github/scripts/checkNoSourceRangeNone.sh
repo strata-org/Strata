@@ -1,6 +1,9 @@
 #!/bin/bash
-# Check that new code does not introduce net-new SourceRange.none or ExprSourceLoc.none
+# Check that new code does not introduce net-new SourceRange.none
 # without justification.
+#
+# ExprSourceLoc.none was removed; all synthesized expressions must now use
+# ExprSourceLoc.synthesized with an explicit origin string.
 #
 # Suppression:
 #   Per-line:  add "-- nosourcerange: <explanation>" on the same line
@@ -15,7 +18,7 @@ BASE_REF="${1:-origin/main}"
 # Patterns to check. If any of these are renamed, the safety check below will
 # detect that the pattern no longer appears anywhere in the codebase and fail,
 # forcing the developer to update this list.
-NONE_PATTERNS=("SourceRange.none" "ExprSourceLoc.none")
+NONE_PATTERNS=("SourceRange.none")
 
 # Safety check: every pattern must appear at least once in the tracked Lean
 # files. If a pattern disappears entirely (e.g. due to a rename), this script
@@ -47,7 +50,7 @@ HITS=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lean' 
       if [ "$grep_status" -gt 1 ]; then exit "$grep_status"; else exit 0; fi; })
 
 if [ -z "$HITS" ]; then
-  echo "OK: No new SourceRange.none / ExprSourceLoc.none usage found."
+  echo "OK: No new SourceRange.none usage found."
   exit 0
 fi
 
@@ -79,7 +82,7 @@ REMOVED=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lea
 NET=$((ADDED - REMOVED))
 
 if [ "$NET" -gt 0 ]; then
-  echo "ERROR: Net increase of $NET unsuppressed SourceRange.none / ExprSourceLoc.none occurrence(s)."
+  echo "ERROR: Net increase of $NET unsuppressed SourceRange.none occurrence(s)."
   echo "  (added: $ADDED, removed: $REMOVED)"
   echo ""
   echo "Each occurrence should either propagate real source metadata or"

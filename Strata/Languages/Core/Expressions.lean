@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
--- nosourcerange-file: default instances and operator constructors with no source origin
+-- Default instances and operator constructors use synthesized provenance
 module
 
 public import Strata.DL.Lambda.Lambda
@@ -35,14 +35,14 @@ abbrev Expression : Imperative.PureExpr :=
 instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
--- Inhabited default; no meaningful source location
+-- Inhabited default uses synthesized "core" provenance
 instance : Inhabited Expression.Expr where
-  default := .intConst ExprSourceLoc.none 0
+  default := .intConst (ExprSourceLoc.synthesized "core") 0
 
 /-- Build an `LExpr.op` node from a structured `CoreOp`.
-    `CoreOp` values are language-level operators with no source location. -/
+    `CoreOp` values are language-level operators with synthesized provenance. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
-  .op ExprSourceLoc.none op.toString ty
+  .op (ExprSourceLoc.synthesized "core") op.toString ty
 
 ---------------------------------------------------------------------
 

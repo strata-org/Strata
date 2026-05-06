@@ -51,7 +51,7 @@ private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
 private def exprSourceLocOf (node : AstNode α) : ExprSourceLoc :=
   match node.source with
   | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
-  | none => ExprSourceLoc.none -- nosourcerange: AST node has no source info
+  | none => ExprSourceLoc.synthesized "laurel"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -140,7 +140,7 @@ def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr :
   emitDiagnostic d
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
   let id ← freshId
-  return LExpr.fvar ExprSourceLoc.none (⟨s!"DUMMY_VAR_{id}", ()⟩) none -- nosourcerange: synthesized dummy for error recovery
+  return LExpr.fvar (ExprSourceLoc.synthesized "laurel") (⟨s!"DUMMY_VAR_{id}", ()⟩) none
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
@@ -606,10 +606,10 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Translate postconditions and trigger with the full bound-var context
   let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
-    -- Synthesized conjunction of postconditions; no single source location applies
-    | [] => .const ExprSourceLoc.none (.boolConst true) -- nosourcerange: synthesized true literal for empty postconditions
+    -- Synthesized conjunction of postconditions
+    | [] => .const (ExprSourceLoc.synthesized "laurel") (.boolConst true)
     | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp ExprSourceLoc.none boolAndOp [acc, x]) e -- nosourcerange: synthesized conjunction node
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp (ExprSourceLoc.synthesized "laurel") boolAndOp [acc, x]) e
   let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
@@ -625,13 +625,13 @@ where
     | [p] =>
       let sr := match p.name.source with
         | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
-        | none => ExprSourceLoc.none -- nosourcerange: AST node has no source info
+        | none => ExprSourceLoc.synthesized "laurel"
       return LExpr.allTr sr p.name.text (some (← translateType p.type)) trigger body
     | p :: rest => do
       let inner ← buildQuants rest body trigger
       let sr := match p.name.source with
         | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
-        | none => ExprSourceLoc.none -- nosourcerange: AST node has no source info
+        | none => ExprSourceLoc.synthesized "laurel"
       return LExpr.all sr p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
