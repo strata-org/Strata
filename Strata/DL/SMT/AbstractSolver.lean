@@ -25,7 +25,8 @@ For the incremental SMT-LIB backend, `τ = SMT.Term`, `σ = SMT.TermType`,
 - Models return keys as `(String × Nat)` where `Nat` is the shadow depth
   (0 = most recently declared).
 - Quantifier bound variables are scoped via a callback pattern.
-- Terms are session-independent and can be stored and replayed across sessions.
+- Terms (`τ`) are opaque handles whose meaning is backend-specific. They may
+  be internal addresses and should not be assumed valid across sessions.
 - Sorts are first-class: backends can create and pass their own sort
   representations via `intSort`, `boolSort`, `bitvecSort`, `arraySort`, etc.
 -/
