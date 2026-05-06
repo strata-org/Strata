@@ -221,7 +221,10 @@ def anfEncodeProgram (p : Program) : Bool × Program :=
       | .structured ss =>
         let (body', idx') := anfEncodeBody ss idx
         (.proc { proc with body := .structured body' } md :: acc, idx', changed || idx' > idx)
-      | .cfg _ => (.proc proc md :: acc, idx, changed)
+      | .cfg _ =>
+        -- CSE on CFGs would require dominator analysis to determine where to
+        -- place hoisted var declarations. Skipped for now.
+        (.proc proc md :: acc, idx, changed)
     | other => (other :: acc, idx, changed)
   ) ([], 0, false)
   (changed, { decls := revDecls.reverse })
