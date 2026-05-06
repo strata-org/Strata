@@ -12,18 +12,17 @@ namespace Strata.Pipeline
 
 open Strata (DiagnosticType DiagnosticModel FileRange Uri)
 
-/-- Map a `DiagnosticType` to a `MessageKind` for a given phase.
-    Each phase has four message kinds corresponding to the four
-    diagnostic severity levels. -/
-public def MessageKind.fromDiagnosticType (phase : Phase) : DiagnosticType → MessageKind
+/-- Map a `DiagnosticType` to a `MessageKind`.
+    Each diagnostic severity maps to a category and impact. -/
+public def MessageKind.fromDiagnosticType : DiagnosticType → MessageKind
   | .Warning =>
-    { phase, category := "warning", impact := .internalWarning }
+    { category := "warning", impact := .internalWarning }
   | .UserError =>
-    { phase, category := "userError", impact := .userCodeIssue }
+    { category := "userError", impact := .userCodeIssue }
   | .NotYetImplemented =>
-    { phase, category := "notYetImplemented", impact := .knownLimitation }
+    { category := "notYetImplemented", impact := .knownLimitation }
   | .StrataBug =>
-    { phase, category := "error", impact := .internalError }
+    { category := "error", impact := .internalError }
 
 /-- Convert a `DiagnosticModel` to a `PipelineMessage` using the given phase. -/
 public def PipelineMessage.fromDiagnostic (phase : Phase) (d : DiagnosticModel) : PipelineMessage :=
@@ -31,7 +30,8 @@ public def PipelineMessage.fromDiagnostic (phase : Phase) (d : DiagnosticModel) 
     | .file path => path
   { file
     loc := d.fileRange.range
-    kind := MessageKind.fromDiagnosticType phase d.type
+    phase
+    kind := MessageKind.fromDiagnosticType d.type
     message := d.message }
 
 /-- Convert a list of `DiagnosticModel` values to pipeline messages. -/

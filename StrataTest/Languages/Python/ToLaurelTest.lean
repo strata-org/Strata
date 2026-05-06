@@ -93,7 +93,7 @@ private def fmtTypeDef : TypeDefinition → String
 private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
   let result := signaturesToLaurel "<test>" sigs modulePrefix
   for err in result.errors do
-    IO.println s!"warning: {err.kind.phase}.{err.kind.category}: {err.message}"
+    IO.println s!"warning: {err.phase}.{err.kind.category}: {err.message}"
   for td in result.program.types do
     IO.println (fmtTypeDef td)
   for proc in result.program.staticProcedures do
@@ -111,7 +111,7 @@ private def runTestWarningKinds (sigs : Array Signature) (modulePrefix : String 
   let result := signaturesToLaurel "<test>" sigs modulePrefix
   assert! result.errors.size > 0
   for err in result.errors do
-    IO.println s!"{err.kind.phase}.{err.kind.category}: {err.message}"
+    IO.println s!"{err.phase}.{err.kind.category}: {err.message}"
 
 /-- Helper to make a function signature with preconditions. -/
 private def mkFuncSigWithPrecond (name : String) (returnType : SpecType)

@@ -356,8 +356,10 @@ def shouldSkip (name : String) : PySpecM Bool := do
   let nameIdent := { pythonModule := toString ctx.currentModule, name }
   return nameIdent ∈ ctx.skipNames
 
+private def pySpecParsingPhase : Phase := Phase.base "pySpecParsing" 1
+
 def specErrorAt (file : System.FilePath) (loc : SourceRange) (message : String) : PySpecM Unit := do
-  let e : PipelineMessage := { file, loc, kind := .pySpecParsingError, message }
+  let e : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingError, message }
   modify fun s => { s with errors := s.errors.push e }
 
 instance : PySpecMClass PySpecM where
@@ -365,7 +367,7 @@ instance : PySpecMClass PySpecM where
     specErrorAt (←read).pythonFile loc message
   specWarning loc message := do
     let file := (←read).pythonFile
-    let w : PipelineMessage := { file, loc, kind := .pySpecParsingWarning, message }
+    let w : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingWarning, message }
     modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
@@ -746,11 +748,11 @@ abbrev SpecAssertionM := ReaderT SpecAssertionContext (StateM SpecAssertionState
 instance : PySpecMClass SpecAssertionM where
   specError loc message := do
     let file := (←read) |>.filePath
-    let e : PipelineMessage := { file, loc, kind := .pySpecParsingError, message }
+    let e : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingError, message }
     modify fun s => { s with errors := s.errors.push e }
   specWarning loc message := do
     let file := (←read) |>.filePath
-    let w : PipelineMessage := { file, loc, kind := .pySpecParsingWarning, message }
+    let w : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingWarning, message }
     modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size

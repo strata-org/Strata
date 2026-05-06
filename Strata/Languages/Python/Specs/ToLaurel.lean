@@ -62,7 +62,7 @@ namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
 open Strata.Python.Laurel
-open Strata.Pipeline (PipelineMessage MessageKind)
+open Strata.Pipeline (PipelineMessage MessageKind Phase)
 
 /-! ## ToLaurelM Monad -/
 
@@ -87,9 +87,11 @@ structure ToLaurelState where
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 
-/-- Report an error during translation. -/
+/-- Report an error during translation. Phase is set to pySpecToLaurel since
+    this monad always runs during that phase. -/
 def reportError (kind : MessageKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
-  let e : PipelineMessage := ⟨(←read).filepath, loc, kind, message⟩
+  let phase := Phase.base "pySpecToLaurel" 2
+  let e : PipelineMessage := ⟨(←read).filepath, loc, phase, kind, message⟩
   modify fun s => { s with errors := s.errors.push e }
 
 def runChecked (act : ToLaurelM α) : ToLaurelM (α × Bool) := do

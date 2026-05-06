@@ -38,11 +38,15 @@ public structure PyAnalyzeConfig where
   verifyOptions : Core.VerifyOptions
   entryPoint : Core.EntryPoint := Core.EntryPoint.roots
   isBugFinding : Bool := true
+  outputMode : OutputMode := .default
+  skipVerification : Bool := false
+  skipTiming : Bool := false
 
 /-- Full result of the pyAnalyzeLaurel pipeline. Warnings are always populated. -/
 public structure PyAnalyzeResult where
   outcome : PyAnalyzeOutcome
   warnings : Array PipelineMessage
+  timing : Array PhaseTimingEntry := #[]
   laurelPassStats : Statistics := {}
 
 private def runPipeline (filePath : String) (specDir : System.FilePath)
@@ -50,8 +54,10 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
     (sourcePath : Option String) (profile : Bool)
     (keepAllFilesPrefix : Option String) (verifyOptions : Core.VerifyOptions)
     (entryPoint : Core.EntryPoint) (isBugFinding : Bool)
-    : Strata.PipelineM (PyAnalyzeOutcome × Statistics) := do
+    (skipVerification : Bool)
+    : PipelineM (PyAnalyzeOutcome × Statistics) := do
   -- Phase 0-3: Python + PySpec → Laurel
+  startPhase (Phase.base "pythonAndSpecToLaurel" 0)
   let pipelineResult ← Strata.pythonAndSpecToLaurel (specDir := specDir)
         filePath dispatchModules pyspecModules sourcePath
         (profile := profile)
@@ -67,6 +73,7 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
       return (PyAnalyzeOutcome.internalError msg, {})
 
   -- Phase 4-5: Laurel → Core
+  startPhase (Phase.base "laurelToCore" 5)
   let (coreProgramOption, laurelTranslateErrors, _, laurelPassStats) ←
     match ← (Strata.translateCombinedLaurelWithLowered combinedLaurel
       (keepAllFilesPrefix := keepAllFilesPrefix)
@@ -75,7 +82,7 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
     | .error e =>
       return (PyAnalyzeOutcome.internalError s!"Laurel translation error: {e}", {})
 
-  let laurelMessages := PipelineMessage.fromDiagnostics .laurelToCore laurelTranslateErrors
+  let laurelMessages := PipelineMessage.fromDiagnostics (Phase.base "laurelToCore" 5) laurelTranslateErrors
   Strata.addMessages laurelMessages
 
   let coreProgram ← match coreProgramOption with
@@ -84,7 +91,12 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
       return (PyAnalyzeOutcome.internalError
         s!"Laurel to Core translation failed: {laurelTranslateErrors}", laurelPassStats)
 
+  -- Skip verification if requested
+  if skipVerification then
+    return (PyAnalyzeOutcome.verified #[] coreProgram, laurelPassStats)
+
   -- Phase 7: SMT Verification
+  startPhase (Phase.base "verification" 7)
   let userSourcePath := sourcePath.getD filePath
   let (_, userProcNames) := Strata.splitProcNames coreProgram [userSourcePath]
   let (proceduresToVerify, inlinePhases) :=
@@ -124,7 +136,12 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
     Accumulates pipeline messages from all phases. The caller is responsible
     for printing warnings and handling the outcome (exit codes, SARIF, etc.). -/
 public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO PyAnalyzeResult := do
-  let ((outcome, stats), state) ← runPipeline
+  let ctx : PipelineContext := {
+    outputMode := config.outputMode
+    pipelineStartTime := ← IO.monoNanosNow
+    skipTiming := config.skipTiming
+  }
+  let ((outcome, stats), state) ← PipelineM.run' (runPipeline
     (PyAnalyzeConfig.filePath config)
     (PyAnalyzeConfig.specDir config)
     (PyAnalyzeConfig.dispatchModules config)
@@ -135,7 +152,9 @@ public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO PyAnalyzeResult 
     (PyAnalyzeConfig.verifyOptions config)
     (PyAnalyzeConfig.entryPoint config)
     (PyAnalyzeConfig.isBugFinding config)
-    |>.run {}
-  return PyAnalyzeResult.mk outcome state.messages stats
+    (PyAnalyzeConfig.skipVerification config)) ctx
+  let warnings := PipelineState.messages state
+  let timing := PipelineState.timing state
+  return { outcome, warnings, timing, laurelPassStats := stats }
 
 end Strata.Pipeline

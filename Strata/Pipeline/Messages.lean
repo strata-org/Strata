@@ -6,49 +6,64 @@
 module
 
 public import Strata.DDM.Util.SourceRange
+import all Strata.DDM.Util.String
 
 public section
 namespace Strata.Pipeline
 
-/-- A pipeline phase that produced a message. The `phaseNumber` determines
-    the display order so that warnings are printed in pipeline execution order. -/
-structure Phase where
-  private mk ::
-  phaseNumber : Nat
+/-- A single component in a phase path. -/
+structure PhaseName where
   name : String
-  deriving BEq, DecidableEq, Hashable, Ord, Repr
+  index : Nat
+  deriving BEq, DecidableEq, Hashable, Repr, Inhabited
 
-instance : LT Phase where
-  lt a b := a.phaseNumber < b.phaseNumber ∨
-    (a.phaseNumber == b.phaseNumber ∧ a.name < b.name)
+instance : ToString PhaseName where
+  toString pn := pn.name
 
-instance (a b : Phase) : Decidable (a < b) :=
-  inferInstanceAs (Decidable (a.phaseNumber < b.phaseNumber ∨
-    (a.phaseNumber == b.phaseNumber ∧ a.name < b.name)))
+instance : Ord PhaseName where
+  compare a b := compare a.index b.index
 
-instance : ToString Phase where
-  toString p := p.name
+/-- A phase represents a position in the phase hierarchy.
+    Top-level phases have a single entry; subphases have multiple. -/
+structure Phase where
+  path : Array PhaseName := #[]
+  deriving BEq, DecidableEq, Hashable, Repr, Inhabited
 
 namespace Phase
-/-- Resolving dotted module names to PySpec Ion file paths on disk. -/
-def moduleResolution : Phase := { phaseNumber := 0, name := "moduleResolution" }
-/-- Parsing PySpec Ion files into typed signatures. -/
-def pySpecParsing : Phase := { phaseNumber := 1, name := "pySpecParsing" }
-/-- Translating PySpec signatures into Laurel declarations. -/
-def pySpecToLaurel : Phase := { phaseNumber := 2, name := "pySpecToLaurel" }
-/-- Matching call sites in user Python AST to dispatch table entries from
-    PySpec `@overload` declarations. -/
-def overloadResolution : Phase := { phaseNumber := 3, name := "overloadResolution" }
-/-- Laurel-to-Laurel lowering passes (resolution, diamond validation,
-    constrained-type elimination, etc.). -/
-def laurelLowering : Phase := { phaseNumber := 4, name := "laurelLowering" }
-/-- Translating lowered Laurel to Core. -/
-def laurelToCore : Phase := { phaseNumber := 5, name := "laurelToCore" }
-/-- Core program transforms (type-checking, call elimination, symbolic eval). -/
-def coreTransforms : Phase := { phaseNumber := 6, name := "coreTransforms" }
-/-- SMT verification (encoding, solving). -/
-def verification : Phase := { phaseNumber := 7, name := "verification" }
+
+def base (name : String) (index : Nat) : Phase :=
+  { path := #[⟨name, index⟩] }
+
+def subphase (parent : Phase) (name : String) (index : Nat) : Phase :=
+  { path := parent.path.push ⟨name, index⟩ }
+
+def depth (p : Phase) : Nat := p.path.size
+
+def leaf (p : Phase) : String :=
+  match p.path.back? with
+  | some pn => toString pn
+  | none => "<unknown>"
+
+def display (p : Phase) : String :=
+  String.intercalate "." (p.path.toList.map toString)
+
 end Phase
+
+instance : ToString Phase where
+  toString p := p.display
+
+instance : Ord Phase where
+  compare a b :=
+    let rec go (i : Nat) : Ordering :=
+      if h₁ : i < a.path.size then
+        if h₂ : i < b.path.size then
+          match compare a.path[i] b.path[i] with
+          | .eq => go (i + 1)
+          | ord => ord
+        else .gt
+      else if i < b.path.size then .lt
+      else .eq
+    go 0
 
 /-- How severe / actionable is this message? -/
 inductive MessageImpact where
@@ -85,145 +100,137 @@ instance : ToString MessageImpact where
     | .userCodeIssue => "userCodeIssue"
     | .configurationError => "configurationError"
 
-/-- A categorized message kind with phase, category, and impact. -/
+/-- A categorized message kind with category and impact.
+    The phase is derived from pipeline context at emit time. -/
 structure MessageKind where
-  phase : Phase
   category : String
   impact : MessageImpact
   deriving BEq, DecidableEq, Hashable, Ord, Repr
 
-instance : LT MessageKind where
-  lt a b := a.phase < b.phase ∨ (a.phase == b.phase ∧ a.category < b.category)
-
-instance (a b : MessageKind) : Decidable (a < b) :=
-  inferInstanceAs (Decidable (a.phase < b.phase ∨ (a.phase == b.phase ∧ a.category < b.category)))
-
 instance : ToString MessageKind where
-  toString mk := s!"{mk.phase}.{mk.category}"
+  toString mk := mk.category
 
 namespace MessageKind
 
 -- Type translation warnings
 def unsupportedUnion : MessageKind :=
-  { phase := .pySpecToLaurel, category := "unsupportedUnion", impact := .knownLimitation }
-
--- Unsupported Optional patterns
+  { category := "unsupportedUnion", impact := .knownLimitation }
 def unsupportedOptionalFloat : MessageKind :=
-  { phase := .pySpecToLaurel, category := "unsupportedOptionalFloat", impact := .knownLimitation }
+  { category := "unsupportedOptionalFloat", impact := .knownLimitation }
 def unsupportedOptionalList : MessageKind :=
-  { phase := .pySpecToLaurel, category := "unsupportedOptionalList", impact := .knownLimitation }
+  { category := "unsupportedOptionalList", impact := .knownLimitation }
 def unsupportedOptionalDict : MessageKind :=
-  { phase := .pySpecToLaurel, category := "unsupportedOptionalDict", impact := .knownLimitation }
+  { category := "unsupportedOptionalDict", impact := .knownLimitation }
 def unsupportedOptionalAny : MessageKind :=
-  { phase := .pySpecToLaurel, category := "unsupportedOptionalAny", impact := .knownLimitation }
+  { category := "unsupportedOptionalAny", impact := .knownLimitation }
 def unsupportedOptionalBytes : MessageKind :=
-  { phase := .pySpecToLaurel, category := "unsupportedOptionalBytes", impact := .knownLimitation }
+  { category := "unsupportedOptionalBytes", impact := .knownLimitation }
 
 -- Internal type errors
 def typeError : MessageKind :=
-  { phase := .pySpecToLaurel, category := "typeError", impact := .internalWarning }
+  { category := "typeError", impact := .internalWarning }
 
 -- Precondition warnings
 def placeholderExpr : MessageKind :=
-  { phase := .pySpecToLaurel, category := "placeholderExpr", impact := .knownLimitation }
+  { category := "placeholderExpr", impact := .knownLimitation }
 def floatLiteral : MessageKind :=
-  { phase := .pySpecToLaurel, category := "floatLiteral", impact := .knownLimitation }
+  { category := "floatLiteral", impact := .knownLimitation }
 def isinstanceUnsupported : MessageKind :=
-  { phase := .pySpecToLaurel, category := "isinstanceUnsupported", impact := .knownLimitation }
+  { category := "isinstanceUnsupported", impact := .knownLimitation }
 def forallListUnsupported : MessageKind :=
-  { phase := .pySpecToLaurel, category := "forallListUnsupported", impact := .knownLimitation }
+  { category := "forallListUnsupported", impact := .knownLimitation }
 def forallDictUnsupported : MessageKind :=
-  { phase := .pySpecToLaurel, category := "forallDictUnsupported", impact := .knownLimitation }
+  { category := "forallDictUnsupported", impact := .knownLimitation }
 
 -- Declaration warnings
 def missingMethodSelf : MessageKind :=
-  { phase := .pySpecToLaurel, category := "missingMethodSelf", impact := .internalWarning }
+  { category := "missingMethodSelf", impact := .internalWarning }
 def kwargsExpansionError : MessageKind :=
-  { phase := .pySpecToLaurel, category := "kwargsExpansionError", impact := .internalWarning }
+  { category := "kwargsExpansionError", impact := .internalWarning }
 def postconditionUnsupported : MessageKind :=
-  { phase := .pySpecToLaurel, category := "postconditionUnsupported", impact := .knownLimitation }
+  { category := "postconditionUnsupported", impact := .knownLimitation }
 
 -- Overload dispatch warnings (in PySpec-to-Laurel phase)
 def overloadNoArgs : MessageKind :=
-  { phase := .pySpecToLaurel, category := "overloadNoArgs", impact := .internalError }
+  { category := "overloadNoArgs", impact := .internalError }
 def overloadArgArity : MessageKind :=
-  { phase := .pySpecToLaurel, category := "overloadArgArity", impact := .internalError }
+  { category := "overloadArgArity", impact := .internalError }
 def overloadArgNotStringLiteral : MessageKind :=
-  { phase := .pySpecToLaurel, category := "overloadArgNotStringLiteral", impact := .internalError }
+  { category := "overloadArgNotStringLiteral", impact := .internalError }
 def overloadReturnArity : MessageKind :=
-  { phase := .pySpecToLaurel, category := "overloadReturnArity", impact := .internalError }
+  { category := "overloadReturnArity", impact := .internalError }
 def overloadReturnNotClass : MessageKind :=
-  { phase := .pySpecToLaurel, category := "overloadReturnNotClass", impact := .internalError }
+  { category := "overloadReturnNotClass", impact := .internalError }
 def overloadParamNameDisagreement : MessageKind :=
-  { phase := .pySpecToLaurel, category := "overloadParamNameDisagreement", impact := .internalError }
+  { category := "overloadParamNameDisagreement", impact := .internalError }
 
 -- PySpec parsing phase
 def pySpecParsingError : MessageKind :=
-  { phase := .pySpecParsing, category := "error", impact := .internalError }
+  { category := "error", impact := .internalError }
 def pySpecParsingWarning : MessageKind :=
-  { phase := .pySpecParsing, category := "warning", impact := .knownLimitation }
+  { category := "warning", impact := .knownLimitation }
 def pySpecReadError : MessageKind :=
-  { phase := .pySpecParsing, category := "readError", impact := .configurationError }
+  { category := "readError", impact := .configurationError }
 
 -- PySpec-to-Laurel assembly phase
 def functionSignatureError : MessageKind :=
-  { phase := .pySpecToLaurel, category := "functionSignatureError", impact := .internalError }
+  { category := "functionSignatureError", impact := .internalError }
 def typeNameCollision : MessageKind :=
-  { phase := .pySpecToLaurel, category := "typeNameCollision", impact := .internalError }
+  { category := "typeNameCollision", impact := .internalError }
 def procedureNameCollision : MessageKind :=
-  { phase := .pySpecToLaurel, category := "procedureNameCollision", impact := .internalError }
+  { category := "procedureNameCollision", impact := .internalError }
 
 -- Module resolution phase
 def invalidModuleName : MessageKind :=
-  { phase := .moduleResolution, category := "invalidModuleName", impact := .internalWarning }
+  { category := "invalidModuleName", impact := .internalWarning }
 def missingAutoResolvedPySpec : MessageKind :=
-  { phase := .moduleResolution, category := "missingAutoResolvedPySpec", impact := .knownLimitation }
+  { category := "missingAutoResolvedPySpec", impact := .knownLimitation }
 def missingDispatchModule : MessageKind :=
-  { phase := .moduleResolution, category := "missingDispatchModule", impact := .configurationError }
+  { category := "missingDispatchModule", impact := .configurationError }
 def missingExplicitPySpec : MessageKind :=
-  { phase := .moduleResolution, category := "missingExplicitPySpec", impact := .configurationError }
+  { category := "missingExplicitPySpec", impact := .configurationError }
 
 -- Overload resolution phase
 def overloadResolveWarning : MessageKind :=
-  { phase := .overloadResolution, category := "resolveWarning", impact := .internalWarning }
+  { category := "resolveWarning", impact := .internalWarning }
 
 -- Laurel lowering phase
 def laurelLoweringWarning : MessageKind :=
-  { phase := .laurelLowering, category := "warning", impact := .internalWarning }
+  { category := "warning", impact := .internalWarning }
 def laurelLoweringError : MessageKind :=
-  { phase := .laurelLowering, category := "error", impact := .internalError }
+  { category := "error", impact := .internalError }
 def laurelLoweringNotImpl : MessageKind :=
-  { phase := .laurelLowering, category := "notYetImplemented", impact := .knownLimitation }
+  { category := "notYetImplemented", impact := .knownLimitation }
 def laurelLoweringUserError : MessageKind :=
-  { phase := .laurelLowering, category := "userError", impact := .userCodeIssue }
+  { category := "userError", impact := .userCodeIssue }
 
 -- Laurel-to-Core translation phase
 def laurelToCoreWarning : MessageKind :=
-  { phase := .laurelToCore, category := "warning", impact := .internalWarning }
+  { category := "warning", impact := .internalWarning }
 def laurelToCoreError : MessageKind :=
-  { phase := .laurelToCore, category := "error", impact := .internalError }
+  { category := "error", impact := .internalError }
 def laurelToCoreNotImpl : MessageKind :=
-  { phase := .laurelToCore, category := "notYetImplemented", impact := .knownLimitation }
+  { category := "notYetImplemented", impact := .knownLimitation }
 def laurelToCoreUserError : MessageKind :=
-  { phase := .laurelToCore, category := "userError", impact := .userCodeIssue }
+  { category := "userError", impact := .userCodeIssue }
 
 -- Core transforms phase
 def coreTransformWarning : MessageKind :=
-  { phase := .coreTransforms, category := "warning", impact := .internalWarning }
+  { category := "warning", impact := .internalWarning }
 def coreTransformError : MessageKind :=
-  { phase := .coreTransforms, category := "error", impact := .internalError }
+  { category := "error", impact := .internalError }
 def coreTransformNotImpl : MessageKind :=
-  { phase := .coreTransforms, category := "notYetImplemented", impact := .knownLimitation }
+  { category := "notYetImplemented", impact := .knownLimitation }
 def coreTransformUserError : MessageKind :=
-  { phase := .coreTransforms, category := "userError", impact := .userCodeIssue }
+  { category := "userError", impact := .userCodeIssue }
 
 -- Verification phase
 def verificationWarning : MessageKind :=
-  { phase := .verification, category := "warning", impact := .internalWarning }
+  { category := "warning", impact := .internalWarning }
 def verificationError : MessageKind :=
-  { phase := .verification, category := "error", impact := .internalError }
+  { category := "error", impact := .internalError }
 def verificationTimeout : MessageKind :=
-  { phase := .verification, category := "solverTimeout", impact := .knownLimitation }
+  { category := "solverTimeout", impact := .knownLimitation }
 
 end MessageKind
 
@@ -231,11 +238,102 @@ end MessageKind
 structure PipelineMessage where
   file : System.FilePath
   loc : SourceRange
+  phase : Phase
   kind : MessageKind
   message : String
 
 instance : ToString PipelineMessage where
-  toString m := s!"{m.file}: {m.kind}: {m.message}"
+  toString m := s!"{m.file}: {m.phase}.{m.kind}: {m.message}"
+
+/-- Output verbosity mode for the pipeline. -/
+inductive OutputMode where
+  | quiet
+  | default
+  | profile
+  | verbose
+  deriving BEq, DecidableEq, Repr
+
+/-- Immutable configuration for a pipeline run. -/
+structure PipelineContext where
+  outputMode : OutputMode
+  pipelineStartTime : Nat
+  skipTiming : Bool := false
+
+/-- Timing entry for a single phase. -/
+structure PhaseTimingEntry where
+  phase : Phase
+  start_ns : Nat
+  end_ns : Option Nat := none
+  timeout : Bool := false
+
+/-- Mutable state accumulated during a pipeline run. -/
+structure PipelineState where
+  messages : Array PipelineMessage := #[]
+  shouldAbort : Bool := false
+  timing : Array PhaseTimingEntry := #[]
+  currentPhase : Phase := {}
+  messageCountAtPhaseStart : Nat := 0
+
+/-- The pipeline monad: reader for config, state for accumulated messages and timing. -/
+public abbrev PipelineM := ReaderT PipelineContext (StateT PipelineState BaseIO)
+
+/-- Nanoseconds to milliseconds with rounding. -/
+def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
+
+/-- Get elapsed nanoseconds since pipeline start. -/
+def elapsedNs : PipelineM Nat := do
+  let ctx ← read
+  let now ← IO.monoNanosNow
+  return now - ctx.pipelineStartTime
+
+/-- Print to stderr and flush. -/
+private def eprintlnFlush (msg : String) : PipelineM Unit := do
+  let _ ← (do IO.eprintln msg; (← IO.getStderr).flush : IO Unit).toBaseIO
+
+/-- End the current phase: record end time, print [warnings] summary in profile mode. -/
+private def endCurrentPhase : PipelineM Unit := do
+  let s ← get
+  if s.currentPhase.path.isEmpty then return
+  let now ← elapsedNs
+  let ctx ← read
+  let timing := s.timing
+  if h : timing.size > 0 then
+    let lastIdx := timing.size - 1
+    let last := timing[lastIdx]
+    let timing' := timing.set lastIdx { last with end_ns := some now }
+    modify fun st => { st with timing := timing' }
+  if ctx.outputMode == .profile then
+    let newMsgs := s.messages.extract s.messageCountAtPhaseStart s.messages.size
+    if newMsgs.size > 0 then
+      let counts : Std.HashMap String Nat := newMsgs.foldl (init := {})
+        fun acc msg => acc.alter msg.kind.category fun mv => some (mv.getD 0 + 1)
+      let parts := counts.toArray.map fun (cat, n) => s!"{n} {cat}"
+      let summary := String.intercalate ", " parts.toList
+      let indent := String.replicate ((s.currentPhase.depth - 1) * 2) ' '
+      eprintlnFlush s!"{indent}[warnings] {s.currentPhase.leaf}: {summary}"
+
+/-- Start a new phase. Implicitly ends the previous phase at the same or deeper depth. -/
+public def startPhase (phase : Phase) : PipelineM Unit := do
+  let s ← get
+  if s.currentPhase.path.size >= phase.path.size then
+    endCurrentPhase
+  let now ← elapsedNs
+  modify fun st => { st with
+    timing := st.timing.push { phase, start_ns := now }
+    currentPhase := phase
+    messageCountAtPhaseStart := st.messages.size }
+  let ctx ← read
+  if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+    let indent := String.replicate ((phase.depth - 1) * 2) ' '
+    let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
+    eprintlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
+
+/-- Run PipelineM, closing any open phases at the end. -/
+public def PipelineM.run' (action : PipelineM α) (ctx : PipelineContext)
+    (state : PipelineState := {}) : BaseIO (α × PipelineState) := do
+  let (result, finalState) ← action.run ctx |>.run state
+  let ((), closedState) ← (endCurrentPhase : PipelineM Unit).run ctx |>.run finalState
+  return (result, closedState)
 
 end Strata.Pipeline
 end

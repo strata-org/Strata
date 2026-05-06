@@ -669,6 +669,14 @@ def pyAnalyzeLaurelCommand : Command where
           exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
         else pure .all
 
+    -- Derive output mode from CLI flags.
+    let outputMode : Strata.Pipeline.OutputMode :=
+      if verbose then .verbose
+      else if profile then .profile
+      else if quiet then .quiet
+      else .default
+    let skipVerification := pflags.getBool "skip-verification"
+
     -- Run the pipeline
     let result ← Strata.Pipeline.runPyAnalyzePipeline {
       filePath, specDir
@@ -677,6 +685,7 @@ def pyAnalyzeLaurelCommand : Command where
       keepAllFilesPrefix := keepPrefix
       verifyOptions := options
       entryPoint, isBugFinding
+      outputMode, skipVerification
     }
 
     -- Always print pipeline warnings
@@ -685,9 +694,10 @@ def pyAnalyzeLaurelCommand : Command where
       IO.eprintln s!"{pipelineWarnings.size} pipeline warning(s)"
       if verbose then
         for err in pipelineWarnings do
-          IO.eprintln s!"  {err.file}: {err.kind}: {err.message}"
+          IO.eprintln s!"  {err.file}: {err.phase}.{err.kind}: {err.message}"
     if let some warnFile := warningSummaryFile then
       Strata.Pipeline.PipelineMessage.writeSummaryJson pipelineWarnings warnFile
+        (timing := result.timing)
 
     if profile && !result.laurelPassStats.data.isEmpty then
       IO.println result.laurelPassStats.format

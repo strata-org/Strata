@@ -19,6 +19,7 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Util.DecideProp
 import Strata.Util.Profile
+import all Strata.DDM.Util.String
 
 /-! ## PySpec Pipeline
 
@@ -44,26 +45,37 @@ public structure PySpecLaurelResult where
   exhaustiveClasses : Std.HashSet String := {}
   deriving Inhabited
 
-/-- Accumulated state for pipeline steps: messages and abort flag. -/
-public structure PipelineState where
-  messages : Array Pipeline.PipelineMessage := #[]
-  shouldAbort : Bool := false
+/-- A default pipeline context for sub-pipelines that don't need output. -/
+private def defaultPipelineContext : BaseIO Pipeline.PipelineContext := do
+  return { outputMode := .quiet, pipelineStartTime := ← IO.monoNanosNow }
 
-/-- Monad for pipeline steps that accumulate messages. -/
-public abbrev PipelineM := StateT PipelineState BaseIO
-
-/-- Emit a pipeline message. Sets `shouldAbort` if the kind's impact is fatal. -/
+/-- Emit a pipeline message. Tags with the current phase from state.
+    Sets `shouldAbort` if the kind's impact is fatal.
+    In verbose mode, prints the message immediately to stderr. -/
 public def emitMessage (kind : Pipeline.MessageKind) (message : String)
-    (file : System.FilePath := default) (loc : SourceRange := default) : PipelineM Unit :=
+    (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
+  let phase := (← get).currentPhase
   modify fun s => { s with
-    messages := s.messages.push { file, loc, kind, message },
+    messages := s.messages.push { file, loc, phase, kind, message },
     shouldAbort := s.shouldAbort || kind.impact.isFatal }
+  let ctx ← read
+  if ctx.outputMode == .verbose then
+    let tag := if kind.impact.isFatal then "error" else "warning"
+    let indent := String.replicate ((phase.depth - 1) * 2) ' '
+    let _ ← (do IO.eprintln s!"{indent}[{tag}] {file}: {message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
 
-/-- Append a batch of messages to the pipeline state. -/
-public def addMessages (msgs : Array Pipeline.PipelineMessage) : PipelineM Unit :=
+/-- Append a batch of messages to the pipeline state.
+    In verbose mode, prints each message immediately to stderr. -/
+public def addMessages (msgs : Array Pipeline.PipelineMessage) : Pipeline.PipelineM Unit := do
   modify fun s => { s with
     messages := s.messages ++ msgs,
     shouldAbort := s.shouldAbort || msgs.any (·.kind.impact.isFatal) }
+  let ctx ← read
+  if ctx.outputMode == .verbose then
+    for msg in msgs do
+      let tag := if msg.kind.impact.isFatal then "error" else "warning"
+      let indent := String.replicate ((msg.phase.depth - 1) * 2) ' '
+      let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
 
 /-! ### Private Helpers -/
 
@@ -153,7 +165,7 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
 private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
-    (overloads : OverloadTable) : PipelineM PySpecLaurelResult := do
+    (overloads : OverloadTable) : Pipeline.PipelineM PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
@@ -224,12 +236,13 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
     tables into a single combined result. -/
 public def buildPySpecLaurel (pyspecEntries : Array (String × String))
     (overloads : OverloadTable)
-    : BaseIO (PySpecLaurelResult × PipelineState) := do
-  buildPySpecLaurelM pyspecEntries overloads |>.run {}
+    : BaseIO (PySpecLaurelResult × Pipeline.PipelineState) := do
+  let ctx ← defaultPipelineContext
+  buildPySpecLaurelM pyspecEntries overloads |>.run ctx |>.run {}
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 private def readDispatchOverloadsM
-    (dispatchPaths : Array String) : PipelineM OverloadTable := do
+    (dispatchPaths : Array String) : Pipeline.PipelineM OverloadTable := do
   let mut tbl : OverloadTable := {}
   for dispatchPath in dispatchPaths do
     let ionFile : System.FilePath := dispatchPath
@@ -247,14 +260,15 @@ private def readDispatchOverloadsM
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
     (dispatchPaths : Array String)
-    : BaseIO (OverloadTable × PipelineState) := do
-  readDispatchOverloadsM dispatchPaths |>.run {}
+    : BaseIO (OverloadTable × Pipeline.PipelineState) := do
+  let ctx ← defaultPipelineContext
+  readDispatchOverloadsM dispatchPaths |>.run ctx |>.run {}
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` (with a warning) if the name is
     invalid or the pyspec file is not found. -/
 private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
-    : PipelineM (Option (String × String)) := do
+    : Pipeline.PipelineM (Option (String × String)) := do
   match Python.Specs.ModuleName.ofString modName with
   | .error _ =>
     emitMessage .invalidModuleName s!"invalid module name '{modName}', skipping" (file := specDir)
@@ -268,7 +282,7 @@ private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
 
 /-- Resolve module names, returning found entries and unresolved names. -/
 private def resolveModules (modules : Array String) (specDir : System.FilePath)
-    : PipelineM (Array (String × String) × Array String) := do
+    : Pipeline.PipelineM (Array (String × String) × Array String) := do
   let mut entries : Array (String × String) := #[]
   let mut unresolved : Array String := #[]
   for modName in modules do
@@ -290,7 +304,7 @@ public def resolveAndBuildLaurelPrelude
     (pyspecModules : Array String)
     (stmts : Array (Python.stmt SourceRange))
     (specDir : System.FilePath := ".")
-    : PipelineM PySpecLaurelResult := do
+    : Pipeline.PipelineM PySpecLaurelResult := do
   -- Dispatch modules (fatal on miss)
   let (dispatchEntries, missing) ← resolveModules dispatchModules specDir
   if missing.size > 0 then
@@ -464,27 +478,42 @@ public def PythonToLaurelResult.warnings : PythonToLaurelResult → Array Pipeli
 
 /-- Generate a JSON warning summary from pipeline messages. -/
 public def Pipeline.PipelineMessage.toSummaryJson
-    (warnings : Array Pipeline.PipelineMessage) : Lean.Json :=
-  let counts : Std.HashMap _ Nat := warnings.foldl (init := {})
-    fun acc err => acc.alter err.kind fun mv => some (mv.getD 0 + 1)
-  let entries := counts.toArray.qsort fun ⟨a, _⟩ ⟨b, _⟩ => a < b
-  let jsonEntries : Array Lean.Json := entries.map fun (kind, count) =>
+    (warnings : Array Pipeline.PipelineMessage)
+    (timing : Array Pipeline.PhaseTimingEntry := #[]) : Lean.Json :=
+  let diagnostics : Array Lean.Json := warnings.map fun msg =>
     Lean.Json.mkObj [
-      ("phase", .str kind.phase.name),
-      ("category", .str kind.category),
-      ("impact", .str (toString kind.impact)),
-      ("count", .num count)
+      ("file", .str msg.file.toString),
+      ("phase", .str msg.phase.display),
+      ("category", .str msg.kind.category),
+      ("impact", .str (toString msg.kind.impact)),
+      ("message", .str msg.message)
     ]
+  let timingPhases : Array Lean.Json := timing.map fun entry =>
+    let fields := [
+      ("phase", Lean.Json.str entry.phase.display),
+      ("start_ms", .num (Pipeline.nsToMs entry.start_ns)),
+      ("end_ms", .num (entry.end_ns.map Pipeline.nsToMs |>.getD 0))
+    ]
+    let fields := if entry.timeout then fields ++ [("timeout", .bool true)] else fields
+    Lean.Json.mkObj fields
+  let totalMs := match timing.back? with
+    | some last => last.end_ns.map Pipeline.nsToMs |>.getD 0
+    | none => 0
+  let timingObj := Lean.Json.mkObj [
+    ("total_ms", .num totalMs),
+    ("phases", .arr timingPhases)
+  ]
   Lean.Json.mkObj [
-    ("pyspecWarningSummary", .arr jsonEntries),
-    ("totalWarnings", .num warnings.size)
+    ("diagnostics", .arr diagnostics),
+    ("timing", timingObj)
   ]
 
 /-- Write a JSON warning summary to a file. -/
 public def Pipeline.PipelineMessage.writeSummaryJson
     (warnings : Array Pipeline.PipelineMessage)
-    (path : System.FilePath) : IO Unit := do
-  let json := Pipeline.PipelineMessage.toSummaryJson warnings
+    (path : System.FilePath)
+    (timing : Array Pipeline.PhaseTimingEntry := #[]) : IO Unit := do
+  let json := Pipeline.PipelineMessage.toSummaryJson warnings timing
   IO.FS.writeFile path (json.compress ++ "\n")
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
@@ -514,9 +543,10 @@ public def pythonAndSpecToLaurel
     | .ok r => pure r
     | .error msg => return .failure (.internal msg) #[]
 
+  let ctx ← defaultPipelineContext
   let (result, pipelineState) ←
     profileStep profile "Resolve and build Laurel prelude"
-      ((resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir).run {})
+      ((resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir).run ctx |>.run {})
   let pyspecWarnings := pipelineState.messages
 
   if pipelineState.shouldAbort then
