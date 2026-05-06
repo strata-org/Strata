@@ -1104,7 +1104,7 @@ def verifySingleEnv (oblProgram : Program)
     let t0 ← IO.monoNanosNow
     let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
     let t1 ← IO.monoNanosNow
-    timingNs := timingNs.insert (toString Verifier.Timing.preprocessObligations) (timingNs.getD (toString Verifier.Timing.preprocessObligations) 0 + (t1 - t0))
+    timingNs := timingNs.add (toString Verifier.Timing.preprocessObligations) (t1 - t0)
 
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
@@ -1133,7 +1133,7 @@ def verifySingleEnv (oblProgram : Program)
     let needValCheck := validityCheck && peValResult?.isNone
     let (maybeTerms, encNs) ← measureNanos fun () =>
       ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-    timingNs := timingNs.insert (toString Verifier.Timing.smtEncoding) (timingNs.getD (toString Verifier.Timing.smtEncoding) 0 + encNs)
+    timingNs := timingNs.add (toString Verifier.Timing.smtEncoding) encNs
 
     match maybeTerms with
     | .error err =>
@@ -1155,10 +1155,10 @@ def verifySingleEnv (oblProgram : Program)
                     counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
                     (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
-      timingNs := timingNs.insert (toString Verifier.Timing.solverFileWriting) (timingNs.getD (toString Verifier.Timing.solverFileWriting) 0 + (t5 - t4))
+      timingNs := timingNs.add (toString Verifier.Timing.solverFileWriting) (t5 - t4)
 
       for (key, val) in timing do
-        timingNs := timingNs.insert key (timingNs.getD key 0 + val)
+        timingNs := timingNs.add key val
 
       -- Merge evaluator results with solver results
       let result := match result.outcome with
@@ -1220,6 +1220,8 @@ def verify (program : Program)
     let mut current := program
     let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
+    -- Required by `measureNanos`'s `[Inhabited α]` constraint; the default value
+    -- is never observed (it only initializes an IO.Ref that is overwritten before read).
     have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
       ⟨(.error default, Transform.CoreTransformState.emp)⟩
     for pp in pipelinePhases do

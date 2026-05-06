@@ -10,6 +10,10 @@ public import Std.Data.HashMap.Basic
 /-- A map from timing label to elapsed nanoseconds. -/
 public abbrev TimingInfo := Std.HashMap String Nat
 
+/-- Accumulate nanoseconds into an existing key (defaulting to 0). -/
+@[inline] public def TimingInfo.add (t : TimingInfo) (key : String) (ns : Nat) : TimingInfo :=
+  t.insert key (t.getD key 0 + ns)
+
 @[inline] public def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
 
 /-- Measure the wall-clock nanoseconds taken by a pure expression.
@@ -25,7 +29,7 @@ public abbrev TimingInfo := Std.HashMap String Nat
   pure (result, t2 - t1)
 
 /-- Run an action and record its elapsed nanoseconds into a `TimingInfo` under the given key. -/
-@[inline] public def recordNanos {m α} [Monad m] [MonadLiftT BaseIO m]
+public def recordNanos {m α} [Monad m] [MonadLiftT BaseIO m]
     (key : String) (timing : TimingInfo) (action : m α) : m (α × TimingInfo) := do
   let t0 ← IO.monoNanosNow
   let result ← action
