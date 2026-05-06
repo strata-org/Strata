@@ -114,11 +114,11 @@ private def renameAllLocalNames (c:Procedure)
   -- a later old_id. The iteration is intentionally sequential because each step also
   -- renames LHS variables and labels.
   let new_body := List.map (fun (s0:Statement) =>
-        var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-            let s := Statement.substFvar s old_id (.fvar () new_id .none)
-            let s := Statement.renameLhs s old_id new_id
-            Statement.replaceLabels s label_map)
-          s0) bodyStmts
+    var_map.foldl (fun (s:Statement) (old_id,new_id) =>
+        let s := Statement.substFvar s old_id (.fvar () new_id .none)
+        let s := Statement.renameLhs s old_id new_id
+        Statement.replaceLabels s label_map)
+      s0) bodyStmts
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
       match var_map.find? id with
