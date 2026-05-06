@@ -272,16 +272,19 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .StaticCall callee args =>
     let model := (← get).model
-    let seqArgs ← args.reverse.mapM transformExpr
-    let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
     if model.isFunction callee then
-      return seqCall
+      let seqArgs ← args.reverse.mapM transformExpr
+      return ⟨.StaticCall callee seqArgs.reverse, source⟩
     else
       -- Imperative call in expression position: lift to an assignment.
       -- Only valid for single-output procedures (or unresolved ones where we
       -- fall back to a single target). Multi-output procedures in expression
       -- position are a bug in the upstream translation — Resolution should
       -- emit a diagnostic for that case.
+      let prePrepends ← takePrepends
+      let seqArgs ← args.reverse.mapM transformExpr
+      let argPrepends ← takePrepends
+      let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       let outputs := match model.get callee with
         | .staticProcedure proc => proc.outputs
         | .instanceProcedure _ proc => proc.outputs
@@ -294,7 +297,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         ⟨.Var (.Declare ⟨callResultVar, callResultType⟩), source⟩,
         ⟨.Assign [⟨.Local callResultVar, source⟩] seqCall, source⟩
       ]
-      modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
+      modify fun s => { s with prependedStmts := s.prependedStmts ++ argPrepends ++ prePrepends ++ liftedCall}
       return bare (.Var (.Local callResultVar))
 
   | .IfThenElse cond thenBranch elseBranch =>
