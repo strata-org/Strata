@@ -10,7 +10,7 @@ import Strata.DDM.Format
 import Strata.Languages.Python.OverloadTable
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
-public import Strata.Languages.Python.PipelineMessages
+public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
 
@@ -62,7 +62,7 @@ namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
 open Strata.Python.Laurel
-open Strata.Python (PipelineMessage MessageKind)
+open Strata.Pipeline (PipelineMessage MessageKind)
 
 /-! ## ToLaurelM Monad -/
 

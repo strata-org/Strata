@@ -8,7 +8,7 @@ module
 public import Strata.DDM.Util.SourceRange
 
 public section
-namespace Strata.Python
+namespace Strata.Pipeline
 
 /-- A pipeline phase that produced a message. The `phaseNumber` determines
     the display order so that warnings are printed in pipeline execution order. -/
@@ -39,6 +39,15 @@ def pySpecToLaurel : Phase := { phaseNumber := 2, name := "pySpecToLaurel" }
 /-- Matching call sites in user Python AST to dispatch table entries from
     PySpec `@overload` declarations. -/
 def overloadResolution : Phase := { phaseNumber := 3, name := "overloadResolution" }
+/-- Laurel-to-Laurel lowering passes (resolution, diamond validation,
+    constrained-type elimination, etc.). -/
+def laurelLowering : Phase := { phaseNumber := 4, name := "laurelLowering" }
+/-- Translating lowered Laurel to Core. -/
+def laurelToCore : Phase := { phaseNumber := 5, name := "laurelToCore" }
+/-- Core program transforms (type-checking, call elimination, symbolic eval). -/
+def coreTransforms : Phase := { phaseNumber := 6, name := "coreTransforms" }
+/-- SMT verification (encoding, solving). -/
+def verification : Phase := { phaseNumber := 7, name := "verification" }
 end Phase
 
 /-- How severe / actionable is this message? -/
@@ -178,6 +187,44 @@ def missingExplicitPySpec : MessageKind :=
 def overloadResolveWarning : MessageKind :=
   { phase := .overloadResolution, category := "resolveWarning", impact := .internalWarning }
 
+-- Laurel lowering phase
+def laurelLoweringWarning : MessageKind :=
+  { phase := .laurelLowering, category := "warning", impact := .internalWarning }
+def laurelLoweringError : MessageKind :=
+  { phase := .laurelLowering, category := "error", impact := .internalError }
+def laurelLoweringNotImpl : MessageKind :=
+  { phase := .laurelLowering, category := "notYetImplemented", impact := .knownLimitation }
+def laurelLoweringUserError : MessageKind :=
+  { phase := .laurelLowering, category := "userError", impact := .userCodeIssue }
+
+-- Laurel-to-Core translation phase
+def laurelToCoreWarning : MessageKind :=
+  { phase := .laurelToCore, category := "warning", impact := .internalWarning }
+def laurelToCoreError : MessageKind :=
+  { phase := .laurelToCore, category := "error", impact := .internalError }
+def laurelToCoreNotImpl : MessageKind :=
+  { phase := .laurelToCore, category := "notYetImplemented", impact := .knownLimitation }
+def laurelToCoreUserError : MessageKind :=
+  { phase := .laurelToCore, category := "userError", impact := .userCodeIssue }
+
+-- Core transforms phase
+def coreTransformWarning : MessageKind :=
+  { phase := .coreTransforms, category := "warning", impact := .internalWarning }
+def coreTransformError : MessageKind :=
+  { phase := .coreTransforms, category := "error", impact := .internalError }
+def coreTransformNotImpl : MessageKind :=
+  { phase := .coreTransforms, category := "notYetImplemented", impact := .knownLimitation }
+def coreTransformUserError : MessageKind :=
+  { phase := .coreTransforms, category := "userError", impact := .userCodeIssue }
+
+-- Verification phase
+def verificationWarning : MessageKind :=
+  { phase := .verification, category := "warning", impact := .internalWarning }
+def verificationError : MessageKind :=
+  { phase := .verification, category := "error", impact := .internalError }
+def verificationTimeout : MessageKind :=
+  { phase := .verification, category := "solverTimeout", impact := .knownLimitation }
+
 end MessageKind
 
 /-- A located, categorized pipeline message. -/
@@ -190,5 +237,5 @@ structure PipelineMessage where
 instance : ToString PipelineMessage where
   toString m := s!"{m.file}: {m.kind}: {m.message}"
 
-end Strata.Python
+end Strata.Pipeline
 end

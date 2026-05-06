@@ -17,6 +17,8 @@ import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+import Strata.Pipeline.Diagnostic
+import Strata.Pipeline.PyAnalyzeLaurel
 import Strata.Languages.Boole.Boole
 import Strata.Languages.Boole.Verify
 import Strata.Languages.Python.Python
@@ -639,81 +641,9 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let warningSummaryFile := pflags.getString "warning-summary"
-    let pipelineResult ← Strata.pythonAndSpecToLaurel (specDir := specDir)
-          filePath dispatchModules pyspecModules
-          sourcePath
-          (profile := profile)
-    let pyspecWarnings := pipelineResult.warnings
-    if !quiet && pyspecWarnings.size > 0 then
-      IO.eprintln s!"{pyspecWarnings.size} PySpec translation warning(s)"
-      if verbose then
-        for err in pyspecWarnings do
-          IO.eprintln s!"  {err.file}: {err.kind}: {err.message}"
-    if let some warnFile := warningSummaryFile then
-      Strata.Python.PipelineMessage.writeSummaryJson pyspecWarnings warnFile
-    let combinedLaurel ←
-      match pipelineResult with
-      | .success r _ =>
-        pure r
-      | .failure (.userCode range msg) _ =>
-        let location ← reportUserCodeError range msg mfm (sourcePath.getD filePath)
-        exitPyAnalyzeUserError s!"{msg}{location}"
-      | .failure (.knownLimitation msg) _ =>
-        exitPyAnalyzeKnownLimitation msg
-      | .failure (.internal msg) _ =>
-        exitPyAnalyzeInternalError msg
 
-    if verbose then
-      IO.println "\n==== Laurel Program ===="
-      IO.println f!"{combinedLaurel}"
-
+    -- Parse verify options early (needed for pipeline config).
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
-
-    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel, laurelPassStats) ←
-      profileStep profile "Laurel to Core translation" do
-        Strata.translateCombinedLaurelWithLowered combinedLaurel
-          (keepAllFilesPrefix := keepPrefix) (profile := profile)
-
-    if profile && !laurelPassStats.data.isEmpty then
-      IO.println laurelPassStats.format
-
-    let coreProgram ←
-      match coreProgramOption with
-      | none =>
-        exitPyAnalyzeInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
-      | some core => pure core
-
-    if verbose then
-      IO.println "\n==== Core Program ===="
-      IO.print (Core.formatProgram coreProgram)
-
-    -- When --skip-verification is set, report translation diagnostics and exit
-    -- without running SMT verification (stages 3-4).
-    if pflags.getBool "skip-verification" then do
-      if !laurelTranslateErrors.isEmpty then
-        IO.eprintln "\n==== Errors ===="
-        for err in laurelTranslateErrors do
-          IO.eprintln err
-      if outputSarif then
-        let files := match mfm with
-          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-          | none => Map.empty
-        Core.Sarif.writeSarifOutput .deductive files #[] (filePath ++ ".sarif")
-      let nStrataBug := laurelTranslateErrors.filter (·.type == .StrataBug) |>.length
-      let nNotYetImpl := laurelTranslateErrors.filter (·.type == .NotYetImplemented) |>.length
-      let nUserError := laurelTranslateErrors.filter (·.type == .UserError) |>.length
-      let nWarning := laurelTranslateErrors.filter (·.type == .Warning) |>.length
-      let counts := s!"{nUserError} user errors, {nWarning} warnings, {nNotYetImpl} not yet implemented, {nStrataBug} internal errors"
-      if nStrataBug > 0 then
-        exitPyAnalyzeInternalError s!"Translation produced internal errors. {counts}"
-      else if nNotYetImpl > 0 then
-        exitPyAnalyzeKnownLimitation s!"Translation encountered unsupported constructs. {counts}"
-      else
-        printPyAnalyzeResult "Analysis success" counts
-      return
-
-    -- Verify using Core verifier
-    -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
     let pyAnalyzeBase : VerifyOptions :=
       { VerifyOptions.default with
@@ -739,57 +669,63 @@ def pyAnalyzeLaurelCommand : Command where
           exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
         else pure .all
 
-    -- Pick the procedures to verify and set up inlining phases.
-    let userSourcePath := sourcePath.getD filePath
-    let (_, userProcNames) :=
-      Strata.splitProcNames coreProgram [userSourcePath]
-    let (proceduresToVerify, inlinePhases) :=
-      if isBugFinding then
-        let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases coreProgram userProcNames entryPoint
-        (p, [i])
-      else (userProcNames, [])
+    -- Run the pipeline
+    let result ← Strata.Pipeline.runPyAnalyzePipeline {
+      filePath, specDir
+      dispatchModules, pyspecModules, sourcePath
+      profile
+      keepAllFilesPrefix := keepPrefix
+      verifyOptions := options
+      entryPoint, isBugFinding
+    }
 
-    let vcResults ← profileStep profile "SMT verification" do
-      match ← Core.verifyProgram coreProgram options
-                (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some proceduresToVerify)
-                (externalPhases := [Strata.frontEndPhase])
-                (prefixPhases := inlinePhases)
-                (keepAllFilesPrefix := keepPrefix)
-                |>.toBaseIO with
-      | .ok r => pure r.mergeByAssertion
-      | .error msg => exitPyAnalyzeInternalError msg
+    -- Always print pipeline warnings
+    let pipelineWarnings := result.warnings
+    if !quiet && pipelineWarnings.size > 0 then
+      IO.eprintln s!"{pipelineWarnings.size} pipeline warning(s)"
+      if verbose then
+        for err in pipelineWarnings do
+          IO.eprintln s!"  {err.file}: {err.kind}: {err.message}"
+    if let some warnFile := warningSummaryFile then
+      Strata.Pipeline.PipelineMessage.writeSummaryJson pipelineWarnings warnFile
 
-    -- Print translation errors (always on stderr)
-    if !laurelTranslateErrors.isEmpty then
-      IO.eprintln "\n==== Errors ===="
-      for err in laurelTranslateErrors do
-        IO.eprintln err
+    if profile && !result.laurelPassStats.data.isEmpty then
+      IO.println result.laurelPassStats.format
 
-    -- Print per-VC results by default, unless SARIF mode is used
-    if !outputSarif then
-      let mut s := ""
-      for vcResult in vcResults do
-        let fileMap := mfm.map (·.2)
-        let location := match Imperative.getFileRange vcResult.obligation.metadata with
-          | some fr =>
-            if fr.range.isNone then ""
-            else s!"{fr.format fileMap (includeEnd? := false)}"
-          | none => ""
-        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
-          | some msg => s!" - {msg}"
-          | none => s!" - {vcResult.obligation.label}"
-        let outcomeStr := vcResult.formatOutcome
-        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
-        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
-      IO.print s
-    -- Output in SARIF format if requested
-    if outputSarif then
-      let files := match mfm with
-        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-        | none => Map.empty
-      Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults options.checkMode
+    -- Handle pipeline outcome
+    match result.outcome with
+    | .userError range msg =>
+      let location ← reportUserCodeError range msg mfm (sourcePath.getD filePath)
+      exitPyAnalyzeUserError s!"{msg}{location}"
+    | .knownLimitation msg =>
+      exitPyAnalyzeKnownLimitation msg
+    | .internalError msg =>
+      exitPyAnalyzeInternalError msg
+    | .verified vcResults _coreProgram =>
+      -- Print per-VC results by default, unless SARIF mode is used
+      if !outputSarif then
+        let mut s := ""
+        for vcResult in vcResults do
+          let fileMap := mfm.map (·.2)
+          let location := match Imperative.getFileRange vcResult.obligation.metadata with
+            | some fr =>
+              if fr.range.isNone then ""
+              else s!"{fr.format fileMap (includeEnd? := false)}"
+            | none => ""
+          let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+            | some msg => s!" - {msg}"
+            | none => s!" - {vcResult.obligation.label}"
+          let outcomeStr := vcResult.formatOutcome
+          let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+          s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+        IO.print s
+      -- Output in SARIF format if requested
+      if outputSarif then
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
+          | none => Map.empty
+        Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
+      printPyAnalyzeSummary vcResults options.checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"

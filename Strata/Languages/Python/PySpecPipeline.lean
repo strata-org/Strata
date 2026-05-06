@@ -14,7 +14,7 @@ import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
-public import Strata.Languages.Python.PipelineMessages
+public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Util.DecideProp
@@ -46,21 +46,21 @@ public structure PySpecLaurelResult where
 
 /-- Accumulated state for pipeline steps: messages and abort flag. -/
 public structure PipelineState where
-  messages : Array Python.PipelineMessage := #[]
+  messages : Array Pipeline.PipelineMessage := #[]
   shouldAbort : Bool := false
 
 /-- Monad for pipeline steps that accumulate messages. -/
 public abbrev PipelineM := StateT PipelineState BaseIO
 
 /-- Emit a pipeline message. Sets `shouldAbort` if the kind's impact is fatal. -/
-def emitMessage (kind : Python.MessageKind) (message : String)
+public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : PipelineM Unit :=
   modify fun s => { s with
     messages := s.messages.push { file, loc, kind, message },
     shouldAbort := s.shouldAbort || kind.impact.isFatal }
 
 /-- Append a batch of messages to the pipeline state. -/
-def addMessages (msgs : Array Python.PipelineMessage) : PipelineM Unit :=
+public def addMessages (msgs : Array Pipeline.PipelineMessage) : PipelineM Unit :=
   modify fun s => { s with
     messages := s.messages ++ msgs,
     shouldAbort := s.shouldAbort || msgs.any (·.kind.impact.isFatal) }
@@ -452,19 +452,19 @@ public instance : ToString PipelineError where
 /-- Result of the full Python + PySpec to Laurel pipeline. -/
 public inductive PythonToLaurelResult where
   /-- Translation succeeded, possibly with non-fatal warnings. -/
-  | success (program : Laurel.Program) (warnings : Array Python.PipelineMessage)
+  | success (program : Laurel.Program) (warnings : Array Pipeline.PipelineMessage)
   /-- A fatal error prevented Laurel generation. Warnings collected before
       the failure are still available. -/
-  | failure (error : PipelineError) (warnings : Array Python.PipelineMessage)
+  | failure (error : PipelineError) (warnings : Array Pipeline.PipelineMessage)
 
 /-- Get warnings from a pipeline result regardless of success or failure. -/
-public def PythonToLaurelResult.warnings : PythonToLaurelResult → Array Python.PipelineMessage
+public def PythonToLaurelResult.warnings : PythonToLaurelResult → Array Pipeline.PipelineMessage
   | .success _ ws => ws
   | .failure _ ws => ws
 
 /-- Generate a JSON warning summary from pipeline messages. -/
-public def Python.PipelineMessage.toSummaryJson
-    (warnings : Array Python.PipelineMessage) : Lean.Json :=
+public def Pipeline.PipelineMessage.toSummaryJson
+    (warnings : Array Pipeline.PipelineMessage) : Lean.Json :=
   let counts : Std.HashMap _ Nat := warnings.foldl (init := {})
     fun acc err => acc.alter err.kind fun mv => some (mv.getD 0 + 1)
   let entries := counts.toArray.qsort fun ⟨a, _⟩ ⟨b, _⟩ => a < b
@@ -481,10 +481,10 @@ public def Python.PipelineMessage.toSummaryJson
   ]
 
 /-- Write a JSON warning summary to a file. -/
-public def Python.PipelineMessage.writeSummaryJson
-    (warnings : Array Python.PipelineMessage)
+public def Pipeline.PipelineMessage.writeSummaryJson
+    (warnings : Array Pipeline.PipelineMessage)
     (path : System.FilePath) : IO Unit := do
-  let json := Python.PipelineMessage.toSummaryJson warnings
+  let json := Pipeline.PipelineMessage.toSummaryJson warnings
   IO.FS.writeFile path (json.compress ++ "\n")
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
