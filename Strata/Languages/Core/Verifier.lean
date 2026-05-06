@@ -239,6 +239,10 @@ private def datatypeConstrsM [Monad m] (solver : AbstractSolver τ σ m)
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
 private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     (solver : AbstractSolver τ σ m) (ctx : Core.SMT.Context) : m Unit := do
+  -- Validate that no datatype has arrow-typed fields (same check as batch path)
+  match Core.validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+  | .error msg => throw (IO.userError (toString msg))
+  | .ok () => pure ()
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with

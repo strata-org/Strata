@@ -115,7 +115,7 @@ private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List 
 
 /-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
   constructor arguments-/
-private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
     (seenDatatypes : Std.HashSet String) : Except Format Unit := do
   for block in typeFactory.toList do
     for d in block do

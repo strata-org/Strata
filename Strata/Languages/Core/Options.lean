@@ -220,7 +220,7 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
-  incremental := false
+  incremental := true
   pathCap := .none
 }
 
