@@ -259,6 +259,9 @@ def procedureToGotoCtx
     : Except Std.Format
         (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
+  -- TODO: This pass could be split into a two-stage transformation:
+  -- 1. structured → cfg (via StructuredToUnstructured)
+  -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
   let bodyStmts ← match p.body with
     | .structured ss => pure ss
     | .cfg _ => throw f!"CFG body not supported for GOTO pipeline"

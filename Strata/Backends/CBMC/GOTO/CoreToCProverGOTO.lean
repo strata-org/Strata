@@ -201,6 +201,9 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       if !p.header.typeArgs.isEmpty then
         throw f!"[transformToGoto] Translation for polymorphic Strata Core procedures is unimplemented."
 
+      -- TODO: This pass could be split into a two-stage transformation:
+      -- 1. structured → cfg (via StructuredToUnstructured)
+      -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
       let bodyStmts ← match p.body with
         | .structured ss => pure ss
         | .cfg _ => throw f!"CFG body not supported for GOTO translation"
