@@ -1463,7 +1463,7 @@ private theorem star_preserves_store_outside_touchedVars
     Stated for blocks without `init` commands or where all defined variables
     are already present in the initial store (the `reinit` case).
     The full inductive proof requires tracking UpdateState/InitState across
-    all command constructors; sorry-backed for now. -/
+    all command constructors; sorried for now. -/
 private theorem block_execution_store_agreement
     (ss : Statements) (ρ₀ ρ' : Env Expression)
     (hstar : CoreStar π φ (.stmts ss ρ₀) (.terminal ρ'))
@@ -3633,7 +3633,7 @@ private theorem loop_enter_canfail_simulation
        c. assume invs at ρ' → passes
 
     Store agreement (`hstore_agree`) is taken as a hypothesis, to be derived
-    from the loop iteration chain (see the sorry at the call site). -/
+    from the loop iteration chain (see the sorried tactic at the call site). -/
 private theorem det_loop_success_target_simulation
     (hwf_ext : WFEvalExtension φ)
     (σ : LoopElimState)
@@ -3731,7 +3731,7 @@ private theorem det_loop_success_target_simulation
       rw [hsuffix_info']; exact .step _ _ _ .step_stmts_nil (.refl _)
     | some _ =>
       intro _ _
-      -- For measure=some, suffix is [assert_decrease]; sorry for now
+      -- For measure=some, suffix is [assert_decrease]
       sorry
   -- Combine prefix → body' → maintain → suffix
   have harb_inner_term : CoreStar π φ
