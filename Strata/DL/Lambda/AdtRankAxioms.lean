@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.IntBoolFactory
 public import Strata.DL.Lambda.TypeFactory
 
 /-!
@@ -64,8 +65,7 @@ def mkAdtRankPerConstrAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited
         let fieldRankTy := .arrow (dataDefault fieldDt) .int
         let adtRankField := .app m (.op m (adtRankFuncName fieldDt.name)
           (.some fieldRankTy)) fieldBvar
-        let ltTy := .arrow .int (.arrow .int .bool)
-        let ltExpr := LExpr.mkApp m (.op m "Int.Lt" (.some ltTy))
+        let ltExpr := LExpr.mkApp m (@intLtFunc T).opExpr
           [adtRankField, adtRankConstr]
         let axiom_ := match fieldTys with
           | [] => ltExpr
@@ -85,8 +85,7 @@ def mkAdtRankNonNegAxiom {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.I
   let rankTy := .arrow dtTy .int
   let rankX := .app m (.op m (adtRankFuncName dt.name) (.some rankTy))
     (.bvar m 0)
-  let geTy := .arrow .int (.arrow .int .bool)
-  let geExpr := .mkApp m (.op m "Int.Ge" (.some geTy)) [rankX, .intConst m 0]
+  let geExpr := .mkApp m (@intGeFunc T).opExpr [rankX, .intConst m 0]
   .quant m .all "" (.some dtTy) rankX geExpr
 
 /-- Generate all adtRank axioms for a single datatype within a mutual block. -/

@@ -949,4 +949,264 @@ Result: ✅ pass -/
 #guard_msgs in
 #eval verify precondTermPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 18: recursive call nested inside a non-recursive function call
+---------------------------------------------------------------------
+
+def nestedInNonRecPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+function f (xs : IntList) : IntList { xs }
+
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(f(IntList..tl(xs)))
+};
+#end
+
+/-- info:
+Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify nestedInNonRecPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 19: error — decreasing argument contains a bound variable
+---------------------------------------------------------------------
+
+def boundVarDecrArgPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList) : bool
+{
+  if IntList..isNil(xs) then true
+  else forall y : IntList :: bad(y)
+};
+#end
+
+/-- error: termination checking: decreasing argument contains a bound variable -/
+#guard_msgs in
+#eval verify boundVarDecrArgPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 20: error — decreasing argument contains a recursive call
+---------------------------------------------------------------------
+
+def recCallInDecrArgPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList) : IntList
+{
+  if IntList..isNil(xs) then Nil() else bad(IntList..tl(bad(xs)))
+};
+#end
+
+/-- error: termination checking: decreasing argument contains a recursive call -/
+#guard_msgs in
+#eval verify recCallInDecrArgPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 21: recursive call nested inside non-recursive call — should fail
+-- g(x) = x so g does NOT decrease, termination unprovable
+---------------------------------------------------------------------
+
+def nestedInNonRecFailPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+function g (xs : IntList) : IntList { xs }
+
+rec function bad (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + bad(g(xs))
+};
+#end
+
+/-- info:
+Obligation: bad_terminates_0
+Property: assert
+Result: ❓ unknown -/
+#guard_msgs in
+#eval verify nestedInNonRecFailPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 22: recursive call under a binder but decreasing arg is free
+-- forall y :: ... bad(tl(xs)) ... — xs is free, so this is fine
+---------------------------------------------------------------------
+
+def recUnderBinderFreePgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function allPos (@[cases] xs : IntList) : bool
+{
+  if IntList..isNil(xs) then true
+  else (forall y : int :: y == IntList..hd(xs)) == allPos(IntList..tl(xs))
+};
+#end
+
+/-- info:
+Obligation: allPos_body_calls_IntList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: allPos_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: allPos_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify recUnderBinderFreePgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 23: let-binding (lambda application) with valid decreasing arg
+-- (fun y => listLen(IntList..tl(xs)))(IntList..hd(xs))
+---------------------------------------------------------------------
+
+def letBindingTermPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else (fun y : int => 1 + listLen(IntList..tl(xs)))(IntList..hd(xs))
+};
+#end
+
+/-- info:
+Obligation: listLen_body_calls_IntList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLen_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify letBindingTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 24: axiom filtering — mutual rec block with two unrelated datatypes
+-- f recurses on IntList, g recurses on MyNat; each $$term proc
+-- only gets axioms for its own decreasing type's datatype block
+---------------------------------------------------------------------
+
+def extraAxiomsPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+datatype MyNat { Zero(), Succ(pred: MyNat) };
+
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+}
+function natToInt (@[cases] n : MyNat) : int
+{
+  if MyNat..isZero(n) then 0 else 1 + natToInt(MyNat..pred(n))
+};
+#end
+
+/-- info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
+
+Label: natToInt_body_calls_MyNat..pred_0
+Property: assert
+Obligation:
+!(MyNat..isZero(n@1)) ==> MyNat..isSucc(n@1)
+
+Label: listLen_terminates_0
+Property: assert
+Assumptions:
+IntList..adtRank_0: forall __q0 : IntList ::  { IntList..adtRank(__q0) }
+  IntList..adtRank(__q0) >= 0
+IntList..adtRank_1: forall __q0 : int :: forall __q1 : IntList ::  { IntList..adtRank(Cons(__q0, __q1)) }
+  IntList..adtRank(__q1) < IntList..adtRank(Cons(__q0, __q1))
+Obligation:
+!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+
+Label: natToInt_terminates_0
+Property: assert
+Assumptions:
+MyNat..adtRank_0: forall __q0 : MyNat ::  { MyNat..adtRank(__q0) }
+  MyNat..adtRank(__q0) >= 0
+MyNat..adtRank_1: forall __q0 : MyNat ::  { MyNat..adtRank(Succ(__q0)) }
+  MyNat..adtRank(__q0) < MyNat..adtRank(Succ(__q0))
+Obligation:
+!(MyNat..isZero(n@2)) ==> MyNat..adtRank(MyNat..pred(n@2)) < MyNat..adtRank(n@2)
+
+---
+info:
+Obligation: listLen_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: natToInt_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: natToInt_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify extraAxiomsPgm (options := .default)
+
+---------------------------------------------------------------------
+-- Test 25: error — decreases with non-variable expression
+---------------------------------------------------------------------
+
+def decreasesNonVarPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList) : int
+  decreases IntList..tl(xs)
+{
+  if IntList..isNil(xs) then 0 else 1 + bad(IntList..tl(xs))
+};
+#end
+
+/-- error: recursive function 'bad': decreases clause must be a parameter name. Non-structural recursion is not yet supported -/
+#guard_msgs in
+#eval verify decreasesNonVarPgm (options := .quiet)
+
 end Strata.TerminationCheckTest

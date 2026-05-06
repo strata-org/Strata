@@ -54,7 +54,9 @@ private def getDecreasesIdx (func : Function) : Option Nat :=
   | some _ => none
   | none => FuncAttr.findInlineIfConstr func.attr
 
-/-- Extract the datatype name from a monomorphic type. -/
+/-- Extract the datatype name from a monomorphic type.
+  Precondition: `ty` must be a `.tcons`
+  (enforced by error checking in `termCheck`). -/
 private def adtNameOf (ty : LMonoTy) : String :=
   match ty with
   | .tcons n _ => n
@@ -71,6 +73,17 @@ private def mkAdtRankLt
   let ltTy : LMonoTy := LMonoTy.arrow .int (LMonoTy.arrow .int .bool)
   LExpr.mkApp () (.op () "Int.Lt" (.some ltTy)) [rank calleeAdtTy callArg, rank callerAdtTy (.fvar () callerParam (.some callerAdtTy))]
 
+/-- Check if an expression contains a call to any operation in the given name list. -/
+private def containsOpCall (e : Expression.Expr) (names : List String) : Bool :=
+  match e with
+  | .op _ opName _ => opName.name ∈ names
+  | .app _ fn arg => containsOpCall fn names || containsOpCall arg names
+  | .ite _ c t f => containsOpCall c names || containsOpCall t names || containsOpCall f names
+  | .eq _ e1 e2 => containsOpCall e1 names || containsOpCall e2 names
+  | .abs _ _ _ body => containsOpCall body names
+  | .quant _ _ _ _ tr body => containsOpCall tr names || containsOpCall body names
+  | _ => false
+
 /-- Extract termination obligations from an expression. Path conditions
     through `ite` branches are accumulated and wrapped as implications
     in the obligation expression, mirroring `collectWFObligations`. -/
@@ -80,42 +93,55 @@ private def extractTermObligations
     (callerParam : Expression.Ident)
     (callerAdtTy : LMonoTy)
     (funcDecreasesMap : List (String × Nat × LMonoTy))
-    : List Expression.Expr :=
+    : Except String (List Expression.Expr) :=
   go body []
 where
   go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
-      : List Expression.Expr :=
+      : Except String (List Expression.Expr) :=
     match _he: e with
-    | .ite _ c t f =>
-      let cObs := go c implications
-      let tObs := go t (((), c) :: implications)
+    | .ite _ c t f => do
+      let cObs ← go c implications
+      let tObs ← go t (((), c) :: implications)
       let notC : Expression.Expr :=
         LExpr.mkApp () (.op () "Bool.Not" (.some (LMonoTy.arrow .bool .bool))) [c]
-      let fObs := go f (((), notC) :: implications)
-      cObs ++ tObs ++ fObs
-    | .app _ _ _ =>
+      let fObs ← go f (((), notC) :: implications)
+      return cObs ++ tObs ++ fObs
+    | .app _ fn arg =>
       match _h : getLFuncCall e with
-      | (op, args) =>
-        let argObs := args.attach.flatMap fun ⟨a, _⟩ => go a implications
-        let callObs := match op with
+      | (op, args) => do
+        let argObs ← args.attach.flatMapM fun ⟨a, _⟩ => go a implications
+        let callObs ← match op with
           | .op _ opName _ =>
             if opName.name ∈ recFuncNames then
               match funcDecreasesMap.find? (fun (n, _, _) => n == opName.name) with
               | some (_, calleeIdx, calleeAdtTy) =>
                 match args[calleeIdx]? with
                 | some callArg =>
-                  let ltExpr := mkAdtRankLt callArg callerParam callerAdtTy calleeAdtTy
-                  [wrapImplications implications ltExpr]
-                | none => []
-              | none => []
-            else []
-          | _ => []
-        argObs ++ callObs
-    | .eq _ e1 e2 => go e1 implications ++ go e2 implications
+                  if callArg.hasBVar then
+                    .error s!"termination checking: decreasing argument contains a bound variable"
+                  else if containsOpCall callArg recFuncNames then
+                    .error s!"termination checking: decreasing argument contains a recursive call"
+                  else
+                    let ltExpr := mkAdtRankLt callArg callerParam callerAdtTy calleeAdtTy
+                    .ok [wrapImplications implications ltExpr]
+                | none => .ok []
+              | none => .ok []
+            else .ok []
+          | _ => do
+            let fnObs ← go fn implications
+            let argObs2 ← go arg implications
+            .ok (fnObs ++ argObs2)
+        return argObs ++ callObs
+    | .eq _ e1 e2 => do
+      let obs1 ← go e1 implications
+      let obs2 ← go e2 implications
+      return obs1 ++ obs2
     | .abs _ _ _ body => go body implications
-    | .quant _ _ _ _ trigger body =>
-      go trigger implications ++ go body implications
-    | _ => []
+    | .quant _ _ _ _ trigger body => do
+      let obs1 ← go trigger implications
+      let obs2 ← go body implications
+      return obs1 ++ obs2
+    | _ => .ok []
   termination_by e.sizeOf
   decreasing_by
     all_goals (try term_by_mem)
@@ -152,22 +178,29 @@ private def mkTermCheckProc
     (adtRankAxioms : List (String × Expression.Expr))
     (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
-    : Option (Decl × Nat) := do
-  let decrIdx ← getDecreasesIdx func
+    : Except String (Option (Decl × Nat)) := do
+  let some decrIdx := getDecreasesIdx func | return none
   let inputTys := func.inputs.values
-  let decrTy ← inputTys[decrIdx]?
-  let decrParam ← func.inputs.keys[decrIdx]?
-  let body ← func.body
-  let obligations := extractTermObligations body recFuncNames decrParam decrTy
+  let some decrTy := inputTys[decrIdx]? | return none
+  let some decrParam := func.inputs.keys[decrIdx]? | return none
+  let some body := func.body | return none
+  let obligations ← extractTermObligations body recFuncNames decrParam decrTy
     funcDecreasesMap
-  if obligations.isEmpty then none
+  if obligations.isEmpty then return none
   let stmts := obligations.mapIdx fun i ob =>
     Statement.assert s!"{func.name.name}_terminates_{i}" ob md
-  -- Specialize polymorphic axioms to the concrete decreasing-parameter type
+  -- Filter axioms to only those relevant to this function's decreasing type's
+  -- mutual datatype block, then specialize polymorphic type args.
+  let decrAdtName := adtNameOf decrTy
+  let relevantDtNames : List String := match tf.toList.find? (fun b => b.any (fun d => d.name == decrAdtName)) with
+    | some block => block.map (·.name)
+    | none => [decrAdtName]
+  let relevantAxioms := adtRankAxioms.filter fun (name, _) =>
+    relevantDtNames.any (fun dtName => name.startsWith (adtRankFuncName dtName))
   let tySubst := mkTySubst tf decrTy
-  let specializedAxioms := adtRankAxioms.map fun (name, e) =>
+  let specializedAxioms := relevantAxioms.map fun (name, e) =>
     (name, e.applySubst tySubst)
-  some (.proc {
+  return some (.proc {
     header := {
       name := ⟨termProcName func.name.name, ()⟩
       typeArgs := func.typeArgs
@@ -229,7 +262,8 @@ where
     | d :: rest =>
       match d with
       | .recFuncBlock funcs md => do
-        -- Step 1: error checking
+        -- Step 1: error checking (fail-fast: an ill-formed function may
+        -- invalidate subsequent definitions in the mutual block)
         -- Skip polymorphic functions: adtRank axioms are monomorphic, so we
         -- cannot generate them for polymorphic datatypes yet. The user-facing
         -- error is in Env.addFactoryFunc; when that restriction is lifted,
@@ -241,7 +275,11 @@ where
           if func.typeArgs.isEmpty then
             match getDecreasesIdx func with
             | none =>
-              throwErr s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
+              match func.measure with
+              | some _ =>
+                throwErr s!"recursive function '{func.name.name}': decreases clause must be a parameter name. Non-structural recursion is not yet supported"
+              | none =>
+                throwErr s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
             | some idx =>
               match func.inputs.values[idx]? with
               | some (.tcons n _) =>
@@ -259,9 +297,9 @@ where
           pure (func.name.name, idx, ty)
         -- Step 3: Generate adtRank UF declarations and per-constructor axioms.
         -- `allAdtRank` is computed once for all datatypes in this block.
-        -- `newFuncDecls` filters to only UF decls not yet emitted, while
-        -- axioms are always taken from the full set (each $$term proc embeds
-        -- all axioms as preconditions even if UF decls were emitted earlier).
+        -- `newFuncDecls` filters to only UF decls not yet emitted.
+        -- Each $$term proc filters axioms to its own decreasing type's
+        -- mutual datatype block (see mkTermCheckProc).
         let allAdtNames := funcDecreasesMap.map (fun (_, _, ty) => adtNameOf ty)
           |>.eraseDups
         let allAdtRank : AdtRankDecls :=
@@ -283,12 +321,13 @@ where
         let recNames := funcs.map (·.name.name)
         let termDecls ← funcs.filterMapM fun func => do
           match mkTermCheckProc func recNames funcDecreasesMap allAdtRank.axioms tf md with
-          | some (decl, numAsserts) => do
+          | .error msg => do throwErr msg; return none
+          | .ok (some (decl, numAsserts)) => do
             incrementStat s!"{Stats.termCheckProcsGenerated}"
             incrementStat s!"{Stats.termCheckAssertsEmitted}" numAsserts
             addTermProcToCallGraph (termProcName func.name.name)
             return some decl
-          | none => return none
+          | .ok none => return none
         -- Step 5: Splice adtRank decls before the rec block, term procs after.
         let (changed, rest') ← transformDecls rest tf emittedAdtRank
         if newFuncDecls.isEmpty && termDecls.isEmpty then

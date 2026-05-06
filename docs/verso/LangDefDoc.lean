@@ -437,7 +437,9 @@ evaluation transform, when applied.
 Currently, only recursive functions over algebraic datatypes are supported (both
 single and mutually recursive). Recursive functions are declared with the `rec`
 keyword, and exactly one parameter must be annotated with `@[cases]` to indicate
-the algebraic datatype argument for per-constructor axiom generation.
+the algebraic datatype argument for per-constructor axiom generation: one
+unfolding axiom is generated for each constructor of the datatype,
+case-splitting on the `@[cases]` parameter.
 Recursive functions cannot be marked `inline`.
 
 ```
@@ -461,6 +463,9 @@ rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
   else 1 + zipLen(IntList..tl(xs), IntList..tl(ys))
 };
 ```
+
+Every recursive function must have at least a `@[cases]` annotation or a
+`decreases` clause; Strata rejects recursive functions without a termination hint.
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block:
