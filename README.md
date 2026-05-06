@@ -29,7 +29,8 @@ changes!**
 
    - **cvc5** (required): [cvc5.github.io](https://cvc5.github.io/)
    - **z3** (required by some tests): [github.com/Z3Prover/z3](https://github.com/Z3Prover/z3)
-
+This provides the `strata` Python package (imported as `strata`) used by the
+Python verification pipeline and tests.
 3. **Python 3.11+** (required for Python-related tests and the `strata`
    Python tooling):
 
