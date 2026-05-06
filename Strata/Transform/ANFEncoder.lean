@@ -192,9 +192,17 @@ private def findANFEncoderTargets (exprs : List Expression.Expr) :
     the next available dedup index.
     Assumes single-assignment (SSA-like) property of the post-PE Core IR:
     variables are assigned only once, so structurally equal expressions
-    always denote the same value within a procedure body. -/
-def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
+    always denote the same value within a procedure body.
+
+    Iterates to fixpoint because extracting one level of duplicates exposes
+    further duplicates inside the newly-created var declarations (a large
+    expression may hide subexpression dupes that `removeSubsumed` skipped
+    on the first pass). -/
+partial def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let targets := findANFEncoderTargets ((Statements.collectExprs body).flatMap collectSubexprs)
+  if targets.isEmpty then
+    (body, startIdx)
+  else
   -- Build all var declarations and the replacement map
   let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
     let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
@@ -209,7 +217,10 @@ def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   ) ([], ({} : Std.HashMap UInt64 (Expression.Expr × Expression.Expr)), startIdx)
   -- Single pass: replace all targets at once
   let body' := Statements.mapExprs (replaceExprs replacements) body
-  (revDecls.reverse ++ body', nextIdx)
+  let newBody := revDecls.reverse ++ body'
+  -- Iterate: the newly-inserted var declarations may themselves contain
+  -- duplicated subexpressions that `removeSubsumed` dropped in this pass.
+  anfEncodeBody newBody nextIdx
 
 /-- Deduplicate all procedures in a program. Returns the modified program
     and whether any changes were made. -/
