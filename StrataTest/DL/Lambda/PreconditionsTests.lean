@@ -89,6 +89,26 @@ info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arro
     ((~Bool.Implies ((~Int.Gt %0) #0))
       ((~Int.Gt ((~safeDiv y) %0)) #0))]
 
+-- Test: p || safeDiv(y, x) > 0
+-- The WF obligation for the RHS should assume ¬p: Bool.Not(p) ==> x != 0
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool)))
+ ((~Bool.Not : (arrow bool bool)) p)
+ (~!= x #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.Or p) ((~Int.Gt ((~safeDiv y) x)) #0))]
+
+-- Test: p && safeDiv(y, x) > 0
+-- The WF obligation for the RHS should assume p: p ==> x != 0
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool))) p (~!= x #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.And p) ((~Int.Gt ((~safeDiv y) x)) #0))]
+
 -- Test: let x := a in safeDiv(2, x)
 -- Encoded as (λ (int): ((~safeDiv #2) %0)) a
 -- The obligation should be: let x := a in (x != 0)
@@ -99,10 +119,79 @@ info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arro
 
 -- Test: let x := safeDiv(a, b) in x
 -- Encoded as (λ (int): %0) (safeDiv(a, b))
--- The obligation comes from the arg: b != 0
+-- The obligation comes from the arg: b != 0, emitted at usage site of x
 /-- info: [WFObligation(safeDiv, (~!= b #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
   esM[((λ (int): %0) ((~safeDiv a) b))]
+
+-- Test: let x := safeDiv(a, b) in (p ==> x > 0)
+-- The arg obligation b != 0 should inherit the implication context: p ==> b != 0
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool))) p (~!= b #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((λ (int): ((~Bool.Implies p) ((~Int.Gt %0) #0))) ((~safeDiv a) b))]
+
+-- Test: let x := safeDiv(a, b) in (p || x > 0)
+-- The arg obligation b != 0 should assume ¬p: ¬p ==> b != 0
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool)))
+ ((~Bool.Not : (arrow bool bool)) p)
+ (~!= b #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((λ (int): ((~Bool.Or p) ((~Int.Gt %0) #0))) ((~safeDiv a) b))]
+
+-- Test: let x := safeDiv(a, b) in (p && x > 0)
+-- The arg obligation b != 0 should assume p: p ==> b != 0
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool))) p (~!= b #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((λ (int): ((~Bool.And p) ((~Int.Gt %0) #0))) ((~safeDiv a) b))]
+
+-- Test: let x := safeDiv(a, b) in 42 (variable not used)
+-- No obligations: x is never used so arg preconditions are not needed
+/-- info: [] -/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((λ (int): #42) ((~safeDiv a) b))]
+
+-- Test: let x := safeDiv(a, b) in safeDiv(c, x)
+-- Arg obligation b != 0 at usage site (unwrapped), plus body obligation x != 0 (wrapped in let)
+/-- info: [WFObligation(safeDiv, (~!= b #0), ()), WFObligation(safeDiv, ((λ (bvar:int) (~!= %0 #0)) (~safeDiv a b)), ())] -/
+#guard_msgs in
+#eval collectWFObligations testFactory
+  esM[((λ (int): ((~safeDiv c) %0)) ((~safeDiv a) b))]
+
+-- Test: true || safeDiv(a, 0) > 0
+-- The obligation ¬true ==> 0 != 0 is trivially provable (false premise)
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool)))
+ ((~Bool.Not : (arrow bool bool)) #true)
+ (~!= #0 #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.Or #true) ((~Int.Gt ((~safeDiv a) #0)) #0))]
+
+-- Test: false && safeDiv(a, 0) > 0
+-- The obligation false ==> 0 != 0 is trivially provable (false premise)
+/--
+info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool))) #false (~!= #0 #0)), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.And #false) ((~Int.Gt ((~safeDiv a) #0)) #0))]
+
+-- Test for bvars: forall y :: let x := safeDiv(a, y) in safeDiv(b, x) > 0
+/-- info: [WFObligation(safeDiv, (∀ (bvar:int) (~!= %0 #0)), ()), WFObligation(safeDiv, (∀ (bvar:int) ((λ (bvar:int) (~!= %0 #0)) (~safeDiv a %0))), ())]-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[∀ (int):{#true} ((λ (int): ((~Int.Gt ((~safeDiv b) %0)) #0)) ((~safeDiv a) %0))]
 
 end Lambda

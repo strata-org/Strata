@@ -555,4 +555,54 @@ Result: ✅ pass
 #guard_msgs in
 #eval verify loopGuardPrecondPgm
 
+-- Short-circuit operators make division-by-zero preconditions trivially provable
+def shortCircuitPgm :=
+#strata
+program Core;
+
+procedure test(x : int) returns ()
+{
+  var a : bool := false && (x / 0 > 0);
+  var b : bool := true || (x / 0 > 0);
+  var c : bool := false ==> (x / 0 > 0);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: init_calls_Int.SafeDiv_0
+Property: division by zero check
+Obligation:
+true
+
+Label: init_calls_Int.SafeDiv_0
+Property: division by zero check
+Obligation:
+true
+
+Label: init_calls_Int.SafeDiv_0
+Property: division by zero check
+Obligation:
+true
+
+---
+info: Obligation: init_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: init_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: init_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify shortCircuitPgm
+
 end Strata
