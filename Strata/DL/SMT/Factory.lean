@@ -5,14 +5,14 @@
 -/
 module
 
-import all Strata.DL.Util.BitVec
+public import Strata.DL.Util.BitVec
 public import Strata.DL.SMT.Function
 public import Strata.DL.SMT.Op
 public import Strata.DL.SMT.Term
 public import Strata.DL.SMT.TermType
 
 
-public section
+@[expose] public section
 /-!
 Based on Cedar's Term language.
 (https://github.com/cedar-policy/cedar-spec/blob/main/cedar-lean/Cedar/SymCC/Factory.lean)
@@ -40,12 +40,15 @@ namespace Factory
 
 ---------- Term constructors ----------
 
+-- Correctness: `Factory.noneOf_correct`
 def noneOf (ty : TermType) : Term := .none ty
 
+-- Correctness: `Factory.someOf_correct`
 def someOf (t : Term) : Term := .some t
 
 ---------- SMTLib core theory of equality with uninterpreted functions (`UF`) ----------
 
+-- Correctness: `Factory.not_correct`
 def not : Term → Term
   | .prim (.bool b)  => ! b
   | .app .not [t'] _ => t'
@@ -56,6 +59,7 @@ def opposites : Term → Term → Bool
   | .app .not [t₁] _, t₂ => t₁ = t₂
   | _, _                 => false
 
+-- Correctness: `Factory.and_correct`
 def and (t₁ t₂ : Term) : Term :=
   if t₁ = t₂ || t₂ = true
   then t₁
@@ -65,6 +69,7 @@ def and (t₁ t₂ : Term) : Term :=
   then false
   else .app .and [t₁, t₂] .bool
 
+-- Correctness: `Factory.or_correct`
 def or (t₁ t₂ : Term) : Term :=
   if t₁ = t₂ || t₂ = false
   then t₁
@@ -74,9 +79,12 @@ def or (t₁ t₂ : Term) : Term :=
   then true
   else .app .or [t₁, t₂] .bool
 
+-- Correctness: `Factory.implies_correct`
 def implies (t₁ t₂ : Term) : Term :=
   or (not t₁) t₂
 
+-- Correctness: `Factory.eq_correct_bool`, `Factory.eq_correct_int`,
+-- `Factory.eq_correct_bv`, `Factory.eq_correct_string`
 def eq (t₁ t₂ : Term) : Term :=
   if t₁ = t₂
   then true
@@ -88,6 +96,8 @@ def eq (t₁ t₂ : Term) : Term :=
   | .none _, .some _     => false
   | _, _                 => .app .eq [t₁, t₂] .bool
 
+-- Correctness: `Factory.ite_correct_bool`, `Factory.ite_correct_int`,
+-- `Factory.ite_correct_bv`, `Factory.ite_correct_string`
 def ite (t₁ t₂ t₃ : Term) : Term :=
   if t₁ = true || t₂ = t₃
   then t₂
@@ -113,6 +123,7 @@ Returns the result of applying function to a list of terms.
 
 (TODO) Arity check?
 -/
+-- Correctness: `Factory.app_uf_correct`
 def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
 
@@ -129,6 +140,7 @@ theorem mkSimpleTriggerIsSimple: isSimpleTrigger (mkSimpleTrigger x ty) := by
   simp [isSimpleTrigger, mkSimpleTrigger]
 
 -- Note: we could coalesce nested quantifiers here, since SMT-Lib allows multiple variables to be bound at once.
+-- TODO: Its correctness could not be proven due to its complexity. Contribution is welcome
 def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Term) : Term :=
   -- Check if we can coalesce with a nested quantifier
   match e with
@@ -148,10 +160,12 @@ def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Te
 
 ---------- SMTLib theory of integer numbers (`Ints`) ----------
 
+-- Correctness: `Factory.intNeg_correct`
 def intNeg : Term → Term
   | .prim (.int i) => i.neg
   | t              => .app .neg [t] t.typeOf
 
+-- Correctness: `Factory.intAbs_correct`
 def intAbs : Term → Term
   | .prim (.int i) => Int.ofNat i.natAbs
   | t              => .app .abs [t] t.typeOf
@@ -161,10 +175,15 @@ def intapp (op : Op) (fn : Int → Int → Int) (t₁ t₂ : Term) : Term :=
   | .prim (.int i₁), .prim (.int i₂) => fn i₁ i₂
   | _, _ => .app op [t₁, t₂] t₁.typeOf
 
+-- Correctness: `Factory.intSub_correct`
 def intSub := intapp .sub Int.sub
+-- Correctness: `Factory.intAdd_correct`
 def intAdd := intapp .add Int.add
+-- Correctness: `Factory.intMul_correct`
 def intMul := intapp .mul Int.mul
+-- Correctness: `Factory.intDiv_correct`
 def intDiv := intapp .div Int.ediv
+-- Correctness: `Factory.intMod_correct`
 def intMod := intapp .mod Int.emod
 
 def intcmp (op : Op) (fn : Int → Int → Bool) (t₁ t₂ : Term) : Term :=
@@ -172,9 +191,13 @@ def intcmp (op : Op) (fn : Int → Int → Bool) (t₁ t₂ : Term) : Term :=
   | .prim (.int i₁), .prim (.int i₂) => fn i₁ i₂
   | _, _ => .app op [t₁, t₂] .bool
 
+-- Correctness: `Factory.intLe_correct`
 def intLe  := intcmp .le (λ i₁ i₂ => i₁ <= i₂)
+-- Correctness: `Factory.intLt_correct`
 def intLt  := intcmp .lt (λ i₁ i₂ => i₁ < i₂)
+-- Correctness: `Factory.intGe_correct`
 def intGe  := intcmp .ge (λ i₁ i₂ => i₁ >= i₂)
+-- Correctness: `Factory.intGt_correct`
 def intGt  := intcmp .gt (λ i₁ i₂ => i₁ > i₂)
 
 ---------- SMTLib theory of finite bitvectors (`BV`) ----------
@@ -184,6 +207,7 @@ def intGt  := intcmp .gt (λ i₁ i₂ => i₁ > i₂)
 -- approach is sufficient for the strong PE property we care about:  if given a
 -- fully concrete input, the symbolic evaluator returns a fully concrete output.
 
+-- Correctness: `Factory.bvneg_correct`
 def bvneg : Term → Term
   | .prim (.bitvec b)  => b.neg
   | t                  => .app .bvneg [t] t.typeOf
@@ -195,11 +219,16 @@ def bvapp (op : Op) (fn : ∀ {n}, BitVec n → BitVec n → BitVec n) (t₁ t�
   | _, _ =>
     .app op [t₁, t₂] t₁.typeOf
 
+-- Correctness: `Factory.bvadd_correct`
 def bvadd := bvapp .bvadd BitVec.add
+-- Correctness: `Factory.bvsub_correct`
 def bvsub := bvapp .bvsub BitVec.sub
+-- Correctness: `Factory.bvmul_correct`
 def bvmul := bvapp .bvmul BitVec.mul
 
+-- Correctness: `Factory.bvshl_correct`
 def bvshl  := bvapp .bvshl (λ b₁ b₂ => b₁ <<< b₂)
+-- Correctness: `Factory.bvlshr_correct`
 def bvlshr := bvapp .bvlshr (λ b₁ b₂ => b₁ >>> b₂)
 
 def bvcmp (op : Op) (fn : ∀ {n}, BitVec n → BitVec n → Bool) (t₁ t₂ : Term) : Term :=
@@ -209,11 +238,16 @@ def bvcmp (op : Op) (fn : ∀ {n}, BitVec n → BitVec n → Bool) (t₁ t₂ : 
   | _, _ =>
     .app op [t₁, t₂] .bool
 
+-- Correctness: `Factory.bvslt_correct`
 def bvslt := bvcmp .bvslt BitVec.slt
+-- Correctness: `Factory.bvsle_correct`
 def bvsle := bvcmp .bvsle BitVec.sle
+-- Correctness: `Factory.bvult_correct`
 def bvult := bvcmp .bvult BitVec.ult
+-- Correctness: `Factory.bvule_correct`
 def bvule := bvcmp .bvule BitVec.ule
 
+-- Correctness: `Factory.bvnego_correct`
 def bvnego : Term → Term
   | .prim (@TermPrim.bitvec n b₁) => BitVec.overflows n (-b₁.toInt)
   | t                             => .app .bvnego [t] .bool
@@ -224,14 +258,18 @@ def bvso (op : Op) (fn : Int → Int → Int) (t₁ t₂ : Term) : Term :=
     BitVec.overflows n (fn b₁.toInt b₂.toInt)
   | _, _ => .app op [t₁, t₂] .bool
 
+-- Correctness: `Factory.bvsaddo_correct`
 def bvsaddo := bvso .bvsaddo (· + ·)
+-- Correctness: `Factory.bvssubo_correct`
 def bvssubo := bvso .bvssubo (· - ·)
+-- Correctness: `Factory.bvsmulo_correct`
 def bvsmulo := bvso .bvsmulo (· * ·)
 
 /-
 Note that BitVec defines zero_extend differently from SMTLib,
 so we compensate for the difference in partial evaluation.
 -/
+-- Correctness: `Factory.zero_extend_correct`
 def zero_extend (n : Nat) : Term → Term
   | .prim (@TermPrim.bitvec m b) =>
     BitVec.zeroExtend (n + m) b
@@ -243,6 +281,7 @@ def zero_extend (n : Nat) : Term → Term
 
 ---------- Core ADT operators with a trusted mapping to SMT ----------
 
+-- Correctness: `Factory.option_get_some_correct`
 def option.get : Term → Term
   | .some t  => t
   | t        =>

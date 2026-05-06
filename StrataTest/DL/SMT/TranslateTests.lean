@@ -14,6 +14,7 @@ open Elab Command
 def elabQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : CommandElabM Unit := do
   runTermElabM fun _ => do
     let e ← translateQueryMeta ctx assums conc
+    Meta.check e
     logInfo e
 
 /-- info: ∀ (a : Int), 42 > a -/
@@ -41,3 +42,35 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #guard_msgs in
 #eval
   elabQuery {} [] (.app .eq [(.app .abs [(.prim (.int (-5)))] (.prim .int)), (.prim (.int 5))] (.prim .bool))
+
+/-- info: (if 0 = 0 then 0 else 1) = 0 -/
+#guard_msgs in
+#eval
+  let c := .app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool)
+  let t := .app .ite [c, (.prim (.int 0)), (.prim (.int 1))] (.prim .int)
+  elabQuery {} [] (.app .eq [t, (.prim (.int 0))] (.prim .bool))
+
+-- Int literal as the first operand of `.app .eq`: previously built
+-- `@Eq Prop 5 ...` because `.prim (.int 5)` returned `(mkProp, _)`.
+/-- info: 5 = -5 -/
+#guard_msgs in
+#eval
+  elabQuery {} [] (.app .eq [(.prim (.int 5)), (.app .neg [(.prim (.int 5))] (.prim .int))] (.prim .bool))
+
+-- Int literal as the first operand of arithmetic: `leftAssocOp` propagates the
+-- first operand's type as the whole expression's type, so before the fix the
+-- entire `add` was typed `Prop`.
+/-- info: 1 + 2 = 3 -/
+#guard_msgs in
+#eval
+  elabQuery {} [] (.app .eq [(.app .add [(.prim (.int 1)), (.prim (.int 2))] (.prim .int)), (.prim (.int 3))] (.prim .bool))
+
+-- Int literal as a branch of a nested ITE: exercises type propagation across
+-- nested conditionals.
+/-- info: (if 0 = 0 then if 0 = 0 then 1 else 2 else 3) = 1 -/
+#guard_msgs in
+#eval
+  let c := .app .eq [(.prim (.int 0)), (.prim (.int 0))] (.prim .bool)
+  let inner := .app .ite [c, (.prim (.int 1)), (.prim (.int 2))] (.prim .int)
+  let outer := .app .ite [c, inner, (.prim (.int 3))] (.prim .int)
+  elabQuery {} [] (.app .eq [outer, (.prim (.int 1))] (.prim .bool))

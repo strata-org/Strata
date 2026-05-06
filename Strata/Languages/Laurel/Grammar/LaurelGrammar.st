@@ -48,6 +48,16 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 // Assignment
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
 
+// Multi-target assignment: assign var x: int, y, var z: int := call()
+// Uses the 'assign' keyword to avoid ambiguity with other comma-separated constructs.
+category AssignTarget;
+op assignTargetDecl (name: Ident, targetType: LaurelType): AssignTarget => "var " name ": " targetType;
+op assignTargetVar (name: Ident): AssignTarget => name;
+op assignTargetField (obj: Ident, field: Ident): AssignTarget => obj "#" field;
+
+op multiAssign (targets: CommaSepBy AssignTarget, value: StmtExpr): StmtExpr
+  => @[prec(0)] "assign " targets " := " value:0;
+
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
 op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " - " rhs;
