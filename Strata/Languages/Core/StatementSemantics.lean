@@ -8,6 +8,7 @@ module
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.CFGSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -285,6 +286,86 @@ inductive CoreStepStar
     ----
     CoreStepStar π φ c₁ c₃
 
+/-- Evaluate the commands in a deterministic basic block, then transfer
+    control based on the block's terminator. Defined mutually to satisfy
+    strict positivity (uses `EvalCommand` for command evaluation). -/
+inductive CoreEvalDetBlock
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    CoreStore → DetBlock String Command Expression →
+    CFGConfig String Expression → Prop where
+  | step_goto_true :
+    CoreEvalCmds π φ δ σ cs σ' failed →
+    δ σ c = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ →
+    CoreEvalDetBlock π φ
+      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ' failed)
+  | step_goto_false :
+    CoreEvalCmds π φ δ σ cs σ' failed →
+    δ σ c = .some HasBool.ff →
+    WellFormedSemanticEvalBool δ →
+    CoreEvalDetBlock π φ
+      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ' failed)
+  | step_terminal :
+    CoreEvalCmds π φ δ σ cs σ' failed →
+    CoreEvalDetBlock π φ
+      σ ⟨ cs, .finish _ ⟩ (.terminal σ' failed)
+
+/-- Evaluate a list of commands sequentially. Defined mutually because
+    `EvalCommand` is being defined in the same block. -/
+inductive CoreEvalCmds
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    CoreEval → CoreStore → List Command → CoreStore → Bool → Prop where
+  | eval_cmds_none :
+    CoreEvalCmds π φ δ σ [] σ false
+  | eval_cmds_some :
+    EvalCommand π φ δ σ c σ' failed →
+    CoreEvalCmds π φ δ σ' cs σ'' failed' →
+    CoreEvalCmds π φ δ σ (c :: cs) σ'' (failed || failed')
+
+/-- Single step of a deterministic CFG: look up the current block by label
+    and evaluate it. Defined mutually for strict positivity. -/
+inductive CoreCFGStep
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    DetCFG → CFGConfig String Expression →
+    CFGConfig String Expression → Prop where
+  | eval_next :
+    List.lookup t cfg.blocks = .some b →
+    CoreEvalDetBlock π φ σ b config →
+    CoreCFGStep π φ cfg (.cont t σ failed) (updateFailure config failed)
+
+/-- Reflexive-transitive closure of `CoreCFGStep`. -/
+inductive CoreCFGStepStar
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    DetCFG → CFGConfig String Expression →
+    CFGConfig String Expression → Prop where
+  | refl : CoreCFGStepStar π φ cfg c c
+  | step :
+    CoreCFGStep π φ cfg c₁ c₂ →
+    CoreCFGStepStar π φ cfg c₂ c₃ →
+    ----
+    CoreCFGStepStar π φ cfg c₁ c₃
+
+/-- Execution of a procedure body: either structured (via `CoreStepStar`)
+    or unstructured CFG (via `CoreCFGStepStar`). -/
+inductive CoreBodyExec
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Procedure.Body → CoreStore → CoreEval → CoreStore → Bool → Prop where
+  | structured :
+    CoreStepStar π φ
+      (.stmts ss ⟨σ, δ, false⟩)
+      (.terminal ρ') →
+    CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.hasFailure
+  | cfg :
+    CoreCFGStepStar π φ cfg
+      (.cont cfg.entry σ false)
+      (.terminal σ' failed) →
+    CoreBodyExec π φ (.cfg cfg) σ δ σ' failed
+
 inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
   | cmd_sem {δ σ c σ' f} :
@@ -295,7 +376,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
   /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
       aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
       with `p.header.outputs`. -/
-  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' ρ' md} :
+  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' σ_final failed md} :
     π n = .some p →
     -- inArg exprs + fvar refs for inoutArg ids
     CallArg.getInputExprs callArgs = inArgs →
@@ -317,13 +398,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    CoreStepStar π φ
-      (.stmts p.body.stmts ⟨σAO, δ, false⟩)
-      (.terminal ρ') →
+    CoreBodyExec π φ p.body σAO δ σ_final failed →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ ρ'.store post = .some HasBool.tt) →
-    ReadValues ρ'.store (ListMap.keys (p.header.outputs)) modvals →
+      δ σ_final post = .some HasBool.tt) →
+    ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
     -- positional: modvals[i] written back to lhs[i]
     UpdateStates σ lhs modvals σ' →
     ----
