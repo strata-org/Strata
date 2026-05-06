@@ -7,6 +7,7 @@
 import StrataTest.DL.Imperative.Arith
 import Strata.DL.Imperative.EvalContext
 import Strata.DL.SMT.SMT
+import Strata.Util.Profile
 import Init.Data.String.Extra
 
 namespace Arith
@@ -80,7 +81,8 @@ def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderStat
     Solver.assert t
   let ids := estate.ufs.values
   let _ ← Solver.checkSat ids
-  return (ids, estate, {})
+  let timing : TimingInfo := default
+  return (ids, estate, timing)
 
 ---------------------------------------------------------------------
 
