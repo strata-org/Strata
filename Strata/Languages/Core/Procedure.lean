@@ -304,22 +304,27 @@ def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
   | .cfg c => .ok c
   | .structured _ => .error "expected CFG body, got structured"
 
-/-- Extract statements from a structured body, or `[]` for CFG.
-    Intended for use in Prop contexts where `Except` is inconvenient. -/
-@[simp, expose] def Procedure.Body.stmts : Procedure.Body → List Statement
-  | .structured ss => ss
-  | .cfg _ => []
-
 /-- Get variables referenced in the body. -/
 def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
   | .structured ss => ss.flatMap Imperative.HasVarsPure.getVars
   | .cfg c => c.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Imperative.HasVarsPure.getVars
 
-/-- Is this body empty (abstract)? -/
-def Procedure.Body.isEmpty : Procedure.Body → Bool
+/-- Is this body abstract (no implementation)? Only empty structured bodies
+    are abstract. CFG bodies always have an implementation. -/
+def Procedure.Body.isAbstract : Procedure.Body → Bool
   | .structured ss => ss.isEmpty
   | .cfg _ => false
+
+/-- Does this body have a structured implementation? -/
+def Procedure.Body.isStructured : Procedure.Body → Bool
+  | .structured _ => true
+  | .cfg _ => false
+
+/-- Does this body have a CFG implementation? -/
+def Procedure.Body.isCfg : Procedure.Body → Bool
+  | .structured _ => false
+  | .cfg _ => true
 
 /--
 A Strata Core procedure: the main verification unit.

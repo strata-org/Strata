@@ -214,9 +214,6 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
 end
 
-private def getStmts (p : Core.Procedure) : List Core.Statement :=
-  match p.body with | .structured ss => ss | .cfg _ => []
-
 private def alphaEquivCmds (cmds1 cmds2 : List Core.Command) (map : IdMap)
     : Except Format IdMap := do
   if cmds1.length ≠ cmds2.length then

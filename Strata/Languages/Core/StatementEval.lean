@@ -800,7 +800,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
     | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
     | some proc =>
-      if proc.body.isEmpty then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
+      if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
         match args.mapM (LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
