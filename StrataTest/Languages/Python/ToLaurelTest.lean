@@ -836,4 +836,85 @@ private def translateFunc (args : Array Arg := #[])
   -- return type assume
   assert! body.contains "assume Any..isfrom_str(result)"
 
+/-! ## Nested class field references
+
+Regression test: when a class field's type is a bare identifier (empty
+`pythonModule`) whose name matches a nested class of the enclosing class,
+`classDefToLaurel` rewrites the reference to the qualified name assigned to
+the nested class. This models PySpec inputs produced by `typeClassNoArgs`
+where the enclosing-class context is lost on DDM round-trip. -/
+
+-- Build a raw `.classDef` signature exposing `fields` and `subclasses`
+-- (the `classDef` helper above only sets methods).
+private def rawClassDef (name : String)
+    (fields : Array ClassField := #[])
+    (subclasses : Array ClassDef := #[])
+    (methods : Array FunctionDecl := #[]) : Signature :=
+  .classDef { loc, name, fields, subclasses, methods }
+
+-- Print composite types with their field names and resolved types, so the
+-- test can observe whether nested-class references were qualified.
+private def runTypeFieldsTest (sigs : Array Signature)
+    (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
+  for err in result.errors do
+    IO.println s!"warning: {err.kind.phase}.{err.kind.category}: {err.message}"
+  for td in result.program.types do
+    match td with
+    | .Composite ct =>
+      IO.println s!"type {ct.name.text}"
+      for f in ct.fields do
+        IO.println s!"  {f.name.text} : {fmtHighType f.type.val}"
+    | _ =>
+      IO.println (fmtTypeDef td)
+
+-- A field whose type is a bare reference to the enclosing class's nested
+-- class is qualified to the nested class's prefixed name.
+/--
+info: type Outer
+  inner : UserDefined(Outer_Inner)
+type Outer_Inner
+-/
+#guard_msgs in
+#eval runTypeFieldsTest #[
+  rawClassDef "Outer"
+    (fields := #[{ name := "inner", type := pyClass "Inner" }])
+    (subclasses := #[{ loc, name := "Inner", methods := #[] }])
+]
+
+-- Two sibling classes each declaring a nested class of the same bare name
+-- must not collide: each outer class's bare reference is qualified with its
+-- own prefix.
+/--
+info: type A
+  child : UserDefined(A_Child)
+type A_Child
+type B
+  child : UserDefined(B_Child)
+type B_Child
+-/
+#guard_msgs in
+#eval runTypeFieldsTest #[
+  rawClassDef "A"
+    (fields := #[{ name := "child", type := pyClass "Child" }])
+    (subclasses := #[{ loc, name := "Child", methods := #[] }]),
+  rawClassDef "B"
+    (fields := #[{ name := "child", type := pyClass "Child" }])
+    (subclasses := #[{ loc, name := "Child", methods := #[] }])
+]
+
+-- A bare reference to a name that is *not* a nested class of the enclosing
+-- class is left unqualified (no spurious rewriting).
+/--
+info: type Outer
+  sibling : UserDefined(Unrelated)
+type Unrelated
+-/
+#guard_msgs in
+#eval runTypeFieldsTest #[
+  rawClassDef "Outer"
+    (fields := #[{ name := "sibling", type := pyClass "Unrelated" }]),
+  rawClassDef "Unrelated"
+]
+
 end Strata.Python.Specs.ToLaurel.Tests

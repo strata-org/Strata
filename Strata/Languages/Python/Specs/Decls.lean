@@ -342,6 +342,12 @@ def union (loc : SourceRange) (x y : SpecType) : SpecType :=
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
   { empty loc with idents := #[{ name := i, args }] }
 
+/-- Apply `f` to the `PythonIdent` of each `SpecIdent` in this `SpecType`.
+    Literal atoms and typed-dicts are left untouched. Useful for rewriting
+    bare identifiers that lost their module context during DDM round-trip. -/
+def mapIdentNames (f : PythonIdent → PythonIdent) (ty : SpecType) : SpecType :=
+  { ty with idents := ty.idents.map (fun si => { si with name := f si.name }) }
+
 def noneType (loc : SourceRange) : SpecType :=
   ident loc .noneType
 

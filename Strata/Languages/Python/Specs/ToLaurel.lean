@@ -532,6 +532,27 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     body := body
   }
 
+/-- Rewrite each `SpecIdent` in `ty` whose `pythonModule` is empty and whose
+    `name` is a key of `subNames` to the qualified ident referring to a nested
+    class. This fixes references produced by `typeClassNoArgs` in pyspec input
+    (e.g., `inner : class(Inner)` inside `class Outer`), which lose their
+    enclosing-class context on DDM round-trip.
+
+    `subNames` maps the bare subclass name (e.g., `Inner`) to the prefixed
+    module path under which the nested class is emitted (e.g., `Outer`). Once
+    rewritten, `PythonIdent.toLaurelName` will produce `Outer_Inner`, which
+    matches the name `classDefToLaurel` assigns to the nested class. -/
+private def qualifyNestedClassRefs
+    (subNames : Std.HashMap String String) (ty : SpecType) : SpecType :=
+  if subNames.isEmpty then ty
+  else
+    ty.mapIdentNames fun id =>
+      if id.pythonModule.isEmpty then
+        match subNames[id.name]? with
+        | some qualifiedModule => { pythonModule := qualifiedModule, name := id.name }
+        | none => id
+      else id
+
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   let prefixedName ← prefixName cls.name
@@ -540,8 +561,16 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     modify fun s => { s with typeAliases := s.typeAliases.insert cls.name prefixedName }
   if cls.exhaustive then
     modify fun s => { s with exhaustiveClasses := s.exhaustiveClasses.insert prefixedName }
+  -- Build a map from each nested class's bare name to the qualified module
+  -- path under which it will be emitted. Field type references that come
+  -- from `typeClassNoArgs` (and therefore lost their enclosing-class context
+  -- on DDM round-trip) are then rewritten to the qualified reference.
+  let subNames : Std.HashMap String String :=
+    cls.subclasses.foldl (init := ∅) fun m sub =>
+      m.insert sub.name prefixedName
   let laurelFields ← cls.fields.toList.mapM fun f => do
-    let ty ← specTypeToLaurelType f.type
+    let qualifiedTy := qualifyNestedClassRefs subNames f.type
+    let ty ← specTypeToLaurelType qualifiedTy
     pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
   let prefixedBases := cls.bases.toList.map fun cd =>
     mkId cd.toLaurelName
@@ -554,8 +583,17 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   for method in cls.methods do
     let proc ← funcDeclToLaurel (prefixedName ++ "@" ++ method.name) method (isMethod := true)
     pushProcedure proc
+  -- When recursing into nested classes, push the qualified path as the
+  -- module prefix for that subtree so the subclass's own prefixed name
+  -- aligns with how its parent references it (`subNames` above).
+  let enclosingPrefix := (← read).modulePrefix
   for sub in cls.subclasses do
-    classDefToLaurel sub
+    withReader
+      (fun ctx => { ctx with modulePrefix := prefixedName })
+      (classDefToLaurel sub)
+    -- restore happens automatically via `withReader` scope; this loop
+    -- is purely iterative, no state rollback needed beyond that.
+    let _ := enclosingPrefix
 decreasing_by
   · cases cls
     decreasing_tactic
