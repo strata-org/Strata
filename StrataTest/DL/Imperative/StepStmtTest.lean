@@ -459,4 +459,28 @@ theorem loopScopeTest :
 
 ---------------------------------------------------------------------
 
+/-! ## Test: re-init inside an if-branch gets stuck
+
+`init x := tt; if tt { init x := ff }` gets stuck at the second `init x`
+because `InitState` requires the variable to be undefined (`σ x = none`),
+but after the first `init`, `x` is already `some .tt`.  This confirms that
+block scoping is necessary to re-use a variable name. -/
+
+def progReinitStuck : List (Stmt MiniPureExpr (Cmd MiniPureExpr)) :=
+  [.cmd (.init "x" .Bool (.det .tt) .empty),
+   .ite (.det .tt) [.cmd (.init "x" .Bool (.det .ff) .empty)] [] .empty]
+
+/-- After executing `init x := tt`, the inner `init x := ff` cannot step
+    because `InitState` requires `σ "x" = none` but `σ "x" = some .tt`.
+    We show no single step is possible from this configuration. -/
+theorem reinit_stuck :
+    ¬ ∃ c₂, StepStmt MiniPureExpr stdEvalCmd miniExtendEval
+      (.stmt (.cmd (.init "x" .Bool (.det .ff) .empty)) ρ_x) c₂ := by
+  intro ⟨c₂, hstep⟩
+  match hstep with
+  | .step_cmd (.eval_init _ (.init h_none _ _) _) =>
+    exact absurd h_none (by simp [ρ_x, storeWithX])
+
+---------------------------------------------------------------------
+
 end StepStmtTest
