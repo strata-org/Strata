@@ -113,9 +113,16 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       /- the assumptions from preconditions are set to have empty metadata  -/
       (.assume label check.expr check.md))
       p.spec.preconditions
-  let bodyStmts := match p.body with | .structured ss => ss | .cfg _ => []
-  let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
-  (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
+  -- Symbolic evaluation of CFG bodies is not yet implemented: it would require
+  -- control-flow-following with path merging at join points, significantly
+  -- increasing complexity. For now, only structured bodies are supported.
+  match p.body with
+  | .cfg _ =>
+    ({ E with error := some (.Misc
+        s!"Procedure.eval: symbolic evaluation of CFG bodies is not implemented (procedure '{p.header.name}')") }, {})
+  | .structured bodyStmts =>
+    let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
+    (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
 
 ---------------------------------------------------------------------
 

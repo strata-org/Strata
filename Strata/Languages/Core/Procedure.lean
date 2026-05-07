@@ -362,33 +362,51 @@ instance : HasVarsPure Expression Procedure where
 instance : HasVarsPure Expression Procedure.Body where
   getVars := Procedure.Body.getVars
 
+instance : HasVarsImp Expression DetCFG where
+  definedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap Command.definedVars
+  modifiedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap Command.modifiedVars
+
 instance : HasVarsImp Expression Procedure.Body where
   definedVars b := match b with
     | .structured ss => HasVarsImp.definedVars ss
-    | .cfg cfgBody => cfgBody.blocks.flatMap fun (_, blk) =>
-        blk.cmds.filterMap fun | .cmd (.init n _ _ _) => some n | _ => none
+    | .cfg cfgBody => HasVarsImp.definedVars cfgBody
   modifiedVars b := match b with
     | .structured ss => HasVarsImp.modifiedVars ss
-    | .cfg cfgBody => cfgBody.blocks.flatMap fun (_, blk) =>
-        blk.cmds.filterMap fun
-          | .cmd (.set n _ _) => some n
-          | .cmd (.init n _ _ _) => some n
-          | _ => none
+    | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
 
 instance : HasVarsImp Expression Procedure where
   definedVars := Procedure.definedVars
   modifiedVars := Procedure.modifiedVars
 
+def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
+  { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
+      (lbl, { blk with cmds := blk.cmds.map Command.eraseTypes,
+                        transfer := match blk.transfer with
+                          | .condGoto p lt lf md => .condGoto p.eraseTypes lt lf md
+                          | .finish md => .finish md }) }
+
+-- DetCFG.stripMetaData clears metadata from transfer commands. Currently,
+-- commands inside blocks carry no standalone metadata field, so only
+-- transfer metadata is stripped. This mirrors Block.stripMetaData for
+-- structured bodies and ensures a uniform interface.
+def DetCFG.stripMetaData (cfg : DetCFG) : DetCFG :=
+  { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
+      (lbl, { blk with transfer := match blk.transfer with
+                          | .condGoto p lt lf _ => .condGoto p lt lf .empty
+                          | .finish _ => .finish .empty }) }
+
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   let body' := match p.body with
     | .structured ss => .structured (Statements.eraseTypes ss)
-    | .cfg c => .cfg c
+    | .cfg c => .cfg c.eraseTypes
   { p with body := body', spec := p.spec }
 
 def Procedure.stripMetaData (p : Procedure) : Procedure :=
   let body' := match p.body with
     | .structured ss => .structured (Imperative.Block.stripMetaData ss)
-    | .cfg c => .cfg c
+    | .cfg c => .cfg c.stripMetaData
   { p with body := body' }
 
 /-- Transitive variable lookup for procedures.
