@@ -8,9 +8,10 @@ module
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Util.DecidableEq
 public import Strata.Util.FileRange
+public import Strata.Util.Provenance
 
 namespace Imperative
-open Strata (DiagnosticModel FileRange)
+open Strata (DiagnosticModel FileRange Provenance)
 
 public section
 
@@ -79,6 +80,8 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | fileRange (r: FileRange)
   /-- Metadata value in the form of a boolean switch. -/
   | switch (b : Bool)
+  /-- Metadata value in the form of a provenance (source location or synthesized origin). -/
+  | provenance (p : Provenance)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
@@ -86,6 +89,7 @@ instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
               | .msg s => f!"{s}"
               | .fileRange r => f!"{r}"
               | .switch b => f!"{b}"
+              | .provenance p => f!"{p}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -95,6 +99,7 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       | .msg s => f!".msg {s}"
       | .fileRange fr => f!".fileRange {fr}"
       | .switch b => f!".switch {repr b}"
+      | .provenance p => f!".provenance {repr p}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -103,6 +108,7 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
   | .switch b1, .switch b2 => b1 == b2
+  | .provenance p1, .provenance p2 => p1 == p2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -179,6 +185,8 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
+def MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
+
 def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 
 def MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
@@ -228,11 +236,33 @@ def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRang
       some fileRange
     | _ => none
 
+/-- Get the provenance from metadata, checking both the new "provenance" field
+and the legacy "fileRange" field for backward compatibility. -/
+def getProvenance {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option Provenance := do
+  match md.findElem Imperative.MetaData.provenanceField with
+  | some elem =>
+    match elem.value with
+    | .provenance p => some p
+    | _ => none
+  | none =>
+    -- Fall back to legacy fileRange field
+    let fr ← getFileRange md
+    some (Provenance.ofFileRange fr)
+
+/-- Create metadata with a provenance element. -/
+def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
+  #[{ fld := MetaData.provenanceField, value := .provenance p }]
+
+/-- Create metadata with a synthesized provenance. -/
+def MetaData.synthesized {P : PureExpr} (origin : String) : MetaData P :=
+  MetaData.ofProvenance (.synthesized origin)
+
 /-- Create a DiagnosticModel from metadata and a message.
-    Uses the file range from metadata if available, otherwise uses a default location. -/
+    Uses provenance or file range from metadata if available, otherwise uses a default location. -/
 def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : DiagnosticModel :=
-  match getFileRange md with
-  | some fr => DiagnosticModel.withRange fr msg
+  match getProvenance md with
+  | some (.loc uri range) => DiagnosticModel.withRange { file := uri, range } msg
+  | some (.synthesized _) => DiagnosticModel.fromMessage msg
   | none => DiagnosticModel.fromMessage msg
 
 /-- Create a DiagnosticModel from metadata and a Format message. -/

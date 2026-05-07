@@ -10,6 +10,7 @@ public import Strata.DDM.AST.Datatype
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
 public import Strata.DDM.Util.SourceRange
+public import Strata.Util.Provenance
 
 import Std.Data.HashMap
 import all Strata.DDM.Util.Array
@@ -404,6 +405,22 @@ abbrev Expr := ExprF SourceRange
 abbrev Operation := OperationF SourceRange
 abbrev SyntaxCat := SyntaxCatF SourceRange
 abbrev TypeExpr := TypeExprF SourceRange
+
+/-- Abbreviations for AST nodes annotated with Provenance (for downstream use after
+the SourceRange→Provenance mapping pass). -/
+abbrev ArgProv := ArgF Provenance
+abbrev ExprProv := ExprF Provenance
+abbrev OperationProv := OperationF Provenance
+abbrev SyntaxCatProv := SyntaxCatF Provenance
+abbrev TypeExprProv := TypeExprF Provenance
+
+/-- Convert a SourceRange-annotated argument to a Provenance-annotated one using a Uri. -/
+def ArgF.toProv (a : Arg) (uri : Uri) : ArgProv :=
+  a.mapAnn (Provenance.ofSourceRange uri)
+
+/-- Convert a SourceRange-annotated operation to a Provenance-annotated one using a Uri. -/
+def OperationF.toProv (op : Operation) (uri : Uri) : OperationProv :=
+  op.mapAnn (Provenance.ofSourceRange uri)
 
 mutual
 /--

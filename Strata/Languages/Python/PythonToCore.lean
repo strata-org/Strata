@@ -101,8 +101,10 @@ deriving Inhabited
 /-- Create metadata from a SourceRange for attaching to Core statements. -/
 def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
   let uri : Uri := .file filePath
+  let prov := Provenance.ofSourceRange uri sr
   let fileRangeElt := ⟨ Imperative.MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  let provElt := ⟨ Imperative.MetaData.provenanceField, .provenance prov ⟩
+  #[fileRangeElt, provElt]
 
 -------------------------------------------------------------------------------
 

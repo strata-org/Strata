@@ -52,8 +52,10 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
   let file := ictx.fileName
   let uri: Uri := .file file
+  let prov := Provenance.ofSourceRange uri sr
   let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  let provElt := ⟨ MetaData.provenanceField, .provenance prov ⟩
+  #[fileRangeElt, provElt]
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
   return op.ann.toMetaData (← StateT.get).inputCtx
