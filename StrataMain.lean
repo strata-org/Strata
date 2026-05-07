@@ -207,7 +207,7 @@ def verifyOptionsFlags : List Flag := [
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
     takesArg := .arg "checks" },
   { name := "incremental",
-    help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
+    help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O. Disabled automatically with --no-solve." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" }
@@ -267,7 +267,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     removeIrrelevantAxioms,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
-    incremental := pflags.getBool "incremental" || base.incremental,
+    incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,

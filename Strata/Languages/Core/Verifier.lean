@@ -74,6 +74,8 @@ private def liftExcept (label : String) (r : Except String α) : AbstractEncoder
   | .error msg => throw (IO.userError s!"{label}: {msg}")
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
+  -- Pattern: `liftM` lifts solver calls from `m` into `StateT`,
+  -- `liftExcept` unwraps `Except String τ` (throwing on error with a label).
   match op, tEncs with
   -- Boolean operations
   | .and, _         => liftExcept "mkAnd" (← liftM (solver.mkAnd tEncs))
@@ -533,7 +535,7 @@ def dischargeObligationIncremental
   let allFlags := solverSpecificFlags ++ baseFlags
   let solverState ← spawn options.solver allFlags
   let action : _root_.Strata.SMT.IncrementalSolverM (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
-    let solver := _root_.Strata.SMT.IncrementalSolver.mkAbstractSolver
+    let solver := _root_.Strata.SMT.IncrementalSolver.mkIncrementalSolver
     -- Unwrap an Except String result, throwing on error
     let unwrapResult (label : String) (r : Except String Unit)
         : _root_.Strata.SMT.IncrementalSolverM Unit :=
@@ -558,7 +560,8 @@ def dischargeObligationIncremental
         (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
     -- Variable terms for getValue
     let varIds := ids.map fun id => Term.var ⟨id, .bool⟩
-    -- Helper to get model via solver.getValue and parse it
+    -- Helper to get model via solver.getValue and parse it.
+    -- Called only when the decision is SAT or UNKNOWN.
     let getModelForVars : _root_.Strata.SMT.IncrementalSolverM (Imperative.SMT.Model Expression.Ident) := do
       if varIds.isEmpty then return []
       match ← solver.getValue varIds with

@@ -37,8 +37,7 @@ inductive Decision where
 deriving DecidableEq, Repr
 
 /--
- An SMT-LIB solver process wrapper. Renamed from `Solver` to `SMTLibSolver`
- to distinguish from the abstract `Solver` interface.
+ An SMT-LIB solver process wrapper.
 
  An SMTLibSolver is an interpreter for SMTLib scripts, which are passed to the
  solver via its `smtLibInput` stream. Solvers optionally have an `smtLibOutput`

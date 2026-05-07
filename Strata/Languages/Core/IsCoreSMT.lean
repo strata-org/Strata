@@ -11,9 +11,9 @@ public import Strata.Languages.Core.Statement
 # IsCoreSMT Predicate
 
 Defines predicates that characterize the subset of Strata Core that maps
-directly to SMT-LIB constructs. Statements and expressions outside this subset
-require alternative verification approaches (e.g., symbolic execution, loop
-elimination).
+directly to SMT constructs (for use by the AbstractSolver). Statements and
+expressions outside this subset require removal before SMT processing
+(e.g., via symbolic execution, loop elimination).
 
 Each predicate returns `Except String` where the error case provides a
 human-readable reason why the construct is not in the CoreSMT subset.

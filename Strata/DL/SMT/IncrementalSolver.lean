@@ -154,7 +154,7 @@ private def mkConstructorHandles (selfSort : TermType)
         Term.app (.datatype_op .selector fname) [] fty }
 
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
-def mkAbstractSolver : AbstractSolver Term TermType IncrementalSolverM where
+def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   setLogic logic := emitln s!"(set-logic {logic})"
   setOption name value := emitln s!"(set-option :{name} {value})"
   comment c := emitln s!"; {c.replace "\n" " "}"

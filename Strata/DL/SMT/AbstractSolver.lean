@@ -56,7 +56,7 @@ All term constructors are fallible. Solvers might not accept certain constructs
 (e.g., wrong sorts, unsupported combinations) and we need to surface the issue
 precisely via `Except String`. -/
 structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
-  -- Configuration
+  -- Configuration (for solvers that support them; ignored otherwise)
   setLogic : String → m Unit
   setOption : String → String → m Unit
   comment : String → m Unit
@@ -114,6 +114,17 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   -- Function application (for uninterpreted functions)
   mkApp : τ → List τ → m (Except String τ)
 
+  -- Quantifiers
+  /-- Construct a universally quantified term.
+      Takes name-sort pairs for bound variables and a monadic callback that
+      receives the bound variable terms and returns the body and trigger groups.
+      The callback is monadic so callers can encode sub-terms using the
+      bound variable handles. Bound variables cannot escape the quantifier scope. -/
+  mkForall : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
+
+  /-- Construct an existentially quantified term. Same callback pattern as `mkForall`. -/
+  mkExists : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
+
   /-- Declare a new variable. Shadowing is allowed: declaring the same name
       twice creates two distinct variables. The backend handles disambiguation
       internally. -/
@@ -146,16 +157,6 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   declareDatatypes : List (String × List String) →
     (List σ → List (List σ) → Except String (List (List (String × List (String × σ))))) →
     m (Except String (List (DatatypeInfo τ σ)))
-
-  /-- Construct a universally quantified term.
-      Takes name-sort pairs for bound variables and a monadic callback that
-      receives the bound variable terms and returns the body and trigger groups.
-      The callback is monadic so callers can encode sub-terms using the
-      bound variable handles. Bound variables cannot escape the quantifier scope. -/
-  mkForall : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
-
-  /-- Construct an existentially quantified term. Same callback pattern as `mkForall`. -/
-  mkExists : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
 
   -- Session operations
 
