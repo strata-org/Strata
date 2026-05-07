@@ -25,17 +25,12 @@ changes!**
    Install Lean4 by following the instructions at [lean-lang.org](https://lean-lang.org/).
 
 2. **SMT Solvers**: The verification pipeline and tests require SMT solvers
-3. **Python 3.11+** — required for Python-related tests and the `strata`
+3. **Python 3.11+**: required for Python-related tests and the `strata`
    Python tooling.
 
-4. **Java JDK (11 or later)** — required for Java code generation tests.
+4. **Java JDK (11 or later)**: required for Java code generation tests.
 
-5. **ion-java jar (1.11.11)** — required for the Java/Ion integration test.
-   Python tooling):
-
-4. **Java JDK** (required for Java code generation tests):
-
-5. **ion-java jar** (required for the Java/Ion integration test):
+5. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
 
 ### Installing dependencies
 
