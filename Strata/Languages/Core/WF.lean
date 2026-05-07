@@ -137,7 +137,9 @@ structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
--- TODO: add WF properties for unstructured programs:
+-- NOTE: For CFG procedures, the structured-body fields (`wfstmts`, `wfloclnd`,
+-- `bodyExitsCovered`) are vacuously satisfied. CFG-specific well-formedness
+-- (e.g., label uniqueness, reachability) is not yet captured here:
 --   * verify block labels are unique
 --   * all variables used are declared/initialized
 --   * target labels of transfer commands exist
