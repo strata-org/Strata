@@ -115,12 +115,17 @@ private def renameAllLocalNames (c:Procedure)
   -- by genOldToFreshIdMappings (counter-based), so a fresh new_id cannot collide with
   -- a later old_id. The iteration is intentionally sequential because each step also
   -- renames LHS variables and labels.
-  let new_body := List.map (fun (s0:Statement) =>
-    var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-        let s := Statement.substFvar s old_id (.fvar () new_id .none)
-        let s := Statement.renameLhs s old_id new_id
-        Statement.replaceLabels s label_map)
-      s0) bodyStmts
+  let new_body : Procedure.Body ← match c.body with
+    | .structured bodyStmts =>
+      pure <| .structured (List.map (fun (s0:Statement) =>
+        var_map.foldl (fun (s:Statement) (old_id,new_id) =>
+            let s := Statement.substFvar s old_id (.fvar () new_id .none)
+            let s := Statement.renameLhs s old_id new_id
+            Statement.replaceLabels s label_map)
+          s0) bodyStmts)
+    | .cfg _ =>
+      throw (Strata.DiagnosticModel.fromMessage
+        "renameAllLocalNames: CFG body renaming not yet implemented")
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
       match var_map.find? id with
@@ -131,7 +136,7 @@ private def renameAllLocalNames (c:Procedure)
       | .some id' => (id',ty)
       | .none => panic! "unreachable")
     }
-  return ({ c with body := .structured new_body, header := new_header }, var_map)
+  return ({ c with body := new_body, header := new_header }, var_map)
 
 
 /-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
