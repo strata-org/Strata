@@ -142,7 +142,6 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 --   * all variables used are declared/initialized
 --   * target labels of transfer commands exist
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
-  bodyIsStructured : ∃ ss, d.body = .structured ss
   wfstmts : ∀ ss, d.body = .structured ss → WFStatementsProp p ss
   wfloclnd : ∀ ss, d.body = .structured ss → (HasVarsImp.definedVars (P:=Expression) ss).Nodup
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
