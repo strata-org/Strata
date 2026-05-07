@@ -185,8 +185,12 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
   /-- (2) The postconditions hold on termination.
-      For structured bodies, termination is witnessed by `CoreStepStar`.
-      For CFG bodies, use `CoreCFGStepStar` (via `Lang.coreCFG`). -/
+      Currently uses `CoreStepStar` on the structured body. For CFG procedures,
+      the match yields `[]` making this vacuously true.
+      TODO: Unify with `CoreBodyExec` to cover CFGs. The obstacle is that
+      `CoreBodyExec` only exposes terminal `store`/`hasFailure`, not `eval`,
+      but this proof obtains postcondition validity via the terminal env's eval
+      (which may differ from the initial eval due to `funcDecl` extensions). -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),

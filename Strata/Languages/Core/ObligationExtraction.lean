@@ -98,7 +98,11 @@ def extractFromStatements
   extractGo pathConditions ss #[]
 end
 
-/-- Extract proof obligations from a deterministic CFG by walking all blocks. -/
+/-- Extract proof obligations from a deterministic CFG by walking all blocks.
+    NOTE: Path conditions restart from the global `pc` for each block independently.
+    Assumes within one block do not propagate to successor blocks. This is conservative
+    (no false negatives) but means obligations may be harder to discharge than necessary.
+    TODO: dominator-based path-condition propagation would improve precision. -/
 def extractFromDetCFG (pc : PathConditions Expression) (cfg : DetCFG)
     : Except String (Array (ProofObligation Expression)) :=
   let obs := cfg.blocks.foldl (init := #[]) fun acc (_, blk) =>
