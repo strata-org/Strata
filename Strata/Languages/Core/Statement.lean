@@ -210,24 +210,24 @@ instance : HasVarsPure Expression Command where
   | .cmd c => c.modifiedVars
   | .call _ args _ => CallArg.getLhs args
 
-def Command.touchedVars (c : Command) : List Expression.Ident :=
+def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
   Command.definedVars c ++ Command.modifiedVars c
 
 instance : HasVarsImp Expression Command where
   definedVars := Command.definedVars
   modifiedVars := Command.modifiedVars
-  touchedVars := Command.touchedVars
+  modifiedOrDefinedVars := Command.modifiedOrDefinedVars
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
-  touchedVars := Stmt.touchedVars
+  modifiedOrDefinedVars := Stmt.modifiedOrDefinedVars
 
 instance : HasVarsImp Expression (List Statement) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Block.touchedVars
+  modifiedOrDefinedVars := Block.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 
@@ -334,8 +334,8 @@ def Statements.definedVarsTrans
   Block.definedVars s
 
 mutual
-/-- get all variables touched by the statement `s`. -/
-def Statement.touchedVarsTrans
+/-- get all variables modified or defined by the statement `s` (write-set). -/
+def Statement.modifiedOrDefinedVarsTrans
   {ProcType : Type}
   [HasVarsProcTrans Expression ProcType]
   (π : String → Option ProcType) (s : Statement)
@@ -343,26 +343,26 @@ def Statement.touchedVarsTrans
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
   | .exit _ _ => []
-  | .block _ bss _ => Statements.touchedVarsTrans π bss
-  | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
-  | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
+  | .block _ bss _ => Statements.modifiedOrDefinedVarsTrans π bss
+  | .ite _ tbss ebss _ => Statements.modifiedOrDefinedVarsTrans π tbss ++ Statements.modifiedOrDefinedVarsTrans π ebss
+  | .loop _ _ _ bss _ => Statements.modifiedOrDefinedVarsTrans π bss
   | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
   | .typeDecl _ _ => []  -- Type declarations don't touch variables
 
-def Statements.touchedVarsTrans
+def Statements.modifiedOrDefinedVarsTrans
   {ProcType : Type}
   [HasVarsProcTrans Expression ProcType]
   (π : String → Option ProcType) (ss : Statements)
   : List Expression.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
+  | s :: srest => Statement.modifiedOrDefinedVarsTrans π s ++ Statements.modifiedOrDefinedVarsTrans π srest
 end
 
 def Statement.allVarsTrans
   [HasVarsProcTrans Expression ProcType]
   (π : String → Option ProcType) (s : Statement) :=
-  Statement.getVarsTrans π s ++ Statement.touchedVarsTrans π s
+  Statement.getVarsTrans π s ++ Statement.modifiedOrDefinedVarsTrans π s
 
 def Statements.allVarsTrans
   [HasVarsProcTrans Expression ProcType]

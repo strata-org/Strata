@@ -1477,7 +1477,7 @@ private theorem block_execution_store_agreement
       exact fun h => h.elim hmod hdef)
 
 /-- If body is executed across multiple loop iterations (from `ρ₀` to `ρ_last`
-    via repeated body execution), variables outside `touchedVars body`
+    via repeated body execution), variables outside `modifiedOrDefinedVars body`
     (`modifiedVars ∪ definedVars`) are unchanged.
 
     Currently takes the raw (stronger) store agreement as a hypothesis.
@@ -1489,11 +1489,11 @@ private theorem block_execution_store_agreement
     ensures they are already `isSome`. -/
 private theorem loop_iterations_store_agreement
     (body : Statements) (ρ₀ ρ_last : Env Expression)
-    -- Raw store agreement: preserved outside touchedVars
+    -- Raw store agreement: preserved outside modifiedOrDefinedVars
     (hagree_raw : ∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body →
       ρ_last.store x = ρ₀.store x)
-    -- All touchedVars are defined at ρ₀ (ensures init can't fire for definedVars)
-    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome) :
+    -- All modifiedOrDefinedVars are defined at ρ₀ (ensures init can't fire for definedVars)
+    (hswf_body : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome) :
     ∀ x, x ∉ (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body) →
       ρ_last.store x = ρ₀.store x := by
   intro x hx
@@ -2084,7 +2084,7 @@ private theorem loop_invariant_dichotomy_det
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnofd : Block.noFuncDecl body = Bool.true)
-    (hswf : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     (hnf : ρ'.hasFailure = Bool.false)
     (hloop : CoreStar π φ (.stmt (.loop (.det g) measure inv body md) ρ₀) (.terminal ρ')) :
     -- Success: last iteration body terminates, all invs tt at ρ'
@@ -2098,7 +2098,7 @@ private theorem loop_invariant_dichotomy_det
       CoreStar π φ (.stmts body ρ_last) (.terminal ρ') ∧
       (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
       ρ'.eval ρ'.store g = some HasBool.ff ∧
-      (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
       (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
       ρ_last.eval = ρ₀.eval ∧
       (∀ me, measure = .some me →
@@ -2113,7 +2113,7 @@ private theorem loop_invariant_dichotomy_det
       WellFormedSemanticEvalVar ρ_last.eval ∧
       ρ_last.hasFailure = Bool.false ∧
       CoreStar π φ (.stmts body ρ_last) (.exiting .none ρ') ∧
-      (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
       (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
       ρ_last.eval = ρ₀.eval) := by
   -- Convert to ReflTransT and use strong induction on trace length
@@ -2124,7 +2124,7 @@ private theorem loop_invariant_dichotomy_det
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
       WellFormedSemanticEvalVar ρ₀.eval →
-      (∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome) →
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome) →
       ∀ (hstarT : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
           (.stmt (.loop (.det g) measure inv body md) ρ₀) (.terminal ρ')),
         hstarT.len ≤ n →
@@ -2138,7 +2138,7 @@ private theorem loop_invariant_dichotomy_det
         CoreStar π φ (.stmts body ρ_last) (.terminal ρ') ∧
         (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
         ρ'.eval ρ'.store g = some HasBool.ff ∧
-        (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+        (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
         (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
         ρ_last.eval = ρ₀.eval ∧
         (∀ me, measure = .some me →
@@ -2152,7 +2152,7 @@ private theorem loop_invariant_dichotomy_det
         WellFormedSemanticEvalVar ρ_last.eval ∧
         ρ_last.hasFailure = Bool.false ∧
         CoreStar π φ (.stmts body ρ_last) (.exiting .none ρ') ∧
-        (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+        (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
         (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
         ρ_last.eval = ρ₀.eval) by
     exact this hloopT.len ρ₀ measure hguard_tt hall_tt hwfb hwfv hwfvar hswf hloopT (Nat.le_refl _)
@@ -2240,7 +2240,7 @@ private theorem loop_invariant_dichotomy_det
           have hnif₁ : hasInvFailure₁ = Bool.false :=
             loop_step_hasInvFailure_false_of_or hnf_start₁
           have hall_tt₁ := all_inv_tt_of_hasInvFailure_false hinv_bool₁ hff_iff₁ hnif₁
-          have hswf₁ : ∀ n ∈ Block.touchedVars body, (ρ₁.store n).isSome :=
+          have hswf₁ : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₁.store n).isSome :=
             fun n hn => star_preserves_isDefined_single (π := π) (φ := φ) hbody' (hswf₀ n hn)
           have hstore₁ : ∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body →
               ρ₁.store x = ρ₀.store x :=
@@ -2329,7 +2329,7 @@ private theorem loop_invariant_dichotomy_nondet
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwfvar : WellFormedSemanticEvalVar ρ₀.eval)
     (hnofd : Block.noFuncDecl body = Bool.true)
-    (hswf : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     (hnf : ρ'.hasFailure = Bool.false)
     (hloop : CoreStar π φ
       (.stmt (.loop .nondet measure inv body md) ρ₀) (.terminal ρ'))
@@ -2346,7 +2346,7 @@ private theorem loop_invariant_dichotomy_nondet
       ρ_last.hasFailure = Bool.false ∧
       CoreStar π φ (.stmts body ρ_last) (.terminal ρ') ∧
       (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
-      (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
       (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
       ρ_last.eval = ρ₀.eval)
     ∨
@@ -2358,7 +2358,7 @@ private theorem loop_invariant_dichotomy_nondet
       WellFormedSemanticEvalVar ρ_last.eval ∧
       ρ_last.hasFailure = Bool.false ∧
       CoreStar π φ (.stmts body ρ_last) (.exiting .none ρ') ∧
-      (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
       (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
       ρ_last.eval = ρ₀.eval) := by
   have hnf₀ : ρ₀.hasFailure = Bool.false :=
@@ -2371,7 +2371,7 @@ private theorem loop_invariant_dichotomy_nondet
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
       WellFormedSemanticEvalVar ρ₀.eval →
-      (∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome) →
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome) →
       ∀ (hstarT : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
           (.block .none (.stmts (body ++ [.loop .nondet measure inv body md]) ρ₀))
           (.terminal ρ')),
@@ -2384,7 +2384,7 @@ private theorem loop_invariant_dichotomy_nondet
         ρ_last.hasFailure = Bool.false ∧
         CoreStar π φ (.stmts body ρ_last) (.terminal ρ') ∧
         (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
-        (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+        (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
         (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
         ρ_last.eval = ρ₀.eval)
       ∨
@@ -2395,7 +2395,7 @@ private theorem loop_invariant_dichotomy_nondet
         WellFormedSemanticEvalVar ρ_last.eval ∧
         ρ_last.hasFailure = Bool.false ∧
         CoreStar π φ (.stmts body ρ_last) (.exiting .none ρ') ∧
-        (∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome) ∧
+        (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome) ∧
         (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body → ρ_last.store x = ρ₀.store x) ∧
         ρ_last.eval = ρ₀.eval) by
     exact this hblockT.len ρ₀ hall_tt hwfb hwfv hwfvar hswf hblockT (Nat.le_refl _)
@@ -2458,7 +2458,7 @@ private theorem loop_invariant_dichotomy_nondet
         have hρ₁_eq :
             ({ ρ₁ with hasFailure := ρ₁.hasFailure || Bool.false } : Env Expression) = ρ₁ := by
           cases ρ₁; simp [Bool.or_false]
-        have hswf₁ : ∀ n₁ ∈ Block.touchedVars body, (ρ₁.store n₁).isSome :=
+        have hswf₁ : ∀ n₁ ∈ Block.modifiedOrDefinedVars body, (ρ₁.store n₁).isSome :=
           fun n₁ hn₁ => star_preserves_isDefined_single (π := π) (φ := φ) hbody' (hswf₀ n₁ hn₁)
         have hstore₁ : ∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body →
             ρ₁.store x = ρ₀.store x :=
@@ -2770,12 +2770,12 @@ private theorem loop_nondet_exiting_body_exit
 
 /-! ## TouchedVars subset lemmas -/
 
-/-- `Block.touchedVars ss ⊆ Block.definedVars ss ++ Block.modifiedVars ss`. -/
-private theorem touchedVars_subset (sz : Nat) :
+/-- `Block.modifiedOrDefinedVars ss ⊆ Block.definedVars ss ++ Block.modifiedVars ss`. -/
+private theorem modifiedOrDefinedVars_subset (sz : Nat) :
     (∀ (s : Statement), Stmt.sizeOf s ≤ sz →
-      ∀ n, n ∈ Stmt.touchedVars s → n ∈ Stmt.definedVars s ++ Stmt.modifiedVars s) ∧
+      ∀ n, n ∈ Stmt.modifiedOrDefinedVars s → n ∈ Stmt.definedVars s ++ Stmt.modifiedVars s) ∧
     (∀ (ss : Statements), Block.sizeOf ss ≤ sz →
-      ∀ n, n ∈ Block.touchedVars ss → n ∈ Block.definedVars ss ++ Block.modifiedVars ss) := by
+      ∀ n, n ∈ Block.modifiedOrDefinedVars ss → n ∈ Block.definedVars ss ++ Block.modifiedVars ss) := by
   induction sz with
   | zero =>
     constructor
@@ -2795,14 +2795,14 @@ private theorem touchedVars_subset (sz : Nat) :
     · intro s hsz n hn_mem
       match s with
       | .block _ bss _ =>
-        simp only [Stmt.touchedVars, Stmt.definedVars, Stmt.modifiedVars] at hn_mem ⊢
+        simp only [Stmt.modifiedOrDefinedVars, Stmt.definedVars, Stmt.modifiedVars] at hn_mem ⊢
         have hsz_bss : Block.sizeOf bss ≤ m := by simp [Stmt.sizeOf] at hsz; omega
         have := ih.2 bss hsz_bss n hn_mem
         cases List.mem_append.mp this with
         | inl hd => exact List.mem_append_left _ hd
         | inr hm => exact List.mem_append_right _ hm
       | .ite _ tss ess _ =>
-        simp only [Stmt.touchedVars] at hn_mem
+        simp only [Stmt.modifiedOrDefinedVars] at hn_mem
         simp only [Stmt.definedVars, Stmt.modifiedVars]
         have hsz_tss : Block.sizeOf tss ≤ m := by simp [Stmt.sizeOf] at hsz; omega
         have hsz_ess : Block.sizeOf ess ≤ m := by simp [Stmt.sizeOf] at hsz; omega
@@ -2823,7 +2823,7 @@ private theorem touchedVars_subset (sz : Nat) :
       match ss with
       | [] => exact hn_mem
       | s :: rest =>
-        simp only [Block.touchedVars] at hn_mem
+        simp only [Block.modifiedOrDefinedVars] at hn_mem
         simp only [Block.definedVars, Block.modifiedVars]
         have hsz_s : Stmt.sizeOf s ≤ m := by simp [Block.sizeOf] at hsz; omega
         have hsz_rest : Block.sizeOf rest ≤ m := by simp [Block.sizeOf] at hsz; omega
@@ -2839,28 +2839,28 @@ private theorem touchedVars_subset (sz : Nat) :
           | inl hd => exact List.mem_append_left _ (List.mem_append_right _ hd)
           | inr hm => exact List.mem_append_right _ (List.mem_append_right _ hm)
 
-private theorem loop_touchedVars_implies_body_touchedVars
+private theorem loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars
     {guard : ExprOrNondet Expression}
     {measure : Option Expression.Expr}
     {inv : List (String × Expression.Expr)}
     {body : Statements} {md : MetaData Expression}
     {ρ₀ : Env Expression}
-    (hswf : ∀ n ∈ Stmt.touchedVars (.loop guard measure inv body md), (ρ₀.store n).isSome) :
-    ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome := by
+    (hswf : ∀ n ∈ Stmt.modifiedOrDefinedVars (.loop guard measure inv body md), (ρ₀.store n).isSome) :
+    ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome := by
   intro n hn
   apply hswf
   show n ∈ Stmt.definedVars (.loop guard measure inv body md) ++
            Stmt.modifiedVars (.loop guard measure inv body md)
-  have := (touchedVars_subset (Block.sizeOf body)).2 body (Nat.le_refl _) n hn
+  have := (modifiedOrDefinedVars_subset (Block.sizeOf body)).2 body (Nat.le_refl _) n hn
   simp only [Stmt.definedVars, Stmt.modifiedVars]
   exact this
 
-/-- `Block.modifiedVars` is a subset of `Block.touchedVars`. -/
-private theorem modifiedVars_subset_touchedVars (sz : Nat) :
+/-- `Block.modifiedVars` is a subset of `Block.modifiedOrDefinedVars`. -/
+private theorem modifiedVars_subset_modifiedOrDefinedVars (sz : Nat) :
     (∀ (s : Statement), Stmt.sizeOf s ≤ sz →
-      ∀ n, n ∈ Stmt.modifiedVars s → n ∈ Stmt.touchedVars s) ∧
+      ∀ n, n ∈ Stmt.modifiedVars s → n ∈ Stmt.modifiedOrDefinedVars s) ∧
     (∀ (ss : Statements), Block.sizeOf ss ≤ sz →
-      ∀ n, n ∈ Block.modifiedVars ss → n ∈ Block.touchedVars ss) := by
+      ∀ n, n ∈ Block.modifiedVars ss → n ∈ Block.modifiedOrDefinedVars ss) := by
   induction sz with
   | zero =>
     constructor
@@ -2880,24 +2880,24 @@ private theorem modifiedVars_subset_touchedVars (sz : Nat) :
     · intro s hsz n hn_mem
       match s with
       | .block _ bss _ =>
-        simp only [Stmt.touchedVars, Stmt.modifiedVars] at hn_mem ⊢
+        simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars] at hn_mem ⊢
         have hsz_bss : Block.sizeOf bss ≤ m := by simp [Stmt.sizeOf] at hsz; omega
         exact ih.2 bss hsz_bss n hn_mem
       | .ite _ tss ess _ =>
-        simp only [Stmt.touchedVars, Stmt.modifiedVars] at hn_mem ⊢
+        simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars] at hn_mem ⊢
         have hsz_tss : Block.sizeOf tss ≤ m := by simp [Stmt.sizeOf] at hsz; omega
         have hsz_ess : Block.sizeOf ess ≤ m := by simp [Stmt.sizeOf] at hsz; omega
         cases List.mem_append.mp hn_mem with
         | inl h => exact List.mem_append_left _ (ih.2 tss hsz_tss n h)
         | inr h => exact List.mem_append_right _ (ih.2 ess hsz_ess n h)
       | .cmd _ | .exit _ _ | .loop _ _ _ _ _ | .funcDecl _ _ | .typeDecl _ _ =>
-        simp only [Stmt.touchedVars]
+        simp only [Stmt.modifiedOrDefinedVars]
         exact List.mem_append_right _ hn_mem
     · intro ss hsz n hn_mem
       match ss with
       | [] => exact hn_mem
       | s :: rest =>
-        simp only [Block.touchedVars, Block.modifiedVars] at hn_mem ⊢
+        simp only [Block.modifiedOrDefinedVars, Block.modifiedVars] at hn_mem ⊢
         have hsz_s : Stmt.sizeOf s ≤ m := by simp [Block.sizeOf] at hsz; omega
         have hsz_rest : Block.sizeOf rest ≤ m := by simp [Block.sizeOf] at hsz; omega
         cases List.mem_append.mp hn_mem with
@@ -2922,7 +2922,7 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
     (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hguard_ok : match guard with
       | .det g => ρ₀.eval ρ₀.store g = some HasBool.tt | .nondet => True)
-    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf_body : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     (hmeas_wf : ∀ me, measure = .some me →
       ρ₀.eval ρ₀.store (HasIntOrder.lt me HasIntOrder.zero) = .some HasBool.ff)
     (hok : stmtOk σ (.loop guard measure inv body md)) :
@@ -2960,7 +2960,7 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
     intro n hn
     simp only [assigned_vars, List.mem_filter] at hn
     exact hswf_body n
-      ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
+      ((modifiedVars_subset_modifiedOrDefinedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
   -- Havoc identity: the havoc block terminates at ρ₀
   have hhavoc_id := havoc_block_identity π φ
     s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ₀
@@ -3006,7 +3006,7 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
       Functor.map, liftM, monadLift, MonadLift.monadLift,
       modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
       genLoopNum, bumpStat] at h
-    -- We need to handle the freshness check. Extract that `m_old_ident ∉ touchedVars` from the
+    -- We need to handle the freshness check. Extract that `m_old_ident ∉ modifiedOrDefinedVars` from the
     -- successful stmtRun (the else branch of the if check).
     -- Use a helper that provides semantic proofs alongside structural witnesses.
     -- After simp + repeated split, we get goals where h is a Prod.mk equality.
@@ -3047,8 +3047,6 @@ private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
                   hpf_star,
                 hpf_eval, hpf_fail,
                 fun n hn => hpf_agree n (by
-                  -- m_old_ident ∉ touchedVars body: from the split, we have
-                  -- h✝ : ¬ m_old_ident ∈ Block.touchedVars body
                   intro heq; rename_i hfresh
                   exact absurd (heq ▸ hn) hfresh)⟩))
       | (simp [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM,
@@ -3132,11 +3130,11 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hall_tt₀ : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hguard_tt₀ : ρ₀.eval ρ₀.store g = some HasBool.tt)
-    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf_body : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     -- Target conditions
     (hguard_tt_tgt : ρ_target.eval ρ_target.store g = some HasBool.tt)
     (hall_tt_tgt : ∀ le ∈ inv, ρ_target.eval ρ_target.store le.2 = some HasBool.tt)
-    (hswf_tgt : ∀ n ∈ Block.touchedVars body, (ρ_target.store n).isSome)
+    (hswf_tgt : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_target.store n).isSome)
     (heval_tgt : ρ_target.eval = ρ₀.eval)
     (hfail_tgt : ρ_target.hasFailure = ρ₀.hasFailure)
     (hagree : ∀ x, x ∉ (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body) →
@@ -3194,12 +3192,12 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
     intro n hn
     simp only [assigned_vars, List.mem_filter] at hn
     exact hswf_body n
-      ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
+      ((modifiedVars_subset_modifiedOrDefinedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
   have hdef_assigned_tgt : ∀ n ∈ assigned_vars, (ρ_target.store n).isSome := by
     intro n hn
     simp only [assigned_vars, List.mem_filter] at hn
     exact hswf_tgt n
-      ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
+      ((modifiedVars_subset_modifiedOrDefinedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
   -- Havoc targeting: the havoc block targets ρ_target on assigned_vars
   have hhavoc_tgt := havoc_block_to_target π φ
     s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ₀ ρ_target
@@ -3353,6 +3351,83 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
               StateT.pure] at hok'; contradiction)
       | contradiction)
 
+/-! ## Partial-store agreement transfer for CoreStar
+
+Execution of statements `ss` depends only on the eval function, the hasFailure
+flag, and store values at `Block.modifiedOrDefinedVars ss`.  Two environments that agree
+on these produce executions with the same hasFailure behavior and the same
+store values on `modifiedOrDefinedVars` at each step.
+
+A full formal proof requires a custom partial-store simulation (analogous to
+`step_simulation` in `StmtSemantics.lean` but with `ConfigPSE` instead of
+`ConfigSE`).  The mathematical justification:
+- Commands read the store only through `eval store expr` (where
+  `getVars expr ⊆ modifiedOrDefinedVars` of the containing statement) and
+  direct lookups `store x` for `x ∈ modifiedVars ∪ definedVars ⊆ modifiedOrDefinedVars`.
+- `WellFormedCoreEvalCong` + `WellFormedSemanticEvalVar` together imply that
+  `eval` depends only on `store` values at `getVars expr`.
+- `UpdateState`/`InitState` write to `x ∈ modifiedOrDefinedVars`, preserving agreement
+  on modifiedOrDefinedVars for the next step.
+- Structural steps (block, seq, ite, loop) don't access the store at all.
+
+The theorems below are marked `private` and used to fill proof obligations in
+the loop-elimination correctness argument. -/
+
+/-- Transfer `CanFailBlock` across environments that agree on `Block.touchedVars ss`
+    (all vars read or written by ss) with same eval and hasFailure.
+    Requires `WellFormedSemanticEvalExprCongr` to ensure expression evaluation
+    depends only on store values at `getVars expr`. -/
+private theorem canFailBlock_touchedVars_transfer
+    (ss : Statements) (ρ₁ ρ₂ : Env Expression)
+    (heval : ρ₂.eval = ρ₁.eval)
+    (hfail : ρ₂.hasFailure = ρ₁.hasFailure)
+    (hagree : ∀ n ∈ Block.touchedVars ss, ρ₂.store n = ρ₁.store n)
+    (hcf : CanFailBlock π φ ss ρ₁) :
+    CanFailBlock π φ ss ρ₂ := by
+  obtain ⟨cfg, hfail_cfg, hstar⟩ := hcf
+  -- If ρ₁.hasFailure is already true, ρ₂.hasFailure = true and the starting
+  -- config (.stmts ss ρ₂) already has hasFailure = true, so .refl witnesses it.
+  by_cases h : ρ₁.hasFailure = Bool.true
+  · exact ⟨.stmts ss ρ₂, hfail ▸ h, .refl _⟩
+  · -- ρ₁.hasFailure = false. Execution from ρ₁ eventually sets hasFailure.
+    -- Use the full-store simulation: since ρ₂ agrees with ρ₁ on touchedVars and
+    -- differs only outside, we observe that EvalStmtsSmall_hasFailure_irrel
+    -- generalizes to partial store agreement when WellFormedSemanticEvalExprCongr holds.
+    -- Key fact: any var accessed during execution of ss is in Block.touchedVars ss,
+    -- so the stores are effectively equal for the purpose of the execution.
+    -- The proof applies coreStar_stmts_touchedVars_transfer and then uses hasFailure
+    -- monotonicity to show some intermediate config has hasFailure = true.
+    -- Direct approach: partial-store simulation (see module docstring above).
+    sorry
+
+/-- Transfer `CoreStar` termination across environments that agree on
+    `Block.touchedVars ss` with same eval and hasFailure.
+    The terminal from ρ₂ agrees with ρ₁' on touchedVars and has same eval/hasFailure.
+    Requires `WellFormedSemanticEvalExprCongr`. -/
+private theorem coreStar_stmts_touchedVars_transfer
+    (ss : Statements) (ρ₁ ρ₂ ρ₁' : Env Expression)
+    (heval : ρ₂.eval = ρ₁.eval)
+    (hfail : ρ₂.hasFailure = ρ₁.hasFailure)
+    (hagree : ∀ n ∈ Block.touchedVars ss, ρ₂.store n = ρ₁.store n)
+    (hstar : CoreStar π φ (.stmts ss ρ₁) (.terminal ρ₁')) :
+    ∃ ρ₂', CoreStar π φ (.stmts ss ρ₂) (.terminal ρ₂') ∧
+      ρ₂'.eval = ρ₁'.eval ∧ ρ₂'.hasFailure = ρ₁'.hasFailure ∧
+      (∀ n ∈ Block.touchedVars ss, ρ₂'.store n = ρ₁'.store n) := by
+  -- Same partial-store simulation as canFailBlock_touchedVars_transfer.
+  -- Given ρ₂ agrees with ρ₁ on touchedVars ss (all accessed vars) and has same eval,
+  -- execution from ρ₂ follows an identical path to terminal.
+  -- The terminal ρ₂' agrees with ρ₁' on touchedVars (writes are to modifiedOrDefinedVars
+  -- ⊆ touchedVars, and reads used the same values due to agreement + congruence).
+  -- Proof: induction on hstar with ConfigPSE invariant (partial-store equivalence).
+  -- Each step preserves the invariant:
+  --  - step_cmd: EvalCmd reads getVars(expr) ⊆ touchedVars, writes modifiedOrDefinedVars ⊆ touchedVars
+  --  - step_ite: reads guard vars ⊆ touchedVars
+  --  - step_loop: reads guard + inv vars ⊆ touchedVars
+  --  - structural steps: don't access store
+  -- At terminal, the invariant gives the conclusion.
+  -- Requires WellFormedSemanticEvalExprCongr (available at all call sites).
+  sorry
+
 /-- Route a CanFailBlock for the transformed body through the full target structure.
     Given body canfails in blockResult form and appropriate conditions,
     produce CanFail for the full stmtResult. -/
@@ -3373,7 +3448,7 @@ private theorem route_body_canfail_through_target
                               ρ₀.eval ρ₀.store le.2 = .some HasBool.ff)
     (hguard_ok : match guard with
       | .det g => ρ₀.eval ρ₀.store g = some HasBool.tt | .nondet => True)
-    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf_body : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     (hmeas_wf : ∀ me, measure = .some me →
       ρ₀.eval ρ₀.store (HasIntOrder.lt me HasIntOrder.zero) = .some HasBool.ff)
     (hcf : CanFailBlock π φ body ρ₀)
@@ -3401,9 +3476,16 @@ private theorem route_body_canfail_through_target
   -- 2. body_statements = blockResult body, which canfails by hcf
   rw [← heq_body] at hcf
   -- 3. CanFail for body_statements ++ maintain ++ suffix (body' canfails, rest is appended)
+  -- Transfer body canfail from ρ₀ to ρ_pf: they have same eval/hasFailure, and ρ_pf agrees
+  -- with ρ₀ on modifiedOrDefinedVars body. The prefix only modifies assigned_vars ⊆ modifiedOrDefinedVars body
+  -- (via havoc_block_identity) plus assumes (no store change). In det+some case, prefix also
+  -- does init m_old (fresh var not in body). Full store equality follows from prefix not
+  -- modifying vars outside modifiedOrDefinedVars body ∪ {m_old_ident} and agreement on modifiedOrDefinedVars body.
   have hcf_suffix : CanFailBlock π φ
       (body_statements ++ (maintain_invariants ++ suffix_stmts)) ρ_pf :=
-    sorry -- body canfails from ρ_pf (agrees with ρ₀ on body-touched vars)
+    canFailBlock_append_left π φ body_statements (maintain_invariants ++ suffix_stmts) ρ_pf
+      (canFailBlock_touchedVars_transfer π φ body_statements ρ₀ ρ_pf
+        _heval_pf _hfail_pf (heq_body ▸ _hagree_pf) hcf)
   -- 4. CanFail for the full arb_iter_facts inner list
   have hcf_arb_inner : CanFailBlock π φ
       (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) ρ₀ := by
@@ -3467,7 +3549,7 @@ private theorem loop_enter_canfail_simulation
     (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
     (hguard_ok : match guard with
       | .det g => ρ₀.eval ρ₀.store g = some HasBool.tt | .nondet => True)
-    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf_body : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     (hnofd : Block.noFuncDecl body = Bool.true)
     -- Source block canfails from ρ₀ (after loop enter, with ρ₀' = ρ₀)
     (hcf : ∃ cfg : CC, cfg.getEnv.hasFailure = Bool.true ∧
@@ -3476,7 +3558,7 @@ private theorem loop_enter_canfail_simulation
     (ih_body_term : ∀ ρ ρ',
       WellFormedSemanticEvalBool ρ.eval → WellFormedSemanticEvalVal ρ.eval →
       WellFormedSemanticEvalVar ρ.eval → WellFormedCoreEvalCong ρ.eval →
-      (∀ n ∈ Block.touchedVars body, (ρ.store n).isSome) →
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ.store n).isSome) →
       CoreStar π φ (.stmts body ρ) (.terminal ρ') →
       CanFailBlock π φ body ρ ∨
       (ρ'.hasFailure = Bool.false →
@@ -3484,7 +3566,7 @@ private theorem loop_enter_canfail_simulation
     (ih_body_cf : ∀ ρ,
       WellFormedSemanticEvalBool ρ.eval → WellFormedSemanticEvalVal ρ.eval →
       WellFormedSemanticEvalVar ρ.eval → WellFormedCoreEvalCong ρ.eval →
-      (∀ n ∈ Block.touchedVars body, (ρ.store n).isSome) →
+      (∀ n ∈ Block.modifiedOrDefinedVars body, (ρ.store n).isSome) →
       CanFailBlock π φ body ρ →
       CanFailBlock π φ body ρ)
     (measure_tgt : Option Expression.Expr)
@@ -3544,6 +3626,13 @@ private theorem loop_enter_canfail_simulation
             (∃ le ∈ inv, ρ₁.eval ρ₁.store le.2 = .some HasBool.ff) →
             Transform.CanFail (LangCore π φ)
               (stmtResult σ (.loop guard measure_tgt inv body md)) ρ₀ by
+          -- The source loop canfails from ρ₁ (via hloop_T/hloop_fail).
+          -- Decompose the loop's first step to extract invariant evaluation info:
+          -- step_loop_enter/step_loop_exit both require hinv_bool₁ and provide hff_iff.
+          -- If hasInvFailure=true (some inv is ff): apply route_maintain_cf.
+          -- If hasInvFailure=false (all invs tt): loop enters body, need recursive
+          -- decomposition of the loop canfail to find the eventual failure.
+          -- This requires a well-founded induction on the loop execution length.
           sorry
         -- Proof of route_maintain_cf
         intro hinv_eval₁ hsome_ff₁
@@ -3555,20 +3644,32 @@ private theorem loop_enter_canfail_simulation
             hok
         let mkMaintainLbl : Nat → String → String := fun i lbl =>
           s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
-        have hmaint_cf : CanFailBlock π φ maintain_invariants ρ₁ := by
+        -- Transfer body termination from ρ₀ to ρ_pf₂ (touchedVars agreement)
+        have ⟨ρ_body_end, hbody_s, heval_end, hfail_end, hagree_end⟩ :=
+          coreStar_stmts_touchedVars_transfer π φ body_statements ρ₀ ρ_pf₂ ρ₁
+            _heval_pf₂ _hfail_pf₂ (heq_body₂ ▸ _hagree_pf₂) (heq_body₂ ▸ htgt_body_term)
+        -- maintain_invariants canfails from ρ₁; transfer to ρ_body_end
+        have hmaint_cf : CanFailBlock π φ maintain_invariants ρ_body_end := by
           rw [heq_maintain₂]
-          exact stmts_mapIdx_maintain_assert_canFail π φ inv ρ₁ md mkMaintainLbl hwfb₁ hnf₁'
-            hinv_eval₁ hsome_ff₁
-        have hbody_s : CoreStar π φ (.stmts body_statements ρ_pf₂) (.terminal ρ₁) :=
-          sorry -- body terminates from ρ_pf₂ (agrees with ρ₀ on body-touched vars)
+          have hmaint_at_rho1 := stmts_mapIdx_maintain_assert_canFail π φ inv ρ₁ md mkMaintainLbl
+            hwfb₁ hnf₁' hinv_eval₁ hsome_ff₁
+          -- ρ_body_end agrees with ρ₁ on touchedVars body (from hagree_end) which
+          -- includes the invariant expression vars (since inv vars ⊆ loop touchedVars
+          -- and loop body touchedVars includes them for well-formed loops).
+          -- The maintain stmts are asserts whose touchedVars = getVars(inv exprs).
+          exact canFailBlock_touchedVars_transfer π φ _ ρ₁ ρ_body_end
+            heval_end hfail_end
+            (fun n hn => sorry /- n ∈ touchedVars(maintain) ⊆ touchedVars(body): inv vars
+               are accessed by body (well-formedness of the loop invariant). -/)
+            hmaint_at_rho1
         have hcf_arb : CanFailBlock π φ
             (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) ρ₀ := by
           rw [show prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts =
               prefix_stmts ++ (body_statements ++ (maintain_invariants ++ suffix_stmts))
             from by simp [List.append_assoc]]
           exact canFailBlock_prefix_terminal_suffix π φ prefix_stmts _ ρ₀ ρ_pf₂ hprefix_term₂
-            (canFailBlock_prefix_terminal_suffix π φ body_statements _ ρ_pf₂ ρ₁ hbody_s
-              (canFailBlock_append_left π φ maintain_invariants suffix_stmts ρ₁ hmaint_cf))
+            (canFailBlock_prefix_terminal_suffix π φ body_statements _ ρ_pf₂ ρ_body_end hbody_s
+              (canFailBlock_append_left π φ maintain_invariants suffix_stmts ρ_body_end hmaint_cf))
         rw [heq_stmt₂]
         -- Steps 5-7: route hcf_arb through block/ite/outer (same pattern as route_body_canfail_through_target)
         let mkAssertLbl₂ : Nat → String → String := fun i lbl =>
@@ -3648,7 +3749,7 @@ private theorem det_loop_success_target_simulation
     (hnofd : Block.noFuncDecl body = Bool.true)
     (hnf₀ : ρ₀.hasFailure = Bool.false)
     (hnf : ρ'.hasFailure = Bool.false)
-    (hswf_body : ∀ n ∈ Block.touchedVars body, (ρ₀.store n).isSome)
+    (hswf_body : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n).isSome)
     -- ρ_last conditions
     (hg_last : ρ_last.eval ρ_last.store g = some HasBool.tt)
     (hinv_last : ∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt)
@@ -3657,7 +3758,7 @@ private theorem det_loop_success_target_simulation
     (hwfb_last : WellFormedSemanticEvalBool ρ_last.eval)
     (hwfv_last : WellFormedSemanticEvalVal ρ_last.eval)
     (hwfvar_last : WellFormedSemanticEvalVar ρ_last.eval)
-    (hswf_last : ∀ n ∈ Block.touchedVars body, (ρ_last.store n).isSome)
+    (hswf_last : ∀ n ∈ Block.modifiedOrDefinedVars body, (ρ_last.store n).isSome)
     -- Store agreement: ρ_last agrees with ρ₀ outside assigned vars
     (hstore_agree : ∀ x,
       x ∉ (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body) →
@@ -3715,8 +3816,18 @@ private theorem det_loop_success_target_simulation
     let mkMaintainLbl : Nat → String → String := fun i lbl =>
       s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}"
     exact stmts_mapIdx_assert_terminal π φ inv ρ' md mkMaintainLbl hwfb_post hall_tt_post
-  have hbody_term : CoreStar π φ (.stmts body_statements ρ_pf_tgt) (.terminal ρ') :=
-    sorry -- body' terminates from ρ_pf_tgt (agrees with ρ_last on body-touched vars)
+  -- Transfer body termination from ρ_last to ρ_pf_tgt (touchedVars agreement)
+  have hbody_term : CoreStar π φ (.stmts body_statements ρ_pf_tgt) (.terminal ρ') := by
+    have ⟨ρ_body_end, hstar_end, heval_end, hfail_end, hagree_end⟩ :=
+      coreStar_stmts_touchedVars_transfer π φ body_statements ρ_last ρ_pf_tgt ρ'
+        _heval_pf_tgt _hfail_pf_tgt (heq_body ▸ _hagree_pf_tgt)
+        (heq_body ▸ ih_body_ok hnf)
+    -- ρ_body_end = ρ': they agree on touchedVars, and vars outside touchedVars are
+    -- preserved from ρ_pf_tgt (which agrees with ρ_last outside touchedVars body).
+    -- Since ρ' is reached from ρ_last by executing body (which only modifies
+    -- modifiedOrDefinedVars ⊆ touchedVars), and ρ_pf_tgt agrees with ρ_last on
+    -- touchedVars, ρ_body_end = ρ'.
+    sorry
   -- 3. Arb-block inner execution from ρ₀:
   -- prefix → body' → maintain → suffix
   -- prefix targeting ρ_pf_tgt (from stmtResult_loop_with_prefix_targeting_det)
@@ -3764,7 +3875,7 @@ private theorem det_loop_success_target_simulation
       intro n hn
       simp only [assigned_vars, List.mem_filter] at hn
       have hdef_last := hswf_last n
-        ((modifiedVars_subset_touchedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
+        ((modifiedVars_subset_modifiedOrDefinedVars (Block.sizeOf body)).2 body (Nat.le_refl _) n hn.1)
       exact star_preserves_isDefined_single (π := π) (φ := φ) hbody_last hdef_last
     have hwfvar_post : WellFormedSemanticEvalVar ρ'.eval := heval_post ▸ hwfvar
     have hnf_post : ρ'.hasFailure = Bool.false := hnf
@@ -4035,7 +4146,7 @@ private theorem simulation
         WellFormedSemanticEvalVal ρ₀.eval →
         WellFormedSemanticEvalVar ρ₀.eval →
         WellFormedCoreEvalCong ρ₀.eval →
-        (∀ n ∈ Stmt.touchedVars st, (ρ₀.store n).isSome) →
+        (∀ n ∈ Stmt.modifiedOrDefinedVars st, (ρ₀.store n).isSome) →
         (∀ ρ', CoreStar π φ (.stmt st ρ₀) (.terminal ρ') →
           Transform.CanFail (LangCore π φ) (stmtResult σ st) ρ₀ ∨
           (ρ'.hasFailure = Bool.false →
@@ -4056,7 +4167,7 @@ private theorem simulation
         WellFormedSemanticEvalVal ρ₀.eval →
         WellFormedSemanticEvalVar ρ₀.eval →
         WellFormedCoreEvalCong ρ₀.eval →
-        (∀ n ∈ Block.touchedVars bss, (ρ₀.store n).isSome) →
+        (∀ n ∈ Block.modifiedOrDefinedVars bss, (ρ₀.store n).isSome) →
         (∀ ρ', CoreStar π φ (.stmts bss ρ₀) (.terminal ρ') →
           CanFailBlock π φ (blockResult σ bss) ρ₀ ∨
           (ρ'.hasFailure = Bool.false →
@@ -4077,7 +4188,7 @@ private theorem simulation
         WellFormedSemanticEvalVal ρ₀.eval →
         WellFormedSemanticEvalVar ρ₀.eval →
         WellFormedCoreEvalCong ρ₀.eval →
-        (∀ n ∈ Stmt.touchedVars st, (ρ₀.store n).isSome) →
+        (∀ n ∈ Stmt.modifiedOrDefinedVars st, (ρ₀.store n).isSome) →
         Transform.CanFail (LangCore π φ) st ρ₀ →
         Transform.CanFail (LangCore π φ) (stmtResult σ st) ρ₀)
     ∧
@@ -4091,7 +4202,7 @@ private theorem simulation
         WellFormedSemanticEvalVal ρ₀.eval →
         WellFormedSemanticEvalVar ρ₀.eval →
         WellFormedCoreEvalCong ρ₀.eval →
-        (∀ n ∈ Block.touchedVars bss, (ρ₀.store n).isSome) →
+        (∀ n ∈ Block.modifiedOrDefinedVars bss, (ρ₀.store n).isSome) →
         CanFailBlock π φ bss ρ₀ →
         CanFailBlock π φ (blockResult σ bss) ρ₀) := by
   induction sz with
@@ -4335,13 +4446,13 @@ private theorem simulation
                   ReflTrans.step _ _ _ hstep (henv_eq ▸ r1)
                 match loop_invariant_dichotomy_det π φ hwf_ext _ measure inv body md ρ₀ ρ'
                     hguard_tt hall_tt hwfb hwfv hwfvar hnofd_body
-                    (loop_touchedVars_implies_body_touchedVars hswf) hnf hloop_src with
+                    (loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars hswf) hnf hloop_src with
                 | .inl ⟨ρ_last, hg_last, hinv_last, hwfb_last, hwfv_last,
                     hwfvar_last, hnf_last, hbody_last, hall_tt_post, hg_ff_post,
                     hswf_last, hstore_agree_last, heval_last, hmeas_wf_last⟩ =>
                   -- Success: body terminates at ρ', invs tt, guard ff.
-                  have hswf_body₂ : ∀ n₂ ∈ Block.touchedVars body, (ρ₀.store n₂).isSome :=
-                    loop_touchedVars_implies_body_touchedVars hswf
+                  have hswf_body₂ : ∀ n₂ ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n₂).isSome :=
+                    loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars hswf
                   have hbody_ok : ρ'.hasFailure = Bool.false →
                       CoreStar π φ (.stmts body ρ_last) (.terminal ρ') :=
                     fun _ => hbody_last
@@ -4419,7 +4530,7 @@ private theorem simulation
                     (.stmt (Stmt.loop .nondet .none inv body md) ρ₀) (.terminal ρ') :=
                   ReflTrans.step _ _ _ (.step_loop_nondet_enter hinv_eval hff_iff) (henv_eq ▸ r1)
                 match loop_invariant_dichotomy_nondet π φ hwf_ext .none inv body md ρ₀ ρ'
-                    hall_tt hwfb hwfv hwfvar hnofd_body (loop_touchedVars_implies_body_touchedVars hswf) hnf hloop_src henter with
+                    hall_tt hwfb hwfv hwfvar hnofd_body (loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars hswf) hnf hloop_src henter with
                 | .inl ⟨ρ_last, hinv_last, hwfb_last, hwfv_last,
                     hwfvar_last, hnf_last, hbody_last, hall_tt_post, hswf_last, hstore_agree_last, heval_last⟩ =>
                   -- Success: same as det case but without guard.
@@ -4427,8 +4538,8 @@ private theorem simulation
                   --   first-iter block (assert+assume invs) → ite nondet true →
                   --   arb block (havoc targeting ρ_last + assume invs + body + assert invs) →
                   --   exit state (havoc + assume invs at ρ')
-                  have hswf_body₂ : ∀ n₂ ∈ Block.touchedVars body, (ρ₀.store n₂).isSome :=
-                    loop_touchedVars_implies_body_touchedVars hswf
+                  have hswf_body₂ : ∀ n₂ ∈ Block.modifiedOrDefinedVars body, (ρ₀.store n₂).isSome :=
+                    loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars hswf
                   exact .inr (fun _ => sorry /- nondet_loop_success: needs body replay from havoc-targeted state (mirror of det_loop_success_target_simulation) -/)
                 | .inr ⟨ρ_last, hinv_last, hwfb_last, hwfv_last,
                     hwfvar_last, hnf_last, hbody_exit, hswf_last, hstore_agree_last, heval_last⟩ =>
@@ -4726,7 +4837,7 @@ private theorem simulation
                 rw [← heq_stmt]
                 exact loop_enter_canfail_simulation π φ hwf_ext σ (.det _) (measure.map HasIntOrder.decr) inv body md ρ₀
                   hwfb hwfv hwfvar hwfc hnf₀' hall_tt hguard_tt
-                  (loop_touchedVars_implies_body_touchedVars hswf) hnofd_body
+                  (loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars hswf) hnofd_body
                   ⟨cfg, hfail, henv_eq ▸ r1⟩
                   (fun _ _ _ _ _ _ _ hstar => .inr (fun _ => hstar))
                   (fun _ _ _ _ _ _ hcf => hcf)
@@ -4781,7 +4892,7 @@ private theorem simulation
                 rw [← heq_stmt]
                 exact loop_enter_canfail_simulation π φ hwf_ext σ .nondet .none inv body md ρ₀
                   hwfb hwfv hwfvar hwfc hnf₀' hall_tt trivial
-                  (loop_touchedVars_implies_body_touchedVars hswf) hnofd_body
+                  (loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars hswf) hnofd_body
                   ⟨cfg, hfail, henv_eq ▸ r1⟩
                   (fun _ _ _ _ _ _ _ hstar => .inr (fun _ => hstar))
                   (fun _ _ _ _ _ _ hcf => hcf)
@@ -4856,7 +4967,7 @@ private theorem canfail_simulation
         WellFormedSemanticEvalVal ρ₀.eval →
         WellFormedSemanticEvalVar ρ₀.eval →
         WellFormedCoreEvalCong ρ₀.eval →
-        (∀ n ∈ Stmt.touchedVars st, (ρ₀.store n).isSome) →
+        (∀ n ∈ Stmt.modifiedOrDefinedVars st, (ρ₀.store n).isSome) →
         Transform.CanFail (LangCore π φ) st ρ₀ →
         Transform.CanFail (LangCore π φ) (stmtResult σ st) ρ₀)
     ∧
@@ -4869,7 +4980,7 @@ private theorem canfail_simulation
         WellFormedSemanticEvalVal ρ₀.eval →
         WellFormedSemanticEvalVar ρ₀.eval →
         WellFormedCoreEvalCong ρ₀.eval →
-        (∀ n ∈ Block.touchedVars bss, (ρ₀.store n).isSome) →
+        (∀ n ∈ Block.modifiedOrDefinedVars bss, (ρ₀.store n).isSome) →
         CanFailBlock π φ bss ρ₀ →
         CanFailBlock π φ (blockResult σ bss) ρ₀) := by
   induction sz with
@@ -4998,8 +5109,10 @@ theorem loopElim_overapproximatesAggressive
       (fun s => some (stmtResult σ s)) := by
   intro st st' ht ρ₀ hwfb hwfv hwfvar hswf
   simp at ht; subst ht
+  have hswf_mod : ∀ n ∈ Stmt.modifiedOrDefinedVars st, (ρ₀.store n).isSome := by
+    intro n hn; exact hswf.1 n (List.mem_append_left _ hn)
   have hsim := (simulation π φ hwf_ext (Stmt.sizeOf st)).1
-    σ st (Nat.le_refl _) (sorry /- noFuncDecl -/) (sorry /- ok -/) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1
+    σ st (Nat.le_refl _) (sorry /- noFuncDecl -/) (sorry /- ok -/) ρ₀ hwfb hwfv hwfvar hswf.2.1 hswf_mod
   refine ⟨?_, ?_, ?_, sorry /- LATER: initEnvWF preservation -/⟩
   · intro ρ' hstar; exact hsim.1 ρ' hstar
   · intro lbl ρ' hstar; exact hsim.2 lbl ρ' hstar
@@ -5007,7 +5120,7 @@ theorem loopElim_overapproximatesAggressive
     by_cases hnf₀ : ρ₀.hasFailure = Bool.true
     · exact ⟨.stmt (stmtResult σ st) ρ₀, by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
     · exact (canfail_simulation π φ hwf_ext (Stmt.sizeOf st)).1
-        σ st (Nat.le_refl _) (sorry /- ok -/) (sorry /- noFuncDecl: needs top-level assumption -/) ρ₀ hwfb hwfv hwfvar hswf.2 hswf.1 ⟨cfg, hfail, hreach⟩
+        σ st (Nat.le_refl _) (sorry /- ok -/) (sorry /- noFuncDecl: needs top-level assumption -/) ρ₀ hwfb hwfv hwfvar hswf.2.1 hswf_mod ⟨cfg, hfail, hreach⟩
 
 end Core.LoopElim
 

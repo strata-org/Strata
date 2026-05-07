@@ -128,7 +128,8 @@ def bumpStat (key : String) (n : Nat := 1) : StateM LoopElimState Unit :=
 mutual
 
 def Stmt.removeLoopsM
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [HasNot P] [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+  [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : ExceptT String (StateM LoopElimState) (Bool × Stmt P C) :=
@@ -245,7 +246,8 @@ def Stmt.removeLoopsM
   | .typeDecl _ _ => pure (false, s)  -- Type declarations pass through unchanged
 
 def Block.removeLoopsM
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [HasNot P] [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+  [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (ss : List (Stmt P C)) : ExceptT String (StateM LoopElimState) (Bool × List (Stmt P C)) :=

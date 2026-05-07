@@ -265,21 +265,33 @@ def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
 end
 
 mutual
-/-- Get all variables modified/defined by the statement `s`.
+/-- Get all variables modified/defined by the statement `s` (the write-set).
     Note that we need a separate function because order matters here for sub-blocks
  -/
 @[simp, expose]
-def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .block _ bss _ => Block.touchedVars bss
-  | .ite _ tbss ebss _ => Block.touchedVars tbss ++ Block.touchedVars ebss
+  | .block _ bss _ => Block.modifiedOrDefinedVars bss
+  | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
 
 @[simp, expose]
-def Block.touchedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.touchedVars s ++ Block.touchedVars srest
+  | s :: srest => Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars srest
+end
+
+mutual
+/-- Get all variables accessed by the statement `s` (reads + writes).
+    This is `modifiedOrDefinedVars ++ getVars`. -/
+@[simp, expose]
+def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
+  Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
+
+@[simp, expose]
+def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
+  Block.modifiedOrDefinedVars ss ++ Block.getVars ss
 end
 
 mutual
@@ -308,13 +320,13 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmt.touchedVars
+  modifiedOrDefinedVars := Stmt.modifiedOrDefinedVars
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Block.touchedVars
+  modifiedOrDefinedVars := Block.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 

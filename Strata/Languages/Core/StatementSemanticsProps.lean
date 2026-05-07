@@ -1765,9 +1765,9 @@ theorem EvalCmdDefMonotone' :
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   EvalCmd P δ σ c σ' f →
-  TouchVars σ (HasVarsImp.touchedVars c) σ' := by
+  TouchVars σ (HasVarsImp.modifiedOrDefinedVars c) σ' := by
   intro Heval
-  induction Heval <;> simp [HasVarsImp.touchedVars, Cmd.definedVars, Cmd.modifiedVars]
+  induction Heval <;> simp [HasVarsImp.modifiedOrDefinedVars, Cmd.definedVars, Cmd.modifiedVars]
   case eval_init x' δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     apply TouchVars.init_some Hup
     constructor
