@@ -295,16 +295,19 @@ inductive Procedure.Body where
   deriving Inhabited
 
 /-- Extract the structured statements, or error if the body is a CFG. -/
+@[simp, expose]
 def Procedure.Body.getStructured : Procedure.Body → Except String (List Statement)
   | .structured ss => .ok ss
   | .cfg _ => .error "expected structured body, got CFG"
 
 /-- Extract the CFG, or error if the body is structured. -/
+@[simp]
 def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
   | .cfg c => .ok c
   | .structured _ => .error "expected CFG body, got structured"
 
 /-- Get variables referenced in the body. -/
+@[simp]
 def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
   | .structured ss => ss.flatMap Imperative.HasVarsPure.getVars
   | .cfg c => c.blocks.flatMap fun (_, blk) =>
@@ -312,16 +315,19 @@ def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
 
 /-- Is this body abstract (no implementation)? Only empty structured bodies
     are abstract. CFG bodies always have an implementation. -/
+@[simp]
 def Procedure.Body.isAbstract : Procedure.Body → Bool
   | .structured ss => ss.isEmpty
   | .cfg _ => false
 
 /-- Does this body have a structured implementation? -/
+@[simp]
 def Procedure.Body.isStructured : Procedure.Body → Bool
   | .structured _ => true
   | .cfg _ => false
 
 /-- Does this body have a CFG implementation? -/
+@[simp]
 def Procedure.Body.isCfg : Procedure.Body → Bool
   | .structured _ => false
   | .cfg _ => true

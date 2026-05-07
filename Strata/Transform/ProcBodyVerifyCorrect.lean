@@ -447,6 +447,16 @@ private theorem mapM_stateT_pure_eq {α β : Type} {σ : Type} {ε : Type}
 
 /-! ## Verification Statement Structure -/
 
+theorem procToVerifyStmt_is_structured
+    (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st')) :
+      ∃ ss, proc.body = .structured ss := by
+    simp [ExceptT.run, procToVerifyStmt] at h
+    cases hb: proc.body with
+    | structured ss => simp
+    | cfg blk =>
+      simp [hb] at h
+      cases h
+
 /-- Structure: the output of `procToVerifyStmt` is a block
     `prefix ++ [bodyBlock] ++ postAsserts`, and all prefix statements
     are `.cmd` (init/assume commands).
@@ -468,7 +478,7 @@ theorem procToVerifyStmt_structure
         ∃ ρ_init,
           Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
             (.stmts prefixStmts ρ_init) (.terminal ρ₀)) := by
-  obtain ⟨ss, h_body_eq⟩ := h_wf_proc.bodyIsStructured
+  obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h
   unfold procToVerifyStmt at h
   rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
@@ -648,8 +658,7 @@ theorem procBodyVerify_procedureCorrect
     (h_wf_proc : WF.WFProcedureProp p proc) :
     -- Conclusion: ProcedureCorrect holds.
     Core.Specification.ProcedureCorrect π φ proc p := by
-
-  obtain ⟨ss, h_body_eq⟩ := h_wf_proc.bodyIsStructured
+  obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
   have h_body_match : (match proc.body with | .structured ss => ss | .cfg _ => []) = ss := by
     rw [h_body_eq]
   obtain ⟨prefixStmts, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
