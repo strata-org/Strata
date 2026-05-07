@@ -2,8 +2,8 @@
 # Check that new code does not introduce net-new SourceRange.none
 # without justification.
 #
-# ExprSourceLoc.none was removed; all synthesized expressions must now use
-# ExprSourceLoc.synthesized with an explicit origin string.
+# All synthesized expressions must use ExprSourceLoc.synthesized with an
+# explicit origin string instead of SourceRange.none.
 #
 # Suppression:
 #   Per-line:  add "-- nosourcerange: <explanation>" on the same line
