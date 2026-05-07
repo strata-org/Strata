@@ -21,7 +21,7 @@ namespace Core
 -- (canonical forms represent abstract values, not parsed source terms).
 
 abbrev semLoc : ExprSourceLoc :=
-  { uri := some (.file "<synthesized:semantics>"), range := Strata.SourceRange.none }
+  { uri := some (.file "<synthesized:semantics>"), range := Strata.SourceRange.none } -- nosourcerange: semantic canonical forms have no real source location
 
 /-- Expressions that can't be reduced when evaluating.
     These are canonical forms used in semantic definitions; they carry synthesized provenance
