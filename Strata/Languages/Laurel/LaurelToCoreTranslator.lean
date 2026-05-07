@@ -319,7 +319,7 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   match Imperative.getFileRange md with
   | some fileRange => s!"({fileRange.range.start})"
   | none => match Imperative.getProvenance md with
-    | some (.synthesized origin) => s!"(synthesized:{origin})"
+    | some (.synthesized _) => "(0)"
     | _ => "(unknown)"
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
