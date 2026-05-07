@@ -22,6 +22,13 @@ open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
 ---------------------------------------------------------------------
 
+-- In a call statement, every inout parameter (which appear in both inputs and outputs of the call) must be
+-- matched with a simple variable of the same name
+private def areInoutArgsValid (proc : Procedure) (args : List Expression.Expr) : Bool :=
+  (proc.header.inputs.toList.zip args).all fun ((paramId, _), arg) =>
+    !(ListMap.keys proc.header.outputs).contains paramId ||  -- not inout, or …
+    match arg with | .fvar _ id _ => id == paramId | _ => false  -- … is fvar with same name
+
 /--
 Type checker for Strata Core commands.
 
@@ -36,7 +43,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c
     .ok (.cmd c, Env)
-  | .call lhs pname args md => try
+  | .call pname callArgs md => try
+    let lhs := CallArg.getLhs callArgs
+    let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
      | none => .error <| md.toDiagnosticF f!"[{c}]: Procedure {pname} not found!"
@@ -49,6 +58,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
        else if args.length != proc.header.inputs.length then
          .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's arguments!\
                    Here is the expected signature: {proc.header.inputs}"
+       else if !areInoutArgsValid proc args then
+         .error <| md.toDiagnosticF f!"[{c}]: In-out arguments (parameters appearing in \
+                   both inputs and outputs) must be simple variable references"
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.
@@ -71,7 +83,8 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
            let Env := Env.updateSubst S
-           let s' := .call lhs pname args' md
+           let newCallArgs := CallArg.replaceInArgs callArgs args'
+           let s' := .call pname newCallArgs md
            .ok (s', Env)
       catch e =>
         -- Add source location to error messages if not already present.
@@ -106,50 +119,64 @@ where
           .ok (s', Env, C)
 
         | .ite cond tss ess md => do try
-          let _ ← Env.freeVarCheck cond f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-          let (conda, Env) ← LExpr.resolve C Env cond |>.mapError DiagnosticModel.fromFormat
-          let condty := conda.toLMonoTy
-          match condty with
-          | .tcons "bool" [] =>
+          match cond with
+          | .det c =>
+            let _ ← Env.freeVarCheck c f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
+            let (conda, Env) ← LExpr.resolve C Env c |>.mapError DiagnosticModel.fromFormat
+            let condty := conda.toLMonoTy
+            match condty with
+            | .tcons "bool" [] =>
+              let (tss, Env, C) ← goBlock C Env tss [] labels
+              let (ess, Env, C) ← goBlock C Env ess [] labels
+              let s' := Stmt.ite (.det conda.unresolved) tss ess md
+              .ok (s', Env, C)
+            | _ => .error <| md.toDiagnosticF f!"[{s}]: If's condition {c} is not of type `bool`!"
+          | .nondet =>
             let (tss, Env, C) ← goBlock C Env tss [] labels
             let (ess, Env, C) ← goBlock C Env ess [] labels
-            let s' := Stmt.ite conda.unresolved tss ess md
+            let s' := Stmt.ite .nondet tss ess md
             .ok (s', Env, C)
-          | _ => .error <| md.toDiagnosticF f!"[{s}]: If's condition {cond} is not of type `bool`!"
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
         | .loop guard measure invariant bss md => do try
-          let _ ← Env.freeVarCheck guard f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-          let (conda, Env) ← LExpr.resolve C Env guard |>.mapError DiagnosticModel.fromFormat
-          let condty := conda.toLMonoTy
+          let guardResult ← match guard with
+            | .det g => do
+              let _ ← Env.freeVarCheck g f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
+              let (conda, Env) ← LExpr.resolve C Env g |>.mapError DiagnosticModel.fromFormat
+              let condty := conda.toLMonoTy
+              if condty != .tcons "bool" [] then
+                throw <| md.toDiagnosticF f!"[{s}]: Loop's guard {g} is not of type `bool`!"
+              pure (some conda, Env)
+            | .nondet => pure (none, Env)
+          let (guarda, Env) := guardResult
           let (mt, Env) ← (match measure with
           | .some m => do
             let _ ← Env.freeVarCheck m f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
             let (ma, Env) ← LExpr.resolve C Env m |>.mapError DiagnosticModel.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
-          let (it, Env) ← invariant.foldlM (fun (acc, E) i => do
+          let (it, Env) ← invariant.foldlM (fun (acc, E) (lbl, i) => do
             let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
             let (ia, E') ← LExpr.resolve C E i |>.mapError DiagnosticModel.fromFormat
             if ia.toLMonoTy == .tcons "bool" [] then
-              .ok (acc ++ [ia], E')
+              .ok (acc ++ [(lbl, ia)], E')
             else
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
-          ) ([], Env)
+          ) (([] : List (String × _)), Env)
           let mty := mt.map LExpr.toLMonoTy
-          match (condty, mty) with
-          | (.tcons "bool" [], none)
-          | (.tcons "bool" [], some (.tcons "int" [])) =>
+          match mty with
+          | none | some (.tcons "int" []) =>
             let (tb, Env, C) ← goBlock C Env bss [] labels
-            let s' := Stmt.loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
+            let guarda' : ExprOrNondet Expression := match guarda with
+              | some e => .det e.unresolved
+              | none => .nondet
+            let s' := Stmt.loop guarda' (mt.map LExpr.unresolved)
+              (it.map (fun (lbl, e) => (lbl, e.unresolved))) tb md
             .ok (s', Env, C)
           | _ =>
-            match condty with
-            | .tcons "bool" [] =>
-              .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
-            | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+            .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
@@ -208,6 +235,9 @@ private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option E
   | some e => some (LExpr.applySubst e S)
   | none => none
 
+private def substExprOrNondet (S : Subst) (e : Imperative.ExprOrNondet Expression) : Imperative.ExprOrNondet Expression :=
+  e.map (LExpr.applySubst · S)
+
 /--
 Apply type substitution `S` to a command.
 -/
@@ -215,18 +245,20 @@ def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
   | .cmd c => match c with
     | .init x ty e md =>
-      .cmd $ .init x (LTy.subst S ty) (substOptionExpr S e) md
+      .cmd $ .init x (LTy.subst S ty) (substExprOrNondet S e) md
     | .set x e md =>
-      .cmd $ .set x (e.applySubst S) md
-    | .havoc _ _ => .cmd $ c
+      .cmd $ .set x (substExprOrNondet S e) md
     | .assert label b md =>
       .cmd $ .assert label (b.applySubst S) md
     | .assume label b md =>
       .cmd $ .assume label (b.applySubst S) md
     | .cover label b md =>
       .cmd $ .cover label (b.applySubst S) md
-  | .call lhs pname args md =>
-    .call lhs pname (args.map (fun a => a.applySubst S)) md
+  | .call pname callArgs md =>
+    .call pname (callArgs.map fun
+      | .inArg e => .inArg (e.applySubst S)
+      | .inoutArg id => .inoutArg id
+      | .outArg id => .outArg id) md
 
 /--
 Apply type substitution `S` to a statement.
@@ -243,9 +275,10 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .block label bss md =>
     .block label (go S bss []) md
   | .ite cond tss ess md =>
-    .ite (cond.applySubst S) (go S tss []) (go S ess []) md
+    .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
+    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m)
+      (i.map (fun (l, e) => (l, e.applySubst S))) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with

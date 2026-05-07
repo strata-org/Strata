@@ -6,10 +6,10 @@
 module
 
 public import Strata.DDM.AST
-public import Strata.DDM.Util.Ion
 
-import Strata.DDM.Util.Array
 import Strata.DDM.Util.Ion.Lean
+import Strata.Util.DecideProp
+public import Strata.DDM.Util.Ion.SymbolTable
 
 open Lean
 open Lean.Elab
@@ -127,11 +127,21 @@ def fromIonName? : String → Option SepFormat
   | "spacePrefixedList" => some .spacePrefix
   | "newlineSepList" => some .newline
   | "semicolonSepList" => some .semicolon
-  | _ => none
+  | _ => .none
 
 theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
   fromIonName? (toIonName sep) = some sep := by
   cases sep <;> rfl
+
+/-- Invalid Ion separator names return `none`. -/
+theorem fromIonName_none_of_invalid (s : String) (h : ∀ sep, toIonName sep ≠ s) :
+  fromIonName? s = .none := by
+  simp [fromIonName?]
+  split <;> first
+    | rfl
+    | (exfalso; have := h .none; have := h .comma; have := h .space
+       have := h .spacePrefix; have := h .newline; have := h .semicolon
+       simp_all [toIonName])
 
 end SepFormat
 
@@ -359,10 +369,10 @@ private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromI
     | .error (off, msg) =>
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
-  let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
+  let .isTrue p := decideProp (a.size = 1)
     | throw s!"Expected single Ion value, but got {a.size} values."
   let entries := a[0]
-  let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
+  let .isTrue p := decideProp (entries.size = 2)
     | throw s!"Expected symbol table and value in dialect."
   let symbols ←
         match SymbolTable.ofLocalSymbolTable entries[0] with
@@ -1196,7 +1206,7 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArgType := d
     | "functionTemplate" => pure .functionTemplate
     | _ => throw s!"Unknown type {s}"
   | .sexp args ap => do
-    let .isTrue p := inferInstanceAs (Decidable (args.size ≥ 2))
+    let .isTrue p := decideProp (args.size ≥ 2)
       | throw s!"Expected arguments to sexp"
     match ← .asSymbolString "MetadataArgType kind" args[0] with
     | "opt" =>
@@ -1446,7 +1456,7 @@ namespace Header
 
 private def fromIon (v : Ion SymbolId) : FromIonM Header := do
   let ⟨hdr, _⟩ ← .asSexp "Header" v
-  let .isTrue ne := inferInstanceAs (Decidable (hdr.size ≥ 2))
+  let .isTrue ne := decideProp (hdr.size ≥ 2)
     | throw s!"Expected header to have two elements."
   match ← .asSymbolString "Header kind" hdr[0] with
   | "dialect" => .dialect <$> .asString "Dialect name" hdr[1]
@@ -1457,7 +1467,7 @@ def parse (bytes : ByteArray) : Except String (Header × Fragment) := do
   FromIonM.deserializeValue bytes $ fun v => do
     let tbl := (← read).symbols
     let ⟨args, _⟩ ← .asList v
-    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+    let .isTrue ne := decideProp (args.size ≥ 1)
       | throw s!"Expected header"
     return (← fromIon args[0], { symbols := tbl, values := args, offset := 1 })
 
@@ -1506,7 +1516,7 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
 private instance : FromIon Dialect where
   fromIon v := do
     let ⟨args, _⟩ ← .asList v
-    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+    let .isTrue ne := decideProp (args.size ≥ 1)
       | throw s!"Expected header"
     match ← Ion.Header.fromIon args[0] with
     | .dialect dialect => fun ctx =>
@@ -1578,7 +1588,7 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
       else
         throw s!"Expected single Ion value"
 
-  let .isTrue p := inferInstanceAs (Decidable (ctx.size = 2))
+  let .isTrue p := decideProp (ctx.size = 2)
     | throw "Expected symbol table and value"
 
   let symbols ←
@@ -1606,7 +1616,7 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     let filePath ← FromIonM.asString "filePath" filePathData ionCtx
 
     let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
-    let .isTrue ne := inferInstanceAs (Decidable (programValues.size ≥ 1))
+    let .isTrue ne := decideProp (programValues.size ≥ 1)
       | throw "Expected program header"
 
     let hdr ← Ion.Header.fromIon programValues[0] ionCtx

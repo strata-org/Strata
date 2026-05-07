@@ -1,3 +1,4 @@
+# strata-args: --check-mode bugFinding --check-level full
 #this is currently not handled
 
 import test_helper

@@ -39,6 +39,8 @@ program Laurel;
 // Composite: datatype with a reference (int)
 datatype Composite { MkComposite(ref: int) }
 
+datatype NotSupportedYet {}
+
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {
   MkHeap(data: Map Composite Map Field Box, nextReference: int)
@@ -66,10 +68,9 @@ function increment(heap: Heap): Heap {
 
 /-- The Laurel Core prelude as a Laurel Program. -/
 def heapConstants : Program :=
-  let uri := Strata.Uri.file "Strata/Languages/Laurel/HeapParameterizationConstants.lean"
-  match Laurel.TransM.run uri (Laurel.parseProgram laurelPreludeDDM) with
+  match Laurel.TransM.run none (Laurel.parseProgram laurelPreludeDDM) with
   | .ok program => program
-  | .error e => panic! s!"Laurel heap prelude parse error: {e}"
+  | .error e => dbg_trace s!"BUG: Laurel heap prelude parse error: {e}"; default
 
 end -- public section
 

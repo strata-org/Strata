@@ -20,11 +20,11 @@ procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: i
       invariant counter >= 0
     {
       {
-        if (steps == exitSteps) {
+        if steps == exitSteps then {
           counter = -10;
           exit breakBlock;
         }
-        if (steps == continueSteps) {
+        if steps == continueSteps then {
           exit continueBlock;
         }
         counter = counter + 1;
@@ -51,12 +51,12 @@ proof whileWithBreakAndContinue_body() {
 
   loopStart: {
     assert counter >= 0;
-    if (steps > 0) {
-      if (steps == exitSteps) {
+    if steps > 0 then {
+      if steps == exitSteps then {
         counter = -10;
         exit loopStart;
       }
-      if (steps == continueSteps) {
+      if steps == continueSteps then {
         exit loopStart;
       }
       counter = counter + 1;

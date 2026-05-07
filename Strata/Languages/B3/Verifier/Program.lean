@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.Statements
-import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Transform.FunctionToAxiom
 import Strata.Languages.B3.DDMTransform.Conversion
+
+public section
 
 /-!
 # B3 Program Verification
@@ -176,11 +179,8 @@ Workflow:
    - If failed, automatically diagnose to find root cause
 3. Report all results with diagnosis
 
-The solver is reset at the beginning to ensure clean state.
 -/
 def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
-  -- Reset solver to clean state
-  let _ ← (Solver.reset).run solver
   let state ← buildProgramState prog solver
   let mut reportsRev := []
 

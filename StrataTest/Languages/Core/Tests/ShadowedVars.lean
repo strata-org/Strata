@@ -14,15 +14,14 @@ namespace Strata
 def noShadowPgm1 :=
 #strata
 program Core;
-var g : int;
-procedure Test() returns ()
+procedure Test(g : int)
 {
   var g : bool;
 };
 #end
 
 /--
-error:  ❌ Type checking error.
+error: ❌ Type checking error.
 Variable g of type int already in context.
 -/
 #guard_msgs in
@@ -31,7 +30,7 @@ Variable g of type int already in context.
 def noShadowPgm2 :=
 #strata
 program Core;
-procedure Test() returns ()
+procedure Test()
 {
   var g : bool;
   var g : int;
@@ -39,7 +38,7 @@ procedure Test() returns ()
 #end
 
 /--
-error:  ❌ Type checking error.
+error: ❌ Type checking error.
 Variable g of type bool already in context.
 -/
 #guard_msgs in

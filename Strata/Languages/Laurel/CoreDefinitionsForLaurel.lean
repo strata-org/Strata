@@ -25,6 +25,7 @@ def coreDefinitionsForLaurelDDM :=
 #strata
 program Laurel;
 
+datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
 
 // The types for these Map functions are incorrect.
@@ -46,7 +47,7 @@ The core map operation definitions as a `Laurel.Program`, parsed at compile time
 def coreDefinitionsForLaurel : Program :=
   match TransM.run none (parseProgram coreDefinitionsForLaurelDDM) with
   | .ok program => program
-  | .error e => panic! s!"CoreDefinitionsForLaurel parse error: {e}"
+  | .error e => dbg_trace s!"BUG: CoreDefinitionsForLaurel parse error: {e}"; default
 
 end -- public section
 

@@ -178,7 +178,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
      Used on constructor args in datatype declarations so that type parameters are available
      as type variables inside constructor field types. -/
   declareMetadata { name := "scopeTVar", args := #[.mk "typeParams" .ident] }
-  declareMetadata { name := "scopeSelf", args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
+  declareMetadata { name := "preRegisterFunctions", args := #[.mk "scope" .ident] }
 
 end Strata
 end

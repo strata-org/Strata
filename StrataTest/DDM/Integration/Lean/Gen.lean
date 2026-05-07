@@ -65,9 +65,9 @@ trace: [Strata.generator] Generating Command.toAst
 ---
 trace: [Strata.generator] Generating Command.ofAst
 ---
-trace: [Strata.generator] Declarations group: [Init.Expr]
-[Strata.generator] Declarations group: [Init.Type]
-[Strata.generator] Declarations group: [Init.Command]
+trace: [Strata.generator] ✅️ Declarations group: [Init.Expr]
+[Strata.generator] ✅️ Declarations group: [Init.Type]
+[Strata.generator] ✅️ Declarations group: [Init.Command]
 -/
 #guard_msgs in
 set_option trace.Strata.generator true in
@@ -252,3 +252,24 @@ info: Strata.ExprF.app ()
 #eval Expr.lambda () (.bool ()) (.mkBindings () ⟨(), #[]⟩) (.trueExpr ()) |>.toAst
 
 end TestDialect
+
+-- Test: #strata_gen reports an error when a generated name already exists
+namespace DuplicateNameTest
+
+#dialect
+dialect DupDialect;
+category Stmt;
+op skip : Stmt => "skip";
+#end
+
+-- Pre-define a type named `Stmt` to conflict with the generated one
+inductive Stmt : Type → Type where
+  | placeholder : Stmt α
+
+/--
+error: #strata_gen: 'Stmt' already exists as '_private.StrataTest.DDM.Integration.Lean.Gen.0.DuplicateNameTest.Stmt'.
+-/
+#guard_msgs in
+#strata_gen DupDialect
+
+end DuplicateNameTest

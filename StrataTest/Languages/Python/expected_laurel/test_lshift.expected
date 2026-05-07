@@ -1,0 +1,6 @@
+test_lshift.py(2, 4): ✅ pass - assert(16)
+test_lshift.py(3, 13): ✅ pass - Check PLShift exception
+test_lshift.py(3, 4): ✅ pass - assert(31)
+test_lshift.py(4, 4): ✅ pass - left shift
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

@@ -9,6 +9,7 @@ public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.LExprType
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.Semantics
+public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.DL.Lambda.Reflect
 
@@ -46,7 +47,7 @@ def typeCheckAndPartialEval
   (e : LExpr T.mono) :
   Except DiagnosticModel (LExpr T.mono) := do
   let E := TEnv.default
-  let C := LContext.default.addFactoryFunctions f
+  let C := LContext.default (functions := f)
   let C ← C.addTypeFactory t
   let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"

@@ -23,6 +23,7 @@ import all Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
 import Strata.Util.Tactics
+public import Strata.Languages.Core.WF
 
 public section
 
@@ -53,19 +54,26 @@ theorem TouchVarsEmpty :
 
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   {extendEval : ExtendEval P}
-  { σ σ': SemanticStore P } { δ δ' : SemanticEval P }
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd extendEval δ σ ([]: (List (Stmt P Cmd))) σ' δ' → σ = σ' := by
-  intros H; cases H <;> simp
+  { ρ ρ' : Env P }
+  [HasBool P] [HasNot P] :
+  EvalStmtsSmall P EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
+  intro H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsEmpty :
-  EvalStatements π extendEval δ σ [] σ' δ' → σ = σ' := by
-  intros H; cases H <;> simp
+  EvalStatements π φ ρ [] ρ' → ρ = ρ' := by
+  intro H
+  unfold EvalStatements EvalStmtsSmall at H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsContractEmpty :
-  EvalStatementsContract π extendEval δ σ [] σ' δ' → σ = σ' := by
-  intros H; cases H <;> simp
+  EvalStatementsContract π φ ρ [] ρ' → ρ = ρ' := by
+  intro H
+  unfold EvalStatementsContract EvalStmtsSmall at H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem UpdateStateNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
@@ -1324,64 +1332,89 @@ theorem ReadValuesSubstStores :
       simp_all
     . exact ih Ht Ht'
 
-theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ'' : CoreEval} :
-  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' →
-  ∃ σ' δ',
-    EvalStatementsContract π φ δ σ ss₁ σ' δ' ∧
-    EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' := by
-  intros Heval
-  induction ss₁ generalizing σ δ <;> simp_all
-  case nil =>
-    exists σ, δ <;> simp_all
-    exact EvalBlock.stmts_none_sem
-  case cons h t ih =>
-    cases Heval with
-    | stmts_some_sem Hh Ht =>
-    next σ' δ' =>
-    specialize ih Ht
-    cases ih with
-    | intro σ'' Heval =>
-    cases Heval with
-    | intro δ'' Heval =>
-    exists σ'', δ''
-    simp_all
-    exact EvalBlock.stmts_some_sem Hh Heval.1
-
-theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ' δ'' : CoreEval} :
-  EvalStatementsContract π φ δ σ ss₁ σ' δ' →
-  EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' →
-  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' := by
-  intros Heval1 Heval2
-  induction ss₁ generalizing σ σ' δ δ' <;> simp_all
-  case nil =>
-    have ⟨Hσ, Hδ⟩ := EvalBlockEmpty Heval1
-    simp [Hσ, Hδ]
-    assumption
-  case cons h t ih =>
-    cases Heval1 with
-    | stmts_some_sem Heval Heval' =>
-    next σ₁ δ₁ =>
-    constructor
-    . exact Heval
-    . exact ih Heval' Heval2
-
-theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ' δ'' : CoreEval} :
-  EvalStatements π φ δ σ ss₁ σ' δ' →
-  EvalStatements π φ δ' σ' ss₂ σ'' δ'' →
-  EvalStatements π φ δ σ (ss₁ ++ ss₂) σ'' δ'' := by
-  intros Heval1 Heval2
-  induction ss₁ generalizing σ σ' δ δ' with
+theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → CoreEval} :
+  EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' →
+  ∃ ρ',
+    EvalStatementsContract π φ ρ ss₁ ρ' ∧
+    EvalStatementsContract π φ ρ' ss₂ ρ'' := by
+  intro Heval
+  induction ss₁ generalizing ρ with
   | nil =>
-    have ⟨Hσ, Hδ⟩ := EvalBlockEmpty Heval1
-    simp [Hσ, Hδ]
-    assumption
-  | cons h t ih =>
-    cases Heval1 with
-    | stmts_some_sem Heval Heval' =>
-    next σ₁ δ₁ =>
-    constructor
-    . exact Heval
-    . exact ih Heval' Heval2
+    simp at Heval
+    exact ⟨ρ, evalStmtsSmallNil Expression (EvalCommandContract π) (EvalPureFunc φ) ρ, Heval⟩
+  | cons s ss₁ ih =>
+    simp [List.cons_append] at Heval
+    unfold EvalStatementsContract EvalStmtsSmall at Heval
+    match Heval with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+      have ⟨ρ', Hss₁, Hss₂⟩ := ih htail
+      have Hcons : EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: ss₁) ρ' := by
+        unfold EvalStmtsSmall
+        apply ReflTrans.step _ _ _ .step_stmts_cons
+        exact ReflTrans_Transitive _ _ _ _
+          (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ ss₁ hterm_s)
+          (.step _ _ _ .step_seq_done
+            (show StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+              (.stmts ss₁ ρ₁) (.terminal ρ') from Hss₁))
+      exact ⟨ρ', Hcons, Hss₂⟩
+
+theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} :
+  EvalStatementsContract π φ ρ ss₁ ρ' →
+  EvalStatementsContract π φ ρ' ss₂ ρ'' →
+  EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' := by
+  intro Heval1 Heval2
+  induction ss₁ generalizing ρ ρ' with
+  | nil =>
+    simp
+    have Heq := EvalStatementsContractEmpty Heval1
+    rw [Heq]; exact Heval2
+  | cons s ss₁ ih =>
+    simp [List.cons_append]
+    -- Peel off s from Heval1
+    unfold EvalStatementsContract EvalStmtsSmall at Heval1
+    match Heval1 with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+      -- hterm_s : .stmt s ρ →* .terminal ρ₁
+      -- htail : .stmts ss₁ ρ₁ →* .terminal ρ'
+      -- IH: EvalStmtsSmall ρ₁ ss₁ ρ' → EvalStmtsSmall ρ' ss₂ ρ'' → EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
+      have Hconcat := ih htail Heval2
+      -- Hconcat : EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
+      -- Build: .stmts (s :: (ss₁ ++ ss₂)) ρ →* .terminal ρ''
+      show EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      unfold EvalStmtsSmall
+      apply ReflTrans.step _ _ _ .step_stmts_cons
+      exact ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (.step _ _ _ .step_seq_done Hconcat)
+
+theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
+  EvalStatements π φ ρ ss₁ ρ' →
+  EvalStatements π φ ρ' ss₂ ρ'' →
+  EvalStatements π φ ρ (ss₁ ++ ss₂) ρ'' := by
+  intro Heval1 Heval2
+  induction ss₁ generalizing ρ ρ' with
+  | nil =>
+    simp
+    have Heq := EvalStatementsEmpty Heval1
+    rw [Heq]; exact Heval2
+  | cons s ss₁ ih =>
+    simp [List.cons_append]
+    unfold EvalStatements EvalStmtsSmall at Heval1
+    match Heval1 with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest
+      have Hconcat := ih htail Heval2
+      show EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      unfold EvalStmtsSmall
+      apply ReflTrans.step _ _ _ .step_stmts_cons
+      exact ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (.step _ _ _ .step_seq_done Hconcat)
 
 theorem HavocVarsApp :
   HavocVars σ vs₁ σ' →
@@ -1717,7 +1750,7 @@ theorem HavocVarsDefined :
 
 theorem EvalCmdDefMonotone' :
   isDefined σ v →
-  EvalCmd Core.Expression δ σ c σ' →
+  EvalCmd Core.Expression δ σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
@@ -1728,7 +1761,7 @@ theorem EvalCmdDefMonotone' :
 
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
-  EvalCmd P δ σ c σ' →
+  EvalCmd P δ σ c σ' f →
   TouchVars σ (HasVarsImp.touchedVars c) σ' := by
   intro Heval
   induction Heval <;> simp [HasVarsImp.touchedVars, Cmd.definedVars, Cmd.modifiedVars]
@@ -1740,9 +1773,10 @@ theorem EvalCmdTouch
     constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
+  case eval_set_nondet x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_assert => exact TouchVars.none
+  case eval_assert_pass => exact TouchVars.none
+  case eval_assert_fail => exact TouchVars.none
   case eval_assume => exact TouchVars.none
   case eval_cover => exact TouchVars.none
 
@@ -1781,9 +1815,9 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
     apply Hup2
 
 theorem EvalCmdRefinesContract :
-EvalCmd Expression δ σ c σ' →
-EvalCommandContract π δ σ (CmdExt.cmd c) σ' := by
-intros H; constructor; assumption
+EvalCmd Expression δ σ c σ' f →
+EvalCommandContract π δ σ (CmdExt.cmd c) σ' f := by
+intros H; constructor; exact H
 
 theorem InvStoresUpdatedStateDisjRightMono :
   ¬ k' ∈ ks →
@@ -2021,63 +2055,93 @@ theorem InvStoresExceptInvStores :
   exact List.Disjoint.symm Hdis
   assumption
 
-/--
+/-
+
+/-
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
   assymmetry between the two semantics regarding the temporary variables
   created in the concrete semantics. That is, evaluating the procedure body may
   create new variables in the store, and since the temporary variables are
   discarded at the end of the call, it is possible to show that those created
-  variables are irrelevant, and can be approximated by updating the relevant
-  variables (that is, lhs ++ modifies)
+  variables are irrelevant.
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ lhs n args σ' p md md'},
+  ∀ {π φ δ σ n callArgs σ' p md md'},
   π n = .some p →
-  p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' →
-  EvalCommandContract π δ σ (CmdExt.call lhs n args md') σ' := by
-  intros π φ δ σ lhs n args σ' p md md' pFound modValid H
+  EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false →
+  EvalCommandContract π δ σ (CmdExt.call n callArgs md') σ' false := by
+  intros π φ δ σ n callArgs σ' p md md' pFound H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
 
 theorem EvalCommandRefinesContract :
-EvalCommand π φ δ σ c σ' →
-EvalCommandContract π δ σ c σ' := by
+EvalCommand π φ δ σ c σ' f →
+EvalCommandContract π δ σ c σ' f := by
   intros H
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
   | call_sem _ =>
     apply EvalCallBodyRefinesContract <;> try assumption
-    -- need to connect `modifies` with `modifiedVarsTrans`
-    sorry
     constructor <;> assumption
 
-mutual
-/-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
-    by structural recursion on the derivation. -/
-theorem EvalStmtRefinesContract
-  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ') :
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
-  match H with
-  | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
-  | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
-  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
-  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
-  | .funcDecl_sem => .funcDecl_sem
-  | .typeDecl_sem => .typeDecl_sem
+/-- A single `StepStmt` with `EvalCommand` can be simulated by a single
+    `StepStmt` with `EvalCommandContract`. -/
+private theorem StepStmt_refines_contract
+    {c₁ c₂ : Imperative.Config Expression Command} :
+    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
+  intro H
+  induction H with
+  | step_cmd hcmd => exact .step_cmd (EvalCommandRefinesContract hcmd)
+  | step_seq_inner _ ih => exact .step_seq_inner ih
+  | step_block_body _ ih => exact .step_block_body ih
+  | step_block => exact .step_block
+  | step_ite_true h1 h2 => exact .step_ite_true h1 h2
+  | step_ite_false h1 h2 => exact .step_ite_false h1 h2
+  | step_ite_nondet_true => exact .step_ite_nondet_true
+  | step_ite_nondet_false => exact .step_ite_nondet_false
+  | step_loop_enter h1 h2 => exact .step_loop_enter h1 h2
+  | step_loop_exit h1 h2 => exact .step_loop_exit h1 h2
+  | step_loop_nondet_enter => exact .step_loop_nondet_enter
+  | step_loop_nondet_exit => exact .step_loop_nondet_exit
+  | step_exit => exact .step_exit
+  | step_funcDecl => exact .step_funcDecl
+  | step_typeDecl => exact .step_typeDecl
+  | step_stmts_nil => exact .step_stmts_nil
+  | step_stmts_cons => exact .step_stmts_cons
+  | step_seq_done => exact .step_seq_done
+  | step_seq_exit => exact .step_seq_exit
+  | step_block_done => exact .step_block_done
+  | step_block_exit_none => exact .step_block_exit_none
+  | step_block_exit_match h => exact .step_block_exit_match h
+  | step_block_exit_mismatch h => exact .step_block_exit_mismatch h
 
-/-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
-    by structural recursion on the derivation. -/
-theorem EvalBlockRefinesContract
-  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ') :
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
-  match H with
-  | .stmts_none_sem => .stmts_none_sem
-  | .stmts_some_sem Hstmt Hrest =>
-    .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
-end
+/-- Small-step execution with `EvalCommand` refines `EvalCommandContract`. -/
+theorem StepStmtStar_refines_contract
+    {c₁ c₂ : Imperative.Config Expression Command} :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
+  intro H
+  induction H with
+  | refl => exact .refl _
+  | step _ _ _ hstep _ ih =>
+    exact .step _ _ _ (StepStmt_refines_contract hstep) ih
+
+/-- `EvalStatements` with concrete semantics refines contract semantics. -/
+theorem EvalStatementsRefinesContract :
+    EvalStatements π φ ρ ss ρ' →
+    EvalStatementsContract π φ ρ ss ρ' :=
+  StepStmtStar_refines_contract
+
+/-- `EvalStatement` with concrete semantics refines contract semantics. -/
+theorem EvalStatementRefinesContract :
+    EvalStatement π φ ρ s ρ' →
+    EvalStatementContract π φ ρ s ρ' :=
+  StepStmtStar_refines_contract
+
+-/
 
 /-- If an expression is defined, all its free variables are defined in the store.
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
@@ -2110,6 +2174,325 @@ theorem EvalExpressionIsDefined :
   case eq m e₁ e₂ ih₁ ih₂ =>
     have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
     grind
+
+/-! ## Properties of CoreStep and CoreStepStar. -/
+
+/-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
+theorem CoreStepStar_to_StepStmtStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command}
+    (h : CoreStepStar π φ c c') :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
+  match h with
+  | .refl => .refl _
+  | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
+
+/-- The generic `StepStmtStar` implies `CoreStepStar`. -/
+theorem StepStmtStar_to_CoreStepStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command} :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
+    CoreStepStar π φ c c' := by
+  intro H
+  induction H with
+  | refl => exact .refl
+  | step _ _ _ hstep _ ih => exact .step hstep ih
+
+/-- Manual induction principle for `CoreStepStar` (the `induction` tactic does
+    not support mutual inductives). -/
+theorem CoreStepStar_rec
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {motive : CoreConfig → CoreConfig → Prop}
+    (h_refl : ∀ c, motive c c)
+    (h_step : ∀ c₁ c₂ c₃, CoreStep π φ c₁ c₂ →
+      CoreStepStar π φ c₂ c₃ → motive c₂ c₃ → motive c₁ c₃)
+    {c₁ c₂ : CoreConfig}
+    (h : CoreStepStar π φ c₁ c₂) : motive c₁ c₂ := by
+  suffices ∀ c₁ c₂,
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      motive c₁ c₂ by
+    exact this _ _ (CoreStepStar_to_StepStmtStar h)
+  intro c₁ c₂ h'
+  induction h' with
+  | refl => exact h_refl _
+  | step _ _ _ hstep hrest ih =>
+    exact h_step _ _ _ hstep (StepStmtStar_to_CoreStepStar hrest) ih
+
+/-- `CoreStepStar` is transitive. -/
+theorem CoreStepStar_trans
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c₁ c₂ c₃ : CoreConfig}
+    (h₁ : CoreStepStar π φ c₁ c₂)
+    (h₂ : CoreStepStar π φ c₂ c₃) :
+    CoreStepStar π φ c₁ c₃ :=
+  StepStmtStar_to_CoreStepStar
+    (ReflTrans_Transitive _ _ _ _
+      (CoreStepStar_to_StepStmtStar h₁)
+      (CoreStepStar_to_StepStmtStar h₂))
+
+/-- Lift `seq_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
+theorem core_seq_inner_star
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    (inner inner' : CoreConfig) (ss : List Statement)
+    (h : CoreStepStar π φ inner inner') :
+    CoreStepStar π φ (.seq inner ss) (.seq inner' ss) :=
+  StepStmtStar_to_CoreStepStar
+    (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' ss
+      (CoreStepStar_to_StepStmtStar h))
+
+/-- Lift `block_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
+theorem core_block_inner_star
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    (inner inner' : CoreConfig) (label : Option String)
+    (h : CoreStepStar π φ inner inner') :
+    CoreStepStar π φ (.block label inner) (.block label inner') :=
+  StepStmtStar_to_CoreStepStar
+    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' label
+      (CoreStepStar_to_StepStmtStar h))
+
+/-- Lift `seq_reaches_terminal` from `StepStmtStar` to `CoreStepStar`. -/
+theorem core_seq_reaches_terminal
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {inner : CoreConfig} {ss : List Statement} {ρ' : Env Expression}
+    (hstar : CoreStepStar π φ (.seq inner ss) (.terminal ρ')) :
+    ∃ ρ₁, CoreStepStar π φ inner (.terminal ρ₁) ∧
+      CoreStepStar π φ (.stmts ss ρ₁) (.terminal ρ') := by
+  have h := seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ)
+    (CoreStepStar_to_StepStmtStar hstar)
+  obtain ⟨ρ₁, h₁, h₂⟩ := h
+  exact ⟨ρ₁, StepStmtStar_to_CoreStepStar h₁, StepStmtStar_to_CoreStepStar h₂⟩
+
+
+/-! ## Well-formed evaluator extension -/
+
+variable (π : String → Option Procedure)
+variable (φ : CoreEval → PureFunc Expression → CoreEval)
+
+theorem core_step_preserves_wfBool
+    (h_wf_ext : WFEvalExtension φ)
+    (c₁ c₂ : CoreConfig)
+    (hwf : WellFormedSemanticEvalBool c₁.getEnv.eval)
+    (hstep : CoreStep π φ c₁ c₂) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  induction hstep with
+  | step_cmd hcmd =>
+    cases hcmd with
+    | cmd_sem _ => simp [Config.getEnv]; exact hwf
+    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp only [Config.getEnv]; exact hwf
+  | step_block => simp [Config.getEnv]; exact hwf
+  | step_ite_true _ _ => exact hwf
+  | step_ite_false _ _ => exact hwf
+  | step_loop_enter _ _ => exact hwf
+  | step_loop_exit _ _ => exact hwf
+  | step_ite_nondet_true => exact hwf
+  | step_ite_nondet_false => exact hwf
+  | step_loop_nondet_enter => exact hwf
+  | step_loop_nondet_exit => exact hwf
+  | step_exit => exact hwf
+  | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfBool _ _ _ hwf
+  | step_typeDecl => exact hwf
+  | step_stmts_nil => exact hwf
+  | step_stmts_cons => exact hwf
+  | step_seq_inner _ ih => exact ih hwf
+  | step_seq_done => exact hwf
+  | step_seq_exit => exact hwf
+  | step_block_body _ ih => exact ih hwf
+  | step_block_done => exact hwf
+  | step_block_exit_none => exact hwf
+  | step_block_exit_match _ => exact hwf
+  | step_block_exit_mismatch _ => exact hwf
+
+theorem core_wfBool_preserved
+    (h_wf_ext : WFEvalExtension φ)
+    (c₁ c₂ : CoreConfig)
+    (hwf₀ : WellFormedSemanticEvalBool c₁.getEnv.eval)
+    (hstar : CoreStepStar π φ c₁ c₂) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  suffices ∀ c₁ c₂, WellFormedSemanticEvalBool c₁.getEnv.eval →
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      WellFormedSemanticEvalBool c₂.getEnv.eval from
+    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+  intro c₁ c₂ hwf₀ h
+  induction h with
+  | refl => exact hwf₀
+  | step _ _ _ hstep _ ih =>
+    exact ih (core_step_preserves_wfBool π φ h_wf_ext _ _ hwf₀ hstep)
+
+/-! ## Assert-only blocks preserve store -/
+
+theorem stmts_allAssert_preserves_store
+    (ss : List Statement) (ρ ρ' : Env Expression)
+    (h_all : ∀ s ∈ ss, ∃ l e md, s = Statement.assert l e md)
+    (hterm : CoreStepStar π φ (.stmts ss ρ) (.terminal ρ')) :
+    ρ'.store = ρ.store := by
+  induction ss generalizing ρ with
+  | nil =>
+    cases hterm with
+    | step h_step h_rest => cases h_step with
+      | step_stmts_nil => cases h_rest with
+        | refl => rfl
+        | step h _ => exact nomatch h
+  | cons s rest ih =>
+    have ⟨l, e, md, h_eq⟩ := h_all s (.head _)
+    subst h_eq
+    cases hterm with
+    | step h_step h_rest => cases h_step with
+      | step_stmts_cons =>
+        have ⟨ρ₁, h_s, h_r⟩ := core_seq_reaches_terminal h_rest
+        have h_store₁ : ρ₁.store = ρ.store := by
+          suffices ∀ (c₁ c₂ : CoreConfig),
+              CoreStepStar π φ c₁ c₂ →
+              c₁ = .stmt (Statement.assert l e md) ρ →
+              c₂ = .terminal ρ₁ →
+              ρ₁.store = ρ.store by
+            exact this _ _ h_s rfl rfl
+          intro c₁ c₂ hstar heq₁ heq₂
+          subst heq₁
+          cases hstar with
+          | refl => exact nomatch heq₂
+          | step hstep hrest₂ =>
+            cases hstep with
+            | step_cmd hcmd =>
+              cases hcmd with
+              | cmd_sem heval =>
+                cases heval with
+                | eval_assert_pass =>
+                  cases hrest₂ with
+                  | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
+                  | step h _ => exact nomatch h
+                | eval_assert_fail =>
+                  cases hrest₂ with
+                  | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
+                  | step h _ => exact nomatch h
+        exact (ih ρ₁ (fun s' hs' => h_all s' (.tail _ hs')) h_r).trans h_store₁
+
+/-! ## hasFailure preservation (Core-specific)
+
+    `core_noFailure_preserved` reduces to the abstract Imperative
+    `step_preserves_noFailure` applied to each step of the multi-step
+    derivation, with `coreIsAtAssert` playing the role of the
+    `IsAtAssert` parameter. -/
+
+private theorem coreIsAtAssert_of_inv_mem
+    {g m inv body md} {ρ : Env Expression} {lbl e}
+    (hmem : (lbl, e) ∈ inv) :
+    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
+
+private theorem coreIsAtAssert_seq_of_inner
+    {inner : CoreConfig} {ss a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.seq inner ss) a := h
+
+private theorem coreIsAtAssert_block_of_inner
+    {label} {inner : CoreConfig} {a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label inner) a := h
+
+private theorem evalCommand_failure_implies_assert_ff
+    {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
+    {ρ : Env Expression} {c : Command} {σ'}
+    (hcmd : EvalCommand π φ ρ.eval ρ.store c σ' true) :
+    ∃ a : AssertId Expression,
+      coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
+      ρ.eval ρ.store a.expr = some HasBool.ff := by
+  cases hcmd with
+  | cmd_sem heval =>
+    cases heval with
+    | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
+
+theorem core_noFailure_preserved
+    (c₁ c₂ : CoreConfig)
+    (hvalid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
+      CoreStepStar π φ c₁ cfg →
+      coreIsAtAssert cfg a →
+      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hf₀ : c₁.getEnv.hasFailure = Bool.false)
+    (hstar : CoreStepStar π φ c₁ c₂) :
+    c₂.getEnv.hasFailure = Bool.false := by
+  suffices ∀ c₁ c₂,
+      (∀ (a : AssertId Expression) (cfg : CoreConfig),
+        CoreStepStar π φ c₁ cfg →
+        coreIsAtAssert cfg a →
+        cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
+      c₁.getEnv.hasFailure = Bool.false →
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      c₂.getEnv.hasFailure = Bool.false from
+    this c₁ c₂ hvalid hf₀ (CoreStepStar_to_StepStmtStar hstar)
+  intro c₁ c₂ hvalid hf₀ h
+  induction h with
+  | refl => exact hf₀
+  | step _ mid _ hstep hrest ih =>
+    exact ih
+      (fun a cfg h hat => hvalid a _ (.step hstep h) hat)
+      (Imperative.step_preserves_noFailure
+        (P := Expression) (extendEval := EvalPureFunc φ)
+        coreIsAtAssert
+        evalCommand_failure_implies_assert_ff
+        coreIsAtAssert_of_inv_mem
+        coreIsAtAssert_seq_of_inner
+        coreIsAtAssert_block_of_inner
+        _ _
+        (fun a cfg hr hat => hvalid a cfg (StepStmtStar_to_CoreStepStar hr) hat)
+        hf₀ hstep)
+
+/-! ## mapExprs identity -/
+
+private theorem block_mapExpr_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    Imperative.Block.mapExpr id (Command.mapExpr id) ss = ss := by
+  induction ss with
+  | nil => simp [Imperative.Block.mapExpr]
+  | cons s rest ih =>
+    simp only [Imperative.Block.mapExpr, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+private theorem list_mapExprs_id_of_forall {ss : List Statement}
+    (h : ∀ s, s ∈ ss → Statement.mapExprs id s = s) :
+    ss.map (Statement.mapExprs id) = ss := by
+  induction ss with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [List.map_cons, List.cons.injEq]
+    exact ⟨h s (.head _), ih (fun s hs => h s (.tail _ hs))⟩
+
+private theorem Command.mapExpr_id (c : Command) : Command.mapExpr id c = c := by
+  cases c with
+  | cmd c =>
+    cases c with
+    | assert _ _ _ | assume _ _ _ | cover _ _ _ => simp [Command.mapExpr]
+    | init n ty e md => cases e <;> simp [Command.mapExpr]
+    | set n e md => cases e <;> simp [Command.mapExpr]
+  | call pname args md =>
+    simp [Command.mapExpr]
+    induction args with
+    | nil => rfl
+    | cons h t ih => simp [ih]; cases h <;> rfl
+
+theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := by
+  induction s using Stmt.inductionOn with
+  | cmd_case c =>
+    simp only [Statement.mapExprs, Imperative.Stmt.mapExpr]
+    exact congrArg Stmt.cmd (Command.mapExpr_id c)
+  | block_case l ss md ih =>
+    simp [Statement.mapExprs, Imperative.Stmt.mapExpr, block_mapExpr_id_of_forall ih]
+  | ite_case cond tss ess md iht ihe =>
+    cases cond <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
+                          block_mapExpr_id_of_forall iht, block_mapExpr_id_of_forall ihe]
+  | loop_case guard measure inv body md ihb =>
+    cases guard <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
+                           block_mapExpr_id_of_forall ihb]
+  | exit_case l md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+  | funcDecl_case decl md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+  | typeDecl_case tc md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
+
+theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
+  exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
 
 end Core
 

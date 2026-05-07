@@ -3,10 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Backends.CBMC.GOTO.Program
-import Strata.Backends.CBMC.Common
+public import Strata.Backends.CBMC.Common
+public import Strata.Util.Json
+public import Strata.Backends.CBMC.GOTO.Program
+
 import Strata.Util.Tactics
+
+public section
 
 namespace CProverGOTO
 open Lean
@@ -64,6 +69,19 @@ def tyToJson (ty : Ty) : Json :=
       ("id", "array"),
       ("sub", Json.arr #[tyToJson elemTy])
     ]
+  | { id := .code, subtypes := retTy :: paramTypes, .. } =>
+    let paramSubs := paramTypes.map fun pTy =>
+      Json.mkObj [("namedSub", Json.mkObj [("type", tyToJson pTy)])]
+    Json.mkObj [
+      ("id", "code"),
+      ("namedSub", Json.mkObj [
+        ("parameters", Json.mkObj [("sub", Json.arr paramSubs.toArray)]),
+        ("return_type", tyToJson retTy)])]
+  | { id := .code, .. } => Json.mkObj [
+      ("id", "code"),
+      ("namedSub", Json.mkObj [
+        ("parameters", Json.mkObj [("sub", Json.arr #[])]),
+        ("return_type", Json.mkObj [("id", "empty")])])]
   | _ => Json.mkObj [("id", "unknown")]
 
 /-- Convert `Expr` to JSON format -/
@@ -243,7 +261,7 @@ def programToJson (name : String) (program : Program) : Except String Json := do
 /-- Write a program to JSON file -/
 def writeProgramToFile (fileName : String) (programName : String) (program : Program) : IO Unit := do
   let json ← IO.ofExcept (programToJson programName program)
-  IO.FS.writeFile fileName json.pretty
+  writeJsonFile fileName json
 
 /-- Convert `Program`s to JSON containing GOTO functions -/
 def programsToJson (programs : List (String × Program)) : Except String Json := do
@@ -255,7 +273,7 @@ def programsToJson (programs : List (String × Program)) : Except String Json :=
 /-- Write programs to JSON file -/
 def writeProgramsToFile (fileName : String) (programs : List (String × Program)) : IO Unit := do
   let json ← IO.ofExcept (programsToJson programs)
-  IO.FS.writeFile fileName json.pretty
+  writeJsonFile fileName json
 
 -------------------------------------------------------------------------------
 

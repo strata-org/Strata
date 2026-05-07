@@ -34,6 +34,7 @@ spec {
 
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" bit_vectors
 
 example : Strata.smtVCsCorrect bit_vectors := by

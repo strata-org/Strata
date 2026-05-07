@@ -1,14 +1,14 @@
 Successfully parsed.
-Arrays2.core.st(22, 2) [P0_ensures_2]: ✅ pass
-Arrays2.core.st(23, 2) [P0_ensures_3]: ✅ pass
-Arrays2.core.st(40, 2) [P1_ensures_1]: ✅ pass
-Arrays2.core.st(57, 2) [P2_ensures_1]: ❓ unknown
-Arrays2.core.st(75, 2) [Q0_ensures_2]: ✅ pass
-Arrays2.core.st(76, 2) [Q0_ensures_3]: ✅ pass
-Arrays2.core.st(93, 2) [Q1_ensures_1]: ✅ pass
-Arrays2.core.st(111, 2) [Q2_ensures_2]: ✅ pass
-Arrays2.core.st(129, 2) [Q3_ensures_2]: ✅ pass
-Arrays2.core.st(146, 2) [Q4_ensures_1]: ❓ unknown
-Arrays2.core.st(164, 2) [Skip0_ensures_2]: ✅ pass
-Arrays2.core.st(165, 2) [Skip0_ensures_3]: ✅ pass
+Arrays2.core.st(17, 2) [P0_ensures_1]: ✅ pass
+Arrays2.core.st(18, 2) [P0_ensures_2]: ✅ pass
+Arrays2.core.st(34, 2) [P1_ensures_0]: ✅ pass
+Arrays2.core.st(50, 2) [P2_ensures_0]: ❓ unknown
+Arrays2.core.st(67, 2) [Q0_ensures_1]: ✅ pass
+Arrays2.core.st(68, 2) [Q0_ensures_2]: ✅ pass
+Arrays2.core.st(84, 2) [Q1_ensures_0]: ✅ pass
+Arrays2.core.st(101, 2) [Q2_ensures_1]: ✅ pass
+Arrays2.core.st(118, 2) [Q3_ensures_1]: ✅ pass
+Arrays2.core.st(134, 2) [Q4_ensures_0]: ❓ unknown
+Arrays2.core.st(150, 2) [Skip0_ensures_0]: ✅ pass
+Arrays2.core.st(151, 2) [Skip0_ensures_1]: ✅ pass
 Finished with 10 goals passed, 2 failed.

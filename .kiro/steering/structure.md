@@ -180,7 +180,7 @@ Program-to-program translations for simplification and verification. Each has op
 **Main module:** `Strata.lean`
 
 **Executables:**
-- `StrataVerify` - Main verifier
+- `strata` - Main CLI (includes `verify`, `check`, `toIon`, `print`, etc.)
 - `StrataCoreToGoto` - Strata Core to GOTO translation
 - `StrataToCBMC` - CBMC backend
 
@@ -188,7 +188,7 @@ Program-to-program translations for simplification and verification. Each has op
 ```bash
 lake build                                          # Build all
 lake test                                           # Run tests
-lake exe StrataVerify Examples/SimpleProc.core.st   # Verify program
+lake exe strata verify Examples/SimpleProc.core.st   # Verify program
 ```
 
 ## Verification Workflow

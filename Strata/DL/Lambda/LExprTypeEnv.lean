@@ -443,7 +443,7 @@ for `datatypes` should be in `functions`.
 -/
 structure LContext (T: LExprParams) where
   /-- Descriptions of all built-in functions. -/
-  functions : @Factory T
+  functions : Factory T
   /-- Descriptions of all built-in datatypes. -/
   datatypes : @TypeFactory T.IDMeta
   /-- A list of known built-in types. -/
@@ -453,7 +453,10 @@ structure LContext (T: LExprParams) where
 deriving Inhabited
 
 def LContext.empty {IDMeta} : LContext IDMeta :=
-  ⟨#[], #[], {}, {}⟩
+  { functions := .default
+    datatypes := #[]
+    knownTypes := {}
+    idents := {} }
 
 instance : EmptyCollection (LContext IDMeta) where
   emptyCollection := LContext.empty
@@ -489,8 +492,8 @@ def TEnv.default : TEnv IDMeta :=
   let g := {context := {}, genState := TState.init}
   { genEnv := g}
 
-def LContext.default : LContext T :=
-  { functions := #[],
+def LContext.default (functions : Factory T := .default) : LContext T :=
+  { functions := functions,
     datatypes := #[],
     knownTypes := KnownTypes.default,
     idents := Identifiers.default }
@@ -525,10 +528,10 @@ def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Diagnostic
 
 @[expose]
 def LContext.addFactoryFunction (C : LContext T) (fn : LFunc T) : LContext T :=
-  { C with functions := C.functions.push fn }
-
-def LContext.addFactoryFunctions (C : LContext T) (fact : @Factory T) : LContext T :=
-  { C with functions := C.functions.append fact }
+  if h : fn.name.name ∈ C.functions then
+    C
+  else
+    { C with functions := C.functions.push fn h }
 
 /--
 Add a mutual block of datatypes `block` to an `LContext` `C`.
@@ -1104,7 +1107,7 @@ theorem LMonoTy.instantiateWithCheck_decompose
       · simp at h
       · -- Fourth split: isInstanceOfKnownType
         split at h
-        · simp [Except.pure] at h
+        · simp [Pure.pure, Except.pure] at h
           obtain ⟨h1, _⟩ := h
           subst h1
           exact ⟨mty_ie, _, _, h_ie, h_ra⟩
@@ -1362,8 +1365,8 @@ theorem knownTypeVars_go_append_superset
     intro v h
     obtain ⟨a, b⟩ := p
     simp only [TContext.types.knownTypeVars.go, List.mem_append] at h
-    unfold Map at *
-    simp only [List.cons_append, TContext.types.knownTypeVars.go, List.mem_append]
+    show v ∈ b.freeVars ++ TContext.types.knownTypeVars.go (List.append m' extra)
+    simp only [List.mem_append]
     rcases h with h_fv | h_rest
     · left; exact h_fv
     · right; exact ih v h_rest

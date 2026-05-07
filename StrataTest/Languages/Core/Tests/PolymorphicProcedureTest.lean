@@ -20,18 +20,18 @@ def polyProcPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure Extract<a>(xs : List a) returns (h : a)
+procedure Extract<a>(xs : List a, out h : a)
 spec {
   requires List..isCons(xs);
 };
-procedure Test() returns () spec { ensures true; }
+procedure Test() spec { ensures true; }
 {
   var xs : List int;
   xs := Cons(1, Nil());
   havoc xs;
  //assume List..isCons(xs);
   var h : int;
-  call h := Extract(xs);
+  call Extract(xs, out h);
 };
 #end
 
@@ -40,55 +40,23 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: (Origin_Extract_Requires)Extract_requires_0
+Label: callElimAssert_Extract_requires_0_2
 Property: assert
 Obligation:
-List..isCons($__xs3)
+List..isCons(xs@3)
 
 Label: Test_ensures_0
 Property: assert
 Obligation:
 true
 
-
-
-Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
-Property: assert
-Result: ❌ fail
-Model:
-($__xs3, Nil)
-
-
-[DEBUG] Evaluated program:
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
-};
-procedure Extract (xs : (List $__ty0)) returns (h : ($__ty5))
-spec {
-  requires [Extract_requires_0]: List..isCons(xs);
-  } {
-  assume [Extract_requires_0]: List..isCons($__xs0);
-  };
-procedure Test () returns ()
-spec {
-  ensures [Test_ensures_0]: true;
-  } {
-  var xs : (List int);
-  xs := Cons(1, Nil);
-  havoc xs;
-  var h : int;
-  call h := Extract(xs);
-  assert [Test_ensures_0]: true;
-  };
-
 ---
 info:
-Obligation: (Origin_Extract_Requires)Extract_requires_0
+Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, Nil)
+(xs@3, Nil)
 
 Obligation: Test_ensures_0
 Property: assert
@@ -107,14 +75,14 @@ def polyPostPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
-procedure MkCons<a>(x : a) returns (r : List a)
+procedure MkCons<a>(x : a, out r : List a)
 spec {
   free ensures List..isCons(r);
 };
-procedure Test() returns () spec { ensures true; }
+procedure Test() spec { ensures true; }
 {
   var r : List int;
-  call r := MkCons(1);
+  call MkCons(1, out r);
   assert List..isCons(r);
 };
 #end
@@ -132,14 +100,14 @@ true
 Label: assert_0
 Property: assert
 Assumptions:
-(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r3)
+callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
 Obligation:
-List..isCons($__r3)
+List..isCons(r@3)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r3)
+callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
 Obligation:
 true
 

@@ -27,40 +27,14 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
-  if !proc.spec.modifies.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the modifies clause!"
-
-private def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
-  if proc.spec.modifies.any (fun v => v ∈ proc.header.inputs.keys) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
-              not appear in the formals.\n\
-              Modifies: {proc.spec.modifies}\n\
-              Formals: {proc.header.inputs.keys}"
-  if proc.spec.modifies.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
-              not appear in the return values.\n\
-              Modifies: {proc.spec.modifies}\n\
-              Returns: {proc.header.outputs.keys}"
-  if proc.header.inputs.keys.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the formals must \
-              not appear in the return values.\n\
-              Formals: {proc.header.inputs.keys}\n\
-              Returns: {proc.header.outputs.keys}"
-
-private def checkModifiesClause (proc : Procedure) (Env : Core.Expression.TyEnv)
-    (sourceLoc : FileRange) : Except DiagnosticModel Unit := do
-  if proc.spec.modifies.any (fun v => (Env.context.types.find? v).isNone) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: All the variables in the modifies clause \
-              must exist in the context!\n\
-              Modifies: {proc.spec.modifies}"
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
   let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
-  let allowedVars := proc.header.outputs.keys ++ proc.spec.modifies ++ definedVars
-  if modifiedVars.any (fun v => v ∉ allowedVars) then
+  let allowedVars := proc.header.outputs.keys ++ definedVars
+  let disallowed := modifiedVars.filter (fun v => v ∉ allowedVars)
+  if !disallowed.isEmpty then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
               Variables actually modified: {modifiedVars}\n\
@@ -102,10 +76,8 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
     (proc : Procedure) (md : MetaData Expression) : Except DiagnosticModel (Procedure × Core.Expression.TyEnv) := do
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
 
-  -- Validate well-formedness of formals, returns, and modifies clause.
+  -- Validate well-formedness of formals and returns.
   checkNoDuplicates proc fileRange
-  checkVariableScoping proc fileRange
-  checkModifiesClause proc Env fileRange
   checkModificationRights proc fileRange
 
   -- Temporarily add the formals into the context.
@@ -125,14 +97,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := envWithOutputs.addInNewestContext out_lty_sig
 
-  -- Add "old g" variables for all globals in the program so that
-  -- postconditions can reference them (old g is always well-defined).
-  let oldVarBindings : List (CoreIdent × Lambda.LTy) :=
-    p.decls.filterMap fun d =>
-      match d with
-      | .var name ty _ _ => some (CoreIdent.mkOld name.name, ty)
-      | _ => none
-  let envWithOldVars := envWithOutputs.addInNewestContext oldVarBindings
+  -- Add "old" variables for in-out parameters (those in both inputs and outputs)
+  -- so that postconditions and body can reference `old x`.
+  let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
+    proc.header.getInoutParams.toList.map fun (id, ty) =>
+      (CoreIdent.mkOld id.name, .forAll [] ty)
+  let envWithOldVars := envWithOutputs.addInNewestContext oldInoutBindings
 
   -- Type check postconditions.
   let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOldVars

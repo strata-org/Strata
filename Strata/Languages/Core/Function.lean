@@ -21,6 +21,9 @@ open Lambda
 @[expose]
 abbrev Function := Lambda.LFunc CoreLParams
 
+instance : Inhabited Function where
+  default := { name := default, inputs := [], output := default }
+
 -- Type class instances to enable type class resolution for CoreLParams.Identifier
 instance : DecidableEq CoreLParams.IDMeta :=
   show DecidableEq Unit from inferInstance

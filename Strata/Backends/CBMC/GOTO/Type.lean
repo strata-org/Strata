@@ -74,6 +74,8 @@ inductive Identifier where
   | structTag (name : String)
   /-- Array type with element type -/
   | array
+  /-- Code (function) type -/
+  | code
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
@@ -82,6 +84,7 @@ instance : ToFormat Identifier where
     | .bitVector bv => f!"{bv}"
     | .structTag name => f!"struct_tag({name})"
     | .array => f!"array"
+    | .code => f!"code"
 
 end Ty
 
@@ -180,6 +183,12 @@ def StructTag (name : _root_.String) : Ty :=
 @[expose, match_pattern]
 def Array (elemTy : Ty) : Ty :=
   { id := .array, subtypes := [elemTy] }
+
+/-- Code (function) type with parameter types and return type.
+    Used for FUNCTION_CALL callee symbols.
+    Encodes as subtypes = [returnType] ++ paramTypes. -/
+def mkCode (paramTypes : List Ty) (returnType : Ty) : Ty :=
+  { id := .code, subtypes := returnType :: paramTypes }
 
 end Ty
 
