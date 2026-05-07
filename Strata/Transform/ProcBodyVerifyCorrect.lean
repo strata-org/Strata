@@ -468,7 +468,9 @@ theorem procToVerifyStmt_structure
         ∃ ρ_init,
           Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
             (.stmts prefixStmts ρ_init) (.terminal ρ₀)) := by
+  obtain ⟨ss, h_body_eq⟩ := h_wf_proc.bodyIsStructured
   unfold procToVerifyStmt at h
+  rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
     pure, ExceptT.pure, StateT.bind] at h
   rw [mapM_stateT_pure_eq] at h
@@ -483,6 +485,9 @@ theorem procToVerifyStmt_structure
       (.det (LExpr.fvar () id none)) #[]
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
+  have h_body_match : (match proc.body with | .structured ss => ss | .cfg _ => []) = ss := by
+    rw [h_body_eq]
+  rw [h_body_match]
   refine ⟨prefixStmts, h_eq.symm, ?_, ?_⟩
   · intro s hs
     simp only [prefixStmts, List.mem_append] at hs

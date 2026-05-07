@@ -88,7 +88,14 @@ open Core Imperative Transform
   -- Convert preconditions to assumes
   let assumes := requiresToAssumes proc.spec.preconditions
 
-  let bodyStmts := match proc.body with | .structured ss => ss | .cfg _ => []
+  -- ProcBodyVerify expects a structured body: the prefix (inits + assumes) and
+  -- suffix (postcondition asserts) are statement-level constructs that embed
+  -- around the body. Unstructured CFG bodies require a different verification
+  -- strategy (e.g., encoding the contract directly in the CFG).
+  let bodyStmts ← match proc.body with
+    | .structured ss => pure ss
+    | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+        "procToVerifyStmt: expected structured body, got CFG")
   -- Wrap body in labeled block
   let bodyBlock := Stmt.block bodyLabel bodyStmts #[]
 

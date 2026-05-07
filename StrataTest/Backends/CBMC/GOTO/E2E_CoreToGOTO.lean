@@ -344,13 +344,20 @@ private def injectPropertySummary (stmts : List Core.Statement) (msg : String)
       .cmd (.cmd (.assert label b (md.withPropertySummary msg)))
     | other => other
 
+-- TODO: This could be split into a two-stage transformation:
+-- 1. structured → cfg (via StructuredToUnstructured)
+-- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
+-- For now, unstructured bodies are not supported in this test helper.
 private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
     Except Std.Format (Lean.Json × Lean.Json) := do
   let cprog := translateCore p
   let Env := Lambda.TEnv.default
   let procs := cprog.decls.filterMap fun d => d.getProc?
   let p := procs[0]!
-  let p' : Core.Procedure := { p with body := .structured (injectPropertySummary (match p.body with | .structured ss => ss | .cfg _ => []) summary) }
+  let bodyStmts ← match p.body with
+    | .structured ss => pure ss
+    | .cfg _ => .error f!"coreToGotoJsonWithSummary: CFG body not supported"
+  let p' : Core.Procedure := { p with body := .structured (injectPropertySummary bodyStmts summary) }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'
   let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")

@@ -93,9 +93,14 @@ private def renameAllLocalNames (c:Procedure)
   let var_map: Map Expression.Ident Expression.Ident := []
   let proc_name := c.header.name.name
 
-  -- Make a map for renaming local variables
+  -- Extract local names from the body. Although ProcedureInlining only supports
+  -- structured bodies for inlining, extracting defined variables is a generic
+  -- facility that supports both structured and CFG bodies.
+  let lhs_vars := match c.body with
+    | .structured ss => ss.flatMap (fun (s : Statement) => s.definedVars)
+    | .cfg cfg => cfg.blocks.flatMap fun (_, blk) =>
+        blk.cmds.flatMap Command.definedVars
   let bodyStmts := match c.body with | .structured ss => ss | .cfg _ => []
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) bodyStmts
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name

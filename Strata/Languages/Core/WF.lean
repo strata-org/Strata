@@ -137,6 +137,10 @@ structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
+-- TODO: add WF properties for unstructured programs:
+--   * verify block labels are unique
+--   * all variables used are declared/initialized
+--   * target labels of transfer commands exist
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   bodyIsStructured : ∃ ss, d.body = .structured ss
   wfstmts : ∀ ss, d.body = .structured ss → WFStatementsProp p ss
