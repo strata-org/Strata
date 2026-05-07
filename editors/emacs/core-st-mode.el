@@ -8,8 +8,8 @@
   '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
     "decreases" "while" "out" "inout" "call" "exit" "free" "ensures"
     "requires" "spec" "procedure" "type" "const" "function" "inline"
-    "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
-    "program"))
+    "rec" "axiom" "distinct" "datatype" "goto" "cfg" "old" "forall"
+    "exists" "program"))
 
 (defvar core-st-types
   '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
