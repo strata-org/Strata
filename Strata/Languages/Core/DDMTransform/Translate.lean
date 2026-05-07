@@ -1628,7 +1628,9 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
     | [l] =>
       let label ← translateIdent String l
       return .condGoto (Lambda.LExpr.boolConst () Bool.true) label label
-    | l1 :: l2 :: _ =>
+    | l1 :: l2 :: rest =>
+      if !rest.isEmpty then
+        TransM.error s!"translateTransfer: goto with more than 2 targets is not supported"
       let label1 ← translateIdent String l1
       let label2 ← translateIdent String l2
       let condName := s!"$__nondet_{bindings.gen.var_def}"
