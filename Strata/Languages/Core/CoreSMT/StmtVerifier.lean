@@ -100,7 +100,7 @@ private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
       | .ok (smtTy, _) => return .ok (types ++ [smtTy])
   ) (.ok [])
   let mkError (msg : String) : CoreSMTResult :=
-    let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
+    let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true) -- nosourcerange: synthetic expression for error reporting only
     { obligation := { label := s!"funcDecl {decl.name.name}", property := .assert,
                       assumptions := [], obligation := dummyExpr, metadata := .empty },
       error := some msg }
@@ -140,7 +140,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       label := "non-CoreSMT"
       property := .assert
       assumptions := []
-      obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
+      obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none -- nosourcerange: synthetic placeholder for non-CoreSMT error
       metadata := .empty
     }
     let result : CoreSMTResult := { obligation, error := some s!"Statement not in CoreSMT subset: {reason}" }
@@ -180,8 +180,8 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         solver.defineFun name.name [] smtTy term
         let state := state.addItem (.varDef name.name smtTy term)
         -- Track the definition as an assumption for diagnosis context (x == expr)
-        let nameExpr : Core.Expression.Expr := .fvar Strata.SourceRange.none name none
-        let eqExpr : Core.Expression.Expr := .eq Strata.SourceRange.none nameExpr expr
+        let nameExpr : Core.Expression.Expr := .fvar Strata.SourceRange.none name none -- nosourcerange: synthetic expression for tracking variable definition
+        let eqExpr : Core.Expression.Expr := .eq Strata.SourceRange.none nameExpr expr -- nosourcerange: synthetic equality for assumption tracking
         let state := state.addAssumption eqExpr
         return (state, smtCtx, [])
 
@@ -189,7 +189,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     match translateType E ty smtCtx with
     | .error msg =>
       -- Use a dummy expression for error reporting
-      let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
+      let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true) -- nosourcerange: synthetic expression for type error reporting
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := s!"init {name.name}", property := .assert, assumptions := [],
         obligation := dummyExpr, metadata := .empty
@@ -228,7 +228,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       label := "unknown"
       property := .assert
       assumptions := []
-      obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
+      obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none -- nosourcerange: synthetic placeholder for unexpected statement error
       metadata := .empty
     }
     return (state, smtCtx, [{ obligation, error := some "Unexpected statement" }])
