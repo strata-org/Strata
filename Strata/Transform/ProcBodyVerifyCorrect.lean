@@ -469,9 +469,10 @@ theorem procToVerifyStmt_structure
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (h_wf_proc : WF.WFProcedureProp p proc) :
-    ∃ (prefixStmts : List Statement),
+    ∃ (prefixStmts ss : List Statement),
+      proc.body = .structured ss ∧
       verifyStmt = Stmt.block s!"verify_{proc.header.name.name}"
-        (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" (match proc.body with | .structured ss => ss | .cfg _ => []) #[]] ++
+        (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" ss #[]] ++
           ensuresToAsserts proc.spec.postconditions) #[] ∧
       (∀ s ∈ prefixStmts, ∃ c, s = Stmt.cmd c) ∧
       (∀ ρ₀, Core.Specification.ProcEnvWF proc ρ₀ →
@@ -495,10 +496,8 @@ theorem procToVerifyStmt_structure
       (.det (LExpr.fvar () id none)) #[]
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
-  have h_body_match : (match proc.body with | .structured ss => ss | .cfg _ => []) = ss := by
-    rw [h_body_eq]
-  rw [h_body_match]
-  refine ⟨prefixStmts, h_eq.symm, ?_, ?_⟩
+  rw [h_body_eq]
+  refine ⟨prefixStmts, ss, rfl, h_eq.symm, ?_, ?_⟩
   · intro s hs
     simp only [prefixStmts, List.mem_append] at hs
     rcases hs with ((hs | hs) | hs) | hs
@@ -661,9 +660,12 @@ theorem procBodyVerify_procedureCorrect
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
   have h_body_match : (match proc.body with | .structured ss => ss | .cfg _ => []) = ss := by
     rw [h_body_eq]
-  obtain ⟨prefixStmts, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
+  obtain ⟨prefixStmts, ss', h_body, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
-  rw [h_body_match] at h_eq
+  have h_ss_eq : ss = ss' := by
+    have := h_body_eq.symm.trans h_body
+    exact Procedure.Body.structured.inj this
+  subst h_ss_eq
   let verifyLabel := s!"verify_{proc.header.name.name}"
   let bodyLabel := s!"body_{proc.header.name.name}"
   let postAsserts := ensuresToAsserts proc.spec.postconditions
