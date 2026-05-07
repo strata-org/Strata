@@ -91,7 +91,14 @@ def collectPrecondAssertCmds (F : @Lambda.Factory CoreLParams) (e : Expression.E
 (labelPrefix : String) (md : Imperative.MetaData Expression)
 : List (Imperative.Cmd Expression) :=
   let wfObs := Lambda.collectWFObligations F e
+  -- Strip propertySummary: the enclosing statement's user-facing message
+  -- (e.g., a Python assert message) should not propagate to generated
+  -- precondition checks for called functions.
   let md := md.eraseAllElems Imperative.MetaData.propertySummary
+  -- Use modulo to cycle the precondition index correctly across call sites.
+  -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
+  -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
+  -- Without modulo, the index would be 0,1,2,3 instead of 0,1,0,1.
   let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List (Imperative.Cmd Expression))))
     fun (prevFunc, prevIdx, acc) ob =>
       let rawIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
