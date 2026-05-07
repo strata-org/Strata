@@ -77,7 +77,7 @@ cp z3-4.15.2-arm64-osx-15.7.3/bin/z3 /usr/local/bin/
 
 #### Python
 
-Python 3.11 or later is required. Install the Strata Python package:
+Python 3.11 or later is required. Install the `strata` Python package:
 
 ```bash
 pip install ./Tools/Python
