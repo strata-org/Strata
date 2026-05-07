@@ -392,11 +392,7 @@ example : projectStore (P := MiniPureExpr) storeWithX storeWithXY "x" = some .tt
 
 Verify that variables `init`'d inside a loop body are scoped to each
 iteration. The loop body is wrapped in an anonymous block, so after
-each iteration (and after loop exit) the init'd variable is projected
-away.
-
-Program: with "x" already defined, `loop (true) { init y := tt; exit }`
-After the loop exits, "y" should not be visible in the final store. -/
+each iteration the init'd variable is projected away. -/
 
 /-- Program: `loop (nondet) { init y := tt }`.
     The loop enters one iteration, inits y, then exits on the next iteration.
