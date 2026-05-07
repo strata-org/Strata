@@ -329,6 +329,8 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   getModel := return .error "getModel: not yet implemented for incremental backend"
 
+  getUnsatAssumptions := return .error "getUnsatAssumptions: not yet implemented for incremental backend"
+
   getValue ts := do
     -- Send get-value command with the given terms
     let mut strs := []

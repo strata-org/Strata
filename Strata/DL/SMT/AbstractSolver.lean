@@ -169,6 +169,10 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   /-- Check satisfiability under additional assumptions. -/
   checkSatAssuming : List τ → m (Except String Decision)
 
+  /-- After an `unsat` result from `checkSatAssuming`, retrieve the subset of
+      assumptions that contributed to unsatisfiability. -/
+  getUnsatAssumptions : m (Except String (List τ))
+
   /-- Retrieve the model after a `sat` result.
       Keys are `(name, shadow_depth)` where 0 = most recently declared. -/
   getModel : m (Except String (List ((String × Nat) × τ)))
