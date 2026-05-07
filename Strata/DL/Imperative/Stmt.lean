@@ -108,7 +108,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
 /-! ### sizeOf -/
 
 mutual
-@[simp]
+@[simp, expose]
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
   | .cmd c => 1 + SizeOf.sizeOf c
@@ -119,7 +119,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .funcDecl _ _ => 1
   | .typeDecl _ _ => 1
 
-@[simp]
+@[simp, expose]
 def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
   match ss with
   | [] => 1
@@ -266,6 +266,7 @@ instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
 
 mutual
 /-- Get all variables defined by the statement `s`. -/
+@[simp, expose]
 def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
@@ -276,6 +277,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .typeDecl _ _ => []  -- Type declarations don't define variables
   | _ => []
 
+@[simp, expose]
 def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
@@ -284,6 +286,7 @@ end
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
+@[simp, expose]
 def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
@@ -294,6 +297,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
+@[simp, expose]
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
@@ -304,31 +308,66 @@ mutual
 /-- Get all variables modified/defined by the statement `s`.
     Note that we need a separate function because order matters here for sub-blocks
  -/
-@[simp]
-def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+@[simp, expose]
+def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .block _ bss _ => Block.touchedVars bss
-  | .ite _ tbss ebss _ => Block.touchedVars tbss ++ Block.touchedVars ebss
+  | .block _ bss _ => Block.modifiedOrDefinedVars bss
+  | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
 
-@[simp]
-def Block.touchedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[simp, expose]
+def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.touchedVars s ++ Block.touchedVars srest
+  | s :: srest => Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars srest
+end
+
+mutual
+/-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
+@[simp, expose]
+def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+    (s : Stmt P C) : List P.Ident :=
+  Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
+
+@[simp, expose]
+def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
+    (ss : Block P C) : List P.Ident :=
+  Block.modifiedOrDefinedVars ss ++ Block.getVars ss
 end
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmt.touchedVars
+  modifiedOrDefinedVars := Stmt.modifiedOrDefinedVars
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Block.touchedVars
+  modifiedOrDefinedVars := Block.modifiedOrDefinedVars
+
+---------------------------------------------------------------------
+
+/-! ### Labels -/
+
+mutual
+@[expose] def Stmt.labels (s : Stmt P C) : List String :=
+  match s with
+  | .exit (some l) _ => [l]
+  | .exit none _     => []
+  | .cmd _           => []
+  | .block _ bss _   => Block.labels bss
+  | .ite _ tss ess _ => Block.labels tss ++ Block.labels ess
+  | .loop _ _ _ bss _ => Block.labels bss
+  | .funcDecl _ _    => []
+  | .typeDecl _ _    => []
+
+@[expose] def Block.labels (ss : Block P C) : List String :=
+  match ss with
+  | []       => []
+  | s :: rest => Stmt.labels s ++ Block.labels rest
+end
 
 ---------------------------------------------------------------------
 

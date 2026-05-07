@@ -17,7 +17,7 @@ public section
 /-! # Small-step semantics for non-deterministic statements
 
 A configuration is either executing a `KleeneStmt`, sequencing two parts
-(left config + right continuation), or terminated.
+(left config + right continuation), a block context, or terminated.
 -/
 
 /-- Configurations for small-step execution of `KleeneStmt`. -/
@@ -28,6 +28,9 @@ inductive KleeneConfig (P : PureExpr) (CmdT : Type) : Type where
   | seq : KleeneConfig P CmdT → KleeneStmt P CmdT → KleeneConfig P CmdT
   /-- Execution has finished. -/
   | terminal : Env P → KleeneConfig P CmdT
+  /-- A block context for scoping. The `SemanticStore P` is the parent store;
+      on exit, variables init'd inside are projected away. -/
+  | block : SemanticStore P → KleeneConfig P CmdT → KleeneConfig P CmdT
 
 /-! ## Configuration accessors -/
 
@@ -35,16 +38,19 @@ inductive KleeneConfig (P : PureExpr) (CmdT : Type) : Type where
   | .stmt _ ρ => ρ.store
   | .seq inner _ => inner.getStore
   | .terminal ρ => ρ.store
+  | .block _ inner => inner.getStore
 
 @[expose] def KleeneConfig.getEval : KleeneConfig P CmdT → SemanticEval P
   | .stmt _ ρ => ρ.eval
   | .seq inner _ => inner.getEval
   | .terminal ρ => ρ.eval
+  | .block _ inner => inner.getEval
 
 @[expose] def KleeneConfig.getEnv : KleeneConfig P CmdT → Env P
   | .stmt _ ρ => ρ
   | .seq inner _ => inner.getEnv
   | .terminal ρ => ρ
+  | .block _ inner => inner.getEnv
 
 /-! ## Single-step relation -/
 
@@ -89,11 +95,20 @@ inductive StepKleene
       (.stmt (.loop s) ρ)
       (.terminal ρ)
 
-  /-- A loop can execute one iteration then continue looping. -/
+  /-- A loop can execute one iteration then continue looping.
+      The body+recursion is wrapped in a block (matching the deterministic
+      `step_loop_enter` structure): variables init'd inside are projected
+      away when the block exits. -/
   | step_loop_step :
     StepKleene EvalCmd
       (.stmt (.loop s) ρ)
-      (.seq (.stmt s ρ) (.loop s))
+      (.block ρ.store (.seq (.stmt s ρ) (.loop s)))
+
+  /-- A block statement enters a block context, saving the parent store. -/
+  | step_block :
+    StepKleene EvalCmd
+      (.stmt (.block s) ρ)
+      (.block ρ.store (.stmt s ρ))
 
   /-- A seq context steps its inner config forward. -/
   | step_seq_inner :
@@ -109,6 +124,20 @@ inductive StepKleene
     StepKleene EvalCmd
       (.seq (.terminal ρ') s2)
       (.stmt s2 ρ')
+
+  /-- A block context steps its inner config forward. -/
+  | step_block_body :
+    StepKleene EvalCmd inner inner' →
+    ----
+    StepKleene EvalCmd
+      (.block σ_parent inner)
+      (.block σ_parent inner')
+
+  /-- When a block's inner config reaches terminal, project the store. -/
+  | step_block_done :
+    StepKleene EvalCmd
+      (.block σ_parent (.terminal ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
 
 end
 
