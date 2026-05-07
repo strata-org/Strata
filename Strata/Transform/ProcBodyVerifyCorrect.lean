@@ -447,6 +447,7 @@ private theorem mapM_stateT_pure_eq {α β : Type} {σ : Type} {ε : Type}
 
 /-! ## Verification Statement Structure -/
 
+/-- if `procToVerifyStmt` succeeds, then the input procedure has `.structured` body -/
 theorem procToVerifyStmt_is_structured
     (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st')) :
       ∃ ss, proc.body = .structured ss := by
