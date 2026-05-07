@@ -330,13 +330,15 @@ def Core.verifyProgram
     (keepAllFilesPrefix : Option String := none)
     (solver : Option Core.CoreSMTSolver := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (pipelineCtx : Option Pipeline.PipelineContext := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
         (keepAllFilesPrefix := keepAllFilesPrefix)
         (solver := solver)
-        (mkDischarge := mkDischarge))
+        (mkDischarge := mkDischarge)
+        (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
@@ -553,8 +555,9 @@ def pyTranslateLaurel
     (pyspecModules : Array String := #[])
     (specDir : System.FilePath := ".")
     : EIO String (Core.Program × List DiagnosticModel) := do
+  let pctx ← Pipeline.PipelineContext.create (outputMode := .quiet)
   let laurel ←
-    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) with
+    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) (pipelineCtx := pctx) with
     | .success r _ => pure r
     | .failure err _ => throw (toString err)
   let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)

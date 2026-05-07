@@ -76,8 +76,10 @@ private meta def buildOverloadTable
     let some ionPath := pySpecOutputPath testDir outDir pyFile
       | throw <| .userError s!"Cannot derive output path for {pyFile}"
     let ctx ← Strata.Pipeline.PipelineContext.create
-    let tbl ← readDispatchOverloads ctx #[ionPath.toString]
-    return tbl
+    match ← (readDispatchOverloads ctx #[ionPath.toString]).toBaseIO with
+    | .ok tbl => return tbl
+    | .error () =>
+      throw <| .userError s!"readDispatchOverloads failed for {ionPath}"
 
 /-- Parse a user Python Ion file into statements. -/
 private meta def parseStmts (ionPath : System.FilePath)

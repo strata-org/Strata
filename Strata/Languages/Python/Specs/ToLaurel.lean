@@ -90,7 +90,7 @@ abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 /-- Report an error during translation. Phase is set to pySpecToLaurel since
     this monad always runs during that phase. -/
 def reportError (kind : MessageKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
-  let phase := Phase.base "pySpecToLaurel" 2
+  let phase := Phase.base "pySpecToLaurel"
   let e : PipelineMessage := ⟨(←read).filepath, loc, phase, kind, message⟩
   modify fun s => { s with errors := s.errors.push e }
 

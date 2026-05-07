@@ -356,7 +356,7 @@ def shouldSkip (name : String) : PySpecM Bool := do
   let nameIdent := { pythonModule := toString ctx.currentModule, name }
   return nameIdent ∈ ctx.skipNames
 
-private def pySpecParsingPhase : Phase := Phase.base "pySpecParsing" 1
+private def pySpecParsingPhase : Phase := Phase.base "pySpecParsing"
 
 def specErrorAt (file : System.FilePath) (loc : SourceRange) (message : String) : PySpecM Unit := do
   let e : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingError, message }

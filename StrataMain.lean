@@ -31,7 +31,6 @@ import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
 import Strata.SimpleAPI
-import Strata.Util.Profile
 import Strata.Util.Json
 import Strata.DDM.BuiltinDialects
 import Strata.DDM.Util.String
@@ -919,7 +918,9 @@ def pyResolveOverloadsCommand : Command where
     let dispatchPath := v[1]
     -- Read dispatch overload table
     let pctx ← Strata.Pipeline.PipelineContext.create
-    let overloads ← readDispatchOverloads pctx #[dispatchPath]
+    let overloads ← match ← (readDispatchOverloads pctx #[dispatchPath]).toBaseIO with
+      | .ok r => pure r
+      | .error () => exitFailure "readDispatchOverloads: fatal error"
     -- Convert .py to Python AST
     let stmts ←
       IO.FS.withTempFile fun _handle dialectFile => do
@@ -1338,8 +1339,9 @@ def pyInterpretCommand : Command where
         | .none => exitFailure s!"Invalid fuel: '{s}'"
       | none => pure 10000
 
+    let quietCtx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
     let (core, _diags) ←
-      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") with
+      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") (pipelineCtx := quietCtx) with
       | .success laurel _ =>
         if let some dir := keepDir then
           IO.FS.createDirAll dir

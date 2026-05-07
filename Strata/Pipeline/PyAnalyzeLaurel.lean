@@ -51,13 +51,13 @@ public structure PyAnalyzeResult where
 
 private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
-  -- Phase 0-3: Python + PySpec → Laurel
-  startPhase (Phase.base "pythonAndSpecToLaurel" 0)
-  let pipelineResult ← Strata.pythonAndSpecToLaurel
-        (specDir := config.specDir)
-        config.filePath config.dispatchModules config.pyspecModules config.sourcePath
-        (profile := config.profile)
-  Strata.addMessages pipelineResult.warnings
+  let pipelineResult ← withPhase "pythonAndSpecToLaurel" do
+    let ctx ← read
+    let r ← Strata.pythonAndSpecToLaurel
+          (specDir := config.specDir)
+          config.filePath config.dispatchModules config.pyspecModules config.sourcePath
+          (pipelineCtx := ctx)
+    pure r
 
   let combinedLaurel ← match pipelineResult with
     | .success r _ => pure r
@@ -68,17 +68,21 @@ private def runPipeline (config : PyAnalyzeConfig)
     | .failure (.internal msg) _ =>
       return (PyAnalyzeOutcome.internalError msg, {})
 
-  -- Phase 4-5: Laurel → Core
-  startPhase (Phase.base "laurelToCore" 5)
-  let (coreProgramOption, laurelTranslateErrors, _, laurelPassStats) ←
-    match ← (Strata.translateCombinedLaurelWithLowered combinedLaurel
+  let laurelResult ← withPhase "laurelToCore" do
+    let ctx ← read
+    (Strata.translateCombinedLaurelWithLowered combinedLaurel
       (keepAllFilesPrefix := config.keepAllFilesPrefix)
-      (profile := config.profile)).toBaseIO with
+      (profile := config.profile)
+      (pipelineCtx := some ctx)).toBaseIO
+
+  let (coreProgramOption, laurelTranslateErrors, _, laurelPassStats) ←
+    match laurelResult with
     | .ok r => pure r
     | .error e =>
       return (PyAnalyzeOutcome.internalError s!"Laurel translation error: {e}", {})
 
-  let laurelMessages := PipelineMessage.fromDiagnostics (Phase.base "laurelToCore" 5) laurelTranslateErrors
+  let phase ← getPhase
+  let laurelMessages := PipelineMessage.fromDiagnostics phase laurelTranslateErrors
   Strata.addMessages laurelMessages
 
   let coreProgram ← match coreProgramOption with
@@ -87,33 +91,33 @@ private def runPipeline (config : PyAnalyzeConfig)
       return (PyAnalyzeOutcome.internalError
         s!"Laurel to Core translation failed: {laurelTranslateErrors}", laurelPassStats)
 
-  -- Skip verification if requested
   if config.skipVerification then
     return (PyAnalyzeOutcome.verified #[] coreProgram, laurelPassStats)
 
-  -- Phase 7: SMT Verification
-  startPhase (Phase.base "verification" 7)
-  let userSourcePath := config.sourcePath.getD config.filePath
-  let (_, userProcNames) := Strata.splitProcNames coreProgram [userSourcePath]
-  let (proceduresToVerify, inlinePhases) :=
-    if config.isBugFinding then
-      let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases
-        coreProgram userProcNames config.entryPoint
-      (p, [i])
-    else (userProcNames, [])
-
-  let vcResults ← match ← Strata.Core.verifyProgram coreProgram config.verifyOptions
+  let verifyResult ← withPhase "verification" do
+    let ctx ← read
+    let userSourcePath := config.sourcePath.getD config.filePath
+    let (_, userProcNames) := Strata.splitProcNames coreProgram [userSourcePath]
+    let (proceduresToVerify, inlinePhases) :=
+      if config.isBugFinding then
+        let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases
+          coreProgram userProcNames config.entryPoint
+        (p, [i])
+      else (userProcNames, [])
+    Strata.Core.verifyProgram coreProgram config.verifyOptions
         (moreFns := Strata.Python.ReFactory)
         (proceduresToVerify := some proceduresToVerify)
         (externalPhases := [Strata.frontEndPhase])
         (prefixPhases := inlinePhases)
         (keepAllFilesPrefix := config.keepAllFilesPrefix)
-        |>.toBaseIO with
+        (pipelineCtx := some ctx)
+        |>.toBaseIO
+
+  let vcResults ← match verifyResult with
     | .ok r => pure r.mergeByAssertion
     | .error msg =>
       return (PyAnalyzeOutcome.internalError msg, laurelPassStats)
 
-  -- Collect verification errors into pipeline messages
   for vcResult in vcResults do
     match vcResult.outcome with
     | .error (.encoding msg) =>
@@ -135,10 +139,14 @@ public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO PyAnalyzeResult 
   let ctx ← PipelineContext.create
     (outputMode := config.outputMode)
     (skipTiming := config.skipTiming)
-  let (outcome, stats) ← runPipeline config |>.run ctx
-  ctx.endCurrentPhase
+  let result ← (runPipeline config |>.run ctx).toBaseIO
   let warnings ← ctx.messagesRef.get
   let timing ← ctx.timingRef.get
-  return { outcome, warnings, timing, laurelPassStats := stats }
+  match result with
+  | .ok (outcome, stats) =>
+    return { outcome, warnings, timing, laurelPassStats := stats }
+  | .error () =>
+    return { outcome := .internalError "Pipeline aborted due to fatal errors",
+             warnings, timing }
 
 end Strata.Pipeline

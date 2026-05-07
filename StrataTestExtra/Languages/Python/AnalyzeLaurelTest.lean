@@ -23,6 +23,9 @@ Messaging) are generic and not tied to any cloud provider.
 namespace Strata.Python.AnalyzeLaurelTest
 
 open Strata (pythonAndSpecToLaurel pySpecsDir)
+open Strata.Pipeline (PipelineContext)
+
+private def quietCtx : BaseIO PipelineContext := PipelineContext.create (outputMode := .quiet)
 
 private meta def testDir : System.FilePath :=
   "StrataTestExtra/Languages/Python/Specs/dispatch_test"
@@ -83,10 +86,11 @@ private meta def runAnalyze
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
+  let pctx ← quietCtx
   let laurel ←
     match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
-        (specDir := tmpDir) with
+        (specDir := tmpDir) (pipelineCtx := pctx) with
     | .success r _ => pure r
     | .failure err _ => return .error (toString err)
   match ← Strata.translateCombinedLaurel laurel with
@@ -106,10 +110,11 @@ private meta def runAnalyzeAndVerify
     (useRoots : Bool := false)
     : IO (Except String (Array Core.VCResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
+  let pctx ← quietCtx
   let laurel ←
     match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
-        (specDir := tmpDir) with
+        (specDir := tmpDir) (pipelineCtx := pctx) with
     | .success r _ => pure r
     | .failure err _ => return .error (toString err)
   let (coreProgramOption, _) ← Strata.translateCombinedLaurel laurel
@@ -246,11 +251,12 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
     -- causes a type unification error in Core.typeCheck, which is expected.
     let task ← IO.asTask do
       let testIon ← compileTestScript pythonCmd (testDir / "test_class_any_as_composite.py") tmpDir
+      let pctx ← quietCtx
       let laurel ←
         match ← Strata.pythonAndSpecToLaurel testIon.toString
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
-            (specDir := tmpDir) with
+            (specDir := tmpDir) (pipelineCtx := pctx) with
         | .success r _ => pure r
         | .failure err _ => return some s!"test_class_any_as_composite.py: {err}"
       match ← Strata.translateCombinedLaurel laurel with
@@ -372,10 +378,11 @@ recursively translates subclasses, so the type
     setupFixture pythonCmd tmpDir
     let testIon ← compileTestScript pythonCmd
       (testDir / "test_resolution_after_filter.py") tmpDir
+    let pctx ← quietCtx
     let combined ←
       match ← Strata.pythonAndSpecToLaurel testIon.toString
           (dispatchModules := #["servicelib"])
-          (specDir := tmpDir) with
+          (specDir := tmpDir) (pipelineCtx := pctx) with
       | .success r _ => pure r
       | .failure err _ => throw <| IO.userError s!"pyAnalyzeLaurel failed: {err}"
     let result := Laurel.resolve combined

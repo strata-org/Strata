@@ -38,8 +38,9 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     let exitCode ← child.wait
     if exitCode ≠ 0 then
       throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
+    let pctx ← Pipeline.PipelineContext.create (outputMode := .quiet)
     match ← pythonAndSpecToLaurel ionFile.toString
-        (sourcePath := some pyFile.toString) with
+        (sourcePath := some pyFile.toString) (pipelineCtx := pctx) with
     | .success r _ => k r pyFile
     | .failure err _ => throw <| .userError s!"pythonAndSpecToLaurel failed: {err}"
 

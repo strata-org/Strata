@@ -18,7 +18,6 @@ public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Util.DecideProp
-import Strata.Util.Profile
 import all Strata.DDM.Util.String
 
 /-! ## PySpec Pipeline
@@ -45,37 +44,34 @@ public structure PySpecLaurelResult where
   exhaustiveClasses : Std.HashSet String := {}
   deriving Inhabited
 
-/-- A default pipeline context for sub-pipelines that don't need output. -/
-private def defaultPipelineContext : BaseIO Pipeline.PipelineContext :=
-  Pipeline.PipelineContext.create (outputMode := .quiet)
-
 /-- Emit a pipeline message. Tags with the current phase from state.
-    Sets `shouldAbort` if the kind's impact is fatal.
+    Throws `()` if the kind's impact is fatal, aborting the pipeline.
     In verbose mode, prints the message immediately to stderr. -/
 public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
   let ctx ← read
   let phase ← ctx.currentPhaseRef.get
   ctx.messagesRef.modify (·.push { file, loc, phase, kind, message })
-  if kind.impact.isFatal then
-    ctx.shouldAbortRef.set true
   if ctx.outputMode == .verbose then
     let tag := if kind.impact.isFatal then "error" else "warning"
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
     let _ ← (do IO.eprintln s!"{indent}[{tag}] {file}: {message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
+  if kind.impact.isFatal then
+    throw ()
 
 /-- Append a batch of messages to the pipeline state.
+    Throws `()` if any message has fatal impact.
     In verbose mode, prints each message immediately to stderr. -/
 public def addMessages (msgs : Array Pipeline.PipelineMessage) : Pipeline.PipelineM Unit := do
   let ctx ← read
   ctx.messagesRef.modify (· ++ msgs)
-  if msgs.any (·.kind.impact.isFatal) then
-    ctx.shouldAbortRef.set true
   if ctx.outputMode == .verbose then
     for msg in msgs do
       let tag := if msg.kind.impact.isFatal then "error" else "warning"
       let indent := String.replicate ((msg.phase.depth - 1) * 2) ' '
       let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
+  if msgs.any (·.kind.impact.isFatal) then
+    throw ()
 
 /-! ### Private Helpers -/
 
@@ -237,7 +233,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
 public def buildPySpecLaurel
     (ctx : Pipeline.PipelineContext)
     (pyspecEntries : Array (String × String))
-    (overloads : OverloadTable) : BaseIO PySpecLaurelResult :=
+    (overloads : OverloadTable) : EIO Unit PySpecLaurelResult :=
   buildPySpecLaurelM pyspecEntries overloads |>.run ctx
 
 /-- Read dispatch Ion files and merge their overload tables. -/
@@ -260,7 +256,7 @@ private def readDispatchOverloadsM
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
     (ctx : Pipeline.PipelineContext)
-    (dispatchPaths : Array String) : BaseIO OverloadTable :=
+    (dispatchPaths : Array String) : EIO Unit OverloadTable :=
   readDispatchOverloadsM dispatchPaths |>.run ctx
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
@@ -434,9 +430,11 @@ public def splitProcNames (prog : Core.Program)
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
     (profile : Bool := false)
+    (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, profile } combined
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, profile }
+      combined (pipelineCtx := pipelineCtx)
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
@@ -534,22 +532,22 @@ public def pythonAndSpecToLaurel
     (pyspecModules : Array String := #[])
     (sourcePath : Option String := none)
     (specDir : System.FilePath := ".")
-    (profile : Bool := false)
+    (pipelineCtx : Pipeline.PipelineContext)
     : BaseIO PythonToLaurelResult := do
   let stmts ←
-    match ← profileStep profile "Read Python Ion"
+    match ← pipelineCtx.withPhase "readPythonIon"
         (Python.readPythonStrata pythonIonPath |>.toBaseIO) with
     | .ok r => pure r
     | .error msg => return .failure (.internal msg) #[]
 
-  let ctx ← defaultPipelineContext
-  let result ←
-    profileStep profile "Resolve and build Laurel prelude" $
-      resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir |>.run ctx
-  let pyspecWarnings ← ctx.messagesRef.get
+  let resultOrAbort ←
+    pipelineCtx.withPhase "resolveAndBuildPrelude"
+      (resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir |>.run pipelineCtx).toBaseIO
+  let pyspecWarnings ← pipelineCtx.messagesRef.get
 
-  if ← ctx.shouldAbortRef.get then
-    return .failure (.internal "Pipeline aborted due to fatal errors") pyspecWarnings
+  let result ← match resultOrAbort with
+    | .error () => return .failure (.internal "Pipeline aborted due to fatal errors") pyspecWarnings
+    | .ok r => pure r
 
   let preludeInfo := buildPreludeInfo result
   let metadataPath := sourcePath.getD pythonIonPath
