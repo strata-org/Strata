@@ -95,7 +95,7 @@ def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory Co
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
 Handles monomorphic types and type variables (as `.constr tv []`).
 -/
-private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
+def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   match ty with
   | .bitvec n => .bitvec n
   | .tcons "bool" [] => .bool
@@ -115,7 +115,7 @@ private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List 
 
 /-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
   constructor arguments-/
-private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
     (seenDatatypes : Std.HashSet String) : Except Format Unit := do
   for block in typeFactory.toList do
     for d in block do
