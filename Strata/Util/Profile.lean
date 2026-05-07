@@ -28,13 +28,24 @@ public abbrev TimingInfo := Std.HashMap String Nat
   let result ← ref.get
   pure (result, t2 - t1)
 
-/-- Run an action and record its elapsed nanoseconds into a `TimingInfo` under the given key. -/
+/-- Run an action and record its elapsed nanoseconds into a `TimingInfo` under
+    the given key. The measurement is accumulated via `TimingInfo.add`, so
+    repeated calls with the same key sum their durations.
+
+    Unlike `measureNanos`, this does not need `@[noinline]`: `action` is a
+    monadic computation, so its IO primitives are sequenced by `>>=` and cannot
+    be reordered across `IO.monoNanosNow`.
+
+    Caveat: if the `α` returned by `action` is a lazy pure value (e.g.
+    `pure (expensivePureComputation)`), the thunk is not forced here, and the
+    recorded time will reflect only the IO sequencing, not the pure work. For
+    timing pure computations, use `measureNanos` (which forces via `IO.Ref`). -/
 public def recordNanos {m α} [Monad m] [MonadLiftT BaseIO m]
     (key : String) (timing : TimingInfo) (action : m α) : m (α × TimingInfo) := do
   let t0 ← IO.monoNanosNow
   let result ← action
   let t1 ← IO.monoNanosNow
-  pure (result, timing.insert key (t1 - t0))
+  pure (result, timing.add key (t1 - t0))
 
 /-- Run an action, printing its elapsed time in milliseconds to stdout when `profile` is true. -/
 public def profileStep {m α} [Monad m] [MonadLiftT BaseIO m]
