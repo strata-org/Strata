@@ -48,41 +48,28 @@ should also be fine.
 - cvc5 releases: https://github.com/cvc5/cvc5/releases
 - z3 releases: https://github.com/Z3Prover/z3/releases
 
-**Linux x86_64:**
+The following script auto-detects your platform and downloads both solvers:
 
 ```bash
-# cvc5
-wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-x86_64-static.zip
-unzip cvc5-Linux-x86_64-static.zip
-mkdir -p ~/.local/bin
-cp cvc5-Linux-x86_64-static/bin/cvc5 ~/.local/bin/
+# Detect platform
+OS="$(uname -s)"      # Linux or Darwin
+ARCH="$(uname -m)"    # x86_64, aarch64, arm64
+case "$OS/$ARCH" in
+  Linux/x86_64)              CVC5_ZIP=cvc5-Linux-x86_64-static   Z3_ZIP=z3-4.15.2-x64-glibc-2.39 ;;
+  Linux/aarch64|Linux/arm64) CVC5_ZIP=cvc5-Linux-arm64-static    Z3_ZIP=z3-4.15.2-arm64-glibc-2.34 ;;
+  Darwin/arm64)              CVC5_ZIP=cvc5-macOS-arm64-static    Z3_ZIP=z3-4.15.2-arm64-osx-13.7.6 ;;
+  Darwin/x86_64)             CVC5_ZIP=cvc5-macOS-x86_64-static   Z3_ZIP=z3-4.15.2-x64-osx-13.7.6 ;;
+  *) echo "Unsupported: $OS/$ARCH"; exit 1 ;;
+esac
 
-# z3
-wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
-unzip z3-4.15.2-x64-glibc-2.39.zip
-cp z3-4.15.2-x64-glibc-2.39/bin/z3 ~/.local/bin/
-# Ensure ~/.local/bin is on your PATH (most modern distros include it by default).
-```
+wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/${CVC5_ZIP}.zip
+unzip ${CVC5_ZIP}.zip
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/${Z3_ZIP}.zip
+unzip ${Z3_ZIP}.zip
 
-**macOS (Apple Silicon)** — use the `arm64` variants and prefer the **static**
-build to avoid dynamic library issues:
-
-```bash
-# cvc5 static for macOS arm64
-wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-macOS-arm64-static.zip
-unzip cvc5-macOS-arm64-static.zip
-cp cvc5-macOS-arm64-static/bin/cvc5 /usr/local/bin/
-
-# z3 for macOS arm64
-# z3 for macOS arm64
-wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-osx-13.7.6.zip
-unzip z3-4.15.2-arm64-osx-13.7.6.zip
-sudo cp z3-4.15.2-arm64-osx-13.7.6/bin/z3 /usr/local/bin/
-# z3 for macOS arm64
-wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-osx-13.7.6.zip
-unzip z3-4.15.2-arm64-osx-13.7.6.zip
-sudo cp z3-4.15.2-arm64-osx-13.7.6/bin/z3 /usr/local/bin/
-# Alternative: install into ~/.local/bin (no sudo), then ensure it's on your PATH.
+# Install (choose one):
+mkdir -p ~/.local/bin && cp ${CVC5_ZIP}/bin/cvc5 ${Z3_ZIP}/bin/z3 ~/.local/bin/
+# or: sudo cp ${CVC5_ZIP}/bin/cvc5 ${Z3_ZIP}/bin/z3 /usr/local/bin/
 ```
 
 #### Python
@@ -91,15 +78,21 @@ Python 3.11 or later is required. Install the `strata` Python package inside a
 virtual environment (recommended; avoids PEP 668's `externally-managed-environment`
 error on Debian/Ubuntu 23.04+):
 
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install ./Tools/Python
+```
 
 #### Java (for code generation tests)
-
-A JDK (11+) providing `javac` must be on your `PATH`. Additionally,
-download the ion-java jar used by the Java/Ion integration test:
 
 A JDK (11+) providing `javac` must be on your `PATH`. For running the
 Java/Ion integration test, download the ion-java jar:
 
+```bash
+wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
+  https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+```
 
 ### Verifying your setup
 
@@ -134,6 +127,16 @@ Two kinds of tests coexist in this repo:
 - **Uncached extra tests** live under `StrataTestExtra/` and run via `lake test`.
   These accept prefix filters:
 
+```bash
+# Run all extra tests except Python (which requires the Python package)
+lake test -- --exclude Languages.Python
+
+# Run only Python extra tests (requires `pip install ./Tools/Python`)
+lake test -- Languages.Python
+
+# Run all extra tests (Python tests will fail without the Python package above)
+lake test
+```
 
 ## Running Analyses on Existing Strata Programs
 
@@ -178,4 +181,3 @@ The contents of this repository are licensed under the terms of either
 the Apache-2.0 or MIT license, at your choice. See
 [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for
 details of the two licenses.
-
