@@ -318,6 +318,7 @@ def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
     let md := md.pushElem MetaData.relatedFileRange (.fileRange origRange)
     existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.fileRange fr)) md
   | some csRange, none =>
+    let md := md.eraseElem MetaData.provenanceField
     md.pushElem MetaData.provenanceField (.provenance (Provenance.ofFileRange csRange))
   | none, _ => md
 
