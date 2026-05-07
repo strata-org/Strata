@@ -793,7 +793,7 @@ theorem procBodyVerify_procedureCorrect
         CoreStepStar π φ (.stmts ss ρ₀) cfg →
         coreIsAtAssert cfg a →
         cfg.getEval cfg.getStore a.expr = some HasBool.tt :=
-      fun a cfg h h' => body_asserts_valid ρ₀ h_wf a cfg (h_body_match ▸ h) h'
+      fun a cfg h h' => body_asserts_valid ρ₀ h_wf a cfg h h'
     -- hasFailure = false
     have h_nf' : ρ'.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ
