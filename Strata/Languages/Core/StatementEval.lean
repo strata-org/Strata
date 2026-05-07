@@ -775,7 +775,7 @@ where
     | 0 => env
     | fuel' + 1 =>
       match cfg.blocks.lookup label with
-      | none => env
+      | none => CmdEval.updateError env (.Misc s!"runCFG: block '{label}' not found in CFG")
       | some blk =>
         let cmdStmts := blk.cmds.map (Imperative.Stmt.cmd ·)
         match Imperative.runStmt ops fuel' (.stmts cmdStmts env) with
