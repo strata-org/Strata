@@ -218,7 +218,7 @@ end AbstractEncoder
     `m (Except String _)` to signal failures. After `←` we get the
     `Except`; this helper converts `.error` into an `IO.userError`
     exception so callers can use a simple `unwrap "label" (← …)` pattern. -/
-private def unwrap [MonadExceptOf IO.Error m] [Monad m] (label : String) (r : Except String α) : m α :=
+def unwrap [MonadExceptOf IO.Error m] [Monad m] (label : String) (r : Except String α) : m α :=
   match r with
   | .ok a => return a
   | .error msg => throw (IO.userError s!"{label}: {msg}")
@@ -535,17 +535,6 @@ def dischargeObligationIncremental
   let solverState ← spawn options.solver allFlags
   let action : _root_.Strata.SMT.IncrementalSolverM (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
     let solver := _root_.Strata.SMT.IncrementalSolver.mkIncrementalSolver
-    -- Unwrap an Except String result, throwing on error
-    let unwrapResult (label : String) (r : Except String Unit)
-        : _root_.Strata.SMT.IncrementalSolverM Unit :=
-      match r with
-      | .ok _ => return ()
-      | .error msg => throw (IO.userError s!"{label}: {msg}")
-    let unwrapResultTerm (label : String) (r : Except String Term)
-        : _root_.Strata.SMT.IncrementalSolverM Term :=
-      match r with
-      | .ok a => return a
-      | .error msg => throw (IO.userError s!"{label}: {msg}")
     -- Solver-specific prelude (options like smt.mbqi, auto_config)
     let prelude : _root_.Strata.SMT.IncrementalSolverM Unit := match options.solver with
       | "z3" => do
@@ -588,15 +577,15 @@ def dischargeObligationIncremental
     let mut valResult : Imperative.SMT.Result Expression.Ident := .unknown
     if bothChecks then
       satResult ← decisionToResult (← solver.checkSatAssuming [obligationId])
-      let negObligation ← unwrapResultTerm "mkNot" (← solver.mkNot obligationId)
+      let negObligation ← _root_.Strata.SMT.Encoder.unwrap "mkNot" (← solver.mkNot obligationId)
       valResult ← decisionToResult (← solver.checkSatAssuming [negObligation])
     else
       if satisfiabilityCheck then
-        unwrapResult "assert" (← solver.assert obligationId)
+        _root_.Strata.SMT.Encoder.unwrap "assert" (← solver.assert obligationId)
         satResult ← decisionToResult (← solver.checkSat)
       else if validityCheck then
-        let negObligation ← unwrapResultTerm "mkNot" (← solver.mkNot obligationId)
-        unwrapResult "assert" (← solver.assert negObligation)
+        let negObligation ← _root_.Strata.SMT.Encoder.unwrap "mkNot" (← solver.mkNot obligationId)
+        _root_.Strata.SMT.Encoder.unwrap "assert" (← solver.assert negObligation)
         valResult ← decisionToResult (← solver.checkSat)
     solver.close
     return .ok (satResult, valResult, estate)
