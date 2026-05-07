@@ -14,7 +14,6 @@ public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
-public import Strata.Languages.Core.IsCoreSMT
 import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
