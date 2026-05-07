@@ -129,9 +129,7 @@ def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .n
 
 /-- Create metadata from a SourceRange for attaching to Laurel statements. -/
 def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  let uri : Uri := .file filePath
-  let fileRangeElt := ⟨ Imperative.MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  Imperative.MetaData.ofSourceRange (.file filePath) sr
 
 /-- Create default metadata for Laurel AST nodes -/
 def defaultMetadata : Imperative.MetaData Core.Expression :=

@@ -148,11 +148,7 @@ private def constructorListToList : BooleDDM.ConstructorList SourceRange → Lis
 
 private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData Core.Expression) := do
   let file := (← get).fileName
-  let uri : Uri := .file file
-  let prov := Provenance.ofSourceRange uri sr
-  let fileRangeElt := ⟨Imperative.MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩
-  let provElt := ⟨Imperative.MetaData.provenanceField, .provenance prov⟩
-  return #[fileRangeElt, provElt]
+  return Imperative.MetaData.ofSourceRange (.file file) sr
 
 private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
   Lambda.LExpr.mkApp () op args

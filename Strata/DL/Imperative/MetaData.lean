@@ -11,7 +11,7 @@ public import Strata.Util.FileRange
 public import Strata.Util.Provenance
 
 namespace Imperative
-open Strata (DiagnosticModel FileRange Provenance)
+open Strata (DiagnosticModel FileRange Provenance Uri SourceRange)
 
 public section
 
@@ -256,6 +256,13 @@ def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
 /-- Create metadata with a synthesized provenance. -/
 def MetaData.synthesized {P : PureExpr} (origin : String) : MetaData P :=
   MetaData.ofProvenance (.synthesized origin)
+
+/-- Create metadata from a source range and URI, storing both the legacy fileRange
+and the new provenance element for backward compatibility. -/
+def MetaData.ofSourceRange {P : PureExpr} (uri : Uri) (sr : SourceRange) : MetaData P :=
+  let prov := Provenance.ofSourceRange uri sr
+  #[⟨MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩,
+    ⟨MetaData.provenanceField, .provenance prov⟩]
 
 /-- Create a DiagnosticModel from metadata and a message.
     Uses provenance or file range from metadata if available, otherwise uses a default location. -/
