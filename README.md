@@ -25,12 +25,17 @@ changes!**
    Install Lean4 by following the instructions at [lean-lang.org](https://lean-lang.org/).
 
 2. **SMT Solvers**: The verification pipeline and tests require SMT solvers
+   (`cvc5` and `z3`). See [Installing dependencies → SMT Solvers](#smt-solvers)
+   below.
+
 3. **Python 3.11+**: required for Python-related tests and the `strata`
-   Python tooling.
+   Python tooling. See [Installing dependencies → Python](#python) below.
 
 4. **Java JDK (11 or later)**: required for Java code generation tests.
+   See [Installing dependencies → Java](#java-for-code-generation-tests) below.
 
 5. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
+   See [Installing dependencies → Java](#java-for-code-generation-tests) below.
 
 ### Installing dependencies
 
@@ -69,32 +74,32 @@ unzip cvc5-macOS-arm64-static.zip
 cp cvc5-macOS-arm64-static/bin/cvc5 /usr/local/bin/
 
 # z3 for macOS arm64
-wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-osx-15.7.3.zip
-unzip z3-4.15.2-arm64-osx-15.7.3.zip
-cp z3-4.15.2-arm64-osx-15.7.3/bin/z3 /usr/local/bin/
-# On macOS, /usr/local/bin is typically writable without sudo.
+# z3 for macOS arm64
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-osx-13.7.6.zip
+unzip z3-4.15.2-arm64-osx-13.7.6.zip
+sudo cp z3-4.15.2-arm64-osx-13.7.6/bin/z3 /usr/local/bin/
+# z3 for macOS arm64
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-osx-13.7.6.zip
+unzip z3-4.15.2-arm64-osx-13.7.6.zip
+sudo cp z3-4.15.2-arm64-osx-13.7.6/bin/z3 /usr/local/bin/
+# Alternative: install into ~/.local/bin (no sudo), then ensure it's on your PATH.
 ```
 
 #### Python
 
-Python 3.11 or later is required. Install the `strata` Python package:
+Python 3.11 or later is required. Install the `strata` Python package inside a
+virtual environment (recommended; avoids PEP 668's `externally-managed-environment`
+error on Debian/Ubuntu 23.04+):
 
-```bash
-pip install ./Tools/Python
-```
-
-This provides the `strata-python` tooling used by the Python verification
-pipeline and tests.
 
 #### Java (for code generation tests)
 
 A JDK (11+) providing `javac` must be on your `PATH`. Additionally,
 download the ion-java jar used by the Java/Ion integration test:
 
-```bash
-wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
-  https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
-```
+A JDK (11+) providing `javac` must be on your `PATH`. For running the
+Java/Ion integration test, download the ion-java jar:
+
 
 ### Verifying your setup
 
@@ -102,7 +107,6 @@ wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
 cvc5 --version    # should print version info
 z3 --version      # should print version info
 python3 --version # should be 3.11+
-javac --version   # should be 11+
 ```
 
 ## Build
@@ -123,16 +127,13 @@ lake build strata:exe strata StrataToCBMC StrataCoreToGoto
 
 ### Running specific test subsets
 
-```bash
-# Run all tests except Python (which requires the Python package)
-lake test -- --exclude Languages.Python
+Two kinds of tests coexist in this repo:
 
-# Run only Python tests (requires `pip install ./Tools/Python`)
-lake test -- Languages.Python
+- **Elaboration-time tests** (`#guard_msgs`) live under `StrataTest/` and run as
+  part of `lake build`. No output means they passed.
+- **Uncached extra tests** live under `StrataTestExtra/` and run via `lake test`.
+  These accept prefix filters:
 
-# Run all tests (requires the Python package above)
-lake test
-```
 
 ## Running Analyses on Existing Strata Programs
 
