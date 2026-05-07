@@ -2399,6 +2399,30 @@ theorem core_wfExprCongr_preserved
   | step _ _ _ hstep _ ih =>
     exact ih (core_step_preserves_wfExprCongr π φ h_wf_ext _ _ hwf₀ hstep)
 
+/-! ## projectStore and expression evaluation -/
+
+/-- If an expression evaluates in the projected store, it evaluates identically
+    in the full store.  The projected store only removes variables, and expression
+    evaluation depends only on the variables it references. -/
+theorem eval_projectStore_to_full
+    {δ : CoreEval} {σ₀ σ : SemanticStore Expression}
+    {e : Expression.Expr} {v : Expression.Expr}
+    (h_eval : δ (projectStore σ₀ σ) e = some v)
+    (h_wfVar : WellFormedSemanticEvalVar δ)
+    (h_wfCong : WellFormedCoreEvalCong δ)
+    (h_wfExprCongr : WellFormedSemanticEvalExprCongr δ) :
+    δ σ e = some v := by
+  have h_def := EvalExpressionIsDefined h_wfCong h_wfVar
+    (show (δ (projectStore σ₀ σ) e).isSome from by rw [h_eval]; simp)
+  have h_agree : ∀ x ∈ HasVarsPure.getVars e, (projectStore σ₀ σ) x = σ x := by
+    intro x hx
+    have h_x_def : (projectStore σ₀ σ x).isSome = true := h_def x hx
+    simp only [projectStore] at h_x_def ⊢
+    split
+    · rfl
+    · next h_neg => simp [h_neg] at h_x_def
+  rw [← h_wfExprCongr e (projectStore σ₀ σ) σ h_agree]; exact h_eval
+
 /-! ## Assert-only blocks preserve store -/
 
 theorem stmts_allAssert_preserves_store

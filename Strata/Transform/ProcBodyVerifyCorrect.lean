@@ -623,39 +623,6 @@ private theorem ensuresToAsserts_mem_is_assert
   · simp at h_eq
   · simp at h_eq; exact ⟨label, check.expr, check.md, h_eq.symm⟩
 
-/-! ## projectStore bridge lemma -/
-
-/-- If an expression evaluates successfully on a projected store, it also
-    evaluates to the same result on the full store.  This holds because all
-    free variables of the expression must be defined in the projected store
-    (by `EvalExpressionIsDefined`), and `projectStore` agrees with the full
-    store on all defined variables.
-
-    Requires `WellFormedSemanticEvalExprCongr` which states that the evaluator
-    respects store agreement on free variables. -/
-private theorem eval_projectStore_to_full
-    {δ : CoreEval} {σ₀ σ : SemanticStore Expression}
-    {e : Expression.Expr} {v : Expression.Expr}
-    (h_eval : δ (projectStore σ₀ σ) e = some v)
-    (h_wfVar : WellFormedSemanticEvalVar δ)
-    (h_wfCong : Core.WellFormedCoreEvalCong δ)
-    (h_wfExprCongr : WellFormedSemanticEvalExprCongr δ) :
-    δ σ e = some v := by
-  -- All free vars of e are defined in the projected store
-  have h_def := Core.EvalExpressionIsDefined h_wfCong h_wfVar
-    (show (δ (projectStore σ₀ σ) e).isSome from by rw [h_eval]; simp)
-  -- The projected store agrees with σ on all free vars of e.
-  have h_agree : ∀ x ∈ HasVarsPure.getVars e, (projectStore σ₀ σ) x = σ x := by
-    intro x hx
-    have h_x_def : (projectStore σ₀ σ x).isSome = true := h_def x hx
-    simp only [projectStore] at h_x_def ⊢
-    split
-    · rfl
-    · next h_neg =>
-      simp [h_neg] at h_x_def
-  -- By expression congruence
-  rw [← h_wfExprCongr e (projectStore σ₀ σ) σ h_agree]; exact h_eval
-
 /-! ## Main Theorem -/
 
 /-- If all asserts are valid in the verification statement produced by
@@ -838,21 +805,14 @@ theorem procBodyVerify_procedureCorrect
                     (.step _ _ _ .step_block_done (.refl _)))
                   (.step _ _ _ .step_seq_done (.refl _)))))))
 
-    -- Key property: for any variable x defined in ρ₀.store, the projected store
-    -- agrees with ρ'.store on x.
     have h_proj_store_agree : ∀ x, (ρ₀.store x).isSome →
         ρ_proj.store x = ρ'.store x := by
       intro x hx
       simp only [ρ_proj, projectStore]
       simp [hx]
 
-    -- The projected env has the same eval and hasFailure as ρ'
     have h_proj_eval : ρ_proj.eval = ρ'.eval := rfl
     have h_proj_hasFailure : ρ_proj.hasFailure = ρ'.hasFailure := rfl
-    -- We need WellFormedCoreEvalCong and WellFormedSemanticEvalVar for ρ_proj.eval = ρ'.eval
-    -- to bridge from projected store evaluation to full store evaluation.
-    -- Since ρ_proj.eval = ρ'.eval, we need these properties for ρ'.eval.
-    -- We derive them from the initial env via preservation through execution.
     have h_wfVar_term : WellFormedSemanticEvalVar ρ'.eval :=
       Core.core_wfVar_preserved π φ h_wf_ext
         (.stmts proc.body ρ₀) (.terminal ρ') h_wf.wfVar h_term
@@ -863,9 +823,6 @@ theorem procBodyVerify_procedureCorrect
       Core.core_wfExprCongr_preserved π φ h_wf_ext
         (.stmts proc.body ρ₀) (.terminal ρ') h_wf.wfExprCongr h_term
 
-    -- Show every postcondition assert evaluates to true
-    -- by induction on the suffix of postAsserts.
-    -- We work with ρ_proj in the trace and bridge to ρ'.store at the end.
     have h_all_post_valid : ∀ s ∈ postAsserts, ∀ l e md,
         s = Statement.assert l e md → ρ'.eval ρ'.store e = some HasBool.tt := by
       suffices h_sfx :
@@ -891,9 +848,6 @@ theorem procBodyVerify_procedureCorrect
           simp only [coreIsAtAssert]; exact ⟨trivial, trivial⟩
         have h_head_eval_proj := h_correct' ⟨lh, eh⟩ ρ_init _ h_trace h_at_head
         simp only [Config.getEval, Config.getStore] at h_head_eval_proj
-        -- h_head_eval_proj : ρ_proj.eval ρ_proj.store eh = some HasBool.tt
-        -- i.e., ρ'.eval (projectStore ρ₀.store ρ'.store) eh = some HasBool.tt
-        -- Bridge to full store using eval_projectStore_to_full
         have h_head_eval : ρ'.eval ρ'.store eh = some HasBool.tt :=
           eval_projectStore_to_full h_head_eval_proj h_wfVar_term h_wfCong_term h_wfExprCongr_term
         cases h_mem with

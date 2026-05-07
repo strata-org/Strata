@@ -214,41 +214,6 @@ theorem progIteElseReachesTerminal :
 
 ---------------------------------------------------------------------
 
-/-! ## touchedVars tests
-
-Verify that `Stmt.touchedVars` includes both read and write variables
-(= `modifiedOrDefinedVars ++ getVars`), while `Stmt.modifiedOrDefinedVars`
-only includes the write-set. -/
-
-/-- `HasVarsPure` for `Expr`: our expressions have no free variables
-    (they are all closed boolean constants). -/
-instance : HasVarsPure MiniPureExpr Expr where
-  getVars _ := []
-
-/-- `HasVarsPure` for `Cmd MiniPureExpr`: delegate to `Cmd.getVars`. -/
-instance : HasVarsPure MiniPureExpr (Cmd MiniPureExpr) where
-  getVars := Cmd.getVars
-
-/-- Test: `init x : Bool := tt` has `modifiedOrDefinedVars = ["x"]`
-    and `touchedVars = ["x"]` (since `.tt` has no free variables). -/
-example : (Stmt.cmd (P := MiniPureExpr)
-    (Cmd.init (P := MiniPureExpr) "x" .Bool (.det .tt) .empty)).modifiedOrDefinedVars
-    = ["x"] := by native_decide
-
-example : (Stmt.cmd (P := MiniPureExpr)
-    (Cmd.init (P := MiniPureExpr) "x" .Bool (.det .tt) .empty)).touchedVars
-    = ["x"] := by native_decide
-
-/-- Test: `set x := tt` has `modifiedOrDefinedVars = ["x"]`
-    and `touchedVars = ["x"]` (since `.tt` has no free variables). -/
-example : (Stmt.cmd (P := MiniPureExpr)
-    (Cmd.set (P := MiniPureExpr) "x" (.det .tt) .empty)).modifiedOrDefinedVars
-    = ["x"] := by native_decide
-
-example : (Stmt.cmd (P := MiniPureExpr)
-    (Cmd.set (P := MiniPureExpr) "x" (.det .tt) .empty)).touchedVars
-    = ["x"] := by native_decide
-
 /-- Now extend `Expr` to include a variable reference so we can test
     that `getVars` picks up read variables. -/
 inductive Expr2 where
@@ -433,11 +398,11 @@ away.
 Program: with "x" already defined, `loop (true) { init y := tt; exit }`
 After the loop exits, "y" should not be visible in the final store. -/
 
-/-- Program: `loop (tt) { init y := tt ; exit }`.
-    The loop enters one iteration, inits y, then immediately exits.
+/-- Program: `loop (nondet) { init y := tt }`.
+    The loop enters one iteration, inits y, then exits on the next iteration.
     The anonymous block wrapper projects "y" away. -/
 def progLoopScope : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
-  .loop (.det .tt) none [] [.cmd (.init "y" .Bool (.det .tt) .empty), .exit none .empty] .empty
+  .loop .nondet none [] [.cmd (.init "y" .Bool (.det .tt) .empty)] .empty
 
 /-- After stepping the loop, the final store should still be `storeWithX`
     (the variable "y" is projected away by the anonymous block). -/
@@ -445,16 +410,15 @@ theorem loopScopeTest :
     StepStmtStar MiniPureExpr stdEvalCmd miniExtendEval
       (.stmt progLoopScope ρ_x)
       (.terminal { store := storeWithX, eval := miniEval, hasFailure := false }) := by
-  have htt : ρ_x.eval ρ_x.store HasBool.tt = some HasBool.tt := rfl
-  -- Step 1: step_loop_enter — guard is true, enter the loop body wrapped in anon block.
+  -- Step 1: step_loop_nondet_enter — enter the loop body wrapped in anon block.
   refine .step _ _ _
-    (StepStmt.step_loop_enter (hasInvFailure := false) htt ?_ ?_ miniEval_wfBool) ?_
+    (StepStmt.step_loop_nondet_enter (hasInvFailure := false) ?_ ?_) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
   -- Now config is:
-  -- .block .none storeWithX (.stmts [init y; exit; loop...] ρ_x)
+  -- .block .none storeWithX (.stmts [init y; loop...] ρ_x)
   -- Step 2: step_block_body (step_stmts_cons)
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
   -- Step 3: step_block_body (step_seq_inner step_cmd) — init y := tt
@@ -472,14 +436,22 @@ theorem loopScopeTest :
   -- Step 4: step_block_body (step_seq_done) — inner stmt is terminal, advance to rest
   refine .step _ _ _
     (StepStmt.step_block_body StepStmt.step_seq_done) ?_
-  -- Step 5: step_block_body (step_stmts_cons) — process [exit, loop...]
+  -- Step 5: step_block_body (step_stmts_cons) — process [loop...]
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
-  -- Step 6: step_block_body (step_seq_inner step_exit) — fire the exit
+  -- Step 6: step_block_body (step_seq_inner step_loop_nondet_exit) — loop exits
   refine .step _ _ _
-    (StepStmt.step_block_body (StepStmt.step_seq_inner StepStmt.step_exit)) ?_
-  -- Step 7: step_block_body step_seq_exit — propagate exit past remaining stmts
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?_
-  -- Step 8: step_block_exit_none — anonymous block catches unlabeled exit, projects store.
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner
+        (StepStmt.step_loop_nondet_exit (hasInvFailure := false) ?_ ?_))) ?_
+  · intro _ hmem; nomatch hmem
+  · constructor <;> intro h
+    · cases h
+    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+  -- Step 7: step_block_body step_seq_done — terminal propagates
+  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_done) ?_
+  -- Step 8: step_block_body step_stmts_nil — empty list terminates
+  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_nil) ?_
+  -- Step 9: step_block_done — block projects store, removing "y".
   have hproj : projectStore (P := MiniPureExpr) storeWithX storeWithXY = storeWithX := by
     ext v
     simp [projectStore, storeWithX, storeWithXY]
@@ -487,7 +459,7 @@ theorem loopScopeTest :
   conv => rhs; rw [show Env.mk storeWithX miniEval false =
     { (Env.mk storeWithXY miniEval false) with store := projectStore storeWithX storeWithXY }
     from by simp [hproj]]
-  exact .step _ _ _ StepStmt.step_block_exit_none (.refl _)
+  exact .step _ _ _ StepStmt.step_block_done (.refl _)
 
 ---------------------------------------------------------------------
 

@@ -627,13 +627,12 @@ theorem block_reaches_exiting
     | step_block_body h =>
       have ⟨lbl_inner, ρ_inner, hexit, heq⟩ := ih _ _ _ rfl htgt
       exact ⟨lbl_inner, ρ_inner, .step _ _ _ h hexit, heq⟩
-    | step_block_done => subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_none => subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_match => subst htgt; cases hrest with | step _ _ _ h _ => cases h
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with
       | refl => exact ⟨_, _, .refl _, rfl⟩
       | step _ _ _ h _ => cases h
+    | step_block_done | step_block_exit_none | step_block_exit_match =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
 /-! ## Trace construction helpers -/
 

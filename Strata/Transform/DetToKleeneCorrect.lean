@@ -235,8 +235,6 @@ where
       simp [Block.noFuncDecl]
       exact ⟨stmtToKleene_some_noFuncDecl s s' hs, blockHelper rest r' hr⟩
 
-/-! ## projectStore helpers -/
-
 /-! ## ReflTransT decomposition helpers -/
 
 omit [HasVal P] [HasBoolVal P] in
@@ -406,11 +404,8 @@ private def loop_sim
             (.stmts (body ++ [.loop (.det g) m [] body md]) ρ₀') (.exiting lbl ρ_x) :=
         block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval
           (body ++ [.loop (.det g) m [] body md]) h_noescape_body ρ₀'
-      -- Unwrap the block using blockT_reaches_terminal_noExit
-      -- heq_ρ' : ρ' = { ρ_inner with store := projectStore ρ₀'.store ρ_inner.store }
       have ⟨ρ_inner, h_inner_term, heq_ρ', hlen_inner⟩ :=
         blockT_reaches_terminal_noExit extendEval hrest h_ne
-      -- Split inner execution: body from ρ₀' → ρ₁, then loop from ρ₁ → ρ_inner
       have ⟨ρ₁, hterm_body, h_loop_T, hlen_loop⟩ :=
         stmtsT_append_terminal extendEval body (.loop (.det g) m [] body md) ρ₀' ρ_inner
           h_inner_term hcov
@@ -425,17 +420,12 @@ private def loop_sim
       have h_kleene_body : StepKleeneStar P (EvalCmd P)
           (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀) (.terminal ρ₁) :=
         kleene_seq_terminal _ b ρ₀ ρ₀ ρ₁ h_assume h_sim_body
-      -- Step 3: Kleene loop from ρ₁ reaching ρ_inner by IH
-      -- The recursive det loop from ρ₁ reaches ρ_inner (inside the outer block).
-      -- By IH (with ρ' := ρ_inner), the Kleene loop from ρ₁ also reaches ρ_inner.
       have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval := by
         have := block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ₁ hnofd_body hterm_body_eq
         rw [this]; exact hwfv
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₁) (.terminal ρ_inner) :=
         ih ρ₁ ρ_inner hwfv₁ h_loop_T (by simp [ReflTransT.len] at hlen; omega)
-      -- Combine: step_loop_step produces .block ρ₀.store (.seq (.stmt body_k ρ₀) (.loop body_k))
-      -- Build Kleene inner seq execution: body→ρ₁, seq_done, then recursive loop→ρ_inner
       have h_inner_seq : StepKleeneStar P (EvalCmd P)
           (.seq (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀)
                 (.loop (.seq (.cmd (.assume "guard" g md)) b)))
@@ -445,10 +435,6 @@ private def loop_sim
             (kleene_seq_inner_star _ _ (.loop (.seq (.cmd (.assume "guard" g md)) b)) h_kleene_body)
             (.step _ _ _ .step_seq_done (.refl _)))
           h_kleene_loop
-      -- Lift through Kleene block wrapper.
-      -- step_loop_step gives: (.stmt (.loop s) ρ₀) → (.block ρ₀.store (.seq (.stmt s ρ₀) (.loop s)))
-      -- kleene_block_terminal gives: (.block ρ₀.store inner) → (.terminal { ρ_inner with store := projectStore ρ₀.store ρ_inner.store })
-      -- By heq_ρ' (and ρ₀' = ρ₀), this equals ρ'.
       have heq_ρ'_store : ρ₀'.store = ρ₀.store := by rw [hρ₀_eq]
       rw [heq_ρ', heq_ρ'_store]
       exact .step _ _ _ .step_loop_step
@@ -507,10 +493,8 @@ private def loop_sim_kleene
             (.stmts (body ++ [.loop .nondet m [] body md]) ρ₀') (.exiting lbl ρ_x) :=
         block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval
           (body ++ [.loop .nondet m [] body md]) h_noescape_body ρ₀'
-      -- Unwrap block: heq_ρ' : ρ' = { ρ_inner with store := projectStore ρ₀'.store ρ_inner.store }
       have ⟨ρ_inner, h_inner_term, heq_ρ', hlen_inner⟩ :=
         blockT_reaches_terminal_noExit extendEval hrest h_ne
-      -- Split inner execution
       have ⟨ρ₁, hterm_body, h_loop_T, hlen_loop⟩ :=
         stmtsT_append_terminal extendEval body (.loop .nondet m [] body md) ρ₀' ρ_inner
           h_inner_term hcov
@@ -525,12 +509,9 @@ private def loop_sim_kleene
       have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval := by
         have := block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ₀ ρ₁ hnofd_body hterm_body_eq
         rw [this]; exact hwfb
-      -- By IH (with ρ' := ρ_inner), the Kleene loop from ρ₁ reaches ρ_inner
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop b) ρ₁) (.terminal ρ_inner) :=
         ih ρ₁ ρ_inner hwfb₁ hwfv₁ h_loop_T (by simp [ReflTransT.len] at hlen; omega)
-      -- Combine: step_loop_step produces .block ρ₀.store (.seq (.stmt b ρ₀) (.loop b))
-      -- Build Kleene inner seq execution: body→ρ₁, seq_done, then recursive loop→ρ_inner
       have h_inner_seq : StepKleeneStar P (EvalCmd P)
           (.seq (.stmt b ρ₀) (.loop b))
           (.terminal ρ_inner) :=
@@ -539,10 +520,6 @@ private def loop_sim_kleene
             (kleene_seq_inner_star _ _ (.loop b) h_sim_body)
             (.step _ _ _ .step_seq_done (.refl _)))
           h_kleene_loop
-      -- Lift through Kleene block wrapper.
-      -- step_loop_step: (.stmt (.loop b) ρ₀) → (.block ρ₀.store (.seq (.stmt b ρ₀) (.loop b)))
-      -- kleene_block_terminal: (.block ρ₀.store inner) → (.terminal { ρ_inner with store := projectStore ρ₀.store ρ_inner.store })
-      -- By heq_ρ' (and ρ₀' = ρ₀), this equals ρ'.
       have heq_ρ'_store : ρ₀'.store = ρ₀.store := by rw [hρ₀_eq]
       rw [heq_ρ', heq_ρ'_store]
       exact .step _ _ _ .step_loop_step

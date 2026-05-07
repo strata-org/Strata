@@ -292,23 +292,27 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
 
-  /-- Procedure call semantics with scoped execution.
-      The callee body runs to completion; output values are read from the body's
-      terminal store and written back to the caller's store.  The body execution
-      is scoped: callee-local variables (params + body locals) do not persist in
-      the caller's store — only `lhs` variables are updated via `UpdateStates`. -/
+  /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
+      aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
+      with `p.header.outputs`. -/
   | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' ρ' md} :
     π n = .some p →
+    -- inArg exprs + fvar refs for inoutArg ids
     CallArg.getInputExprs callArgs = inArgs →
+    -- caller-side output variables (inout + out);
+    -- used by ReadValues and UpdateStates below
     CallArg.getLhs callArgs = lhs →
     EvalExpressions (P:=Expression) δ σ inArgs vals →
+    -- pre-call values of lhs, needed to init callee output params
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ →
     WellFormedCoreEvalTwoState δ σ₀ σ →
     isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call n callArgs md) →
+    -- positional: vals[i] initializes p.header.inputs[i]
     InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
+    -- positional: oVals[i] initializes p.header.outputs[i]
     InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
@@ -320,6 +324,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δ ρ'.store post = .some HasBool.tt) →
     ReadValues ρ'.store (ListMap.keys (p.header.outputs)) modvals →
+    -- positional: modvals[i] written back to lhs[i]
     UpdateStates σ lhs modvals σ' →
     ----
     EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false
