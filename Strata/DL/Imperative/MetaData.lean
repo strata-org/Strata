@@ -231,21 +231,6 @@ def MetaData.hasSatisfiabilityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData 
     | _ => false
   | none => false
 
-def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
-  -- Check provenance field first (preferred)
-  match md.findElem Imperative.MetaData.provenanceField with
-  | some elem =>
-    match elem.value with
-    | .provenance p => p.toFileRange
-    | _ => none
-  | none =>
-    -- Fall back to legacy fileRange field
-    let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
-    match fileRangeElement.value with
-      | .fileRange fileRange =>
-        some fileRange
-      | _ => none
-
 /-- Get the provenance from metadata, checking both the "provenance" field
 and the legacy "fileRange" field for backward compatibility. -/
 def getProvenance {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option Provenance := do
@@ -260,6 +245,10 @@ def getProvenance {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option Proven
     match fileRangeElement.value with
       | .fileRange fr => some (Provenance.ofFileRange fr)
       | _ => none
+
+def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
+  let p ← getProvenance md
+  p.toFileRange
 
 /-- Create metadata with a provenance element. -/
 def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=

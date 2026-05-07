@@ -131,7 +131,7 @@ match ss with
       let assertLabel ←
         if srcLabel.isEmpty then StringGenState.gen "inv$"
         else pure srcLabel
-      pure (HasPassiveCmds.assert assertLabel i MetaData.empty))
+      pure (HasPassiveCmds.assert assertLabel i (MetaData.synthesized "structured-to-unstructured")))
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
@@ -141,7 +141,7 @@ match ss with
   | .nondet => do
     let freshName ← StringGenState.gen "$__nondet_loop$"
     let ident := HasIdent.ident (P := P) freshName
-    let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
+    let initCmd := HasInit.init ident HasBool.boolTy .nondet (MetaData.synthesized "structured-to-unstructured")
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
                         transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
