@@ -87,19 +87,12 @@ so expression-level metadata carries no source location. We therefore inherit
 the enclosing statement's `md` (with `propertySummary` stripped to prevent
 user-facing messages from leaking into generated checks).
 -/
-def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
+def collectPrecondAssertCmds (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression)
-: List Statement :=
+: List (Imperative.Cmd Expression) :=
   let wfObs := Lambda.collectWFObligations F e
-  -- Strip propertySummary: the enclosing statement's user-facing message
-  -- (e.g., a Python assert message) should not propagate to generated
-  -- precondition checks for called functions.
   let md := md.eraseAllElems Imperative.MetaData.propertySummary
-  -- Use modulo to cycle the precondition index correctly across call sites.
-  -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
-  -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
-  -- Without modulo, the index would be 0,1,2,3 instead of 0,1,0,1.
-  let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List Statement)))
+  let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List (Imperative.Cmd Expression))))
     fun (prevFunc, prevIdx, acc) ob =>
       let rawIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
       let precondCount := F[ob.funcName]?.map (·.preconditions.length) |>.getD 1
@@ -108,32 +101,52 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
       let md' := match classifyPrecondition ob.funcName precondIdx with
         | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
         | none => md
-      let stmt := Statement.assert
+      let cmd := Imperative.Cmd.assert
         s!"{labelPrefix}_calls_{ob.funcName}_{globalIdx}" ob.obligation md'
-      (ob.funcName, rawIdx, stmt :: acc)
+      (ob.funcName, rawIdx, cmd :: acc)
   result.reverse
+
+private def cmdsToStatements (cs : List (Imperative.Cmd Expression)) : List Statement :=
+  cs.map (fun c => Imperative.Stmt.cmd (CmdExt.cmd c))
+
+private def cmdsToCommands (cs : List (Imperative.Cmd Expression)) : List Command :=
+  cs.map CmdExt.cmd
+
+def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
+(labelPrefix : String) (md : Imperative.MetaData Expression)
+: List Statement :=
+  cmdsToStatements (collectPrecondAssertCmds F e labelPrefix md)
 
 /--
 Collect assertions for all expressions in a command.
 -/
+def collectCmdPrecondAssertCmds (F : @Lambda.Factory CoreLParams)
+  (cmd : Imperative.Cmd Expression) : List (Imperative.Cmd Expression) :=
+  match cmd with
+  | .init _ _ (.det e) md => collectPrecondAssertCmds F e "init" md
+  | .init _ _ .nondet _ => []
+  | .set x (.det e) md => collectPrecondAssertCmds F e s!"set_{x.name}" md
+  | .set _ .nondet _ => []
+  | .assert l e md => collectPrecondAssertCmds F e s!"assert_{l}" md
+  | .assume l e md => collectPrecondAssertCmds F e s!"assume_{l}" md
+  | .cover l e md => collectPrecondAssertCmds F e s!"cover_{l}" md
+
 def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
   (cmd : Imperative.Cmd Expression) : List Statement :=
-  match cmd with
-  | .init _ _ (.det e) md => collectPrecondAsserts F e "init" md
-  | .init _ _ .nondet _ => []
-  | .set x (.det e) md => collectPrecondAsserts F e s!"set_{x.name}" md
-  | .set _ .nondet _ => []
-  | .assert l e md => collectPrecondAsserts F e s!"assert_{l}" md
-  | .assume l e md => collectPrecondAsserts F e s!"assume_{l}" md
-  | .cover l e md => collectPrecondAsserts F e s!"cover_{l}" md
+  cmdsToStatements (collectCmdPrecondAssertCmds F cmd)
 
 /--
 Collect assertions for call arguments.
 -/
+def collectCallPrecondAssertCmds (F : @Lambda.Factory CoreLParams) (pname : String)
+  (args : List Expression.Expr) (md : Imperative.MetaData Expression)
+  : List (Imperative.Cmd Expression) :=
+  args.flatMap fun arg => collectPrecondAssertCmds F arg s!"call_{pname}_arg" md
+
 def collectCallPrecondAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
   (args : List Expression.Expr) (md : Imperative.MetaData Expression)
   : List Statement :=
-  args.flatMap fun arg => collectPrecondAsserts F arg s!"call_{pname}_arg" md
+  cmdsToStatements (collectCallPrecondAssertCmds F pname args md)
 
 /-! ## Processing contract conditions -/
 
@@ -340,6 +353,46 @@ def transformStmt (s : Statement)
   decreasing_by all_goals term_by_mem
 end
 
+/-! ## CFG transformation -/
+
+/-- Transform a single command in a CFG block, prepending precondition asserts. -/
+def transformCFGCmd (F : @Lambda.Factory CoreLParams) (cmd : Command)
+    : Bool × List Command :=
+  match cmd with
+  | .cmd c =>
+    let asserts := collectCmdPrecondAssertCmds F c
+    (!asserts.isEmpty, cmdsToCommands asserts ++ [.cmd c])
+  | .call pname callArgs md =>
+    let asserts := collectCallPrecondAssertCmds F pname (CallArg.getInputExprs callArgs) md
+    (!asserts.isEmpty, cmdsToCommands asserts ++ [.call pname callArgs md])
+
+/-- Transform all commands in a CFG block. -/
+def transformCFGCmds (F : @Lambda.Factory CoreLParams) (cmds : List Command)
+    : Bool × List Command :=
+  cmds.foldl (fun (changed, acc) cmd =>
+    let (c, cmds') := transformCFGCmd F cmd
+    (changed || c, acc ++ cmds')) (false, [])
+
+/-- Transform a DetBlock: transform commands and add asserts for the transfer condition. -/
+def transformDetBlock (F : @Lambda.Factory CoreLParams)
+    (blk : Imperative.DetBlock String Command Expression)
+    : Bool × Imperative.DetBlock String Command Expression :=
+  let (changed, cmds') := transformCFGCmds F blk.cmds
+  let (transferChanged, transferAsserts) := match blk.transfer with
+    | .condGoto cond _ _ md =>
+      let asserts := collectPrecondAssertCmds F cond "branch_cond" md
+      (!asserts.isEmpty, cmdsToCommands asserts)
+    | .finish _ => (false, [])
+  (changed || transferChanged, ⟨cmds' ++ transferAsserts, blk.transfer⟩)
+
+/-- Transform an entire DetCFG. -/
+def transformDetCFG (F : @Lambda.Factory CoreLParams) (cfg : DetCFG)
+    : Bool × DetCFG :=
+  let (changed, blocks') := cfg.blocks.foldl (fun (changed, acc) (label, blk) =>
+    let (c, blk') := transformDetBlock F blk
+    (changed || c, acc ++ [(label, blk')])) (false, [])
+  (changed, { cfg with blocks := blocks' })
+
 /-! ## Main transformation -/
 
 /-- Add a precondition-WF procedure as a leaf node in the cached call graph.
@@ -377,10 +430,15 @@ where
       match d with
       | .proc proc md => do
         let F ← getFactory
-        let bodyStmts := match proc.body with | .structured ss => ss | .cfg _ => []
-        let (changed, body') ← transformStmts bodyStmts
+        let (changed, body') ← match proc.body with
+          | .structured ss => do
+            let (c, ss') ← transformStmts ss
+            pure (c, Procedure.Body.structured ss')
+          | .cfg cfg =>
+            let (c, cfg') := transformDetCFG F cfg
+            pure (c, Procedure.Body.cfg cfg')
         setFactory F
-        let proc' := { proc with body := .structured body' }
+        let proc' := { proc with body := body' }
         let procDecl := Decl.proc proc' md
         let (changed', rest') ← transformDecls rest
         match mkContractWFProc F proc md with
