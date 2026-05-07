@@ -772,7 +772,7 @@ private def runCFG (cfg : Core.DetCFG) (fuel : Nat) (env : Env)
 where
   go (label : String) (fuel : Nat) (env : Env) : Env :=
     match fuel with
-    | 0 => env
+    | 0 => CmdEval.updateError env (.Misc s!"runCFG: fuel exhausted (possible infinite loop)")
     | fuel' + 1 =>
       match cfg.blocks.lookup label with
       | none => CmdEval.updateError env (.Misc s!"runCFG: block '{label}' not found in CFG")
@@ -786,7 +786,8 @@ where
             match ops.evalExpr env' cond with
             | some (.boolConst _ true) => go lt fuel' env'
             | some (.boolConst _ false) => go lf fuel' env'
-            | _ => env'
+            | _ => CmdEval.updateError env'
+                (.Misc s!"runCFG: branch condition in block '{label}' did not evaluate to a boolean")
         | _ => env
 
 /--
