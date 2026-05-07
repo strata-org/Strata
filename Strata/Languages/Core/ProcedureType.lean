@@ -111,16 +111,14 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
 
   -- Type check body.
   -- Note that `Statement.typeCheck` already reports source locations in
-  -- Type check body.
-  let bodyStmts := match proc.body with
-    | .structured ss => ss
-  -- For now, we skip checking CFG bodies
-  -- potential TODOs for CFGs:
+  -- error messages.
+  -- For now, we skip checking CFG bodies. Potential TODOs for CFGs:
   -- * verify block labels are unique
   -- * all variables used are declared/initialized
   -- * target labels of transfer commands exist
-    | .cfg _ => []
-  let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) bodyStmts
+  let (annotated_body, finalEnv) ← match proc.body with
+    | .structured ss => Statement.typeCheck C envAfterPostconds p (.some proc) ss
+    | .cfg _ => pure ([], envAfterPostconds)
 
   -- Remove formals and returns from the context -- they ought to be local to
   -- the procedure body.
@@ -135,7 +133,10 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                     outputs := out_mty_sig }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
                                    postconditions := finalPostconditions }
-  let new_proc := { proc with header := new_hdr, spec := new_spec, body := .structured annotated_body }
+  let new_body := match proc.body with
+    | .structured _ => .structured annotated_body
+    | .cfg c => .cfg c
+  let new_proc := { proc with header := new_hdr, spec := new_spec, body := new_body }
 
   return (new_proc, finalEnv)
 
