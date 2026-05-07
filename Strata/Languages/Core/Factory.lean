@@ -432,7 +432,9 @@ def seqLengthFunc : WFLFunc CoreLParams :=
     ])
 
 /- An empty `Sequence` constructor with type `∀a. Sequence a`.
-   `Sequence.empty<A>()` returns an empty sequence of element type `A`. -/
+   `Sequence.empty<A>()` returns an empty sequence of element type `A`.
+   The `<A>` is surface syntax produced by Grammar.lean and consumed by
+   Translate.lean; this function itself takes no value parameters. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [

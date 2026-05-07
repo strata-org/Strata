@@ -298,10 +298,11 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | .re .None => pure (.re_none default)
   | .seq .Empty => do
     match opTy with
-    | some (.tcons "Sequence" [elemTy]) =>
+    | some (Core.seqTy elemTy) =>
       let ety ← lmonoTyToCoreType elemTy
       pure (.seq_empty default ety)
-    | _ =>
+    | _ => do
+      ToCSTM.logError "handleZeroaryOps" "Sequence.empty missing or malformed op-type annotation" name
       let ety := CoreType.tvar default unknownTypeVar
       pure (.seq_empty default ety)
   | _ => do

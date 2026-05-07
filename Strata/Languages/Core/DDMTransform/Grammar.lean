@@ -103,6 +103,8 @@ fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
 
+// Unlike other seq_* ops, seq_empty has no value arguments from which DDM can
+// infer the element type, so the type argument must be explicit in surface syntax.
 fn seq_empty (A : Type) : Sequence A =>
   "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
