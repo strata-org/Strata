@@ -18,7 +18,8 @@ public static class BoogieToStrata {
 
         var options = new CommandLineOptions(Console.Out, new ConsolePrinter()) {
             Verify = false,
-            TypeEncodingMethod = CoreOptions.TypeEncoding.Predicates
+            TypeEncodingMethod = CoreOptions.TypeEncoding.Predicates,
+            InferModifies = true
         };
 
         var boogieEngine = ExecutionEngine.CreateWithoutSharedCache(options);
