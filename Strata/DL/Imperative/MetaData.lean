@@ -232,13 +232,21 @@ def MetaData.hasSatisfiabilityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData 
   | none => false
 
 def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
-  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
-  match fileRangeElement.value with
-    | .fileRange fileRange =>
-      some fileRange
+  -- Check provenance field first (preferred)
+  match md.findElem Imperative.MetaData.provenanceField with
+  | some elem =>
+    match elem.value with
+    | .provenance p => p.toFileRange
     | _ => none
+  | none =>
+    -- Fall back to legacy fileRange field
+    let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+    match fileRangeElement.value with
+      | .fileRange fileRange =>
+        some fileRange
+      | _ => none
 
-/-- Get the provenance from metadata, checking both the new "provenance" field
+/-- Get the provenance from metadata, checking both the "provenance" field
 and the legacy "fileRange" field for backward compatibility. -/
 def getProvenance {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option Provenance := do
   match md.findElem Imperative.MetaData.provenanceField with
@@ -248,8 +256,10 @@ def getProvenance {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option Proven
     | _ => none
   | none =>
     -- Fall back to legacy fileRange field
-    let fr ← getFileRange md
-    some (Provenance.ofFileRange fr)
+    let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+    match fileRangeElement.value with
+      | .fileRange fr => some (Provenance.ofFileRange fr)
+      | _ => none
 
 /-- Create metadata with a provenance element. -/
 def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
@@ -259,12 +269,9 @@ def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
 def MetaData.synthesized {P : PureExpr} (origin : String) : MetaData P :=
   MetaData.ofProvenance (.synthesized origin)
 
-/-- Create metadata from a source range and URI, storing both the legacy fileRange
-and the new provenance element for backward compatibility. -/
+/-- Create metadata from a source range and URI, storing provenance. -/
 def MetaData.ofSourceRange {P : PureExpr} (uri : Uri) (sr : SourceRange) : MetaData P :=
-  let prov := Provenance.ofSourceRange uri sr
-  #[⟨MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩,
-    ⟨MetaData.provenanceField, .provenance prov⟩]
+  MetaData.ofProvenance (Provenance.ofSourceRange uri sr)
 
 /-- Create a DiagnosticModel from metadata and a message.
     Uses provenance or file range from metadata if available, otherwise uses a default location. -/
@@ -316,12 +323,13 @@ def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
   | some csRange, some origRange =>
     let existingRelated := getRelatedFileRanges md
     let md := md.eraseElem MetaData.fileRange
+    let md := md.eraseElem MetaData.provenanceField
     let md := md.eraseAllElems MetaData.relatedFileRange
-    let md := md.pushElem MetaData.fileRange (.fileRange csRange)
+    let md := md.pushElem MetaData.provenanceField (.provenance (Provenance.ofFileRange csRange))
     let md := md.pushElem MetaData.relatedFileRange (.fileRange origRange)
     existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.fileRange fr)) md
   | some csRange, none =>
-    md.pushElem MetaData.fileRange (.fileRange csRange)
+    md.pushElem MetaData.provenanceField (.provenance (Provenance.ofFileRange csRange))
   | none, _ => md
 
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/

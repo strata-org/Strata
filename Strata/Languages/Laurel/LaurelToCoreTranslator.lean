@@ -44,7 +44,7 @@ open Lambda (LMonoTy LTy LExpr)
 public section
 
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
-  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+  Imperative.MetaData.synthesized "laurel-to-core"
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
