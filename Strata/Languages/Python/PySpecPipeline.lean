@@ -259,9 +259,6 @@ public def readDispatchOverloads
     (dispatchPaths : Array String) : EIO Unit OverloadTable :=
   readDispatchOverloadsM dispatchPaths |>.run ctx
 
-/-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
-    `buildPySpecLaurel`.  Returns `none` (with a warning) if the name is
-    invalid or the pyspec file is not found. -/
 /-- Resolve a parsed module name to its spec prefix and .ion path.
     Returns `none` if the file is not found on disk. -/
 private def resolveModuleEntry (mod : Python.Specs.ModuleName) (specDir : System.FilePath)
@@ -281,12 +278,11 @@ private def resolveModules (modules : Array String) (specDir : System.FilePath)
     | .error _ =>
       emitMessage .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
     | .ok mod =>
-      match ← resolveModuleEntry mod specDir with
-      | some entry =>
-        entries := entries.push entry
-      | none =>
-        emitMessage .missingPySpecModule
-          s!"PySpec module '{modName}' not found in {specDir}" (file := specDir)
+      let some entry ← resolveModuleEntry mod specDir
+        | emitMessage .missingPySpecModule
+            s!"PySpec module '{modName}' not found in {specDir}" (file := specDir)
+          continue
+      entries := entries.push entry
   return entries
 
 
