@@ -88,7 +88,8 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
     (exprFromCore arg).bind fun argB3 =>
     Except.ok (.functionCall sr ⟨sr, name.name⟩ ⟨sr, #[argB3]⟩)
   | Lambda.LExpr.app _ (Lambda.LExpr.fvar _ name _) firstArg =>
-    -- Multi-arg function call: f(arg1, arg2, ...)
+    -- Multi-arg function call: f(arg1, arg2)
+    -- TODO: Only handles 2-argument calls. 3+ argument calls (nested app) fall through to error.
     (exprFromCore firstArg).bind fun firstB3 =>
     (exprFromCore arg).bind fun argB3 =>
     Except.ok (.functionCall sr ⟨sr, name.name⟩ ⟨sr, #[firstB3, argB3]⟩)

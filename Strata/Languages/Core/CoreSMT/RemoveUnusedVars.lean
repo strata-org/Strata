@@ -70,7 +70,11 @@ end
 mutual
 /-- Remove unused init statements from a statement. -/
 partial def removeUnusedVarsStmt : Core.Statement → Core.Statement
-  | .block _label stmts _md => .ite .nondet (removeUnusedVarsStmts stmts) [] .empty
+  | .block _label stmts _md =>
+    -- Convert block to ite nondet: CoreSMT uses push/pop (ite nondet) for scoping.
+    -- Blocks are sequential in Core but CoreSMT processes them identically to
+    -- ite nondet branches (both are processed sequentially via processStatements).
+    .ite .nondet (removeUnusedVarsStmts stmts) [] .empty
   | .ite cond thenB elseB md =>
     .ite cond (removeUnusedVarsStmts thenB) (removeUnusedVarsStmts elseB) md
   | .loop guard measure invs body md =>

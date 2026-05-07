@@ -75,6 +75,8 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
     checkSat := do
       (Solver.checkSat []).run (← solverRef.get) >>= fun (d, _) => pure d
     checkSatAssuming := fun assumptions => do
+      -- NOTE: This bypasses Solver.checkSat logging. Future work should unify
+      -- with the Solver module's logging/tracing infrastructure.
       let s ← solverRef.get
       let assumptionStrs ← assumptions.mapM fun a =>
         match termToString a with
@@ -91,8 +93,12 @@ def mkSolverInterfaceFromSolver (solver : Solver) : IO SolverInterface := do
         | "unsat"   => return .unsat
         | "unknown" => return .unknown
         | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
-      | .none => return .unsat  -- Buffer solver: assume proved (no diagnosis)
+      | .none => return .unsat  -- Buffer solver: no actual solver, returns unsat to skip diagnosis.
+                                 -- TODO: Consider returning .unknown to avoid masking failures.
     getModel := fun vars => do
+      -- NOTE: Returns the raw SMT-LIB response line for each variable rather
+      -- than parsing individual values. Sufficient for current diagnostics;
+      -- proper parsing can be added when model extraction is needed.
       let s ← solverRef.get
       let varsStr := String.intercalate " " vars
       s.smtLibInput.putStr s!"(get-value ({varsStr}))\n"

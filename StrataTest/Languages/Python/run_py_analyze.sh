@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--incremental] [--update] [--filter <pattern>] [--vc-directory <dir>]
+# Usage: ./run_py_analyze.sh [--incremental] [--update] [--filter <pattern>] [--vc-directory <dir>]
 # Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
 # With --incremental, use pyAnalyzeLaurel --incremental
 # With --update, overwrite existing expected files with actual output
@@ -17,7 +17,6 @@
 failed=0
 update=0
 incremental=false
-mode="laurel"
 filter=""
 vc_directory=""
 
@@ -29,29 +28,19 @@ while [ $# -gt 0 ]; do
         --vc-directory) vc_directory="$2"; shift ;;
         --pending) pending=1 ;;
         --check-pending) pending=1; check_pending=1 ;;
-        laurel) ;; # accepted for backward compatibility
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
     shift
 done
 
-if [ "$mode" = "laurel" ]; then
+if [ "$incremental" = true ]; then
+    command="pyAnalyzeLaurel --incremental"
+    expected_dir="expected_incremental"
+    skip_tests=""
+else
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
     skip_tests=""
-    if [ "$incremental" = true ]; then
-        command="$command --incremental"
-        expected_dir="expected_incremental"
-        skip_tests=""
-    fi
-else
-    command="pyAnalyze"
-    expected_dir="expected_non_laurel"
-    skip_tests=""
-    if [ "$incremental" = true ]; then
-        echo "Error: --incremental requires laurel mode"
-        exit 1
-    fi
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)

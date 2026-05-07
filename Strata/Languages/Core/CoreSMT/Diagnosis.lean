@@ -93,9 +93,12 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
   | some (lhs, rhs) =>
     let leftResult ← diagnoseFailure state E lhs isReachCheck smtCtx pathCondition
     if isReachCheck then
+      -- For reach checks, if left is refuted, the whole conjunction is unreachable
       let leftRefuted := leftResult.diagnosedFailures.any (·.isRefuted)
       if leftRefuted then
         return { diagnosedFailures := leftResult.diagnosedFailures }
+    -- For assert checks, diagnose both sides to report all failing conjuncts.
+    -- The right side is diagnosed under the assumption that lhs holds (path condition).
     match translateExpr E lhs smtCtx with
     | Except.error _ =>
       return { diagnosedFailures := leftResult.diagnosedFailures }

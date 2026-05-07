@@ -73,9 +73,7 @@ def checkCoreSMTCmd : Core.Command → Except String Unit
   | .cmd (.set _ (.det _) _)   => .error "assignment (set) is not in the CoreSMT subset"
   | .call _ _ _              => .error "procedure call is not in the CoreSMT subset"
 
-/-- Boolean version for backward compatibility -/
-def isCoreSMTCmd (c : Core.Command) : Bool :=
-  (checkCoreSMTCmd c).isOk
+
 
 mutual
 /-- Check a statement is in the CoreSMT subset. -/
@@ -95,12 +93,6 @@ def checkCoreSMTStmts : Core.Statements → Except String Unit
   | s :: ss => do checkCoreSMTStmt s; checkCoreSMTStmts ss
 end
 
-/-- Boolean version for backward compatibility -/
-def isCoreSMTStmt (s : Core.Statement) : Bool :=
-  (checkCoreSMTStmt s).isOk
 
-/-- Boolean version for backward compatibility -/
-def isCoreSMTStmts (ss : Core.Statements) : Bool :=
-  (checkCoreSMTStmts ss).isOk
 
 end Strata.Core.CoreSMT

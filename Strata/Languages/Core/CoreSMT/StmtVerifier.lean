@@ -34,7 +34,8 @@ open Lambda
 open Imperative
 
 /-- Run a verification check with dual outcomes (satisfiability + validity).
-    Which checks run depends on checkMode and checkLevel from config options. -/
+    Which checks run depends on checkMode and checkLevel from config options.
+    Returns the CoreSMTResult and updated SMT context. -/
 private def runCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr) (property : Imperative.PropertyType)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
@@ -74,16 +75,19 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
       pure none
     return ({ obligation, satResult := satDecision, valResult := valDecision, diagnosisInfo := diagnosis }, smtCtx)
 
+/-- Check an assertion (validity check: negation must be unsat). -/
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty) :=
   runCheck state E label expr .assert smtCtx md
 
+/-- Check a cover property (satisfiability check: expression must be sat). -/
 private def coverCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty) :=
   runCheck state E label expr .cover smtCtx md
 
+/-- Process a function declaration: translate to SMT declare-fun or define-fun. -/
 private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
     (decl : Imperative.PureFunc Core.Expression) (smtCtx : Core.SMT.Context)
     : IO (CoreSMTState × Core.SMT.Context × List CoreSMTResult) := do
@@ -229,7 +233,9 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     }
     return (state, smtCtx, [{ obligation, error := some "Unexpected statement" }])
 
-/-- Process a list of CoreSMT statements sequentially -/
+/-- Process a list of CoreSMT statements sequentially.
+    TODO(PR 509): After call elimination, convert a full program into an SMT
+    statement that can be processed — every procedure independently. -/
 partial def processStatements (initialState : CoreSMTState) (E : Core.Env)
     (stmts : List Core.Statement) (smtCtx : Core.SMT.Context)
     : IO (CoreSMTState × Core.SMT.Context × List CoreSMTResult) := do
@@ -242,8 +248,12 @@ partial def processStatements (initialState : CoreSMTState) (E : Core.Env)
     state := state'
     smtCtx := smtCtx'
     results := results ++ stmtResults
-    -- If not accumulating errors and we got a failure, stop
-    let shouldStop := !accumulateErrors && stmtResults.any (fun r => r.error.isSome || r.valResult == .sat)
+    -- Stop early on failure: for assert, valResult == .sat means counterexample;
+    -- for cover, satResult == .unsat means unreachable.
+    let shouldStop := !accumulateErrors && stmtResults.any (fun r =>
+      r.error.isSome ||
+      (r.obligation.property == .cover && r.satResult == .unsat) ||
+      (r.obligation.property != .cover && r.valResult == .sat))
     if shouldStop then
       return (state, smtCtx, results)
   return (state, smtCtx, results)
