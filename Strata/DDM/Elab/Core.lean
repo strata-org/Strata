@@ -112,8 +112,9 @@ def applyNArgs (tctx : TypingContext) (e : TypeExpr) (n : Nat) := aux #[] e
       match tctx.hnf e with
       | .arrow _ a r => aux (args.push a) r
       | .tvar ann _ =>
-        let tvars := Array.replicate (n - args.size) (TypeExprF.skip ann)
-        .ok (⟨args ++ tvars, by simp [tvars]; omega⟩, .skip ann)
+        let placeholder := .placeholder ann
+        let tvars := Array.replicate (n - args.size) placeholder
+        .ok (⟨args ++ tvars, by simp [tvars]; omega⟩, placeholder)
       | e => .error (args, e)
     else
       if argsGt : args.size > n then
@@ -1264,13 +1265,16 @@ partial def runSyntaxElaborator
   -- Fill unfilled type parameter slots with skip types when type checking is skipped.
   if !(← read).typecheck then
     for i in Fin.range argc do
-      if trees[i].isNone then
-        if isTypeP i then
-          let loc := SourceRange.none
-          let info : TypeInfo := {
-            loc, inputCtx := tctx0, typeExpr := .skip loc, isInferred := true
-          }
-          trees := trees.set i (some (.node (.ofTypeInfo info) #[]))
+      if trees[i].isNone ∧ isTypeP i then
+        let loc := SourceRange.none
+        -- Synthesisze placeholder type expr.
+        let info : TypeInfo := {
+          loc,
+          inputCtx := tctx0,
+          typeExpr := .placeholder loc,
+          isInferred := true
+        }
+        trees := trees.set i (some (.node (.ofTypeInfo info) #[]))
   return trees.map (·.getD default)
 
 /--

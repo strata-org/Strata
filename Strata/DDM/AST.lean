@@ -114,7 +114,7 @@ deriving BEq, Inhabited, Repr
 namespace TypeExprF
 
 /-- An anonymous type placeholder used when type checking is skipped. -/
-def skip {α} (loc : α) : TypeExprF α := .tvar loc ""
+def placeholder {α} (loc : α) : TypeExprF α := .tvar loc ""
 
 def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann

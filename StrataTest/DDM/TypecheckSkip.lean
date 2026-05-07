@@ -111,7 +111,6 @@ op command_procedure (name : Ident,
                       @[scope(b)] body : Block) :
   Command =>
   "procedure " name b " returns ()\n" body ";\n";
-
 #end
 
 ---------------------------------------------------------------------
