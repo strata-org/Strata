@@ -234,11 +234,11 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
 
 /-- Read PySpec Ion files and collect their Laurel declarations and overload
     tables into a single combined result. -/
-public def buildPySpecLaurel (pyspecEntries : Array (String × String))
-    (overloads : OverloadTable)
-    : BaseIO (PySpecLaurelResult × Pipeline.PipelineState) := do
-  let ctx ← defaultPipelineContext
-  Pipeline.PipelineM.run' (buildPySpecLaurelM pyspecEntries overloads) ctx
+public def buildPySpecLaurel
+    (ctx : Pipeline.PipelineContext)
+    (pyspecEntries : Array (String × String))
+    (overloads : OverloadTable) : BaseIO PySpecLaurelResult :=
+  buildPySpecLaurelM pyspecEntries overloads |>.run ctx
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 private def readDispatchOverloadsM
@@ -259,10 +259,9 @@ private def readDispatchOverloadsM
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
-    (dispatchPaths : Array String)
-    : BaseIO (OverloadTable × Pipeline.PipelineState) := do
-  let ctx ← defaultPipelineContext
-  Pipeline.PipelineM.run' (readDispatchOverloadsM dispatchPaths) ctx
+    (ctx : Pipeline.PipelineContext)
+    (dispatchPaths : Array String) : BaseIO OverloadTable :=
+  readDispatchOverloadsM dispatchPaths |>.run ctx
 
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` (with a warning) if the name is
@@ -544,12 +543,12 @@ public def pythonAndSpecToLaurel
     | .error msg => return .failure (.internal msg) #[]
 
   let ctx ← defaultPipelineContext
-  let (result, pipelineState) ←
-    profileStep profile "Resolve and build Laurel prelude"
-      (Pipeline.PipelineM.run' (resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir) ctx)
-  let pyspecWarnings := pipelineState.messages
+  let result ←
+    profileStep profile "Resolve and build Laurel prelude" $
+      resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir |>.run ctx
+  let pyspecWarnings ← ctx.messagesRef.get
 
-  if pipelineState.shouldAbort then
+  if ← ctx.shouldAbortRef.get then
     return .failure (.internal "Pipeline aborted due to fatal errors") pyspecWarnings
 
   let preludeInfo := buildPreludeInfo result

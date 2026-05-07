@@ -49,18 +49,14 @@ public structure PyAnalyzeResult where
   timing : Array PhaseTimingEntry := #[]
   laurelPassStats : Statistics := {}
 
-private def runPipeline (filePath : String) (specDir : System.FilePath)
-    (dispatchModules : Array String) (pyspecModules : Array String)
-    (sourcePath : Option String) (profile : Bool)
-    (keepAllFilesPrefix : Option String) (verifyOptions : Core.VerifyOptions)
-    (entryPoint : Core.EntryPoint) (isBugFinding : Bool)
-    (skipVerification : Bool)
+private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
   -- Phase 0-3: Python + PySpec → Laurel
   startPhase (Phase.base "pythonAndSpecToLaurel" 0)
-  let pipelineResult ← Strata.pythonAndSpecToLaurel (specDir := specDir)
-        filePath dispatchModules pyspecModules sourcePath
-        (profile := profile)
+  let pipelineResult ← Strata.pythonAndSpecToLaurel
+        (specDir := config.specDir)
+        config.filePath config.dispatchModules config.pyspecModules config.sourcePath
+        (profile := config.profile)
   Strata.addMessages pipelineResult.warnings
 
   let combinedLaurel ← match pipelineResult with
@@ -76,8 +72,8 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
   startPhase (Phase.base "laurelToCore" 5)
   let (coreProgramOption, laurelTranslateErrors, _, laurelPassStats) ←
     match ← (Strata.translateCombinedLaurelWithLowered combinedLaurel
-      (keepAllFilesPrefix := keepAllFilesPrefix)
-      (profile := profile)).toBaseIO with
+      (keepAllFilesPrefix := config.keepAllFilesPrefix)
+      (profile := config.profile)).toBaseIO with
     | .ok r => pure r
     | .error e =>
       return (PyAnalyzeOutcome.internalError s!"Laurel translation error: {e}", {})
@@ -92,26 +88,26 @@ private def runPipeline (filePath : String) (specDir : System.FilePath)
         s!"Laurel to Core translation failed: {laurelTranslateErrors}", laurelPassStats)
 
   -- Skip verification if requested
-  if skipVerification then
+  if config.skipVerification then
     return (PyAnalyzeOutcome.verified #[] coreProgram, laurelPassStats)
 
   -- Phase 7: SMT Verification
   startPhase (Phase.base "verification" 7)
-  let userSourcePath := sourcePath.getD filePath
+  let userSourcePath := config.sourcePath.getD config.filePath
   let (_, userProcNames) := Strata.splitProcNames coreProgram [userSourcePath]
   let (proceduresToVerify, inlinePhases) :=
-    if isBugFinding then
+    if config.isBugFinding then
       let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases
-        coreProgram userProcNames entryPoint
+        coreProgram userProcNames config.entryPoint
       (p, [i])
     else (userProcNames, [])
 
-  let vcResults ← match ← Strata.Core.verifyProgram coreProgram verifyOptions
+  let vcResults ← match ← Strata.Core.verifyProgram coreProgram config.verifyOptions
         (moreFns := Strata.Python.ReFactory)
         (proceduresToVerify := some proceduresToVerify)
         (externalPhases := [Strata.frontEndPhase])
         (prefixPhases := inlinePhases)
-        (keepAllFilesPrefix := keepAllFilesPrefix)
+        (keepAllFilesPrefix := config.keepAllFilesPrefix)
         |>.toBaseIO with
     | .ok r => pure r.mergeByAssertion
     | .error msg =>
@@ -139,20 +135,10 @@ public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO PyAnalyzeResult 
   let ctx ← PipelineContext.create
     (outputMode := config.outputMode)
     (skipTiming := config.skipTiming)
-  let ((outcome, stats), state) ← PipelineM.run' (runPipeline
-    (PyAnalyzeConfig.filePath config)
-    (PyAnalyzeConfig.specDir config)
-    (PyAnalyzeConfig.dispatchModules config)
-    (PyAnalyzeConfig.pyspecModules config)
-    (PyAnalyzeConfig.sourcePath config)
-    (PyAnalyzeConfig.profile config)
-    (PyAnalyzeConfig.keepAllFilesPrefix config)
-    (PyAnalyzeConfig.verifyOptions config)
-    (PyAnalyzeConfig.entryPoint config)
-    (PyAnalyzeConfig.isBugFinding config)
-    (PyAnalyzeConfig.skipVerification config)) ctx
-  let warnings := PipelineState.messages state
-  let timing := PipelineState.timing state
+  let (outcome, stats) ← runPipeline config |>.run ctx
+  ctx.endCurrentPhase
+  let warnings ← ctx.messagesRef.get
+  let timing ← ctx.timingRef.get
   return { outcome, warnings, timing, laurelPassStats := stats }
 
 end Strata.Pipeline

@@ -260,12 +260,6 @@ structure PhaseTimingEntry where
   end_ns : Option Nat := none
   timeout : Bool := false
 
-/-- Snapshot of pipeline state at completion. Returned by `PipelineM.run'`. -/
-structure PipelineState where
-  messages : Array PipelineMessage := #[]
-  shouldAbort : Bool := false
-  timing : Array PhaseTimingEntry := #[]
-
 /-- Pipeline context carrying immutable config and mutable state as individual IORefs.
     This design allows any monad with BaseIO access to use pipeline capabilities
     by passing a PipelineContext value directly. -/
@@ -336,21 +330,6 @@ public def startPhase (phase : Phase) : PipelineM Unit := do
   let ctx ← read
   ctx.startPhase phase
 
-/-- Collect the current state into a PipelineState snapshot. -/
-def PipelineContext.getState (ctx : PipelineContext) : BaseIO PipelineState := do
-  let messages ← ctx.messagesRef.get
-  let shouldAbort ← ctx.shouldAbortRef.get
-  let timing ← ctx.timingRef.get
-  return { messages, shouldAbort, timing }
-
-/-- Create a fresh PipelineContext, run an action, close open phases,
-    and return the result along with the final state snapshot. -/
-public def PipelineM.run' (action : PipelineM α) (ctx : PipelineContext)
-    : BaseIO (α × PipelineState) := do
-  let result ← action.run ctx
-  ctx.endCurrentPhase
-  let finalState ← ctx.getState
-  return (result, finalState)
 
 /-- Create a fresh PipelineContext with new state refs. -/
 public def PipelineContext.create (outputMode : OutputMode := .default)

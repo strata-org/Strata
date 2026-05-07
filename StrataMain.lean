@@ -918,7 +918,8 @@ def pyResolveOverloadsCommand : Command where
     let pythonFile : System.FilePath := v[0]
     let dispatchPath := v[1]
     -- Read dispatch overload table
-    let (overloads, _) ← readDispatchOverloads #[dispatchPath]
+    let pctx ← Strata.Pipeline.PipelineContext.create
+    let overloads ← readDispatchOverloads pctx #[dispatchPath]
     -- Convert .py to Python AST
     let stmts ←
       IO.FS.withTempFile fun _handle dialectFile => do
