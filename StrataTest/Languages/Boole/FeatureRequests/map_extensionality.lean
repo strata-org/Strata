@@ -105,4 +105,5 @@ private def expectedQuantifiedMapExtensionalityCapture : Core.Expression.Expr :=
     (.quant Strata.SourceRange.none .all "" (some mapIntInt) (.bvar Strata.SourceRange.none 0)
       (.quant Strata.SourceRange.none .all "" (some .int) lhs (.eq Strata.SourceRange.none lhs rhs)))
 
-#guard loweredQuantifiedMapExtensionalityCapture? == some expectedQuantifiedMapExtensionalityCapture
+#guard loweredQuantifiedMapExtensionalityCapture?.map Lambda.LExpr.eraseMetadata ==
+  some expectedQuantifiedMapExtensionalityCapture.eraseMetadata
