@@ -333,7 +333,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
     recordNanos (toString Timing.encodeSMT) timing do
       encodeSMT.run solver
   -- Merge encodeCore's internal timing into ours
-  let timing := encTiming.fold (init := timing) fun acc k v => acc.insert k v
+  let timing := TimingInfo.mergeAdd timing encTiming
 
   if printFilename then IO.println s!"Wrote problem to {filename}."
 

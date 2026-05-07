@@ -1156,9 +1156,7 @@ def verifySingleEnv (oblProgram : Program)
                     (varDefinitions := varDefs) (varDeclarations := varDecls)
       let t5 ← IO.monoNanosNow
       timingNs := timingNs.add (toString Verifier.Timing.solverFileWriting) (t5 - t4)
-
-      for (key, val) in timing do
-        timingNs := timingNs.add key val
+      timingNs := TimingInfo.mergeAdd timingNs timing
 
       -- Merge evaluator results with solver results
       let result := match result.outcome with

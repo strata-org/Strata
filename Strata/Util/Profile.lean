@@ -6,6 +6,7 @@
 module
 
 public import Std.Data.HashMap.Basic
+import Std.Data.HashMap.Lemmas
 
 /-- A map from timing label to elapsed nanoseconds. -/
 public abbrev TimingInfo := Std.HashMap String Nat
@@ -13,6 +14,19 @@ public abbrev TimingInfo := Std.HashMap String Nat
 /-- Accumulate nanoseconds into an existing key (defaulting to 0). -/
 @[inline] public def TimingInfo.add (t : TimingInfo) (key : String) (ns : Nat) : TimingInfo :=
   t.insert key (t.getD key 0 + ns)
+
+/-- Merge `b` into `a` by summing values for overlapping keys. -/
+@[inline] public def TimingInfo.mergeAdd (a b : TimingInfo) : TimingInfo :=
+  b.fold (init := a) fun acc k v => acc.add k v
+
+theorem TimingInfo.add_getD_self (t : TimingInfo) (k : String) (v : Nat) :
+    (t.add k v).getD k 0 = t.getD k 0 + v := by
+  simp [TimingInfo.add]
+
+theorem TimingInfo.add_getD_of_ne (t : TimingInfo) (k k' : String) (v : Nat)
+    (h : k ≠ k') : (t.add k v).getD k' 0 = t.getD k' 0 := by
+  simp [TimingInfo.add, Std.HashMap.getD_insert, h]
+
 
 @[inline] public def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
 
