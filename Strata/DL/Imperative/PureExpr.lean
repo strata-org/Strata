@@ -49,10 +49,9 @@ class HasBool (P : PureExpr) where
   ff : P.Expr
   tt_is_not_ff: tt ≠ ff
   boolTy : P.Ty
-  /-- Returns true if the expression is a true boolean value (ignoring metadata). -/
-  isTrue : P.Expr → Bool
-  /-- Returns true if the expression is a false boolean value (ignoring metadata). -/
-  isFalse : P.Expr → Bool
+  /-- Check if an expression represents `true`. Defaults to `e == tt` but
+      implementations may override to ignore metadata. -/
+  isTt : [BEq P.Expr] → P.Expr → Bool := fun e => e == tt
 
 class HasNot (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr

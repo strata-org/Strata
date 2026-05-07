@@ -25,7 +25,7 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving DecidableEq, Inhabited
+deriving DecidableEq, Inhabited, BEq
 
 /-- Compact repr: always displays as `()` to keep debug output readable.
     Source location info is available via `SourceRange.format`. -/
@@ -34,6 +34,7 @@ instance : Repr SourceRange where
 
 namespace SourceRange
 
+@[expose]
 def none : SourceRange := { start := 0, stop := 0 }
 
 def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0

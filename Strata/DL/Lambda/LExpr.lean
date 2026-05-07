@@ -231,6 +231,21 @@ instance {T: LExprParamsT} [DecidableEq T.base.Metadata] [DecidableEq T.TypeType
     else
       isFalse (fun heq => h (LExpr.beq_eq e1 e2 |>.mpr heq))
 
+/-- Structural equality ignoring metadata fields. Does not allocate intermediate expressions. -/
+def LExpr.beqIgnoringMetadata [BEq T.TypeType] [BEq (Identifier T.base.IDMeta)] : LExpr T → LExpr T → Bool
+  | .const _ c1, .const _ c2 => c1 == c2
+  | .op _ o1 ty1, .op _ o2 ty2 => o1 == o2 && ty1 == ty2
+  | .bvar _ i1, .bvar _ i2 => i1 == i2
+  | .fvar _ n1 ty1, .fvar _ n2 ty2 => n1 == n2 && ty1 == ty2
+  | .abs _ name1 ty1 e1, .abs _ name2 ty2 e2 => name1 == name2 && ty1 == ty2 && beqIgnoringMetadata e1 e2
+  | .quant _ k1 name1 ty1 tr1 e1, .quant _ k2 name2 ty2 tr2 e2 =>
+    k1 == k2 && name1 == name2 && ty1 == ty2 && beqIgnoringMetadata tr1 tr2 && beqIgnoringMetadata e1 e2
+  | .app _ fn1 e1, .app _ fn2 e2 => beqIgnoringMetadata fn1 fn2 && beqIgnoringMetadata e1 e2
+  | .ite _ c1 t1 f1, .ite _ c2 t2 f2 =>
+    beqIgnoringMetadata c1 c2 && beqIgnoringMetadata t1 t2 && beqIgnoringMetadata f1 f2
+  | .eq _ e1a e1b, .eq _ e2a e2b => beqIgnoringMetadata e1a e2a && beqIgnoringMetadata e1b e2b
+  | _, _ => false
+
 def LExpr.noTrigger {T : LExprParamsT} (m : T.base.Metadata) : LExpr T := .bvar m 0
 def LExpr.allTr {T : LExprParamsT} (m : T.base.Metadata) (name : String) (ty : Option T.TypeType) := @LExpr.quant T m .all name ty
 def LExpr.all {T : LExprParamsT} (m : T.base.Metadata) (name : String) (ty : Option T.TypeType) := @LExpr.quant T m .all name ty (LExpr.noTrigger m)

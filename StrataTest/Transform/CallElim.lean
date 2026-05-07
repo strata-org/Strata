@@ -222,14 +222,14 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[.assumption "callElimAssume_post" (.true Strata.SourceRange.none)]],
-    obligation := .true Strata.SourceRange.none, metadata := {} }
+    assumptions := [[.assumption "callElimAssume_post" Core.true]],
+    obligation := Core.true, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[.assumption "precond_x_positive" (.true Strata.SourceRange.none)]],
-    obligation := .true Strata.SourceRange.none, metadata := {} }
+    assumptions := [[.assumption "precond_x_positive" Core.true]],
+    obligation := Core.true, metadata := {} }
 
 -- callElimPipelinePhase: rejects sat when obligation has call-elim labels
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase] callElimObligation).1 == unknownResult

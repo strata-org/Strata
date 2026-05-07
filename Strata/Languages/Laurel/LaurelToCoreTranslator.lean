@@ -46,6 +46,13 @@ public section
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
+/-- Extract source location from an `AstNode` as an `ExprSourceLoc`,
+    preserving the URI when available. -/
+private def exprSourceLocOf (node : AstNode α) : ExprSourceLoc :=
+  match node.source with
+  | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
+  | none => ExprSourceLoc.synthesized "laurel"
+
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
 
@@ -127,12 +134,13 @@ private def freshId : TranslateM Nat := do
   set { s with nextId := id + 1 }
   return id
 
-/-- Throw a hard diagnostic error, aborting the current translation -/
+/-- Throw a hard diagnostic error, aborting the current translation.
+    The dummy variable has no source range because it is synthesized for error recovery. -/
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   modify fun s => { s with coreProgramHasSuperfluousErrors := true }
   let id ← freshId
-  return LExpr.fvar Strata.SourceRange.none (⟨s!"DUMMY_VAR_{id}", ()⟩) none
+  return LExpr.fvar (ExprSourceLoc.synthesized "laurel") (⟨s!"DUMMY_VAR_{id}", ()⟩) none
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
@@ -153,6 +161,7 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
+  let sr := exprSourceLocOf expr
   let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       throwExprDiagnostic $ diagnosticFromSource source msg
@@ -160,52 +169,52 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource source s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
 
   match h: expr.val with
-  | .LiteralBool b => return .const Strata.SourceRange.none (.boolConst b)
-  | .LiteralInt i => return .const Strata.SourceRange.none (.intConst i)
-  | .LiteralString s => return .const Strata.SourceRange.none (.strConst s)
-  | .LiteralDecimal d => return .const Strata.SourceRange.none (.realConst (Strata.Decimal.toRat d))
+  | .LiteralBool b => return .const sr (.boolConst b)
+  | .LiteralInt i => return .const sr (.intConst i)
+  | .LiteralString s => return .const sr (.strConst s)
+  | .LiteralDecimal d => return .const sr (.realConst (Strata.Decimal.toRat d))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
       | some idx =>
           -- Bound variable: use de Bruijn index
-          return .bvar Strata.SourceRange.none idx
+          return .bvar sr idx
       | none =>
         match model.get name with
         | .field _ f =>
-            return .op Strata.SourceRange.none ⟨f.name.text, ()⟩ none
+            return .op sr ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar Strata.SourceRange.none ⟨name.text, ()⟩ (some (← translateType astNode.getType))
+            return .fvar sr ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       throwExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
       let re ← translateExpr e boundVars isPureContext
-      return .app Strata.SourceRange.none boolNotOp re
+      return .app sr boolNotOp re
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
         | .TReal => true | _ => false
-      return .app Strata.SourceRange.none (if isReal then realNegOp else intNegOp) re
+      return .app sr (if isReal then realNegOp else intNegOp) re
     | _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
-      LExpr.mkApp Strata.SourceRange.none bop [re1, re2]
+      LExpr.mkApp sr bop [re1, re2]
     let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
       | .TReal, _ | _, .TReal => true
       | _, _ => false
     match op with
-    | .Eq => return .eq Strata.SourceRange.none re1 re2
-    | .Neq => return .app Strata.SourceRange.none boolNotOp (.eq Strata.SourceRange.none re1 re2)
+    | .Eq => return .eq sr re1 re2
+    | .Neq => return .app sr boolNotOp (.eq sr re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
-    | .AndThen => return .ite Strata.SourceRange.none re1 re2 (.boolConst Strata.SourceRange.none false)
-    | .OrElse => return .ite Strata.SourceRange.none re1 (.boolConst Strata.SourceRange.none true) re2
-    | .Implies => return .ite Strata.SourceRange.none re1 re2 (.boolConst Strata.SourceRange.none true)
+    | .AndThen => return .ite sr re1 re2 (.boolConst sr false)
+    | .OrElse => return .ite sr re1 (.boolConst sr true) re2
+    | .Implies => return .ite sr re1 re2 (.boolConst sr true)
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
@@ -233,16 +242,16 @@ def translateExpr (expr : StmtExprMd)
               have := AstNode.sizeOf_val_lt expr
               cases expr; simp_all; omega
             translateExpr e boundVars isPureContext
-      return .ite Strata.SourceRange.none bcond bthen belse
+      return .ite sr bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && !model.isFunction callee then
         disallowed expr.source "calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op Strata.SourceRange.none ⟨callee.text, ()⟩ none
+        let fnOp : Core.Expression.Expr := .op sr ⟨callee.text, ()⟩ none
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
-          return .app Strata.SourceRange.none acc re) fnOp
+          return .app sr acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
   | .Quantifier mode ⟨ name, ty ⟩ trigger body =>
       let coreTy ← translateType ty
@@ -251,19 +260,19 @@ def translateExpr (expr : StmtExprMd)
       | some trig =>
         let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
         match mode with
-        | .Forall => return LExpr.allTr Strata.SourceRange.none name.text (some coreTy) coreTrig coreBody
-        | .Exists => return LExpr.existTr Strata.SourceRange.none name.text (some coreTy) coreTrig coreBody
+        | .Forall => return LExpr.allTr sr name.text (some coreTy) coreTrig coreBody
+        | .Exists => return LExpr.existTr sr name.text (some coreTy) coreTrig coreBody
       | none =>
         match mode with
-        | .Forall => return LExpr.all Strata.SourceRange.none name.text (some coreTy) coreBody
-        | .Exists => return LExpr.exist Strata.SourceRange.none name.text (some coreTy) coreBody
+        | .Forall => return LExpr.all sr name.text (some coreTy) coreBody
+        | .Exists => return LExpr.exist sr name.text (some coreTy) coreBody
   | .Hole _ _ =>
       -- Holes should have been eliminated before translation.
       disallowed expr.source "holes should have been eliminated before translation"
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
-      return .eq Strata.SourceRange.none re1 re2
+      return .eq sr re1 re2
   | .Assign _ _ =>
       disallowed expr.source "destructive assignments are not supported in functions or contracts"
   | .While _ _ _ _ =>
@@ -280,7 +289,7 @@ def translateExpr (expr : StmtExprMd)
       let valueExpr ← translateExpr initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc } (name :: boundVars) isPureContext
       let coreMonoType ← translateType ty
-      return .app Strata.SourceRange.none (.abs Strata.SourceRange.none name.text (some coreMonoType) bodyExpr) valueExpr
+      return .app sr (.abs sr name.text (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label => do
     _ ← disallowed innerSrc "local variables in functions must have initializers"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
@@ -320,16 +329,17 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   s!"({fileRange.range.start})"
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
+  let sr := exprSourceLocOf ty
   match ty.val with
-  | .TInt => return .const Strata.SourceRange.none (.intConst 0)
-  | .TBool => return .const Strata.SourceRange.none (.boolConst false)
-  | .TString => return .const Strata.SourceRange.none (.strConst "")
+  | .TInt => return .const sr (.intConst 0)
+  | .TBool => return .const sr (.boolConst false)
+  | .TString => return .const sr (.strConst "")
   | _ =>
     -- For types without a natural default (arrays, composites, etc.),
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy ← translateType ty
-    return .fvar Strata.SourceRange.none (⟨"$default", ()⟩) (some coreTy)
+    return .fvar sr (⟨"$default", ()⟩) (some coreTy)
 
 /--
 Translate an expression in statement position into a `var $unused_N := expr` init.
@@ -596,9 +606,10 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Translate postconditions and trigger with the full bound-var context
   let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
-    | [] => .const Strata.SourceRange.none (.boolConst true)
+    -- Synthesized conjunction of postconditions
+    | [] => .const (ExprSourceLoc.synthesized "laurel") (.boolConst true)
     | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp Strata.SourceRange.none boolAndOp [acc, x]) e
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp (ExprSourceLoc.synthesized "laurel") boolAndOp [acc, x]) e
   let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
@@ -612,10 +623,16 @@ where
     match params with
     | [] => return body
     | [p] =>
-      return LExpr.allTr Strata.SourceRange.none p.name.text (some (← translateType p.type)) trigger body
+      let sr := match p.name.source with
+        | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
+        | none => ExprSourceLoc.synthesized "laurel"
+      return LExpr.allTr sr p.name.text (some (← translateType p.type)) trigger body
     | p :: rest => do
       let inner ← buildQuants rest body trigger
-      return LExpr.all Strata.SourceRange.none p.name.text (some (← translateType p.type)) inner
+      let sr := match p.name.source with
+        | some fr => ExprSourceLoc.ofUriRange fr.file fr.range
+        | none => ExprSourceLoc.synthesized "laurel"
+      return LExpr.all sr p.name.text (some (← translateType p.type)) inner
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
@@ -646,7 +663,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition.condition [] true
-    return { expr := checkExpr, md := Strata.SourceRange.none })
+    return { expr := checkExpr, md := exprSourceLocOf precondition.condition })
 
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument

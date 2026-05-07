@@ -6,6 +6,7 @@
 
 import Strata.MetaVerifier
 import Strata.Languages.Boole.Verify
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 open Strata
 open Lambda
@@ -82,7 +83,7 @@ spec {
 
 private def mkExprApp (f : Core.Expression.Expr) (args : List Core.Expression.Expr) :
     Core.Expression.Expr :=
-  Lambda.LExpr.mkApp Strata.SourceRange.none f args
+  Lambda.LExpr.mkApp (ExprSourceLoc.synthesized "test") f args
 
 private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.Expr := do
   let booleProg <- (Strata.Boole.getProgram quantifiedMapExtensionalityCaptureSeed).toOption
@@ -99,11 +100,10 @@ private def loweredQuantifiedMapExtensionalityCapture? : Option Core.Expression.
 
 private def expectedQuantifiedMapExtensionalityCapture : Core.Expression.Expr :=
   let mapIntInt := Core.mapTy .int .int
-  let lhs := mkExprApp Core.mapSelectOp [.bvar Strata.SourceRange.none 2, .bvar Strata.SourceRange.none 0]
-  let rhs := mkExprApp Core.mapSelectOp [.bvar Strata.SourceRange.none 1, .bvar Strata.SourceRange.none 0]
-  .quant Strata.SourceRange.none .all "" (some mapIntInt) (.bvar Strata.SourceRange.none 0)
-    (.quant Strata.SourceRange.none .all "" (some mapIntInt) (.bvar Strata.SourceRange.none 0)
-      (.quant Strata.SourceRange.none .all "" (some .int) lhs (.eq Strata.SourceRange.none lhs rhs)))
+  let lhs := mkExprApp Core.mapSelectOp [.bvar (ExprSourceLoc.synthesized "test") 2, .bvar (ExprSourceLoc.synthesized "test") 0]
+  let rhs := mkExprApp Core.mapSelectOp [.bvar (ExprSourceLoc.synthesized "test") 1, .bvar (ExprSourceLoc.synthesized "test") 0]
+  .quant (ExprSourceLoc.synthesized "test") .all "" (some mapIntInt) (.bvar (ExprSourceLoc.synthesized "test") 0)
+    (.quant (ExprSourceLoc.synthesized "test") .all "" (some mapIntInt) (.bvar (ExprSourceLoc.synthesized "test") 0)
+      (.quant (ExprSourceLoc.synthesized "test") .all "" (some .int) lhs (.eq (ExprSourceLoc.synthesized "test") lhs rhs)))
 
-#guard loweredQuantifiedMapExtensionalityCapture?.map Lambda.LExpr.eraseMetadata ==
-  some expectedQuantifiedMapExtensionalityCapture.eraseMetadata
+#guard (loweredQuantifiedMapExtensionalityCapture?.map (·.eraseMetadata)) == some expectedQuantifiedMapExtensionalityCapture.eraseMetadata

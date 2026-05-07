@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.SMTEncoder
 import Strata.Languages.Core.Verifier
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 /-! ## Tests for SMTEncoder -/
 
@@ -18,25 +19,25 @@ info: "(assert (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant Strata.SourceRange.none .all "n" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.quant Strata.SourceRange.none .exist "m" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
+  (.quant (ExprSourceLoc.synthesized "test") .all "n" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "m" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 1) (.bvar (ExprSourceLoc.synthesized "test") 0))))
 
 /--
 info: "; x\n(declare-const x Int)\n(assert (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none .exist "i" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "i" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 0) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int))))
 
 /--
 info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none  .exist "i" (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0))
-   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
+   (.quant (ExprSourceLoc.synthesized "test")  .exist "i" (.some .int) (.app (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))) (.bvar (ExprSourceLoc.synthesized "test") 0))
+   (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 0) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int))))
 
 
 /--
@@ -44,23 +45,23 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exis
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none .exist "i" (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0))
-   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "i" (.some .int) (.app (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))) (.bvar (ExprSourceLoc.synthesized "test") 0))
+   (.eq (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int))))
 
 /-- info: "Cannot encode expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none .exist "i" (.some .int) (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.none)) (.bvar Strata.SourceRange.none 0))
-   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "i" (.some .int) (.app (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "f" (.none)) (.bvar (ExprSourceLoc.synthesized "test") 0))
+   (.eq (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int))))
 
 /--
 info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none .exist "i" (.some .int)
-   (mkTriggerExpr [[.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))]])
-   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.fvar Strata.SourceRange.none "f" (.some (.arrow .int .int))) (.bvar Strata.SourceRange.none 0)) (.fvar Strata.SourceRange.none "x" (.some .int))))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "i" (.some .int)
+   (mkTriggerExpr [[.fvar (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))]])
+   (.eq (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int .int))) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int))))
    (ctx := SMT.Context.default)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -74,8 +75,8 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none .all "m" (.some .int) (.bvar Strata.SourceRange.none 0) (.quant Strata.SourceRange.none .all "n" (.some .int) (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1))
-   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1)) (.fvar Strata.SourceRange.none "x" (.some .int)))))
+   (.quant (ExprSourceLoc.synthesized "test") .all "m" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 0) (.quant (ExprSourceLoc.synthesized "test") .all "n" (.some .int) (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.bvar (ExprSourceLoc.synthesized "test") 1))
+   (.eq (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.bvar (ExprSourceLoc.synthesized "test") 1)) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -92,8 +93,8 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTCommandsWithAssert
-   (.quant Strata.SourceRange.none .all "m" (.some .int) (.bvar Strata.SourceRange.none 0) (.quant Strata.SourceRange.none .all "n" (.some .int) (.bvar Strata.SourceRange.none 0)
-   (.eq Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar Strata.SourceRange.none 0)) (.bvar Strata.SourceRange.none 1)) (.fvar Strata.SourceRange.none "x" (.some .int)))))
+   (.quant (ExprSourceLoc.synthesized "test") .all "m" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 0) (.quant (ExprSourceLoc.synthesized "test") .all "n" (.some .int) (.bvar (ExprSourceLoc.synthesized "test") 0)
+   (.eq (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar (ExprSourceLoc.synthesized "test") 0)) (.bvar (ExprSourceLoc.synthesized "test") 1)) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -114,9 +115,9 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n(asse
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
-    (.fvar Strata.SourceRange.none "i" (.some .int)))
+  (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.fvar (ExprSourceLoc.synthesized "test") "m" (.some (mapTy .int .int))))
+    (.fvar (ExprSourceLoc.synthesized "test") "i" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -131,10 +132,10 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-    (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
-    (.fvar Strata.SourceRange.none "i" (.some .int)))
-    (.fvar Strata.SourceRange.none "v" (.some .int)))
+  (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+    (.fvar (ExprSourceLoc.synthesized "test") "m" (.some (mapTy .int .int))))
+    (.fvar (ExprSourceLoc.synthesized "test") "i" (.some .int)))
+    (.fvar (ExprSourceLoc.synthesized "test") "v" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -149,12 +150,12 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-      (.fvar Strata.SourceRange.none "m" (.some (mapTy .int .int))))
-      (.fvar Strata.SourceRange.none "i" (.some .int)))
-      (.fvar Strata.SourceRange.none "v" (.some .int))))
-    (.fvar Strata.SourceRange.none "j" (.some .int)))
+  (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+      (.fvar (ExprSourceLoc.synthesized "test") "m" (.some (mapTy .int .int))))
+      (.fvar (ExprSourceLoc.synthesized "test") "i" (.some .int)))
+      (.fvar (ExprSourceLoc.synthesized "test") "v" (.some .int))))
+    (.fvar (ExprSourceLoc.synthesized "test") "j" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -169,8 +170,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none (.op Strata.SourceRange.none (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
-           (.fvar Strata.SourceRange.none (⟨"m", ()⟩) (.some (mapTy .int .int))))
+  (.app (ExprSourceLoc.synthesized "test") (.op (ExprSourceLoc.synthesized "test") (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
+           (.fvar (ExprSourceLoc.synthesized "test") (⟨"m", ()⟩) (.some (mapTy .int .int))))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -186,9 +187,9 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
 /-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant Strata.SourceRange.none .all "" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.quant Strata.SourceRange.none .exist "" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
+  (.quant (ExprSourceLoc.synthesized "test") .all "" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 1) (.bvar (ExprSourceLoc.synthesized "test") 0))))
 
 -- Test nested quantifiers with same user name get disambiguated human-readable names
 /--
@@ -196,9 +197,9 @@ info: "(assert (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.quant Strata.SourceRange.none .exist "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 1) (.bvar Strata.SourceRange.none 0))))
+  (.quant (ExprSourceLoc.synthesized "test") .all "x" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.quant (ExprSourceLoc.synthesized "test") .exist "x" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 1) (.bvar (ExprSourceLoc.synthesized "test") 0))))
 
 -- Test triply nested quantifiers all get distinct disambiguated human-readable names
 /--
@@ -206,10 +207,10 @@ info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-    (.quant Strata.SourceRange.none .all "x@1" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-     (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.bvar Strata.SourceRange.none 2)))))
+  (.quant (ExprSourceLoc.synthesized "test") .all "x" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.quant (ExprSourceLoc.synthesized "test") .all "x" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+    (.quant (ExprSourceLoc.synthesized "test") .all "x@1" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+     (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 0) (.bvar (ExprSourceLoc.synthesized "test") 2)))))
 
 
 /--
@@ -217,19 +218,19 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant Strata.SourceRange.none .all "x" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-   (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.fvar Strata.SourceRange.none "x" (.some .int))))
+  (.quant (ExprSourceLoc.synthesized "test") .all "x" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+   (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 0) (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .int))))
 
 -- Test that bound variable names are globally unique across multiple terms.
 -- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
 #guard
   match toSMTTerms Env.init [
     -- Term 1: ∀ x:Int. x = x
-    (.quant Strata.SourceRange.none .all "" (.some .int) (LExpr.noTrigger Strata.SourceRange.none)
-     (.eq Strata.SourceRange.none (.bvar Strata.SourceRange.none 0) (.bvar Strata.SourceRange.none 0))),
+    (.quant (ExprSourceLoc.synthesized "test") .all "" (.some .int) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+     (.eq (ExprSourceLoc.synthesized "test") (.bvar (ExprSourceLoc.synthesized "test") 0) (.bvar (ExprSourceLoc.synthesized "test") 0))),
     -- Term 2: ∀ y:Bool. y
-    (.quant Strata.SourceRange.none .all "" (.some .bool) (LExpr.noTrigger Strata.SourceRange.none)
-     (.bvar Strata.SourceRange.none 0))
+    (.quant (ExprSourceLoc.synthesized "test") .all "" (.some .bool) (LExpr.noTrigger (ExprSourceLoc.synthesized "test"))
+     (.bvar (ExprSourceLoc.synthesized "test") 0))
   ] SMT.Context.default with
   | .ok ([t1, t2], _) =>
     match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
@@ -246,7 +247,7 @@ info: "; x\n(declare-const x String)\n(assert (= x \"{\"\"key\"\":\"\"val\"\"}\"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.eq Strata.SourceRange.none (.fvar Strata.SourceRange.none "x" (.some .string)) (.strConst Strata.SourceRange.none "{\"key\":\"val\"}"))
+  (.eq (ExprSourceLoc.synthesized "test") (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .string)) (.strConst (ExprSourceLoc.synthesized "test") "{\"key\":\"val\"}"))
 
 -- Test that negative integer constants are lowered to (- N) form
 /-- info: Except.ok "(- 1)" -/
@@ -259,11 +260,11 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none
-    (.app Strata.SourceRange.none
-      (.op Strata.SourceRange.none "Real.Div" (.some (.arrow .real (.arrow .real .real))))
-      (.fvar Strata.SourceRange.none "x" (.some .real)))
-    (.fvar Strata.SourceRange.none "y" (.some .real)))
+  (.app (ExprSourceLoc.synthesized "test")
+    (.app (ExprSourceLoc.synthesized "test")
+      (.op (ExprSourceLoc.synthesized "test") "Real.Div" (.some (.arrow .real (.arrow .real .real))))
+      (.fvar (ExprSourceLoc.synthesized "test") "x" (.some .real)))
+    (.fvar (ExprSourceLoc.synthesized "test") "y" (.some .real)))
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -462,16 +463,16 @@ info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none (.app Strata.SourceRange.none strPrefixOfOp (.fvar Strata.SourceRange.none "s1" (.some .string)))
-    (.fvar Strata.SourceRange.none "s2" (.some .string)))
+  (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") strPrefixOfOp (.fvar (ExprSourceLoc.synthesized "test") "s1" (.some .string)))
+    (.fvar (ExprSourceLoc.synthesized "test") "s2" (.some .string)))
 
 /--
 info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.suffixof s1 s2))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app Strata.SourceRange.none (.app Strata.SourceRange.none strSuffixOfOp (.fvar Strata.SourceRange.none "s1" (.some .string)))
-    (.fvar Strata.SourceRange.none "s2" (.some .string)))
+  (.app (ExprSourceLoc.synthesized "test") (.app (ExprSourceLoc.synthesized "test") strSuffixOfOp (.fvar (ExprSourceLoc.synthesized "test") "s1" (.some .string)))
+    (.fvar (ExprSourceLoc.synthesized "test") "s2" (.some .string)))
 
 end Core
 

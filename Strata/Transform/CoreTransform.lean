@@ -13,6 +13,8 @@ public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
 
+-- Synthesized expressions from transforms carry ExprSourceLoc.synthesized provenance.
+
 public section
 
 namespace Core
@@ -31,9 +33,11 @@ def createHavoc (ident : Expression.Ident)
 def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
   : List Statement := ident.map (createHavoc · md)
 
+/-- Create a free variable reference from an identifier.
+    Synthesized during transforms; carries provenance via ExprSourceLoc.synthesized. -/
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
-  := Lambda.LExpr.fvar Strata.SourceRange.none ident none
+  := Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") ident none
 
 @[expose]
 def createFvars (ident : List Expression.Ident)
@@ -211,13 +215,14 @@ def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression
   trips.map (createInit · md)
 
 /--
-Generate an init statement with rhs as a free variable reference
+Generate an init statement with rhs as a free variable reference.
+Synthesized during transforms; carries provenance via ExprSourceLoc.synthesized.
 -/
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (.det (Lambda.LExpr.fvar Strata.SourceRange.none v none)) md
+  | ((v', ty), v) => Statement.init v' ty (.det (Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") v none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
     (md : (Imperative.MetaData Expression))

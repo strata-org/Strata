@@ -17,19 +17,29 @@ public section
 
 namespace Core
 
-/-- expressions that can't be reduced when evaluating -/
+-- Proof terms and semantic definitions use semLoc provenance
+-- (canonical forms represent abstract values, not parsed source terms).
+
+abbrev semLoc : ExprSourceLoc :=
+  { uri := some (.file "<synthesized:semantics>"), range := Strata.SourceRange.none } -- nosourcerange: semantic canonical forms have no real source location
+
+/-- Expressions that can't be reduced when evaluating.
+    These are canonical forms used in semantic definitions; they carry synthesized provenance
+    because they represent abstract values, not parsed source terms. -/
 inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const _ _)
-  | bvar  :  Value (.bvar _ _)
-  | op    :  Value (.op _ _ _)
-  | abs   :  Value (.abs _ _ _ _)
+  | const :  Value (.const semLoc _)
+  | bvar  :  Value (.bvar semLoc _)
+  | op    :  Value (.op semLoc _ _)
+  | abs   :  Value (.abs semLoc _ _ _)
 
 open Imperative
 
 instance : HasVal Core.Expression where value := Value
 
+-- Semantic typeclass instances construct canonical expressions with synthesized provenance.
+
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar Strata.SourceRange.none · none)
+  mkFvar := (.fvar semLoc · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -39,32 +49,31 @@ instance : HasSubstFvar Core.Expression where
   substFvars := Lambda.LExpr.substFvars
 
 instance : HasIntOrder Core.Expression where
-  eq    e1 e2 := .eq Strata.SourceRange.none e1 e2
-  lt    e1 e2 := .app Strata.SourceRange.none (.app Strata.SourceRange.none Core.intLtOp e1) e2
-  zero        := .intConst Strata.SourceRange.none 0
+  eq    e1 e2 := .eq semLoc e1 e2
+  lt    e1 e2 := .app semLoc (.app semLoc Core.intLtOp e1) e2
+  zero        := .intConst semLoc 0
   intTy       := .forAll [] (.tcons "int" [])
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
 
 @[expose, match_pattern]
-def Core.true (m : ExpressionMetadata := Strata.SourceRange.none) : Core.Expression.Expr := .boolConst m Bool.true
+def Core.true : Core.Expression.Expr := .boolConst semLoc Bool.true
 @[expose, match_pattern]
-def Core.false (m : ExpressionMetadata := Strata.SourceRange.none) : Core.Expression.Expr := .boolConst m Bool.false
+def Core.false : Core.Expression.Expr := .boolConst semLoc Bool.false
 
 instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
   boolTy := .forAll [] (.tcons "bool" [])
-  isTrue := Lambda.LExpr.isTrue CoreLParams.mono
-  isFalse := Lambda.LExpr.isFalse CoreLParams.mono
+  isTt := fun e => match e with | .const _ (.boolConst true) => true | _ => false
 
 instance : HasNot Core.Expression where
   not
-  | Core.true _ => Core.false
-  | Core.false _ => Core.true
-  | e => Lambda.LExpr.app Strata.SourceRange.none (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  | Core.true => Core.false
+  | Core.false => Core.true
+  | e => Lambda.LExpr.app semLoc (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
 @[expose] abbrev CoreEval := SemanticEval Expression
 @[expose] abbrev CoreStore := SemanticStore Expression
@@ -189,12 +198,12 @@ def updatedStates
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
-/-- The evaluator handles old expressions correctly
--- It should specify the exact expression form that would map to the old store
--- This can be used to implement more general two-state functions, as in Dafny
--- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
--- where this condition will be asserted at procedures utilizing those two-state functions
--/
+/-- The evaluator handles old expressions correctly.
+It should specify the exact expression form that would map to the old store.
+This can be used to implement more general two-state functions, as in Dafny
+https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
+where this condition will be asserted at procedures utilizing those two-state functions.
+Synthesized `old` variable references carry no source location. -/
 def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
@@ -202,10 +211,10 @@ def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
-            δ σ (.fvar Strata.SourceRange.none (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
+            δ σ (.fvar semLoc (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
           -- if the variable is not modified, "old g" is the same as g
           (¬ v ∈ vs →
-            δ σ (.fvar Strata.SourceRange.none (CoreIdent.mkOld v.name) none) = σ v))
+            δ σ (.fvar semLoc (CoreIdent.mkOld v.name) none) = σ v))
 
 /-! ### Closure Capture for Function Declarations -/
 
