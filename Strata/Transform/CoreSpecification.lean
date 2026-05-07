@@ -39,6 +39,47 @@ open Core Imperative
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
 
+/-! ## Core CFG `Lang` bundle -/
+
+/-- Configuration for CFG specification: pairs a `CFGConfig` with the eval
+    function so that `getEnv` can reconstruct a full `Env Expression`. -/
+structure CoreCFGSpecConfig where
+  cfgConfig : CFGConfig String Expression
+  eval : CoreEval
+
+/-- Extract an `Env Expression` from a CFG specification config. -/
+def CoreCFGSpecConfig.toEnv (c : CoreCFGSpecConfig) : Env Expression :=
+  match c.cfgConfig with
+  | .cont _ σ f => ⟨σ, c.eval, f⟩
+  | .terminal σ f => ⟨σ, c.eval, f⟩
+
+/-- Assert detection in a CFG: an assert is reachable if the current block
+    (looked up by the continuation label in a given CFG) contains an assert
+    command with the matching label and expression. -/
+def coreCFGIsAtAssert (cfg : DetCFG) : CoreCFGSpecConfig → AssertId Expression → Prop
+  | ⟨.cont lbl _ _, _⟩, aid =>
+    match cfg.blocks.lookup lbl with
+    | some blk => blk.cmds.any fun
+        | .cmd (.assert l e _) => l == aid.label && e == aid.expr
+        | _ => false
+    | none => False
+  | ⟨.terminal _ _, _⟩, _ => False
+
+/-- The `Lang Expression` bundle for Core CFG small-step semantics. -/
+@[expose] def Lang.coreCFG
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (cfg : DetCFG) :
+    Imperative.Specification.Lang Expression where
+  StmtT := DetCFG
+  CfgT := CoreCFGSpecConfig
+  star := fun c₁ c₂ => CoreCFGStepStar π φ cfg c₁.cfgConfig c₂.cfgConfig
+  stmtCfg := fun _ ρ => ⟨.cont cfg.entry ρ.store false, ρ.eval⟩
+  terminalCfg := fun ρ => ⟨.terminal ρ.store ρ.hasFailure, ρ.eval⟩
+  exitingCfg := fun _ ρ => ⟨.terminal ρ.store ρ.hasFailure, ρ.eval⟩
+  isAtAssert := coreCFGIsAtAssert cfg
+  getEnv := CoreCFGSpecConfig.toEnv
+
 /-! ## Well-formed program state at the entry of procedure -/
 
 /-- The list of variables that must have been declared,
@@ -81,8 +122,13 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 @[expose] def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
-  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
-    (ProcEnvWF proc) (Stmt.block "" (match proc.body with | .structured ss => ss | .cfg _ => []) #[]) a
+  match proc.body with
+  | .structured ss =>
+    Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
+      (ProcEnvWF proc) (Stmt.block "" ss #[]) a
+  | .cfg cfg =>
+    Imperative.Specification.AssertValidWhen (Specification.Lang.coreCFG π φ cfg)
+      (ProcEnvWF proc) cfg a
 
 /-- A procedure is correct with respect to its specification.
 
@@ -138,12 +184,16 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination. -/
+  /-- (2) The postconditions hold on termination.
+      For structured bodies, termination is witnessed by `CoreStepStar`.
+      For CFG bodies, use `CoreCFGStepStar` (via `Lang.coreCFG`). -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),
       ProcEnvWF proc ρ₀ →
-      CoreStepStar π φ (.stmts (match proc.body with | .structured ss => ss | .cfg _ => []) ρ₀) (.terminal ρ') →
+      CoreStepStar π φ
+        (.stmts (match proc.body with | .structured ss => ss | .cfg _ => []) ρ₀)
+        (.terminal ρ') →
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →

@@ -387,15 +387,11 @@ def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
                           | .condGoto p lt lf md => .condGoto p.eraseTypes lt lf md
                           | .finish md => .finish md }) }
 
--- DetCFG.stripMetaData clears metadata from transfer commands. Currently,
--- commands inside blocks carry no standalone metadata field, so only
--- transfer metadata is stripped. This mirrors Block.stripMetaData for
--- structured bodies and ensures a uniform interface.
+-- DetCFG.stripMetaData delegates to the generic CFG.stripDetMetaData from
+-- BasicBlock.lean. Commands inside blocks carry no standalone metadata field,
+-- so only transfer metadata is stripped.
 def DetCFG.stripMetaData (cfg : DetCFG) : DetCFG :=
-  { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
-      (lbl, { blk with transfer := match blk.transfer with
-                          | .condGoto p lt lf _ => .condGoto p lt lf .empty
-                          | .finish _ => .finish .empty }) }
+  Imperative.CFG.stripDetMetaData cfg
 
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   let body' := match p.body with

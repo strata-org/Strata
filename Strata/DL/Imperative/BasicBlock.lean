@@ -80,6 +80,26 @@ structure CFG (Label Block : Type) where
 
 --------
 
+/-- Strip metadata from a deterministic transfer command. -/
+def DetTransferCmd.stripMetaData : DetTransferCmd Label P → DetTransferCmd Label P
+  | .condGoto p lt lf _ => .condGoto p lt lf .empty
+  | .finish _ => .finish .empty
+
+/-- Strip metadata from a non-deterministic transfer command. -/
+def NondetTransferCmd.stripMetaData : NondetTransferCmd Label P → NondetTransferCmd Label P
+  | .goto ls _ => .goto ls .empty
+
+/-- Strip transfer metadata from a deterministic basic block. -/
+def DetBlock.stripMetaData (blk : DetBlock Label Cmd P) : DetBlock Label Cmd P :=
+  { blk with transfer := blk.transfer.stripMetaData }
+
+/-- Strip transfer metadata from all blocks in a deterministic CFG. -/
+def CFG.stripDetMetaData (cfg : CFG Label (DetBlock Label Cmd P)) :
+    CFG Label (DetBlock Label Cmd P) :=
+  { cfg with blocks := cfg.blocks.map fun (lbl, blk) => (lbl, blk.stripMetaData) }
+
+--------
+
 open Std (ToFormat Format format)
 
 def formatDetTransferCmd (P : PureExpr) (c : DetTransferCmd Label P)
