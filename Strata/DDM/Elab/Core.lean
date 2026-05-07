@@ -113,7 +113,7 @@ def applyNArgs (tctx : TypingContext) (e : TypeExpr) (n : Nat) := aux #[] e
       | .arrow _ a r => aux (args.push a) r
       | .tvar ann _ =>
         let tvars := Array.replicate (n - args.size) (TypeExprF.skip ann)
-        .ok (⟨args ++ tvars, by admit⟩, .skip ann)
+        .ok (⟨args ++ tvars, by simp [tvars]; omega⟩, .skip ann)
       | e => .error (args, e)
     else
       if argsGt : args.size > n then
