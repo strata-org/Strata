@@ -2282,33 +2282,13 @@ theorem core_step_preserves_wfBool
     (hstep : CoreStep π φ c₁ c₂) :
     WellFormedSemanticEvalBool c₂.getEnv.eval := by
   induction hstep with
-  | step_cmd hcmd =>
-    cases hcmd with
-    | cmd_sem _ => simp [Config.getEnv]; exact hwf
-    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        simp only [Config.getEnv]; exact hwf
+  | step_cmd hcmd => cases hcmd with
+    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
-  | step_ite_true _ _ => exact hwf
-  | step_ite_false _ _ => exact hwf
-  | step_loop_enter _ _ => exact hwf
-  | step_loop_exit _ _ => exact hwf
-  | step_ite_nondet_true => exact hwf
-  | step_ite_nondet_false => exact hwf
-  | step_loop_nondet_enter => exact hwf
-  | step_loop_nondet_exit => exact hwf
-  | step_exit => exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfBool _ _ _ hwf
-  | step_typeDecl => exact hwf
-  | step_stmts_nil => exact hwf
-  | step_stmts_cons => exact hwf
-  | step_seq_inner _ ih => exact ih hwf
-  | step_seq_done => exact hwf
-  | step_seq_exit => exact hwf
-  | step_block_body _ ih => exact ih hwf
-  | step_block_done => exact hwf
-  | step_block_exit_none => exact hwf
-  | step_block_exit_match _ => exact hwf
-  | step_block_exit_mismatch _ => exact hwf
+  | step_seq_inner _ ih | step_block_body _ ih => exact ih hwf
+  | _ => exact hwf
 
 theorem core_wfBool_preserved
     (h_wf_ext : WFEvalExtension φ)
@@ -2333,33 +2313,13 @@ theorem core_step_preserves_wfVar
     (hstep : CoreStep π φ c₁ c₂) :
     WellFormedSemanticEvalVar c₂.getEnv.eval := by
   induction hstep with
-  | step_cmd hcmd =>
-    cases hcmd with
-    | cmd_sem _ => simp [Config.getEnv]; exact hwf
-    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        simp only [Config.getEnv]; exact hwf
+  | step_cmd hcmd => cases hcmd with
+    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
-  | step_ite_true _ _ => exact hwf
-  | step_ite_false _ _ => exact hwf
-  | step_loop_enter _ _ => exact hwf
-  | step_loop_exit _ _ => exact hwf
-  | step_ite_nondet_true => exact hwf
-  | step_ite_nondet_false => exact hwf
-  | step_loop_nondet_enter => exact hwf
-  | step_loop_nondet_exit => exact hwf
-  | step_exit => exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfVar _ _ _ hwf
-  | step_typeDecl => exact hwf
-  | step_stmts_nil => exact hwf
-  | step_stmts_cons => exact hwf
-  | step_seq_inner _ ih => exact ih hwf
-  | step_seq_done => exact hwf
-  | step_seq_exit => exact hwf
-  | step_block_body _ ih => exact ih hwf
-  | step_block_done => exact hwf
-  | step_block_exit_none => exact hwf
-  | step_block_exit_match _ => exact hwf
-  | step_block_exit_mismatch _ => exact hwf
+  | step_seq_inner _ ih | step_block_body _ ih => exact ih hwf
+  | _ => exact hwf
 
 theorem core_wfVar_preserved
     (h_wf_ext : WFEvalExtension φ)
@@ -2384,33 +2344,13 @@ theorem core_step_preserves_wfCong
     (hstep : CoreStep π φ c₁ c₂) :
     WellFormedCoreEvalCong c₂.getEnv.eval := by
   induction hstep with
-  | step_cmd hcmd =>
-    cases hcmd with
-    | cmd_sem _ => simp [Config.getEnv]; exact hwf
-    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        simp only [Config.getEnv]; exact hwf
+  | step_cmd hcmd => cases hcmd with
+    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
-  | step_ite_true _ _ => exact hwf
-  | step_ite_false _ _ => exact hwf
-  | step_loop_enter _ _ => exact hwf
-  | step_loop_exit _ _ => exact hwf
-  | step_ite_nondet_true => exact hwf
-  | step_ite_nondet_false => exact hwf
-  | step_loop_nondet_enter => exact hwf
-  | step_loop_nondet_exit => exact hwf
-  | step_exit => exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfCong _ _ _ hwf
-  | step_typeDecl => exact hwf
-  | step_stmts_nil => exact hwf
-  | step_stmts_cons => exact hwf
-  | step_seq_inner _ ih => exact ih hwf
-  | step_seq_done => exact hwf
-  | step_seq_exit => exact hwf
-  | step_block_body _ ih => exact ih hwf
-  | step_block_done => exact hwf
-  | step_block_exit_none => exact hwf
-  | step_block_exit_match _ => exact hwf
-  | step_block_exit_mismatch _ => exact hwf
+  | step_seq_inner _ ih | step_block_body _ ih => exact ih hwf
+  | _ => exact hwf
 
 theorem core_wfCong_preserved
     (h_wf_ext : WFEvalExtension φ)
@@ -2435,33 +2375,13 @@ theorem core_step_preserves_wfExprCongr
     (hstep : CoreStep π φ c₁ c₂) :
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval := by
   induction hstep with
-  | step_cmd hcmd =>
-    cases hcmd with
-    | cmd_sem _ => simp [Config.getEnv]; exact hwf
-    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        simp only [Config.getEnv]; exact hwf
+  | step_cmd hcmd => cases hcmd with
+    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
-  | step_ite_true _ _ => exact hwf
-  | step_ite_false _ _ => exact hwf
-  | step_loop_enter _ _ => exact hwf
-  | step_loop_exit _ _ => exact hwf
-  | step_ite_nondet_true => exact hwf
-  | step_ite_nondet_false => exact hwf
-  | step_loop_nondet_enter => exact hwf
-  | step_loop_nondet_exit => exact hwf
-  | step_exit => exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfExprCongr _ _ _ hwf
-  | step_typeDecl => exact hwf
-  | step_stmts_nil => exact hwf
-  | step_stmts_cons => exact hwf
-  | step_seq_inner _ ih => exact ih hwf
-  | step_seq_done => exact hwf
-  | step_seq_exit => exact hwf
-  | step_block_body _ ih => exact ih hwf
-  | step_block_done => exact hwf
-  | step_block_exit_none => exact hwf
-  | step_block_exit_match _ => exact hwf
-  | step_block_exit_mismatch _ => exact hwf
+  | step_seq_inner _ ih | step_block_body _ ih => exact ih hwf
+  | _ => exact hwf
 
 theorem core_wfExprCongr_preserved
     (h_wf_ext : WFEvalExtension φ)
