@@ -920,7 +920,11 @@ def pyResolveOverloadsCommand : Command where
     let pctx ← Strata.Pipeline.PipelineContext.create
     let overloads ← match ← (readDispatchOverloads pctx #[dispatchPath]).toBaseIO with
       | .ok r => pure r
-      | .error () => exitFailure "readDispatchOverloads: fatal error"
+      | .error () =>
+        let msgs ← pctx.messagesRef.get
+        for m in msgs do
+          IO.eprintln s!"{m}"
+        exitFailure "readDispatchOverloads: fatal error"
     -- Convert .py to Python AST
     let stmts ←
       IO.FS.withTempFile fun _handle dialectFile => do

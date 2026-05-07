@@ -262,29 +262,33 @@ public def readDispatchOverloads
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` (with a warning) if the name is
     invalid or the pyspec file is not found. -/
-private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
+/-- Resolve a parsed module name to its spec prefix and .ion path.
+    Returns `none` if the file is not found on disk. -/
+private def resolveModuleEntry (mod : Python.Specs.ModuleName) (specDir : System.FilePath)
     : Pipeline.PipelineM (Option (String × String)) := do
-  match Python.Specs.ModuleName.ofString modName with
-  | .error _ =>
-    emitMessage .invalidModuleName s!"invalid module name '{modName}', skipping" (file := specDir)
-    return none
-  | .ok mod =>
-    match ← mod.specIonPath specDir with
-    | some specPath =>
-      let pfx := "_".intercalate mod.components.toList
-      return some (pfx, specPath.toString)
-    | none => return none
+  match ← mod.specIonPath specDir with
+  | some specPath =>
+    let pfx := "_".intercalate mod.components.toList
+    return some (pfx, specPath.toString)
+  | none => return none
 
-/-- Resolve module names, returning found entries and unresolved names. -/
+/-- Resolve module names that must exist. Fatal on invalid name or missing file. -/
 private def resolveModules (modules : Array String) (specDir : System.FilePath)
-    : Pipeline.PipelineM (Array (String × String) × Array String) := do
+    : Pipeline.PipelineM (Array (String × String)) := do
   let mut entries : Array (String × String) := #[]
-  let mut unresolved : Array String := #[]
   for modName in modules do
-    match ← resolveModuleEntry modName specDir with
-    | some entry => entries := entries.push entry
-    | none => unresolved := unresolved.push modName
-  return (entries, unresolved)
+    match Python.Specs.ModuleName.ofString modName with
+    | .error _ =>
+      emitMessage .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
+    | .ok mod =>
+      match ← resolveModuleEntry mod specDir with
+      | some entry =>
+        entries := entries.push entry
+      | none =>
+        emitMessage .missingPySpecModule
+          s!"PySpec module '{modName}' not found in {specDir}" (file := specDir)
+  return entries
+
 
 /-- Build dispatch overload table, auto-resolve pyspec files
     from the program AST, and return combined Laurel declarations
@@ -300,35 +304,22 @@ public def resolveAndBuildLaurelPrelude
     (stmts : Array (Python.stmt SourceRange))
     (specDir : System.FilePath := ".")
     : Pipeline.PipelineM PySpecLaurelResult := do
-  -- Dispatch modules (fatal on miss)
-  let (dispatchEntries, missing) ← resolveModules dispatchModules specDir
-  if missing.size > 0 then
-    for m in missing do
-      emitMessage .missingDispatchModule
-        s!"Dispatch module '{m}' not found in {specDir}" (file := specDir)
-    return default
+  -- Dispatch modules (fatal on invalid name or missing file)
+  let dispatchEntries ← resolveModules dispatchModules specDir
   let dispatchPaths := dispatchEntries.map (·.2)
   let dispatchOverloads ← readDispatchOverloadsM dispatchPaths
   let resolveState :=
     Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
   for w in resolveState.warnings do
     emitMessage .overloadResolveWarning w (file := specDir)
-  -- Auto-resolved (warn on miss)
-  let (autoSpecEntries, missing) ←
+  -- Auto-resolved from dispatch overload table
+  let autoSpecEntries ←
     if dispatchModules.size > 0 then
       let resolvedMods := resolveState.modules.toArray.qsort (· < ·)
       resolveModules resolvedMods specDir
-    else pure (#[], #[])
-  for m in missing do
-    emitMessage .missingAutoResolvedPySpec
-      s!"auto-resolved pyspec not found for module '{m}'" (file := specDir)
-  -- Explicit pyspec modules (fatal on miss)
-  let (explicitEntries, missing) ← resolveModules pyspecModules specDir
-  if missing.size > 0 then
-    for m in missing do
-      emitMessage .missingExplicitPySpec
-        s!"PySpec module '{m}' not found in {specDir}" (file := specDir)
-    return default
+    else pure #[]
+  -- Explicit pyspec modules (fatal on invalid name or missing file)
+  let explicitEntries ← resolveModules pyspecModules specDir
   buildPySpecLaurelM (autoSpecEntries ++ explicitEntries) dispatchOverloads
 
 /-! ### Pipeline Steps -/

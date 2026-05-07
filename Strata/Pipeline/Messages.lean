@@ -158,13 +158,9 @@ def procedureNameCollision : MessageKind :=
 
 -- Module resolution phase
 def invalidModuleName : MessageKind :=
-  { category := "invalidModuleName", impact := .internalWarning }
-def missingAutoResolvedPySpec : MessageKind :=
-  { category := "missingAutoResolvedPySpec", impact := .knownLimitation }
-def missingDispatchModule : MessageKind :=
-  { category := "missingDispatchModule", impact := .configurationError }
-def missingExplicitPySpec : MessageKind :=
-  { category := "missingExplicitPySpec", impact := .configurationError }
+  { category := "invalidModuleName", impact := .configurationError }
+def missingPySpecModule : MessageKind :=
+  { category := "missingPySpecModule", impact := .configurationError }
 
 -- Overload resolution phase
 def overloadResolveWarning : MessageKind :=
