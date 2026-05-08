@@ -112,6 +112,12 @@ each constructor `C` of the ADT at the `@[cases]` parameter, the encoding
 generates an axiom representing the corresponding rewrite rule (e.g.,
 `List.length Nil = 0` and `forall h t, List.length (Cons h t) = 1 + List.length t`).
 
+Termination checking is always on for `rec` functions. For each recursive
+function, the TermCheck pipeline phase generates a `D..adtRank : D → Int`
+uninterpreted function with per-constructor axioms establishing that recursive
+fields have strictly smaller rank, and a `f$$term` verification procedure that
+asserts `adtRank(callArg) < adtRank(callerParam)` at each recursive call site.
+
 ## Axiom Encoding
 
 Axioms are emitted as universally quantified SMT assertions.
