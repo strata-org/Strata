@@ -6,55 +6,71 @@ SMACK encodes C `assert(expr)` as a call to a procedure named `assert_.i32(cond)
 
 ## Example
 
-Given C code:
+Given C code with an obviously false assertion:
 
 ```c
-int z = x + y;
-assert(z == 3);
+int x = 0;
+assert(x == 1);  // should FAIL
 ```
 
 SMACK produces Boogie:
 
 ```boogie
-$i1 := $eq.i32($i0, 3);
-$i2 := $zext.i1.i32($i1);
-call $i3 := assert_.i32($i2);
+$i0 := $eq.i32(0, 1);       // evaluates to 0 (false)
+$i1 := $zext.i1.i32($i0);   // still 0
+call $i2 := assert_.i32($i1);  // should be an assertion failure
 ```
 
-BoogieToStrata currently emits:
+BoogieToStrata translates this as an opaque call:
 
 ```
-call assert__i32(_exn, _exnv, _CurrAddr, _i2, out _i3);
+call assert__i32(0, out _i2);
 ```
 
-But what Strata needs to generate VCs is:
+The verifier reports **"All 0 goals passed"** — the false assertion is completely invisible.
+
+What Strata needs to generate a VC is:
 
 ```
-assert (_i2 != 0);
+assert (0 != 0);   // this would correctly FAIL
 ```
 
 ## Steps to Reproduce
 
-1. Write a simple `.bpl` file with:
+1. Save this as `SmackAssert.bpl`:
 
 ```boogie
 type i32 = int;
-type i1 = int;
 
 procedure assert_.i32(p.0: i32) returns ($r: i32);
 
 procedure main() returns ($r: i32)
 {
-  var $i0: i32;
-  $i0 := 1;
-  call $r := assert_.i32($i0);
+  // Pass 0 (false) to assert — this should be a verification failure
+  call $r := assert_.i32(0);
   $r := 0;
   return;
 }
 ```
 
-2. Translate with BoogieToStrata.
-3. Verify with `strata verify` -- observe "All 0 goals passed" (no VCs generated).
+2. Translate:
+```bash
+cd Tools/BoogieToStrata
+dotnet run --project Source/BoogieToStrata.csproj -- Tests/SmackAssert.bpl > /tmp/out.core.st
+```
+
+3. Verify:
+```bash
+../../.lake/build/bin/strata verify /tmp/out.core.st
+```
+
+4. Observe output:
+```
+Successfully parsed.
+All 0 goals passed.
+```
+
+The assertion `assert(false)` passes silently with zero VCs generated.
 
 A minimal test case is saved at `Tools/BoogieToStrata/Tests/SmackAssert.bpl`.
 
