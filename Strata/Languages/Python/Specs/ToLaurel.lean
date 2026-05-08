@@ -586,14 +586,10 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   -- When recursing into nested classes, push the qualified path as the
   -- module prefix for that subtree so the subclass's own prefixed name
   -- aligns with how its parent references it (`subNames` above).
-  let enclosingPrefix := (← read).modulePrefix
   for sub in cls.subclasses do
     withReader
       (fun ctx => { ctx with modulePrefix := prefixedName })
       (classDefToLaurel sub)
-    -- restore happens automatically via `withReader` scope; this loop
-    -- is purely iterative, no state rollback needed beyond that.
-    let _ := enclosingPrefix
 decreasing_by
   · cases cls
     decreasing_tactic
