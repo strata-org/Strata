@@ -52,6 +52,38 @@ namespace AbstractEncoder
 
 variable {τ σ : Type} {m : Type → Type} [Monad m] [MonadExceptOf IO.Error m]
 
+/-- Convert a `TermType` to the solver's sort type `σ` by dispatching on
+    the sort primitives provided by the solver. -/
+def termTypeToSort (solver : AbstractSolver τ σ m) (ty : TermType) : m σ := do
+  match ty with
+  | .bool => solver.boolSort
+  | .int => solver.intSort
+  | .real => solver.realSort
+  | .string => solver.stringSort
+  | .regex => solver.regexSort
+  | .bitvec n => solver.bitvecSort n
+  | .trigger => solver.boolSort
+  | .option inner => do
+    let s ← termTypeToSort solver inner
+    solver.constrSort "Option" [s]
+  | .constr name args => do
+    if name == "Array" then
+      match args with
+      | [k, v] => do
+        let ks ← termTypeToSort solver k
+        let vs ← termTypeToSort solver v
+        match ← solver.arraySort ks vs with
+        | .ok s => return s
+        | .error _ => solver.constrSort name []
+      | _ => solver.constrSort name []
+    else
+      let argSorts ← args.attach.mapM fun ⟨t, _⟩ => termTypeToSort solver t
+      solver.constrSort name argSorts
+termination_by sizeOf ty
+decreasing_by
+  all_goals simp_wf
+  all_goals (try omega) <;> (have := List.sizeOf_lt_of_mem ‹_›; omega)
+
 private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
@@ -59,8 +91,8 @@ private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncod
   let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
   let id := Strata.Name.findUnique baseName 1 usedNames
   liftM (solver.comment uf.id)
-  let argSorts ← uf.args.mapM (fun vt => liftM (solver.termTypeToSort vt.ty))
-  let outSort ← liftM (solver.termTypeToSort uf.out)
+  let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
+  let outSort ← liftM (termTypeToSort solver uf.out)
   match ← liftM (solver.declareFun id argSorts outSort) with
   | .ok handle =>
     modify fun st => { st with varHandles := st.varHandles.insert id handle }
@@ -103,7 +135,7 @@ private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op)
   | .uf f, _ =>
     let ufName ← encodeUF solver f
     let ufRef : UF := { id := ufName, args := f.args, out := f.out }
-    let outSort ← liftM (solver.termTypeToSort ufRef.out)
+    let outSort ← liftM (termTypeToSort solver ufRef.out)
     let handle ← liftExcept "mkAppOp(uf)" (← liftM (solver.mkAppOp (.uf ufRef) [] outSort))
     liftExcept "mkApp" (← liftM (solver.mkApp handle tEncs))
   -- Datatype operations: build handle and apply
@@ -119,7 +151,7 @@ private def defineQuantifierHelper (solver : AbstractSolver τ σ m) (qk : Quant
     (encodeTriggers : AbstractEncoderM τ m (List (List τ)))
     : AbstractEncoderM τ m τ := do
   let bindings ← args.mapM fun v => do
-    let s ← liftM (solver.termTypeToSort v.ty)
+    let s ← liftM (termTypeToSort solver v.ty)
     return (v.id, s)
   let mkQuant := match qk with
     | .all => solver.mkForall
@@ -146,40 +178,40 @@ def encodeTerm (solver : AbstractSolver τ σ m) (t : Term) : AbstractEncoderM �
     | .some handle => return handle
     | .none =>
       -- Variable not yet declared — declare it now via declareNew
-      let s ← liftM (solver.termTypeToSort v.ty)
+      let s ← liftM (termTypeToSort solver v.ty)
       let handle ← liftM (solver.declareNew v.id s)
       modify fun st => { st with varHandles := st.varHandles.insert v.id handle }
       return handle
   | .prim p => liftM (solver.mkPrim p)
   | .none ty =>
     -- Option none: use the datatype constructor via mkAppOp
-    let retSort ← liftM (solver.termTypeToSort (.option ty))
+    let retSort ← liftM (termTypeToSort solver (.option ty))
     liftExcept "mkAppOp(none)" (← liftM (solver.mkAppOp (.datatype_op .constructor "none") [] retSort))
   | .some t₁ =>
     -- Option some: encode the inner term and apply the constructor via mkAppOp
     let t₁Enc ← encodeTerm solver t₁
-    let retSort ← liftM (solver.termTypeToSort (.option t₁.typeOf))
+    let retSort ← liftM (termTypeToSort solver (.option t₁.typeOf))
     let handle ← liftExcept "mkAppOp(some)" (← liftM (solver.mkAppOp (.datatype_op .constructor "some") [] retSort))
     liftExcept "mkApp(some)" (← liftM (solver.mkApp handle [t₁Enc]))
   | .app .re_allchar [] .regex =>
-    let s ← liftM (solver.termTypeToSort .regex)
+    let s ← liftM (termTypeToSort solver .regex)
     liftExcept "mkAppOp(re)" (← liftM (solver.mkAppOp .re_allchar [] s))
   | .app .re_all     [] .regex =>
-    let s ← liftM (solver.termTypeToSort .regex)
+    let s ← liftM (termTypeToSort solver .regex)
     liftExcept "mkAppOp(re)" (← liftM (solver.mkAppOp .re_all [] s))
   | .app .re_none    [] .regex =>
-    let s ← liftM (solver.termTypeToSort .regex)
+    let s ← liftM (termTypeToSort solver .regex)
     liftExcept "mkAppOp(re)" (← liftM (solver.mkAppOp .re_none [] s))
   | .app .bvnego [inner] .bool =>
     match inner.typeOf with
     | .bitvec n =>
       let innerEnc ← encodeTerm solver inner
       let minVal ← liftM (solver.mkPrim (.bitvec (BitVec.intMin n)))
-      let retSort ← liftM (solver.termTypeToSort .bool)
+      let retSort ← liftM (termTypeToSort solver .bool)
       defineApp solver retSort .eq [innerEnc, minVal]
     | _ => liftM (solver.mkBool false)
   | .app op ts _ =>
-    let retSort ← liftM (solver.termTypeToSort t.typeOf)
+    let retSort ← liftM (termTypeToSort solver t.typeOf)
     defineApp solver retSort op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver tᵢ))
   | .quant qk qargs tr body =>
     let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
@@ -202,9 +234,9 @@ private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : T
   let id := ufId (← get).base.ufs.size
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
-    let s ← liftM (solver.termTypeToSort vt.ty)
+    let s ← liftM (termTypeToSort solver vt.ty)
     return (vt.id, s)
-  let outSort ← liftM (solver.termTypeToSort uf.out)
+  let outSort ← liftM (termTypeToSort solver uf.out)
   let bodyEnc ← encodeTerm solver body
   match ← liftM (solver.defineFun id argPairs outSort bodyEnc) with
   | .ok _ => pure ()
@@ -232,7 +264,7 @@ private def datatypeConstrsM [Monad m] (solver : AbstractSolver τ σ m)
   for c in d.constrs.reverse do
     let mut fields := []
     for (name, fieldTy) in c.args.reverse do
-      let s ← solver.termTypeToSort (Core.lMonoTyToTermType fieldTy)
+      let s ← AbstractEncoder.termTypeToSort solver (Core.lMonoTyToTermType fieldTy)
       fields := (d.name ++ ".." ++ name.name, s) :: fields
     result := (c.name.name, fields) :: result
   return result
@@ -306,12 +338,12 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     unwrap "assert" (← solver.assert id)
   -- Emit variable declarations as declareFun
   for decl in varDeclarations do
-    let sort ← solver.termTypeToSort decl.ty
+    let sort ← AbstractEncoder.termTypeToSort solver decl.ty
     let _ ← unwrap "declareFun" (← solver.declareFun decl.name [] sort)
   -- Emit variable definitions as defineFun
   let estate ← varDefinitions.foldlM (init := estate) fun estate def_ => do
     let (bodyEnc, estate) ← (AbstractEncoder.encodeTerm solver def_.body) |>.run estate
-    let sort ← solver.termTypeToSort def_.ty
+    let sort ← AbstractEncoder.termTypeToSort solver def_.ty
     unwrap "defineFun" (← solver.defineFun def_.name [] sort bodyEnc)
     pure estate
   let (assumptionIds, estate) ← assumptionTerms.mapM (AbstractEncoder.encodeTerm solver) |>.run estate

@@ -66,11 +66,13 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
   intSort : m σ
   realSort : m σ
   stringSort : m σ
+  regexSort : m σ
   bitvecSort : Nat → m σ
   arraySort : σ → σ → m (Except String σ)
 
-  -- Sort conversion from Strata's TermType
-  termTypeToSort : TermType → m σ
+  /-- Construct a sort for a named type (datatype or user-defined sort)
+      with the given type arguments. -/
+  constrSort : String → List σ → m σ
 
   -- Literal / leaf constructors
   mkBool : Bool → m τ
