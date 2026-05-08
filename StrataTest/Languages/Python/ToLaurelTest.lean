@@ -917,4 +917,41 @@ type Unrelated
   rawClassDef "Unrelated"
 ]
 
+-- Nested classes must NOT leak into `typeAliases`: the map exposes
+-- unprefixed top-level class names to user code, and registering a nested
+-- class under its bare name would (a) make it user-addressable as a
+-- top-level type, and (b) let sibling outers with same-named nested
+-- classes overwrite each other.
+/--
+info: typeAliases keys: [Outer]
+-/
+#guard_msgs in
+#eval do
+  let result := signaturesToLaurel "<test>" #[
+    rawClassDef "Outer"
+      (fields := #[{ name := "inner", type := pyClass "Inner" }])
+      (subclasses := #[{ loc, name := "Inner", methods := #[] }])
+  ] "mod"
+  let keys := result.typeAliases.toArray.map Prod.fst |>.qsort (· < ·)
+  IO.println s!"typeAliases keys: {keys.toList}"
+
+-- Two sibling classes, each with a nested class of the same bare name,
+-- do not pollute `typeAliases` with the nested name (no last-writer-wins
+-- collision).
+/--
+info: typeAliases keys: [A, B]
+-/
+#guard_msgs in
+#eval do
+  let result := signaturesToLaurel "<test>" #[
+    rawClassDef "A"
+      (fields := #[{ name := "child", type := pyClass "Child" }])
+      (subclasses := #[{ loc, name := "Child", methods := #[] }]),
+    rawClassDef "B"
+      (fields := #[{ name := "child", type := pyClass "Child" }])
+      (subclasses := #[{ loc, name := "Child", methods := #[] }])
+  ] "mod"
+  let keys := result.typeAliases.toArray.map Prod.fst |>.qsort (· < ·)
+  IO.println s!"typeAliases keys: {keys.toList}"
+
 end Strata.Python.Specs.ToLaurel.Tests

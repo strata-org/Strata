@@ -553,11 +553,20 @@ private def qualifyNestedClassRefs
         | none => id
       else id
 
-/-- Convert a class definition to Laurel types and procedures. -/
-def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+/-- Convert a class definition to Laurel types and procedures.
+
+    `isNested` is set when recursing into a parent class's `subclasses`.
+    Nested classes are addressable only via their qualified prefixed name
+    (e.g., `Outer_Inner`), so we suppress the bare-name alias registration
+    that top-level classes get — otherwise multiple sibling outers each
+    declaring a nested class of the same bare name would race to overwrite
+    the alias entry, reintroducing ambiguous resolutions. -/
+def classDefToLaurel (cls : ClassDef) (isNested : Bool := false) : ToLaurelM Unit := do
   let prefixedName ← prefixName cls.name
-  -- Register alias from unprefixed to prefixed name for type resolution
-  if prefixedName != cls.name then
+  -- Register alias from unprefixed to prefixed name for type resolution.
+  -- Only top-level classes are user-addressable by their bare name;
+  -- nested classes deliberately do not get an entry here.
+  if !isNested && prefixedName != cls.name then
     modify fun s => { s with typeAliases := s.typeAliases.insert cls.name prefixedName }
   if cls.exhaustive then
     modify fun s => { s with exhaustiveClasses := s.exhaustiveClasses.insert prefixedName }
@@ -585,11 +594,13 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     pushProcedure proc
   -- When recursing into nested classes, push the qualified path as the
   -- module prefix for that subtree so the subclass's own prefixed name
-  -- aligns with how its parent references it (`subNames` above).
+  -- aligns with how its parent references it (`subNames` above). Pass
+  -- `isNested := true` so the recursion does not register a bare alias.
   for sub in cls.subclasses do
     withReader
       (fun ctx => { ctx with modulePrefix := prefixedName })
-      (classDefToLaurel sub)
+      (classDefToLaurel sub (isNested := true))
+termination_by sizeOf cls
 decreasing_by
   · cases cls
     decreasing_tactic
