@@ -46,7 +46,7 @@ private def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
   return match (← get).uri with
   | some uri => Imperative.MetaData.ofSourceRange uri arg.ann
-  | none => Imperative.MetaData.ofProvenance .laurelParse
+  | none => Imperative.MetaData.ofProvenance (.synthesized .laurelParse)
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
