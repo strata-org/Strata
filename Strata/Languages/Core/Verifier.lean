@@ -1401,8 +1401,7 @@ def verifySingleEnv (oblProgram : Program)
   -- Build SMT encoding context from the obligations program itself
   let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
   let p := E.program
-
-    -- Extract obligations from the obligations program via ObligationExtraction
+  -- Extract obligations from the obligations program via ObligationExtraction
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
     | .ok obs => pure obs
     | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
@@ -1449,7 +1448,8 @@ def verifySingleEnv (oblProgram : Program)
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
     let needValCheck := validityCheck && peValResult?.isNone
     let maybeTerms ← pctx.withRepeatedPhase "smtEncode" do
-      pure (ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory)
+      let smtCtx := { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames }
+      pure (ProofObligation.toSMTTerms E obligation smtCtx options.useArrayTheory)
     match maybeTerms with
     | .error err =>
       let result := { obligation,

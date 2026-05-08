@@ -94,12 +94,14 @@ meta def runAnalyze
         (specDir := tmpDir)).run pctx |>.toBaseIO with
     | .ok r => pure r
     | .error () =>
-      let msgs ← pctx.getMessages
-      let detail :=
-            match msgs.back? with
-            | some m => m.message
-            | none => "Pipeline aborted"
-      return .error detail
+      -- Flag tool errors, then user errors, then general
+      if let some r := (← pctx.getToolErrors).back? then
+        return .error <| r.message
+      if let some r := (← pctx.getUserCodeErrors).back? then
+        return .error <| s!"User code error: {r.message}"
+      if let some m := (←pctx.getMessages).back? then
+        return .error m.message
+      return .error "Pipeline aborted for unspecified reason (bug)"
   match ← Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
