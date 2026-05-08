@@ -53,6 +53,7 @@ def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format 
     concreteEval := none
     axioms := decl.axioms
     preconditions := decl.preconditions
+    measure := decl.measure
   }
 
 ---------------------------------------------------------------------

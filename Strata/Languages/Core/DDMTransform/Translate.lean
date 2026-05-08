@@ -1716,7 +1716,7 @@ Translate a single function within a mutual recursive block.
 partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
     (fnOp : Operation) (siblingExprs : Array Core.Expression.Expr) :
     TransM Core.Function := do
-  let _ ← @checkOp Core.Function fnOp q`Core.recfn_decl 6
+  let _ ← @checkOp Core.Function fnOp q`Core.recfn_decl 7
   let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
   let typeArgs ← translateTypeArgs fnOp.args[1]!
   let (sig, casesIdx) ← translateBindingsWithCases preBindings fnOp.args[2]!
@@ -1733,10 +1733,12 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
     | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
     | none => #[]
   let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
-  let body ← translateExpr p bodyBindings fnOp.args[5]!
+  let measure ← translateMeasure p bodyBindings fnOp.args[5]!
+  let body ← translateExpr p bodyBindings fnOp.args[6]!
   return { name := fname, typeArgs := typeArgs.toList, isRecursive := true,
            inputs := sig, output := ret, body := some body,
-           attr := casesAttr, preconditions := preconds }
+           attr := casesAttr, preconditions := preconds,
+           measure := measure }
 
 /--
 Translate a `command_recfndefs` block (one or more mutually recursive functions).
