@@ -349,28 +349,6 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
 
 ---------------------------------------------------------------------
 
-/-! ### Labels -/
-
-mutual
-@[expose] def Stmt.labels (s : Stmt P C) : List String :=
-  match s with
-  | .exit (some l) _ => [l]
-  | .exit none _     => []
-  | .cmd _           => []
-  | .block _ bss _   => Block.labels bss
-  | .ite _ tss ess _ => Block.labels tss ++ Block.labels ess
-  | .loop _ _ _ bss _ => Block.labels bss
-  | .funcDecl _ _    => []
-  | .typeDecl _ _    => []
-
-@[expose] def Block.labels (ss : Block P C) : List String :=
-  match ss with
-  | []       => []
-  | s :: rest => Stmt.labels s ++ Block.labels rest
-end
-
----------------------------------------------------------------------
-
 /-! ### Formatting -/
 
 open Std (ToFormat Format format)
