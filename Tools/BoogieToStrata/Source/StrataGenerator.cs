@@ -52,6 +52,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     // Global variables collected from the program, used to convert them
     // into inout/input parameters on procedure headers and call sites.
     private List<GlobalVariable> _globalVariables = [];
+    // Maps sanitized constant names to their renamed versions when they
+    // collide with procedure names. In Boogie, constants and procedures
+    // live in separate namespaces, but Strata Core has a single namespace.
+    private readonly Dictionary<string, string> _constantRenames = new();
+    // Set of all sanitized procedure names, used to detect collisions.
+    private readonly HashSet<string> _procedureNames = new();
 
     private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
         _options = options;
@@ -73,6 +79,22 @@ public class StrataGenerator : ReadOnlyVisitor {
                     : Pruner.GetLiveDeclarations(options, p, allBlocks.ToList()).LiveDeclarations.ToList();
 
             generator.FindSpecialTypes();
+
+            // Collect all procedure names (sanitized) to detect namespace collisions.
+            foreach (var proc in p.Procedures) {
+                generator._procedureNames.Add(SanitizeNameForStrata(proc.Name));
+            }
+            foreach (var impl in p.Implementations) {
+                generator._procedureNames.Add(SanitizeNameForStrata(impl.Name));
+            }
+
+            // Build rename map for constants that collide with procedure names.
+            foreach (var c in liveDeclarations.OfType<Constant>()) {
+                var sanitized = SanitizeNameForStrata(c.TypedIdent.Name);
+                if (generator._procedureNames.Contains(sanitized)) {
+                    generator._constantRenames[c.TypedIdent.Name] = $"__const_{sanitized}";
+                }
+            }
 
             var typeConstructors = p.TopLevelDeclarations.OfType<TypeCtorDecl>().ToList();
             if (typeConstructors.Count != 0) {
@@ -299,6 +321,17 @@ public class StrataGenerator : ReadOnlyVisitor {
         return SanitizeNameForStrata(name);
     }
 
+    /// <summary>
+    /// Returns the (possibly renamed) name for a constant, handling namespace
+    /// collisions with procedures.
+    /// </summary>
+    private string ConstantName(string originalName) {
+        if (_constantRenames.TryGetValue(originalName, out var renamed)) {
+            return renamed;
+        }
+        return SanitizeNameForStrata(originalName);
+    }
+
     private void WriteLine(string text) {
         _writer.WriteLine(text);
     }
@@ -310,7 +343,11 @@ public class StrataGenerator : ReadOnlyVisitor {
         switch (expr) {
             case IdentifierExpr identExpr:
                 WriteText("old ");
-                WriteText(Name(identExpr.Name));
+                if (identExpr.Decl is Constant && _constantRenames.ContainsKey(identExpr.Name)) {
+                    WriteText(ConstantName(identExpr.Name));
+                } else {
+                    WriteText(Name(identExpr.Name));
+                }
                 break;
             case NAryExpr { Fun: MapSelect } mapSelect:
                 WriteText("(");
@@ -546,7 +583,11 @@ public class StrataGenerator : ReadOnlyVisitor {
             case LiteralExpr literalExpr:
                 throw new StrataConversionException(node.tok, $"Unsupported literal type: {literalExpr}");
             case IdentifierExpr identifierExpr:
-                WriteText(Name(identifierExpr.Name));
+                if (identifierExpr.Decl is Constant && _constantRenames.ContainsKey(identifierExpr.Name)) {
+                    WriteText(ConstantName(identifierExpr.Name));
+                } else {
+                    WriteText(Name(identifierExpr.Name));
+                }
                 break;
             case NAryExpr nAryExpr: {
                 var fun = nAryExpr.Fun;
@@ -1510,7 +1551,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Constant VisitConstant(Constant node) {
         var ti = node.TypedIdent;
-        var name = Name(ti.Name);
+        var name = ConstantName(ti.Name);
         WriteText($"const {name} : ");
         VisitType(ti.Type);
         if (node.Unique) {
@@ -1773,6 +1814,19 @@ public class StrataGenerator : ReadOnlyVisitor {
     public override Procedure VisitProcedure(Procedure node) {
         if (!_program.Implementations.Any(i => i.Name.Equals(node.Name))) {
             WriteProcedureHeader(node);
+            // SMACK encodes C assert(expr) as a call to assert_.*(cond).
+            // Emit a requires precondition so the call-elimination pass
+            // generates a VC checking the condition is non-zero.
+            if (node.Name.StartsWith("assert_") && node.InParams.Count > 0
+                && node.Requires.Count == 0) {
+                var firstParam = Name(node.InParams[0].TypedIdent.Name);
+                WriteLine("spec {");
+                IncIndent();
+                Indent();
+                WriteLine($"requires ({firstParam} != 0);");
+                DecIndent();
+                WriteText("}");
+            }
             WriteLine(";");
             WriteLine();
         }
