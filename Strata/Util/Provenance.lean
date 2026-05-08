@@ -39,6 +39,14 @@ instance : Std.ToFormat Provenance where
     | .loc uri range => f!"{uri}:{range}"
     | .synthesized origin => f!"<synthesized:{origin}>"
 
+/-- Canonical synthesized provenance origins. Use these instead of ad-hoc strings. -/
+abbrev smtEncode : Provenance := .synthesized "smt-encode"
+abbrev nondetIte : Provenance := .synthesized "nondet-ite"
+abbrev laurelParse : Provenance := .synthesized "laurel-parse"
+abbrev laurel : Provenance := .synthesized "laurel"
+abbrev laurelToCore : Provenance := .synthesized "laurel-to-core"
+abbrev structuredToUnstructured : Provenance := .synthesized "structured-to-unstructured"
+
 end Provenance
 end Strata
 end

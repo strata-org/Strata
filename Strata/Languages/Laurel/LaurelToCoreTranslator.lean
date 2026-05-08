@@ -44,7 +44,7 @@ open Lambda (LMonoTy LTy LExpr)
 public section
 
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
-  Imperative.MetaData.synthesized "laurel-to-core"
+  Imperative.MetaData.ofProvenance .laurelToCore
 
 /-- Extract source location from an `AstNode` as an `ExprSourceLoc`,
     preserving the URI when available. -/

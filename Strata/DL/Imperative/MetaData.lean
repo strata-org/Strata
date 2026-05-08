@@ -239,10 +239,6 @@ def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRang
 def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
   #[{ fld := MetaData.provenanceField, value := .provenance p }]
 
-/-- Create metadata with a synthesized provenance. -/
-def MetaData.synthesized {P : PureExpr} (origin : String) : MetaData P :=
-  MetaData.ofProvenance (.synthesized origin)
-
 /-- Create metadata from a source range and URI, storing provenance. -/
 def MetaData.ofSourceRange {P : PureExpr} (uri : Uri) (sr : SourceRange) : MetaData P :=
   MetaData.ofProvenance (Provenance.ofSourceRange uri sr)
