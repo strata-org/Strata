@@ -13,6 +13,14 @@ import all Strata.DDM.Util.String
 public section
 namespace Strata.Pipeline
 
+/-- Print to stdout and flush. -/
+private def printlnFlush (msg : String) : BaseIO Unit := do
+  let _ ← (do IO.println msg; (← IO.getStdout).flush : IO Unit).toBaseIO
+
+/-- Nanoseconds to milliseconds with rounding. -/
+def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
+
+
 /-- A phase represents a position in the phase hierarchy.
     Top-level phases have a single entry; subphases have multiple.
     Ordering is determined by position in the timing array, not by name. -/
@@ -61,14 +69,13 @@ inductive MessageImpact where
   | configurationError
   deriving BEq, DecidableEq, Hashable, Ord, Repr
 
-/-- Whether this impact level should abort the pipeline. Fatal impacts
-    indicate that the pipeline output would be incomplete or incorrect. -/
-def MessageImpact.isFatal : MessageImpact → Bool
+/-- Whether this impact level represents an error (vs a warning). -/
+def MessageImpact.isError : MessageImpact → Bool
   | .internalError => true
   | .configurationError => true
   | .internalWarning => false
   | .knownLimitation => false
-  | .userCodeIssue => false
+  | .userCodeIssue => true
 
 instance : ToString MessageImpact where
   toString
@@ -240,42 +247,82 @@ structure PhaseTimingEntry where
 /-- Pipeline context carrying immutable config and mutable state as individual IORefs.
     This design allows any monad with BaseIO access to use pipeline capabilities
     by passing a PipelineContext value directly. -/
-public structure PipelineContext where
+structure PipelineContext where
+  private mk ::
   outputMode : OutputMode
-  pipelineStartTime : Nat
-  skipTiming : Bool := false
-  messagesRef : IO.Ref (Array PipelineMessage)
-  timingRef : IO.Ref (Array PhaseTimingEntry)
-  currentPhaseRef : IO.Ref Phase
-  messageCountAtPhaseStartRef : IO.Ref Nat
-  repeatedPhasesRef : IO.Ref (Std.HashMap String (Nat × Nat))
-  metricsHandle : Option IO.FS.Handle := none
+  private pipelineStartTime : Nat
+  private skipTiming : Bool := false
+  private messagesRef : IO.Ref (Array PipelineMessage)
+  private toolErrorsRef : IO.Ref (Array PipelineMessage)
+  private userCodeErrorsRef : IO.Ref (Array PipelineMessage)
+  private timingRef : IO.Ref (Array PhaseTimingEntry)
+  private currentPhaseRef : IO.Ref Phase
+  private messageCountAtPhaseStartRef : IO.Ref Nat
+  private repeatedPhasesRef : IO.Ref (Std.HashMap String (Nat × Nat))
+  private metricsHandle : Option IO.FS.Handle := none
 
-/-- The pipeline monad: a reader over PipelineContext with EIO Unit.
-    Fatal messages abort by throwing `()`. Callers that want to continue
-    despite abort can catch the exception. -/
-public abbrev PipelineM := ReaderT PipelineContext (EIO Unit)
+namespace PipelineContext
 
-/-- Nanoseconds to milliseconds with rounding. -/
-def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
+/-- Create a fresh PipelineContext with new state refs. -/
+def create (outputMode : OutputMode := .default)
+    (skipTiming : Bool := false)
+    (metricsHandle : Option IO.FS.Handle := none) : BaseIO PipelineContext := do
+  let startTime ← IO.monoNanosNow
+  let messagesRef ← IO.mkRef (α := Array PipelineMessage) #[]
+  let toolErrorsRef ← IO.mkRef (α := Array PipelineMessage) #[]
+  let userCodeErrorsRef ← IO.mkRef (α := Array PipelineMessage) #[]
+  let timingRef ← IO.mkRef (α := Array PhaseTimingEntry) #[]
+  let currentPhaseRef ← IO.mkRef (α := Phase) default
+  let messageCountAtPhaseStartRef ← IO.mkRef 0
+  let repeatedPhasesRef ← IO.mkRef (α := Std.HashMap String (Nat × Nat)) {}
+  return { outputMode, pipelineStartTime := startTime, skipTiming,
+           messagesRef, toolErrorsRef, userCodeErrorsRef, timingRef,
+           currentPhaseRef, messageCountAtPhaseStartRef, repeatedPhasesRef,
+           metricsHandle }
 
-/-- Get elapsed nanoseconds since pipeline start. -/
-def PipelineContext.elapsedNs (ctx : PipelineContext) : BaseIO Nat := do
-  let now ← IO.monoNanosNow
-  return now - ctx.pipelineStartTime
+/-- All accumulated pipeline messages. -/
+def getMessages (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
+  ctx.messagesRef.get
 
-/-- Print to stdout and flush. -/
-private def printlnFlush (msg : String) : BaseIO Unit := do
-  let _ ← (do IO.println msg; (← IO.getStdout).flush : IO Unit).toBaseIO
+/-- Messages with `.internalError` or `.configurationError` impact.
+    These represent tool bugs or invalid invocations that we must fix. -/
+def getToolErrors (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
+  ctx.toolErrorsRef.get
+
+/-- Messages with `.userCodeIssue` impact.
+    These represent definite errors in the user's Python source code. -/
+def getUserCodeErrors (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
+  ctx.userCodeErrorsRef.get
+
+/-- All timing entries recorded during the pipeline. -/
+def getTimingEntries (ctx : PipelineContext) : BaseIO (Array PhaseTimingEntry) :=
+  ctx.timingRef.get
 
 /-- Write a JSONL metric record to the metrics file (if open) and flush. -/
-public def PipelineContext.emitMetric (ctx : PipelineContext) (json : Lean.Json) : BaseIO Unit := do
+public def emitMetric (ctx : PipelineContext) (json : Lean.Json) : BaseIO Unit := do
   if let some h := ctx.metricsHandle then
     let _ ← (do h.putStrLn json.compress; h.flush : IO Unit).toBaseIO
 
+/-- Get elapsed nanoseconds since pipeline start. -/
+def elapsedNs (ctx : PipelineContext) : BaseIO Nat := do
+  let now ← IO.monoNanosNow
+  return now - ctx.pipelineStartTime
+
+/-- Start a new phase: record timing and print [start] in profile/verbose mode. -/
+private def startPhase (ctx : PipelineContext) (phase : Phase) : BaseIO Unit := do
+  let now ← ctx.elapsedNs
+  ctx.timingRef.modify (·.push { phase, start_ns := now })
+  ctx.currentPhaseRef.set phase
+  let messages ← ctx.messagesRef.get
+  ctx.messageCountAtPhaseStartRef.set messages.size
+  if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+    let indent := String.replicate ((phase.depth - 1) * 2) ' '
+    let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
+    printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
+
 /-- End the current phase: flush aggregated repeated subphases, record end time,
     print [warnings] summary in profile mode. -/
-private def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
+private def endPhase (ctx : PipelineContext) : BaseIO Unit := do
   let currentPhase ← ctx.currentPhaseRef.get
   if currentPhase.path.isEmpty then return
   -- Flush aggregated repeated subphases
@@ -319,25 +366,13 @@ private def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Uni
       printlnFlush s!"{indent}[warnings] {currentPhase.leaf}: {summary}"
   ctx.currentPhaseRef.set {}
 
-/-- Start a new phase: record timing and print [start] in profile/verbose mode. -/
-private def PipelineContext.startPhase (ctx : PipelineContext) (phase : Phase) : BaseIO Unit := do
-  let now ← ctx.elapsedNs
-  ctx.timingRef.modify (·.push { phase, start_ns := now })
-  ctx.currentPhaseRef.set phase
-  let messages ← ctx.messagesRef.get
-  ctx.messageCountAtPhaseStartRef.set messages.size
-  if ctx.outputMode == .profile || ctx.outputMode == .verbose then
-    let indent := String.replicate ((phase.depth - 1) * 2) ' '
-    let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
-    printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
-
 /-- Run an action as a named subphase of the current phase. Nesting is
     determined by call structure — at the root the phase is top-level,
     inside a withPhase it becomes a child. Records timing, prints
     [start]/[end] in profile/verbose mode. Restores parent on completion
     (even if the action throws). -/
 @[noinline]
-public def PipelineContext.withPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
+public def withPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
     (ctx : PipelineContext) (name : String) (action : m α) : m α := do
   let parent ← (ctx.currentPhaseRef.get : BaseIO _)
   let savedRepeated ← (ctx.repeatedPhasesRef.get : BaseIO _)
@@ -346,25 +381,19 @@ public def PipelineContext.withPhase {m α} [Monad m] [MonadLiftT BaseIO m] [Mon
   try
     action
   finally
-    (ctx.endCurrentPhase : BaseIO _)
+    (ctx.endPhase : BaseIO _)
     (ctx.currentPhaseRef.set parent : BaseIO _)
     (ctx.repeatedPhasesRef.set savedRepeated : BaseIO _)
     -- Advance parent's message start so it only reports messages added after this child
     let msgs ← (ctx.messagesRef.get : BaseIO _)
     (ctx.messageCountAtPhaseStartRef.set msgs.size : BaseIO _)
 
-/-- PipelineM wrapper for withPhase. -/
-@[noinline]
-public def withPhase (name : String) (action : PipelineM α) : PipelineM α := do
-  let ctx ← read
-  ctx.withPhase name (action.run ctx)
-
 /-- Run an action as a repeated subphase. Instead of recording individual
     timing entries, accumulates count and total duration into the parent's
     `repeatedPhasesRef`. When the parent phase ends, the aggregated results
     are flushed as single timing entries. Silent per-iteration. -/
 @[noinline]
-public def PipelineContext.withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
+public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
     (ctx : PipelineContext) (name : String) (action : m α) : m α := do
   let t1 ← (IO.monoNanosNow : BaseIO _)
   try
@@ -377,25 +406,72 @@ public def PipelineContext.withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO
         | some (count, total) => some (count + 1, total + elapsed)
         | none => some (1, elapsed) : BaseIO _)
 
+end PipelineContext
+
+/-- The pipeline monad: a reader over PipelineContext with EIO Unit.
+    Computations accumulate diagnostic messages in PipelineContext.messagesRef.
+    `emitFatalMessage` throws `()` to abort, but multiple messages (including
+    multiple error-impact messages) may accumulate before or across aborts.
+    The caller of `PipelineM.run` is responsible for inspecting the accumulated
+    messages and the outcome to determine the appropriate exit code. -/
+abbrev PipelineM := ReaderT PipelineContext (EIO Unit)
+
 /-- Get the current phase from the pipeline context. -/
 public def getPhase : PipelineM Phase := do
   let ctx ← read
   ctx.currentPhaseRef.get
 
-/-- Create a fresh PipelineContext with new state refs. -/
-public def PipelineContext.create (outputMode : OutputMode := .default)
-    (skipTiming : Bool := false)
-    (metricsHandle : Option IO.FS.Handle := none) : BaseIO PipelineContext := do
-  let startTime ← IO.monoNanosNow
-  let messagesRef ← IO.mkRef (α := Array PipelineMessage) #[]
-  let timingRef ← IO.mkRef (α := Array PhaseTimingEntry) #[]
-  let currentPhaseRef ← IO.mkRef (α := Phase) default
-  let messageCountAtPhaseStartRef ← IO.mkRef 0
-  let repeatedPhasesRef ← IO.mkRef (α := Std.HashMap String (Nat × Nat)) {}
-  return { outputMode, pipelineStartTime := startTime, skipTiming,
-           messagesRef, timingRef,
-           currentPhaseRef, messageCountAtPhaseStartRef, repeatedPhasesRef,
-           metricsHandle }
+/-- PipelineM wrapper for withPhase. -/
+@[noinline]
+public def withPhase (name : String) (action : PipelineM α) : PipelineM α := do
+  let ctx ← read
+  ctx.withPhase name (action.run ctx)
+
+/-- Append a pre-built PipelineMessage, emit metrics, and print in verbose mode.
+    Also buckets the message into specialized refs by impact. Does not throw. -/
+public def addMessage (msg : Pipeline.PipelineMessage) : Pipeline.PipelineM Unit := do
+  let ctx ← read
+  ctx.messagesRef.modify (·.push msg)
+  match msg.kind.impact with
+  | .internalError | .configurationError => ctx.toolErrorsRef.modify (·.push msg)
+  | .userCodeIssue => ctx.userCodeErrorsRef.modify (·.push msg)
+  | _ => pure ()
+  let mut fields : List (String × Lean.Json) := [
+    ("type", .str "diagnostic"), ("phase", .str msg.phase.display),
+    ("file", .str msg.file.toString), ("category", .str msg.kind.category),
+    ("impact", .str (toString msg.kind.impact)), ("message", .str msg.message)]
+  unless msg.loc == default do
+    fields := fields ++ [("start", .num msg.loc.start.byteIdx), ("stop", .num msg.loc.stop.byteIdx)]
+  ctx.emitMetric (Lean.Json.mkObj fields)
+  if ctx.outputMode == .verbose then
+    let tag := if msg.kind.impact.isError then "error" else "warning"
+    let indent := String.replicate ((msg.phase.depth - 1) * 2) ' '
+    let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
+
+/-- Emit a diagnostic message and continue. Tags with current phase. -/
+public def emitMessage (kind : Pipeline.MessageKind) (message : String)
+    (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
+  let phase ← (← read) |>.currentPhaseRef.get
+  addMessage { file, loc, phase, kind, message }
+
+/-- Emit a diagnostic message and abort the pipeline.
+    Polymorphic return type allows use in expression position. -/
+public def emitFatalMessage (kind : Pipeline.MessageKind) (message : String)
+    (file : System.FilePath) (loc : SourceRange := default) : Pipeline.PipelineM α := do
+  emitMessage kind message file loc
+  throw ()
+
+/-- All messages with a given impact. -/
+public def getMessagesByImpact (impact : MessageImpact) : PipelineM (Array PipelineMessage) := do
+  let ctx ← read
+  let msgs ← ctx.messagesRef.get
+  return msgs.filter (·.kind.impact == impact)
+
+/-- Whether any accumulated message has the given impact. -/
+public def hasImpact (impact : MessageImpact) : PipelineM Bool := do
+  let ctx ← read
+  let msgs ← ctx.messagesRef.get
+  return msgs.any (·.kind.impact == impact)
 
 end Strata.Pipeline
 end

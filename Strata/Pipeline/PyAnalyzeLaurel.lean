@@ -15,16 +15,13 @@ import Strata.SimpleAPI
 
 namespace Strata.Pipeline
 
-/-- The outcome of the full pyAnalyzeLaurel pipeline. -/
+/-- The outcome of the full pyAnalyzeLaurel pipeline.
+    Error details are derived from the accumulated messages in PipelineContext. -/
 public inductive PyAnalyzeOutcome where
   /-- Pipeline completed verification successfully. -/
   | verified (vcResults : _root_.Core.VCResults) (coreProgram : Core.Program)
-  /-- User code error detected during translation. -/
-  | userError (range : SourceRange) (message : String)
-  /-- Known limitation prevented pipeline completion. -/
-  | knownLimitation (message : String)
-  /-- Internal error. -/
-  | internalError (message : String)
+  /-- Pipeline aborted due to a fatal error. -/
+  | failed
 
 /-- Configuration for the pyAnalyzeLaurel pipeline. -/
 public structure PyAnalyzeConfig where
@@ -43,54 +40,34 @@ public structure PyAnalyzeConfig where
   skipTiming : Bool := false
   metricsHandle : Option IO.FS.Handle := none
 
-/-- Full result of the pyAnalyzeLaurel pipeline. Warnings are always populated. -/
-public structure PyAnalyzeResult where
-  outcome : PyAnalyzeOutcome
-  warnings : Array PipelineMessage
-  timing : Array PhaseTimingEntry := #[]
-  laurelPassStats : Statistics := {}
-
 private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
-  let pipelineResult ← withPhase "pythonAndSpecToLaurel" do
+  let combinedLaurel ← withPhase "pythonAndSpecToLaurel" do
+    Strata.pythonAndSpecToLaurel
+      (specDir := config.specDir)
+      config.filePath config.dispatchModules config.pyspecModules config.sourcePath
+
+  let uri := config.sourcePath.getD config.filePath
+
+  let (coreProgram, laurelPassStats) ← withPhase "laurelToCore" do
     let ctx ← read
-    let r ← Strata.pythonAndSpecToLaurel
-          (specDir := config.specDir)
-          config.filePath config.dispatchModules config.pyspecModules config.sourcePath
-          (pipelineCtx := ctx)
-    pure r
-
-  let combinedLaurel ← match pipelineResult with
-    | .success r _ => pure r
-    | .failure (.userCode range msg) _ =>
-      return (PyAnalyzeOutcome.userError range msg, {})
-    | .failure (.knownLimitation msg) _ =>
-      return (PyAnalyzeOutcome.knownLimitation msg, {})
-    | .failure (.internal msg) _ =>
-      return (PyAnalyzeOutcome.internalError msg, {})
-
-  let laurelResult ← withPhase "laurelToCore" do
-    let ctx ← read
-    (Strata.translateCombinedLaurelWithLowered combinedLaurel
-      (keepAllFilesPrefix := config.keepAllFilesPrefix)
-      (profile := config.profile)
-      (pipelineCtx := some ctx)).toBaseIO
-
-  let (coreProgramOption, laurelTranslateErrors, _, laurelPassStats) ←
+    let laurelResult ←
+      Strata.translateCombinedLaurelWithLowered combinedLaurel
+        (keepAllFilesPrefix := config.keepAllFilesPrefix)
+        (profile := config.profile)
+        (pipelineCtx := some ctx) |>.toBaseIO
     match laurelResult with
-    | .ok r => pure r
+    | .ok (coreOpt, diags, _, stats) =>
+      let phase ← getPhase
+      for msg in PipelineMessage.fromDiagnostics phase diags do
+        addMessage msg
+        if msg.kind.impact.isError then throw ()
+      match coreOpt with
+      | some core => pure (core, stats)
+      | none =>
+        emitFatalMessage (file := uri) .laurelToCoreError s!"Laurel to Core translation failed: {diags}"
     | .error e =>
-      return (PyAnalyzeOutcome.internalError s!"Laurel translation error: {e}", {})
-
-  let phase ← getPhase
-  let laurelMessages := PipelineMessage.fromDiagnostics phase laurelTranslateErrors
-  Strata.addMessages laurelMessages
-
-  let coreProgram ← match coreProgramOption with
-    | some core => pure core
-    | none =>
-      return (PyAnalyzeOutcome.internalError
-        s!"Laurel to Core translation failed: {laurelTranslateErrors}", laurelPassStats)
+      emitFatalMessage (file := uri) .laurelToCoreError s!"Laurel translation error: {e}"
 
   if config.skipVerification then
     return (PyAnalyzeOutcome.verified #[] coreProgram, laurelPassStats)
@@ -114,19 +91,21 @@ private def runPipeline (config : PyAnalyzeConfig)
         (pipelineCtx := some ctx)
         |>.toBaseIO
 
-  let vcResults ← match verifyResult with
-    | .ok r => pure r.mergeByAssertion
+  let vcResults ←
+    match verifyResult with
+    | .ok r =>
+      pure r.mergeByAssertion
     | .error msg =>
-      return (PyAnalyzeOutcome.internalError msg, laurelPassStats)
+      emitFatalMessage (file := uri) .verificationError msg
 
   for vcResult in vcResults do
     match vcResult.outcome with
     | .error (.encoding msg) =>
-      Strata.emitMessage .verificationError msg
+      emitFatalMessage (file := uri) .verificationError msg
     | .error (.solverTimeout msg) =>
-      Strata.emitMessage .verificationTimeout msg
+      emitMessage .verificationTimeout msg
     | .error (.solverCrash msg) =>
-      Strata.emitMessage .verificationError msg
+      emitFatalMessage (file := uri) .verificationError msg
     | .ok _ => pure ()
 
   return (PyAnalyzeOutcome.verified vcResults coreProgram, laurelPassStats)
@@ -135,22 +114,16 @@ private def runPipeline (config : PyAnalyzeConfig)
     Laurel to Core, then SMT verification.
 
     Accumulates pipeline messages from all phases. The caller is responsible
-    for printing warnings and handling the outcome (exit codes, SARIF, etc.). -/
-public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO (PyAnalyzeResult × PipelineContext) := do
+    for inspecting the outcome and accumulated messages to determine exit codes. -/
+public def runPyAnalyzePipeline (config : PyAnalyzeConfig)
+    : IO (PyAnalyzeOutcome × Statistics × PipelineContext) := do
   let ctx ← PipelineContext.create
     (outputMode := config.outputMode)
     (skipTiming := config.skipTiming)
     (metricsHandle := config.metricsHandle)
-  let result ← (runPipeline config |>.run ctx).toBaseIO
-  let warnings ← ctx.messagesRef.get
-  let timing ← ctx.timingRef.get
+  let result ← runPipeline config |>.run ctx |>.toBaseIO
   match result with
-  | .ok (outcome, stats) =>
-    let r : PyAnalyzeResult := { outcome, warnings, timing, laurelPassStats := stats }
-    return (r, ctx)
-  | .error () =>
-    let r : PyAnalyzeResult :=
-      { outcome := .internalError "Pipeline aborted due to fatal errors", warnings, timing }
-    return (r, ctx)
+  | .ok (outcome, stats) => return (outcome, stats, ctx)
+  | .error () => return (.failed, {}, ctx)
 
 end Strata.Pipeline

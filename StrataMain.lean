@@ -679,7 +679,7 @@ def pyAnalyzeLaurelCommand : Command where
     let skipVerification := pflags.getBool "skip-verification"
 
     -- Run the pipeline
-    let (result, pctx) ← Strata.Pipeline.runPyAnalyzePipeline {
+    let (outcome, laurelPassStats, pctx) ← Strata.Pipeline.runPyAnalyzePipeline {
       filePath, specDir
       dispatchModules, pyspecModules, sourcePath
       profile
@@ -691,15 +691,15 @@ def pyAnalyzeLaurelCommand : Command where
     }
 
     -- Always print pipeline warnings
-    let pipelineWarnings := result.warnings
-    if !quiet && pipelineWarnings.size > 0 then
-      IO.eprintln s!"{pipelineWarnings.size} pipeline warning(s)"
+    let msgs ← pctx.getMessages
+    if !quiet && msgs.size > 0 then
+      IO.eprintln s!"{msgs.size} pipeline warning(s)"
       if verbose then
-        for err in pipelineWarnings do
+        for err in msgs do
           IO.eprintln s!"  {err.file}: {err.phase}.{err.kind}: {err.message}"
 
-    if profile && !result.laurelPassStats.data.isEmpty then
-      IO.println result.laurelPassStats.format
+    if profile && !laurelPassStats.data.isEmpty then
+      IO.println laurelPassStats.format
 
     -- Write outcome record to metrics file.
     let emitOutcome (resultStr : String) (exitCode : UInt8) (detail : Option String := none) : IO Unit := do
@@ -711,18 +711,21 @@ def pyAnalyzeLaurelCommand : Command where
         fields := fields ++ [("detail", .str d)]
       pctx.emitMetric (Lean.Json.mkObj fields)
 
-    -- Handle pipeline outcome
-    match result.outcome with
-    | .userError range msg =>
-      let location ← reportUserCodeError range msg mfm (sourcePath.getD filePath)
-      emitOutcome "userError" ExitCode.userError (detail := msg)
-      exitPyAnalyzeUserError s!"{msg}{location}"
-    | .knownLimitation msg =>
-      emitOutcome "knownLimitation" ExitCode.knownLimitation (detail := msg)
-      exitPyAnalyzeKnownLimitation msg
-    | .internalError msg =>
-      emitOutcome "internalError" ExitCode.internalError (detail := msg)
-      exitPyAnalyzeInternalError msg
+    -- Handle pipeline outcome.
+    -- Exit code is f(outcome, messages) — see priority ordering in unify.md.
+    let toolErrors ← pctx.getToolErrors
+    let userErrors ← pctx.getUserCodeErrors
+
+    -- Priority 1: internal/configuration errors always dominate
+    if let some lastErr := toolErrors.back? then
+      emitOutcome "internalError" ExitCode.internalError (detail := lastErr.message)
+      exitPyAnalyzeInternalError lastErr.message
+    -- Priority 2: user code errors
+    if let some lastErr := userErrors.back? then
+      let location ← reportUserCodeError lastErr.loc lastErr.message mfm (sourcePath.getD filePath)
+      emitOutcome "userError" ExitCode.userError (detail := lastErr.message)
+      exitPyAnalyzeUserError s!"{lastErr.message}{location}"
+    match outcome with
     | .verified vcResults _coreProgram =>
       -- Print per-VC results by default, unless SARIF mode is used
       if !outputSarif then
@@ -747,8 +750,23 @@ def pyAnalyzeLaurelCommand : Command where
           | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
           | none => Map.empty
         Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
+      -- Priority 3: verification failures (exit 2 or 0)
       emitOutcome "verified" 0
       printPyAnalyzeSummary vcResults options.checkMode
+    | .failed =>
+      -- Priority 4: known limitations
+      let knownLimitations := msgs.filter (·.kind.impact == .knownLimitation)
+      match knownLimitations.back? with
+      | some lastErr =>
+        emitOutcome "knownLimitation" ExitCode.knownLimitation (detail := lastErr.message)
+        exitPyAnalyzeKnownLimitation lastErr.message
+      | none =>
+        -- .failed with no classified impact = internal error
+        let msg : String := match msgs.back? with
+          | some m => m.message
+          | none => "Pipeline aborted"
+        emitOutcome "internalError" ExitCode.internalError (detail := msg)
+        exitPyAnalyzeInternalError msg
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -935,8 +953,7 @@ def pyResolveOverloadsCommand : Command where
     let overloads ← match ← (readDispatchOverloads pctx #[dispatchPath]).toBaseIO with
       | .ok r => pure r
       | .error () =>
-        let msgs ← pctx.messagesRef.get
-        for m in msgs do
+        for m in ← pctx.getMessages do
           IO.eprintln s!"{m}"
         exitFailure "readDispatchOverloads: fatal error"
     -- Convert .py to Python AST
@@ -1359,15 +1376,18 @@ def pyInterpretCommand : Command where
 
     let quietCtx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
     let (core, _diags) ←
-      match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") (pipelineCtx := quietCtx) with
-      | .success laurel _ =>
+      match ← (Strata.pythonAndSpecToLaurel filePath (specDir := ".")).run quietCtx |>.toBaseIO with
+      | .ok laurel =>
         if let some dir := keepDir then
           IO.FS.createDirAll dir
           IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))
         match ← Strata.translateCombinedLaurel laurel with
         | (some core, diags) => pure (core, diags)
         | (none, diags) => exitFailure s!"Laurel to Core translation failed: {diags}"
-      | .failure msg _ => exitFailure (toString msg)
+      | .error () =>
+        let msgs ← quietCtx.getMessages
+        let detail := match msgs.back? with | some m => m.message | none => "Pipeline aborted"
+        exitFailure detail
     if let some dir := keepDir then
       IO.FS.writeFile (dir ++ "/core.st") (toString (Std.format core))
     let core ← match Core.typeCheck Core.VerifyOptions.quiet core

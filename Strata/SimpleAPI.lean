@@ -557,9 +557,14 @@ def pyTranslateLaurel
     : EIO String (Core.Program × List DiagnosticModel) := do
   let pctx ← Pipeline.PipelineContext.create (outputMode := .quiet)
   let laurel ←
-    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) (pipelineCtx := pctx) with
-    | .success r _ => pure r
-    | .failure err _ => throw (toString err)
+    match ← (pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir)).run pctx |>.toBaseIO with
+    | .ok r => pure r
+    | .error () =>
+      let msgs ← pctx.getMessages
+      let detail := match msgs.back? with
+        | some m => m.message
+        | none => "Pipeline aborted"
+      throw detail
   let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
