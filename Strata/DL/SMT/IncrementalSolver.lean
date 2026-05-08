@@ -37,6 +37,9 @@ structure IncrementalSolverState where
   typeStrings : Std.HashMap TermType String := {}
   /-- Tracks how many times each variable name has been declared (for shadowing). -/
   shadowCounts : Std.HashMap String Nat := {}
+  /-- Maps SMT-LIB string → Term for the last `checkSatAssuming` call,
+      used by `getUnsatAssumptions` to recover terms from solver output. -/
+  lastAssumptions : Std.HashMap String Term := {}
 
 /-- The monad for the incremental solver backend. -/
 abbrev IncrementalSolverM := StateT IncrementalSolverState IO
@@ -321,10 +324,14 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   checkSatAssuming assumptions := do
     let mut strs := []
+    let mut assumptionMap : Std.HashMap String Term := {}
     for t in assumptions.reverse do
       match ← termToStr t with
-      | .ok s => strs := s :: strs
+      | .ok s =>
+        strs := s :: strs
+        assumptionMap := assumptionMap.insert s t
       | .error msg => return .error msg
+    modify fun st => { st with lastAssumptions := assumptionMap }
     let inline := String.intercalate " " strs
     emitln s!"(check-sat-assuming ({inline}))"
     let result ← readln
@@ -332,7 +339,20 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   getModel := return .error "getModel: not yet implemented for incremental backend"
 
-  getUnsatAssumptions := return .error "getUnsatAssumptions: not yet implemented for incremental backend"
+  getUnsatAssumptions := do
+    emitln "(get-unsat-assumptions)"
+    let response ← readln
+    -- Response is "(lit1 lit2 ...)" — strip parens and split
+    let inner := response.replace "(" "" |>.replace ")" ""
+    if inner.trim.isEmpty then return .ok []
+    let literals := inner.trim.splitOn " " |>.filter (!·.isEmpty)
+    let assumptionMap := (← get).lastAssumptions
+    let mut result := []
+    for lit in literals.reverse do
+      match assumptionMap.get? lit with
+      | some t => result := t :: result
+      | none => return .error s!"getUnsatAssumptions: unknown literal '{lit}'"
+    return .ok result
 
   getValue ts := do
     -- Send get-value command with the given terms
