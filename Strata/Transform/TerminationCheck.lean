@@ -159,9 +159,11 @@ private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
   | .tcons adtName concreteArgs =>
     if concreteArgs.isEmpty then []
     else match tf.getType adtName with
-      | some dt => [dt.typeArgs.zip concreteArgs]
+      | some dt =>
+        if dt.typeArgs.length != concreteArgs.length then []
+        else [dt.typeArgs.zip concreteArgs]
       | none => []
-  | _ => []
+  | _ => [] -- unreachable: termCheck Step 1 rejects non-.tcons types
 
 /-- Generate a termination-checking procedure for a single function.
     Returns `none` if the function has no recursive calls or no valid

@@ -56,7 +56,7 @@ def mkAdtRankPerConstrAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited
     let adtRankTy := .arrow dtTy .int
     let adtRankConstr : LExpr T.mono :=
       .app m (.op m (adtRankFuncName dt.name) (.some adtRankTy)) constrApp
-    let fieldTys := (c.args.map (·.snd)).reverse
+    let fields := (c.args.map (fun (id, ty) => (id.name, ty))).reverse
     (c.args.foldlIdx (init := []) fun acc i (_, fieldTy) =>
       match block.find? (fun d => fieldTy == dataDefault d) with
       | none => acc
@@ -67,13 +67,13 @@ def mkAdtRankPerConstrAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited
           (.some fieldRankTy)) fieldBvar
         let ltExpr := LExpr.mkApp m (@intLtFunc T).opExpr
           [adtRankField, adtRankConstr]
-        let axiom_ := match fieldTys with
-          | [] => ltExpr
-          | ty :: rest =>
-            let inner := .quant m .all "" (.some ty) adtRankConstr ltExpr
-            rest.foldl (fun body ty =>
-              .quant m .all "" (.some ty) (LExpr.noTrigger m) body
+        let axiom_ := match fields with
+          | (name, ty) :: rest =>
+            let inner := .quant m .all name (.some ty) adtRankConstr ltExpr
+            rest.foldl (fun body (name, ty) =>
+              .quant m .all name (.some ty) (LExpr.noTrigger m) body
             ) inner
+          | [] => ltExpr
         axiom_ :: acc
     ).reverse
 
@@ -86,7 +86,7 @@ def mkAdtRankNonNegAxiom {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.I
   let rankX := .app m (.op m (adtRankFuncName dt.name) (.some rankTy))
     (.bvar m 0)
   let geExpr := .mkApp m (@intGeFunc T).opExpr [rankX, .intConst m 0]
-  .quant m .all "" (.some dtTy) rankX geExpr
+  .quant m .all "x" (.some dtTy) rankX geExpr
 
 /-- Generate all adtRank axioms for a single datatype within a mutual block. -/
 def mkAdtRankAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
