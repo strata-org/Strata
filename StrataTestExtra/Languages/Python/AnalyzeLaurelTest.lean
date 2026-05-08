@@ -25,14 +25,15 @@ namespace Strata.Python.AnalyzeLaurelTest
 open Strata (pythonAndSpecToLaurel pySpecsDir)
 open Strata.Pipeline (PipelineContext)
 
-private def quietCtx : BaseIO PipelineContext := PipelineContext.create (outputMode := .quiet)
+meta def quietCtx : BaseIO PipelineContext :=
+  PipelineContext.create (outputMode := .quiet)
 
-private meta def testDir : System.FilePath :=
+meta def testDir : System.FilePath :=
   "StrataTestExtra/Languages/Python/Specs/dispatch_test"
 
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
     Returns the path to the generated Ion file. -/
-private meta def compilePython
+meta def compilePython
     (pythonCmd : System.FilePath)
     (dialectFile : System.FilePath) (pyFile : System.FilePath)
     (outDir : System.FilePath) : IO System.FilePath := do
@@ -60,7 +61,7 @@ private meta def compilePython
 
 /-- Set up the test fixture: compile all servicelib modules and return the
     spec directory.  The dispatch and pyspec modules are resolved by name. -/
-private meta def setupFixture (pythonCmd : System.FilePath)
+meta def setupFixture (pythonCmd : System.FilePath)
     (outDir : System.FilePath) : IO Unit := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
@@ -73,7 +74,7 @@ private meta def setupFixture (pythonCmd : System.FilePath)
     | .error msg => throw <| IO.userError s!"pySpecsDir failed: {msg}"
 
 /-- Compile a test Python file to Ion format. -/
-private meta def compileTestScript (pythonCmd : System.FilePath)
+meta def compileTestScript (pythonCmd : System.FilePath)
     (pyFile : System.FilePath)
     (outDir : System.FilePath) : IO System.FilePath := do
   IO.FS.withTempFile fun _handle dialectFile => do
@@ -81,7 +82,7 @@ private meta def compileTestScript (pythonCmd : System.FilePath)
     compilePython pythonCmd dialectFile pyFile outDir
 
 /-- Run pyAnalyzeLaurel on a test script within the shared fixture. -/
-private meta def runAnalyze
+meta def runAnalyze
     (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
@@ -104,7 +105,7 @@ private meta def runAnalyze
 /-- Run pyAnalyzeLaurel with inlining and verification.
     When `useRoots` is true, entry points are determined via the call graph
     (the CLI `--entry-point roots` default); otherwise only `__main__` is used. -/
-private meta def runAnalyzeAndVerify
+meta def runAnalyzeAndVerify
     (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
     (useRoots : Bool := false)
@@ -149,13 +150,13 @@ private meta def runAnalyzeAndVerify
   | .error msg => return .error (toString msg)
 
 /-- Expected outcome for a test case. -/
-private inductive Expected where
+inductive Expected where
   | success
   | fail (msg : String)
   | failPrefix (pfx : String)
 
 /-- All dispatch test cases: (filename, expected outcome). -/
-private meta def testCases : List (String × Expected) := [
+meta def testCases : List (String × Expected) := [
   -- Positive tests
   .mk "test_single_service.py" .success,
   .mk "test_multi_service.py" .success,
@@ -211,7 +212,7 @@ private meta def testCases : List (String × Expected) := [
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
-private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.FilePath)
+meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.FilePath)
     (scriptName : String) (expected : Expected) : IO (Option String) := do
   let result ← runAnalyze pythonCmd tmpDir scriptName
   match expected, result with
