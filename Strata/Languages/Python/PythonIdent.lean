@@ -213,8 +213,12 @@ protected def ofString (s : String) : Option PythonIdent := do
     name := s.extract idx.next! s.endPos
   }
 
+/-- Convert to a string, joining module components and name with `sep` (default `"."`). -/
+protected def toString (i : PythonIdent) (sep : String := ".") : String :=
+  i.pythonModule.toString sep ++ sep ++ i.name
+
 instance : ToString PythonIdent where
-  toString i := s!"{i.pythonModule}.{i.name}"
+  toString := PythonIdent.toString
 
 end PythonIdent
 

@@ -345,7 +345,6 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   | .typeDef d =>
     .typeDef d.loc (.mk d.nameLoc d.name) d.definition.toDDM
 
-
 abbrev FromDDM := Except (SourceRange × String)
 
 def FromDDM.throw {α} (loc : SourceRange) (msg : String) : FromDDM α :=

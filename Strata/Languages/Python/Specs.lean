@@ -146,19 +146,19 @@ structure TypeDecl where
 Map from Python identifiers to their type specifications.
 -/
 structure TypeSignature where
-  rank : Std.HashMap String (Option (Std.HashMap String SpecValue))
+  rank : Std.HashMap ModuleName (Option (Std.HashMap String SpecValue))
 
 namespace TypeSignature
 
 def ofList (l : List TypeDecl) : TypeSignature where
   rank := l.foldl (init := {}) fun m d =>
-    m.alter d.ident.pythonModule.toString fun r =>
+    m.alter d.ident.pythonModule fun r =>
       match r with
       | .none => some <| some <| .ofList [(d.ident.name, d.value)]
       | .some none => .some none
       | .some (some m) => m |>.insert d.ident.name d.value
 
-def insert (sig : TypeSignature) (name : String) (m : Option (Std.HashMap String SpecValue)) :=
+def insert (sig : TypeSignature) (name : ModuleName) (m : Option (Std.HashMap String SpecValue)) :=
   { sig with rank := sig.rank.insert name m }
 
 end TypeSignature
@@ -1268,7 +1268,7 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
 def translateImportFrom (mod : ModuleName) (types : Std.HashMap String SpecValue)
       (names : Array (alias SourceRange)) : PySpecM Unit := do
   -- Check if module is a builtin (in prelude) - if so, don't generate extern declarations
-  let isBuiltinModule := preludeSig.rank.contains (toString mod)
+  let isBuiltinModule := mod ∈ preludeSig.rank
   for a in names do
     let name := a.name
     match types[name]? with
@@ -1415,14 +1415,13 @@ partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
 
 partial def resolveModuleCached (loc : SourceRange) (mod : ModuleName)
     : PySpecM (Option (Std.HashMap String SpecValue)) := do
-  let key := toString mod
-  match (←get).typeSigs.rank[key]? with
+  match (←get).typeSigs.rank[mod]? with
   | some types =>
     return types
   | none =>
     let (success, r) ← runChecked <| resolveModule loc mod
     let r := if success then some r else none
-    modify fun s => { s with typeSigs := s.typeSigs.insert key r }
+    modify fun s => { s with typeSigs := s.typeSigs.insert mod r }
     return r
 
 /-- Resolve a module, returning `none` on resolution failure. -/

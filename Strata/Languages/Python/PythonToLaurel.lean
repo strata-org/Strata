@@ -489,8 +489,7 @@ def resolveDispatch (ctx : TranslationContext)
           let suffix := if fnOverloads.entries.size > 2 then s!" ... ({fnOverloads.entries.size} total)" else ""
           throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
-      let className :=
-        ident.pythonModule.toString (sep := "_") ++ "_" ++ ident.name
+      let className := ident.toString (sep := "_")
       return some className
     | _ => return none
 
@@ -2749,7 +2748,7 @@ def pythonToLaurel (info : PreludeInfo)
 
   let overloadCompositeType := Std.HashSet.ofList $
       (overloadTable.values.flatMap (·.entries.values)).map fun ident =>
-        s!"{ident.pythonModule.toString (sep := "_")}_{ident.name}"
+        ident.toString (sep := "_")
   let mut compositeTypeNames := info.compositeTypes.union overloadCompositeType
 
   -- FIRST PASS: Collect all class definitions and field type info

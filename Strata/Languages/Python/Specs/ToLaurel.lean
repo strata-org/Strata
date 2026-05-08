@@ -53,7 +53,7 @@ private def typeTestersMap : Std.HashMap PythonIdent String :=
 /-- Fully qualified Laurel name for a `PythonIdent`: module dots become
     underscores. E.g., `"mylib.sub"` / `"Foo"` → `"mylib_sub_Foo"`. -/
 def PythonIdent.toLaurelName (id : PythonIdent) : String :=
-  s!"{id.pythonModule.toString "_"}_{id.name}"
+  id.toString (sep := "_")
 
 end -- public section
 end Strata.Python
