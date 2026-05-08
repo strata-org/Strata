@@ -1381,7 +1381,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
-
+private
 def verifySingleEnv (oblProgram : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (options : VerifyOptions)
@@ -1396,14 +1396,11 @@ def verifySingleEnv (oblProgram : Program)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
-    (pipelineCtx : Option PipelineContext := none) :
+    (pctx : PipelineContext) :
     EIO DiagnosticModel (VCResults × Statistics) := do
   -- Build SMT encoding context from the obligations program itself
   let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
   let p := E.program
-  let pctx ← match pipelineCtx with
-    | some ctx => pure ctx
-    | none => (PipelineContext.create (outputMode := .quiet) : BaseIO _)
 
     -- Extract obligations from the obligations program via ObligationExtraction
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
@@ -1514,12 +1511,12 @@ def mkDefaultCoreSMTSolver
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
-    (pipelineCtx : Option PipelineContext := none) :
+    (pctx : PipelineContext) :
     CoreSMTSolver :=
   fun moreFns oblProgram =>
     verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
       axiomNames axiomProgram externalPhases corePhases
-      (mkDischarge := mkDischarge) (pipelineCtx := pipelineCtx)
+      (mkDischarge := mkDischarge) pctx
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
@@ -1586,7 +1583,7 @@ def verify (program : Program)
       let coreSMTSolver := solver.getD
         (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
           axiomNames (axiomProgram := program) externalPhases phases
-          (mkDischarge := mkDischarge) (pipelineCtx := pipelineCtx))
+          (mkDischarge := mkDischarge) pctx)
       pure [← coreSMTSolver moreFns oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then

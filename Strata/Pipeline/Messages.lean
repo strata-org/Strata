@@ -275,7 +275,7 @@ public def PipelineContext.emitMetric (ctx : PipelineContext) (json : Lean.Json)
 
 /-- End the current phase: flush aggregated repeated subphases, record end time,
     print [warnings] summary in profile mode. -/
-def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
+private def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
   let currentPhase ← ctx.currentPhaseRef.get
   if currentPhase.path.isEmpty then return
   -- Flush aggregated repeated subphases
