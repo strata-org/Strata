@@ -319,6 +319,7 @@ end ArrayTheory
 
 /--
 info: (set-logic ALL)
+(set-info :strata-smt-metadata-version "1")
 ; Validity
 (assert false)
 (check-sat)
@@ -347,6 +348,7 @@ info: (set-logic ALL)
 
 /--
 info: (set-logic ALL)
+(set-info :strata-smt-metadata-version "1")
 ; Validity
 (assert false)
 (check-sat)

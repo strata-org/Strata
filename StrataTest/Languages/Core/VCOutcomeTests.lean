@@ -280,4 +280,26 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
 -- frontEndPhase: unsat is unchanged
 #guard (unsatResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unsatResult
 
+/-! ### Meta-test: phase validators are stubs
+
+The SSR aggregate results path passes `phases = []` to `buildVCResult` because
+phase validation cannot be reconstructed from `.smt2` metadata alone. This is
+safe ONLY because `frontEndPhase` currently always rejects (returns `false`).
+
+If you are implementing a real model validator for `frontEndPhase` (i.e., one
+that can return `true` for some models), you MUST also update the SSR aggregate
+results path to either:
+  1. Embed phase validation decisions in `set-info` metadata during generation, or
+  2. Re-run phase validation during aggregate results by serializing enough context.
+
+See `docs/design/SplitSolveReconcile.md` for details.
+-/
+
+-- Assert that frontEndPhase is still a stub that always rejects sat.
+-- If this test fails, the SSR aggregate results path needs updating.
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [Strata.frontEndPhase]
+  { label := "arbitrary", property := .assert,
+    assumptions := [], obligation := .true (), metadata := {} }).1 == unknownResult
+
 end Core

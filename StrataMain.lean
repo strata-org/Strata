@@ -12,7 +12,7 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
-import Strata.Languages.Core.Reconcile
+import Strata.Languages.Core.AggregateResults
 import Strata.Languages.Core.ProgramEval
 import Strata.Languages.Core.StatementEval
 import Strata.Languages.C_Simp.Verify
@@ -1311,10 +1311,10 @@ def verifyCommand : Command where
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
 
-/-- Reconcile: read `.smt2` files and solver `.result` files from a directory,
-    produce the final verification report. See `docs/CloudSolving.md`. -/
-def reconcileCommand : Command where
-  name := "reconcile"
+/-- Aggregate results: read `.smt2` files and solver `.result` files from a
+    directory, produce the final verification report. -/
+def aggregateResultsCommand : Command where
+  name := "aggregate-results"
   args := []
   flags := [
     { name := "vc-directory",
@@ -1329,13 +1329,13 @@ def reconcileCommand : Command where
     { name := "verbose", help := "Enable verbose output." },
     { name := "quiet", help := "Suppress default output." },
     { name := "sarif",
-      help := "Write results as SARIF to <vc-directory>/reconcile.sarif." }
+      help := "Write results as SARIF to <vc-directory>/aggregate-results.sarif." }
   ]
-  help := "Reconcile solver results with .smt2 files."
+  help := "Aggregate solver results with .smt2 files."
   callback := fun _v pflags => do
     let vcDirStr ← match pflags.getString "vc-directory" with
       | .some d => pure d
-      | .none => exitFailure "--vc-directory is required for reconcile."
+      | .none => exitFailure "--vc-directory is required for aggregate-results."
     let vcDir : System.FilePath := ⟨vcDirStr⟩
     let checkMode ← match pflags.getString "check-mode" with
       | .none => pure Core.VerificationMode.deductive
@@ -1354,10 +1354,10 @@ def reconcileCommand : Command where
     let options : Core.VerifyOptions :=
       { Core.VerifyOptions.default with
         checkMode, checkLevel, verbose }
-    let vcResults ← Core.reconcileDirectory vcDir options
+    let vcResults ← Core.aggregateResultsDirectory vcDir options
     if pflags.getBool "sarif" then
       let files := Map.empty
-      let outputPath := (vcDir / "reconcile.sarif").toString
+      let outputPath := (vcDir / "aggregate-results.sarif").toString
       Core.Sarif.writeSarifOutput options.checkMode files vcResults outputPath
     for vcResult in vcResults do
       let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata none
@@ -1418,7 +1418,7 @@ def pyInterpretCommand : Command where
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [verifyCommand, reconcileCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, aggregateResultsCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },

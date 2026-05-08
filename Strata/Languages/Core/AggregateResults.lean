@@ -8,12 +8,13 @@ module
 public import Strata.Languages.Core.Verifier
 
 /-!
-# Reconcile Phase for Split-Solve-Reconcile
+# Aggregate Results Phase for Split-Solve-Aggregate Results
 
-This module implements the **Reconcile** phase of the Split-Solve-Reconcile
-workflow. It reads `.smt2` files (produced by `strata verify --no-solve`)
-and their corresponding `.result` files from an SMT solver, and produces
-`VCResults` identical to what a full `strata verify` would have returned.
+This module implements the **Aggregate Results** phase of the
+Split-Solve-Aggregate Results workflow. It reads `.smt2` files (produced by
+`strata verify --no-solve`) and their corresponding `.result` files from an
+SMT solver, and produces `VCResults` identical to what a full `strata verify`
+would have returned.
 
 All obligation metadata is embedded directly in the `.smt2` files via
 `set-info` directives, so no separate manifest file is needed.
@@ -77,10 +78,11 @@ def parseResultFile (content : String)
   | false, false =>
     (.unknown, .unknown)
 
-/-! ## SMT2-based reconcile -/
+/-! ## SMT2-based result aggregation -/
 
 /-- Metadata extracted from a single `.smt2` file's `set-info` directives. -/
 structure SMT2Meta where
+  smtMetadataVersion : Option String := none
   file : Option String := none
   start : Option Nat := none
   stop : Option Nat := none
@@ -101,7 +103,9 @@ private def extractQuoted (line : String) : Option String :=
 def parseSMT2Meta (content : String) : SMT2Meta :=
   content.splitOn "\n" |>.foldl (init := ({} : SMT2Meta)) fun info line =>
     let l := line.trimAscii.toString
-    if l.startsWith "(set-info :file " then
+    if l.startsWith "(set-info :strata-smt-metadata-version " then
+      { info with smtMetadataVersion := extractQuoted l }
+    else if l.startsWith "(set-info :file " then
       { info with file := extractQuoted l }
     else if l.startsWith "(set-info :start " then
       { info with start := (l.drop 17 |>.dropRight 1 |>.trimAscii).toNat? }
@@ -122,7 +126,7 @@ def parseSMT2Meta (content : String) : SMT2Meta :=
     else info
 
 /-- Build a `VCResult` from parsed SMT2 metadata and solver output. -/
-def reconcileFromSMT2 (smt2 : SMT2Meta) (solverOutput : Option String)
+def aggregateFromSMT2 (smt2 : SMT2Meta) (solverOutput : Option String)
     (options : VerifyOptions) : VCResult :=
   let property := propertyTypeOfString smt2.property
   let fileRange : Option Strata.FileRange :=
@@ -148,9 +152,10 @@ def reconcileFromSMT2 (smt2 : SMT2Meta) (solverOutput : Option String)
   buildVCResult obligation satResult valResult
     satisfiabilityCheck validityCheck [] options
 
-/-- Reconcile all `.smt2` files in a directory. Reads each `.smt2` file for
-obligation metadata and pairs it with the corresponding `.result` file. -/
-def reconcileDirectory (vcDir : System.FilePath)
+/-- Aggregate results from all `.smt2` files in a directory. Reads each `.smt2`
+file for obligation metadata and pairs it with the corresponding `.result` file.
+Warns on stderr if any file has an unrecognized schema version. -/
+def aggregateResultsDirectory (vcDir : System.FilePath)
     (options : VerifyOptions) : IO VCResults := do
   let entries ← vcDir.readDir
   let smt2Files := entries.filter (·.fileName.endsWith ".smt2")
@@ -159,13 +164,20 @@ def reconcileDirectory (vcDir : System.FilePath)
   for entry in smt2Files do
     let content ← IO.FS.readFile entry.path
     let smt2 := parseSMT2Meta content
+    -- Warn if the SMT metadata version is missing or unrecognized.
+    match smt2.smtMetadataVersion with
+    | none =>
+      IO.eprintln s!"warning: {entry.fileName} has no strata-smt-metadata-version; results may be unreliable"
+    | some v =>
+      if v != Strata.SMT.Encoder.smtMetadataVersion then
+        IO.eprintln s!"warning: {entry.fileName} has strata-smt-metadata-version \"{v}\" but this build expects \"{Strata.SMT.Encoder.smtMetadataVersion}\"; results may be unreliable"
     let resultPath := vcDir / (entry.fileName.dropRight 5 ++ ".result")
     let solverOutput ← do
       if ← resultPath.pathExists then
         some <$> IO.FS.readFile resultPath
       else
         pure none
-    let r := reconcileFromSMT2 smt2 solverOutput options
+    let r := aggregateFromSMT2 smt2 solverOutput options
     results := results.push r
   return results.mergeByAssertion
 

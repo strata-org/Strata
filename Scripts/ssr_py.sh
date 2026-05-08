@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# ssr_py.sh — Split-Solve-Reconcile workflow for Python analysis.
+# ssr_py.sh — Split-Solve-Aggregate Results workflow for Python analysis.
 #
 # Runs the three phases of cloud-compatible SMT solving for a Python file:
 #
 #   1. Generate — convert .py to Strata Ion, run `strata pyAnalyzeLaurel
 #      --no-solve` to produce .smt2 files.
 #   2. Solve    — run an SMT solver on every .smt2 file (in parallel).
-#   3. Reconcile — run `strata reconcile` against the .smt2 + .result
-#      files and produce the final report.
+#   3. Aggregate Results — run `strata aggregate-results` against the .smt2 +
+#      .result files and produce the final report.
 #
 # By default, everything runs locally (the Solve phase fans out over
 # `xargs -P`). To wire in a real cloud solver, override the SOLVER_CMD
@@ -38,7 +38,7 @@
 #                            (default: minimal)
 #      --spec-dir <dir>      Directory with compiled PySpec Ion files
 #                            (default: ".")
-#      --sarif               Also emit reconcile.sarif in <output-dir>
+#      --sarif               Also emit aggregate-results.sarif in <output-dir>
 #      --strict              Fail if any .result file is missing
 #      --keep                Keep intermediate files even on failure
 #      --skip-generate       Skip phase 1 (reuse existing <output-dir>)
@@ -55,8 +55,8 @@
 # Exit codes:
 #   0  — all goals passed
 #   1  — user error (missing prerequisites, bad args)
-#   2  — failures found during reconcile
-#   3  — internal error (generate/solve/reconcile crashed)
+#   2  — failures found during aggregate results
+#   3  — internal error (generate/solve/aggregate crashed)
 # ------------------------------------------------------------------------------
 
 set -u  # Treat unset variables as errors. We handle non-zero ourselves.
@@ -73,7 +73,7 @@ STRICT=0
 KEEP=0
 SKIP_GENERATE=0
 SKIP_SOLVE=0
-SKIP_RECONCILE=0
+SKIP_AGGREGATE=0
 STRATA_BIN="./.lake/build/bin/strata"
 DIALECT_FILE="./dialects/Python.dialect.st.ion"
 DISPATCH_MODULES=()
@@ -118,7 +118,7 @@ while [ $# -gt 0 ]; do
     --keep)            KEEP=1; shift ;;
     --skip-generate)   SKIP_GENERATE=1; shift ;;
     --skip-solve)      SKIP_SOLVE=1; shift ;;
-    --skip-reconcile)  SKIP_RECONCILE=1; shift ;;
+    --skip-reconcile)  SKIP_AGGREGATE=1; shift ;;
     --strata)          STRATA_BIN="$2"; shift 2 ;;
     --dialect)         DIALECT_FILE="$2"; shift 2 ;;
     --dispatch)        DISPATCH_MODULES+=("$2"); shift 2 ;;
@@ -228,13 +228,13 @@ solve_phase() {
   info "Solve phase complete."
 }
 
-# -------- phase 3: reconcile --------
-# Runs `strata reconcile` to classify results and produce the final report.
+# -------- phase 3: aggregate results --------
+# Runs `strata aggregate-results` to classify results and produce the final report.
 
-reconcile_phase() {
-  step "Phase 3: reconcile"
+aggregate_phase() {
+  step "Phase 3: aggregate results"
   local rec_args=(
-    reconcile
+    aggregate-results
     --vc-directory "$OUTPUT_DIR"
     --check-mode "$CHECK_MODE"
     --check-level "$CHECK_LEVEL"
@@ -242,17 +242,17 @@ reconcile_phase() {
   [ "$EMIT_SARIF" -eq 1 ] && rec_args+=( --sarif )
   [ "$STRICT"     -eq 1 ] && rec_args+=( --strict )
 
-  "$STRATA_BIN" "${rec_args[@]}" | tee "$OUTPUT_DIR/reconcile.log"
+  "$STRATA_BIN" "${rec_args[@]}" | tee "$OUTPUT_DIR/aggregate-results.log"
   local rc="${PIPESTATUS[0]}"
-  info "Reconcile phase complete. Log: $OUTPUT_DIR/reconcile.log"
+  info "Aggregate results phase complete. Log: $OUTPUT_DIR/aggregate-results.log"
   return "$rc"
 }
 
 # -------- drive the workflow --------
 [ "$SKIP_GENERATE"  -eq 0 ] && generate_phase
 [ "$SKIP_SOLVE"     -eq 0 ] && solve_phase
-if [ "$SKIP_RECONCILE" -eq 0 ]; then
-  reconcile_phase
+if [ "$SKIP_AGGREGATE" -eq 0 ]; then
+  aggregate_phase
   rc=$?
   if [ "$KEEP" -eq 0 ] && [ "$rc" -eq 0 ]; then
     info "Success. Artifacts kept in $OUTPUT_DIR (pass --keep or rerun with --skip-* to reuse)."

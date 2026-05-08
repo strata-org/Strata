@@ -32,6 +32,12 @@ open Strata
 
 public section
 
+/-- The current schema version for SMT metadata (`set-info` directives).
+    Bump this when the set of directives or their semantics change
+    in a backwards-incompatible way. The aggregate results phase checks this
+    and warns if it encounters a version it does not understand. -/
+def smtMetadataVersion : String := "1"
+
 /-- Encode a verification condition into SMT-LIB format.
 
 This function encodes the path conditions (P) and obligation (Q) into SMT,
@@ -60,6 +66,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (varDeclarations : List Core.VarDeclaration := []) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
+  -- Emit SMT metadata version so the aggregate results phase can detect incompatible changes.
+  Solver.setInfo "strata-smt-metadata-version" s!"\"{smtMetadataVersion}\""
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
   ctx.emitDatatypes
@@ -136,9 +144,9 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let rawMsg := md.getPropertySummary.getD label
   let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
   Solver.setInfo "final-message" s!"\"{escaped}\""
-  -- Emit the property type so reconcile can classify without a manifest.
+  -- Emit the property type so aggregate results can classify without a manifest.
   Solver.setInfo "property" s!"\"{property}\""
-  -- Emit evaluator-resolved results (if any) so reconcile knows which
+  -- Emit evaluator-resolved results (if any) so aggregate results knows which
   -- checks were already decided before the solver ran.
   if let some r := resolvedSat then
     Solver.setInfo "resolved-sat" s!"\"{r}\""
@@ -158,14 +166,21 @@ open Lambda Strata.SMT
 
 public section
 
-/-- Short verdict string for embedding in SMT2 `set-info` directives. -/
+/-- Short verdict string for embedding in SMT2 `set-info` directives.
+    Note: This intentionally differs from the `ToFormat` instance on
+    `SMT.Result` which includes model details. The SSR format needs
+    bare keywords that can be round-tripped via `smtResultOfString`. -/
 def verdictString : Imperative.SMT.Result Core.Expression.Ident → String
   | .sat _ => "sat"
   | .unsat => "unsat"
   | .unknown _ => "unknown"
   | .err _ => "err"
 
-/-- Property type as a short string for embedding in SMT2 `set-info`. -/
+/-- Property type as a short machine-readable string for `set-info`.
+    Note: This intentionally differs from the `ToFormat PropertyType`
+    instance which produces human-readable labels like "division by zero check".
+    The SSR format needs identifiers that can be round-tripped via
+    `propertyTypeOfString` in `AggregateResults.lean`. -/
 def propertyString (p : Imperative.PropertyType) : String :=
   match p with
   | .cover => "cover"
@@ -943,7 +958,7 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
 solver log construction, and outcome masking. This is the single source of
 truth for turning `(satResult, valResult)` into a classified `VCResult`,
 used by both the integrated verifier (`getObligationResult`) and the
-reconcile path (`reconcileOne`). -/
+aggregate results path (`aggregateFromSMT2`). -/
 def buildVCResult
     (obligation : ProofObligation Expression)
     (satResult valResult : SMT.Result)

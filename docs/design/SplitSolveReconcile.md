@@ -1,4 +1,4 @@
-# Design: Split-Solve-Reconcile for Cloud-Based SMT Solving
+# Design: Split-Solve-Aggregate Results for Cloud-Based SMT Solving
 
 ## Motivation
 
@@ -10,16 +10,16 @@ decoupling the pipeline into three phases:
 
 1. **Generate** — run the Strata pipeline up to SMT file creation
 2. **Solve** — dispatch SMT queries to cloud solvers (external to Strata)
-3. **Reconcile** — read solver results and produce the final verification report
+3. **Aggregate Results** — read solver results and produce the final verification report
 
 The generation phase (parse, transform, symbolic eval, SMT encoding) can itself
-be expensive, so the reconcile phase must **not** re-run the pipeline. Instead,
-the generate phase embeds all metadata needed for reconciliation directly in the
-`.smt2` files.
+be expensive, so the aggregate results phase must **not** re-run the pipeline.
+Instead, the generate phase embeds all metadata needed for result aggregation
+directly in the `.smt2` files.
 
 ## Design
 
-### Key Decision: Manifest-Free Reconciliation
+### Key Decision: Manifest-Free Result Aggregation
 
 Rather than emitting a separate `manifest.json` file alongside the `.smt2`
 files, all obligation metadata is embedded directly in each `.smt2` file using
@@ -32,12 +32,13 @@ between manifest and SMT files.
 When `--no-solve --vc-directory <dir>` is used, Strata runs the full pipeline
 (parse, transform, symbolic eval, SMT encoding) and writes `.smt2` files to the
 VC directory. Each `.smt2` file includes `set-info` directives that capture the
-obligation metadata the reconcile phase needs.
+obligation metadata the aggregate results phase needs.
 
 #### Embedded `set-info` Directives
 
 | Directive | Description |
 |-----------|-------------|
+| `(set-info :strata-smt-metadata-version "<N>")` | Schema version for the SMT metadata format. The aggregate results phase warns if it encounters an unrecognized version. Currently `"1"`. |
 | `(set-info :file "<path>")` | Source file path for the obligation. |
 | `(set-info :start N)` | Start offset of the source location range. |
 | `(set-info :stop N)` | End offset of the source location range. |
@@ -51,15 +52,21 @@ obligation metadata the reconcile phase needs.
 These directives are emitted by `encodeCore` in `Verifier.lean` at the end of
 the SMT encoding, after the `check-sat` commands. They are comments from the
 solver's perspective (solvers ignore unknown `set-info` keys) but are parsed by
-the reconcile phase.
+the aggregate results phase.
 
 #### Evaluator-Resolved Obligations
 
 Some obligations are trivially resolved by the evaluator (e.g., `assert true`
-→ valid). These still produce `.smt2` files (since the SMT encoding runs
-regardless), but the `resolved-sat` / `resolved-val` directives record the
-evaluator's verdict. The reconcile phase uses these stored results directly
-instead of relying on the solver output.
+→ valid). Generating `.smt2` files for these is optional — the evaluator may
+skip SMT encoding entirely when the result is already known. When `.smt2` files
+*are* generated for such obligations, the `resolved-sat` / `resolved-val`
+directives record the evaluator's verdict. The aggregate results phase uses
+these stored results directly instead of relying on the solver output.
+
+For obligations that are resolved without generating an `.smt2` file, the
+generate phase records the result internally and includes it in the final report
+during the same run. These results do not participate in the SSR workflow (there
+is nothing to solve or aggregate).
 
 ### Phase 2: Solve (external)
 
@@ -79,13 +86,13 @@ The `.result` file contains exactly what the solver prints to stdout — verdict
 lines (`sat`/`unsat`/`unknown`) followed by optional model output from
 `(get-value ...)` commands. This is the same format Strata already parses.
 
-If a `.result` file is missing, the reconcile phase treats the obligation as
-`unknown`.
+If a `.result` file is missing, the aggregate results phase treats the
+obligation as `unknown`.
 
-### Phase 3: Reconcile (`strata reconcile`)
+### Phase 3: Aggregate Results (`strata aggregate-results`)
 
 ```bash
-lake exe strata reconcile --vc-directory ./vcs/ [--check-mode deductive] [--check-level minimal] [--sarif]
+lake exe strata aggregate-results --vc-directory ./vcs/ [--check-mode deductive] [--check-level minimal] [--sarif]
 ```
 
 This command:
@@ -102,10 +109,10 @@ This command:
 
 ---
 
-## Reconcile Algorithm
+## Aggregate Results Algorithm
 
 ```
-function reconcileDirectory(vcDir, options):
+function aggregateResultsDirectory(vcDir, options):
   results = []
   for each .smt2 file in vcDir (sorted by name):
     smt2Content = readFile(smt2File)
@@ -160,22 +167,24 @@ for turning raw `(satResult, valResult)` into a classified `VCResult`. It:
 4. Applies `maskOutcome` based on which checks were requested
 5. Returns the final `VCResult`
 
-Both the integrated verifier (`getObligationResult`) and the reconcile path
-(`reconcileFromSMT2`) call this function, ensuring consistent classification.
+Both the integrated verifier (`getObligationResult`) and the aggregate results
+path (`aggregateFromSMT2`) call this function, ensuring consistent
+classification.
 
-### `Reconcile.lean` — Reconcile Module
+### `AggregateResults.lean` — Aggregate Results Module
 
 - `parseSMT2Meta`: Parses `set-info` directives from `.smt2` file content into
   an `SMT2Meta` structure.
 - `parseResultFile`: Parses a `.result` file's verdict lines into
   `(satResult, valResult)`, respecting which checks were requested.
-- `reconcileFromSMT2`: Combines parsed metadata and solver output into a
+- `aggregateFromSMT2`: Combines parsed metadata and solver output into a
   `VCResult`.
-- `reconcileDirectory`: Orchestrates the full reconcile over a directory.
+- `aggregateResultsDirectory`: Orchestrates the full aggregation over a
+  directory.
 
 ### `StrataMain.lean` — CLI Command
 
-The `reconcileCommand` accepts:
+The `aggregateResultsCommand` accepts:
 - `--vc-directory` (required) — directory containing `.smt2` and `.result` files
 - `--check-mode` — verification mode (deductive, bugFinding, etc.)
 - `--check-level` — check level (minimal, minimalVerbose, full)
@@ -193,7 +202,7 @@ are already computed.
 ### Helper Scripts
 
 - `Scripts/ssr_py.sh` — End-to-end SSR workflow for Python files (generate →
-  solve → reconcile) with parallel solving via `xargs -P`.
+  solve → aggregate results) with parallel solving via `xargs -P`.
 - `StrataTest/Languages/Python/run_py_ssr_test.sh` — Integration test that
   validates SSR output matches direct verification for all Python test files.
 
@@ -208,21 +217,21 @@ deserialization code, and makes each `.smt2` file dependent on an external file
 for interpretation. Embedding metadata via `set-info` keeps each file
 self-contained, uses a standard SMT-LIB mechanism, and is ignored by solvers.
 
-**Why not re-run the pipeline during reconcile?**
+**Why not re-run the pipeline during aggregate results?**
 The symbolic evaluation step (path explosion, expression simplification) can be
 expensive for large programs. The embedded metadata avoids re-running it.
 
-**Why allow `checkMode`/`checkLevel` override in reconcile?**
+**Why allow `checkMode`/`checkLevel` override in aggregate results?**
 These only affect how outcomes are classified and displayed (pass/fail/warning).
 The underlying SMT results are mode-independent. This lets users re-classify
 results without re-solving — e.g., switch from deductive to bug-finding mode.
 
-**Why pass empty `phases` in reconcile?**
-The reconcile path calls `buildVCResult` with `phases = []` because phase
-validation (which demotes sat results to unknown for unvalidated abstractions)
-cannot be reconstructed from the `.smt2` metadata alone. This is acceptable
-because the current phase validators are all stubs that return `false`. When
-real validators are implemented, this will need revisiting.
+**Why pass empty `phases` in aggregate results?**
+The aggregate results path calls `buildVCResult` with `phases = []` because
+phase validation (which demotes sat results to unknown for unvalidated
+abstractions) cannot be reconstructed from the `.smt2` metadata alone. This is
+acceptable because the current phase validators are all stubs that return
+`false`. When real validators are implemented, this will need revisiting.
 
 ---
 
@@ -230,10 +239,11 @@ real validators are implemented, this will need revisiting.
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Phase validators get real implementations | Reconcile cannot apply phase validation | Extend `set-info` metadata or add a lightweight sidecar file for phase decisions |
+| `set-info` schema changes between generate and aggregate results | Aggregate results misinterprets metadata | `strata-smt-metadata-version` directive checked at aggregate time; warns on mismatch. New directives must be additive (backwards compatible) or bump the version. |
+| Phase validators get real implementations | Aggregate results cannot apply phase validation | Meta-test in `VCOutcomeTests.lean` asserts validators are stubs; extend `set-info` metadata when real validators land. |
 | SMT file naming collisions | Two obligations produce the same filename | Already handled: counter suffix (`_{N}`) ensures uniqueness |
 | Solver produces unexpected output format | Result parsing fails | Reuse existing verdict parsing; report clear errors for unparseable results |
-| User changes source between generate and reconcile | Source locations in `set-info` are stale | Document that generate and reconcile must use the same source |
+| User changes source between generate and aggregate results | Source locations in `set-info` are stale | Document that generate and aggregate results must use the same source |
 | Missing `.result` files | Obligations classified as unknown | Graceful degradation: treat missing results as `unknown` rather than failing |
 
 ---
@@ -241,16 +251,17 @@ real validators are implemented, this will need revisiting.
 ## Future Extensions
 
 - **Source hash validation:** Embed a hash of the input file in `set-info`.
-  The reconcile phase can warn if the source has changed.
+  The aggregate results phase can warn if the source has changed.
 - **Incremental re-solving:** If only some obligations change after a source
   edit, re-generate only the affected SMT files and reuse cached results for
   unchanged obligations.
-- **Rich model display:** Currently the reconcile path does not reconstruct
-  solver models (variable mappings are not embedded). A future extension could
-  embed variable map metadata to enable model display during reconcile.
+- **Rich model display:** Currently the aggregate results path does not
+  reconstruct solver models (variable mappings are not embedded). A future
+  extension could embed variable map metadata to enable model display during
+  result aggregation.
 - **Phase validation serialization:** When validators get real implementations,
-  embed phase validation decisions in `set-info` directives so the reconcile
-  phase can apply them.
+  embed phase validation decisions in `set-info` directives so the aggregate
+  results phase can apply them.
 - **Parallel local solving:** Use the directory listing to drive parallel local
   solver invocations (multiple cvc5 processes), as a simpler alternative to
   cloud solving.
