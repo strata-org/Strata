@@ -5,9 +5,7 @@
 //   $add.i32  →  _add_i32
 //   $add_i32  →  _add_i32   (collision!)
 //
-// BoogieToStrata currently does NOT detect this class of collision.
-// This test documents the bug: both functions get emitted with the
-// same name, causing a duplicate definition error in Strata.
+// The rename mechanism should detect this and disambiguate.
 
 type i32 = int;
 

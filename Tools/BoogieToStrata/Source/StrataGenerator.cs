@@ -53,10 +53,10 @@ public class StrataGenerator : ReadOnlyVisitor {
     // into inout/input parameters on procedure headers and call sites.
     private List<GlobalVariable> _globalVariables = [];
     // Renames for declarations whose sanitized name collides with another
-    // declaration. Boogie has separate namespaces for constants, procedures,
-    // etc., but Strata Core has a single namespace. First-seen wins; later
-    // entities get prefixed with their kind (__const_, __func_, __var_).
-    private readonly Dictionary<string, string> _renames = new();
+    // declaration. Keyed by Boogie Declaration object to avoid ambiguity
+    // when two entities share the same original name (e.g., const main and
+    // procedure main). First-seen wins; later entities get prefixed.
+    private readonly Dictionary<Declaration, string> _renames = new();
 
     private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
         _options = options;
@@ -80,28 +80,37 @@ public class StrataGenerator : ReadOnlyVisitor {
             generator.FindSpecialTypes();
 
             // Build rename map for declarations with colliding sanitized names.
-            // Procedures/implementations are claimed first; constants, functions,
-            // and globals that collide get prefixed with their entity kind.
+            // Two kinds of collision are handled:
+            //   1. Cross-namespace: constant vs procedure sharing the same name
+            //   2. Sanitization: distinct names that map to the same string
+            //      (e.g., $add.i32 and $add_i32 both become _add_i32)
+            // First-seen wins; colliding entities get a suffix (_2, _3, ...).
             var claimed = new HashSet<string>();
+
+            void ClaimOrRename(Declaration decl, string originalName, string prefix) {
+                var sanitized = SanitizeNameForStrata(originalName);
+                if (claimed.Add(sanitized)) return;
+                var candidate = $"{prefix}{sanitized}";
+                if (!claimed.Add(candidate)) {
+                    var i = 2;
+                    while (!claimed.Add($"{candidate}_{i}")) i++;
+                    candidate = $"{candidate}_{i}";
+                }
+                generator._renames[decl] = candidate;
+            }
+
             foreach (var proc in p.Procedures)
-                claimed.Add(SanitizeNameForStrata(proc.Name));
-            foreach (var impl in p.Implementations)
-                claimed.Add(SanitizeNameForStrata(impl.Name));
-            foreach (var c in liveDeclarations.OfType<Constant>()) {
-                var sanitized = SanitizeNameForStrata(c.TypedIdent.Name);
-                if (!claimed.Add(sanitized))
-                    generator._renames[c.TypedIdent.Name] = $"__const_{sanitized}";
+                ClaimOrRename(proc, proc.Name, "__proc_");
+            foreach (var impl in p.Implementations) {
+                var sanitized = SanitizeNameForStrata(impl.Name);
+                claimed.Add(sanitized);
             }
-            foreach (var f in liveDeclarations.OfType<Function>()) {
-                var sanitized = SanitizeNameForStrata(f.Name);
-                if (!claimed.Add(sanitized))
-                    generator._renames[f.Name] = $"__func_{sanitized}";
-            }
-            foreach (var g in p.GlobalVariables) {
-                var sanitized = SanitizeNameForStrata(g.Name);
-                if (!claimed.Add(sanitized))
-                    generator._renames[g.Name] = $"__var_{sanitized}";
-            }
+            foreach (var c in liveDeclarations.OfType<Constant>())
+                ClaimOrRename(c, c.TypedIdent.Name, "__const_");
+            foreach (var f in liveDeclarations.OfType<Function>())
+                ClaimOrRename(f, f.Name, "__func_");
+            foreach (var g in p.GlobalVariables)
+                ClaimOrRename(g, g.Name, "__var_");
 
             var typeConstructors = p.TopLevelDeclarations.OfType<TypeCtorDecl>().ToList();
             if (typeConstructors.Count != 0) {
@@ -328,9 +337,8 @@ public class StrataGenerator : ReadOnlyVisitor {
         return SanitizeNameForStrata(name);
     }
 
-    /// <summary>
-    private string ResolveName(string originalName) {
-        if (_renames.TryGetValue(originalName, out var renamed))
+    private string NameOf(Declaration decl, string originalName) {
+        if (_renames.TryGetValue(decl, out var renamed))
             return renamed;
         return SanitizeNameForStrata(originalName);
     }
@@ -346,11 +354,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         switch (expr) {
             case IdentifierExpr identExpr:
                 WriteText("old ");
-                if (_renames.ContainsKey(identExpr.Name)) {
-                    WriteText(ResolveName(identExpr.Name));
-                } else {
-                    WriteText(Name(identExpr.Name));
-                }
+                WriteText(identExpr.Decl != null ? NameOf(identExpr.Decl, identExpr.Name) : Name(identExpr.Name));
                 break;
             case NAryExpr { Fun: MapSelect } mapSelect:
                 WriteText("(");
@@ -586,11 +590,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             case LiteralExpr literalExpr:
                 throw new StrataConversionException(node.tok, $"Unsupported literal type: {literalExpr}");
             case IdentifierExpr identifierExpr:
-                if (_renames.ContainsKey(identifierExpr.Name)) {
-                    WriteText(ResolveName(identifierExpr.Name));
-                } else {
-                    WriteText(Name(identifierExpr.Name));
-                }
+                WriteText(identifierExpr.Decl != null ? NameOf(identifierExpr.Decl, identifierExpr.Name) : Name(identifierExpr.Name));
                 break;
             case NAryExpr nAryExpr: {
                 var fun = nAryExpr.Fun;
@@ -678,7 +678,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
                         break;
                     case FunctionCall functionCall: {
-                        WriteText($"{Name(functionCall.FunctionName)}(");
+                        WriteText($"{NameOf(functionCall.Func, functionCall.FunctionName)}(");
                         EmitSeparated(args, e => VisitExpr(e), ", ");
                         WriteText(")");
                         break;
@@ -997,7 +997,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         var modifiesNames = new HashSet<string>(callee.Modifies.Select(m => m.Name));
 
         Indent("call ");
-        WriteText($"{Name(callee.Name)}(");
+        WriteText($"{NameOf(callee, callee.Name)}(");
         // Emit: inout globals, then read-only globals, then original args, then out outputs.
         var needComma = false;
         foreach (var g in _globalVariables.Where(g => modifiesNames.Contains(g.Name))) {
@@ -1554,7 +1554,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Constant VisitConstant(Constant node) {
         var ti = node.TypedIdent;
-        var name = ResolveName(ti.Name);
+        var name = NameOf(node, ti.Name);
         WriteText($"const {name} : ");
         VisitType(ti.Type);
         if (node.Unique) {
@@ -1725,7 +1725,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override Function VisitFunction(Function node) {
-        WriteText($"function {Name(node.Name)}");
+        WriteText($"function {NameOf(node, node.Name)}");
         EmitTypeParameters(node.TypeParameters);
         WriteText("(");
         WriteFormals(node.InParams);
@@ -1767,7 +1767,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         var modifiesGlobals = _globalVariables.Where(g => modifiesNames.Contains(g.Name)).ToList();
         var readOnlyGlobals = _globalVariables.Where(g => !modifiesNames.Contains(g.Name)).ToList();
 
-        WriteText($"procedure {Name(proc.Name)}");
+        WriteText($"procedure {NameOf(proc, proc.Name)}");
         EmitTypeParameters(proc.TypeParameters);
         WriteText("(");
         // Emit: inout globals, then read-only globals, then original inputs, then out outputs.
