@@ -17,6 +17,8 @@
 failed=0
 update=0
 incremental=false
+pending=0
+check_pending=0
 filter=""
 vc_directory=""
 
