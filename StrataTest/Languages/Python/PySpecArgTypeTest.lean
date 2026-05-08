@@ -43,7 +43,7 @@ private def buildSpecs (sigs : Array Signature) : IO Strata.PySpecLaurelResult :
   IO.FS.withTempDir fun dir => do
     let ionFile := dir / "test.pyspec.ion"
     writeDDM ionFile sigs
-    let result ← buildPySpecLaurel #[(.ofString! "test", ionFile.toString)] {} |>.toBaseIO
+    let result ← buildPySpecLaurel #[(.ofComponent (.ofString "test"), ionFile.toString)] {} |>.toBaseIO
     match result with
     | .ok r => pure r
     | .error msg => throw <| .userError msg

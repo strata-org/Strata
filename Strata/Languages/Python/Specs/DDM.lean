@@ -5,17 +5,10 @@
 -/
 module
 
-public import Strata.DDM.Integration.Lean
-public import Strata.Languages.Python.Specs.Decls
-
-import Strata.DDM.AST
-import Strata.DDM.Util.ByteArray
-import Strata.DDM.Format
-import Strata.DDM.BuiltinDialects.Init
-public import Strata.DDM.Integration.Lean.OfAstM
+public import Strata.DDM.Format
+import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
-
-public section
+public import Strata.Languages.Python.Specs.Decls
 
 namespace Strata.Python
 
@@ -299,8 +292,8 @@ def specExprFormatContext : FormatContext :=
 def specExprFormatState : FormatState where
   openDialects := DDM.PythonSpecs_map.toList.foldl (init := {}) fun s d => s.insert d.name
 
-instance : ToString SpecExpr where
-  toString e := (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
+public instance : ToString SpecExpr where
+  toString e := private (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
 
 private def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
   match p with
@@ -389,10 +382,8 @@ private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : FromDDM Specs.
   | .typeUnion loc ⟨_, args⟩ => do
     if p : args.size > 0 then
       let init ← args[0].fromDDM
-      args.attach.foldlM (init := init) (start := 1)
-        fun a ⟨b, mem⟩ => do
-          let b' ← b.fromDDM
-          pure <| SpecType.union loc a b'
+      args.attach.foldlM (init := init) (start := 1) fun a ⟨b, mem⟩ => do
+        return .union loc a (← b.fromDDM)
     else
       .throw loc "Expected non-empty union"
 termination_by sizeOf d
@@ -456,8 +447,10 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : FromDDM Specs.Fu
                  ⟨_, preconditions⟩ ⟨_, postconditions⟩ := d
   let kwargsOpt : Option (String × Specs.SpecType) ←
     match kwargs with
-    | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) => pure <| some (kn, ← tp.fromDDM)
-    | none => pure none
+    | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) =>
+      pure <| some (kn, ← tp.fromDDM)
+    | none =>
+      pure none
   pure {
     loc := loc
     nameLoc := nameLoc
@@ -513,7 +506,7 @@ private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : FromDDM Specs.
     pure <| .typeDef d
 
 /-- Reads Python spec signatures from a DDM Ion file. -/
-def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
+public def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
   let contents ←
         match ← IO.FS.readBinFile path |>.toBaseIO with
         | .ok r => pure r
@@ -539,9 +532,8 @@ def toDDMProgram (sigs : Array Signature) : Strata.Program := {
   }
 
 /-- Writes Python spec signatures to a DDM Ion file. -/
-def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
+public def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
   let pgm := toDDMProgram sigs
   IO.FS.writeBinFile path <| pgm.toIon
 
 end Strata.Python.Specs
-end

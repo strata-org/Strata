@@ -16,10 +16,10 @@ import        Strata.Util.DecideProp
 namespace Strata.Python.ModuleName
 
 public def foldlDirs {α} (mod : ModuleName) (init : α) (f : α → String → α) : α :=
-  mod.components.foldl (init := init) (stop := mod.components.size - 1) f
+  mod.components.foldl (init := init) (stop := mod.components.size - 1) fun a c => f a c.val
 
 def foldlMDirs {α m} [Monad m] (mod : ModuleName) (init : α) (f : α → String → m α) : m α := do
-  mod.components.foldlM (init := init) (stop := mod.components.size - 1) f
+  mod.components.foldlM (init := init) (stop := mod.components.size - 1) fun a c => f a c.val
 
 -- Maybe eliminate fileRoot in f
 @[deprecated ModuleName.back (since := "FIXME")]
@@ -30,12 +30,11 @@ def fileRoot (mod : ModuleName) : String :=
 Locate the Python source file for a module within `searchPath`.
 Navigates subdirectories for intermediate components, then looks for
 `{leaf}.py`. Falls back to `{leaf}/__init__.py` for packages.
-Returns `(filePath, modulePrefix)` where `modulePrefix` is the array
-of package components for resolving relative imports. For `__init__.py`
-packages this is all components; for regular files it is all but the last.
+Returns `(filePath, isInit)` where `isInit` indicates whether the resolved
+file is a package `__init__.py`.
 -/
 public def findInPath (mod : ModuleName) (searchPath : System.FilePath)
-    : EIO String (System.FilePath × ModuleName) := do
+    : EIO String (System.FilePath × Bool) := do
   let findComponent path comp := do
         let newPath := path / comp
         if !(← newPath.isDir) then
@@ -46,16 +45,14 @@ public def findInPath (mod : ModuleName) (searchPath : System.FilePath)
   if let .ok md ← file.metadata |>.toBaseIO then
     if md.type != .file then
       throw s!"{file} is not a regular file."
-    match mod.parent with
-    | some pfx => return (file, pfx)
-    | none => throw s!"Module {mod} has no parent package"
+    return (file, false)
   -- Fall back to __init__.py for packages (directories)
   let pkgDir := dir / mod.back
   let initFile := pkgDir / "__init__.py"
   if let .ok md ← initFile.metadata |>.toBaseIO then
     if md.type != .file then
       throw s!"{initFile} is not a regular file."
-    return (initFile, mod)
+    return (initFile, true)
   -- Fail both
   throw s!"{file} not found (also no {initFile})."
 
@@ -76,41 +73,6 @@ public def specIonPath (mod : ModuleName) (specDir : System.FilePath)
   if ← initPath.pathExists then return some initPath
   return none
 
-/-- Derive a ModuleName and its search root from a Python source file path.
-    For regular files, the root is the parent directory.
-    For package init files (`__init__.py`), the module name is the parent
-    directory name and the root is the grandparent.
-    In both cases, `findInPath mod root` resolves back to the original file. -/
-public def ofFile (pythonFile : System.FilePath)
-    : Except String (ModuleComponent × System.FilePath) := do
-  let (stem, root) :=
-    if pythonFile.fileName == some "__init__.py" then
-      (pythonFile.parent >>= (·.fileName), pythonFile.parent >>= (·.parent))
-    else
-      (pythonFile.fileStem, pythonFile.parent)
-  let some s := stem | .error s!"Cannot derive module name from {pythonFile}"
-  let some r := root | .error s!"Cannot derive search root from {pythonFile}"
-  if s.contains '.' then
-    .error s!"File stem '{s}' contains '.'; expected a simple module name (from {pythonFile})"
-  if h : s = "" then
-    .error s!"Cannot derive module name from {pythonFile}"
-  else
-    pure (⟨s, h⟩, r)
-
--- Unit tests for ofFile
-private def testOfFile (path expectedMod expectedRoot : String) : Bool :=
-  match ofFile path with
-  | .ok (comp, root) => comp.val == expectedMod && root.toString == expectedRoot
-  | .error _ => false
-
-#guard testOfFile "path/to/module.py" "module" "path/to"
-#guard testOfFile "path/to/service/__init__.py" "service" "path/to"
-#guard testOfFile "./module.py" "module" "."
--- Bare filenames without a directory context are rejected
-#guard match ofFile "module.py" with | .error _ => true | .ok _ => false
-#guard match ofFile "__init__.py" with | .error _ => true | .ok _ => false
--- Dotted file stems are rejected (would be silently split by ofString)
-#guard match ofFile "path/to/foo.bar.py" with | .error _ => true | .ok _ => false
 
 def mkIdent (mod : ModuleName) (name : String) : PythonIdent :=
   { pythonModule := mod, name }
@@ -267,18 +229,18 @@ structure PySpecContext where
   currentModule : ModuleName
 
 /-- Resolve a module name to a file path, registering the file's FileMap
-    for source-location error reporting.  Returns `(filePath, modulePrefix)`
-    where `modulePrefix` is the package prefix for resolving relative imports. -/
+    for source-location error reporting.  Returns `(filePath, isInit)`
+    where `isInit` indicates whether the file is a package `__init__.py`. -/
 def PySpecContext.readModule (ctx : PySpecContext) (mod : ModuleName)
-    : EIO String (System.FilePath × ModuleName) := do
-  let (pythonPath, modulePrefix) ← mod.findInPath ctx.baseSearchPath
+    : EIO String (System.FilePath × Bool) := do
+  let (pythonPath, isInit) ← mod.findInPath ctx.baseSearchPath
   baseLogEvent ctx.eventSet "findFile"
     s!"Found {mod} as {pythonPath}"
   match ← IO.FS.readFile pythonPath |>.toBaseIO with
   | .ok contents =>
     let fm := Lean.FileMap.ofString contents
     ctx.fileMapsRef.modify fun m => m.insert pythonPath fm
-    pure (pythonPath, modulePrefix)
+    pure (pythonPath, isInit)
   | .error msg =>
     throw s!"Could not read file {pythonPath}: {msg}"
 
@@ -1383,7 +1345,7 @@ Python source if not in cache.
 -/
 partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
     PySpecM (Std.HashMap String SpecValue) := do
-  let (pythonFile, childPrefix) ←
+  let (pythonFile, isInit) ←
         match ← (←read).readModule mod |>.toBaseIO with
         | .ok r =>
           pure r
@@ -1425,7 +1387,9 @@ partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
   let ctx := { (←read) with
     pythonFile := pythonFile
     currentModule := mod
-    currentModulePrefix := some childPrefix }
+    currentModulePrefix :=
+      let pfx := (ModuleName.ModuleOfPath.mk mod isInit).modulePrefix
+      if h : pfx.size > 0 then some ⟨pfx, h⟩ else none }
   -- This does state shuffling to ensure warnings and errors maintain
   -- a reference count of 1 (for destructive updates).
   let s := ←get

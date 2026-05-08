@@ -398,33 +398,27 @@ inductive WarningOutput where
 deriving Inhabited, BEq
 
 /-- Recursively discover all Python modules under a directory.
-    Returns `(moduleName, filePath)` pairs. The `components` array
-    accumulates directory names as we recurse, forming the dotted
-    module name prefix. -/
+    Returns `(moduleName, filePath)` pairs. -/
 private partial def discoverModules (sourceDir : System.FilePath)
     : IO (Array (ModuleName × System.FilePath)) := do
-  let rec go (dir : System.FilePath) (components : Array String)
+  let rec go (dir : System.FilePath) (relPrefix : System.FilePath)
       : IO (Array (ModuleName × System.FilePath)) := do
     let mut acc := #[]
     let entries ← dir.readDir
     for entry in entries do
+      let relChild : System.FilePath :=
+            if relPrefix.toString.isEmpty then
+              entry.fileName
+            else
+              relPrefix / entry.fileName
       if ← entry.path.isDir then
-        acc := acc ++ (← go entry.path (components.push entry.fileName))
+        acc := acc ++ (← go entry.path relChild)
       else if entry.fileName.endsWith ".py" then
-        let parts :=
-          if entry.fileName == "__init__.py" then
-            components
-          else
-            components.push (entry.fileName.takeWhile (· != '.') |>.toString)
-        if parts.isEmpty then continue
-        let dotted := ".".intercalate parts.toList
-        match ModuleName.ofString? dotted with
-        | some mod =>
-          acc := acc.push (mod, entry.path)
-        | none =>
-          let _ ← IO.eprintln s!"warning: skipping {entry.path}: invalid module name '{dotted}'" |>.toBaseIO
+        match ModuleName.ofRelativePath relChild with
+        | .ok info => acc := acc.push (info.moduleName, entry.path)
+        | .error _ => continue
     return acc
-  go sourceDir #[]
+  go sourceDir ⟨""⟩
 
 /-- Derive the output path for a Python file by mirroring the source directory
     structure and replacing `.py` with `.pyspec.st.ion`. -/

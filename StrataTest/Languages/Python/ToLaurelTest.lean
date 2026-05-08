@@ -21,7 +21,7 @@ open Strata.Laurel
 
 /-! ## Test Infrastructure -/
 
-private def testModule : String := "test"
+private def testModule : ModuleName := .ofComponent (.ofString "test")
 
 private def assertEq [BEq α] [ToString α] (actual expected : α) : IO Unit := do
   unless actual == expected do
@@ -72,7 +72,7 @@ private def fmtTypeDef : TypeDefinition → String
 
 /-- Run signaturesToLaurel and print formatted output.
     Prints warnings (if any) before procedures so `#guard_msgs` can verify them. -/
-private def runTest (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+private def runTest (sigs : Array Signature) (moduleName : ModuleName := testModule) : IO Unit := do
   let result := signaturesToLaurel "<test>" sigs moduleName
   for err in result.errors do
     IO.println s!"warning: {err.kind.phase}.{err.kind.category}: {err.message}"
@@ -82,14 +82,14 @@ private def runTest (sigs : Array Signature) (moduleName : ModuleName := .ofStri
     IO.println (fmtProc proc)
 
 /-- Run signaturesToLaurel expecting errors. Print error messages. -/
-private def runTestErrors (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+private def runTestErrors (sigs : Array Signature) (moduleName : ModuleName := testModule) : IO Unit := do
   let result := signaturesToLaurel "<test>" sigs moduleName
   assert! result.errors.size > 0
   for err in result.errors do
     IO.println err.message
 
 /-- Run signaturesToLaurel and print warning kinds (phase.category: message). -/
-private def runTestWarningKinds (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+private def runTestWarningKinds (sigs : Array Signature) (moduleName : ModuleName := testModule) : IO Unit := do
   let result := signaturesToLaurel "<test>" sigs moduleName
   assert! result.errors.size > 0
   for err in result.errors do
@@ -97,7 +97,7 @@ private def runTestWarningKinds (sigs : Array Signature) (moduleName : ModuleNam
 
 /-- Run signaturesToLaurel and print the full result: Laurel output,
     dispatch table, and method registry. Sorts by key for stable output. -/
-private def runFullTest (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+private def runFullTest (sigs : Array Signature) (moduleName : ModuleName := testModule) : IO Unit := do
   let result := signaturesToLaurel "<test>" sigs moduleName
   if result.errors.size > 0 then
     IO.println s!"errors: {result.errors.size}"
@@ -148,7 +148,7 @@ private def dict_ := SpecType.ident loc .typingDict
 private def listOf (t : SpecType) := SpecType.ident loc .typingList #[t]
 private def dictOf (k v : SpecType) := SpecType.ident loc .typingDict #[k, v]
 private def mkUnion (types : Array SpecType) := SpecType.unionArray loc types
-private def pyClass (name : String) := SpecType.ident loc (PythonIdent.ofComponent testModule name)
+private def pyClass (name : String) := SpecType.ident loc (.mkRaw testModule name)
 private def externIdent (mod name : String) := PythonIdent.mkRaw (.ofString! mod) name
 
 private def arg (name : String) (type : SpecType) (default : Option SpecDefault := none) : Arg :=
@@ -442,7 +442,7 @@ body contains FieldSelect: false
           (.intLit 0 loc)
           loc
       }])
-  ] (.ofString! testModule)
+  ] testModule
   assert! result.errors.size = 0
   match result.program.staticProcedures with
   | proc :: _ =>
@@ -674,7 +674,7 @@ private def translatePrecondResult (preconditions : Array Assertion)
       args := { args, kwonly := #[] }
       returnType := str, isOverload := false
       preconditions, postconditions := #[]
-    }] (.ofString! testModule)
+    }] testModule
 
 /-- Translate a single function with preconditions and return
     `(bodyString, errorCount)`. -/
@@ -720,7 +720,7 @@ private def translatePrecond (preconditions : Array Assertion)
       preconditions := #[{
         message := #[], formula :=
           .containsKey (.var "kwargs" loc) "key" loc }]
-      postconditions := #[] }] (.ofString! testModule)
+      postconditions := #[] }] testModule
   let body := getBody result |>.getD ""
   assertEq result.errors.size 0
   assert! body.contains "result := <??>"
@@ -771,7 +771,7 @@ private def translateFunc (args : Array Arg := #[])
       args := { args := args, kwonly := #[] }
       returnType, isOverload := false
       preconditions, postconditions
-    }] (.ofString! testModule)
+    }] testModule
   (getBody result |>.getD "", result.errors.size)
 
 -- No args, no preconditions: body has havoc + return type assume
