@@ -108,9 +108,9 @@ def parseSMT2Meta (content : String) : SMT2Meta :=
     else if l.startsWith "(set-info :file " then
       { info with file := extractQuoted l }
     else if l.startsWith "(set-info :start " then
-      { info with start := (l.drop 17 |>.dropRight 1 |>.trimAscii).toNat? }
+      { info with start := (l.drop 17 |>.dropEnd 1 |>.trimAscii).toNat? }
     else if l.startsWith "(set-info :stop " then
-      { info with stop := (l.drop 16 |>.dropRight 1 |>.trimAscii).toNat? }
+      { info with stop := (l.drop 16 |>.dropEnd 1 |>.trimAscii).toNat? }
     else if l.startsWith "(set-info :final-message " then
       { info with label := extractQuoted l |>.getD "unknown" }
     else if l.startsWith "(set-info :property " then
@@ -171,7 +171,7 @@ def aggregateResultsDirectory (vcDir : System.FilePath)
     | some v =>
       if v != Strata.SMT.Encoder.smtMetadataVersion then
         IO.eprintln s!"warning: {entry.fileName} has strata-smt-metadata-version \"{v}\" but this build expects \"{Strata.SMT.Encoder.smtMetadataVersion}\"; results may be unreliable"
-    let resultPath := vcDir / (entry.fileName.dropRight 5 ++ ".result")
+    let resultPath := vcDir / ((entry.fileName.dropEnd 5).toString ++ ".result")
     let solverOutput ← do
       if ← resultPath.pathExists then
         some <$> IO.FS.readFile resultPath
