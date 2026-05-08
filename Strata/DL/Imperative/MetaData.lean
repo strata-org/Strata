@@ -280,26 +280,35 @@ def getRelatedFileRanges {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array F
       | _ => none
     else none
 
+/-- Get all related provenances from metadata, in order. -/
+private def getRelatedProvenances {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array Provenance :=
+  md.filterMap fun elem =>
+    if elem.fld == Imperative.MetaData.relatedFileRange then
+      match elem.value with
+      | .provenance p => some p
+      | _ => none
+    else none
+
 /-- Remove all metadata elements with the given field. -/
 def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
   md.filter (fun e => !(e.fld == fld))
 
-/-- Replace the primary file range with a new one, shifting existing related
-    file ranges and prepending the old primary range. -/
+/-- Replace the primary provenance with a new one, shifting existing related
+    provenances and prepending the old primary provenance. -/
 def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (callSiteRange : MetaData P) : MetaData P :=
-  match getFileRange callSiteRange, getFileRange md with
-  | some csRange, some origRange =>
-    let existingRelated := getRelatedFileRanges md
+  match getProvenance callSiteRange, getProvenance md with
+  | some csProv, some origProv =>
+    let existingRelated := getRelatedProvenances md
     let md := md.eraseElem MetaData.provenanceField
     let md := md.eraseAllElems MetaData.relatedFileRange
-    let md := md.pushElem MetaData.provenanceField (.provenance (Provenance.ofFileRange csRange))
-    let md := md.pushElem MetaData.relatedFileRange (.provenance (Provenance.ofFileRange origRange))
-    existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.provenance (Provenance.ofFileRange fr))) md
-  | some csRange, none =>
+    let md := md.pushElem MetaData.provenanceField (.provenance csProv)
+    let md := md.pushElem MetaData.relatedFileRange (.provenance origProv)
+    existingRelated.foldl (fun md p => md.pushElem MetaData.relatedFileRange (.provenance p)) md
+  | some csProv, none =>
     let md := md.eraseElem MetaData.provenanceField
-    md.pushElem MetaData.provenanceField (.provenance (Provenance.ofFileRange csRange))
+    md.pushElem MetaData.provenanceField (.provenance csProv)
   | none, _ => md
 
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/
