@@ -170,6 +170,7 @@ private def guardProp {p : Prop} [Decidable p] (msg : String)
 
 /-! ## Helper Functions -/
 
+/-- Create a FileRange from a SourceRange for attaching to Laurel statements. -/
 def sourceRangeToFileRange (filePath : String) (sr : SourceRange) : FileRange :=
   let uri : Uri := .file filePath
   ⟨ uri, sr ⟩
