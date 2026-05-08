@@ -166,10 +166,10 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   intSort := return .int
   realSort := return .real
   stringSort := return .string
+  regexSort := return .regex
   bitvecSort n := return .bitvec n
   arraySort k v := return .ok (.constr "Array" [k, v])
-
-  termTypeToSort ty := return ty
+  constrSort name args := return .constr name args
 
   mkBool b := return Term.bool b
   mkInt i := return Term.int i
