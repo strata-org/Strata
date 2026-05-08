@@ -5,23 +5,24 @@
 -/
 
 import Strata.Languages.Core.DDMTransform.Grammar
+import Strata.Languages.CoreMatch.DDMTransform.StrataGen
 
 /-!
-# Auto-generate editor syntax highlighting from the Core DDM grammar
+# Auto-generate editor syntax highlighting from Strata DDM grammars
 
 Usage:
-  lake env lean --run editors/GenSyntax.lean vscode   # writes editors/vscode/syntaxes/core-st.tmLanguage.json
-  lake env lean --run editors/GenSyntax.lean emacs    # writes editors/emacs/core-st-mode.el
+  lake env lean --run editors/GenSyntax.lean vscode   # writes vscode TextMate grammars
+  lake env lean --run editors/GenSyntax.lean emacs    # writes emacs major modes
   lake env lean --run editors/GenSyntax.lean all      # writes both
 
-The generator reads the `Core` dialect object (produced by `#strata_gen`)
-and extracts types, keywords, operators, constants, and built-in function
+The generator reads each dialect object produced by `#strata_gen` and
+extracts types, keywords, operators, constants, and built-in function
 names from the structured `SyntaxDef` data.  Static patterns (comments,
 strings, labels, attributes, identifiers, numbers) are hardcoded since
 they come from the DDM parser, not the dialect grammar.
 -/
 
-open Strata CoreDDM Strata.Elab
+open Strata CoreDDM CoreMatchDDM Strata.Elab
 
 /-! ## Extract syntax tokens from the Dialect object -/
 
@@ -58,7 +59,8 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
     | _ => none
   -- Function names with explicit classification (handled by dedicated branches below)
   let constantFnNames := ["btrue", "bfalse"]
-  let keywordFnNames := ["forall", "forallT", "exists", "existsT", "old"]
+  let keywordFnNames := ["forall", "forallT", "exists", "existsT", "old",
+                          "match_expr", "matchExprArm_mk"]
   -- Auto-detect literal constructors by naming convention (*Lit suffix)
   let isLiteralCtor (name : String) : Bool := name.endsWith "Lit"
   -- Internal functions: not user-visible operators or keywords
@@ -138,7 +140,13 @@ def escapeRegexForJson (s : String) : String :=
   String.ofList <| s.toList.flatMap fun c =>
     if special.contains c then ['\\', '\\', c] else [c]
 
-def generateTextMate (info : SyntaxInfo) : String :=
+structure LangCfg where
+  langId : String
+  scopeName : String
+  displayName : String
+  generatorTarget : String
+
+def generateTextMate (cfg : LangCfg) (info : SyntaxInfo) : String :=
   let typePattern := "\\\\b(" ++ "|".intercalate (info.types.map escapeRegexForJson) ++ ")\\\\b"
   let kwPattern := "\\\\b(" ++ "|".intercalate (info.keywords.map escapeRegexForJson) ++ ")\\\\b"
   let constPattern := "\\\\b(" ++ "|".intercalate (info.constants.map escapeRegexForJson) ++ ")\\\\b"
@@ -154,9 +162,9 @@ def generateTextMate (info : SyntaxInfo) : String :=
   let lines : List String := [
     ob,
     s!"  {q}$schema{q}: {q}https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json{q},",
-    s!"  {q}_comment{q}: {q}AUTO-GENERATED from the Core DDM grammar. Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean vscode{q},",
-    s!"  {q}name{q}: {q}Strata Core{q},",
-    s!"  {q}scopeName{q}: {q}source.core-st{q},",
+    s!"  {q}_comment{q}: {q}AUTO-GENERATED from the {cfg.generatorTarget} DDM grammar. Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean vscode{q},",
+    s!"  {q}name{q}: {q}{cfg.displayName}{q},",
+    s!"  {q}scopeName{q}: {q}source.{cfg.langId}{q},",
     s!"  {q}patterns{q}: [",
     s!"    {ob} {q}include{q}: {q}#comment{q} {cb},",
     s!"    {ob} {q}include{q}: {q}#string{q} {cb},",
@@ -172,67 +180,67 @@ def generateTextMate (info : SyntaxInfo) : String :=
     "  ],",
     s!"  {q}repository{q}: {ob}",
     s!"    {q}comment{q}: {ob}",
-    s!"      {q}name{q}: {q}comment.line.double-slash.core-st{q},",
+    s!"      {q}name{q}: {q}comment.line.double-slash.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}//.*${q}",
     s!"    {cb},",
     s!"    {q}string{q}: {ob}",
-    s!"      {q}name{q}: {q}string.quoted.double.core-st{q},",
+    s!"      {q}name{q}: {q}string.quoted.double.{cfg.langId}{q},",
     s!"      {q}begin{q}: {q}\\{q}{q},",
     s!"      {q}end{q}: {q}\\{q}{q},",
     s!"      {q}patterns{q}: [",
     s!"        {ob}",
-    s!"          {q}name{q}: {q}constant.character.escape.core-st{q},",
+    s!"          {q}name{q}: {q}constant.character.escape.{cfg.langId}{q},",
     s!"          {q}match{q}: {q}\\\\\\\\.{q}",
     s!"        {cb}",
     "      ]",
     s!"    {cb},",
     s!"    {q}attribute{q}: {ob}",
-    s!"      {q}name{q}: {q}meta.attribute.core-st{q},",
+    s!"      {q}name{q}: {q}meta.attribute.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}@\\\\[[^\\\\]]*\\\\]{q},",
     s!"      {q}captures{q}: {ob}",
-    s!"        {q}0{q}: {ob} {q}name{q}: {q}entity.other.attribute-name.core-st{q} {cb}",
+    s!"        {q}0{q}: {ob} {q}name{q}: {q}entity.other.attribute-name.{cfg.langId}{q} {cb}",
     s!"      {cb}",
     s!"    {cb},",
     s!"    {q}label{q}: {ob}",
-    s!"      {q}name{q}: {q}meta.label.core-st{q},",
+    s!"      {q}name{q}: {q}meta.label.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}\\\\[([a-zA-Z_][a-zA-Z0-9_]*)\\\\]\\\\s*:{q},",
     s!"      {q}captures{q}: {ob}",
-    s!"        {q}0{q}: {ob} {q}name{q}: {q}entity.name.label.core-st{q} {cb},",
-    s!"        {q}1{q}: {ob} {q}name{q}: {q}entity.name.tag.core-st{q} {cb}",
+    s!"        {q}0{q}: {ob} {q}name{q}: {q}entity.name.label.{cfg.langId}{q} {cb},",
+    s!"        {q}1{q}: {ob} {q}name{q}: {q}entity.name.tag.{cfg.langId}{q} {cb}",
     s!"      {cb}",
     s!"    {cb},",
     s!"    {q}number{q}: {ob}",
     s!"      {q}patterns{q}: [",
     s!"        {ob}",
-    s!"          {q}name{q}: {q}constant.numeric.decimal.core-st{q},",
+    s!"          {q}name{q}: {q}constant.numeric.decimal.{cfg.langId}{q},",
     s!"          {q}match{q}: {q}\\\\b[0-9]+(\\\\.[0-9]+)?\\\\b{q}",
     s!"        {cb}",
     "      ]",
     s!"    {cb},",
     s!"    {q}keyword{q}: {ob}",
-    s!"      {q}name{q}: {q}keyword.core-st{q},",
+    s!"      {q}name{q}: {q}keyword.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}{kwPattern}{q}",
     s!"    {cb},",
     s!"    {q}type{q}: {ob}",
-    s!"      {q}name{q}: {q}support.type.core-st{q},",
+    s!"      {q}name{q}: {q}support.type.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}{typePattern}{q}",
     s!"    {cb},",
     s!"    {q}constant{q}: {ob}",
-    s!"      {q}name{q}: {q}constant.language.core-st{q},",
+    s!"      {q}name{q}: {q}constant.language.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}{constPattern}{q}",
     s!"    {cb},",
     s!"    {q}operator{q}: {ob}",
     s!"      {q}patterns{q}: [",
     s!"        {ob}",
-    s!"          {q}name{q}: {q}keyword.operator.assignment.core-st{q},",
+    s!"          {q}name{q}: {q}keyword.operator.assignment.{cfg.langId}{q},",
     s!"          {q}match{q}: {q}:={q}",
     s!"        {cb},",
     s!"        {ob}",
-    s!"          {q}name{q}: {q}keyword.operator.word.core-st{q},",
+    s!"          {q}name{q}: {q}keyword.operator.word.{cfg.langId}{q},",
     s!"          {q}match{q}: {q}{wordOpPattern}{q}",
     s!"        {cb},",
     s!"        {ob}",
-    s!"          {q}name{q}: {q}keyword.operator.symbol.core-st{q},",
+    s!"          {q}name{q}: {q}keyword.operator.symbol.{cfg.langId}{q},",
     s!"          {q}match{q}: {q}{symOpPattern}{q}",
     s!"        {cb}",
     "      ]",
@@ -240,11 +248,11 @@ def generateTextMate (info : SyntaxInfo) : String :=
     s!"    {q}function-call{q}: {ob}",
     s!"      {q}match{q}: {q}{builtinPattern}{q},",
     s!"      {q}captures{q}: {ob}",
-    s!"        {q}1{q}: {ob} {q}name{q}: {q}support.function.builtin.core-st{q} {cb}",
+    s!"        {q}1{q}: {ob} {q}name{q}: {q}support.function.builtin.{cfg.langId}{q} {cb}",
     s!"      {cb}",
     s!"    {cb},",
     s!"    {q}identifier{q}: {ob}",
-    s!"      {q}name{q}: {q}variable.other.core-st{q},",
+    s!"      {q}name{q}: {q}variable.other.{cfg.langId}{q},",
     s!"      {q}match{q}: {q}\\\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\\\b{q}",
     s!"    {cb}",
     s!"  {cb}",
@@ -266,42 +274,49 @@ private def emacsWordList (items : List String) (indent : String := "    ") : St
   let allLines := result.1 ++ [result.2]
   "\n".intercalate allLines
 
-def generateEmacs (info : SyntaxInfo) : String :=
+structure EmacsCfg where
+  langId : String
+  modeLine : String
+  /-- Raw elisp regex string for `auto-mode-alist`; inserted verbatim. -/
+  extRegex : String
+  displayName : String
+
+def generateEmacs (cfg : EmacsCfg) (info : SyntaxInfo) : String :=
   let kwList := emacsWordList info.keywords
   let tyList := emacsWordList info.types
   let ctList := emacsWordList info.constants
   let opList := emacsWordList info.wordOperators
   let biList := emacsWordList info.builtinFunctions
-  -- Build the file as a list of lines to avoid escape nightmares
+  let id := cfg.langId
   let lines : List String := [
-    ";;; core-st-mode.el --- Major mode for Strata Core (.core.st) files -*- lexical-binding: t; -*-",
+    s!";;; {id}-mode.el --- Major mode for {cfg.displayName} files -*- lexical-binding: t; -*-",
     "",
-    ";; AUTO-GENERATED from the Core DDM grammar.",
+    ";; AUTO-GENERATED from the Strata DDM grammar.",
     ";; Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean emacs",
     "",
     ";; Keywords",
-    "(defvar core-st-keywords",
+    s!"(defvar {id}-keywords",
     s!"  '({kwList}))",
     "",
-    "(defvar core-st-types",
+    s!"(defvar {id}-types",
     s!"  '({tyList}))",
     "",
-    "(defvar core-st-constants",
+    s!"(defvar {id}-constants",
     s!"  '({ctList}))",
     "",
-    "(defvar core-st-operators",
+    s!"(defvar {id}-operators",
     s!"  '({opList}))",
     "",
-    "(defvar core-st-builtins",
+    s!"(defvar {id}-builtins",
     s!"  '({biList}))",
     "",
     ";; Font-lock rules",
-    "(defvar core-st-font-lock-keywords",
-    "  (let ((kw-re  (regexp-opt core-st-keywords  'symbols))",
-    "        (ty-re  (regexp-opt core-st-types     'symbols))",
-    "        (ct-re  (regexp-opt core-st-constants 'symbols))",
-    "        (op-re  (regexp-opt core-st-operators 'symbols))",
-    "        (bi-re  (regexp-opt core-st-builtins  'symbols)))",
+    s!"(defvar {id}-font-lock-keywords",
+    s!"  (let ((kw-re  (regexp-opt {id}-keywords  'symbols))",
+    s!"        (ty-re  (regexp-opt {id}-types     'symbols))",
+    s!"        (ct-re  (regexp-opt {id}-constants 'symbols))",
+    s!"        (op-re  (regexp-opt {id}-operators 'symbols))",
+    s!"        (bi-re  (regexp-opt {id}-builtins  'symbols)))",
     "    `((,kw-re . font-lock-keyword-face)",
     "      (,ty-re . font-lock-type-face)",
     "      (,ct-re . font-lock-constant-face)",
@@ -315,7 +330,7 @@ def generateEmacs (info : SyntaxInfo) : String :=
     "      (\"\\\\b[0-9]+\\\\(?:\\\\.[0-9]+\\\\)?\\\\b\" . font-lock-constant-face))))",
     "",
     ";; Syntax table",
-    "(defvar core-st-mode-syntax-table",
+    s!"(defvar {id}-mode-syntax-table",
     "  (let ((st (make-syntax-table)))",
     "    ;; // line comments",
     "    (modify-syntax-entry ?/ \". 12\" st)",
@@ -337,36 +352,82 @@ def generateEmacs (info : SyntaxInfo) : String :=
     "    st))",
     "",
     ";;;###autoload",
-    "(define-derived-mode core-st-mode prog-mode \"Core.st\"",
-    "  \"Major mode for editing Strata Core (.core.st) files.\"",
-    "  :syntax-table core-st-mode-syntax-table",
-    "  (setq-local font-lock-defaults '(core-st-font-lock-keywords))",
+    s!"(define-derived-mode {id}-mode prog-mode \"{cfg.modeLine}\"",
+    s!"  \"Major mode for editing {cfg.displayName} files.\"",
+    s!"  :syntax-table {id}-mode-syntax-table",
+    s!"  (setq-local font-lock-defaults '({id}-font-lock-keywords))",
     "  (setq-local comment-start \"// \")",
     "  (setq-local comment-end \"\"))",
     "",
     ";;;###autoload",
-    "(add-to-list 'auto-mode-alist '(\"\\\\.core\\\\.st\\\\'\" . core-st-mode))",
+    s!"(add-to-list 'auto-mode-alist '(\"{cfg.extRegex}\" . {id}-mode))",
     "",
-    "(provide 'core-st-mode)",
-    ";;; core-st-mode.el ends here",
+    s!"(provide '{id}-mode)",
+    s!";;; {id}-mode.el ends here",
     ""
   ]
   "\n".intercalate lines
 
-/-! ## Main -/
+structure DialectGenSpec where
+  /-- Every dialect whose ops should appear in the highlighter. For
+  dialects that import others (e.g. `CoreMatch` imports `Core`), list
+  each one: `Dialect.declarations` only carries the locally-declared
+  ops, so imports must be extracted and merged separately. -/
+  dialects : List Dialect
+  vscode : LangCfg
+  emacs : EmacsCfg
 
-def main (args : List String) : IO Unit := do
-  let info := extractSyntaxInfo Core
-  let target := args.head?.getD "all"
+def SyntaxInfo.merge (a b : SyntaxInfo) : SyntaxInfo :=
+  { types := (a.types ++ b.types).eraseDups
+    keywords := (a.keywords ++ b.keywords).eraseDups
+    wordOperators := (a.wordOperators ++ b.wordOperators).eraseDups
+    constants := (a.constants ++ b.constants).eraseDups
+    builtinFunctions := (a.builtinFunctions ++ b.builtinFunctions).eraseDups
+    symbolOperators := (a.symbolOperators ++ b.symbolOperators).eraseDups }
+
+def SyntaxInfo.empty : SyntaxInfo :=
+  { types := [], keywords := [], wordOperators := [],
+    constants := [], builtinFunctions := [], symbolOperators := [] }
+
+def coreSpec : DialectGenSpec :=
+  { dialects := [Core]
+    vscode := { langId := "core-st"
+                scopeName := "source.core-st"
+                displayName := "Strata Core"
+                generatorTarget := "Core" }
+    emacs := { langId := "core-st"
+               modeLine := "Core.st"
+               extRegex := "\\\\.core\\\\.st\\\\'"
+               displayName := "Strata Core (.core.st)" } }
+
+def coreMatchSpec : DialectGenSpec :=
+  { dialects := [Core, CoreMatch]
+    vscode := { langId := "coreMatch-st"
+                scopeName := "source.coreMatch-st"
+                displayName := "Strata CoreMatch"
+                generatorTarget := "CoreMatch" }
+    emacs := { langId := "coreMatch-st"
+               modeLine := "CoreMatch.st"
+               extRegex := "\\\\.coreMatch\\\\.st\\\\'"
+               displayName := "Strata CoreMatch (.coreMatch.st)" } }
+
+def writeForDialect (spec : DialectGenSpec) (target : String) : IO Unit := do
+  let info := spec.dialects.foldl (init := SyntaxInfo.empty) fun acc d =>
+    SyntaxInfo.merge acc (extractSyntaxInfo d)
   let scriptDir := "editors"
   if target == "vscode" || target == "all" then
-    let path := s!"{scriptDir}/vscode/syntaxes/core-st.tmLanguage.json"
-    IO.FS.writeFile path (generateTextMate info)
+    let path := s!"{scriptDir}/vscode/syntaxes/{spec.vscode.langId}.tmLanguage.json"
+    IO.FS.writeFile path (generateTextMate spec.vscode info)
     IO.println s!"Wrote {path}"
   if target == "emacs" || target == "all" then
-    let path := s!"{scriptDir}/emacs/core-st-mode.el"
-    IO.FS.writeFile path (generateEmacs info)
+    let path := s!"{scriptDir}/emacs/{spec.emacs.langId}-mode.el"
+    IO.FS.writeFile path (generateEmacs spec.emacs info)
     IO.println s!"Wrote {path}"
+
+def main (args : List String) : IO Unit := do
+  let target := args.head?.getD "all"
   if target != "vscode" && target != "emacs" && target != "all" then
     IO.eprintln s!"Usage: lake env lean --run editors/GenSyntax.lean [vscode|emacs|all]"
     IO.Process.exit 1
+  writeForDialect coreSpec target
+  writeForDialect coreMatchSpec target

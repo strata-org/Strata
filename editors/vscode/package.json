@@ -3,7 +3,7 @@
   "displayName": "Strata",
   "publisher": "strata-org",
   "description": "Syntax highlighting for Strata dialect files",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -15,6 +15,12 @@
         "aliases": ["Strata Core", "core-st"],
         "extensions": [".core.st"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "coreMatch-st",
+        "aliases": ["Strata CoreMatch", "coreMatch-st"],
+        "extensions": [".coreMatch.st"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -22,6 +28,11 @@
         "language": "core-st",
         "scopeName": "source.core-st",
         "path": "./syntaxes/core-st.tmLanguage.json"
+      },
+      {
+        "language": "coreMatch-st",
+        "scopeName": "source.coreMatch-st",
+        "path": "./syntaxes/coreMatch-st.tmLanguage.json"
       }
     ]
   }

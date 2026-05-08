@@ -1,0 +1,97 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "_comment": "AUTO-GENERATED from the CoreMatch DDM grammar. Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean vscode",
+  "name": "Strata CoreMatch",
+  "scopeName": "source.coreMatch-st",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#attribute" },
+    { "include": "#label" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#type" },
+    { "include": "#constant" },
+    { "include": "#operator" },
+    { "include": "#function-call" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.coreMatch-st",
+      "match": "//.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.coreMatch-st",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.coreMatch-st",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "attribute": {
+      "name": "meta.attribute.coreMatch-st",
+      "match": "@\\[[^\\]]*\\]",
+      "captures": {
+        "0": { "name": "entity.other.attribute-name.coreMatch-st" }
+      }
+    },
+    "label": {
+      "name": "meta.label.coreMatch-st",
+      "match": "\\[([a-zA-Z_][a-zA-Z0-9_]*)\\]\\s*:",
+      "captures": {
+        "0": { "name": "entity.name.label.coreMatch-st" },
+        "1": { "name": "entity.name.tag.coreMatch-st" }
+      }
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.coreMatch-st",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.coreMatch-st",
+      "match": "\\b(var|assume|assert|cover|if|else|havoc|invariant|decreases|while|out|inout|call|exit|free|ensures|requires|spec|procedure|type|const|function|inline|rec|axiom|distinct|datatype|old|forall|exists|program|match|arm)\\b"
+    },
+    "type": {
+      "name": "support.type.coreMatch-st",
+      "match": "\\b(bool|int|string|regex|real|bv1|bv8|bv16|bv32|bv64|Map|Sequence)\\b"
+    },
+    "constant": {
+      "name": "constant.language.coreMatch-st",
+      "match": "\\b(true|false|null)\\b"
+    },
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.coreMatch-st",
+          "match": ":="
+        },
+        {
+          "name": "keyword.operator.word.coreMatch-st",
+          "match": "\\b(div|mod|sdiv|smod|safesdiv|safesmod)\\b"
+        },
+        {
+          "name": "keyword.operator.symbol.coreMatch-st",
+          "match": "(safe_neg|safe-|safe\\+|safe\\*|<==>|>=s|==>|>>s|<=s|/t|\\|\\||>=|%t|<<|>>|&&|<=|==|!=|<s|>s|>|\\^|\\+|\\*|/|%|!|-|~|&|<|\\|)"
+        }
+      ]
+    },
+    "function-call": {
+      "match": "\\b(Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|str\\.prefixof|str\\.suffixof|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
+      "captures": {
+        "1": { "name": "support.function.builtin.coreMatch-st" }
+      }
+    },
+    "identifier": {
+      "name": "variable.other.coreMatch-st",
+      "match": "\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\b"
+    }
+  }
+}
