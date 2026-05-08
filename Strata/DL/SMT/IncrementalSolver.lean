@@ -410,6 +410,7 @@ def mkIncrementalSolverIO (solver : SMTLibSolver) : IO (AbstractSolver Term Term
     arraySort := fun k v => run (s.arraySort k v)
     regexSort := run s.regexSort
     constrSort := fun name args => run (s.constrSort name args)
+    termTypeToSort := fun ty => run (s.termTypeToSort ty)
     mkBool := fun b => run (s.mkBool b)
     mkInt := fun i => run (s.mkInt i)
     mkPrim := fun p => run (s.mkPrim p)
