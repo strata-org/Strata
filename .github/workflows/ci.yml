@@ -90,6 +90,7 @@ jobs:
           use-github-cache: false
           test: false
       - name: Save lake cache
+        # Save before tests so downstream jobs can use the cache even if tests fail
         if: always()
         uses: actions/cache/save@v5
         with:
