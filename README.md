@@ -41,35 +41,17 @@ changes!**
 
 #### SMT Solvers
 
-Download static builds (single binary, no library dependencies). The
-versions below are known to work; any newer release from the same links
-should also be fine.
+Download static builds (single binary, no library dependencies) and
+place them on your `PATH`:
 
 - cvc5 releases: https://github.com/cvc5/cvc5/releases
 - z3 releases: https://github.com/Z3Prover/z3/releases
 
-The following script auto-detects your platform and downloads both solvers:
-
 ```bash
-# Detect platform
-OS="$(uname -s)"      # Linux or Darwin
-ARCH="$(uname -m)"    # x86_64, aarch64, arm64
-case "$OS/$ARCH" in
-  Linux/x86_64)              CVC5_ZIP=cvc5-Linux-x86_64-static   Z3_ZIP=z3-4.15.2-x64-glibc-2.39 ;;
-  Linux/aarch64|Linux/arm64) CVC5_ZIP=cvc5-Linux-arm64-static    Z3_ZIP=z3-4.15.2-arm64-glibc-2.34 ;;
-  Darwin/arm64)              CVC5_ZIP=cvc5-macOS-arm64-static    Z3_ZIP=z3-4.15.2-arm64-osx-13.7.6 ;;
-  Darwin/x86_64)             CVC5_ZIP=cvc5-macOS-x86_64-static   Z3_ZIP=z3-4.15.2-x64-osx-13.7.6 ;;
-  *) echo "Unsupported: $OS/$ARCH"; exit 1 ;;
-esac
-
-wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/${CVC5_ZIP}.zip
-unzip ${CVC5_ZIP}.zip
-wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/${Z3_ZIP}.zip
-unzip ${Z3_ZIP}.zip
-
-# Install (choose one):
-mkdir -p ~/.local/bin && cp ${CVC5_ZIP}/bin/cvc5 ${Z3_ZIP}/bin/z3 ~/.local/bin/
-# or: sudo cp ${CVC5_ZIP}/bin/cvc5 ${Z3_ZIP}/bin/z3 /usr/local/bin/
+# Download the appropriate static build for your platform from the
+# release pages above, then copy the binaries somewhere on your PATH:
+cp /path/to/cvc5 /path/to/z3 ~/.local/bin/
+# or: sudo cp /path/to/cvc5 /path/to/z3 /usr/local/bin/
 ```
 
 #### Python
@@ -173,7 +155,9 @@ modes.
 
 ### When running unit tests: "error: no such file or directory (error code: 2)"
 
-This is likely due to `cvc5` or `z3` not being in the PATH environment variable. Add them and try again.
+This is likely due to `cvc5` or `z3` not being in the `PATH` environment
+variable. See [Installing dependencies → SMT Solvers](#smt-solvers) for
+how to install them.
 
 ## License
 
