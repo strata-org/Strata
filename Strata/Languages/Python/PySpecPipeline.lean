@@ -52,6 +52,13 @@ public def emitMessage (kind : Pipeline.MessageKind) (message : String)
   let ctx ← read
   let phase ← ctx.currentPhaseRef.get
   ctx.messagesRef.modify (·.push { file, loc, phase, kind, message })
+  let mut fields : List (String × Lean.Json) := [
+    ("type", .str "diagnostic"), ("phase", .str phase.display),
+    ("file", .str file.toString), ("category", .str kind.category),
+    ("impact", .str (toString kind.impact)), ("message", .str message)]
+  unless loc == default do
+    fields := fields ++ [("start", .num loc.start.byteIdx), ("stop", .num loc.stop.byteIdx)]
+  ctx.emitMetric (Lean.Json.mkObj fields)
   if ctx.outputMode == .verbose then
     let tag := if kind.impact.isFatal then "error" else "warning"
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
@@ -65,6 +72,14 @@ public def emitMessage (kind : Pipeline.MessageKind) (message : String)
 public def addMessages (msgs : Array Pipeline.PipelineMessage) : Pipeline.PipelineM Unit := do
   let ctx ← read
   ctx.messagesRef.modify (· ++ msgs)
+  for msg in msgs do
+    let mut fields : List (String × Lean.Json) := [
+      ("type", .str "diagnostic"), ("phase", .str msg.phase.display),
+      ("file", .str msg.file.toString), ("category", .str msg.kind.category),
+      ("impact", .str (toString msg.kind.impact)), ("message", .str msg.message)]
+    unless msg.loc == default do
+      fields := fields ++ [("start", .num msg.loc.start.byteIdx), ("stop", .num msg.loc.stop.byteIdx)]
+    ctx.emitMetric (Lean.Json.mkObj fields)
   if ctx.outputMode == .verbose then
     for msg in msgs do
       let tag := if msg.kind.impact.isFatal then "error" else "warning"
@@ -460,45 +475,6 @@ public def PythonToLaurelResult.warnings : PythonToLaurelResult → Array Pipeli
   | .success _ ws => ws
   | .failure _ ws => ws
 
-/-- Generate a JSON warning summary from pipeline messages. -/
-public def Pipeline.PipelineMessage.toSummaryJson
-    (warnings : Array Pipeline.PipelineMessage)
-    (timing : Array Pipeline.PhaseTimingEntry := #[]) : Lean.Json :=
-  let diagnostics : Array Lean.Json := warnings.map fun msg =>
-    Lean.Json.mkObj [
-      ("file", .str msg.file.toString),
-      ("phase", .str msg.phase.display),
-      ("category", .str msg.kind.category),
-      ("impact", .str (toString msg.kind.impact)),
-      ("message", .str msg.message)
-    ]
-  let timingPhases : Array Lean.Json := timing.map fun entry =>
-    let fields := [
-      ("phase", Lean.Json.str entry.phase.display),
-      ("start_ms", .num (Pipeline.nsToMs entry.start_ns)),
-      ("end_ms", .num (entry.end_ns.map Pipeline.nsToMs |>.getD 0))
-    ]
-    let fields := if entry.timeout then fields ++ [("timeout", .bool true)] else fields
-    Lean.Json.mkObj fields
-  let totalMs := match timing.back? with
-    | some last => last.end_ns.map Pipeline.nsToMs |>.getD 0
-    | none => 0
-  let timingObj := Lean.Json.mkObj [
-    ("total_ms", .num totalMs),
-    ("phases", .arr timingPhases)
-  ]
-  Lean.Json.mkObj [
-    ("diagnostics", .arr diagnostics),
-    ("timing", timingObj)
-  ]
-
-/-- Write a JSON warning summary to a file. -/
-public def Pipeline.PipelineMessage.writeSummaryJson
-    (warnings : Array Pipeline.PipelineMessage)
-    (path : System.FilePath)
-    (timing : Array Pipeline.PhaseTimingEntry := #[]) : IO Unit := do
-  let json := Pipeline.PipelineMessage.toSummaryJson warnings timing
-  IO.FS.writeFile path (json.compress ++ "\n")
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,

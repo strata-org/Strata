@@ -610,8 +610,8 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "entry-point",
               help := "Which procedures to verify: main (main fn only), roots (user procs with no user callers, default), or all (all user procs). Only valid in bugFinding mode.",
               takesArg := .arg "mode" },
-            { name := "warning-summary",
-              help := "Write PySpec warning summary as JSON to <file>.",
+            { name := "metrics",
+              help := "Write pipeline metrics (diagnostics, timing, outcome) as JSONL to <file>.",
               takesArg := .arg "file" },
             { name := "skip-verification",
               help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
@@ -639,7 +639,9 @@ def pyAnalyzeLaurelCommand : Command where
     let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
-    let warningSummaryFile := pflags.getString "warning-summary"
+    let metricsHandle ← match pflags.getString "metrics" with
+      | some path => some <$> IO.FS.Handle.mk path .write
+      | none => pure none
 
     -- Parse verify options early (needed for pipeline config).
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
@@ -677,7 +679,7 @@ def pyAnalyzeLaurelCommand : Command where
     let skipVerification := pflags.getBool "skip-verification"
 
     -- Run the pipeline
-    let result ← Strata.Pipeline.runPyAnalyzePipeline {
+    let (result, pctx) ← Strata.Pipeline.runPyAnalyzePipeline {
       filePath, specDir
       dispatchModules, pyspecModules, sourcePath
       profile
@@ -685,6 +687,7 @@ def pyAnalyzeLaurelCommand : Command where
       verifyOptions := options
       entryPoint, isBugFinding
       outputMode, skipVerification
+      metricsHandle
     }
 
     -- Always print pipeline warnings
@@ -694,21 +697,31 @@ def pyAnalyzeLaurelCommand : Command where
       if verbose then
         for err in pipelineWarnings do
           IO.eprintln s!"  {err.file}: {err.phase}.{err.kind}: {err.message}"
-    if let some warnFile := warningSummaryFile then
-      Strata.Pipeline.PipelineMessage.writeSummaryJson pipelineWarnings warnFile
-        (timing := result.timing)
 
     if profile && !result.laurelPassStats.data.isEmpty then
       IO.println result.laurelPassStats.format
+
+    -- Write outcome record to metrics file.
+    let emitOutcome (resultStr : String) (exitCode : UInt8) (detail : Option String := none) : IO Unit := do
+      let totalMs ← pctx.elapsedNs
+      let mut fields : List (String × Lean.Json) := [
+        ("type", .str "outcome"), ("result", .str resultStr),
+        ("exit_code", .num exitCode.toNat), ("total_ms", .num (Strata.Pipeline.nsToMs totalMs))]
+      if let some d := detail then
+        fields := fields ++ [("detail", .str d)]
+      pctx.emitMetric (Lean.Json.mkObj fields)
 
     -- Handle pipeline outcome
     match result.outcome with
     | .userError range msg =>
       let location ← reportUserCodeError range msg mfm (sourcePath.getD filePath)
+      emitOutcome "userError" ExitCode.userError (detail := msg)
       exitPyAnalyzeUserError s!"{msg}{location}"
     | .knownLimitation msg =>
+      emitOutcome "knownLimitation" ExitCode.knownLimitation (detail := msg)
       exitPyAnalyzeKnownLimitation msg
     | .internalError msg =>
+      emitOutcome "internalError" ExitCode.internalError (detail := msg)
       exitPyAnalyzeInternalError msg
     | .verified vcResults _coreProgram =>
       -- Print per-VC results by default, unless SARIF mode is used
@@ -734,6 +747,7 @@ def pyAnalyzeLaurelCommand : Command where
           | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
           | none => Map.empty
         Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
+      emitOutcome "verified" 0
       printPyAnalyzeSummary vcResults options.checkMode
 
 def pyAnalyzeToGotoCommand : Command where

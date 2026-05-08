@@ -6,6 +6,8 @@
 module
 
 public import Strata.DDM.Util.SourceRange
+import Lean.Data.Json.Basic
+import Lean.Data.Json.Printer
 import all Strata.DDM.Util.String
 
 public section
@@ -247,6 +249,7 @@ public structure PipelineContext where
   currentPhaseRef : IO.Ref Phase
   messageCountAtPhaseStartRef : IO.Ref Nat
   repeatedPhasesRef : IO.Ref (Std.HashMap String (Nat × Nat))
+  metricsHandle : Option IO.FS.Handle := none
 
 /-- The pipeline monad: a reader over PipelineContext with EIO Unit.
     Fatal messages abort by throwing `()`. Callers that want to continue
@@ -265,6 +268,11 @@ def PipelineContext.elapsedNs (ctx : PipelineContext) : BaseIO Nat := do
 private def printlnFlush (msg : String) : BaseIO Unit := do
   let _ ← (do IO.println msg; (← IO.getStdout).flush : IO Unit).toBaseIO
 
+/-- Write a JSONL metric record to the metrics file (if open) and flush. -/
+public def PipelineContext.emitMetric (ctx : PipelineContext) (json : Lean.Json) : BaseIO Unit := do
+  if let some h := ctx.metricsHandle then
+    let _ ← (do h.putStrLn json.compress; h.flush : IO Unit).toBaseIO
+
 /-- End the current phase: flush aggregated repeated subphases, record end time,
     print [warnings] summary in profile mode. -/
 def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
@@ -282,6 +290,10 @@ def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
         let timeSuffix := if ctx.skipTiming then ""
           else s!" (×{count}, total: {nsToMs totalNs}ms, avg: {avg}ms)"
         printlnFlush s!"{childIndent}[profile] {name}{timeSuffix}"
+      ctx.emitMetric (Lean.Json.mkObj [
+        ("type", .str "timing"), ("phase", .str subphase.display),
+        ("start_ms", .num 0), ("end_ms", .num (nsToMs totalNs)),
+        ("count", .num count)])
     ctx.repeatedPhasesRef.set {}
   let now ← ctx.elapsedNs
   let timing ← ctx.timingRef.get
@@ -289,6 +301,9 @@ def PipelineContext.endCurrentPhase (ctx : PipelineContext) : BaseIO Unit := do
     let lastIdx := timing.size - 1
     let last := timing[lastIdx]
     ctx.timingRef.set (timing.set lastIdx { last with end_ns := some now })
+    ctx.emitMetric (Lean.Json.mkObj [
+      ("type", .str "timing"), ("phase", .str currentPhase.display),
+      ("start_ms", .num (nsToMs last.start_ns)), ("end_ms", .num (nsToMs now))])
   if ctx.outputMode == .profile || ctx.outputMode == .verbose then
     let messages ← ctx.messagesRef.get
     let msgStart ← ctx.messageCountAtPhaseStartRef.get
@@ -369,16 +384,18 @@ public def getPhase : PipelineM Phase := do
 
 /-- Create a fresh PipelineContext with new state refs. -/
 public def PipelineContext.create (outputMode : OutputMode := .default)
-    (skipTiming : Bool := false) : BaseIO PipelineContext := do
+    (skipTiming : Bool := false)
+    (metricsHandle : Option IO.FS.Handle := none) : BaseIO PipelineContext := do
   let startTime ← IO.monoNanosNow
-  let messagesRef ← IO.mkRef #[]
-  let timingRef ← IO.mkRef #[]
-  let currentPhaseRef ← IO.mkRef {}
+  let messagesRef ← IO.mkRef (α := Array PipelineMessage) #[]
+  let timingRef ← IO.mkRef (α := Array PhaseTimingEntry) #[]
+  let currentPhaseRef ← IO.mkRef (α := Phase) default
   let messageCountAtPhaseStartRef ← IO.mkRef 0
-  let repeatedPhasesRef ← IO.mkRef {}
+  let repeatedPhasesRef ← IO.mkRef (α := Std.HashMap String (Nat × Nat)) {}
   return { outputMode, pipelineStartTime := startTime, skipTiming,
            messagesRef, timingRef,
-           currentPhaseRef, messageCountAtPhaseStartRef, repeatedPhasesRef }
+           currentPhaseRef, messageCountAtPhaseStartRef, repeatedPhasesRef,
+           metricsHandle }
 
 end Strata.Pipeline
 end

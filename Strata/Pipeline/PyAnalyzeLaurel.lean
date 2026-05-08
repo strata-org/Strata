@@ -41,6 +41,7 @@ public structure PyAnalyzeConfig where
   outputMode : OutputMode := .default
   skipVerification : Bool := false
   skipTiming : Bool := false
+  metricsHandle : Option IO.FS.Handle := none
 
 /-- Full result of the pyAnalyzeLaurel pipeline. Warnings are always populated. -/
 public structure PyAnalyzeResult where
@@ -135,18 +136,21 @@ private def runPipeline (config : PyAnalyzeConfig)
 
     Accumulates pipeline messages from all phases. The caller is responsible
     for printing warnings and handling the outcome (exit codes, SARIF, etc.). -/
-public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO PyAnalyzeResult := do
+public def runPyAnalyzePipeline (config : PyAnalyzeConfig) : IO (PyAnalyzeResult × PipelineContext) := do
   let ctx ← PipelineContext.create
     (outputMode := config.outputMode)
     (skipTiming := config.skipTiming)
+    (metricsHandle := config.metricsHandle)
   let result ← (runPipeline config |>.run ctx).toBaseIO
   let warnings ← ctx.messagesRef.get
   let timing ← ctx.timingRef.get
   match result with
   | .ok (outcome, stats) =>
-    return { outcome, warnings, timing, laurelPassStats := stats }
+    let r : PyAnalyzeResult := { outcome, warnings, timing, laurelPassStats := stats }
+    return (r, ctx)
   | .error () =>
-    return { outcome := .internalError "Pipeline aborted due to fatal errors",
-             warnings, timing }
+    let r : PyAnalyzeResult :=
+      { outcome := .internalError "Pipeline aborted due to fatal errors", warnings, timing }
+    return (r, ctx)
 
 end Strata.Pipeline

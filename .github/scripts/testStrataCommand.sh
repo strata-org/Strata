@@ -90,6 +90,7 @@ expect_error "pyResolveOverloads missing dispatch file" \
 
 set -e
 
+
 if [ $failed -ne 0 ]; then
   echo "Some tests failed."
   exit 1
