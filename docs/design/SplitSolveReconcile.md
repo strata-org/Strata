@@ -65,8 +65,8 @@ these stored results directly instead of relying on the solver output.
 
 For obligations that are resolved without generating an `.smt2` file, the
 generate phase records the result internally and includes it in the final report
-during the same run. These results do not participate in the SSR workflow (there
-is nothing to solve or aggregate).
+during the same run. These results do not participate in the solve/aggregate
+workflow (there is nothing to solve or aggregate).
 
 ### Phase 2: Solve (external)
 
@@ -201,10 +201,12 @@ are already computed.
 
 ### Helper Scripts
 
-- `Scripts/ssr_py.sh` — End-to-end SSR workflow for Python files (generate →
-  solve → aggregate results) with parallel solving via `xargs -P`.
+- `Scripts/ssr_py.sh` — End-to-end solve/aggregate workflow for Python files
+  (generate → solve → aggregate results) with parallel solving via `xargs -P`.
+
 - `StrataTest/Languages/Python/run_py_ssr_test.sh` — Integration test that
-  validates SSR output matches direct verification for all Python test files.
+  validates aggregation output matches direct verification for all Python test
+  files.
 
 ---
 

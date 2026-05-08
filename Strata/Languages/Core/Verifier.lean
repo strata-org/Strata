@@ -166,21 +166,21 @@ open Lambda Strata.SMT
 
 public section
 
-/-- Short verdict string for embedding in SMT2 `set-info` directives.
-    Note: This intentionally differs from the `ToFormat` instance on
-    `SMT.Result` which includes model details. The SSR format needs
-    bare keywords that can be round-tripped via `smtResultOfString`. -/
+/-- Short verdict string for embedding in SMT2 `set-info` directives.  Note:
+This intentionally differs from the `ToFormat` instance on `SMT.Result` which
+includes model details. Solver result aggregation needs bare keywords that can
+be round-tripped via `smtResultOfString`. -/
 def verdictString : Imperative.SMT.Result Core.Expression.Ident → String
   | .sat _ => "sat"
   | .unsat => "unsat"
   | .unknown _ => "unknown"
   | .err _ => "err"
 
-/-- Property type as a short machine-readable string for `set-info`.
-    Note: This intentionally differs from the `ToFormat PropertyType`
-    instance which produces human-readable labels like "division by zero check".
-    The SSR format needs identifiers that can be round-tripped via
-    `propertyTypeOfString` in `AggregateResults.lean`. -/
+/-- Property type as a short machine-readable string for `set-info`.  Note: This
+intentionally differs from the `ToFormat PropertyType` instance which produces
+human-readable labels like "division by zero check".  Solver result aggregation
+needs identifiers that can be round-tripped via `propertyTypeOfString` in
+`AggregateResults.lean`. -/
 def propertyString (p : Imperative.PropertyType) : String :=
   match p with
   | .cover => "cover"
