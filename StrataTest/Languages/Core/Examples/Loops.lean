@@ -54,7 +54,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  #[<[fileRange]: :813-919>] condGoto i < n l$_4 end$_0
 l$_4:
   i := i + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
@@ -142,7 +142,7 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  #[<[fileRange]: :2438-2594>] condGoto i < n l$_4 end$_0
 l$_4:
   i := i + 1;
   s := s + i;
@@ -389,7 +389,7 @@ Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto x < n before_loop$_11 end$_0
+  #[<[fileRange]: :8059-8312>] condGoto x < n before_loop$_11 end$_0
 before_loop$_11:
   y := 0;
   condGoto true loop_entry$_5 loop_entry$_5
@@ -399,7 +399,7 @@ loop_entry$_5:
   var loop_measure$_6 : int;
   assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
   assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  condGoto y < x l$_8 l$_4
+  #[<[fileRange]: :8179-8292>] condGoto y < x l$_8 l$_4
 l$_8:
   y := y + 1;
   condGoto true measure_decrease$_7 measure_decrease$_7
