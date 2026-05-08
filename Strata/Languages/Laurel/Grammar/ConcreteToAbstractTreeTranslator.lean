@@ -35,9 +35,6 @@ def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
 def TransM.error (msg : String) : TransM α :=
   throw msg
 
-private def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  Imperative.MetaData.ofSourceRange uri sr
-
 private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :=
   ⟨ uri, sr ⟩
 

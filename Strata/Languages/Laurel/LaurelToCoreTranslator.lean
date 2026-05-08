@@ -316,11 +316,10 @@ def translateExpr (expr : StmtExprMd)
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  match Imperative.getFileRange md with
-  | some fileRange => s!"({fileRange.range.start})"
-  | none => match Imperative.getProvenance md with
-    | some (.synthesized _) => "(0)"
-    | _ => "(unknown)"
+  match Imperative.getProvenance md with
+  | some (.loc _ range) => s!"({range.start})"
+  | some (.synthesized _) => "(0)"
+  | none => "(unknown)"
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
   match ty.val with

@@ -179,9 +179,7 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 @[match_pattern]
-abbrev MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
-
-def MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
+abbrev MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
 
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
@@ -298,7 +296,6 @@ def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
   match getFileRange callSiteRange, getFileRange md with
   | some csRange, some origRange =>
     let existingRelated := getRelatedFileRanges md
-    let md := md.eraseElem MetaData.fileRange
     let md := md.eraseElem MetaData.provenanceField
     let md := md.eraseAllElems MetaData.relatedFileRange
     let md := md.pushElem MetaData.provenanceField (.provenance (Provenance.ofFileRange csRange))

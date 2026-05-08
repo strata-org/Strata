@@ -170,10 +170,6 @@ private def guardProp {p : Prop} [Decidable p] (msg : String)
 
 /-! ## Helper Functions -/
 
-/-- Create metadata from a SourceRange for attaching to Laurel statements. -/
-def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  Imperative.MetaData.ofSourceRange (.file filePath) sr
-
 def sourceRangeToFileRange (filePath : String) (sr : SourceRange) : FileRange :=
   let uri : Uri := .file filePath
   ⟨ uri, sr ⟩
