@@ -92,7 +92,7 @@ match ss with
     | .nondet => do
       let freshName ← StringGenState.gen "$__nondet_ite$"
       let ident := HasIdent.ident (P := P) freshName
-      let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
+      let initCmd := HasInit.init ident HasBool.boolTy .nondet (MetaData.synthesized "structured-to-unstructured")
       pure (HasFvar.mkFvar ident, [initCmd])
   let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
     (.some (.condGoto condExpr tl fl)) l
@@ -111,13 +111,13 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet MetaData.empty
+      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet (MetaData.synthesized "structured-to-unstructured")
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
-                         (HasIntOrder.eq mOldExpr mExpr) MetaData.empty
+                         (HasIntOrder.eq mOldExpr mExpr) (MetaData.synthesized "structured-to-unstructured")
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
-                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) MetaData.empty
+                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) (MetaData.synthesized "structured-to-unstructured")
       let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
-                         (HasIntOrder.lt mExpr mOldExpr) MetaData.empty
+                         (HasIntOrder.lt mExpr mOldExpr) (MetaData.synthesized "structured-to-unstructured")
       let ldec ← StringGenState.gen "measure_decrease$"
       let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
@@ -131,7 +131,7 @@ match ss with
       let assertLabel ←
         if srcLabel.isEmpty then StringGenState.gen "inv$"
         else pure srcLabel
-      pure (HasPassiveCmds.assert assertLabel i MetaData.empty))
+      pure (HasPassiveCmds.assert assertLabel i (MetaData.synthesized "structured-to-unstructured")))
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
@@ -141,7 +141,7 @@ match ss with
   | .nondet => do
     let freshName ← StringGenState.gen "$__nondet_loop$"
     let ident := HasIdent.ident (P := P) freshName
-    let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
+    let initCmd := HasInit.init ident HasBool.boolTy .nondet (MetaData.synthesized "structured-to-unstructured")
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
                         transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry

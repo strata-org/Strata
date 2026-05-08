@@ -44,7 +44,7 @@ open Lambda (LMonoTy LTy LExpr)
 public section
 
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
-  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+  Imperative.MetaData.synthesized "laurel-to-core"
 
 /-- Extract source location from an `AstNode` as an `ExprSourceLoc`,
     preserving the URI when available. -/
@@ -325,8 +325,10 @@ def translateExpr (expr : StmtExprMd)
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "BUG: metadata without a filerange"; default)
-  s!"({fileRange.range.start})"
+  match Imperative.getProvenance md with
+  | some (.loc _ range) => s!"({range.start})"
+  | some (.synthesized _) => "(0)"
+  | none => "(unknown)"
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
   let sr := exprSourceLocOf ty
