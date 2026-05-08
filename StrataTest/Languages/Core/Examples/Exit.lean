@@ -116,10 +116,10 @@ Result: ✅ pass
 info: Entry: l1
 
 l1:
-  condGoto true block$l1$_2 block$l1$_2
+  #[<[fileRange]: :387-502>] condGoto true block$l1$_2 block$l1$_2
 block$l1$_2:
   assert [a1]: x == x;
-  condGoto true l$_1 l$_1
+  #[<[fileRange]: :426-434>] condGoto true l$_1 l$_1
 l$_1:
   assert [a3]: x == x;
   condGoto true end$_0 end$_0
@@ -133,29 +133,29 @@ end$_0:
 info: Entry: l5
 
 l5:
-  condGoto true l4 l4
+  #[<[fileRange]: :577-1056>] condGoto true l4 l4
 l4:
-  condGoto true l4_before l4_before
+  #[<[fileRange]: :589-1050>] condGoto true l4_before l4_before
 l4_before:
-  condGoto true l3_before l3_before
+  #[<[fileRange]: :603-996>] condGoto true l3_before l3_before
 l3_before:
-  condGoto true l1 l1
+  #[<[fileRange]: :626-933>] condGoto true l1 l1
 l1:
-  condGoto true ite$_5 ite$_5
+  #[<[fileRange]: :651-835>] condGoto true ite$_5 ite$_5
 ite$_5:
   assert [a4]: x == x;
-  condGoto x > 0 block$l5$_2 block$l5$_1
+  #[<[fileRange]: :706-821>] condGoto x > 0 block$l5$_2 block$l5$_1
 l2:
-  condGoto true l$_3 l$_3
+  #[<[fileRange]: :848-921>] condGoto true l$_3 l$_3
 l$_3:
   assert [a5]: !(x == x);
   condGoto true block$l5$_2 block$l5$_2
 block$l5$_2:
   assert [a6]: x * 2 > x;
-  condGoto true end$_0 end$_0
+  #[<[fileRange]: :978-986>] condGoto true end$_0 end$_0
 block$l5$_1:
   assert [a7]: x <= 0;
-  condGoto true end$_0 end$_0
+  #[<[fileRange]: :1034-1042>] condGoto true end$_0 end$_0
 end$_0:
   finish
 -/

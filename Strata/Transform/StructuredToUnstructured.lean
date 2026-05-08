@@ -65,7 +65,7 @@ match ss with
 | .typeDecl _ _ :: rest => do
   -- Not yet supported, so just continue with `rest`.
   stmtsToBlocks k rest exitConts accum
-| .block l bss _md :: rest => do
+| .block l bss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Process block body, extending the list of exit continuations.
@@ -77,9 +77,9 @@ match ss with
     -- Empty accumulated block
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
-    let b := (l, { cmds := [], transfer := .goto bl })
+    let b := (l, { cmds := [], transfer := .goto bl md })
     pure (l, accumBlocks ++ [b] ++ bbs ++ bsNext)
-| .ite c tss fss _md :: rest => do
+| .ite c tss fss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create ite block
@@ -95,9 +95,9 @@ match ss with
       let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
       pure (HasFvar.mkFvar ident, [initCmd])
   let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
-    (.some (.condGoto condExpr tl fl)) l
+    (.some (.condGoto condExpr tl fl md)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
-| .loop c m is bss _md :: rest => do
+| .loop c m is bss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create loop entry block
@@ -135,7 +135,7 @@ match ss with
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
-    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext })
+    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext md })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
   | .nondet => do
@@ -143,10 +143,10 @@ match ss with
     let ident := HasIdent.ident (P := P) freshName
     let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
-                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
+                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext md })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
-| .exit l? _md :: _ => do
+| .exit l? md :: _ => do
   -- Find the continuation of the block labeled `l`, or the most recently-added
   -- block if `l` is `.none`.
   let bk :=
@@ -167,7 +167,7 @@ match ss with
     match l? with
     | .some l => s!"block${l}$"
     | .none => "block$"
-  flushCmds exitName accum .none bk
+  flushCmds exitName accum (.some (.goto bk md)) bk
 
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
