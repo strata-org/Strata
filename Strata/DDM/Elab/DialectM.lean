@@ -614,11 +614,16 @@ def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
       logError argDecls.decls[i].nameLoc s!"Argument is not elaborated."
       return default
 
-  -- Use passthrough for single-ident syntax without explicit precedence.
-  -- This runs after the argument-usage check so that polymorphic operators
-  -- with inferred type parameters are validated before simplification.
+  -- Passthrough only when the single ident is `argDecls[0]`: the
+  -- parser path hardcodes `[.ident 0 0]`, so other slots (e.g. when
+  -- leading args are implicit Type params) must take the `.std` path.
   if !hasExplicitPrec && singleAtomKind matches .ident then
-    return .passthrough
+    if h : atoms.size = 1 then
+      match atoms[0] with
+      | .ident 0 _ => return .passthrough
+      | _ => pure ()
+    else
+      pure ()
 
   return .std atoms prec
 
