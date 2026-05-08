@@ -88,9 +88,18 @@ jobs:
         uses: leanprover/lean-action@v1
         with:
           use-github-cache: false
+          build: false
           test: false
+      - name: Build Strata
+        shell: bash
+        run: |
+          ulimit -s 65536
+          lake build
       - name: Run tests (excluding Python)
-        run: lake test -- --exclude Languages.Python
+        shell: bash
+        run: |
+          ulimit -s 65536
+          lake test -- --exclude Languages.Python
       - name: Save lake cache
         uses: actions/cache/save@v5
         with:
