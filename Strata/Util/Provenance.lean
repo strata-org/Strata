@@ -10,13 +10,32 @@ public import Strata.Util.FileRange
 public section
 namespace Strata
 
+/-- Canonical synthesized provenance origins. -/
+inductive SynthesizedOrigin where
+  | smtEncode
+  | nondetIte
+  | laurelParse
+  | laurel
+  | laurelToCore
+  | structuredToUnstructured
+  deriving DecidableEq, Repr, Inhabited
+
+instance : Std.ToFormat SynthesizedOrigin where
+  format
+    | .smtEncode => "smt-encode"
+    | .nondetIte => "nondet-ite"
+    | .laurelParse => "laurel-parse"
+    | .laurel => "laurel"
+    | .laurelToCore => "laurel-to-core"
+    | .structuredToUnstructured => "structured-to-unstructured"
+
 /-- Provenance tracks where an AST node originated from — either a real source
 location or a synthesized origin (e.g., from a translator or encoding pass). -/
 inductive Provenance where
   /-- A real source location with file and byte range. -/
   | loc (uri : Uri) (range : SourceRange)
   /-- A synthesized node with a description of what created it. -/
-  | synthesized (origin : String)
+  | synthesized (origin : SynthesizedOrigin)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Provenance
@@ -38,14 +57,6 @@ instance : Std.ToFormat Provenance where
   format
     | .loc uri range => f!"{uri}:{range}"
     | .synthesized origin => f!"<synthesized:{origin}>"
-
-/-- Canonical synthesized provenance origins. Use these instead of ad-hoc strings. -/
-abbrev smtEncode : Provenance := .synthesized "smt-encode"
-abbrev nondetIte : Provenance := .synthesized "nondet-ite"
-abbrev laurelParse : Provenance := .synthesized "laurel-parse"
-abbrev laurel : Provenance := .synthesized "laurel"
-abbrev laurelToCore : Provenance := .synthesized "laurel-to-core"
-abbrev structuredToUnstructured : Provenance := .synthesized "structured-to-unstructured"
 
 end Provenance
 end Strata

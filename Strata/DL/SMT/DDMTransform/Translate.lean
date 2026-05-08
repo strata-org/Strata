@@ -18,7 +18,7 @@ public section
 namespace SMTDDM
 
 /-- Annotation used for all synthesized SMT DDM nodes. -/
-private abbrev smtProv : Provenance := Provenance.smtEncode
+private abbrev smtProv : Provenance := .synthesized .smtEncode
 
 private def mkQualifiedIdent (s:String):QualifiedIdent Provenance :=
   .qualifiedIdentImplicit smtProv (Ann.mk smtProv s)
