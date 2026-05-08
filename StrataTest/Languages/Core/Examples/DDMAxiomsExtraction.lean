@@ -395,72 +395,9 @@ info: #[{ ann := { start := { byteIdx := 296 }, stop := { byteIdx := 303 } },
 #eval examplePgm.commands
 
 /--
-info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
-   "Map"
-   [Lambda.LMonoTy.ftvar "k",
-    Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
-   "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
-   metadata := () } (some Lambda.LMonoTy.tcons
-   "arrow"
-   [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-    Lambda.LMonoTy.tcons
-      "arrow"
-      [Lambda.LMonoTy.ftvar "k",
-       Lambda.LMonoTy.ftvar
-         "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
-   metadata := () } (some Lambda.LMonoTy.tcons
-   "arrow"
-   [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-    Lambda.LMonoTy.tcons
-      "arrow"
-      [Lambda.LMonoTy.ftvar "k",
-       Lambda.LMonoTy.tcons
-         "arrow"
-         [Lambda.LMonoTy.ftvar "v",
-          Lambda.LMonoTy.tcons
-            "Map"
-            [Lambda.LMonoTy.ftvar "k",
-             Lambda.LMonoTy.ftvar
-               "v"]]]])) (LExpr.bvar () 2)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 1)) (LExpr.bvar () 0)))),
- LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
-   "Map"
-   [Lambda.LMonoTy.ftvar "k",
-    Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "okk" (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
-   "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
-   metadata := () } (some Lambda.LMonoTy.tcons
-   "arrow"
-   [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-    Lambda.LMonoTy.tcons
-      "arrow"
-      [Lambda.LMonoTy.ftvar "k",
-       Lambda.LMonoTy.ftvar
-         "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
-   metadata := () } (some Lambda.LMonoTy.tcons
-   "arrow"
-   [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-    Lambda.LMonoTy.tcons
-      "arrow"
-      [Lambda.LMonoTy.ftvar "k",
-       Lambda.LMonoTy.tcons
-         "arrow"
-         [Lambda.LMonoTy.ftvar "v",
-          Lambda.LMonoTy.tcons
-            "Map"
-            [Lambda.LMonoTy.ftvar "k",
-             Lambda.LMonoTy.ftvar
-               "v"]]]])) (LExpr.bvar () 3)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 2)) (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
-   metadata := () } (some Lambda.LMonoTy.tcons
-   "arrow"
-   [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-    Lambda.LMonoTy.tcons
-      "arrow"
-      [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])) (LExpr.bvar () 3)) (LExpr.bvar () 2))))))]
+info: forall __q0 : (Map k v) :: forall __q1 : (k) :: forall __q2 : (v) :: (__q0[__q1:=__q2])[__q1] == __q2, forall __q0 : (Map k v) :: forall __q1 : (k) :: forall __q2 : (k) :: forall __q3 : (v) :: (__q0[__q2:=__q3])[__q1] == __q0[__q1]
 -/
 #guard_msgs in
-#eval
-  extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]
+#eval do
+  let exprs := extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]
+  IO.println s!"{Core.formatExprs exprs}"

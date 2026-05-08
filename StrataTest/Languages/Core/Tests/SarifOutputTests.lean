@@ -7,6 +7,7 @@
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.Verifier
 import Lean.Data.Json
+-- Test fixtures build Core expressions directly with synthesized provenance
 
 /-!
 # SARIF Output Tests
@@ -59,7 +60,7 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
   { label := label
     property := .assert
     assumptions := []
-    obligation := Lambda.LExpr.boolConst () true
+    obligation := Lambda.LExpr.boolConst (ExprSourceLoc.synthesized "test") true
     metadata := md }
 
 /-- Create a VCResult for testing -/
@@ -258,7 +259,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let cex : List (Core.Expression.Ident × Strata.SMT.Term) :=
     [({ name := "x", metadata := () }, .prim (.int 42))]
   let lexprCex : LExprModel :=
-    [({ name := "x", metadata := () }, .intConst () 42)]
+    [({ name := "x", metadata := () }, .intConst (ExprSourceLoc.synthesized "test") 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
   let vcr := makeVCResult "cex_obligation" (mkOutcome .unsat (.sat cex)) md lexprCex

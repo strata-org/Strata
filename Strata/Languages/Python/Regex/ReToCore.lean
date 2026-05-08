@@ -115,39 +115,42 @@ private def rr2r  := mty[regex → (regex → regex)]
 private def ss2r  := mty[string → (string → regex)]
 private def rii2r := mty[regex → (int → (int → regex))]
 
+/-- Metadata for regex-to-Core synthesized expressions. -/
+private abbrev regexSynthLoc : ExprSourceLoc := ExprSourceLoc.synthesized "regex"
+
 /--
 Empty regex pattern; matches an empty string.
 -/
 private def Core.emptyRegex : Expression.Expr :=
-  mkApp () (.op () strToRegexFunc.name (some s2r)) [strConst () ""]
+  mkApp regexSynthLoc (.op regexSynthLoc strToRegexFunc.name (some s2r)) [strConst regexSynthLoc ""]
 
 /--
 Unmatchable regex pattern.
 -/
 private def Core.unmatchableRegex : Expression.Expr :=
-  mkApp () (.op () reNoneFunc.name (some reTy)) []
+  mkApp regexSynthLoc (.op regexSynthLoc reNoneFunc.name (some reTy)) []
 
 -- Core regex expression builders.
 private abbrev mkReFromStr (s : String) : Expression.Expr :=
-  mkApp () (.op () strToRegexFunc.name (some s2r)) [strConst () s]
+  mkApp regexSynthLoc (.op regexSynthLoc strToRegexFunc.name (some s2r)) [strConst regexSynthLoc s]
 private abbrev mkReRange   (c1 c2 : Char) : Expression.Expr :=
-  mkApp () (.op () reRangeFunc.name (some ss2r)) [strConst () (toString c1), strConst () (toString c2)]
+  mkApp regexSynthLoc (.op regexSynthLoc reRangeFunc.name (some ss2r)) [strConst regexSynthLoc (toString c1), strConst regexSynthLoc (toString c2)]
 private abbrev mkReAllChar : Expression.Expr :=
-  .op () reAllCharFunc.name (some reTy)
+  .op regexSynthLoc reAllCharFunc.name (some reTy)
 private abbrev mkReComp    (r : Expression.Expr) : Expression.Expr :=
-  mkApp () (.op () reCompFunc.name (some r2r)) [r]
+  mkApp regexSynthLoc (.op regexSynthLoc reCompFunc.name (some r2r)) [r]
 private abbrev mkReUnion   (a b : Expression.Expr) : Expression.Expr :=
-  mkApp () (.op () reUnionFunc.name (some rr2r)) [a, b]
+  mkApp regexSynthLoc (.op regexSynthLoc reUnionFunc.name (some rr2r)) [a, b]
 private abbrev mkReConcat  (a b : Expression.Expr) : Expression.Expr :=
-  mkApp () (.op () reConcatFunc.name (some rr2r)) [a, b]
+  mkApp regexSynthLoc (.op regexSynthLoc reConcatFunc.name (some rr2r)) [a, b]
 private abbrev mkReInter   (a b : Expression.Expr) : Expression.Expr :=
-  mkApp () (.op () reInterFunc.name (some rr2r)) [a, b]
+  mkApp regexSynthLoc (.op regexSynthLoc reInterFunc.name (some rr2r)) [a, b]
 private abbrev mkReStar    (r   : Expression.Expr) : Expression.Expr :=
-  mkApp () (.op () reStarFunc.name (some r2r)) [r]
+  mkApp regexSynthLoc (.op regexSynthLoc reStarFunc.name (some r2r)) [r]
 private abbrev mkRePlus    (r   : Expression.Expr) : Expression.Expr :=
-  mkApp () (.op () rePlusFunc.name (some r2r)) [r]
+  mkApp regexSynthLoc (.op regexSynthLoc rePlusFunc.name (some r2r)) [r]
 private abbrev mkReLoop    (r   : Expression.Expr) (lo hi : Nat) : Expression.Expr :=
-  mkApp () (.op () reLoopFunc.name (some rii2r)) [r, intConst () lo, intConst () hi]
+  mkApp regexSynthLoc (.op regexSynthLoc reLoopFunc.name (some rii2r)) [r, intConst regexSynthLoc lo, intConst regexSynthLoc hi]
 
 /--
 Shared body for `star` and `loop {0, m}` (m ≥ 2):
@@ -313,7 +316,7 @@ private def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
-  | .error err => (mkApp () (.op () reAllFunc.name (some reTy)) [], some err)
+  | .error err => (mkApp regexSynthLoc (.op regexSynthLoc reAllFunc.name (some reTy)) [], some err)
   | .ok ast =>
     -- `dotStar`: passed with `atStart=false`, `atEnd=false` since `anychar`
     -- ignores both.

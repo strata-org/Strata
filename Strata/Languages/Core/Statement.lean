@@ -105,7 +105,8 @@ theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) 
 def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
   args.filterMap fun
     | .inArg e => some e
-    | .inoutArg id => some (Lambda.LExpr.fvar () id none)
+    -- Synthesized variable reference from an identifier
+    | .inoutArg id => some (Lambda.LExpr.fvar (ExprSourceLoc.synthesized "statement") id none)
     | .outArg _ => none
 
 end CallArg
