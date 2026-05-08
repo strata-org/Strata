@@ -54,9 +54,15 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
                   opts.checkMode == .bugFindingAssumingCompleteSpec
     let runVal := opts.checkLevel == .full ||
                   opts.checkMode == .deductive
-    let satDecision ← if runSat then state.solver.checkSatAssuming [term]
+    let satDecision ← if runSat then
+                        match ← state.solver.checkSatAssuming [term] with
+                        | .ok d => pure d
+                        | .error _ => pure .unknown
                       else pure .unknown
-    let valDecision ← if runVal then state.solver.checkSatAssuming [Factory.not term]
+    let valDecision ← if runVal then
+                        match ← state.solver.checkSatAssuming [Factory.not term] with
+                        | .ok d => pure d
+                        | .error _ => pure .unknown
                       else pure .unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property, assumptions := [], obligation := expr, metadata := md
@@ -115,7 +121,7 @@ private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
       let smtCtx := smtCtx.addUF uf
       match decl.body with
       | none =>
-        state.solver.declareFun decl.name.name inputTypes outTy
+        let _ ← state.solver.declareFun decl.name.name inputTypes outTy
         return ({ state with smtState := state.smtState.addItem (.funcDecl decl.name.name inputTypes outTy) }, smtCtx, [])
       | some body =>
         match translateExpr E body smtCtx with
@@ -125,7 +131,7 @@ private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
                                     error := some s!"Body translation error: {msg}" }])
         | .ok (bodyTerm, smtCtx) =>
           let args := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => (name.name, smtTy)
-          state.solver.defineFun decl.name.name args outTy bodyTerm
+          let _ ← state.solver.defineFun decl.name.name args outTy bodyTerm
           return ({ state with smtState := state.smtState.addItem (.funcDef decl.name.name args outTy bodyTerm) }, smtCtx, [])
 
 mutual
@@ -155,8 +161,8 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       }
       return (state, smtCtx, [{ obligation, error := some s!"Translation error: {msg}" }])
     | .ok (term, smtCtx) =>
-      let solver : SMT.SolverInterface := state.solver
-      solver.assert term
+      let solver := state.solver
+      let _ ← solver.assert term
       let state := state.addItem (.assumption term)
       let state := state.addAssumption expr
       return (state, smtCtx, [])
@@ -176,8 +182,8 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         }
         return (state, smtCtx, [{ obligation, error := some s!"Type translation error: {msg}" }])
       | .ok (smtTy, smtCtx) =>
-        let solver : SMT.SolverInterface := state.solver
-        solver.defineFun name.name [] smtTy term
+        let solver := state.solver
+        let _ ← solver.defineFun name.name [] smtTy term
         let state := state.addItem (.varDef name.name smtTy term)
         -- Track the definition as an assumption for diagnosis context (x == expr)
         let nameExpr : Core.Expression.Expr := .fvar Strata.SourceRange.none name none -- nosourcerange: synthetic expression for tracking variable definition
@@ -196,8 +202,8 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       }
       return (state, smtCtx, [{ obligation, error := some s!"Type translation error: {toString msg}" }])
     | .ok (smtTy, smtCtx) =>
-      let solver : SMT.SolverInterface := state.solver
-      solver.declareFun name.name [] smtTy
+      let solver := state.solver
+      let _ ← solver.declareFun name.name [] smtTy
       let state := state.addItem (.varDecl name.name smtTy)
       return (state, smtCtx, [])
 

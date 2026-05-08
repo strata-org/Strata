@@ -75,17 +75,20 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
     | Except.ok (term, _) =>
       if isReachCheck then
         -- Reach: check if expr is refuted (always false)
-        let decision ← state.solver.checkSatAssuming [term]
+        let decision ← match ← state.solver.checkSatAssuming [term] with
+          | .ok d => pure d | .error _ => pure .unknown
         if decision == .unsat then
           let report : DiagnosisReport := { result := .error .refuted, context := { pathCondition } }
           return { diagnosedFailures := [{ expression := expr, isRefuted := true, report }] }
         else
           return { diagnosedFailures := [] }
       else
-        let provedDecision ← state.solver.checkSatAssuming [Factory.not term]
+        let provedDecision ← match ← state.solver.checkSatAssuming [Factory.not term] with
+          | .ok d => pure d | .error _ => pure .unknown
         if provedDecision == .unsat then
           return { diagnosedFailures := [] }
-        let refutedDecision ← state.solver.checkSatAssuming [term]
+        let refutedDecision ← match ← state.solver.checkSatAssuming [term] with
+          | .ok d => pure d | .error _ => pure .unknown
         let isRefuted := refutedDecision == .unsat
         let resultType := if isRefuted then DiagnosisResultType.refuted else DiagnosisResultType.unknown
         let report : DiagnosisReport := { result := .error resultType, context := { pathCondition } }
@@ -104,7 +107,7 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
       return { diagnosedFailures := leftResult.diagnosedFailures }
     | Except.ok (lhsTerm, _) =>
       state.solver.push
-      state.solver.assert lhsTerm
+      let _ ← state.solver.assert lhsTerm
       let rightResult ← diagnoseFailure state E rhs isReachCheck smtCtx (lhs :: pathCondition)
       state.solver.pop
       return { diagnosedFailures := leftResult.diagnosedFailures ++ rightResult.diagnosedFailures }

@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.SMT.SolverInterface
+import Strata.DL.SMT.AbstractSolver
 import Strata.Languages.Core.Expressions
 
 /-!
@@ -42,13 +42,13 @@ abbrev ContextStack := List ContextScope
 
 /-- Verification state that can be reused across calls -/
 structure VerifierState where
-  /-- The SMT solver interface -/
-  solver : SMT.SolverInterface
+  /-- The abstract SMT solver -/
+  solver : AbstractSolver Term TermType IO
   /-- Stack of context scopes (for push/pop support) -/
   contextStack : ContextStack
 
-/-- Create initial state from a solver interface -/
-def VerifierState.init (solver : SMT.SolverInterface) : VerifierState :=
+/-- Create initial state from a solver -/
+def VerifierState.init (solver : AbstractSolver Term TermType IO) : VerifierState :=
   { solver, contextStack := [[]] }
 
 /-- Push a new scope onto the context stack -/

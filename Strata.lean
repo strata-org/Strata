@@ -69,7 +69,6 @@ import Strata.MetaVerifier
 import Strata.SimpleAPI
 
 -- noimport: Strata.Util.Random -- deletion candidate: nothing imports this module
--- noimport: Strata.DL.SMT.SolverInterface
 -- noimport: Strata.DL.SMT.State
 -- noimport: Strata.Languages.B3.Format
 -- noimport: Strata.Languages.B3.FromCore

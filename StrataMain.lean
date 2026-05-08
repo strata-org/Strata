@@ -21,7 +21,7 @@ import Strata.Languages.Boole.Verify
 import Strata.Languages.Core.CoreSMT.Verifier
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
-import Strata.DL.SMT.SolverInterface
+import Strata.DL.SMT.IncrementalSolver
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
@@ -585,9 +585,9 @@ private def verifyIncremental
     (pySourceOpt : Option (String × String))
     (options : Core.VerifyOptions := Core.VerifyOptions.default) : IO (Array Core.VCResult) := do
   let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
-  let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
+  let abstractSolver ← Strata.SMT.IncrementalSolver.mkIncrementalSolverIO solver
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true, options }
-  let state := Core.CoreSMT.CoreSMTState.init solverInterface config
+  let state := Core.CoreSMT.CoreSMTState.init abstractSolver config
   let stmts := programDecls.filterMap fun d => match d with
     | .proc p _ =>
       if p.header.inputs.isEmpty && p.header.outputs.isEmpty then

@@ -28,7 +28,7 @@ structure CoreSMTState where
   /-- Stack of Core expression assumptions (for diagnosis path conditions) -/
   assumptionStack : List (List Core.Expression.Expr) := [[]]
 
-def CoreSMTState.init (solver : SMT.SolverInterface) (config : CoreSMTConfig) : CoreSMTState :=
+def CoreSMTState.init (solver : SMT.AbstractSolver SMT.Term SMT.TermType IO) (config : CoreSMTConfig) : CoreSMTState :=
   { smtState := SMT.VerifierState.init solver, config }
 
 /-- Get current path condition (all assumptions in scope) -/
@@ -59,7 +59,7 @@ def CoreSMTState.allContextItems (state : CoreSMTState) : List SMT.ContextItem :
   state.smtState.allContextItems
 
 -- Accessors for SMT state fields (as abbrevs for dot notation)
-@[inline] def CoreSMTState.solver (state : CoreSMTState) : SMT.SolverInterface :=
+@[inline] def CoreSMTState.solver (state : CoreSMTState) : SMT.AbstractSolver SMT.Term SMT.TermType IO :=
   state.smtState.solver
 
 @[inline] def CoreSMTState.contextStack (state : CoreSMTState) : SMT.ContextStack :=
