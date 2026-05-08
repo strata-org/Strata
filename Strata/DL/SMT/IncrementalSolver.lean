@@ -344,8 +344,8 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let response ← readln
     -- Response is "(lit1 lit2 ...)" — strip parens and split
     let inner := response.replace "(" "" |>.replace ")" ""
-    if inner.trim.isEmpty then return .ok []
-    let literals := inner.trim.splitOn " " |>.filter (!·.isEmpty)
+    if inner.trimAscii.toString.isEmpty then return .ok []
+    let literals := inner.trimAscii.toString.splitOn " " |>.filter (!·.isEmpty)
     let assumptionMap := (← get).lastAssumptions
     let mut result := []
     for lit in literals.reverse do
