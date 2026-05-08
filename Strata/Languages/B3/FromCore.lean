@@ -21,6 +21,9 @@ open Strata.B3AST
 open Core
 open Lambda
 
+/-- Extract the SourceRange from Core expression metadata. -/
+private def sr (m : ExpressionMetadata) : SourceRange := m.range
+
 /-- Convert Core type to B3 type string -/
 private def coreTypeToB3Type : LMonoTy → String
   | .tcons "int" _ => "int"
@@ -98,36 +101,36 @@ partial def convertApp (sr : SourceRange) (fn arg : Core.Expression.Expr) : Exce
 /-- Convert Core expression to B3 expression, preserving source locations from Core metadata -/
 partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3AST.Expression SourceRange) :=
   match e with
-  | Lambda.LExpr.const m c => convertConst m c
-  | Lambda.LExpr.bvar m idx => Except.ok (.id m idx)
-  | Lambda.LExpr.app m fn arg => convertApp m fn arg
+  | Lambda.LExpr.const m c => convertConst (sr m) c
+  | Lambda.LExpr.bvar m idx => Except.ok (.id (sr m) idx)
+  | Lambda.LExpr.app m fn arg => convertApp (sr m) fn arg
   | Lambda.LExpr.ite m cond thn els =>
     (exprFromCore cond).bind fun condB3 =>
     (exprFromCore thn).bind fun thnB3 =>
     (exprFromCore els).bind fun elsB3 =>
-    Except.ok (.ite m condB3 thnB3 elsB3)
+    Except.ok (.ite (sr m) condB3 thnB3 elsB3)
   | Lambda.LExpr.fvar m name _ =>
-    -- Free variable reference - represent as 0-arg function call
-    Except.ok (.functionCall m ⟨m, name.name⟩ ⟨m, #[]⟩)
+    Except.ok (.functionCall (sr m) ⟨sr m, name.name⟩ ⟨sr m, #[]⟩)
   | Lambda.LExpr.eq m lhs rhs =>
     (exprFromCore lhs).bind fun lhsB3 =>
     (exprFromCore rhs).bind fun rhsB3 =>
-    Except.ok (.binaryOp m (.eq m) lhsB3 rhsB3)
+    Except.ok (.binaryOp (sr m) (.eq (sr m)) lhsB3 rhsB3)
   | Lambda.LExpr.quant m kind name tyOpt trigger body =>
+    let s := sr m
     let qk := match kind with
-      | .all => B3AST.QuantifierKind.forall m
-      | .exist => B3AST.QuantifierKind.exists m
-    -- Collect all nested quantifiers of the same kind into a var list
+      | .all => B3AST.QuantifierKind.forall s
+      | .exist => B3AST.QuantifierKind.exists s
     let rec collectVars (e : Core.Expression.Expr) (idx : Nat) (acc : List (B3AST.VarDecl SourceRange)) :
         List (B3AST.VarDecl SourceRange) × Core.Expression.Expr :=
       match e with
-      | Lambda.LExpr.quant (innerM : SourceRange) k innerName innerTyOpt _ innerBody =>
+      | Lambda.LExpr.quant innerM k innerName innerTyOpt _ innerBody =>
         if k == kind then
+          let is := sr innerM
           let tyStr := match innerTyOpt with
             | some ty => coreTypeToB3Type ty
             | none => "int"
           let varName := if innerName.isEmpty then s!"x{idx}" else innerName
-          let varDecl := B3AST.VarDecl.quantVarDecl innerM ⟨innerM, varName⟩ ⟨innerM, tyStr⟩
+          let varDecl := B3AST.VarDecl.quantVarDecl is ⟨is, varName⟩ ⟨is, tyStr⟩
           collectVars innerBody (idx + 1) (acc ++ [varDecl])
         else (acc, e)
       | _ => (acc, e)
@@ -135,17 +138,16 @@ partial def exprFromCore (e : Core.Expression.Expr) : Except ConversionError (B3
       | some ty => coreTypeToB3Type ty
       | none => "int"
     let outerVarName := if name.isEmpty then "x0" else name
-    let outerVar := B3AST.VarDecl.quantVarDecl m ⟨m, outerVarName⟩ ⟨m, tyStr⟩
+    let outerVar := B3AST.VarDecl.quantVarDecl s ⟨s, outerVarName⟩ ⟨s, tyStr⟩
     let (allVars, innerBody) := collectVars body 1 [outerVar]
-    -- Convert trigger to patterns
     let patterns := match trigger with
       | Lambda.LExpr.boolConst _ true => #[]
       | _ =>
         match exprFromCore trigger with
-        | .ok trigB3 => #[B3AST.Pattern.pattern m ⟨m, #[trigB3]⟩]
+        | .ok trigB3 => #[B3AST.Pattern.pattern s ⟨s, #[trigB3]⟩]
         | .error _ => #[]
     (exprFromCore innerBody).bind fun bodyB3 =>
-    Except.ok (.quantifierExpr m qk ⟨m, allVars.toArray⟩ ⟨m, patterns⟩ bodyB3)
+    Except.ok (.quantifierExpr s qk ⟨s, allVars.toArray⟩ ⟨s, patterns⟩ bodyB3)
   | _ => Except.error (.unsupportedCoreExpr "unsupported expression")
 
 end

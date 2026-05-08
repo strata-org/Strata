@@ -190,13 +190,13 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
   | .check sr expr, procName =>
     let exprResult := convertExpr ctx expr
     let md : Imperative.MetaData Core.Expression :=
-      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } },
+      #[{ fld := .label "fileRange", value := .provenance (.loc (.file "") sr) },
         { fld := .label "stmtKind", value := .msg "check" }]
     { value := [Core.Statement.assert procName exprResult.value md], errors := exprResult.errors }
   | .assert sr expr, procName =>
     let exprResult := convertExpr ctx expr
     let md : Imperative.MetaData Core.Expression :=
-      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } },
+      #[{ fld := .label "fileRange", value := .provenance (.loc (.file "") sr) },
         { fld := .label "stmtKind", value := .msg "assert" }]
     { value := [Core.Statement.assert procName exprResult.value md,
                 Core.Statement.assume "assert-assume" exprResult.value .empty], errors := exprResult.errors }
@@ -206,7 +206,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
   | .reach sr expr, procName =>
     let exprResult := convertExpr ctx expr
     let md : Imperative.MetaData Core.Expression :=
-      #[{ fld := .label "fileRange", value := .fileRange { file := .file "", range := sr } }]
+      #[{ fld := .label "fileRange", value := .provenance (.loc (.file "") sr) }]
     { value := [Core.Statement.cover procName exprResult.value md], errors := exprResult.errors }
   | .blockStmt _ stmts, procName =>
     let results := stmts.val.toList.map (convertStmt ctx · procName)
@@ -242,7 +242,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
   | .loop sr invariants body, procName =>
     let guard : Core.Expression.Expr := .boolConst sr true
     let invResults := invariants.val.toList.map (convertExpr ctx)
-    let invExprs := invResults.map (·.value)
+    let invExprs := invResults.map fun r => ("loop_inv", r.value)
     let bodyResult := convertStmt ctx body procName
     { value := [Imperative.Stmt.loop (.det guard) none invExprs bodyResult.value .empty],
       errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
