@@ -551,7 +551,7 @@ def pyTranslateLaurel
     : EIO String (Core.Program × List DiagnosticModel) := do
   let laurel ←
     match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
-    | .ok r => pure r
+    | .ok (r, _) => pure r
     | .error err => throw (toString err)
   let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)
   match coreOption with

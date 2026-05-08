@@ -429,7 +429,7 @@ public def pythonAndSpecToLaurel
     (profile : Bool := false)
     (quiet : Bool := false)
     (warningSummaryFile : Option String := none)
-    : EIO PipelineError Laurel.Program := do
+    : EIO PipelineError (Laurel.Program × Python.TranslationContext) := do
   let stmts ← profileStep profile "Read Python Ion" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
@@ -469,7 +469,7 @@ public def pythonAndSpecToLaurel
   let preludeInfo := buildPreludeInfo result
 
   let metadataPath := sourcePath.getD pythonIonPath
-  let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
+  let (laurelProgram, ctx) ← profileStep profile "Translate Python to Laurel" do
     match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
@@ -482,7 +482,9 @@ public def pythonAndSpecToLaurel
     | .ok prog => pure prog
     | .error msg => throw (.internal msg)
 
-  profileStep profile "Combine PySpec and user Laurel" do
+  let combined ← profileStep profile "Combine PySpec and user Laurel" do
     return combinePySpecLaurel filteredPrelude laurelProgram
+
+  return (combined, ctx)
 
 end Strata

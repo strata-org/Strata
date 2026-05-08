@@ -1103,5 +1103,9 @@ public def pythonRuntimeLaurelPart : Laurel.Program :=
   | .ok p => p
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
+/-- Set of all procedure/function names defined in the Python runtime Laurel prelude. -/
+public def pythonRuntimeLaurelNames : Std.HashSet String :=
+  pythonRuntimeLaurelPart.staticProcedures.foldl (init := {}) fun s p => s.insert p.name.text
+
 end Python
 end Strata

@@ -612,7 +612,7 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let warningSummaryFile := pflags.getString "warning-summary"
-    let combinedLaurel ←
+    let (combinedLaurel, translationCtx) ←
       match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
                 (quiet := quiet)
@@ -645,6 +645,20 @@ def pyAnalyzeLaurelCommand : Command where
     if verbose then
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
+
+    if profile then
+      -- Try to get a FileMap for line number resolution.
+      -- mfm comes from the .py source; fall back to reading the input file.
+      let fm ← match mfm with
+        | some (_, fm) => pure (some fm)
+        | none =>
+          try
+            let content ← IO.FS.readFile filePath
+            pure (some (Lean.FileMap.ofString content))
+          catch _ => pure none
+      match fm with
+      | some fm => IO.println (translationCtx.callStats.formatWithLines fm)
+      | none => IO.println translationCtx.callStats.format
 
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
 
@@ -1375,7 +1389,7 @@ def pyInterpretCommand : Command where
 
     let (core, _diags) ←
       match ← Strata.pythonAndSpecToLaurel filePath (specDir := ".") |>.toBaseIO with
-      | .ok laurel =>
+      | .ok (laurel, _) =>
         if let some dir := keepDir then
           IO.FS.createDirAll dir
           IO.FS.writeFile (dir ++ "/laurel.st") (toString (Std.format laurel))

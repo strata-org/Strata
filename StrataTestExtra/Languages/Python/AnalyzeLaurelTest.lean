@@ -87,7 +87,7 @@ private meta def runAnalyze
     match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
-    | .ok r => pure r
+    | .ok (r, _) => pure r
     | .error err => return .error (toString err)
   match ← Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
@@ -110,7 +110,7 @@ private meta def runAnalyzeAndVerify
     match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
-    | .ok r => pure r
+    | .ok (r, _) => pure r
     | .error err => return .error (toString err)
   let (coreProgramOption, _) ← Strata.translateCombinedLaurel laurel
   let coreProgram ← match coreProgramOption with
@@ -251,7 +251,7 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
             (specDir := tmpDir) |>.toBaseIO with
-        | .ok r => pure r
+        | .ok (r, _) => pure r
         | .error err => return some s!"test_class_any_as_composite.py: {err}"
       match ← Strata.translateCombinedLaurel laurel with
       | (some core, []) =>
@@ -376,7 +376,7 @@ recursively translates subclasses, so the type
       match ← Strata.pythonAndSpecToLaurel testIon.toString
           (dispatchModules := #["servicelib"])
           (specDir := tmpDir) |>.toBaseIO with
-      | .ok r => pure r
+      | .ok (r, _) => pure r
       | .error err => throw <| IO.userError s!"pyAnalyzeLaurel failed: {err}"
     let result := Laurel.resolve combined
     unless result.errors.isEmpty do

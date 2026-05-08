@@ -40,7 +40,7 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
       throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
     match ← pythonAndSpecToLaurel ionFile.toString
         (sourcePath := some pyFile.toString) |>.toBaseIO with
-    | .ok r => k r pyFile
+    | .ok (r, _) => k r pyFile
     | .error err => throw <| .userError s!"pythonAndSpecToLaurel failed: {err}"
 
 /-- Run the Python → Ion → Laurel pipeline and return the Laurel program.
