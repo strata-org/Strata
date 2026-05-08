@@ -342,12 +342,6 @@ def union (loc : SourceRange) (x y : SpecType) : SpecType :=
 def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
   { empty loc with idents := #[{ name := i, args }] }
 
-/-- Apply `f` to the `PythonIdent` of each `SpecIdent` in this `SpecType`.
-    Literal atoms and typed-dicts are left untouched. Useful for rewriting
-    bare identifiers that lost their module context during DDM round-trip. -/
-def mapIdentNames (f : PythonIdent → PythonIdent) (ty : SpecType) : SpecType :=
-  { ty with idents := ty.idents.map (fun si => { si with name := f si.name }) }
-
 def noneType (loc : SourceRange) : SpecType :=
   ident loc .noneType
 
@@ -448,6 +442,55 @@ def asTypedDict (tp : SpecType) : Option (Array DictField) := do
     { name, type := td.fieldTypes.getD i default, required := td.fieldRequired.getD i true }
 
 end SpecType
+
+/-! ### Recursive identifier rewriting
+
+`mapIdentNames` applies a function `f` to every `PythonIdent` reachable
+within a `SpecType`, recursing into `SpecIdent.args` (e.g., the `Inner`
+inside `List[Inner]`) and `SpecTypedDict.fieldTypes`. The result is
+rebuilt via `union` so the "sorted by PythonIdent ordering" invariant on
+`idents` and the "sorted by field names" invariant on `typedDicts`
+survive rewrites that change an ident's ordering key (e.g., populating
+an empty `pythonModule`).
+
+Written as a mutual recursion over `SpecType`/`SpecIdent`/`SpecTypedDict`
+so each step only strips one level of nesting, keeping `termination_by
+sizeOf _` straightforward. -/
+
+mutual
+
+def SpecType.mapIdentNames (f : PythonIdent → PythonIdent) (ty : SpecType)
+    : SpecType :=
+  let identTys : Array SpecType := ty.idents.attach.map fun ⟨si, _⟩ =>
+    { SpecType.empty ty.loc with
+        idents := #[SpecIdent.mapIdentNames f si] }
+  let typedDictTys : Array SpecType := ty.typedDicts.attach.map fun ⟨td, _⟩ =>
+    { SpecType.empty ty.loc with
+        typedDicts := #[SpecTypedDict.mapIdentNames f td] }
+  let base : SpecType :=
+    { SpecType.empty ty.loc with
+        intLits := ty.intLits, stringLits := ty.stringLits }
+  (identTys ++ typedDictTys).foldl (init := base) (SpecType.union ty.loc · ·)
+termination_by sizeOf ty
+decreasing_by all_goals (cases ty; decreasing_tactic)
+
+def SpecIdent.mapIdentNames (f : PythonIdent → PythonIdent) (si : SpecIdent)
+    : SpecIdent :=
+  { name := f si.name
+    args := si.args.attach.map fun ⟨a, _⟩ => SpecType.mapIdentNames f a }
+termination_by sizeOf si
+decreasing_by cases si; decreasing_tactic
+
+def SpecTypedDict.mapIdentNames (f : PythonIdent → PythonIdent)
+    (td : SpecTypedDict) : SpecTypedDict :=
+  { fields := td.fields
+    fieldTypes := td.fieldTypes.attach.map fun ⟨a, _⟩ =>
+      SpecType.mapIdentNames f a
+    fieldRequired := td.fieldRequired }
+termination_by sizeOf td
+decreasing_by cases td; decreasing_tactic
+
+end
 
 /-- A default value for a pyspec argument.
     TODO: extend with additional constructors (e.g., string, int, bool literals)
