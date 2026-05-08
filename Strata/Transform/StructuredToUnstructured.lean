@@ -44,7 +44,7 @@ def flushCmds
     pure (l, [b])
 
 private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
-  MetaData.ofProvenance .structuredToUnstructured
+  MetaData.ofProvenance (.synthesized .structuredToUnstructured)
 
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
