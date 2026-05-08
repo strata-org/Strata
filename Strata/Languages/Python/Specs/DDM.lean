@@ -352,37 +352,49 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   | .typeDef d =>
     .typeDef d.loc (.mk d.nameLoc d.name) d.definition.toDDM
 
-private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
+
+abbrev FromDDM := Except (SourceRange × String)
+
+def FromDDM.throw {α} (loc : SourceRange) (msg : String) : FromDDM α :=
+  .error (loc, msg)
+
+private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : FromDDM Specs.SpecType :=
   match d with
   | .typeClassNoArgs loc ⟨_, cl⟩ =>
-    .ident loc { pythonModule := "", name := cl } #[]
-  | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ =>
-    let a := args.map (·.fromDDM)
-    .ident loc { pythonModule := "", name := cl } a
+    match PythonIdent.ofString cl with
+    | none => .throw loc "Unsupported identifier {cl} in typeClass"
+    | some nm => .ok <| .ident loc nm #[]
+  | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ => do
+    let nm ← match PythonIdent.ofString cl with
+      | none => .throw loc s!"Unsupported identifier {cl} in typeClass"
+      | some nm => pure nm
+    let a ← args.mapM (·.fromDDM)
+    pure <| .ident loc nm a
   | .typeIdentNoArgs loc ⟨_, ident⟩ =>
-    if let some pyIdent := PythonIdent.ofString ident then
-      .ident loc pyIdent #[]
-    else
-      panic! "Bad identifier"
-  | .typeIdent loc ⟨_, ident⟩ ⟨_, args⟩ =>
-    let a := args.map (·.fromDDM)
-    if let some pyIdent := PythonIdent.ofString ident then
-      .ident loc pyIdent a
-    else
-      panic! "Bad identifier"
-  | .typeIntLiteral loc i => .intLiteral loc i.ofDDM
-  | .typeStringLiteral loc ⟨_, s⟩ => .stringLiteral loc s
-  | .typeTypedDict loc ⟨_, fields⟩ =>
+    match PythonIdent.ofString ident with
+    | some pyIdent => .ok <| .ident loc pyIdent #[]
+    | none => .throw loc s!"Bad identifier: {ident}"
+  | .typeIdent loc ⟨_, ident⟩ ⟨_, args⟩ => do
+    let a ← args.mapM (·.fromDDM)
+    match PythonIdent.ofString ident with
+    | some pyIdent => pure <| .ident loc pyIdent a
+    | none => .throw loc s!"Bad identifier: {ident}"
+  | .typeIntLiteral loc i => .ok <| .intLiteral loc i.ofDDM
+  | .typeStringLiteral loc ⟨_, s⟩ => .ok <| .stringLiteral loc s
+  | .typeTypedDict loc ⟨_, fields⟩ => do
     let names := fields.map fun (.mkDictFieldDecl _ ⟨_, name⟩ _ _) => name
-    let types := fields.attach.map fun ⟨.mkDictFieldDecl _ _ tp _, mem⟩ => tp.fromDDM
+    let types ← fields.attach.mapM fun ⟨.mkDictFieldDecl _ _ tp _, mem⟩ => tp.fromDDM
     let required := fields.map fun (.mkDictFieldDecl _ _ _ ⟨_, r⟩) => r
-    .typedDict loc names types required
-  | .typeUnion loc ⟨_, args⟩ =>
+    pure <| .typedDict loc names types required
+  | .typeUnion loc ⟨_, args⟩ => do
     if p : args.size > 0 then
-      args.attach.foldl (init := args[0].fromDDM) (start := 1)
-        fun a ⟨b, mem⟩ => SpecType.union loc a b.fromDDM
+      let init ← args[0].fromDDM
+      args.attach.foldlM (init := init) (start := 1)
+        fun a ⟨b, mem⟩ => do
+          let b' ← b.fromDDM
+          pure <| SpecType.union loc a b'
     else
-      panic! "Expected non-empty union"
+      .throw loc "Expected non-empty union"
 termination_by sizeOf d
 decreasing_by
   · decreasing_tactic
@@ -397,11 +409,11 @@ decreasing_by
 private def DDM.SpecDefault.fromDDM : DDM.SpecDefault SourceRange → Specs.SpecDefault
   | .noneDefault _ => .none
 
-private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
+private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : FromDDM Specs.Arg := do
   let .mkArgDecl _ ⟨_, name⟩ type ⟨_, default⟩ := d
-  {
+  pure {
     name := name
-    type := type.fromDDM
+    type := ← type.fromDDM
     default := default.map (·.fromDDM)
   }
 
@@ -438,67 +450,67 @@ private def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assert
   let .mkAssertion _ formula ⟨_, message⟩ := d
   { message := message.map (·.fromDDM), formula := formula.fromDDM }
 
-private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
+private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : FromDDM Specs.FunctionDecl := do
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
                  ⟨_, kwargs⟩ returnType ⟨_, isOverload⟩
                  ⟨_, preconditions⟩ ⟨_, postconditions⟩ := d
-  let kwargsOpt : Option (String × Specs.SpecType) :=
+  let kwargsOpt : Option (String × Specs.SpecType) ←
     match kwargs with
-    | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) => some (kn, tp.fromDDM)
-    | none => none
-  {
+    | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) => pure <| some (kn, ← tp.fromDDM)
+    | none => pure none
+  pure {
     loc := loc
     nameLoc := nameLoc
     name := name
     args := {
-      args := args.map (·.fromDDM)
-      kwonly := kwonly.map (·.fromDDM)
+      args := ← args.mapM (·.fromDDM)
+      kwonly := ← kwonly.mapM (·.fromDDM)
       kwargs := kwargsOpt
     }
-    returnType := returnType.fromDDM
+    returnType := ← returnType.fromDDM
     isOverload := isOverload
     preconditions := preconditions.map (·.fromDDM)
     postconditions := postconditions.map fun
       | .mkPostconditionEntry _ e => e.fromDDM
   }
 
-private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
+private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : FromDDM Specs.ClassDef := do
   let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩
     ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ ⟨_, exhaustive⟩ := d
-  {
+  pure {
     loc := ann
     name := name
-    bases := bases.map fun ⟨_, s⟩ =>
+    bases := ← bases.mapM fun ⟨_, s⟩ =>
       match PythonIdent.ofString s with
-      | some id => id
-      | none => panic! s!"Bad base class identifier: '{s}'"
-    fields := fields.map fun (.mkClassFieldDecl _ ⟨_, n⟩ tp ⟨_, cv⟩) =>
-      { name := n, type := tp.fromDDM, constValue := cv.map (·.2) : ClassField }
+      | some id => pure id
+      | none => .throw ann s!"Bad base class identifier: '{s}'"
+    fields := ← fields.mapM fun (.mkClassFieldDecl _ ⟨_, n⟩ tp ⟨_, cv⟩) => do
+      pure { name := n, type := ← tp.fromDDM, constValue := cv.map (·.2) : ClassField }
     classVars := classVars.map fun (.mkClassVarDecl _ ⟨_, n⟩ ⟨_, v⟩) =>
       { name := n, value := v : ClassVariable }
-    subclasses := subclasses.map (·.fromDDM)
-    methods := methods.map (·.fromDDM)
+    subclasses := ← subclasses.mapM (·.fromDDM)
+    methods := ← methods.mapM (·.fromDDM)
     exhaustive := exhaustive
   }
 
-private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
+private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : FromDDM Specs.Signature :=
   match cmd with
-  | .externTypeDecl _ ⟨_, name⟩ ⟨_, ddmDefinition⟩ =>
-    if let some definition := PythonIdent.ofString ddmDefinition then
-      .externTypeDecl name definition
-    else
-      panic! "Extern type decl definition has bad format."
-  | .classDef _ decl =>
-    .classDef decl.fromDDM
-  | .functionDecl _ d => .functionDecl d.fromDDM
-  | .typeDef loc ⟨nameLoc, name⟩ definition =>
+  | .externTypeDecl loc ⟨_, name⟩ ⟨_, ddmDefinition⟩ =>
+    match PythonIdent.ofString ddmDefinition with
+    | some definition => .ok <| .externTypeDecl name definition
+    | none => .throw loc s!"Extern type decl definition has bad format: {ddmDefinition}"
+  | .classDef _ decl => do
+    pure <| .classDef (← decl.fromDDM)
+  | .functionDecl _ d => do
+    pure <| .functionDecl (← d.fromDDM)
+  | .typeDef loc ⟨nameLoc, name⟩ definition => do
     let d : TypeDef := {
       loc := loc
       nameLoc := nameLoc
       name := name
-      definition := definition.fromDDM
+      definition := ← definition.fromDDM
     }
-    .typeDef d
+    pure <| .typeDef d
 
 /-- Reads Python spec signatures from a DDM Ion file. -/
 def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
@@ -511,7 +523,9 @@ def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
     let r :=
           pgm.commands.mapM fun cmd => do
             let pySig ← DDM.Command.ofAst cmd
-            return pySig.fromDDM
+            match pySig.fromDDM with
+            | .ok sig => pure sig
+            | .error (_, msg) => .error msg
     match r with
     | .ok r => pure r
     | .error msg => throw msg

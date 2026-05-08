@@ -490,10 +490,7 @@ def resolveDispatch (ctx : TranslationContext)
           throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
       let className :=
-        if ident.pythonModule.isEmpty then
-          ident.name
-        else
-          ident.pythonModule.replace "." "_" ++ "_" ++ ident.name
+        ident.pythonModule.toString (sep := "_") ++ "_" ++ ident.name
       return some className
     | _ => return none
 
@@ -2752,10 +2749,7 @@ def pythonToLaurel (info : PreludeInfo)
 
   let overloadCompositeType := Std.HashSet.ofList $
       (overloadTable.values.flatMap (·.entries.values)).map fun ident =>
-        if ident.pythonModule.isEmpty then
-          ident.name
-        else
-          ident.pythonModule ++ "_" ++ ident.name
+        s!"{ident.pythonModule.toString (sep := "_")}_{ident.name}"
   let mut compositeTypeNames := info.compositeTypes.union overloadCompositeType
 
   -- FIRST PASS: Collect all class definitions and field type info

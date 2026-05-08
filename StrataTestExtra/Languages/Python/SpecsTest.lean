@@ -226,6 +226,7 @@ meta def testCase : IO Unit := withPython fun pythonCmd => do
           (strataDir := strataDir)
           (pythonFile := testDir / "main.py")
           (searchPath := testDir)
+          (.ofString! "main")
           |>.toBaseIO
       match r with
       | .ok (sigs, warnings) =>
@@ -264,6 +265,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
           (strataDir := strataDir)
           (pythonFile := testDir / "warnings.py")
           (searchPath := testDir)
+          (.ofString! "warnings")
           |>.toBaseIO
       match r with
       | .ok (sigs, warnings) =>

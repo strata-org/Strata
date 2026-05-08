@@ -5,35 +5,11 @@
 -/
 module
 public import Std.Data.HashMap.Basic
+public import Strata.Languages.Python.PythonIdent
 
 public section
 
 namespace Strata.Python
-
-/--
-A fully-qualified Python identifier consisting of a module path and a name.
-For example, `typing.List` has module "typing" and name "List".
--/
-structure PythonIdent where
-  pythonModule : String
-  name : String
-  deriving DecidableEq, Hashable, Inhabited, Ord, Repr
-
-namespace PythonIdent
-
-protected def ofString (s : String) : Option PythonIdent :=
-  match s.revFind? '.' with
-  | none => none
-  | some idx =>
-    some {
-      pythonModule := s.extract s.startPos idx
-      name := s.extract idx.next! s.endPos
-    }
-
-instance : ToString PythonIdent where
-  toString i := s!"{i.pythonModule}.{i.name}"
-
-end PythonIdent
 
 /--
 All overloads for a single function name: maps a string literal

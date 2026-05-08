@@ -15,10 +15,13 @@ signatures into Laurel programs.
 
 namespace Strata.Python.Specs.ToLaurel.Tests
 
+open Strata.Python (ModuleName)
 open Strata.Python.Specs
 open Strata.Laurel
 
 /-! ## Test Infrastructure -/
+
+private def testModule : String := "test"
 
 private def assertEq [BEq α] [ToString α] (actual expected : α) : IO Unit := do
   unless actual == expected do
@@ -69,8 +72,8 @@ private def fmtTypeDef : TypeDefinition → String
 
 /-- Run signaturesToLaurel and print formatted output.
     Prints warnings (if any) before procedures so `#guard_msgs` can verify them. -/
-private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs modulePrefix
+private def runTest (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs moduleName
   for err in result.errors do
     IO.println s!"warning: {err.kind.phase}.{err.kind.category}: {err.message}"
   for td in result.program.types do
@@ -79,23 +82,23 @@ private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO 
     IO.println (fmtProc proc)
 
 /-- Run signaturesToLaurel expecting errors. Print error messages. -/
-private def runTestErrors (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs modulePrefix
+private def runTestErrors (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs moduleName
   assert! result.errors.size > 0
   for err in result.errors do
     IO.println err.message
 
 /-- Run signaturesToLaurel and print warning kinds (phase.category: message). -/
-private def runTestWarningKinds (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs modulePrefix
+private def runTestWarningKinds (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs moduleName
   assert! result.errors.size > 0
   for err in result.errors do
     IO.println s!"{err.kind.phase}.{err.kind.category}: {err.message}"
 
 /-- Run signaturesToLaurel and print the full result: Laurel output,
     dispatch table, and method registry. Sorts by key for stable output. -/
-private def runFullTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs modulePrefix
+private def runFullTest (sigs : Array Signature) (moduleName : ModuleName := .ofString! testModule) : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs moduleName
   if result.errors.size > 0 then
     IO.println s!"errors: {result.errors.size}"
     for err in result.errors do
@@ -145,8 +148,8 @@ private def dict_ := SpecType.ident loc .typingDict
 private def listOf (t : SpecType) := SpecType.ident loc .typingList #[t]
 private def dictOf (k v : SpecType) := SpecType.ident loc .typingDict #[k, v]
 private def mkUnion (types : Array SpecType) := SpecType.unionArray loc types
-private def pyClass (name : String) := SpecType.ident loc (PythonIdent.mk "" name)
-private def externIdent (mod name : String) := PythonIdent.mk mod name
+private def pyClass (name : String) := SpecType.ident loc (PythonIdent.ofComponent testModule name)
+private def externIdent (mod name : String) := PythonIdent.mkRaw (.ofString! mod) name
 
 private def arg (name : String) (type : SpecType) (default : Option SpecDefault := none) : Arg :=
   { name, type, default := default }
@@ -194,10 +197,10 @@ private def externType (name : String) (ident : PythonIdent) : Signature :=
 /-! ## All function params and returns map to Any -/
 
 /--
-info: procedure returns_int(x:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure returns_bool(a:UserDefined(Any), b:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure returns_real(flag:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure with_kwonly(x:UserDefined(Any), verbose:UserDefined(Any)) returns(result:UserDefined(Any))
+info: procedure test_returns_int(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_returns_bool(a:UserDefined(Any), b:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_returns_real(flag:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_with_kwonly(x:UserDefined(Any), verbose:UserDefined(Any)) returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -212,11 +215,11 @@ procedure with_kwonly(x:UserDefined(Any), verbose:UserDefined(Any)) returns(resu
 /-! ## Complex types (Any, List, Dict, bytes) -/
 
 /--
-info: procedure takes_any(x:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure takes_list(items:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure returns_dict() returns(result:UserDefined(Any))
-procedure typed_list() returns(result:UserDefined(Any))
-procedure typed_dict() returns(result:UserDefined(Any))
+info: procedure test_takes_any(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_takes_list(items:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_returns_dict() returns(result:UserDefined(Any))
+procedure test_typed_list() returns(result:UserDefined(Any))
+procedure test_typed_dict() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -231,10 +234,10 @@ procedure typed_dict() returns(result:UserDefined(Any))
 
 /--
 info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(f : builtins.str)' approximated as DictStrAny in type 'TypedDict(f : builtins.str)'
-procedure int_literal_ret() returns(result:UserDefined(Any))
-procedure str_literal_ret() returns(result:UserDefined(Any))
-procedure typed_dict_ret() returns(result:UserDefined(Any))
-procedure str_enum() returns(result:UserDefined(Any))
+procedure test_int_literal_ret() returns(result:UserDefined(Any))
+procedure test_str_literal_ret() returns(result:UserDefined(Any))
+procedure test_typed_dict_ret() returns(result:UserDefined(Any))
+procedure test_str_enum() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -250,12 +253,12 @@ procedure str_enum() returns(result:UserDefined(Any))
 
 /--
 info: warning: pySpecToLaurel.unsupportedUnion: TypedDict 'TypedDict(x : builtins.str)' approximated as DictStrAny in type 'Union[_types.NoneType, TypedDict(x : builtins.str)]'
-procedure opt_str() returns(result:UserDefined(Any))
-procedure opt_int() returns(result:UserDefined(Any))
-procedure opt_bool(x:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure opt_typed_dict() returns(result:UserDefined(Any))
-procedure opt_str_enum() returns(result:UserDefined(Any))
-procedure opt_int_enum() returns(result:UserDefined(Any))
+procedure test_opt_str() returns(result:UserDefined(Any))
+procedure test_opt_int() returns(result:UserDefined(Any))
+procedure test_opt_bool(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_opt_typed_dict() returns(result:UserDefined(Any))
+procedure test_opt_str_enum() returns(result:UserDefined(Any))
+procedure test_opt_int_enum() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -275,14 +278,14 @@ procedure opt_int_enum() returns(result:UserDefined(Any))
 /-! ## Error cases (updated to verify WarningKind) -/
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
-  #[func "f" (SpecType.ident loc (PythonIdent.mk "foo" "Bar"))]
+  #[func "f" (SpecType.ident loc (PythonIdent.ofComponent "foo" "Bar"))]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
@@ -290,20 +293,20 @@ info: procedure f() returns(result:UserDefined(Any))
 
 /--
 info: warning: pySpecToLaurel.unsupportedUnion: No type tester for 'foo.Bar' in type 'Union[_types.NoneType, foo.Bar]'
-procedure f() returns(result:UserDefined(Any))
+procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f"
-    (mkUnion #[none_, SpecType.ident loc (PythonIdent.mk "foo" "Bar")])]
+    (mkUnion #[none_, SpecType.ident loc (PythonIdent.ofComponent "foo" "Bar")])]
 
 /-! ## Class and type definitions -/
 
 /--
-info: type MyClass
-type MyAlias
-procedure my_func(x:UserDefined(Any), y:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure MyClass@get_value() returns(result:UserDefined(Any))
+info: type test_MyClass
+type test_MyAlias
+procedure test_my_func(x:UserDefined(Any), y:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_MyClass@get_value() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -315,8 +318,8 @@ procedure MyClass@get_value() returns(result:UserDefined(Any))
 /-! ## NoneType and void return -/
 
 /--
-info: procedure returns_none() returns(result:UserDefined(Any))
-procedure takes_none(x:UserDefined(Any)) returns(result:UserDefined(Any))
+info: procedure test_returns_none() returns(result:UserDefined(Any))
+procedure test_takes_none(x:UserDefined(Any)) returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -327,8 +330,8 @@ procedure takes_none(x:UserDefined(Any)) returns(result:UserDefined(Any))
 /-! ## Class types as UserDefined -/
 
 /--
-info: type Foo
-procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Any))
+info: type test_Foo
+procedure test_uses_class(x:UserDefined(test_Foo)) returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -347,9 +350,9 @@ procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Any))
 -- overloads dispatching on string literals, a service class with methods,
 -- and a regular function.
 /--
-info: type SvcClient
-procedure SvcClient@do_thing(x:UserDefined(Any)) returns(result:UserDefined(Any))
-procedure helper() returns(result:UserDefined(Any))
+info: type test_SvcClient
+procedure test_SvcClient@do_thing(x:UserDefined(Any)) returns(result:UserDefined(Any))
+procedure test_helper() returns(result:UserDefined(Any))
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient
   "svc_b" -> mod.other.OtherClient
@@ -370,11 +373,11 @@ dispatch create_client:
 
 -- Overloads with locally-defined class return types.
 /--
-info: type Alpha
-type Beta
+info: type test_Alpha
+type test_Beta
 dispatch make:
-  "a" -> .Alpha
-  "b" -> .Beta
+  "a" -> test.Alpha
+  "b" -> test.Beta
 -/
 #guard_msgs in
 #eval runFullTest #[
@@ -439,7 +442,7 @@ body contains FieldSelect: false
           (.intLit 0 loc)
           loc
       }])
-  ] ""
+  ] (.ofString! testModule)
   assert! result.errors.size = 0
   match result.program.staticProcedures with
   | proc :: _ =>
@@ -455,21 +458,21 @@ body contains FieldSelect: false
 
 -- bytes, bytearray, complex now map to Any (matching PythonToLaurel)
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f" bytes]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f" bytearray]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
@@ -477,35 +480,35 @@ info: procedure f() returns(result:UserDefined(Any))
 
 -- Optional patterns now map to Any without warnings
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f" (mkUnion #[none_, float_])]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f" (mkUnion #[none_, list_])]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f" (mkUnion #[none_, dict_])]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
   #[func "f" (mkUnion #[none_, any])]
 
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
@@ -590,7 +593,7 @@ info: pySpecToLaurel.kwargsExpansionError: **kw has non-TypedDict type; kwargs n
 
 -- Declaration: postconditions now translated (no warning)
 /--
-info: procedure f() returns(result:UserDefined(Any))
+info: procedure test_f() returns(result:UserDefined(Any))
 -/
 #guard_msgs in
 #eval runTest
@@ -671,7 +674,7 @@ private def translatePrecondResult (preconditions : Array Assertion)
       args := { args, kwonly := #[] }
       returnType := str, isOverload := false
       preconditions, postconditions := #[]
-    }] ""
+    }] (.ofString! testModule)
 
 /-- Translate a single function with preconditions and return
     `(bodyString, errorCount)`. -/
@@ -717,7 +720,7 @@ private def translatePrecond (preconditions : Array Assertion)
       preconditions := #[{
         message := #[], formula :=
           .containsKey (.var "kwargs" loc) "key" loc }]
-      postconditions := #[] }] ""
+      postconditions := #[] }] (.ofString! testModule)
   let body := getBody result |>.getD ""
   assertEq result.errors.size 0
   assert! body.contains "result := <??>"
@@ -768,7 +771,7 @@ private def translateFunc (args : Array Arg := #[])
       args := { args := args, kwonly := #[] }
       returnType, isOverload := false
       preconditions, postconditions
-    }] ""
+    }] (.ofString! testModule)
   (getBody result |>.getD "", result.errors.size)
 
 -- No args, no preconditions: body has havoc + return type assume
@@ -804,7 +807,7 @@ private def translateFunc (args : Array Arg := #[])
 -- Composite return type: no assume (no tester for user-defined types)
 #eval do
   let (body, errs) := translateFunc
-    (returnType := SpecType.ident loc (PythonIdent.mk "mod" "Cls"))
+    (returnType := SpecType.ident loc (PythonIdent.ofComponent "mod" "Cls"))
   assert! errs == 0
   assert! !body.contains "assume"
 

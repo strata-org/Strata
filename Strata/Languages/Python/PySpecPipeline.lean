@@ -130,10 +130,10 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     accumulated into one `Laurel.Program`, and overload dispatch entries are
     merged into a single table.
 
-    Each entry is a `(modulePrefix, ionPath)` pair. The `modulePrefix` is used
+    Each entry is a `(moduleName, ionPath)` pair. The module name is used
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
-public def buildPySpecLaurel (pyspecEntries : Array (String × String))
+public def buildPySpecLaurel (pyspecEntries : Array (Python.ModuleName × String))
     (overloads : OverloadTable) : EIO String PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
@@ -142,14 +142,15 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   let mut allTypeAliases : Std.HashMap String String := {}
   let mut allExhaustiveClasses : Std.HashSet String := {}
   let mut allWarnings : Array Python.Specs.SpecError := #[]
-  for (modulePrefix, ionPath) in pyspecEntries do
+  for (moduleName, ionPath) in pyspecEntries do
     let ionFile : System.FilePath := ionPath
     let sigs ←
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
-      Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
+      Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
+    let modulePrefix := moduleName.toString (sep := "_")
     allWarnings := allWarnings ++ errors
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
@@ -207,28 +208,19 @@ public def readDispatchOverloads
       | .ok t => pure t
       | .error msg => throw s!"Could not read dispatch file {ionFile}: {msg}"
     let (overloads, errors) :=
-      Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
+      Python.Specs.extractOverloads dispatchPath sigs
     allWarnings := allWarnings ++ errors
     tbl := mergeOverloads tbl overloads
   return (tbl, allWarnings)
 
-/-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
+/-- Resolve a module name to a `(moduleName, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` if the pyspec file is not found. -/
-private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
-    (quiet : Bool := false)
-    : EIO String (Option (String × String)) := do
-  match Python.Specs.ModuleName.ofString modName with
-  | .error _ =>
-    if !quiet then
-      let _ ← IO.eprintln
-        s!"warning: invalid module name '{modName}', skipping" |>.toBaseIO
-    return none
-  | .ok mod =>
-    match ← mod.specIonPath specDir with
-    | some specPath =>
-      let pfx := "_".intercalate mod.components.toList
-      return some (pfx, specPath.toString)
-    | none => return none
+private def resolveModuleEntry (mod : Python.ModuleName) (specDir : System.FilePath)
+    : EIO String (Option (Python.ModuleName × String)) := do
+  match ← mod.specIonPath specDir with
+  | some specPath =>
+    return some (mod, specPath.toString)
+  | none => return none
 
 /-- Build dispatch overload table, auto-resolve pyspec files
     from the program AST, and return combined Laurel declarations
@@ -247,10 +239,12 @@ public def resolveAndBuildLaurelPrelude
     : EIO String PySpecLaurelResult := do
   -- Resolve dispatch module names to Ion paths
   let mut dispatchPaths : Array String := #[]
-  for modName in dispatchModules do
-    match ← resolveModuleEntry modName specDir (quiet := quiet) with
+  for modStr in dispatchModules do
+    let some mod := Python.ModuleName.ofString? modStr
+      | throw s!"Invalid module name '{modStr}'"
+    match ← resolveModuleEntry mod specDir with
     | some (_, path) => dispatchPaths := dispatchPaths.push path
-    | none => throw s!"Dispatch module '{modName}' not found in {specDir}"
+    | none => throw s!"Dispatch module '{modStr}' not found in {specDir}"
   let (dispatchOverloads, dispatchWarnings) ← readDispatchOverloads dispatchPaths
   let resolveState :=
     Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
@@ -258,22 +252,24 @@ public def resolveAndBuildLaurelPrelude
     for w in resolveState.warnings do
       let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
   -- Auto-resolve pyspec modules from overload table
-  let mut autoSpecEntries : Array (String × String) := #[]
+  let mut autoSpecEntries : Array (Python.ModuleName × String) := #[]
   if dispatchModules.size > 0 then
     let resolvedMods := resolveState.modules.toArray.qsort (· < ·)
-    for modName in resolvedMods do
-      match ← resolveModuleEntry modName specDir (quiet := quiet) with
+    for mod in resolvedMods do
+      match ← resolveModuleEntry mod specDir with
       | some entry => autoSpecEntries := autoSpecEntries.push entry
       | none =>
         if !quiet then
           let _ ← IO.eprintln
-            s!"warning: auto-resolved pyspec not found for module '{modName}'" |>.toBaseIO
+            s!"warning: auto-resolved pyspec not found for module '{mod}'" |>.toBaseIO
   -- Resolve explicit pyspec module names
-  let mut explicitEntries : Array (String × String) := #[]
-  for modName in pyspecModules do
-    match ← resolveModuleEntry modName specDir (quiet := quiet) with
+  let mut explicitEntries : Array (Python.ModuleName × String) := #[]
+  for modStr in pyspecModules do
+    let some mod := Python.ModuleName.ofString? modStr
+      | throw s!"Invalid module name '{modStr}'"
+    match ← resolveModuleEntry mod specDir with
     | some entry => explicitEntries := explicitEntries.push entry
-    | none => throw s!"PySpec module '{modName}' not found in {specDir}"
+    | none => throw s!"PySpec module '{modStr}' not found in {specDir}"
   let allSpecEntries := autoSpecEntries ++ explicitEntries
   let result ← buildPySpecLaurel allSpecEntries dispatchOverloads
   return { result with pyspecWarnings := dispatchWarnings ++ result.pyspecWarnings }

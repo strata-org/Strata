@@ -48,16 +48,18 @@ private meta def runTest (pythonCmd : System.FilePath) (dialectFile : System.Fil
         ((file : String).dropEnd ".py".length).toString
       let dotted := stem.replace "/" "."
       match ModuleName.ofString dotted with
-      | .ok m => pure (some m)
+      | .ok m => pure m
       | .error e => return some s!"{file}: bad module name: {e}"
-    else pure none
+    else
+      let stem := pythonFile.fileStem.getD "unknown"
+      pure (.ofString! stem)
     let r ← translateFile
       (pythonCmd := toString pythonCmd)
       (dialectFile := dialectFile)
       (strataDir := strataDir)
       (pythonFile := pythonFile)
       (searchPath := searchPath)
-      (moduleName := moduleName)
+      moduleName
       |>.toBaseIO
     if expectedErrors.isEmpty then
       match r with

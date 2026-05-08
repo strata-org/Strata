@@ -62,7 +62,7 @@ public section
 
 namespace Strata
 
-open Strata.Python.Specs (ModuleName)
+open Strata.Python (ModuleName)
 
 /-! ### File I/O -/
 
@@ -418,10 +418,11 @@ private partial def discoverModules (sourceDir : System.FilePath)
             components.push (entry.fileName.takeWhile (· != '.') |>.toString)
         if parts.isEmpty then continue
         let dotted := ".".intercalate parts.toList
-        match ModuleName.ofString dotted with
-        | .ok mod => acc := acc.push (mod, entry.path)
-        | .error msg =>
-          let _ ← IO.eprintln s!"warning: skipping {entry.path}: {msg}" |>.toBaseIO
+        match ModuleName.ofString? dotted with
+        | some mod =>
+          acc := acc.push (mod, entry.path)
+        | none =>
+          let _ ← IO.eprintln s!"warning: skipping {entry.path}: invalid module name '{dotted}'" |>.toBaseIO
     return acc
   go sourceDir #[]
 
@@ -474,9 +475,9 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     else
       let mut result := #[]
       for m in modules do
-        let mod ← match ModuleName.ofString m with
-          | .ok r => pure r
-          | .error e => throw s!"Invalid module name '{m}': {e}"
+        let mod ← match ModuleName.ofString? m with
+          | some r => pure r
+          | none => throw s!"Invalid module name '{m}'"
         let (path, _) ←
           match ← ModuleName.findInPath mod sourceDir |>.toBaseIO with
           | .ok r => pure r
@@ -508,9 +509,9 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
     -- Translate
     Python.Specs.baseLogEvent events "import" s!"Translating {mod}"
     match ← Strata.Python.Specs.translateFile
-        dialectFile strataDir pythonFile sourceDir
+        dialectFile strataDir pythonFile sourceDir mod
         (events := events) (skipNames := skipIdents)
-        (moduleName := mod) (pythonCmd := pythonCmd) |>.toBaseIO with
+        (pythonCmd := pythonCmd) |>.toBaseIO with
     | .error msg =>
       Python.Specs.baseLogEvent events "import" s!"Failed {mod}: {msg}"
       failures := failures.push (toString mod, msg)
