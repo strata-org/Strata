@@ -171,3 +171,46 @@ procedure Test () returns ()
   assert [t1]: Lst.sel(Maybe..val(m), 0) == 0;
 };
 #end
+
+---------------------------------------------------------------------
+-- Test 2: Unresolved identifiers still fail with typecheck off.
+--
+-- `typecheck off` only skips type inference/unification — name
+-- resolution still operates normally.
+---------------------------------------------------------------------
+
+/--
+error: Unknown expr identifier undefined_name
+-/
+#guard_msgs in
+def typecheckOffStillCatchesUndefined :=
+#strata
+program TestTCOff;
+
+procedure Test () returns ()
+{
+  assert [t1]: undefined_name == 0;
+};
+#end
+
+---------------------------------------------------------------------
+-- Test 3: Invalid dialect_option values produce clean errors.
+---------------------------------------------------------------------
+
+/--
+error: Expected 'on' or 'off' for option 'typecheck'.
+-/
+#guard_msgs in
+#dialect
+dialect BadOptionValue;
+dialect_option typecheck maybe;
+#end
+
+/--
+error: Unknown option 'nonsense'.
+-/
+#guard_msgs in
+#dialect
+dialect BadOptionName;
+dialect_option nonsense on;
+#end

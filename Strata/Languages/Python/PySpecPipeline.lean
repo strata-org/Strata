@@ -169,17 +169,13 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .Constrained ct => ct.name.text
       | .Datatype dt => dt.name.text
       | .Alias ta => ta.name.text
-    match seenTypes.get? name with
-    | some prevFile =>
+    if let some prevFile := seenTypes[name]? then
       throw s!"PySpec type name collision: '{name}' defined in both {prevFile} and {srcFile}"
-    | none => pure ()
     seenTypes := seenTypes.insert name srcFile
   let mut seenProcs : Std.HashMap String String := {}
   for (proc, srcFile) in combinedProcedures do
-    match seenProcs.get? proc.name.text with
-    | some prevFile =>
+    if let some prevFile := seenProcs[proc.name.text]? then
       throw s!"PySpec procedure name collision: '{proc.name.text}' defined in both {prevFile} and {srcFile}"
-    | none => pure ()
     seenProcs := seenProcs.insert proc.name.text srcFile
 
   let combinedLaurel : Laurel.Program := {
@@ -206,8 +202,7 @@ public def readDispatchOverloads
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => throw s!"Could not read dispatch file {ionFile}: {msg}"
-    let (overloads, errors) :=
-      Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
+    let (overloads, errors) := Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     allWarnings := allWarnings ++ errors
     tbl := mergeOverloads tbl overloads
   return (tbl, allWarnings)

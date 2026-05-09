@@ -111,6 +111,10 @@ def applyNArgs (tctx : TypingContext) (e : TypeExpr) (n : Nat) := aux #[] e
     if argsLt : args.size < n then
       match tctx.hnf e with
       | .arrow _ a r => aux (args.push a) r
+      -- A tvar already represents an unresolved type — filling remaining
+      -- slots with placeholders is consistent with existing tvar semantics.
+      -- This runs regardless of the `typecheck` flag; downstream unifyTypes
+      -- still catches genuine mismatches when typecheck is on.
       | .tvar ann _ =>
         let placeholder := .placeholder ann
         let tvars := Array.replicate (n - args.size) placeholder
@@ -1267,7 +1271,7 @@ partial def runSyntaxElaborator
     for i in Fin.range argc do
       if trees[i].isNone ∧ isTypeP i then
         let loc := SourceRange.none
-        -- Synthesisze placeholder type expr.
+        -- Synthesize placeholder type expr.
         let info : TypeInfo := {
           loc,
           inputCtx := tctx0,

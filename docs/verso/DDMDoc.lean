@@ -208,6 +208,17 @@ The following options are supported:
   parameter slots are filled with anonymous type placeholders. Variable name
   resolution and global context population still operate normally.
 
+  This is intended for cases where the type checker cannot infer implicit type
+  arguments — notably when template-generated accessors with unresolved type
+  variable return types are composed with polymorphic functions that require
+  concrete type arguments for unification.
+
+  With `typecheck off`, type errors in a program are not detected at
+  elaboration time. They will surface at later pipeline stages (VC generation,
+  symbolic evaluation, SMT encoding) with less-helpful diagnostics. Only use
+  this option when the elaboration error is a known type-checker limitation
+  rather than a real type mismatch.
+
 ## Syntactic Categories
 
 Syntactic categories are introduced by the `category` declaration:
