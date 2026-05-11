@@ -15,7 +15,7 @@ so the grammar would silently match just the trailing `;\n`. A user writing
 a stray `;` after a `function` body (whose grammar has no trailing semicolon)
 produced a phantom `command_datatypes` with zero datatypes. That phantom then
 tripped an assertion in `translateDatatypes` at `gen_smt_vcs` time with a
-large `panic!` backtrace.
+large panic backtrace (via `TransM.error`, which calls `panic` internally).
 
 The fix marks `datatypes` as `@[nonempty]`, so the stray `;` surfaces as a
 parse error at the source location it actually appears, and a program that
