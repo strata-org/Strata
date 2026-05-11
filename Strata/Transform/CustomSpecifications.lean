@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.FilterProcedures
+public import Strata.Transform.PrecondElim
 public import Strata.Transform.CoreSpecification
 
 /-! # Pass-Specific Correctness Specifications
@@ -74,20 +75,30 @@ theorem CallGraphWF.noZeroCountCallers {cg : CallGraph} {prog : Program}
   exact wf.noZeroCount a b k' n hk' hn'
 
 
-/-- A pass is *analysis-preserving* for the call graph if, when the input
-    state has a well-formed cached call graph, the output state's cached call
-    graph (if present) is well-formed w.r.t. the output program.
+/-- A pass is *analysis-preserving* for the call graph: for any successful
+    execution, if the input cached call graph is well-formed w.r.t. the input
+    program, then the output cached call graph is well-formed w.r.t. the
+    output program. -/
+def PreservesCachedAnalysesWF
+    (pass : Program → Transform.CoreTransformM (Bool × Program)) : Prop :=
+  ∀ (progIn : Program) (st : Transform.CoreTransformState)
+    (changed : Bool) (progOut : Program) (st' : Transform.CoreTransformState),
+    (pass progIn).run st = (.ok (changed, progOut), st') →
+    ∀ (cgIn : CallGraph),
+      st.cachedAnalyses.callGraph = .some cgIn →
+      CallGraphWF cgIn progIn →
+      ∀ (cgOut : CallGraph),
+        st'.cachedAnalyses.callGraph = .some cgOut →
+        CallGraphWF cgOut progOut
 
-    The pass takes a program and runs in `CoreTransformM`, which threads
-    `CoreTransformState` containing `cachedAnalyses.callGraph`. -/
-def AnalysisPreserving (pass : Program → Transform.CoreTransformM Program) : Prop :=
-  ∀ (prog : Program) (st : Transform.CoreTransformState) (prog' : Program)
-    (st' : Transform.CoreTransformState) (cg : CallGraph) (cg' : CallGraph),
-    st.cachedAnalyses.callGraph = .some cg →
-    CallGraphWF cg prog →
-    (pass prog).run st = (.ok prog', st') →
-    st'.cachedAnalyses.callGraph = .some cg' →
-    CallGraphWF cg' prog'
+/-- The `changed` flag returned by a pass is faithful: true iff the output
+    program differs from the input. -/
+def ChangedFlagValid
+    (pass : Program → Transform.CoreTransformM (Bool × Program)) : Prop :=
+  ∀ (progIn : Program) (st : Transform.CoreTransformState)
+    (changed : Bool) (progOut : Program) (st' : Transform.CoreTransformState),
+    (pass progIn).run st = (.ok (changed, progOut), st') →
+    (changed = Bool.true ↔ progOut ≠ progIn)
 
 
 /-! ## FilterProcedures — Structural Properties -/
@@ -135,7 +146,138 @@ structure FilterCorrect
     (Decl.proc proc md' ∉ progOut.decls ∨
       (respectNoFilter = Bool.true ∧ proc.header.noFilter = Bool.true))
 
+/-- Phase-level correctness for FilterProcedures: structural correctness
+    for every successful execution, plus call graph preservation. -/
+structure FilterProcedurePhaseCorrect
+    (targets : List String)
+    (respectNoFilter : Bool) : Prop where
+  filterCorrect :
+    ∀ (progIn : Program) (st : Transform.CoreTransformState)
+      (changed : Bool) (progOut : Program) (st' : Transform.CoreTransformState)
+      (cgIn : CallGraph),
+      st.cachedAnalyses.callGraph = .some cgIn →
+      ((filterProceduresPipelinePhase targets respectNoFilter).transform progIn).run st =
+        (.ok (changed, progOut), st') →
+      FilterCorrect progIn progOut targets cgIn respectNoFilter
+
+  changedFlagValid :
+    ChangedFlagValid
+      (filterProceduresPipelinePhase targets respectNoFilter).transform
+
+  analysisPreserving :
+    PreservesCachedAnalysesWF
+      (filterProceduresPipelinePhase targets respectNoFilter).transform
+
 end FilterProcedures
+
+
+/-! ## PrecondElim — Structural Properties -/
+
+namespace PrecondElim
+
+/-- Program-level structural correctness of PrecondElim. -/
+structure PrecondElimCorrect (progIn progOut : Program) : Prop where
+  /-- Generated `$$wf` procedures have `noFilter := true` and empty specs. -/
+  generatedWF : ∀ (proc : Procedure) (md : MetaData Expression),
+    (Decl.proc proc md) ∈ progOut.decls →
+    (CoreIdent.toPretty proc.header.name).endsWith wfSuffix →
+    proc.header.noFilter = Bool.true ∧
+    proc.spec.preconditions = [] ∧
+    proc.spec.postconditions = []
+
+  /-- All functions in the output have empty preconditions. -/
+  preconditionsStripped :
+    (∀ (func : Function) (md : MetaData Expression),
+      (Decl.func func md) ∈ progOut.decls →
+      func.preconditions = []) ∧
+    (∀ (fs : List Function) (md : MetaData Expression),
+      (Decl.recFuncBlock fs md) ∈ progOut.decls →
+      ∀ f ∈ fs, f.preconditions = [])
+
+  /-- Non-procedure/function declarations pass through (types, axioms, distincts). -/
+  nonProcDeclsPreserved : ∀ (d : Decl),
+    d ∈ progIn.decls → d.kind = .type ∨ d.kind = .ax ∨ d.kind = .distinct →
+    d ∈ progOut.decls
+
+  /-- Original procedures are preserved (same name and spec, body may grow). -/
+  proceduresPreserved : ∀ (proc : Procedure) (md : MetaData Expression),
+    (Decl.proc proc md) ∈ progIn.decls →
+    ∃ (proc' : Procedure) (md' : MetaData Expression),
+      (Decl.proc proc' md') ∈ progOut.decls ∧
+      proc'.header.name = proc.header.name ∧
+      proc'.spec = proc.spec
+
+  /-- Original functions are preserved (same name/body/signature, preconditions stripped). -/
+  functionsPreserved : ∀ (func : Function) (md : MetaData Expression),
+    (Decl.func func md) ∈ progIn.decls →
+    ∃ (func' : Function) (md' : MetaData Expression),
+      (Decl.func func' md') ∈ progOut.decls ∧
+      func'.name = func.name ∧
+      func'.preconditions = [] ∧
+      func'.body = func.body ∧
+      func'.inputs = func.inputs ∧
+      func'.output = func.output
+
+  /-- No declarations are removed from the input. -/
+  noDeclsRemoved : ∀ (d : Decl),
+    d ∈ progIn.decls →
+    ∃ (d' : Decl), d' ∈ progOut.decls ∧ d'.name = d.name
+
+  /-- The relative order of input declarations is preserved in the output.
+      (New `$$wf` procedures may be interleaved.) -/
+  orderPreserved :
+    (progIn.decls.map Decl.name).Sublist (progOut.decls.map Decl.name)
+
+/-- Factory-level correctness of PrecondElim. -/
+structure PrecondElimFactoryCorrect
+    (progOut : Program)
+    (stIn stOut : Transform.CoreTransformState) : Prop where
+  /-- The output Factory grows from the input Factory. -/
+  factoryGrows : ∀ (fIn : @Lambda.Factory CoreLParams) (fOut : @Lambda.Factory CoreLParams),
+    stIn.factory = .some fIn →
+    stOut.factory = .some fOut →
+    ∀ (name : String), name ∈ fIn → name ∈ fOut
+
+  /-- The output Factory contains all declared functions. -/
+  factoryComplete : ∀ (fOut : @Lambda.Factory CoreLParams),
+    stOut.factory = .some fOut →
+    (∀ (func : Function) (md : MetaData Expression),
+      (Decl.func func md) ∈ progOut.decls →
+      func.name.name ∈ fOut) ∧
+    (∀ (fs : List Function) (md : MetaData Expression),
+      (Decl.recFuncBlock fs md) ∈ progOut.decls →
+      ∀ f ∈ fs, f.name.name ∈ fOut)
+
+  /-- Preconditions are empty in the output Factory. -/
+  factoryStripped : ∀ (fOut : @Lambda.Factory CoreLParams),
+    stOut.factory = .some fOut →
+    ∀ (name : String) (h : name ∈ fOut), (fOut[name]).preconditions = []
+
+/-- Phase-level correctness for PrecondElim: program correctness and
+    factory correctness for every successful execution, plus call graph
+    preservation. -/
+structure PrecondElimPhaseCorrect : Prop where
+  precondElimCorrect :
+    ∀ (progIn : Program) (st : Transform.CoreTransformState)
+      (changed : Bool) (progOut : Program) (st' : Transform.CoreTransformState),
+      (precondElimPipelinePhase.transform progIn).run st =
+        (.ok (changed, progOut), st') →
+      PrecondElimCorrect progIn progOut
+
+  factoryCorrect :
+    ∀ (progIn : Program) (st : Transform.CoreTransformState)
+      (changed : Bool) (progOut : Program) (st' : Transform.CoreTransformState),
+      (precondElimPipelinePhase.transform progIn).run st =
+        (.ok (changed, progOut), st') →
+      PrecondElimFactoryCorrect progOut st st'
+
+  changedFlagValid :
+    ChangedFlagValid precondElimPipelinePhase.transform
+
+  analysisPreserving :
+    PreservesCachedAnalysesWF precondElimPipelinePhase.transform
+
+end PrecondElim
 
 end Core
 
