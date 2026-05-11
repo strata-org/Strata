@@ -1816,22 +1816,30 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Procedure VisitProcedure(Procedure node) {
         if (!_program.Implementations.Any(i => i.Name.Equals(node.Name))) {
-            WriteProcedureHeader(node);
             // SMACK encodes C assert(expr) as a call to assert_.*(cond).
-            // Emit a requires precondition so the call-elimination pass
-            // generates a VC checking the condition is non-zero.
+            // Inject a synthetic requires precondition so the call-elimination
+            // pass generates a VC checking the condition is non-zero.
+            // We add it to node.Requires so WriteProcedureHeader emits it
+            // inside a single spec block alongside any existing specs.
+            Requires? syntheticReq = null;
             if (node.Name.StartsWith("assert_.") && node.InParams.Count > 0
                 && node.Requires.Count == 0) {
-                var firstParam = Name(node.InParams[0].TypedIdent.Name);
-                WriteLine("spec {");
-                IncIndent();
-                Indent();
-                WriteLine($"requires ({firstParam} != 0);");
-                DecIndent();
-                WriteText("}");
+                var param = node.InParams[0];
+                var paramExpr = new IdentifierExpr(param.tok, param);
+                var zero = new LiteralExpr(param.tok, Microsoft.BaseTypes.BigNum.FromInt(0));
+                var neqExpr = Expr.Neq(paramExpr, zero);
+                syntheticReq = new Requires(false, neqExpr);
+                node.Requires.Add(syntheticReq);
             }
+
+            WriteProcedureHeader(node);
             WriteLine(";");
             WriteLine();
+
+            // Remove the synthetic requires to avoid mutating the shared AST.
+            if (syntheticReq != null) {
+                node.Requires.Remove(syntheticReq);
+            }
         }
 
         return node;
