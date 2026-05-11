@@ -56,6 +56,13 @@ public class StrataGenerator : ReadOnlyVisitor {
     // declaration. Keyed by Boogie Declaration object to avoid ambiguity
     // when two entities share the same original name (e.g., const main and
     // procedure main). First-seen wins; later entities get prefixed.
+    //
+    // Registration order determines who wins a collision:
+    //   1. Procedures  — registered first, always keep their name.
+    //   2. Implementations — claimed defensively (they share names with
+    //      their procedures, but claiming guards against edge cases).
+    //   3. Constants, Functions, Globals — registered last; in a
+    //      proc-vs-const collision the constant is always renamed.
     private readonly Dictionary<Declaration, string> _renames = new();
 
     private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
@@ -87,30 +94,22 @@ public class StrataGenerator : ReadOnlyVisitor {
             // First-seen wins; colliding entities get a suffix (_2, _3, ...).
             var claimed = new HashSet<string>();
 
-            void ClaimOrRename(Declaration decl, string originalName, string prefix) {
-                var sanitized = SanitizeNameForStrata(originalName);
-                if (claimed.Add(sanitized)) return;
-                var candidate = $"{prefix}{sanitized}";
-                if (!claimed.Add(candidate)) {
-                    var i = 2;
-                    while (!claimed.Add($"{candidate}_{i}")) i++;
-                    candidate = $"{candidate}_{i}";
-                }
-                generator._renames[decl] = candidate;
-            }
-
             foreach (var proc in p.Procedures)
-                ClaimOrRename(proc, proc.Name, "__proc_");
+                ClaimOrRename(proc, proc.Name, "__proc_", claimed, generator._renames);
+            // Defensive: implementations share names with their corresponding
+            // procedures, so they would normally never collide. Claiming them
+            // here guards against edge cases (e.g., an implementation whose
+            // procedure was pruned or renamed upstream).
             foreach (var impl in p.Implementations) {
                 var sanitized = SanitizeNameForStrata(impl.Name);
                 claimed.Add(sanitized);
             }
             foreach (var c in liveDeclarations.OfType<Constant>())
-                ClaimOrRename(c, c.TypedIdent.Name, "__const_");
+                ClaimOrRename(c, c.TypedIdent.Name, "__const_", claimed, generator._renames);
             foreach (var f in liveDeclarations.OfType<Function>())
-                ClaimOrRename(f, f.Name, "__func_");
+                ClaimOrRename(f, f.Name, "__func_", claimed, generator._renames);
             foreach (var g in p.GlobalVariables)
-                ClaimOrRename(g, g.Name, "__var_");
+                ClaimOrRename(g, g.Name, "__var_", claimed, generator._renames);
 
             var typeConstructors = p.TopLevelDeclarations.OfType<TypeCtorDecl>().ToList();
             if (typeConstructors.Count != 0) {
@@ -241,6 +240,29 @@ public class StrataGenerator : ReadOnlyVisitor {
             .Replace('#', '_')
             .Replace('^', '_')
             .Replace("$", "_");
+    }
+
+    /// <summary>
+    /// Claim a sanitized name for <paramref name="decl"/>, or rename it if the
+    /// name is already taken. The first declaration to claim a name wins;
+    /// subsequent colliders get a prefixed (and possibly suffixed) name recorded
+    /// in <paramref name="renames"/>.
+    /// </summary>
+    private static void ClaimOrRename(
+        Declaration decl,
+        string originalName,
+        string prefix,
+        HashSet<string> claimed,
+        Dictionary<Declaration, string> renames) {
+        var sanitized = SanitizeNameForStrata(originalName);
+        if (claimed.Add(sanitized)) return;
+        var candidate = $"{prefix}{sanitized}";
+        if (!claimed.Add(candidate)) {
+            var i = 2;
+            while (!claimed.Add($"{candidate}_{i}")) i++;
+            candidate = $"{candidate}_{i}";
+        }
+        renames[decl] = candidate;
     }
 
     private void AddUniqueConst(Type t, string name) {
