@@ -349,88 +349,96 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
-    (varDeclarations : List Core.VarDeclaration := []) :
+    (varDeclarations : List Core.VarDeclaration := [])
+    (pctx : Option PipelineContext := none) :
     SolverM (List String × EncoderState) := do
+  let phase {α} (name : String) (action : SolverM α) : SolverM α :=
+    match pctx with
+    | some ctx => ctx.withRepeatedPhase name action
+    | none => action
   Solver.setLogic "ALL"
-  prelude
+  phase "prelude" do
+    prelude
+
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
   ctx.emitDatatypes useArrayTheory
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
-  -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
-  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
-  -- Pre-populate encoder state with managed variable names so encodeTerm
-  -- recognizes them without emitting declare-fun
-  let estate := if managedNames.isEmpty then estate
-    else
-      let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
-      managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with ufs := estate.ufs.insert uf uf.id }
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+
+  let estate ← phase "encodeUFs" do
+    let ufsToDecl := if managedNames.isEmpty then ctx.ufs
+      else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+    pure estate
+
+  let estate ← phase "encodeFunctions" do
+    let estate := if managedNames.isEmpty then estate
+      else
+        let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+        managedUfs.foldl (init := estate) fun estate uf =>
+          { estate with ufs := estate.ufs.insert uf uf.id }
+    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
+    pure estate
+
+  let (_axms, estate) ← phase "encodeAxioms" do
+    ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+
   for id in _axms do
     Solver.assert id
-  -- Emit variable declarations as declare-fun
   for decl in varDeclarations do
     Solver.declareFun decl.name [] decl.ty
-  -- Emit variable definitions as define-fun (macro expansions, not constraints)
-  let estate ← varDefinitions.foldlM (init := estate) fun estate def_ => do
-    let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
-    Solver.defineFunTerm def_.name [] def_.ty bodyEnc
-    pure estate
-  -- Assert assumption terms
-  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm) |>.run estate
+
+  let estate ← phase "defineFunTerms" do
+    varDefinitions.foldlM (init := estate) fun estate def_ => do
+      let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
+      Solver.defineFunTerm def_.name [] def_.ty bodyEnc
+      pure estate
+
+  let (assumptionIds, estate) ← phase "encodeAssumptions" do
+    assumptionTerms.mapM (encodeTerm) |>.run estate
+
   for id in assumptionIds do
     Solver.assert id
-  -- Encode the obligation term Q (not negated)
-  let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
-  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
+  let (obligationId, estate) ← phase "encodeObligation" do
+    (encodeTerm obligationTerm) |>.run estate
 
-  -- Choose encoding strategy: use check-sat-assuming only when doing both checks
-  let bothChecks := satisfiabilityCheck && validityCheck
+  let ids ← phase "epilog" do
+    let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+      if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
-  if bothChecks then
-    -- Satisfiability check: P ∧ Q satisfiable?
-    Solver.comment "Satisfiability"
-    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("sat-message", "Property can be satisfied"))
-    let obligationStr ← Solver.termToSMTString obligationId
-    let _ ← Solver.checkSatAssuming [obligationStr] ids
+    let bothChecks := satisfiabilityCheck && validityCheck
 
-    -- Validity check: P ∧ ¬Q satisfiable?
-    Solver.comment "Validity"
-    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-      (message := ("unsat-message", "Property is always true"))
-    let negObligationStr := s!"(not {obligationStr})"
-    let _ ← Solver.checkSatAssuming [negObligationStr] ids
-  else
-    if satisfiabilityCheck then
-      -- P ∧ Q satisfiable?
+    if bothChecks then
       Solver.comment "Satisfiability"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", "Property can be satisfied"))
-      Solver.assert obligationId
-      let _ ← Solver.checkSat ids
-    else if validityCheck then
-      -- P ∧ ¬Q satisfiable?
+      let obligationStr ← Solver.termToSMTString obligationId
+      let _ ← Solver.checkSatAssuming [obligationStr] ids
+
       Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", "Property is always true"))
-      Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
-      let _ ← Solver.checkSat ids
+      let negObligationStr := s!"(not {obligationStr})"
+      let _ ← Solver.checkSatAssuming [negObligationStr] ids
+    else
+      if satisfiabilityCheck then
+        Solver.comment "Satisfiability"
+        Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+          (message := ("sat-message", "Property can be satisfied"))
+        Solver.assert obligationId
+        let _ ← Solver.checkSat ids
+      else if validityCheck then
+        Solver.comment "Validity"
+        Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+          (message := ("unsat-message", "Property is always true"))
+        Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
+        let _ ← Solver.checkSat ids
 
-  -- Emit the property summary (or label) as the final message in the SMT-LIB output.
-  -- Use `setInfoString` so the value is quoted and escaped per SMT-LIB 2.6+
-  -- (doubled `""` for embedded quotes). C-style `\"` escaping would be rejected
-  -- by SMT-LIB consumers: backslash is a literal character in string contexts,
-  -- and the following `"` would close the string.
-  let rawMsg := md.getPropertySummary.getD label
-  Solver.setInfoString "final-message" rawMsg
+    let rawMsg := md.getPropertySummary.getD label
+    Solver.setInfoString "final-message" rawMsg
+    pure ids
 
   return (ids, estate)
 
@@ -501,6 +509,7 @@ def dischargeObligation
   (label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
+  (pctx : Option PipelineContext := none)
   : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -514,7 +523,8 @@ def dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
       assumptionTerms obligationTerm md options.useArrayTheory satisfiabilityCheck validityCheck
-      (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
+      (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
+      (pctx := pctx))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -522,6 +532,7 @@ def dischargeObligation
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
     (skipSolver := options.skipSolver)
+    (pctx := pctx)
 
 /-- Discharge a proof obligation using the incremental solver backend.
     Spawns a live solver process, sends commands via stdin/stdout, and
@@ -1296,7 +1307,8 @@ abbrev CoreSMTSolver :=
     can replace the default (batch/incremental SMT-LIB) backend. -/
 abbrev MkDischargeFn :=
   VerifyOptions → IO.Ref Nat → System.FilePath →
-  List Expression.TypedIdent → Imperative.MetaData Expression → String → DischargeFn
+  List Expression.TypedIdent → Imperative.MetaData Expression → String →
+  Option PipelineContext → DischargeFn
 
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
@@ -1305,7 +1317,8 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     (tempDir : System.FilePath)
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
-    (label : String) =>
+    (label : String)
+    (pctx : Option PipelineContext) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
     if options.incremental && !options.alwaysGenerateSMT then
@@ -1319,6 +1332,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
+        (pctx := pctx)
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -1476,7 +1490,7 @@ def verifySingleEnv (oblProgram : Program)
           | .some ty => return (v,LTy.forAll [] ty)
           | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
       let discharge := mkDischarge options counter tempDir
-        typedVarsInObligation obligation.metadata obligation.label
+        typedVarsInObligation obligation.metadata obligation.label (some pctx)
       let result ← pctx.withRepeatedPhase "solver" do
         getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     discharge needSatCheck needValCheck (externalPhases ++ corePhases)
@@ -1540,7 +1554,9 @@ def verify (program : Program)
   let profile := options.profile
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
-    | none => (PipelineContext.create (outputMode := .quiet) : BaseIO _)
+    | none =>
+      let mode := if profile then Strata.Pipeline.OutputMode.profile else .quiet
+      (PipelineContext.create (outputMode := mode) : BaseIO _)
 
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
@@ -1553,10 +1569,13 @@ def verify (program : Program)
     let mut current := program
     let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
+    have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
+      ⟨(.error default, Transform.CoreTransformState.emp)⟩
     for pp in pipelinePhases do
-      let (result, newState) := Transform.runWith current (fun prog => do
-        let (_, next) ← pp.transform prog
-        return next) state
+      let (result, newState) ← pctx.withRepeatedPhasePure pp.phase.name fun () =>
+        Transform.runWith current (fun prog => do
+          let (_, next) ← pp.transform prog
+          return next) state
       match result with
       | .ok next =>
         current := next

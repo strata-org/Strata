@@ -258,7 +258,8 @@ structure PipelineContext where
   private timingRef : IO.Ref (Array PhaseTimingEntry)
   private currentPhaseRef : IO.Ref Phase
   private messageCountAtPhaseStartRef : IO.Ref Nat
-  private repeatedPhasesRef : IO.Ref (Std.HashMap String (Nat × Nat))
+  /-- Repeated phases in first-invoked order. Each entry is (name, count, totalNs). -/
+  private repeatedPhasesRef : IO.Ref (Array (String × Nat × Nat))
   private metricsHandle : Option IO.FS.Handle := none
 
 namespace PipelineContext
@@ -274,7 +275,7 @@ def create (outputMode : OutputMode := .default)
   let timingRef ← IO.mkRef (α := Array PhaseTimingEntry) #[]
   let currentPhaseRef ← IO.mkRef (α := Phase) default
   let messageCountAtPhaseStartRef ← IO.mkRef 0
-  let repeatedPhasesRef ← IO.mkRef (α := Std.HashMap String (Nat × Nat)) {}
+  let repeatedPhasesRef ← IO.mkRef (α := Array (String × Nat × Nat)) #[]
   return { outputMode, pipelineStartTime := startTime, skipTiming,
            messagesRef, toolErrorsRef, userCodeErrorsRef, timingRef,
            currentPhaseRef, messageCountAtPhaseStartRef, repeatedPhasesRef,
@@ -329,7 +330,7 @@ private def endPhase (ctx : PipelineContext) : BaseIO Unit := do
   let repeated ← ctx.repeatedPhasesRef.get
   if !repeated.isEmpty then
     let childIndent := String.replicate (currentPhase.depth * 2) ' '
-    for (name, count, totalNs) in repeated.toArray do
+    for (name, count, totalNs) in repeated do
       let subphase := currentPhase.subphase name
       ctx.timingRef.modify (·.push { phase := subphase, start_ns := 0, end_ns := some totalNs, count })
       if ctx.outputMode == .profile || ctx.outputMode == .verbose then
@@ -341,7 +342,7 @@ private def endPhase (ctx : PipelineContext) : BaseIO Unit := do
         ("type", .str "timing"), ("phase", .str subphase.display),
         ("start_ms", .num 0), ("end_ms", .num (nsToMs totalNs)),
         ("count", .num count)])
-    ctx.repeatedPhasesRef.set {}
+    ctx.repeatedPhasesRef.set #[]
   let now ← ctx.elapsedNs
   let timing ← ctx.timingRef.get
   if h : timing.size > 0 then
@@ -376,7 +377,7 @@ public def withPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
     (ctx : PipelineContext) (name : String) (action : m α) : m α := do
   let parent ← (ctx.currentPhaseRef.get : BaseIO _)
   let savedRepeated ← (ctx.repeatedPhasesRef.get : BaseIO _)
-  (ctx.repeatedPhasesRef.set {} : BaseIO _)
+  (ctx.repeatedPhasesRef.set #[] : BaseIO _)
   (ctx.startPhase (parent.subphase name) : BaseIO _)
   try
     action
@@ -401,10 +402,32 @@ public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinall
   finally
     let t2 ← (IO.monoNanosNow : BaseIO _)
     let elapsed := t2 - t1
-    (ctx.repeatedPhasesRef.modify fun m =>
-      m.alter name fun
-        | some (count, total) => some (count + 1, total + elapsed)
-        | none => some (1, elapsed) : BaseIO _)
+    (ctx.repeatedPhasesRef.modify fun arr =>
+      match arr.findIdx? (·.1 == name) with
+      | some idx =>
+        let (n, count, total) := arr[idx]!
+        arr.set! idx (n, count + 1, total + elapsed)
+      | none => arr.push (name, 1, elapsed) : BaseIO _)
+
+/-- Time a pure expression as a repeated subphase. Forces evaluation via
+    `IO.Ref.set` so the compiler cannot hoist the computation outside the
+    timing window. Use this instead of `withRepeatedPhase` when the work
+    being timed is a pure (non-monadic) expression. -/
+@[noinline]
+public def withRepeatedPhasePure {α} [Inhabited α]
+    (ctx : PipelineContext) (name : String) (expr : Unit → α) : BaseIO α := do
+  let ref ← IO.mkRef (default : α)
+  let t1 ← IO.monoNanosNow
+  ref.set (expr ())
+  let t2 ← IO.monoNanosNow
+  let elapsed := t2 - t1
+  ctx.repeatedPhasesRef.modify fun arr =>
+    match arr.findIdx? (·.1 == name) with
+    | some idx =>
+      let (n, count, total) := arr[idx]!
+      arr.set! idx (n, count + 1, total + elapsed)
+    | none => arr.push (name, 1, elapsed)
+  ref.get
 
 end PipelineContext
 

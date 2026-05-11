@@ -10,6 +10,7 @@ import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DDM.Elab
 import Strata.DDM.Format
+public import Strata.Pipeline.Messages
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.EvalContext
 
@@ -373,20 +374,26 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool)
-  (skipSolver : Bool := false) :
+  (skipSolver : Bool := false)
+  (pctx : Option Strata.Pipeline.PipelineContext := none) :
   IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+  let phase {α} (name : String) (action : IO α) : IO α :=
+    match pctx with
+    | some ctx => ctx.withPhase name action
+    | none => action
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
-  -- encodeSMT (which calls encodeCore) emits check-sat commands internally
-  let ((_ids, estate), _solverState) ← encodeSMT.run solver
+  let ((_ids, estate), _solverState) ← phase "encodeSMT" do
+    encodeSMT.run solver
 
   if printFilename then IO.println s!"Wrote problem to {filename}."
 
   if skipSolver then
     return .ok (.unknown, .unknown, estate)
 
-  let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
+  let solver_output ← phase "runSolver" do
+    runSolver smtsolver (#[filename] ++ solver_options)
   match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
   | .error e => return .error e
   | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate)

@@ -56,7 +56,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 "cvc5" filename.toString
-                #["--produce-models"] false false true false)
+                #["--produce-models"] false false true false none)
         match ans with
         | Except.ok (_, result, estate) =>
            let vcres := { obligation, result, estate }
