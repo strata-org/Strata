@@ -176,7 +176,15 @@ before the inner `.Subscript` is rewritten into a `Sequence.select` call.
 
 mutual
 
-/-- Recursively eliminate Subscript nodes and desugar `Array.length`. -/
+/-- Recursively eliminate Subscript nodes and desugar `Array.length`.
+
+    TODO: make structural. The cross-type recursion through `.Assign targets
+    value` (where `targets : List VariableMd` and each `.Field subTarget _`
+    contains a `subTarget : StmtExprMd`) defeats `omega`'s automatic sizeOf
+    reasoning. Options: (a) manually prove a `sizeOf` lemma connecting
+    `Variable.Field` children to the enclosing `VariableMd`, or (b) extract
+    an `elimVariable` helper to move the cross-type recursion into a single
+    level. Not blocking — the pass terminates on any finite input. -/
 partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   let src := expr.source
   match _h : expr.val with

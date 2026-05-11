@@ -95,7 +95,9 @@ partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
 mutual
 
 /-- Walk a `StmtExprMd` and collect diagnostics for Subscript/Array.length
-    misuse, recursing into all subexpressions and embedded types. -/
+    misuse, recursing into all subexpressions and embedded types.
+
+    TODO: make structural (see same note on `SubscriptElim.elimExpr`). -/
 partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   -- Diagnostic 1: a[i := v] on Array<T>
