@@ -181,6 +181,38 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Assert.Contains("ensures", standardOutput);
     }
 
+    /// <summary>
+    /// Regression test: old() expressions must use the renamed name when a
+    /// variable has a name collision (e.g., global var `main` vs procedure `main`).
+    /// Previously, IdentifierExpr with Decl != null used NameOf() correctly, but
+    /// had a silent fallback to Name() when Decl was null — which would emit the
+    /// unrenamed (wrong) name in the collision case. Post-resolution, Decl should
+    /// always be non-null; the fallback masked potential bugs.
+    /// </summary>
+    [Fact]
+    public void OldExprUsesRenamedNameOnCollision() {
+        var filePath = Path.Combine(TestsDirectory, "OldExprRenameCollision.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
+
+        output.WriteLine($"Output:\n{standardOutput}");
+        if (!string.IsNullOrEmpty(errorOutput)) {
+            output.WriteLine($"Error output: {errorOutput}");
+        }
+
+        Assert.Equal(0, exitCode);
+
+        // The output should contain an `old` expression referencing the *renamed*
+        // variable (e.g., __var_main), not the raw name `main` which is the procedure.
+        // Look for the pattern "old __var_main" or similar renamed form.
+        Assert.Contains("old __var_main", standardOutput);
+
+        // Also ensure the output does NOT contain "old main" (unrenamed fallback).
+        // This would indicate the fallback to Name() was used instead of NameOf().
+        Assert.DoesNotContain("old main", standardOutput);
+    }
+
     [Fact]
     public void ErrorCodeWithNoArguments() {
         var result = BoogieToStrata.Main(Array.Empty<string>());

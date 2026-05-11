@@ -354,7 +354,10 @@ public class StrataGenerator : ReadOnlyVisitor {
         switch (expr) {
             case IdentifierExpr identExpr:
                 WriteText("old ");
-                WriteText(identExpr.Decl != null ? NameOf(identExpr.Decl, identExpr.Name) : Name(identExpr.Name));
+                if (identExpr.Decl == null)
+                    throw new StrataConversionException(identExpr.tok,
+                        $"IdentifierExpr '{identExpr.Name}' has null Decl (expected non-null post-resolution)");
+                WriteText(NameOf(identExpr.Decl, identExpr.Name));
                 break;
             case NAryExpr { Fun: MapSelect } mapSelect:
                 WriteText("(");
@@ -590,7 +593,10 @@ public class StrataGenerator : ReadOnlyVisitor {
             case LiteralExpr literalExpr:
                 throw new StrataConversionException(node.tok, $"Unsupported literal type: {literalExpr}");
             case IdentifierExpr identifierExpr:
-                WriteText(identifierExpr.Decl != null ? NameOf(identifierExpr.Decl, identifierExpr.Name) : Name(identifierExpr.Name));
+                if (identifierExpr.Decl == null)
+                    throw new StrataConversionException(identifierExpr.tok,
+                        $"IdentifierExpr '{identifierExpr.Name}' has null Decl (expected non-null post-resolution)");
+                WriteText(NameOf(identifierExpr.Decl, identifierExpr.Name));
                 break;
             case NAryExpr nAryExpr: {
                 var fun = nAryExpr.Fun;
