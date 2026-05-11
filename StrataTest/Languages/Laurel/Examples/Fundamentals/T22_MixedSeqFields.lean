@@ -23,7 +23,10 @@ composite Both {
   var b: Seq<bool>
 }
 
-procedure touch(x: Both) {
+procedure touch(x: Both)
+  opaque
+  modifies x
+{
   x#a := [1];
   x#b := [true]
 };

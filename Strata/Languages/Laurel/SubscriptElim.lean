@@ -209,6 +209,14 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     -- the generic `.Subscript` arm below, it gets rewritten into a
     -- `Sequence.update` expression — but statement position needs a
     -- `.Assign [.Field a $data]` statement instead.
+    --
+    -- LIMITATION: detection only fires for top-level statements in a `.Block`.
+    -- A bare `if cond then a[i] := v` (without a Block around the then-branch)
+    -- or `while cond a[i] := v` (single-statement body) would slip through and
+    -- be rewritten as an expression. The grammar currently wraps such bodies
+    -- in `.Block`s during parsing, but this could diverge under refactor.
+    -- A follow-up should factor out an `elimStmt` helper called from every
+    -- statement-position container (Block, IfThenElse branches, While body).
     let expanded := stmts.attach.flatMap fun ⟨s, _⟩ =>
       match s.val with
       | .Subscript target index (some value) =>

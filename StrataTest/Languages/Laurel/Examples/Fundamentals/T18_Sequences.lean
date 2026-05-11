@@ -14,33 +14,43 @@ namespace Laurel
 
 def seqProgram := r"
 // Literal construction and select
-procedure literalSelect() returns (r: int) {
+procedure literalSelect() returns (r: int)
+  opaque
+{
   var s: Seq<int> := [10, 20, 30];
   r := Sequence.select(s, 1);
   assert r == 20
 };
 
 // Empty sequence has length 0
-procedure emptyLength() {
+procedure emptyLength()
+  opaque
+{
   var s: Seq<int> := [];
   assert Sequence.length(s) == 0
 };
 
 // Build and length
-procedure buildLength() {
+procedure buildLength()
+  opaque
+{
   var s: Seq<int> := [1, 2, 3];
   assert Sequence.length(s) == 3
 };
 
 // Functional update preserves length
-procedure updateLength() {
+procedure updateLength()
+  opaque
+{
   var s: Seq<int> := [1, 2, 3];
   var t: Seq<int> := s[0 := 99];
   assert Sequence.length(t) == 3
 };
 
 // Functional update changes element
-procedure updateSelect() {
+procedure updateSelect()
+  opaque
+{
   var s: Seq<int> := [1, 2, 3];
   var t: Seq<int> := s[0 := 99];
   assert Sequence.select(t, 0) == 99
@@ -49,6 +59,7 @@ procedure updateSelect() {
 // Subscript read sugar
 procedure subscriptRead(s: Seq<int>)
   requires Sequence.length(s) > 0
+  opaque
 {
   var x: int := s[0];
   assert x == Sequence.select(s, 0)
@@ -57,6 +68,7 @@ procedure subscriptRead(s: Seq<int>)
 // Subscript update sugar
 procedure subscriptUpdate(s: Seq<int>)
   requires Sequence.length(s) > 0
+  opaque
 {
   var t: Seq<int> := s[0 := 42];
   assert Sequence.select(t, 0) == 42
@@ -75,24 +87,31 @@ procedure contractSeq(s: Seq<int>) returns (r: int)
 procedure quantifierSeq(s: Seq<int>)
   requires Sequence.length(s) > 0
   requires forall(i: int) => 0 <= i && i < Sequence.length(s) ==> s[i] >= 0
+  opaque
 {
   assert s[0] >= 0
 };
 
 // Bool element type
-procedure seqBool() {
+procedure seqBool()
+  opaque
+{
   var s: Seq<bool> := [true, false];
   assert Sequence.select(s, 0) == true
 };
 
 // Nested sequences
-procedure seqNested() {
+procedure seqNested()
+  opaque
+{
   var s: Seq<Seq<int>> := [[1, 2], [3, 4]];
   assert Sequence.select(Sequence.select(s, 0), 1) == 2
 };
 
 // Append length
-procedure appendLength() {
+procedure appendLength()
+  opaque
+{
   var a: Seq<int> := [1, 2];
   var b: Seq<int> := [3, 4, 5];
   var c: Seq<int> := Sequence.append(a, b);
@@ -100,7 +119,9 @@ procedure appendLength() {
 };
 
 // Append select from first half
-procedure appendSelectFirst() {
+procedure appendSelectFirst()
+  opaque
+{
   var a: Seq<int> := [10, 20];
   var b: Seq<int> := [30];
   var c: Seq<int> := Sequence.append(a, b);
@@ -109,7 +130,9 @@ procedure appendSelectFirst() {
 };
 
 // Append select from second half
-procedure appendSelectSecond() {
+procedure appendSelectSecond()
+  opaque
+{
   var a: Seq<int> := [10, 20];
   var b: Seq<int> := [30];
   var c: Seq<int> := Sequence.append(a, b);
@@ -117,14 +140,18 @@ procedure appendSelectSecond() {
 };
 
 // Take length
-procedure takeLength() {
+procedure takeLength()
+  opaque
+{
   var s: Seq<int> := [10, 20, 30, 40];
   var t: Seq<int> := Sequence.take(s, 2);
   assert Sequence.length(t) == 2
 };
 
 // Take preserves elements
-procedure takeSelect() {
+procedure takeSelect()
+  opaque
+{
   var s: Seq<int> := [10, 20, 30, 40];
   var t: Seq<int> := Sequence.take(s, 2);
   assert t[0] == 10;
@@ -132,14 +159,18 @@ procedure takeSelect() {
 };
 
 // Drop length
-procedure dropLength() {
+procedure dropLength()
+  opaque
+{
   var s: Seq<int> := [10, 20, 30, 40];
   var d: Seq<int> := Sequence.drop(s, 2);
   assert Sequence.length(d) == 2
 };
 
 // Drop selects from offset
-procedure dropSelect() {
+procedure dropSelect()
+  opaque
+{
   var s: Seq<int> := [10, 20, 30, 40];
   var d: Seq<int> := Sequence.drop(s, 2);
   assert d[0] == 30;
@@ -154,10 +185,12 @@ procedure dropSelect() {
 
 def seqNegativeProgram := r"
 // Diagnostic 2: destructive update on Seq<T>
-procedure seqDestructiveUpdate() {
+procedure seqDestructiveUpdate()
+  opaque
+{
   var s: Seq<int> := [1, 2, 3];
   s[0] := 42
-//^^^^ error: immutable
+//^^^^^^^^^^ error: immutable
 };
 "
 

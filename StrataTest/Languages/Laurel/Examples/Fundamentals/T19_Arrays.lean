@@ -14,20 +14,26 @@ namespace Laurel
 
 def arrayProgram := r"
 // Basic read/write
-procedure basicReadWrite() {
+procedure basicReadWrite()
+  opaque
+{
   var a: Array<int> := [1, 2, 3];
   a[0] := 42;
   assert a[0] == 42
 };
 
 // Length
-procedure length() {
+procedure length()
+  opaque
+{
   var a: Array<int> := [10, 20, 30];
   assert Array.length(a) == 3
 };
 
 // Empty array
-procedure emptyArray() {
+procedure emptyArray()
+  opaque
+{
   var a: Array<int> := [];
   assert Array.length(a) == 0
 };
@@ -35,13 +41,16 @@ procedure emptyArray() {
 // Array in contracts
 procedure arrayContract(a: Array<int>)
   requires Array.length(a) > 0
+  opaque
 {
   var x: int := a[0];
   assert x == a[0]
 };
 
 // Multiple writes
-procedure multipleWrites() {
+procedure multipleWrites()
+  opaque
+{
   var a: Array<int> := [0, 0, 0];
   a[0] := 10;
   a[1] := 20;
@@ -52,7 +61,9 @@ procedure multipleWrites() {
 };
 
 // Aliasing: mutation through one reference visible through another
-procedure aliasing() {
+procedure aliasing()
+  opaque
+{
   var a: Array<int> := [1, 2, 3];
   var b: Array<int> := a;
   b[0] := 99;
@@ -60,7 +71,10 @@ procedure aliasing() {
 };
 
 // Array in a loop: zero-fill
-procedure arrayLoop() {
+procedure arrayLoop()
+  opaque
+  modifies *
+{
   var a: Array<int> := [1, 2, 3];
   var i: int := 0;
   while (i < 3)
@@ -87,14 +101,18 @@ procedure setFirst(a: Array<int>, v: int)
   a[0] := v
 };
 
-procedure callSetFirst() {
+procedure callSetFirst()
+  opaque
+{
   var a: Array<int> := [1, 2, 3];
   setFirst(a, 42);
   assert a[0] == 42
 };
 
 // Sequence.fromArray takes a snapshot of the array's current contents.
-procedure fromArrayBasic() {
+procedure fromArrayBasic()
+  opaque
+{
   var a: Array<int> := [10, 20, 30];
   var s: Seq<int> := Sequence.fromArray(a);
   assert Sequence.length(s) == 3;
@@ -103,7 +121,9 @@ procedure fromArrayBasic() {
 
 // Snapshot semantics: mutating the array after extraction does not
 // affect the previously-taken sequence.
-procedure fromArraySnapshot() {
+procedure fromArraySnapshot()
+  opaque
+{
   var a: Array<int> := [1, 2, 3];
   var s: Seq<int> := Sequence.fromArray(a);
   a[0] := 99;
@@ -119,7 +139,9 @@ procedure fromArraySnapshot() {
 
 def arrayFuncUpdateProgram := r"
 // Diagnostic 1: functional update on Array<T>
-procedure arrayFuncUpdate() {
+procedure arrayFuncUpdate()
+  opaque
+{
   var a: Array<int> := [1, 2, 3];
   var b: Array<int> := a[0 := 99]
 //                     ^^^^^^^^^^ error: not supported on `Array
@@ -131,7 +153,9 @@ procedure arrayFuncUpdate() {
 
 def arrayLengthWrongArgProgram := r"
 // Diagnostic 3: Array.length on a non-Array argument
-procedure arrayLengthWrongArg() {
+procedure arrayLengthWrongArg()
+  opaque
+{
   var s: Seq<int> := [1, 2, 3];
   assert Array.length(s) == 3
 //       ^^^^^^^^^^^^^^^ error: requires an argument of type
@@ -143,7 +167,9 @@ procedure arrayLengthWrongArg() {
 
 def arrayNonIntElementProgram := r"
 // Diagnostic 4: Array<T> with T other than int
-procedure arrayNonIntElement() {
+procedure arrayNonIntElement()
+  opaque
+{
   var a: Array<bool> := [true, false]
 //       ^^^^^^^^^^^ error: currently only supported
 };
@@ -154,7 +180,9 @@ procedure arrayNonIntElement() {
 
 def fromArrayWrongArgProgram := r"
 // Sequence.fromArray on a non-Array argument
-procedure fromArrayWrongArg() {
+procedure fromArrayWrongArg()
+  opaque
+{
   var s: Seq<int> := [1, 2, 3];
   var t: Seq<int> := Sequence.fromArray(s)
 //                   ^^^^^^^^^^^^^^^^^^^^^ error: requires an argument of type

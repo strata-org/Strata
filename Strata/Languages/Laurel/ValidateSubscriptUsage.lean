@@ -138,17 +138,27 @@ partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List 
     validateStmtExpr model c ++ validateStmtExpr model t
   | .Block stmts _ =>
     stmts.attach.foldl (fun acc ⟨s, _⟩ =>
-      -- Diagnostic 2: `s[i] := v` on Seq<T> (grammar lowers to `.Subscript s i (some v)`
-      -- at statement position). Detect here before recursing, since the expression-level
-      -- Subscript arm allows `s[i := v]` on Seq<T> (as a pure update).
-      let diag2 : List DiagnosticModel :=
-        match s.val with
-        | .Subscript target _ (some _) =>
+      -- Statement-position `.Subscript t i (some v)` — grammar lowers
+      -- `a[i] := v` and `s[i] := v` to this shape. Here the shape means
+      -- DESTRUCTIVE update:
+      --   * For Seq<T>: user error (Seq is immutable) → Diagnostic 2.
+      --   * For Array<T>: valid (arrays are mutable). No diagnostic.
+      -- Note this differs from expression-position `.Subscript t i (some v)`
+      -- (handled by the top-level Subscript arm above) where the semantics
+      -- is FUNCTIONAL update:
+      --   * For Seq<T>: valid.
+      --   * For Array<T>: user error → Diagnostic 1.
+      match s.val with
+      | .Subscript target index (some value) =>
+        let diag : List DiagnosticModel :=
           if isSeqTy (computeExprType model target).val then
             [diagnosticFromSource s.source msgSeqDestructiveUpdate]
           else []
-        | _ => []
-      acc ++ diag2 ++ validateStmtExpr model s) []
+        -- Still recurse into children; don't fall through to the top-level
+        -- Subscript arm (which would emit Diagnostic 1 on Array).
+        acc ++ diag ++ validateStmtExpr model target ++
+          validateStmtExpr model index ++ validateStmtExpr model value
+      | _ => acc ++ validateStmtExpr model s) []
   | .Var (.Declare param) => validateHighType param.type
   | .Var (.Field t _) => validateStmtExpr model t
   | .Var (.Local _) => []
