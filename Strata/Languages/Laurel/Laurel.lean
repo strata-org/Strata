@@ -623,8 +623,12 @@ def SeqOp.select   := "Sequence.select"
 def SeqOp.update   := "Sequence.update"
 /-- `Sequence.length(s) : int` — length of the sequence. -/
 def SeqOp.length   := "Sequence.length"
-/-- Name of the `$data` field on the synthetic `$Array` composite. -/
-def SeqOp.dataField := "$data"
+
+/-- Name of the `$data` field on the synthetic `$Array` composite.
+    This is a field name, not a `Sequence.*` operation — kept out of the
+    `SeqOp.*` namespace since it's semantically different from the entries
+    above. -/
+def arrayDataField := "$data"
 
 /-- Name of the synthetic composite type injected by `SubscriptElim` to model
     `Array<T>`. Uses the `$` prefix convention for internal names to avoid

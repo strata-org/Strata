@@ -182,7 +182,7 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     let target' := elimExpr model target
     let index' := elimExpr model index
     if isArrayType model target then
-      mkCall SeqOp.select [mkFieldExpr target' SeqOp.dataField src, index'] src
+      mkCall SeqOp.select [mkFieldExpr target' arrayDataField src, index'] src
     else
       mkCall SeqOp.select [target', index'] src
   | .Subscript target index (some value) =>
@@ -198,7 +198,7 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
       -- `a[i := v]` on Array<T>: not supported (the `ValidateSubscriptUsage`
       -- pass has already surfaced a diagnostic for this misuse).
       -- Desugar the read-side to keep downstream typecheck simple.
-      let data := mkFieldExpr target' SeqOp.dataField src
+      let data := mkFieldExpr target' arrayDataField src
       mkCall SeqOp.update [data, index', value'] src
     else
       mkCall SeqOp.update [target', index', value'] src
@@ -217,8 +217,8 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
           let target' := elimExpr model target
           let index' := elimExpr model index
           let value' := elimExpr model value
-          let data := mkFieldExpr target' SeqOp.dataField s.source
-          [⟨.Assign [mkFieldVariable target' SeqOp.dataField s.source]
+          let data := mkFieldExpr target' arrayDataField s.source
+          [⟨.Assign [mkFieldVariable target' arrayDataField s.source]
               (mkCall SeqOp.update [data, index', value'] s.source), s.source⟩]
         else
           -- Seq<T>: validator (commit 2) has reported a diagnostic; replace
@@ -229,7 +229,7 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
         let initExpr' := elimExpr model initExpr
         if isArrayHighType param.type.val && !isArrayType model initExpr then
           [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), s.source⟩, s.source⟩,
-           ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), s.source⟩ SeqOp.dataField s.source]
+           ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), s.source⟩ arrayDataField s.source]
               initExpr', s.source⟩]
         else
           [⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', s.source⟩]
@@ -252,7 +252,7 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
       match args' with
       | [a] =>
         if isArrayType model a then
-          mkCall SeqOp.length [mkFieldExpr a SeqOp.dataField src] src
+          mkCall SeqOp.length [mkFieldExpr a arrayDataField src] src
         else
           ⟨.LiteralInt 0, src⟩
       | _ =>
@@ -266,7 +266,7 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
       match args' with
       | [a] =>
         if isArrayType model a then
-          mkFieldExpr a SeqOp.dataField src
+          mkFieldExpr a arrayDataField src
         else
           mkCall SeqOp.empty [] src
       | _ =>
@@ -329,13 +329,21 @@ private def arrayCompositeDef : TypeDefinition :=
   .Composite {
     name := mkId arrayCompositeName
     extending := []
-    fields := [{ name := mkId SeqOp.dataField, isMutable := true,
+    fields := [{ name := mkId arrayDataField, isMutable := true,
                  type := ⟨.TSeq ⟨.TInt, none⟩, none⟩ }]
     instanceProcedures := [] }
 
 /-- Eliminate `Subscript` nodes and desugar `Array.length` across a program.
     Conditionally injects the `$Array` synthetic composite when the program
-    uses `Array<T>` anywhere. -/
+    uses `Array<T>` anywhere.
+
+    The `_model` parameter is accepted to satisfy `LaurelPass.run`'s
+    `Program → SemanticModel → ...` signature but is intentionally unused:
+    the caller's model predates our `$Array` injection, and `elimProcedure`'s
+    `computeExprType` queries need a model that includes the synthetic
+    composite's `$data` field. We therefore rebuild the model via `resolve`
+    below. The pipeline's `needsResolves := true` flag re-resolves after
+    this pass for all downstream consumers. -/
 public def subscriptElim (_model : SemanticModel) (program : Program)
     : Program × List DiagnosticModel :=
   -- The `$Array` composite is only needed when the program mentions `Array<T>`.
@@ -356,7 +364,9 @@ public def subscriptElim (_model : SemanticModel) (program : Program)
     | other => other
   let program' := { program with
     types := types'
-    staticProcedures := program.staticProcedures.map (elimProcedure model) }
+    staticProcedures := program.staticProcedures.map (elimProcedure model)
+    constants := program.constants.map fun c =>
+      { c with initializer := c.initializer.map (elimExpr model) } }
   (program', [])
 
 end -- public section
