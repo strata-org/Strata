@@ -962,7 +962,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     private void EmitSimpleAssign(SimpleAssignLhs lhs, Expr rhs) {
         Indent();
-        WriteText($"{Name(lhs.AssignedVariable.Name)} := ");
+        WriteText($"{NameOf(lhs.AssignedVariable.Decl, lhs.AssignedVariable.Name)} := ");
         VisitExpr(rhs);
         WriteLine(";");
     }
@@ -1002,12 +1002,12 @@ public class StrataGenerator : ReadOnlyVisitor {
         var needComma = false;
         foreach (var g in _globalVariables.Where(g => modifiesNames.Contains(g.Name))) {
             if (needComma) WriteText(", ");
-            WriteText($"inout {Name(g.Name)}");
+            WriteText($"inout {NameOf(g, g.Name)}");
             needComma = true;
         }
         foreach (var g in _globalVariables.Where(g => !modifiesNames.Contains(g.Name))) {
             if (needComma) WriteText(", ");
-            WriteText(Name(g.Name));
+            WriteText(NameOf(g, g.Name));
             needComma = true;
         }
         foreach (var arg in node.Ins) {
@@ -1027,7 +1027,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Cmd VisitHavocCmd(HavocCmd node) {
         foreach (var x in node.Vars) {
-            IndentLine($"havoc {Name(x.Name)};");
+            IndentLine($"havoc {NameOf(x.Decl, x.Name)};");
         }
 
         // All assumptions come after all havocs! This allows where clauses
@@ -1567,7 +1567,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override GlobalVariable VisitGlobalVariable(GlobalVariable node) {
         var ti = node.TypedIdent;
-        WriteText($"var {Name(ti.Name)} : ");
+        WriteText($"var {NameOf(node, ti.Name)} : ");
         VisitType(ti.Type);
         WriteLine(";");
         return node;
@@ -1820,7 +1820,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             // SMACK encodes C assert(expr) as a call to assert_.*(cond).
             // Emit a requires precondition so the call-elimination pass
             // generates a VC checking the condition is non-zero.
-            if (node.Name.StartsWith("assert_") && node.InParams.Count > 0
+            if (node.Name.StartsWith("assert_.") && node.InParams.Count > 0
                 && node.Requires.Count == 0) {
                 var firstParam = Name(node.InParams[0].TypedIdent.Name);
                 WriteLine("spec {");
@@ -1844,7 +1844,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             if (needComma) WriteText(", ");
             var name = v.TypedIdent.Name ?? "";
             if (name == "") name = $"x{n++}";
-            WriteText($"{prefix}{Name(name)} : ");
+            WriteText($"{prefix}{NameOf(v, name)} : ");
             VisitType(v.TypedIdent.Type);
             needComma = true;
         }
