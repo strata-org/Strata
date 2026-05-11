@@ -195,3 +195,79 @@ cfg start {
           IO.println s!"  Block '{lbl}': {blk.cmds.length} cmds, {transferDesc}"
       | .structured _ => IO.println "  ERROR: expected CFG body"
     | _ => pure ()
+
+/-! ## End-to-end: type-checking rejects CFG procedures
+
+Regression test for PR #1132: the verifier pipeline (which includes type
+checking) should reject CFG bodies with a clear diagnostic rather than
+silently producing wrong results. The current rejection comes from
+`checkModificationRights`, which calls `Body.getStructured` on a CFG body. -/
+
+/--
+info: type-check rejected CFG procedure: expected structured body, got CFG
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure Trivial()
+cfg start {
+  start: {
+    return;
+  }
+};
+"
+  match Core.typeCheck .quiet prog with
+  | .error dm => IO.println s!"type-check rejected CFG procedure: {dm.message}"
+  | .ok _ => IO.println "ERROR: expected type-check to fail for CFG procedure"
+
+/-! ## End-to-end: parsed CFG body is preserved, not collapsed
+
+Regression test for PR #1132: there was a bug where the procedure body was
+always stored as `.structured annotated_body` after type checking, erasing
+CFG bodies to `.structured []`. The fix preserves `.cfg` bodies. This test
+confirms that after parsing, a CFG procedure's body is `.cfg` (not
+`.structured []`), guarding against regression in the parser or DDM layer. -/
+
+/--
+info: Procedure: Max
+  body.isCfg = true
+  body.isStructured = false
+  CFG preserved: entry=entry, 4 blocks
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure Max(x : int, y : int, out m : int)
+spec {
+  ensures (m >= x);
+  ensures (m >= y);
+}
+cfg entry {
+  entry: {
+    branch (x >= y) goto then_branch else else_branch;
+  }
+  then_branch: {
+    m := x;
+    goto done;
+  }
+  else_branch: {
+    m := y;
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+"
+  for d in prog.decls do
+    match d with
+    | .proc p _ =>
+      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
+      IO.println s!"  body.isCfg = {p.body.isCfg}"
+      IO.println s!"  body.isStructured = {p.body.isStructured}"
+      match p.body with
+      | .cfg c =>
+        IO.println s!"  CFG preserved: entry={c.entry}, {c.blocks.length} blocks"
+      | .structured ss =>
+        IO.println s!"  ERROR: body collapsed to .structured with {ss.length} statements"
+    | _ => pure ()
