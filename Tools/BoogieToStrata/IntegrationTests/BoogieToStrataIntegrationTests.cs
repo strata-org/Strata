@@ -149,6 +149,38 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Assert.Equal(expectedExitCode, proc.ExitCode);
     }
 
+    /// <summary>
+    /// Regression test: an assert_.<type> procedure with an existing ensures clause
+    /// should emit a single spec block containing both the synthetic requires and the
+    /// original ensures — not two separate spec blocks.
+    /// </summary>
+    [Fact]
+    public void SmackAssertWithEnsuresProducesSingleSpecBlock() {
+        var filePath = Path.Combine(TestsDirectory, "SmackAssertDuplicateSpec.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
+        Assert.Equal(0, exitCode);
+
+        // Count occurrences of "spec {" in the output.
+        // There should be exactly one spec block for the assert_ procedure.
+        var specCount = 0;
+        var searchFrom = 0;
+        while (true) {
+            var idx = standardOutput.IndexOf("spec {", searchFrom, StringComparison.Ordinal);
+            if (idx < 0) break;
+            specCount++;
+            searchFrom = idx + 1;
+        }
+
+        output.WriteLine($"Output:\n{standardOutput}");
+        Assert.Equal(1, specCount);
+
+        // The single spec block should contain both requires and ensures
+        Assert.Contains("requires", standardOutput);
+        Assert.Contains("ensures", standardOutput);
+    }
+
     [Fact]
     public void ErrorCodeWithNoArguments() {
         var result = BoogieToStrata.Main(Array.Empty<string>());
