@@ -19,6 +19,10 @@ public static class BoogieToStrata {
         var options = new CommandLineOptions(Console.Out, new ConsolePrinter()) {
             Verify = false,
             TypeEncodingMethod = CoreOptions.TypeEncoding.Predicates,
+            // SMACK-generated Boogie often omits explicit `modifies` clauses on procedures that mutate globals.
+            // InferModifies runs ModSetCollector.CollectModifies to populate empty modifies clauses and
+            // suppresses modifies-clause typechecking (via CheckModifies), so that ResolveAndTypecheck
+            // does not reject SMACK programs missing modifies clauses.
             InferModifies = true
         };
 
