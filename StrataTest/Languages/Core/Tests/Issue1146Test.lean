@@ -57,17 +57,31 @@ example : Strata.smtVCsCorrect datatypeAndFunction := by
 
 /-! ## Stray trailing `;` after a function body is a parse error
 
-Kept as a doc-comment rather than an active test because `#strata` is an
-elaborator-level macro; a `#guard_msgs` check here would need custom
-infrastructure to capture the inner elaboration error. The observable
-behaviour is:
+If the `@[nonempty]` annotation on `command_datatypes`'s `datatypes` field is
+removed, the parser will silently accept the stray `;` as an empty datatype
+block, and the panic at `gen_smt_vcs` time returns. Pin the exact parse-error
+message here so that regression is caught at elaboration.
 
-```
-/tmp/repro.lean:N:1: error: unexpected token ';'; expected 'function',
-Core.Block or expected at least one element
-```
+Note: the message text enumerates valid continuations at this source
+position (`'function'`, `Core.Block`, and — from the `@[nonempty]`
+annotation — `expected at least one element`). If a new top-level command
+production is added to the Core grammar, the enumeration will change and
+this docstring will need to be updated along with it. -/
 
-Before the fix, the same program elaborated (producing a phantom
-`command_datatypes`) and then panicked at `gen_smt_vcs`. -/
+/--
+error: unexpected token ';'; expected 'function', Core.Block or expected at least one element
+-/
+#guard_msgs in
+def strayTrailingSemi : Strata.Program :=
+#strata
+program Core;
+
+datatype List () { Nil() };
+
+function Len (xs : List) : int
+{
+  0
+};
+#end
 
 end Strata.Issue1146Test
