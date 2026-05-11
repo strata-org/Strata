@@ -7,6 +7,7 @@ module
 
 public import Strata.Transform.FilterProcedures
 public import Strata.Transform.PrecondElim
+public import Strata.Transform.ANFEncoder
 public import Strata.Transform.CoreSpecification
 
 /-! # Pass-Specific Correctness Specifications
@@ -278,6 +279,110 @@ structure PrecondElimPhaseCorrect : Prop where
     PreservesCachedAnalysesWF precondElimPipelinePhase.transform
 
 end PrecondElim
+
+
+/-! ## ANFEncoder — Structural Properties -/
+
+namespace ANFEncoder
+
+/-- Same command kind (init↔init, set↔set, assert↔assert, assume↔assume,
+    cover↔cover, call↔call with same proc name). Expressions may differ. -/
+def cmdKindEquiv (c1 c2 : Command) : Bool :=
+  match c1, c2 with
+  | .cmd (.init n1 _ _ _), .cmd (.init n2 _ _ _) => n1 == n2
+  | .cmd (.set n1 _ _), .cmd (.set n2 _ _) => n1 == n2
+  | .cmd (.assert l1 _ _), .cmd (.assert l2 _ _) => l1 == l2
+  | .cmd (.assume l1 _ _), .cmd (.assume l2 _ _) => l1 == l2
+  | .cmd (.cover l1 _ _), .cmd (.cover l2 _ _) => l1 == l2
+  | .call p1 _ _, .call p2 _ _ => p1 == p2
+  | _, _ => false
+
+mutual
+/-- Two statements have the same control-flow skeleton: same structure
+    (block/ite/loop/exit shape), same labels, same command kinds,
+    but expressions may differ. -/
+def stmtCFEquiv (s1 s2 : Statement) : Bool :=
+  match s1, s2 with
+  | .cmd c1, .cmd c2 => cmdKindEquiv c1 c2
+  | .block l1 b1 _, .block l2 b2 _ => l1 == l2 && stmtsCFEquiv b1 b2
+  | .ite _ t1 e1 _, .ite _ t2 e2 _ => stmtsCFEquiv t1 t2 && stmtsCFEquiv e1 e2
+  | .loop _ _ _ b1 _, .loop _ _ _ b2 _ => stmtsCFEquiv b1 b2
+  | .exit l1 _, .exit l2 _ => l1 == l2
+  | .funcDecl _ _, .funcDecl _ _ => Bool.true
+  | .typeDecl _ _, .typeDecl _ _ => Bool.true
+  | _, _ => false
+
+/-- Two statement lists have the same control-flow skeleton pointwise. -/
+def stmtsCFEquiv (ss1 ss2 : List Statement) : Bool :=
+  match ss1, ss2 with
+  | [], [] => Bool.true
+  | s1 :: rest1, s2 :: rest2 => stmtCFEquiv s1 s2 && stmtsCFEquiv rest1 rest2
+  | _, _ => false
+end
+
+/-- Strip ANF-prefixed `init` statements from the front of a statement list. -/
+def stripANFInits (ss : List Statement) : List Statement :=
+  ss.filter fun
+    | .cmd (.cmd (.init name _ _ _)) => !(CoreIdent.toPretty name).startsWith anfVarPrefix
+    | _ => true
+
+/-- Program-level structural correctness of ANFEncoder. -/
+structure ANFEncoderCorrect (progIn progOut : Program) : Prop where
+  /-- Same number of declarations in same order: the output is a pointwise
+      modification of the input (no declarations added or removed). -/
+  declsLength : progOut.decls.length = progIn.decls.length
+
+  /-- Non-procedure declarations are unchanged. -/
+  nonProcsUnchanged : ∀ (d : Decl),
+    d ∈ progIn.decls → d.kind ≠ .proc → d ∈ progOut.decls
+
+  /-- Procedure headers and specs are preserved. -/
+  procHeadersPreserved : ∀ (proc : Procedure) (md : MetaData Expression),
+    (Decl.proc proc md) ∈ progIn.decls →
+    ∃ (proc' : Procedure) (md' : MetaData Expression),
+      (Decl.proc proc' md') ∈ progOut.decls ∧
+      proc'.header = proc.header ∧
+      proc'.spec = proc.spec
+
+  /-- All fresh variables introduced use the ANF prefix and have
+      deterministic (non-havoc) initializers. -/
+  freshVarsDet : ∀ (proc' : Procedure) (md' : MetaData Expression),
+    (Decl.proc proc' md') ∈ progOut.decls →
+    ∀ (name : Expression.Ident) (ty : Expression.Ty)
+      (rhs : ExprOrNondet Expression) (md'' : MetaData Expression),
+      Statement.init name ty rhs md'' ∈ proc'.body →
+      (CoreIdent.toPretty name).startsWith anfVarPrefix →
+      ∃ (e : Expression.Expr), rhs = .det e
+
+  /-- Declaration order is preserved (names match positionally). -/
+  orderPreserved : progOut.decls.map Decl.name = progIn.decls.map Decl.name
+
+  /-- Control flow is preserved: stripping ANF init statements from the
+      output body yields a list with the same control-flow skeleton as the
+      input body. -/
+  controlFlowPreserved : ∀ (proc : Procedure) (md : MetaData Expression),
+    (Decl.proc proc md) ∈ progIn.decls →
+    ∀ (proc' : Procedure) (md' : MetaData Expression),
+      (Decl.proc proc' md') ∈ progOut.decls →
+      proc'.header.name = proc.header.name →
+      stmtsCFEquiv proc.body (stripANFInits proc'.body) = Bool.true
+
+/-- Phase-level correctness for ANFEncoder. -/
+structure ANFEncoderPhaseCorrect : Prop where
+  anfCorrect :
+    ∀ (progIn : Program) (st : Transform.CoreTransformState)
+      (changed : Bool) (progOut : Program) (st' : Transform.CoreTransformState),
+      (Core.anfEncoderPipelinePhase.transform progIn).run st =
+        (.ok (changed, progOut), st') →
+      ANFEncoderCorrect progIn progOut
+
+  changedFlagValid :
+    ChangedFlagValid Core.anfEncoderPipelinePhase.transform
+
+  analysisPreserving :
+    PreservesCachedAnalysesWF Core.anfEncoderPipelinePhase.transform
+
+end ANFEncoder
 
 end Core
 
