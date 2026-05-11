@@ -788,7 +788,8 @@ where
             | some (.boolConst _ false) => go lf fuel' env'
             | _ => CmdEval.updateError env'
                 (.Misc s!"runCFG: branch condition in block '{label}' did not evaluate to a boolean")
-        | _ => env
+        | _ => CmdEval.updateError env
+              (.Misc s!"runCFG: block '{label}' did not reach terminal (possibly inner-loop fuel exhaustion or unexpected exit)")
 
 /--
 The resulting Env is the original passed in Env with the output variables copied back into it.

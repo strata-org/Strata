@@ -99,10 +99,11 @@ def extractFromStatements
 end
 
 /-- Extract proof obligations from a deterministic CFG by walking all blocks.
-    NOTE: Path conditions restart from the global `pc` for each block independently.
-    Assumes within one block do not propagate to successor blocks. This is conservative
-    (no false negatives) but means obligations may be harder to discharge than necessary.
-    TODO: dominator-based path-condition propagation would improve precision. -/
+    Path conditions restart from the global `pc` for each block independently, so
+    obligations are over-approximated (no false negatives — every real bug is caught).
+    However, obligations in block B that depend on `assume` from block A will fail to
+    discharge, surfacing as false alarms (false positives) to the user.
+    TODO: dominator-based path-condition propagation to reduce false alarms. -/
 def extractFromDetCFG (pc : PathConditions Expression) (cfg : DetCFG)
     : Except String (Array (ProofObligation Expression)) :=
   let obs := cfg.blocks.foldl (init := #[]) fun acc (_, blk) =>
