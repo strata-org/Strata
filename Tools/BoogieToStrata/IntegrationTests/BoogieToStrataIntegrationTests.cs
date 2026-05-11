@@ -213,6 +213,39 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Assert.DoesNotContain("old main", standardOutput);
     }
 
+    /// <summary>
+    /// Regression test for InferModifies = true.
+    ///
+    /// SMACK-generated Boogie can omit explicit modifies clauses on procedures.
+    /// With InferModifies = true, Boogie's ModSetCollector infers them so that
+    /// the translator correctly emits globals as `inout` parameters (modified)
+    /// rather than read-only parameters.
+    ///
+    /// This test uses a .bpl file where procedure p() assigns to global g but
+    /// has no `modifies g;` clause.  If InferModifies is working, the output
+    /// should contain `inout g` for procedure p.
+    /// </summary>
+    [Fact]
+    public void InferModifiesEmitsInoutForMutatedGlobal() {
+        var filePath = Path.Combine(TestsDirectory, "InferModifiesGlobal.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
+
+        output.WriteLine($"Output:\n{standardOutput}");
+        if (!string.IsNullOrEmpty(errorOutput)) {
+            output.WriteLine($"Error output: {errorOutput}");
+        }
+
+        // Translation must succeed — if InferModifies is broken, Boogie would
+        // reject the program because g is assigned without a modifies clause.
+        Assert.Equal(0, exitCode);
+
+        // The inferred modifies clause should cause the translator to emit
+        // `inout g` on procedure p's parameter list.
+        Assert.Contains("inout g", standardOutput);
+    }
+
     [Fact]
     public void ErrorCodeWithNoArguments() {
         var result = BoogieToStrata.Main(Array.Empty<string>());
