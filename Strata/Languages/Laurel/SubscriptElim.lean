@@ -174,6 +174,8 @@ initialisations) and `.Assign [.Subscript a i none] v` can be recognised
 before the inner `.Subscript` is rewritten into a `Sequence.select` call.
 -/
 
+mutual
+
 /-- Recursively eliminate Subscript nodes and desugar `Array.length`. -/
 partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   let src := expr.source
@@ -187,10 +189,9 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
       mkCall SeqOp.select [target', index'] src
   | .Subscript target index (some value) =>
     -- Expression-position update: `s := s[i := v]`. Desugars to Sequence.update.
-    -- Note: statement-position `a[i] := v` (also produced by the grammar as a
-    -- `.Subscript t i (some v)` with no enclosing .Assign) is handled in the
-    -- `.Block` arm below before reaching here, so that Array<T> can be
-    -- rewritten to a field-update statement rather than a value expression.
+    -- Statement-position `a[i] := v` (same AST shape) is intercepted earlier
+    -- by `elimStmt` — at every statement-position container — so it never
+    -- reaches this arm.
     let target' := elimExpr model target
     let index' := elimExpr model index
     let value' := elimExpr model value
@@ -203,46 +204,7 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     else
       mkCall SeqOp.update [target', index', value'] src
   | .Block stmts label =>
-    -- Top-down: pre-process each stmt (detecting statement-position
-    -- Subscript `a[i] := v`) BEFORE recursing, then recurse on the result.
-    -- This is necessary because once `.Subscript t i (some v)` is passed to
-    -- the generic `.Subscript` arm below, it gets rewritten into a
-    -- `Sequence.update` expression — but statement position needs a
-    -- `.Assign [.Field a $data]` statement instead.
-    --
-    -- LIMITATION: detection only fires for top-level statements in a `.Block`.
-    -- A bare `if cond then a[i] := v` (without a Block around the then-branch)
-    -- or `while cond a[i] := v` (single-statement body) would slip through and
-    -- be rewritten as an expression. The grammar currently wraps such bodies
-    -- in `.Block`s during parsing, but this could diverge under refactor.
-    -- A follow-up should factor out an `elimStmt` helper called from every
-    -- statement-position container (Block, IfThenElse branches, While body).
-    let expanded := stmts.attach.flatMap fun ⟨s, _⟩ =>
-      match s.val with
-      | .Subscript target index (some value) =>
-        -- Statement-position `a[i] := v`.
-        if isArrayType model target then
-          let target' := elimExpr model target
-          let index' := elimExpr model index
-          let value' := elimExpr model value
-          let data := mkFieldExpr target' arrayDataField s.source
-          [⟨.Assign [mkFieldVariable target' arrayDataField s.source]
-              (mkCall SeqOp.update [data, index', value'] s.source), s.source⟩]
-        else
-          -- Seq<T>: validator (commit 2) has reported a diagnostic; replace
-          -- with empty block so downstream doesn't re-complain.
-          [⟨.Block [] none, s.source⟩]
-      | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
-        -- `var a: Array<T> := <seq-init>` — split into two statements.
-        let initExpr' := elimExpr model initExpr
-        if isArrayHighType param.type.val && !isArrayType model initExpr then
-          [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), s.source⟩, s.source⟩,
-           ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), s.source⟩ arrayDataField s.source]
-              initExpr', s.source⟩]
-        else
-          [⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', s.source⟩]
-      | _ => [elimExpr model s]
-    ⟨.Block expanded label, src⟩
+    ⟨.Block (stmts.attach.flatMap fun ⟨s, _⟩ => elimStmt model s) label, src⟩
   | .Assign targets value =>
     -- Assign targets are VariableMd; we only need to recurse into .Field sub-expressions.
     let targets' := targets.attach.map fun ⟨t, _⟩ =>
@@ -282,11 +244,11 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     else
       ⟨.StaticCall callee args', src⟩
   | .IfThenElse c t e =>
-    ⟨.IfThenElse (elimExpr model c) (elimExpr model t)
-      (e.attach.map fun ⟨x, _⟩ => elimExpr model x), src⟩
+    ⟨.IfThenElse (elimExpr model c) (elimStmtAsSingle model t)
+      (e.attach.map fun ⟨x, _⟩ => elimStmtAsSingle model x), src⟩
   | .While c invs dec body =>
     ⟨.While (elimExpr model c) (invs.attach.map fun ⟨i, _⟩ => elimExpr model i)
-      (dec.attach.map fun ⟨d, _⟩ => elimExpr model d) (elimExpr model body), src⟩
+      (dec.attach.map fun ⟨d, _⟩ => elimExpr model d) (elimStmtAsSingle model body), src⟩
   | .Return v => ⟨.Return (v.attach.map fun ⟨x, _⟩ => elimExpr model x), src⟩
   | .PrimitiveOp op args =>
     ⟨.PrimitiveOp op (args.attach.map fun ⟨a, _⟩ => elimExpr model a), src⟩
@@ -306,7 +268,59 @@ partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   | .AsType t ty => ⟨.AsType (elimExpr model t) ty, src⟩
   | .IsType t ty => ⟨.IsType (elimExpr model t) ty, src⟩
   | .ContractOf ty fn => ⟨.ContractOf ty (elimExpr model fn), src⟩
-  | _ => expr
+  -- Leaves: no StmtExprMd children that need eliminating.
+  -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
+  -- it must get its own arm above; otherwise this walker will silently
+  -- skip recursion into those children.
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => expr
+
+/-- Eliminate a statement-position `StmtExprMd`, returning a list to allow
+    1→N expansion (e.g. `var a: Array<T> := <seq>` splits into declare-new
+    + `$data` assignment). Called from every statement-position container:
+    `.Block` children, `.IfThenElse` branches, `.While` body. -/
+partial def elimStmt (model : SemanticModel) (s : StmtExprMd) : List StmtExprMd :=
+  match s.val with
+  | .Subscript target index (some value) =>
+    -- Statement-position `a[i] := v`.
+    if isArrayType model target then
+      let target' := elimExpr model target
+      let index' := elimExpr model index
+      let value' := elimExpr model value
+      let data := mkFieldExpr target' arrayDataField s.source
+      [⟨.Assign [mkFieldVariable target' arrayDataField s.source]
+          (mkCall SeqOp.update [data, index', value'] s.source), s.source⟩]
+    else
+      -- Seq<T>: user error.
+      -- COUPLING: `ValidateSubscriptUsage` MUST have reported a
+      -- `msgSeqDestructiveUpdate` diagnostic for this statement before
+      -- `SubscriptElim` runs — the pipeline runs the validator before
+      -- the laurel-to-laurel passes, and a non-Warning diagnostic
+      -- aborts translation before Core. If that ordering ever
+      -- changes, or if the validator is disabled, silently dropping
+      -- the statement here would hide a user error. Replace with
+      -- empty block so downstream doesn't emit a confusing second
+      -- diagnostic on the already-flagged misuse.
+      [⟨.Block [] none, s.source⟩]
+  | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
+    -- `var a: Array<T> := <seq-init>` — split into two statements.
+    let initExpr' := elimExpr model initExpr
+    if isArrayHighType param.type.val && !isArrayType model initExpr then
+      [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), s.source⟩, s.source⟩,
+       ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), s.source⟩ arrayDataField s.source]
+          initExpr', s.source⟩]
+    else
+      [⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', s.source⟩]
+  | _ => [elimExpr model s]
+
+/-- Convenience: run `elimStmt` and collapse back into a single `StmtExprMd`.
+    If the statement expands to more than one element, wrap in a Block. -/
+partial def elimStmtAsSingle (model : SemanticModel) (s : StmtExprMd) : StmtExprMd :=
+  match elimStmt model s with
+  | [s'] => s'
+  | stmts => ⟨.Block stmts none, s.source⟩
+
+end
 
 private def elimBody (model : SemanticModel) (body : Body) : Body :=
   match body with

@@ -92,6 +92,8 @@ partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
 
 /-! ## Expression-position walk (Subscript and call diagnostics) -/
 
+mutual
+
 /-- Walk a `StmtExprMd` and collect diagnostics for Subscript/Array.length
     misuse, recursing into all subexpressions and embedded types. -/
 partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
@@ -133,32 +135,11 @@ partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List 
       args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateStmtExpr model a) []
   -- Everything below: recurse into children; no local diagnostic.
   | .IfThenElse c t (some e) =>
-    validateStmtExpr model c ++ validateStmtExpr model t ++ validateStmtExpr model e
+    validateStmtExpr model c ++ validateStmt model t ++ validateStmt model e
   | .IfThenElse c t none =>
-    validateStmtExpr model c ++ validateStmtExpr model t
+    validateStmtExpr model c ++ validateStmt model t
   | .Block stmts _ =>
-    stmts.attach.foldl (fun acc ⟨s, _⟩ =>
-      -- Statement-position `.Subscript t i (some v)` — grammar lowers
-      -- `a[i] := v` and `s[i] := v` to this shape. Here the shape means
-      -- DESTRUCTIVE update:
-      --   * For Seq<T>: user error (Seq is immutable) → Diagnostic 2.
-      --   * For Array<T>: valid (arrays are mutable). No diagnostic.
-      -- Note this differs from expression-position `.Subscript t i (some v)`
-      -- (handled by the top-level Subscript arm above) where the semantics
-      -- is FUNCTIONAL update:
-      --   * For Seq<T>: valid.
-      --   * For Array<T>: user error → Diagnostic 1.
-      match s.val with
-      | .Subscript target index (some value) =>
-        let diag : List DiagnosticModel :=
-          if isSeqTy (computeExprType model target).val then
-            [diagnosticFromSource s.source msgSeqDestructiveUpdate]
-          else []
-        -- Still recurse into children; don't fall through to the top-level
-        -- Subscript arm (which would emit Diagnostic 1 on Array).
-        acc ++ diag ++ validateStmtExpr model target ++
-          validateStmtExpr model index ++ validateStmtExpr model value
-      | _ => acc ++ validateStmtExpr model s) []
+    stmts.attach.foldl (fun acc ⟨s, _⟩ => acc ++ validateStmt model s) []
   | .Var (.Declare param) => validateHighType param.type
   | .Var (.Field t _) => validateStmtExpr model t
   | .Var (.Local _) => []
@@ -174,11 +155,11 @@ partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List 
     validateStmtExpr model c ++
     invs.attach.foldl (fun acc ⟨i, _⟩ => acc ++ validateStmtExpr model i) [] ++
     validateStmtExpr model dec ++
-    validateStmtExpr model body
+    validateStmt model body
   | .While c invs none body =>
     validateStmtExpr model c ++
     invs.attach.foldl (fun acc ⟨i, _⟩ => acc ++ validateStmtExpr model i) [] ++
-    validateStmtExpr model body
+    validateStmt model body
   | .Return (some v) => validateStmtExpr model v
   | .Return none => []
   | .PureFieldUpdate t _ v => validateStmtExpr model t ++ validateStmtExpr model v
@@ -202,7 +183,34 @@ partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List 
   | .ProveBy v p => validateStmtExpr model v ++ validateStmtExpr model p
   | .ContractOf _ f => validateStmtExpr model f
   | .Hole _ (some ty) => validateHighType ty
-  | _ => []
+  -- Leaves: no StmtExprMd children, no types to validate.
+  -- ⚠ If a new StmtExpr constructor with StmtExprMd children (or embedded
+  -- types) is added, it must get its own arm above; otherwise this walker
+  -- will silently skip recursion into those children.
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  | .Hole _ none | .New _ | .This | .Abstract | .All => []
+
+/-- Validate a statement-position `StmtExprMd`. Called from every
+    statement-position container: `.Block` children, `.IfThenElse`
+    branches, `.While` body. Handles the statement-position semantics of
+    `.Subscript t i (some v)` (destructive update: valid on `Array<T>`,
+    invalid on `Seq<T>` → Diagnostic 2), distinct from expression-position
+    functional update (handled by `validateStmtExpr`'s `.Subscript` arm). -/
+partial def validateStmt (model : SemanticModel) (s : StmtExprMd) : List DiagnosticModel :=
+  match s.val with
+  | .Subscript target index value =>
+    let diag : List DiagnosticModel :=
+      match value with
+      | some _ =>
+        if isSeqTy (computeExprType model target).val then
+          [diagnosticFromSource s.source msgSeqDestructiveUpdate]
+        else []
+      | none => []
+    diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+      (match value with | some v => validateStmtExpr model v | none => [])
+  | _ => validateStmtExpr model s
+
+end
 
 /-! ## Per-procedure and per-type validation -/
 
