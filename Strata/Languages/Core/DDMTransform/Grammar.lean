@@ -452,8 +452,17 @@ op datatype_decl (name : Ident,
 
 // Unified datatype command: one or more datatype declarations separated by
 // newlines, ending with a semicolon.
+//
+// The `@[nonempty]` on `datatypes` is load-bearing: without it, the trailing
+// `;\n` production alone can match a stray `;` emitted after a non-datatype
+// command (e.g. a user writing `};` at the end of a `function` body, whose
+// grammar has no trailing semicolon). That silent empty match produces a
+// phantom `command_datatypes` op that later trips an assertion in
+// `translateDatatypes` ("Datatype block must contain at least one datatype").
+// Requiring at least one `DatatypeDecl` here surfaces that as a parse error
+// instead. See https://github.com/strata-org/Strata/issues/1146.
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
 
 #end
