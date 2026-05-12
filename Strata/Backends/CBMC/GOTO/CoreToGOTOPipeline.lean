@@ -262,9 +262,7 @@ def procedureToGotoCtx
   -- TODO: This pass could be split into a two-stage transformation:
   -- 1. structured → cfg (via StructuredToUnstructured)
   -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
-  let bodyStmts ← match p.body with
-    | .structured ss => pure ss
-    | .cfg _ => throw f!"CFG body not supported for GOTO pipeline"
+  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
   let (liftedFuncs, body) ← collectFuncDecls bodyStmts
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then

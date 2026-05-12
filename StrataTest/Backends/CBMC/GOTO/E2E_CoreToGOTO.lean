@@ -354,9 +354,7 @@ private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
   let Env := Lambda.TEnv.default
   let procs := cprog.decls.filterMap fun d => d.getProc?
   let p := procs[0]!
-  let bodyStmts ← match p.body with
-    | .structured ss => pure ss
-    | .cfg _ => .error f!"coreToGotoJsonWithSummary: CFG body not supported"
+  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
   let p' : Core.Procedure := { p with body := .structured (injectPropertySummary bodyStmts summary) }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'

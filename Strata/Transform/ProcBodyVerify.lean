@@ -92,10 +92,7 @@ open Core Imperative Transform
   -- suffix (postcondition asserts) are statement-level constructs that embed
   -- around the body. Unstructured CFG bodies require a different verification
   -- strategy (e.g., encoding the contract directly in the CFG).
-  let bodyStmts ← match proc.body with
-    | .structured ss => pure ss
-    | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
-        "procToVerifyStmt: expected structured body, got CFG")
+  let bodyStmts ← proc.body.getStructured.mapError Strata.DiagnosticModel.fromMessage
   -- Wrap body in labeled block
   let bodyBlock := Stmt.block bodyLabel bodyStmts #[]
 
