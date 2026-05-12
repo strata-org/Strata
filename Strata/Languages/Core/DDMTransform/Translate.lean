@@ -1621,26 +1621,19 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
     | TransM.error s!"translateTransfer expected op {repr arg}"
   match op.name with
   | q`Core.transfer_goto =>
-    let .seq _ .comma labels := op.args[0]!
-      | TransM.error s!"translateTransfer goto expected comma-sep labels"
-    match labels.toList with
-    | [] => return .finish
-    | [l] =>
-      let label ← translateIdent String l
-      return .condGoto (Lambda.LExpr.boolConst () Bool.true) label label
-    | l1 :: l2 :: rest =>
-      if !rest.isEmpty then
-        TransM.error s!"translateTransfer: goto with more than 2 targets is not supported"
-      let label1 ← translateIdent String l1
-      let label2 ← translateIdent String l2
-      -- Nondeterministic choice: introduce an unbound free variable as the branch
-      -- condition.  The symbolic evaluator returns the fvar unchanged (via findD),
-      -- which is neither .true nor .false, causing evalCFGStep to fork into both
-      -- paths with complementary path conditions.  The concrete interpreter (runCFG)
-      -- will error on this, which is expected — nondeterministic gotos are only
-      -- meaningful under symbolic execution.
-      let condName := s!"$__nondet_{bindings.gen.var_def}"
-      return .condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2
+    let label ← translateIdent String op.args[0]!
+    return .condGoto (Lambda.LExpr.boolConst () Bool.true) label label
+  | q`Core.transfer_nondet_goto =>
+    let label1 ← translateIdent String op.args[0]!
+    let label2 ← translateIdent String op.args[1]!
+    -- Nondeterministic choice: introduce an unbound free variable as the branch
+    -- condition.  The symbolic evaluator returns the fvar unchanged (via findD),
+    -- which is neither .true nor .false, causing evalCFGStep to fork into both
+    -- paths with complementary path conditions.  The concrete interpreter (runCFG)
+    -- will error on this, which is expected — nondeterministic gotos are only
+    -- meaningful under symbolic execution.
+    let condName := s!"$__nondet_{bindings.gen.var_def}"
+    return .condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2
   | q`Core.transfer_cond_goto =>
     let cond ← translateExpr p bindings op.args[0]!
     let lt ← translateIdent String op.args[1]!
