@@ -171,7 +171,7 @@ def Config.noFuncDecl : Config P CmdT → Prop
 
 section
 
-variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasNot P]
+variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasNot P] [HasIntOrder P]
 
 /--
 `StepStmt` defines a single execution step from one configuration to another.
@@ -257,6 +257,9 @@ inductive StepStmt
                  ρ.eval ρ.store le.2 = .some HasBool.ff) →
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool ρ.eval →
+    (∀ me v, m = .some me →
+      ρ.eval ρ.store me = .some v ∧
+      ρ.eval ρ.store (HasIntOrder.lt v HasIntOrder.zero) = .some HasBool.ff) →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.loop (.det g) m inv body md) ρ)
@@ -293,13 +296,13 @@ inductive StepStmt
           { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
         [.loop .nondet m inv body md])
 
-  /-- Non-deterministic loop: exit the loop. -/
+  /-- Non-deterministic loop: exit the loop.  Measure must be `.none`. -/
   | step_loop_nondet_exit {hasInvFailure : Bool} :
     (∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
                  ρ.eval ρ.store le.2 = .some HasBool.ff) →
     (hasInvFailure ↔ ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) →
     StepStmt EvalCmd extendEval
-      (.stmt (.loop .nondet m inv body _) ρ)
+      (.stmt (.loop .nondet .none inv body _) ρ)
       (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
 
   /-- An exit statement produces an exiting configuration. -/
@@ -402,7 +405,7 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasNot P]
+  [HasBool P] [HasNot P] [HasIntOrder P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
 
@@ -692,7 +695,7 @@ theorem stmts_append_terminates
 local macro "apply_step" : tactic => `(tactic| first
   | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
   | exact .step_ite_false ‹_› ‹_›
-  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_›
+  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_› ‹_›
   | exact .step_loop_exit ‹_› ‹_› ‹_› ‹_›
   | exact .step_block
   | exact .step_exit            | exact .step_funcDecl
@@ -722,7 +725,7 @@ private def step_simulation
   -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
   -- constructor is valid, and the output ConfigSE follows by `simp_all`.
   | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
-  | step_loop_enter _ _ _ _ | step_loop_exit _ _ _ _
+  | step_loop_enter _ _ _ _ _ | step_loop_exit _ _ _ _
   | step_exit | step_funcDecl | step_typeDecl | step_stmts_nil | step_stmts_cons =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst he
@@ -858,7 +861,7 @@ private theorem block_exit_mismatch_unfold {labels : List String}
     · exact hh
 
 /-- A single step preserves `Config.exitsCoveredByBlocks`. -/
-private theorem step_preserves_exitsCoveredByBlocks
+theorem step_preserves_exitsCoveredByBlocks
     (labels : List String)
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
@@ -1120,7 +1123,7 @@ end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
 variable (extendEval : ExtendEval P)
 
 /-! ## Assertion Identity -/
@@ -1149,7 +1152,7 @@ structure AssertId where
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
 
-omit [HasFvar P] [HasBool P] [HasNot P] in
+omit [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -1189,7 +1192,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .block _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
-omit [HasFvar P] [HasBool P] [HasNot P] in
+omit [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
@@ -1261,7 +1264,7 @@ theorem noMatchingAssert_implies_no_reachable_assert
   induction hstar_c with
   | refl => exact hno_c
   | step _ _ _ hstep _ ih =>
-    exact ih (@step_preserves_noMatchingAssert P _ _ _ extendEval _ _ _ hstep hno_c)
+    exact ih (@step_preserves_noMatchingAssert P _ _ _ _ extendEval _ _ _ hstep hno_c)
 
 /-! ## isAtAssert inversion lemmas -/
 

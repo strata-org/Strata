@@ -43,6 +43,7 @@ instance : HasIntOrder Core.Expression where
   lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
   zero        := .intConst () 0
   intTy       := .forAll [] (.tcons "int" [])
+  decr  e     := .app () (.app () Core.intSubOp e) (.intConst () 1)
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
@@ -390,6 +391,8 @@ def withOldBindings
 structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
   preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
     Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
+  preserves_wfVal : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVal δ →
+    Imperative.WellFormedSemanticEvalVal (EvalPureFunc φ δ σ decl)
   preserves_wfVar : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVar δ →
     Imperative.WellFormedSemanticEvalVar (EvalPureFunc φ δ σ decl)
   preserves_wfCong : ∀ δ σ decl, WellFormedCoreEvalCong δ →

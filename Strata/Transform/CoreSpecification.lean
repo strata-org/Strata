@@ -31,13 +31,63 @@ open Core Imperative
 
 /-! ## Core `Lang` bundle -/
 
-/-- The `Lang Expression` bundle for Core small-step semantics. -/
+/-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
+    getting stuck:
+    - `readWritesDefined`: vars in `touchedVars \ definedVars` are `isSome`. These are
+      read (via `getVars`) or written by `set` (in `modifiedVars`); both require the
+      var to already exist in the store.
+    - `defsUndefined`: vars in `definedVars` are `isNone`. These are introduced by
+      `init`, which requires the var to NOT already exist (matching `InitState`'s
+      `σ x = none` precondition).
+    - `reservedFresh`: every name in `ρ.store` whose existence is `isSome` must NOT
+      start with any prefix in `reserved`. The `reserved` parameter lists name
+      prefixes that downstream transforms claim ownership of (e.g., loop-elim's
+      `$__loop_measure_*` and `loopElim_*`). Reserving a prefix means `ρ` does
+      not pre-populate any name with that prefix, so transform-introduced names
+      with that prefix are guaranteed `isNone` at entry.
+    - `evalCong`, `exprCongr`: eval congruence requirements.
+
+    The `defsUndefined` requirement simultaneously:
+    - Ensures `init` commands can fire.
+    - Rules out shadowing at the top-level scope (inner `init`s must not clash with
+      outer bindings).
+    - Allows transforms that introduce fresh init-target vars (e.g., loop-elim's
+      `$__loop_measure_N`) to preserve the invariant cleanly. -/
+structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expression) :
+    Prop where
+  readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Stmt.definedVars s, (ρ.store n).isNone
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  evalCong : WellFormedCoreEvalCong ρ.eval
+  exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+
+/-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
+    statements `bss` from env `ρ`. -/
+structure BlockInitEnvWF (reserved : List String) (bss : Statements)
+    (ρ : Env Expression) : Prop where
+  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Block.definedVars bss, (ρ.store n).isNone
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  evalCong : WellFormedCoreEvalCong ρ.eval
+  exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+
+/-- The `Lang Expression` bundle for Core small-step semantics, parameterised
+    by a list of reserved name prefixes. Transforms that introduce fresh names
+    via `init` (e.g., loop-elim's `$__loop_measure_*`) require the caller to
+    reserve their prefixes, ensuring those names are absent from the entry
+    store. -/
 @[expose] def Lang.core
     (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (reserved : List String) :
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+    (InitEnvWF reserved)
 
 /-! ## Well-formed program state at the entry of procedure -/
 
@@ -79,11 +129,16 @@ variable (π : String → Option Procedure)
 variable (φ : CoreEval → PureFunc Expression → CoreEval)
 
 /-- A specific assertion `a` in procedure `proc` is valid
-    for initial program states satisfying the preconditions (`ProcEnvWF`). -/
+    for initial program states satisfying the preconditions (`ProcEnvWF`).
+
+    The `reserved` parameter lists name prefixes that downstream transforms
+    own (e.g., `["$__loop"]` for loop-elim). It is propagated to `Lang.core`'s
+    `initEnvWF`. The default `reserved = []` imposes no prefix constraints. -/
 @[expose] def AssertValidInProcedure
+    (reserved : List String)
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
-  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
+  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ reserved)
     (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
 
 /-- A procedure is correct with respect to its specification.
@@ -137,9 +192,10 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     (1) assert validity in the body, and
     (2) postcondition validity on termination.
 -/
-structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
+structure ProcedureCorrect (reserved : List String) (proc : Procedure)
+    (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
-  assertsValid : ∀ a, AssertValidInProcedure π φ proc a
+  assertsValid : ∀ a, AssertValidInProcedure π φ reserved proc a
   /-- (2) The postconditions hold on termination. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →

@@ -55,7 +55,7 @@ theorem TouchVarsEmpty :
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   {extendEval : ExtendEval P}
   { ρ ρ' : Env P }
-  [HasBool P] [HasNot P] :
+  [HasBool P] [HasNot P] [HasIntOrder P] :
   EvalStmtsSmall P EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
   intro H
   match H with
@@ -1753,11 +1753,12 @@ theorem EvalCmdDefMonotone' :
   EvalCmd Core.Expression δ σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
-  cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
-  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
-  next _ Hup => exact UpdateStateDefMonotone Hdef Hup
-  next Hup => exact UpdateStateDefMonotone Hdef Hup
+  cases Heval with
+  | eval_init Hsm Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_init_unconstrained Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_set Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | eval_set_nondet Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | _ => exact Hdef
 
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :

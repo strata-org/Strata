@@ -205,12 +205,12 @@ def Command.getVars (c : Command) : List Expression.Ident :=
 instance : HasVarsPure Expression Command where
   getVars := Command.getVars
 
-def Command.definedVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.definedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.definedVars
   | _ => []
 
-def Command.modifiedVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.modifiedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.modifiedVars
   | .call _ args _ => CallArg.getLhs args

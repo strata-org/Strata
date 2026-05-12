@@ -232,6 +232,7 @@ end
 
 mutual
 /-- Get all variables accessed by `s`. -/
+@[expose]
 def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
@@ -249,6 +250,7 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
       bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
+@[expose]
 def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
@@ -304,7 +306,7 @@ def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
 end
 
 mutual
-/-- Get all variables modified/defined by the statement `s`.
+/-- Get all variables modified/defined by the statement `s` (the write-set).
     Note that we need a separate function because order matters here for sub-blocks
  -/
 @[simp, expose]
@@ -332,6 +334,27 @@ def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
 def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss ++ Block.getVars ss
+end
+
+mutual
+/-- Collect all labeled exit targets occurring in a statement.
+    Returns the list of label strings `l` for every `exit l _` in the
+    statement (including those nested inside blocks, ite branches, and loops). -/
+@[expose] def Stmt.labels (s : Stmt P C) : List String :=
+  match s with
+  | .exit l _        => [l]
+  | .cmd _           => []
+  | .block _ bss _   => Block.labels bss
+  | .ite _ tss ess _ => Block.labels tss ++ Block.labels ess
+  | .loop _ _ _ bss _ => Block.labels bss
+  | .funcDecl _ _    => []
+  | .typeDecl _ _    => []
+
+/-- Collect all labeled exit targets occurring in a block (list of statements). -/
+@[expose] def Block.labels (ss : Block P C) : List String :=
+  match ss with
+  | []       => []
+  | s :: rest => Stmt.labels s ++ Block.labels rest
 end
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where

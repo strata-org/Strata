@@ -48,6 +48,13 @@ instance : HasBool MiniPureExpr where
 instance : HasNot MiniPureExpr where
   not := .not
 
+instance : HasIntOrder MiniPureExpr where
+  eq := fun _ _ => .tt
+  lt := fun _ _ => .ff
+  zero := .ff
+  intTy := .Bool
+  decr := fun e => e
+
 ---------------------------------------------------------------------
 
 /-! ## Evaluator and well-formedness setup -/
@@ -136,11 +143,12 @@ theorem progReachesTerminal :
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner
         (StepStmt.step_loop_enter (hasInvFailure := false) htt ?inv_bool ?inv_iff
-          miniEval_wfBool))) ?_
+          miniEval_wfBool ?meas))) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+  · intro _ _ h; nomatch h
   -- Now: outer block (L) > seq > seq > body's block (.none) > stmts [exit "L"]
   -- Step 4: descend into the inner seq, then into the body's block,
   --         then through stmts_cons.

@@ -301,6 +301,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ---
     EvalCmd δ σ (.init x _ .nondet _) σ' false
 
+
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
     δ σ e = .some v →

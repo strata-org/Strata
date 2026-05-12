@@ -67,7 +67,7 @@ structure WFLFunc (T : LExprParams) where
 def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
 
 /-- The operator expression for the underlying LFunc. -/
-def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
+@[expose] def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
   f.func.opExpr
 
 /-- An array of well-formed LFuncs with a proof that function

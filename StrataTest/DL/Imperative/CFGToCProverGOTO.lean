@@ -71,6 +71,7 @@ instance : Imperative.HasIntOrder LExprTP where
   lt    e1 e2 := .app md (.app md (.op md ⟨"Int.Lt", ()⟩ none) e1) e2
   zero        := .intConst md 0
   intTy       := .tcons "int" []
+  decr  e     := .app md (.app md (.op md ⟨"Int.Sub", ()⟩ none) e) (.intConst md 1)
 
 instance : Imperative.HasNot LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
