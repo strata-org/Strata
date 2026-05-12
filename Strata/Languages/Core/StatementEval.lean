@@ -249,52 +249,34 @@ def Statements.containsAsserts (ss : Statements) : Bool :=
     (fun c => match c with | .assert _ _ _ => true | _ => false) ss
 
 mutual
-/--
-Collect all `cover` commands from a statement `s` with their labels and metadata.
--/
-def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaData Expression) :=
+def Statement.collectCmds (f : Imperative.Cmd Expression → Option α) (s : Statement) : List α :=
   match s with
-  | .cmd (.cmd (.cover label _expr md)) => [(label, md)]
+  | .cmd (.cmd c) => (f c).toList
   | .cmd _ => []
-  | .block _ inner_ss _ => Statements.collectCovers inner_ss
-  | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
-  | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
+  | .block _ inner_ss _ => Statements.collectCmds f inner_ss
+  | .ite _ then_ss else_ss _ => Statements.collectCmds f then_ss ++ Statements.collectCmds f else_ss
+  | .loop _ _ _ body_ss _ => Statements.collectCmds f body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []
   termination_by Imperative.Stmt.sizeOf s
-/--
-Collect all `cover` commands from statements `ss` with their labels and metadata.
--/
-def Statements.collectCovers (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+def Statements.collectCmds (f : Imperative.Cmd Expression → Option α) (ss : Statements) : List α :=
   match ss with
   | [] => []
   | s :: ss =>
-    Statement.collectCovers s ++ Statements.collectCovers ss
+    Statement.collectCmds f s ++ Statements.collectCmds f ss
   termination_by Imperative.Block.sizeOf ss
 end
 
-mutual
-/--
-Collect all `assert` commands from a statement `s` with their labels and metadata.
--/
+def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaData Expression) :=
+  Statement.collectCmds (fun | .cover label _expr md => some (label, md) | _ => none) s
+
+def Statements.collectCovers (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+  Statements.collectCmds (fun | .cover label _expr md => some (label, md) | _ => none) ss
+
 def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaData Expression) :=
-  match s with
-  | .cmd (.cmd (.assert label _expr md)) => [(label, md)]
-  | .cmd _ => []
-  | .block _ inner_ss _ => Statements.collectAsserts inner_ss
-  | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
-  | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
-  termination_by Imperative.Stmt.sizeOf s
-/--
-Collect all `assert` commands from statements `ss` with their labels and metadata.
--/
+  Statement.collectCmds (fun | .assert label _expr md => some (label, md) | _ => none) s
+
 def Statements.collectAsserts (ss : Statements) : List (String × Imperative.MetaData Expression) :=
-  match ss with
-  | [] => []
-  | s :: ss =>
-    Statement.collectAsserts s ++ Statements.collectAsserts ss
-  termination_by Imperative.Block.sizeOf ss
-end
+  Statements.collectCmds (fun | .assert label _expr md => some (label, md) | _ => none) ss
 
 /--
 Create cover obligations for covers in an unreachable (dead) branch, including
