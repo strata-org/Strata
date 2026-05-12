@@ -31,7 +31,7 @@ import Strata.Util.IO
 import Strata.SimpleAPI
 import Strata.Util.Profile
 import Strata.Util.Json
-import Strata.DDM.BuiltinDialects
+import Strata.DDM.BundledDialects
 import Strata.DDM.Util.String
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Python.Specs
@@ -133,16 +133,7 @@ def insert (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFl
   { pf with entries := pf.entries.push (name, value) }
 
 def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
-  let preloaded := Strata.Elab.LoadedDialects.builtin
-    |>.addDialect! Strata.Python.Python
-    |>.addDialect! Strata.Python.Specs.DDM.PythonSpecs
-    |>.addDialect! Strata.Core
-    |>.addDialect! Strata.Boole
-    |>.addDialect! Strata.Laurel.Laurel
-    |>.addDialect! Strata.smtReservedKeywordsDialect
-    |>.addDialect! Strata.SMTCore
-    |>.addDialect! Strata.SMT
-    |>.addDialect! Strata.SMTResponse
+  let preloaded := Strata.Elab.LoadedDialects.ofDialects! Strata.bundledDialects
   let mut sp ← Strata.DialectFileMap.new preloaded
   for path in pflags.getRepeated "include" do
     match ← sp.add path |>.toBaseIO with
