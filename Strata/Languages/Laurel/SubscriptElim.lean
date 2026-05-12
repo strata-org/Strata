@@ -178,13 +178,18 @@ mutual
 
 /-- Recursively eliminate Subscript nodes and desugar `Array.length`.
 
-    TODO: make structural. The cross-type recursion through `.Assign targets
-    value` (where `targets : List VariableMd` and each `.Field subTarget _`
-    contains a `subTarget : StmtExprMd`) defeats `omega`'s automatic sizeOf
-    reasoning. Options: (a) manually prove a `sizeOf` lemma connecting
-    `Variable.Field` children to the enclosing `VariableMd`, or (b) extract
-    an `elimVariable` helper to move the cross-type recursion into a single
-    level. Not blocking — the pass terminates on any finite input. -/
+    TODO: make structural. Attempted with tuple termination
+    `(sizeOf expr, 0) / (sizeOf s, 1) / (sizeOf s, 2)` for the mutual
+    `elimExpr / elimStmt / elimStmtAsSingle` — the cross-calls admit the
+    right lexicographic ordering — but `decreasing_by` tactics fail to
+    close the inner `.Assign targets value` goals where omega needs to
+    chain `sizeOf subTarget < sizeOf t < sizeOf targets < sizeOf expr`
+    through `List.sizeOf_lt_of_mem` + `Variable.sizeOf_field_target_lt_of_eq`.
+    Pattern matches the working HeapParameterization.collectExpr, but
+    my walker takes `StmtExprMd` directly whereas `collectExpr` takes
+    bare `StmtExpr` with a thin MD wrapper. Refactoring to that shape
+    would likely close the gap; not blocking — the pass terminates on
+    any finite input. -/
 partial def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   let src := expr.source
   match _h : expr.val with
