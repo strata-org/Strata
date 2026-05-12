@@ -196,15 +196,10 @@ cfg start {
       | .structured _ => IO.println "  ERROR: expected CFG body"
     | _ => pure ()
 
-/-! ## End-to-end: type-checking rejects CFG procedures
-
-Regression test for PR #1132: the verifier pipeline (which includes type
-checking) should reject CFG bodies with a clear diagnostic rather than
-silently producing wrong results. The current rejection comes from
-`checkModificationRights`, which calls `Body.getStructured` on a CFG body. -/
+/-! ## End-to-end: type-checking accepts well-formed CFG procedures -/
 
 /--
-info: type-check rejected CFG procedure: expected structured body, got CFG
+info: type-check accepted CFG procedure
 -/
 #guard_msgs in
 #eval do
@@ -217,22 +212,13 @@ cfg start {
 };
 "
   match Core.typeCheck .quiet prog with
-  | .error dm => IO.println s!"type-check rejected CFG procedure: {dm.message}"
-  | .ok _ => IO.println "ERROR: expected type-check to fail for CFG procedure"
+  | .error dm => IO.println s!"ERROR: type-check rejected CFG procedure: {dm.message}"
+  | .ok _ => IO.println "type-check accepted CFG procedure"
 
-/-! ## End-to-end: parsed CFG body is preserved, not collapsed
-
-Regression test for PR #1132: there was a bug where the procedure body was
-always stored as `.structured annotated_body` after type checking, erasing
-CFG bodies to `.structured []`. The fix preserves `.cfg` bodies. This test
-confirms that after parsing, a CFG procedure's body is `.cfg` (not
-`.structured []`), guarding against regression in the parser or DDM layer. -/
+/-! ## End-to-end: type-checking accepts Max (branches + assignments) -/
 
 /--
-info: Procedure: Max
-  body.isCfg = true
-  body.isStructured = false
-  CFG preserved: entry=entry, 4 blocks
+info: type-check accepted Max with CFG body preserved (4 blocks)
 -/
 #guard_msgs in
 #eval do
@@ -259,15 +245,139 @@ cfg entry {
   }
 };
 "
-  for d in prog.decls do
-    match d with
-    | .proc p _ =>
-      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
-      IO.println s!"  body.isCfg = {p.body.isCfg}"
-      IO.println s!"  body.isStructured = {p.body.isStructured}"
-      match p.body with
-      | .cfg c =>
-        IO.println s!"  CFG preserved: entry={c.entry}, {c.blocks.length} blocks"
-      | .structured ss =>
-        IO.println s!"  ERROR: body collapsed to .structured with {ss.length} statements"
-    | _ => pure ()
+  match Core.typeCheck .quiet prog with
+  | .error dm => IO.println s!"ERROR: {dm.message}"
+  | .ok prog' =>
+    for d in prog'.decls do
+      match d with
+      | .proc p _ =>
+        match p.body with
+        | .cfg c =>
+          IO.println s!"type-check accepted Max with CFG body preserved ({c.blocks.length} blocks)"
+        | .structured ss =>
+          IO.println s!"ERROR: body collapsed to .structured with {ss.length} statements"
+      | _ => pure ()
+
+/-! ## End-to-end: type-checking accepts CountUp (loop pattern with init) -/
+
+/--
+info: type-check accepted CountUp
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure CountUp(n : int, out y : int)
+spec {
+  requires (n >= 0);
+}
+cfg entry {
+  entry: {
+    y := 0;
+    goto loop;
+  }
+  loop: {
+    branch (y < n) goto body else done;
+  }
+  body: {
+    y := y + 1;
+    goto loop;
+  }
+  done: {
+    return;
+  }
+};
+"
+  match Core.typeCheck .quiet prog with
+  | .error dm => IO.println s!"ERROR: {dm.message}"
+  | .ok _ => IO.println "type-check accepted CountUp"
+
+/-! ## Error: duplicate block labels -/
+
+/--
+info: rejected: Duplicate block labels in CFG
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure Bad()
+cfg start {
+  start: { return; }
+  start: { return; }
+};
+"
+  match Core.typeCheck .quiet prog with
+  | .error dm =>
+    if dm.message.contains "Duplicate block labels" then
+      IO.println "rejected: Duplicate block labels in CFG"
+    else
+      IO.println s!"ERROR: unexpected message: {dm.message}"
+  | .ok _ => IO.println "ERROR: expected type-check to fail"
+
+/-! ## Error: unknown target label -/
+
+/--
+info: rejected: branches to unknown label
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure Bad(out y : int)
+cfg start {
+  start: {
+    y := 0;
+    goto nonexistent;
+  }
+};
+"
+  match Core.typeCheck .quiet prog with
+  | .error dm =>
+    if dm.message.contains "branches to unknown label" then
+      IO.println "rejected: branches to unknown label"
+    else
+      IO.println s!"ERROR: unexpected message: {dm.message}"
+  | .ok _ => IO.println "ERROR: expected type-check to fail"
+
+/-! ## Error: type mismatch in CFG command -/
+
+/--
+info: rejected: type error in CFG command
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure Bad(x : bool, out y : int)
+cfg start {
+  start: {
+    y := x;
+    return;
+  }
+};
+"
+  match Core.typeCheck .quiet prog with
+  | .error _ =>
+    IO.println "rejected: type error in CFG command"
+  | .ok _ => IO.println "ERROR: expected type-check to fail"
+
+/-! ## Error: modification rights violation in CFG -/
+
+/--
+info: rejected: modifies disallowed variable
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure Bad(x : int)
+cfg start {
+  start: {
+    x := 42;
+    return;
+  }
+};
+"
+  match Core.typeCheck .quiet prog with
+  | .error dm =>
+    if dm.message.contains "modifies variables" then
+      IO.println "rejected: modifies disallowed variable"
+    else
+      IO.println s!"ERROR: unexpected message: {dm.message}"
+  | .ok _ => IO.println "ERROR: expected type-check to fail"
