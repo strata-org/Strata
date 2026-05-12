@@ -1611,18 +1611,19 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
 
 /-- Translate a transfer command from the CFG syntax -/
 
+private instance : Inhabited TransBindings := ⟨{}⟩
 private instance : Inhabited (Imperative.DetTransferCmd String Core.Expression) := ⟨.finish⟩
 private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) := ⟨⟨[], .finish⟩⟩
 private instance : Inhabited (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := ⟨⟨"", []⟩⟩
 
 partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (Imperative.DetTransferCmd String Core.Expression) := do
+  TransM (Imperative.DetTransferCmd String Core.Expression × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateTransfer expected op {repr arg}"
   match op.name with
   | q`Core.transfer_goto =>
     let label ← translateIdent String op.args[0]!
-    return .condGoto (Lambda.LExpr.boolConst () Bool.true) label label
+    return (.condGoto (Lambda.LExpr.boolConst () Bool.true) label label, bindings)
   | q`Core.transfer_nondet_goto =>
     let label1 ← translateIdent String op.args[0]!
     let label2 ← translateIdent String op.args[1]!
@@ -1633,14 +1634,15 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
     -- will error on this, which is expected — nondeterministic gotos are only
     -- meaningful under symbolic execution.
     let condName := s!"$__nondet_{bindings.gen.var_def}"
-    return .condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2
+    let bindings := incrNum .var_def bindings
+    return (.condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2, bindings)
   | q`Core.transfer_cond_goto =>
     let cond ← translateExpr p bindings op.args[0]!
     let lt ← translateIdent String op.args[1]!
     let lf ← translateIdent String op.args[2]!
-    return .condGoto cond lt lf
+    return (.condGoto cond lt lf, bindings)
   | q`Core.transfer_return =>
-    return .finish
+    return (.finish, bindings)
   | _ => TransM.error s!"translateTransfer: unknown transfer {repr op.name}"
 
 /-- Translate a single CFG block -/
@@ -1664,7 +1666,7 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
         match stmt with
         | .cmd c => cmds := cmds.push c
         | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
-  let transfer ← translateTransfer p bindings op.args[2]!
+  let (transfer, _) ← translateTransfer p bindings op.args[2]!
   return (label, ⟨cmds.toList, transfer⟩)
 
 /-- Translate a list of CFG blocks -/
