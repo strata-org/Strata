@@ -659,8 +659,6 @@ theorem procBodyVerify_procedureCorrect
     -- Conclusion: ProcedureCorrect holds.
     Core.Specification.ProcedureCorrect π φ proc p := by
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
-  have h_body_match : (match proc.body with | .structured ss => ss | .cfg _ => []) = ss := by
-    rw [h_body_eq]
   obtain ⟨prefixStmts, ss', h_body, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
   have h_ss_eq : ss = ss' := by
@@ -744,7 +742,7 @@ theorem procBodyVerify_procedureCorrect
     rw [h_wrapped_eval, h_wrapped_store] at h_v
     exact h_v
 
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
 
   · ----- Part 1: All asserts in proc.body are valid -----
     intro a
@@ -783,10 +781,15 @@ theorem procBodyVerify_procedureCorrect
     have h_valid := body_asserts_valid ρ₀ h_wf a inner h_inner_core h_assert_inner
     simpa [Config.getEval, Config.getStore] using h_valid
 
-  · ----- Part 2: Postconditions + hasFailure on termination -----
-    intro h_wf_proc ρ₀ ρ' h_wf h_term
-    have h_term_ss : CoreStepStar π φ (.stmts ss ρ₀) (.terminal ρ') :=
-      h_body_match ▸ h_term
+  · ----- Part 2: Postconditions (structured) + hasFailure on termination -----
+    -- The field requires `∀ ss, proc.body = .structured ss → ...`.
+    -- We know `h_body_eq : proc.body = .structured ss'`.
+    intro ss_arg h_body_eq_arg _ ρ₀ ρ' h_wf h_term
+    -- After the outer `subst h_ss_eq : ss = ss'`, `ss'` was eliminated and `ss`
+    -- remains in scope. Equate ss_arg with ss.
+    have h_eq_ss : ss_arg = ss :=
+      Procedure.Body.structured.inj (h_body_eq_arg.symm.trans h_body_eq)
+    rw [h_eq_ss] at h_term
     obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
     -- h_valid: all asserts in body from ρ₀ evaluate to true
     have h_valid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
@@ -797,11 +800,11 @@ theorem procBodyVerify_procedureCorrect
     -- hasFailure = false
     have h_nf' : ρ'.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ
-        (.stmts ss ρ₀) (.terminal ρ') h_valid h_wf.noFailure h_term_ss
+        (.stmts ss ρ₀) (.terminal ρ') h_valid h_wf.noFailure h_term
     -- wfBool preservation
     have h_wfb_term : WellFormedSemanticEvalBool ρ'.eval :=
       Core.core_wfBool_preserved π φ h_wf_ext
-        (.stmts ss ρ₀) (.terminal ρ') h_wf.wfBool h_term_ss
+        (.stmts ss ρ₀) (.terminal ρ') h_wf.wfBool h_term
 
     have h_to_post : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
         (.stmt verifyStmt ρ_init) (.block verifyLabel (.stmts postAsserts ρ')) := by
@@ -820,7 +823,7 @@ theorem procBodyVerify_procedureCorrect
                   (ReflTrans_Transitive _ _ _ _
                     (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) bodyLabel _ #[] ρ₀)
                     (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ bodyLabel
-                      (CoreStepStar_to_StepStmtStar h_term_ss))))
+                      (CoreStepStar_to_StepStmtStar h_term))))
                 (ReflTrans_Transitive _ _ _ _
                   (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
                     (.step _ _ _ .step_block_done (.refl _)))
@@ -885,5 +888,12 @@ theorem procBodyVerify_procedureCorrect
         exact ⟨(label, check), h_mem, by simp [h_attr]⟩
       exact h_all_post_valid _ h_in label check.expr check.md rfl
     · exact h_nf'
+
+  · ----- Part 3: Postconditions (CFG) — vacuously true here -----
+    -- `procToVerifyStmt` only succeeds for structured bodies (see
+    -- `procToVerifyStmt_is_structured`), so `proc.body = .cfg _` contradicts
+    -- `h_body_eq : proc.body = .structured ss`.
+    intro cfg h_cfg_eq
+    exact absurd (h_body_eq.symm.trans h_cfg_eq) (by simp)
 
 end ProcBodyVerifyCorrect

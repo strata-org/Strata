@@ -350,7 +350,24 @@ inductive CoreCFGStepStar
     CoreCFGStepStar π φ cfg c₁ c₃
 
 /-- Execution of a procedure body: either structured (via `CoreStepStar`)
-    or unstructured CFG (via `CoreCFGStepStar`). -/
+    or unstructured CFG (via `CoreCFGStepStar`).
+
+    TODO: Wire `CoreBodyExec` into `ProcedureCorrect.postconditionsValid_cfg`
+    so that CFG postcondition verification goes through this inductive rather than
+    being handled separately. Currently only used in `EvalCommand.call_sem`.
+
+    TODO: The `cfg` constructor drops terminal `eval` information — after
+    extracting `store` and `hasFailure` from the terminal CFG configuration, the
+    `δ` (eval) parameter is discarded. This prevents postcondition proofs that
+    need the terminal eval (e.g., when `funcDecl` extends the evaluator during
+    execution). Consider adding a `δ' : CoreEval` output field, or exposing the
+    full terminal `Env Expression`, to support postcondition reasoning.
+
+    TODO: An equivalence theorem `CoreBodyExec.structured_iff_CoreStepStar`
+    relating `CoreBodyExec π φ (.structured ss) σ δ σ' f` to the corresponding
+    `CoreStepStar π φ (.stmts ss ⟨σ, δ, false⟩) (.terminal ⟨σ', δ', f⟩)` would
+    bridge the two representations and ease the transition to unified
+    postcondition verification. -/
 inductive CoreBodyExec
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :

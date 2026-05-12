@@ -184,24 +184,41 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination.
-      Currently uses `CoreStepStar` on the structured body. For CFG procedures,
-      the match yields `[]` making this vacuously true.
-      TODO: Unify with `CoreBodyExec` to cover CFGs. The obstacle is that
-      `CoreBodyExec` only exposes terminal `store`/`hasFailure`, not `eval`,
-      but this proof obtains postcondition validity via the terminal env's eval
-      (which may differ from the initial eval due to `funcDecl` extensions). -/
-  postconditionsValid :
+  /-- (2a) The postconditions hold on termination of a **structured** body.
+      For structured procedures, this uses `CoreStepStar` on the statement list
+      to show all non-free postconditions evaluate to `true` and `hasFailure`
+      remains `false`. -/
+  postconditionsValid_structured :
+    ∀ (ss : List Statement),
+    proc.body = .structured ss →
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ ρ' : Env Expression),
       ProcEnvWF proc ρ₀ →
-      CoreStepStar π φ
-        (.stmts (match proc.body with | .structured ss => ss | .cfg _ => []) ρ₀)
-        (.terminal ρ') →
+      CoreStepStar π φ (.stmts ss ρ₀) (.terminal ρ') →
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →
         ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
       ρ'.hasFailure = Bool.false
+  /-- (2b) The postconditions hold on termination of a **CFG** body.
+      This field is the CFG counterpart of `postconditionsValid_structured`.
+      It is currently a soundness hole: the previous definition was vacuously
+      true for CFGs (the match on `proc.body` produced `[]`, forcing an
+      immediate `rho' = rho0` in `CoreStepStar`).
+      TODO: Provide a genuine proof once `CoreBodyExec` exposes the full
+      terminal environment (including `eval`). -/
+  postconditionsValid_cfg :
+    ∀ (cfg : DetCFG),
+    proc.body = .cfg cfg →
+    WF.WFProcedureProp p proc →
+    ∀ (ρ₀ : Env Expression),
+      ProcEnvWF proc ρ₀ →
+      ∀ (σ' : CoreStore) (failed : Bool),
+        CoreCFGStepStar π φ cfg (.cont cfg.entry ρ₀.store false) (.terminal σ' failed) →
+        (∀ (label : CoreLabel) (check : Procedure.Check),
+          (label, check) ∈ proc.spec.postconditions.toList →
+          check.attr = Procedure.CheckAttr.Default →
+          ρ₀.eval σ' check.expr = some HasBool.tt) ∧
+        failed = Bool.false
 
 end Core.Specification
