@@ -397,9 +397,9 @@ def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
                           | .condGoto p lt lf md => .condGoto p.eraseTypes lt lf md
                           | .finish md => .finish md }) }
 
--- DetCFG.stripMetaData delegates to the generic CFG.stripDetMetaData from
--- BasicBlock.lean. Commands inside blocks carry no standalone metadata field,
--- so only transfer metadata is stripped.
+-- Only transfer metadata is stripped because command metadata (on assert,
+-- assume, init, set, cover) is not included in formatted output — formatCmd
+-- discards it. Transfer metadata, however, appears in CFG formatting.
 def DetCFG.stripMetaData (cfg : DetCFG) : DetCFG :=
   Imperative.CFG.stripDetMetaData cfg
 
