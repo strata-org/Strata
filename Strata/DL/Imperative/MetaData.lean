@@ -303,6 +303,14 @@ def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Op
     | _ => none
   | none => none
 
+/-- Metadata field for a loop invariant expression preserved during structured-to-CFG
+    lowering. Multiple entries may appear when a loop has multiple invariants. -/
+def MetaData.specLoopInvariant : MetaDataElem.Field P := .label "#spec_loop_invariant"
+
+/-- Metadata field for a loop decreases (measure) expression preserved during
+    structured-to-CFG lowering. -/
+def MetaData.specDecreases : MetaDataElem.Field P := .label "#spec_decreases"
+
 /-- Metadata field for property summaries attached to assert/requires/ensures clauses. -/
 def MetaData.propertySummary : MetaDataElem.Field P := .label "propertySummary"
 

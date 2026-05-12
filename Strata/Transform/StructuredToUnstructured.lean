@@ -132,10 +132,18 @@ match ss with
         if srcLabel.isEmpty then StringGenState.gen "inv$"
         else pure srcLabel
       pure (HasPassiveCmds.assert assertLabel i MetaData.empty))
+  -- Attach loop contract (invariants + measure) to the transfer metadata so
+  -- downstream CFG passes can recover the original spec without relying on the
+  -- lowered assert commands alone.
+  let contractMd := is.foldl (fun md (_, inv) =>
+      md.pushElem MetaData.specLoopInvariant (.expr inv)) md
+  let contractMd := match m with
+    | some mExpr => contractMd.pushElem MetaData.specDecreases (.expr mExpr)
+    | none => contractMd
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
-    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext md })
+    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext contractMd })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
   | .nondet => do
@@ -143,7 +151,7 @@ match ss with
     let ident := HasIdent.ident (P := P) freshName
     let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
-                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext md })
+                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext contractMd })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
 | .exit l? md :: _ => do
