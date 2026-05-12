@@ -742,7 +742,7 @@ theorem procBodyVerify_procedureCorrect
     rw [h_wrapped_eval, h_wrapped_store] at h_v
     exact h_v
 
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
 
   · ----- Part 1: All asserts in proc.body are valid -----
     intro a
@@ -781,15 +781,25 @@ theorem procBodyVerify_procedureCorrect
     have h_valid := body_asserts_valid ρ₀ h_wf a inner h_inner_core h_assert_inner
     simpa [Config.getEval, Config.getStore] using h_valid
 
-  · ----- Part 2: Postconditions (structured) + hasFailure on termination -----
-    -- The field requires `∀ ss, proc.body = .structured ss → ...`.
-    -- We know `h_body_eq : proc.body = .structured ss'`.
-    intro ss_arg h_body_eq_arg _ ρ₀ ρ' h_wf h_term
-    -- After the outer `subst h_ss_eq : ss = ss'`, `ss'` was eliminated and `ss`
-    -- remains in scope. Equate ss_arg with ss.
-    have h_eq_ss : ss_arg = ss :=
-      Procedure.Body.structured.inj (h_body_eq_arg.symm.trans h_body_eq)
-    rw [h_eq_ss] at h_term
+  · ----- Part 2: Postconditions + hasFailure on termination -----
+    -- The unified field uses CoreBodyExec. Since procToVerifyStmt only
+    -- succeeds for structured bodies, we invert the CoreBodyExec to get
+    -- a CoreStepStar witness.
+    intro _ ρ₀ h_wf σ' δ' failed h_body_exec
+    -- Invert CoreBodyExec: since proc.body = .structured ss, the only
+    -- matching constructor is .structured, giving us a CoreStepStar witness.
+    rw [h_body_eq] at h_body_exec
+    -- Invert: the .structured constructor builds the initial env as
+    -- ⟨σ, δ, false⟩.  ProcEnvWF gives us ρ₀.hasFailure = false, so
+    -- ⟨ρ₀.store, ρ₀.eval, false⟩ = ρ₀.
+    have h_env_eq : (⟨ρ₀.store, ρ₀.eval, false⟩ : Env Expression) = ρ₀ := by
+      have := h_wf.noFailure; cases ρ₀; simp_all
+    obtain ⟨ρ', h_term⟩ : ∃ ρ' : Env Expression,
+        CoreStepStar π φ (.stmts ss ρ₀) (.terminal ρ') ∧
+        σ' = ρ'.store ∧ δ' = ρ'.eval ∧ failed = ρ'.hasFailure := by
+      cases h_body_exec with
+      | structured h_step => exact ⟨_, h_env_eq ▸ h_step, rfl, rfl, rfl⟩
+    obtain ⟨h_term, rfl, rfl, rfl⟩ := h_term
     obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
     -- h_valid: all asserts in body from ρ₀ evaluate to true
     have h_valid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
@@ -888,12 +898,5 @@ theorem procBodyVerify_procedureCorrect
         exact ⟨(label, check), h_mem, by simp [h_attr]⟩
       exact h_all_post_valid _ h_in label check.expr check.md rfl
     · exact h_nf'
-
-  · ----- Part 3: Postconditions (CFG) — vacuously true here -----
-    -- `procToVerifyStmt` only succeeds for structured bodies (see
-    -- `procToVerifyStmt_is_structured`), so `proc.body = .cfg _` contradicts
-    -- `h_body_eq : proc.body = .structured ss`.
-    intro cfg h_cfg_eq
-    exact absurd (h_body_eq.symm.trans h_cfg_eq) (by simp)
 
 end ProcBodyVerifyCorrect
