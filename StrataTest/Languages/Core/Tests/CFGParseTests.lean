@@ -381,3 +381,57 @@ cfg start {
     else
       IO.println s!"ERROR: unexpected message: {dm.message}"
   | .ok _ => IO.println "ERROR: expected type-check to fail"
+
+/-! ## Multiple nondet gotos get distinct condition variables -/
+
+open Std (format) in
+private def getTransferCondStr (blk : Imperative.DetBlock String Core.Command Core.Expression)
+    : Option String :=
+  match blk.transfer with
+  | .condGoto cond l1 l2 _ =>
+    if l1 != l2 then some (toString (format cond)) else none
+  | _ => none
+
+/--
+info: nondet condition names are distinct across blocks
+-/
+#guard_msgs in
+#eval do
+  let prog ← parseCoreText "
+procedure MultiNondet(out y : int)
+cfg entry {
+  entry: {
+    goto a, b;
+  }
+  a: {
+    goto c, d;
+  }
+  b: {
+    y := 1;
+    goto done;
+  }
+  c: {
+    y := 2;
+    goto done;
+  }
+  d: {
+    y := 3;
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+"
+  for d in prog.decls do
+    match d with
+    | .proc p _ =>
+      match p.body with
+      | .cfg cfg =>
+        let condNames := cfg.blocks.filterMap fun (pair : String × _) => getTransferCondStr pair.2
+        if condNames.length == 2 && condNames.Nodup then
+          IO.println "nondet condition names are distinct across blocks"
+        else
+          IO.println s!"ERROR: expected 2 distinct nondet conditions, got {condNames}"
+      | .structured _ => IO.println "ERROR: expected CFG body"
+    | _ => pure ()
