@@ -332,6 +332,10 @@ def Procedure.Body.isCfg : Procedure.Body → Bool
   | .structured _ => false
   | .cfg _ => true
 
+def Procedure.Body.structuredLength : Procedure.Body → Nat
+  | .structured ss => ss.length
+  | .cfg _ => 0
+
 /--
 A Strata Core procedure: the main verification unit.
 

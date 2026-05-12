@@ -457,7 +457,7 @@ where
         | some wfDecl => do
           incrementStat s!"{Stats.wfProceduresGenerated}"
           incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => (match p.body with | .structured ss => ss.length | .cfg _ => 0) | _ => 0)
+            (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
 
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
           return (true, wfDecl :: procDecl :: rest')
@@ -477,7 +477,7 @@ where
         | some wfDecl => do
           incrementStat s!"{Stats.wfProceduresGenerated}"
           incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => (match p.body with | .structured ss => ss.length | .cfg _ => 0) | _ => 0)
+            (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
 
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
           return (true, wfDecl :: funcDecl :: rest')
@@ -502,7 +502,7 @@ where
           | some wfDecl => do
             incrementStat s!"{Stats.wfProceduresGenerated}"
             incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-              (match wfDecl with | .proc p _ => (match p.body with | .structured ss => ss.length | .cfg _ => 0) | _ => 0)
+              (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
 
             addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
             return some wfDecl

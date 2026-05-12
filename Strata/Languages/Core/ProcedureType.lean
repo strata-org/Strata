@@ -82,6 +82,11 @@ private def checkTargetLabels (procName : CoreIdent) (cfg : DetCFG) (sourceLoc :
              Available labels: {labels}"
     | .finish _ => pure ()
 
+-- Type environment flows sequentially through all blocks in list order,
+-- regardless of control-flow reachability.  This is a sound over-approximation:
+-- it may accept a program that uses an uninitialized variable at runtime (the
+-- verifier will still catch the error), but it never misses a real type error.
+-- Per-block scoping would require a dataflow fixpoint over the CFG.
 open Lambda Lambda.LTy.Syntax in
 private def typeCheckCFG (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (P : Program) (proc : Procedure) (cfg : DetCFG) (sourceLoc : FileRange) :

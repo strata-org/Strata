@@ -201,6 +201,9 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
       p.spec.preconditions
   match p.body with
   | .cfg cfgBody =>
+    -- 100 iterations per block: enough to unroll moderate loops while keeping
+    -- symbolic execution bounded.  Fuel is consumed per block visit, so a
+    -- single-block loop unrolls ~100 times and a 4-block diamond uses ~400.
     let fuel := cfgBody.blocks.length * 100
     let (ssEs, evalStats) :=
       evalCFGBody E old_g_subst precond_assumes postcond_asserts cfgBody fuel

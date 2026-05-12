@@ -1633,6 +1633,12 @@ partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Ar
         TransM.error s!"translateTransfer: goto with more than 2 targets is not supported"
       let label1 ← translateIdent String l1
       let label2 ← translateIdent String l2
+      -- Nondeterministic choice: introduce an unbound free variable as the branch
+      -- condition.  The symbolic evaluator returns the fvar unchanged (via findD),
+      -- which is neither .true nor .false, causing evalCFGStep to fork into both
+      -- paths with complementary path conditions.  The concrete interpreter (runCFG)
+      -- will error on this, which is expected — nondeterministic gotos are only
+      -- meaningful under symbolic execution.
       let condName := s!"$__nondet_{bindings.gen.var_def}"
       return .condGoto (Lambda.LExpr.fvar () ⟨condName, ()⟩ none) label1 label2
   | q`Core.transfer_cond_goto =>

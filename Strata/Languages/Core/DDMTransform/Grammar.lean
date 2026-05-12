@@ -463,7 +463,9 @@ op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
 // Transfer commands: how a basic block ends
 category Transfer;
 
-// Goto: one target = unconditional, multiple targets = nondeterministic choice
+// Goto: one target = unconditional, two targets = nondeterministic choice.
+// The grammar accepts any number of comma-separated labels, but the translator
+// currently supports at most 2 (see translateTransfer in Translate.lean).
 op transfer_goto (labels : CommaSepBy Ident) : Transfer =>
   "goto " labels ";";
 
