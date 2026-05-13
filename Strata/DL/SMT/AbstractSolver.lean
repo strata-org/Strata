@@ -55,7 +55,7 @@ and monad `m`.
 All term constructors are fallible. Solvers might not accept certain constructs
 (e.g., wrong sorts, unsupported combinations) and we need to surface the issue
 precisely via `Except String`. -/
-structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
+structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [MonadExceptOf IO.Error m] where
   -- Configuration (for solvers that support them; ignored otherwise)
   setLogic : String → m Unit
   setOption : String → String → m Unit
