@@ -292,6 +292,94 @@ def addLocationInfo {P : PureExpr} [BEq P.Ident]
       Strata.SMT.Solver.setInfoString message.fst message.snd
     | .none => pure ()
 
+/-- Result of encoding a proof obligation against an `AbstractSolver`.
+    Returned by the encoder callback passed to `dischargeObligationIncremental`,
+    consumed by the check-sat orchestration. -/
+structure EncodedObligation where
+  /-- Solver handle for the obligation term. -/
+  obligationId : Strata.SMT.Term
+  /-- Names of assumption identifiers introduced during encoding (used as
+      `check-sat-assuming` literals). -/
+  assumptionIds : List String
+  /-- The final encoder state, used by `processModel` when retrieving the
+      model after a sat result. -/
+  estate : Strata.SMT.EncoderState
+
+/--
+Discharge a proof obligation using a live (incremental) SMT solver.
+
+The encoder callback runs against the spawned solver to emit declarations,
+assertions, and any solver-specific prelude (option settings, etc.); the
+helper then orchestrates `check-sat` / `check-sat-assuming` calls, parses
+the model on `sat`/`unknown`, and returns the pair of (satisfiability,
+validity) results — mirroring the batch `dischargeObligation`.
+
+`solverFlags` are passed through verbatim to the spawned process; the caller
+is responsible for solver-specific flags (e.g. cvc5 `--quiet`, z3 `-in`).
+-/
+def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
+    (encodeDecl : Strata.SMT.AbstractSolver Strata.SMT.Term Strata.SMT.TermType
+                    Strata.SMT.IncrementalSolverM →
+                  Strata.SMT.IncrementalSolverM EncodedObligation)
+    (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
+    (vars : List P.TypedIdent)
+    (smtsolver : String) (solverFlags : Array String)
+    (satisfiabilityCheck validityCheck : Bool) :
+    IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+  let solverState ← Strata.SMT.IncrementalSolver.spawn smtsolver solverFlags
+  let action : Strata.SMT.IncrementalSolverM
+      (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+    let solver := Strata.SMT.IncrementalSolver.mkIncrementalSolver
+    let { obligationId, assumptionIds, estate } ← encodeDecl solver
+    let varIds := assumptionIds.map fun id => Strata.SMT.Term.var ⟨id, .bool⟩
+    -- Helper: retrieve the model when the verdict is sat/unknown. Errors
+    -- inside `getValue` (e.g. solver returned no model) are silently mapped
+    -- to an empty model, matching the prior behavior.
+    let getModelForVars : Strata.SMT.IncrementalSolverM (Model P.Ident) := do
+      if varIds.isEmpty then return []
+      try
+        let pairs ← solver.getValue varIds
+        match pairs with
+        | [(.prim (.string rawOutput), _)] =>
+          let rawModel ← parseModelDDM rawOutput
+          match processModel typedVarToSMTFn vars rawModel estate with
+          | .ok model => return model
+          | .error _ => return []
+        | _ => return []
+      catch _ => return []
+    -- Wraps the monadic check-sat call in `try`/`catch` so that malformed
+    -- solver output surfaces as `.err msg` rather than aborting the IO
+    -- computation.
+    let decisionToResult (check : Strata.SMT.IncrementalSolverM Strata.SMT.Decision) :
+        Strata.SMT.IncrementalSolverM (Result P.Ident) := do
+      try
+        match ← check with
+        | .sat => return .sat (← getModelForVars)
+        | .unknown =>
+          let model ← getModelForVars
+          return if model.isEmpty then .unknown else .unknown (some model)
+        | .unsat => return .unsat
+      catch e => return .err (toString e)
+    let bothChecks := satisfiabilityCheck && validityCheck
+    let mut satResult : Result P.Ident := .unknown
+    let mut valResult : Result P.Ident := .unknown
+    if bothChecks then
+      satResult ← decisionToResult (solver.checkSatAssuming [obligationId])
+      let negObligation ← solver.mkNot obligationId
+      valResult ← decisionToResult (solver.checkSatAssuming [negObligation])
+    else
+      if satisfiabilityCheck then
+        solver.assert obligationId
+        satResult ← decisionToResult solver.checkSat
+      else if validityCheck then
+        let negObligation ← solver.mkNot obligationId
+        solver.assert negObligation
+        valResult ← decisionToResult solver.checkSat
+    solver.close
+    return .ok (satResult, valResult, estate)
+  let (result, _) ← action.run solverState
+  return result
+
 /--
 Writes the proof obligation to file, discharge the obligation using SMT solver,
 and parse the output of the SMT solver.
