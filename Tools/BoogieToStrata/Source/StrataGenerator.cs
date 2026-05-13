@@ -45,6 +45,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     private readonly List<string> _userAxiomNames = [];
     private readonly TokenTextWriter _writer;
     private int _breakLabelCount;
+    private int _nondetLabelCount;
     private int _indentLevel;
     private TypeCtorDecl? _refTypeCtor;
     private TypeCtorDecl? _fieldTypeCtor;
@@ -1781,6 +1782,82 @@ public class StrataGenerator : ReadOnlyVisitor {
         return Name(b.Label);
     }
 
+    private static bool HasGotoCmd(Implementation impl) {
+        return impl.Blocks.Any(b => b.TransferCmd is GotoCmd);
+    }
+
+    private void EmitCFGTransfer(
+        TransferCmd cmd,
+        List<(string label, string target1, string target2)> syntheticBlocks) {
+        if (cmd is ReturnCmd) {
+            IndentLine("return;");
+        } else if (cmd is GotoCmd gotoCmd) {
+            var names = gotoCmd.LabelTargets.Select(t => Name(t.Label)).ToList();
+            EmitNondetGotoChain(names, syntheticBlocks);
+        } else {
+            throw new StrataConversionException(cmd.tok,
+                $"Unsupported transfer command in CFG: {cmd}");
+        }
+    }
+
+    private void EmitNondetGotoChain(
+        List<string> targets,
+        List<(string label, string target1, string target2)> syntheticBlocks) {
+        if (targets.Count == 1) {
+            IndentLine($"goto {targets[0]};");
+        } else if (targets.Count == 2) {
+            IndentLine($"goto {targets[0]}, {targets[1]};");
+        } else {
+            var synthLabel = $"__nondet_{_nondetLabelCount++}";
+            IndentLine($"goto {targets[0]}, {synthLabel};");
+            var rest = targets.Skip(1).ToList();
+            while (rest.Count > 2) {
+                var nextSynth = $"__nondet_{_nondetLabelCount++}";
+                syntheticBlocks.Add((synthLabel, rest[0], nextSynth));
+                rest.RemoveAt(0);
+                synthLabel = nextSynth;
+            }
+            syntheticBlocks.Add((synthLabel, rest[0], rest[1]));
+        }
+    }
+
+    private void EmitCFGBody(Implementation node) {
+        var blocks = node.Blocks;
+        if (blocks.Count == 0) return;
+
+        var entryLabel = BlockName(blocks[0]);
+        IndentLine($"cfg {entryLabel} {{");
+        IncIndent();
+
+        var syntheticBlocks = new List<(string label, string target1, string target2)>();
+
+        foreach (var block in blocks) {
+            var label = BlockName(block);
+            IndentLine($"{label}: {{");
+            IncIndent();
+
+            foreach (var cmd in block.Cmds) {
+                Visit(cmd);
+            }
+
+            EmitCFGTransfer(block.TransferCmd, syntheticBlocks);
+
+            DecIndent();
+            IndentLine("}");
+        }
+
+        foreach (var (label, target1, target2) in syntheticBlocks) {
+            IndentLine($"{label}: {{");
+            IncIndent();
+            IndentLine($"goto {target1}, {target2};");
+            DecIndent();
+            IndentLine("}");
+        }
+
+        DecIndent();
+        IndentLine("}");
+    }
+
     private bool UnsupportedQuantifier(Expr expr) {
         if (expr is QuantifierExpr quantifierExpr) {
             return quantifierExpr.TypeParameters.Any();
@@ -1924,7 +2001,9 @@ public class StrataGenerator : ReadOnlyVisitor {
             EmitWhereAssumption(v.TypedIdent);
         }
 
-        if (node.StructuredStmts != null) {
+        if (HasGotoCmd(node)) {
+            EmitCFGBody(node);
+        } else if (node.StructuredStmts != null) {
             EmitStmtList(node.StructuredStmts);
         } else {
             // For unstructured blocks, we wrap groups of blocks so that
