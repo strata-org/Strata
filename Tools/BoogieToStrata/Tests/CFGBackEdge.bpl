@@ -9,14 +9,14 @@ procedure LoopViaGoto(n: int)
     goto head;
 
   head:
-    goto body, exit;
+    goto body, loop_exit;
 
   body:
     assume i < n;
     i := i + 1;
     goto head;
 
-  exit:
+  loop_exit:
     assume i >= n;
     assert i >= 0;
     return;

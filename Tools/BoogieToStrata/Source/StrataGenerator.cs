@@ -1830,11 +1830,26 @@ public class StrataGenerator : ReadOnlyVisitor {
         IncIndent();
 
         var syntheticBlocks = new List<(string label, string target1, string target2)>();
+        var isFirst = true;
 
         foreach (var block in blocks) {
             var label = BlockName(block);
             IndentLine($"{label}: {{");
             IncIndent();
+
+            // Emit where-assumptions in the entry block
+            if (isFirst) {
+                isFirst = false;
+                foreach (var v in node.InParams) {
+                    EmitWhereAssumption(v.TypedIdent);
+                }
+                foreach (var v in node.OutParams) {
+                    EmitWhereAssumption(v.TypedIdent);
+                }
+                foreach (var v in node.LocVars) {
+                    EmitWhereAssumption(v.TypedIdent);
+                }
+            }
 
             foreach (var cmd in block.Cmds) {
                 Visit(cmd);
@@ -1866,7 +1881,8 @@ public class StrataGenerator : ReadOnlyVisitor {
         return false;
     }
 
-    private void WriteProcedureHeader(Procedure proc) {
+    private void WriteProcedureHeader(Procedure proc,
+                                      IEnumerable<Variable>? extraOutParams = null) {
         // Modifies globals become inout params; read-only globals become input params.
         var modifiesNames = new HashSet<string>(proc.Modifies.Select(m => m.Name));
         var modifiesGlobals = _globalVariables.Where(g => modifiesNames.Contains(g.Name)).ToList();
@@ -1881,6 +1897,9 @@ public class StrataGenerator : ReadOnlyVisitor {
         WriteFormals(readOnlyGlobals, ref needComma);
         WriteFormals(proc.InParams, ref needComma);
         WriteFormals(proc.OutParams, ref needComma, "out ");
+        if (extraOutParams != null) {
+            WriteFormals(extraOutParams, ref needComma, "out ");
+        }
         WriteLine(")");
 
         // Spec: no modifies clause; only requires and ensures.
@@ -1981,50 +2000,61 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override Implementation VisitImplementation(Implementation node) {
-        WriteProcedureHeader(node.Proc);
-        WriteLine();
-        WriteLine("{");
-        IncIndent();
+        var isCFG = HasGotoCmd(node);
+        WriteProcedureHeader(node.Proc,
+            extraOutParams: isCFG ? node.LocVars : null);
 
-        foreach (var v in node.InParams) {
-            EmitWhereAssumption(v.TypedIdent);
-        }
-
-        foreach (var v in node.OutParams) {
-            EmitWhereAssumption(v.TypedIdent);
-        }
-
-        foreach (var v in node.LocVars) {
-            Indent($"var {Name(v.Name)} : ");
-            VisitType(v.TypedIdent.Type);
-            WriteLine(";");
-            EmitWhereAssumption(v.TypedIdent);
-        }
-
-        if (HasGotoCmd(node)) {
+        if (isCFG) {
+            // CFG syntax: procedure name(params, out locals) spec { ... } cfg entry { ... };
+            // Local variables become out parameters so they are in procedure scope
+            // (CFG blocks have per-block scoping and can't share local declarations).
+            WriteLine();
             EmitCFGBody(node);
-        } else if (node.StructuredStmts != null) {
-            EmitStmtList(node.StructuredStmts);
+            WriteLine(";");
+            WriteLine();
         } else {
-            // For unstructured blocks, we wrap groups of blocks so that
-            // forward gotos (now `exit label`) can exit to the right place.
-            var blocks = node.Blocks;
-            var gotoTargets = CollectGotoTargets(blocks, b => b.TransferCmd);
+            WriteLine();
+            WriteLine("{");
+            IncIndent();
 
-            var labelToIndex = new Dictionary<string, int>();
-            for (var i = 0; i < blocks.Count; i++) {
-                labelToIndex[blocks[i].Label] = i;
+            foreach (var v in node.InParams) {
+                EmitWhereAssumption(v.TypedIdent);
             }
-            labelToIndex[ExitLabel] = blocks.Count;
 
-            EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
-                VisitBlock(blocks[i]);
-            });
+            foreach (var v in node.OutParams) {
+                EmitWhereAssumption(v.TypedIdent);
+            }
+
+            foreach (var v in node.LocVars) {
+                Indent($"var {Name(v.Name)} : ");
+                VisitType(v.TypedIdent.Type);
+                WriteLine(";");
+                EmitWhereAssumption(v.TypedIdent);
+            }
+
+            if (node.StructuredStmts != null) {
+                EmitStmtList(node.StructuredStmts);
+            } else {
+                // For unstructured blocks, we wrap groups of blocks so that
+                // forward gotos (now `exit label`) can exit to the right place.
+                var blocks = node.Blocks;
+                var gotoTargets = CollectGotoTargets(blocks, b => b.TransferCmd);
+
+                var labelToIndex = new Dictionary<string, int>();
+                for (var i = 0; i < blocks.Count; i++) {
+                    labelToIndex[blocks[i].Label] = i;
+                }
+                labelToIndex[ExitLabel] = blocks.Count;
+
+                EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
+                    VisitBlock(blocks[i]);
+                });
+            }
+
+            DecIndent();
+            WriteLine("};");
+            WriteLine();
         }
-
-        DecIndent();
-        WriteLine("};");
-        WriteLine();
 
         return node;
     }
