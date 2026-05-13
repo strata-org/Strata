@@ -40,12 +40,12 @@ namespace Strata
 
 public section
 
-private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
+def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
   | some new => ⟨new, id.metadata⟩
   | none => id
 
-private partial def renameExpr
+partial def renameExpr
     (rn : Std.HashMap String String)
     : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m name ty => .fvar m (renameIdent rn name) ty
@@ -56,7 +56,7 @@ private partial def renameExpr
   | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
   | e => e
 
-private def renameCmd
+def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
   | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
@@ -102,7 +102,7 @@ private def hasCallStmt : List Core.Statement → Bool
 Collect all funcDecl statements from a procedure body (recursively)
 and return them as Core.Functions, stripping them from the body.
 -/
-private def collectFuncDecls : List Core.Statement →
+def collectFuncDecls : List Core.Statement →
     Except Std.Format (List Core.Function × List Core.Statement)
   | [] => return ([], [])
   | .funcDecl decl _ :: rest => do

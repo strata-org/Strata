@@ -29,27 +29,9 @@ of any particular backend.
 
 ## Gaps relative to the direct `Stmt.toGotoInstructions` path
 
-The following features are not yet supported via the CFG path, and would need
-to be addressed before it can fully replace the direct path:
-
-- **Source locations on control flow**: `DetTransferCmd` already carries a
-  `MetaData` field, but `StructuredToUnstructured.stmtsToBlocks` currently
-  passes `MetaData.empty` when constructing transfer commands (the metadata
-  from `ite`/`loop`/`block`/`exit` statements is discarded as `_md`).
-  Once `stmtsToBlocks` propagates the metadata, this module will pick it up
-  automatically via `metadataToSourceLoc`.
-- **Loop contracts**: The direct path emits `#spec_loop_invariant` and
-  `#spec_decreases` as named sub-expressions on the backward-edge GOTO
-  instruction (recognized by CBMC's DFCC). In the CFG, invariants are lowered
-  to plain `assert` commands and measures are discarded entirely.
-  To fix: `StructuredToUnstructured.stmtsToBlocks` (the `.loop` case) would
-  need to preserve invariants and measures in the `DetTransferCmd` (or in a
-  side channel), and this module would need to emit them as named
-  sub-expressions on the backward-edge GOTO, mirroring the logic in the
-  `.loop` case of `Stmt.toGotoInstructions` in `ToCProverGOTO.lean`.
 - **`Core.CmdExt.call`**: This translation handles `Imperative.Cmd` only.
-  Core procedure calls (`CmdExt.call`) would need a command translator
-  analogous to `coreStmtsToGoto` in `CoreToGOTOPipeline.lean`.
+  Core procedure calls (`CmdExt.call`) are handled by the Core-specific
+  wrapper `coreCFGToGotoTransform` in `CoreCFGToGOTOPipeline.lean`.
 -/
 
 namespace Imperative
@@ -92,49 +74,64 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
   -- Pending GOTO patches: (instruction array index, target label)
   let mut pendingPatches : Array (Nat × String) := #[]
   let mut labelMap : Std.HashMap String Nat := {}
+  -- Loop contract metadata: maps loop entry labels to their contract metadata.
+  -- Used in the second pass to annotate backward-edge GOTOs.
+  let mut loopContracts : Std.HashMap String (MetaData P) := {}
   for (label, block) in cfg.blocks do
     -- Record this block's entry location
     labelMap := labelMap.insert label trans.nextLoc
-    -- Emit a LOCATION marker for the block
-    -- NOTE(source-locations): `DetTransferCmd` already carries a `MetaData`
-    -- field, but `StructuredToUnstructured.stmtsToBlocks` currently fills it
-    -- with `MetaData.empty`. Once `stmtsToBlocks` propagates the metadata
-    -- from `ite`/`loop`/`block`/`exit` statements, use `metadataToSourceLoc`
-    -- here (see `Stmt.toGotoInstructions` in ToCProverGOTO.lean for the
-    -- pattern).
     let srcLoc : SourceLocation := { SourceLocation.nil with function := functionName }
     trans := emitLabel label srcLoc trans
     -- Translate each command via the existing Cmd-to-GOTO mapping.
-    -- NOTE: This only handles `Imperative.Cmd`. To support `Core.CmdExt.call`,
-    -- either:
-    --   (a) generalize this function over the command type and accept a
-    --       command translator as a parameter, or
-    --   (b) create a Core-specific wrapper (like `coreStmtsToGoto` in
-    --       `CoreToGOTOPipeline.lean`) that pattern-matches on `CmdExt` and
-    --       emits `FUNCTION_CALL` instructions for `.call`, delegating `.cmd`
-    --       to `Cmd.toGotoInstructions`.
     for cmd in block.cmds do
       trans ← Cmd.toGotoInstructions trans.T functionName cmd trans
     -- Translate the transfer command
     match block.transfer with
-    | .condGoto cond lt lf _md =>
+    | .condGoto cond lt lf md =>
+      let transferSrcLoc := metadataToSourceLoc md functionName trans.sourceText
       let cond_expr ← G.toGotoExpr cond
+      -- Record loop contracts if present (invariants and/or decreases on this
+      -- transfer indicate a loop entry block).
+      let hasLoopContract := md.any fun elem =>
+        elem.fld == MetaData.specLoopInvariant || elem.fld == MetaData.specDecreases
+      if hasLoopContract then
+        loopContracts := loopContracts.insert label md
       -- Emit: GOTO [!cond] lf
-      let (trans', falseIdx) := emitCondGoto (Expr.not cond_expr) srcLoc trans
+      let (trans', falseIdx) := emitCondGoto (Expr.not cond_expr) transferSrcLoc trans
       trans := trans'
       pendingPatches := pendingPatches.push (falseIdx, lf)
       -- Emit: GOTO lt (unconditional)
-      let (trans', trueIdx) := emitUncondGoto srcLoc trans
+      let (trans', trueIdx) := emitUncondGoto transferSrcLoc trans
       trans := trans'
       pendingPatches := pendingPatches.push (trueIdx, lt)
     | .finish _md =>
       -- No instruction needed; the caller appends END_FUNCTION
       pure ()
-  -- Second pass: resolve all pending labels, then patch in one call
+  -- Second pass: resolve all pending labels and annotate backward-edge GOTOs
+  -- with loop contracts when the target is a loop entry block.
   let mut resolvedPatches : List (Nat × Nat) := []
   for (idx, label) in pendingPatches do
     match labelMap[label]? with
-    | some targetLoc => resolvedPatches := (idx, targetLoc) :: resolvedPatches
+    | some targetLoc =>
+      resolvedPatches := (idx, targetLoc) :: resolvedPatches
+      -- If this GOTO targets a loop entry with contracts, annotate its guard.
+      if let some md := loopContracts[label]? then
+        let instLoc := trans.instructions[idx]!.locationNum
+        -- Only annotate backward edges (target location <= source location).
+        if targetLoc ≤ instLoc then
+          let mut guard := trans.instructions[idx]!.guard
+          for elem in md do
+            if elem.fld == MetaData.specLoopInvariant then
+              if let .expr e := elem.value then
+                let gotoExpr ← G.toGotoExpr e
+                guard := guard.setNamedField "#spec_loop_invariant" gotoExpr
+            if elem.fld == MetaData.specDecreases then
+              if let .expr e := elem.value then
+                let gotoExpr ← G.toGotoExpr e
+                guard := guard.setNamedField "#spec_decreases" gotoExpr
+          trans := { trans with
+            instructions := trans.instructions.set! idx
+              { trans.instructions[idx]! with guard := guard } }
     | none =>
       throw f!"[detCFGToGotoTransform] Unresolved label '{label}' referenced \
                by GOTO at instruction index {idx}."
