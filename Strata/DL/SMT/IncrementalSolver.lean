@@ -57,23 +57,23 @@ def readln : IncrementalSolverM String := do
   | .some stdout => return (← stdout.getLine).trimAscii.toString
   | .none => throw (IO.userError "no output stream available")
 
-private def termToStr (t : Term) : IncrementalSolverM (Except String String) := do
+private def termToStr (t : Term) : IncrementalSolverM String := do
   let st ← get
-  if let .some s := st.termStrings.get? t then return .ok s
+  if let .some s := st.termStrings.get? t then return s
   match Strata.SMTDDM.termToString t with
   | .ok s =>
     modify fun st => { st with termStrings := st.termStrings.insert t s }
-    return .ok s
-  | .error msg => return .error s!"term serialization failed: {msg}"
+    return s
+  | .error msg => throw (IO.userError s!"term serialization failed: {msg}")
 
-private def typeToStr (ty : TermType) : IncrementalSolverM (Except String String) := do
+private def typeToStr (ty : TermType) : IncrementalSolverM String := do
   let st ← get
-  if let .some s := st.typeStrings.get? ty then return .ok s
+  if let .some s := st.typeStrings.get? ty then return s
   match Strata.SMTDDM.termTypeToString ty with
   | .ok s =>
     modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
-    return .ok s
-  | .error msg => return .error s!"type serialization failed: {msg}"
+    return s
+  | .error msg => throw (IO.userError s!"type serialization failed: {msg}")
 
 /-- Get the disambiguated SMT-LIB name for a variable, handling shadowing. -/
 private def disambiguatedName (name : String) (depth : Nat) : String :=
@@ -135,9 +135,8 @@ private def formatConstrs (constrs : List (String × List (String × TermType)))
     else do
       let mut fieldStrs := []
       for (fname, fty) in fields.reverse do
-        match ← typeToStr fty with
-        | .ok tyStr => fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
-        | .error msg => return .error msg
+        let tyStr ← typeToStr fty
+        fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
       result := s!"({cname} {String.intercalate " " fieldStrs})" :: result
   return .ok result
 
@@ -213,45 +212,33 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let count := st.shadowCounts.getD name 0
     let smtName := disambiguatedName name count
     set { st with shadowCounts := st.shadowCounts.insert name (count + 1) }
-    match ← typeToStr ty with
-    | .ok tyStr =>
-      emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
-      return Term.var ⟨smtName, ty⟩
-    | .error msg =>
-      throw (IO.userError s!"declareNew: {msg}")
+    let tyStr ← typeToStr ty
+    emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
+    return Term.var ⟨smtName, ty⟩
 
   declareFun name argTys retTy := do
-    match ← typeToStr retTy with
-    | .error msg => return .error msg
-    | .ok retStr =>
-      if argTys.isEmpty then do
-        emitln s!"(declare-const {quoteIdent name} {retStr})"
-        return .ok (Term.var ⟨name, retTy⟩)
-      else do
-        let mut argStrs := []
-        for ty in argTys.reverse do
-          match ← typeToStr ty with
-          | .ok s => argStrs := s :: argStrs
-          | .error msg => return .error msg
-        let inline := String.intercalate " " argStrs
-        emitln s!"(declare-fun {quoteIdent name} ({inline}) {retStr})"
-        return .ok (Term.var ⟨name, retTy⟩)
+    let retStr ← typeToStr retTy
+    if argTys.isEmpty then do
+      emitln s!"(declare-const {quoteIdent name} {retStr})"
+      return .ok (Term.var ⟨name, retTy⟩)
+    else do
+      let mut argStrs := []
+      for ty in argTys.reverse do
+        argStrs := (← typeToStr ty) :: argStrs
+      let inline := String.intercalate " " argStrs
+      emitln s!"(declare-fun {quoteIdent name} ({inline}) {retStr})"
+      return .ok (Term.var ⟨name, retTy⟩)
 
   defineFun name args retTy body := do
-    match ← typeToStr retTy with
-    | .error msg => return .error msg
-    | .ok retStr =>
-      let mut typedArgs := []
-      for (n, ty) in args.reverse do
-        match ← typeToStr ty with
-        | .ok tyStr => typedArgs := s!"({quoteIdent n} {tyStr})" :: typedArgs
-        | .error msg => return .error msg
-      let inline := String.intercalate " " typedArgs
-      match ← termToStr body with
-      | .ok bodyStr =>
-        emitln s!"(define-fun {quoteIdent name} ({inline}) {retStr} {bodyStr})"
-        return .ok ()
-      | .error msg => return .error msg
+    let retStr ← typeToStr retTy
+    let mut typedArgs := []
+    for (n, ty) in args.reverse do
+      let tyStr ← typeToStr ty
+      typedArgs := s!"({quoteIdent n} {tyStr})" :: typedArgs
+    let inline := String.intercalate " " typedArgs
+    let bodyStr ← termToStr body
+    emitln s!"(define-fun {quoteIdent name} ({inline}) {retStr} {bodyStr})"
+    return .ok ()
 
   declareSort name arity := do
     emitln s!"(declare-sort {name} {arity})"
@@ -311,11 +298,9 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   pop := emitln "(pop 1)"
 
   assert t := do
-    match ← termToStr t with
-    | .ok s =>
-      emitln s!"(assert {s})"
-      return .ok ()
-    | .error msg => return .error msg
+    let s ← termToStr t
+    emitln s!"(assert {s})"
+    return .ok ()
 
   checkSat := do
     emitln "(check-sat)"
@@ -326,11 +311,9 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let mut strs := []
     let mut assumptionMap : Std.HashMap String Term := {}
     for t in assumptions.reverse do
-      match ← termToStr t with
-      | .ok s =>
-        strs := s :: strs
-        assumptionMap := assumptionMap.insert s t
-      | .error msg => return .error msg
+      let s ← termToStr t
+      strs := s :: strs
+      assumptionMap := assumptionMap.insert s t
     modify fun st => { st with lastAssumptions := assumptionMap }
     let inline := String.intercalate " " strs
     emitln s!"(check-sat-assuming ({inline}))"
@@ -358,9 +341,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     -- Send get-value command with the given terms
     let mut strs := []
     for t in ts.reverse do
-      match ← termToStr t with
-      | .ok s => strs := s :: strs
-      | .error msg => return .error msg
+      strs := (← termToStr t) :: strs
     let inline := String.intercalate " " strs
     emitln s!"(get-value ({inline}))"
     -- Read the response (a single s-expression, possibly multi-line)
@@ -380,7 +361,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     -- Return the raw output as a single pair (the verifier parses it)
     return .ok [(Term.string modelOutput, Term.string modelOutput)]
 
-  termToSMTLibString t := termToStr t
+  termToSMTLibString t := return .ok (← termToStr t)
 
   reset := emitln "(reset)"
 
