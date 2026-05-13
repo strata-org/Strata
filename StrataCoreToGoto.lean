@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.Languages.Core.Verifier
 import Strata.Util.IO
 
@@ -62,15 +62,20 @@ def main (args : List String) : IO UInt32 := do
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
-      let symTabFile := dir / s!"{programName}.symtab.json"
-      let gotoFile := dir / s!"{programName}.goto.json"
-      CoreToGOTO.writeToGotoJson
-        (programName := programName)
-        (symTabFileName := symTabFile.toString)
-        (gotoFileName := gotoFile.toString)
-        pgm
-      IO.println s!"Written {symTabFile} and {gotoFile}"
-      return 0
+      let baseName := (dir / programName).toString
+      let (cprog, _errors) := Strata.TransM.run Inhabited.default (Strata.translateProgram pgm)
+      match Strata.typeCheckCore cprog with
+      | .error msg =>
+        IO.eprintln s!"[Strata.Core] Type checking failed: {msg}"
+        return 1
+      | .ok (tcPgm, env) =>
+        IO.eprintln s!"[Strata.Core] Type Checking Succeeded!"
+        let sourceText := some text
+        match ← Strata.coreToGotoFiles tcPgm env baseName sourceText |>.toBaseIO with
+        | .ok () => return 0
+        | .error e =>
+          IO.eprintln s!"Error: {e}"
+          return 1
     | .error errors =>
       for e in errors do
         let msg ← e.toString
