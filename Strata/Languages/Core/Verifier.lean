@@ -263,7 +263,7 @@ def unwrap [MonadExceptOf IO.Error m] [Monad m] (label : String) (r : Except Str
 
 /-- Build constructor declarations for a datatype, converting field types
     through the solver's `termTypeToSort`. -/
-private def datatypeConstrsM [Monad m] (solver : AbstractSolver τ σ m)
+private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : AbstractSolver τ σ m)
     (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
     : m (List (String × List (String × σ))) := do
   let mut result := []
