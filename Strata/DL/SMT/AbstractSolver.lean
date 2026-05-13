@@ -74,11 +74,6 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) where
       with the given type arguments. -/
   constrSort : String → List σ → m σ
 
-  /-- Convert a `TermType` to the solver's sort `σ`. Backends implement this
-      directly (e.g. identity for SMT-LIB, actual conversion for FFI).
-      Built from the sort primitives above. -/
-  termTypeToSort : TermType → m σ
-
   -- Literal / leaf constructors
   mkBool : Bool → m τ
   mkInt : Int → m τ
