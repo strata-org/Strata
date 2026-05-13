@@ -373,6 +373,71 @@ theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
   have : sizeOf v.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf h
   omega
 
+/-- The target/index/value subexpressions of a `StmtExpr.Subscript` are strictly
+smaller than the `Subscript` itself. Useful for termination proofs when recursing
+into `Subscript` children. -/
+theorem StmtExpr.sizeOf_subscript_target_lt (target index : AstNode StmtExpr)
+    (value : Option (AstNode StmtExpr)) :
+    sizeOf target < sizeOf (StmtExpr.Subscript target index value) := by
+  simp; omega
+
+theorem StmtExpr.sizeOf_subscript_index_lt (target index : AstNode StmtExpr)
+    (value : Option (AstNode StmtExpr)) :
+    sizeOf index < sizeOf (StmtExpr.Subscript target index value) := by
+  simp; omega
+
+theorem StmtExpr.sizeOf_subscript_value_lt (target index : AstNode StmtExpr)
+    (v : AstNode StmtExpr) :
+    sizeOf v < sizeOf (StmtExpr.Subscript target index (some v)) := by
+  simp; omega
+
+/-- Variants that work directly with an `AstNode StmtExpr` whose `.val` is known to
+be a `Subscript`. Uses the match-with-hypothesis pattern
+(`match _h : e.val with | .Subscript target index value => ...`). -/
+theorem StmtExpr.sizeOf_subscript_target_lt_of_eq {e : AstNode StmtExpr}
+    {target index : AstNode StmtExpr} {value : Option (AstNode StmtExpr)}
+    (h : e.val = StmtExpr.Subscript target index value) :
+    sizeOf target < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_subscript_target_lt target index value
+  have : sizeOf e.val = sizeOf (StmtExpr.Subscript target index value) := congrArg sizeOf h
+  omega
+
+theorem StmtExpr.sizeOf_subscript_index_lt_of_eq {e : AstNode StmtExpr}
+    {target index : AstNode StmtExpr} {value : Option (AstNode StmtExpr)}
+    (h : e.val = StmtExpr.Subscript target index value) :
+    sizeOf index < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_subscript_index_lt target index value
+  have : sizeOf e.val = sizeOf (StmtExpr.Subscript target index value) := congrArg sizeOf h
+  omega
+
+theorem StmtExpr.sizeOf_subscript_value_lt_of_eq {e : AstNode StmtExpr}
+    {target index : AstNode StmtExpr} {v : AstNode StmtExpr}
+    (h : e.val = StmtExpr.Subscript target index (some v)) :
+    sizeOf v < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_subscript_value_lt target index v
+  have : sizeOf e.val = sizeOf (StmtExpr.Subscript target index (some v)) := congrArg sizeOf h
+  omega
+
+/-- The `value` subexpression of a `StmtExpr.Assign` is strictly smaller than
+the `Assign` itself. Useful for termination proofs when recursing into the
+rhs of an assignment (including `.Assign [.Declare param] initExpr`). -/
+theorem StmtExpr.sizeOf_assign_value_lt (targets : List (AstNode Variable))
+    (value : AstNode StmtExpr) :
+    sizeOf value < sizeOf (StmtExpr.Assign targets value) := by
+  simp; omega
+
+theorem StmtExpr.sizeOf_assign_value_lt_of_eq {e : AstNode StmtExpr}
+    {targets : List (AstNode Variable)} {value : AstNode StmtExpr}
+    (h : e.val = StmtExpr.Assign targets value) :
+    sizeOf value < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_assign_value_lt targets value
+  have : sizeOf e.val = sizeOf (StmtExpr.Assign targets value) := congrArg sizeOf h
+  omega
+
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
 def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
   return { c with condition := ← f c.condition }

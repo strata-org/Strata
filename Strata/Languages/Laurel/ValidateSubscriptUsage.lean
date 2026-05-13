@@ -92,13 +92,12 @@ partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
 
 /-! ## Expression-position walk (Subscript and call diagnostics) -/
 
-mutual
-
 /-- Walk a `StmtExprMd` and collect diagnostics for Subscript/Array.length
     misuse, recursing into all subexpressions and embedded types.
-
-    TODO: make structural (see same note on `SubscriptElim.elimExpr`). -/
-partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
+    Statement-position handling for `.Subscript t i (some v)` (destructive
+    update — Diagnostic 2 on Seq) is inlined at the `.Block`, `.IfThenElse`,
+    and `.While` arms. -/
+def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   -- Diagnostic 1: a[i := v] on Array<T>
   -- Note: for Seq<T>, `.Subscript s i (some v)` at STATEMENT position (`s[i] := v`)
@@ -137,31 +136,79 @@ partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List 
       args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateStmtExpr model a) []
   -- Everything below: recurse into children; no local diagnostic.
   | .IfThenElse c t (some e) =>
-    validateStmtExpr model c ++ validateStmt model t ++ validateStmt model e
+    let tDiags := match _htsub : t.val with
+      | .Subscript target index (some value) =>
+        let diag := if isSeqTy (computeExprType model target).val then
+                      [diagnosticFromSource t.source msgSeqDestructiveUpdate]
+                    else []
+        diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+          validateStmtExpr model value
+      | _ => validateStmtExpr model t
+    let eDiags := match _hesub : e.val with
+      | .Subscript target index (some value) =>
+        let diag := if isSeqTy (computeExprType model target).val then
+                      [diagnosticFromSource e.source msgSeqDestructiveUpdate]
+                    else []
+        diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+          validateStmtExpr model value
+      | _ => validateStmtExpr model e
+    validateStmtExpr model c ++ tDiags ++ eDiags
   | .IfThenElse c t none =>
-    validateStmtExpr model c ++ validateStmt model t
+    let tDiags := match _htsub : t.val with
+      | .Subscript target index (some value) =>
+        let diag := if isSeqTy (computeExprType model target).val then
+                      [diagnosticFromSource t.source msgSeqDestructiveUpdate]
+                    else []
+        diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+          validateStmtExpr model value
+      | _ => validateStmtExpr model t
+    validateStmtExpr model c ++ tDiags
   | .Block stmts _ =>
-    stmts.attach.foldl (fun acc ⟨s, _⟩ => acc ++ validateStmt model s) []
+    stmts.attach.foldl (fun acc ⟨s, _⟩ => acc ++
+      (match _hsub : s.val with
+       | .Subscript target index (some value) =>
+         let diag := if isSeqTy (computeExprType model target).val then
+                       [diagnosticFromSource s.source msgSeqDestructiveUpdate]
+                     else []
+         diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+           validateStmtExpr model value
+       | _ => validateStmtExpr model s)) []
   | .Var (.Declare param) => validateHighType param.type
   | .Var (.Field t _) => validateStmtExpr model t
   | .Var (.Local _) => []
   | .Assign targets value =>
     let targetDiags := targets.attach.foldl
       (fun acc ⟨t, _⟩ =>
-        acc ++ (match t.val with
+        acc ++ (match _htv : t.val with
           | .Field subTarget _ => validateStmtExpr model subTarget
           | .Declare param => validateHighType param.type
           | .Local _ => [])) []
     targetDiags ++ validateStmtExpr model value
   | .While c invs (some dec) body =>
+    let bodyDiags := match _hbsub : body.val with
+      | .Subscript target index (some value) =>
+        let diag := if isSeqTy (computeExprType model target).val then
+                      [diagnosticFromSource body.source msgSeqDestructiveUpdate]
+                    else []
+        diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+          validateStmtExpr model value
+      | _ => validateStmtExpr model body
     validateStmtExpr model c ++
     invs.attach.foldl (fun acc ⟨i, _⟩ => acc ++ validateStmtExpr model i) [] ++
     validateStmtExpr model dec ++
-    validateStmt model body
+    bodyDiags
   | .While c invs none body =>
+    let bodyDiags := match _hbsub : body.val with
+      | .Subscript target index (some value) =>
+        let diag := if isSeqTy (computeExprType model target).val then
+                      [diagnosticFromSource body.source msgSeqDestructiveUpdate]
+                    else []
+        diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
+          validateStmtExpr model value
+      | _ => validateStmtExpr model body
     validateStmtExpr model c ++
     invs.attach.foldl (fun acc ⟨i, _⟩ => acc ++ validateStmtExpr model i) [] ++
-    validateStmt model body
+    bodyDiags
   | .Return (some v) => validateStmtExpr model v
   | .Return none => []
   | .PureFieldUpdate t _ v => validateStmtExpr model t ++ validateStmtExpr model v
@@ -191,28 +238,44 @@ partial def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List 
   -- will silently skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Hole _ none | .New _ | .This | .Abstract | .All => []
-
-/-- Validate a statement-position `StmtExprMd`. Called from every
-    statement-position container: `.Block` children, `.IfThenElse`
-    branches, `.While` body. Handles the statement-position semantics of
-    `.Subscript t i (some v)` (destructive update: valid on `Array<T>`,
-    invalid on `Seq<T>` → Diagnostic 2), distinct from expression-position
-    functional update (handled by `validateStmtExpr`'s `.Subscript` arm). -/
-partial def validateStmt (model : SemanticModel) (s : StmtExprMd) : List DiagnosticModel :=
-  match s.val with
-  | .Subscript target index value =>
-    let diag : List DiagnosticModel :=
-      match value with
-      | some _ =>
-        if isSeqTy (computeExprType model target).val then
-          [diagnosticFromSource s.source msgSeqDestructiveUpdate]
-        else []
-      | none => []
-    diag ++ validateStmtExpr model target ++ validateStmtExpr model index ++
-      (match value with | some v => validateStmtExpr model v | none => [])
-  | _ => validateStmtExpr model s
-
-end
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try term_by_mem)
+  -- Assign-target list, .Field inner
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := Variable.sizeOf_field_target_lt_of_eq _htv
+    simp_all; omega))
+  -- Top-level .Subscript arm (expression position)
+  all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _h; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _h; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _h; omega))
+  -- .Block stmt-position .Subscript (via _hsub)
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := StmtExpr.sizeOf_subscript_target_lt_of_eq _hsub
+    simp_all; omega))
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := StmtExpr.sizeOf_subscript_index_lt_of_eq _hsub
+    simp_all; omega))
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := StmtExpr.sizeOf_subscript_value_lt_of_eq _hsub
+    simp_all; omega))
+  -- IfThenElse then-branch (via _htsub) / else-branch (via _hesub) / While body (via _hbsub)
+  all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _htsub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _htsub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _htsub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _hesub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _hesub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _hesub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _hbsub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _hbsub; simp_all; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _hbsub; simp_all; omega))
 
 /-! ## Per-procedure and per-type validation -/
 
