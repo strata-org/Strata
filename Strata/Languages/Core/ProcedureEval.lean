@@ -91,8 +91,9 @@ private def evalCFGStep (cfg : DetCFG) (old_var_subst : SubstMap)
             | .true _ => ((lt, env') :: newActive, finished, stats)
             | .false _ => ((lf, env') :: newActive, finished, stats)
             | _ =>
-              let label_t := toString (f!"<cfgBranch_true: {cond.eraseTypes}>")
-              let label_f := toString (f!"<cfgBranch_false: !({cond.eraseTypes})>")
+              let condErased := cond.eraseTypes
+              let label_t := toString (f!"<cfgBranch_true: {condErased}>")
+              let label_f := toString (f!"<cfgBranch_false: !({condErased})>")
               let env_t := { env' with pathConditions :=
                 (env'.pathConditions.addInNewest
                   [.assumption label_t cond']) }
@@ -126,23 +127,23 @@ private def evalCFGBody (E : Env) (old_var_subst : SubstMap)
     (precond_assumes postcond_asserts : Statements)
     (cfg : DetCFG) (fuel : Nat) : List Env × Statistics :=
   let (preEnvs, preStats) := Statement.eval E old_var_subst precond_assumes
-  let init₁ : List Env × Statistics := ([], {})
-  let (cfgResults, cfgStats) :=
+  let emptyAcc : List Env × Statistics := ([], {})
+  let (cfgResultsRev, cfgStats) :=
     preEnvs.foldl (fun acc preEnv =>
       let (accEnvs, accStats) := acc
       let (envs, stats) :=
         evalCFGBlocks cfg old_var_subst fuel [(cfg.entry, preEnv)] [] {}
-      (accEnvs ++ envs, Statistics.merge accStats stats)) init₁
-  let init₂ : List Env × Statistics := ([], {})
-  let (postResults, postStats) :=
+      (envs.reverse ++ accEnvs, accStats.merge stats)) emptyAcc
+  let cfgResults := cfgResultsRev.reverse
+  let (postResultsRev, postStats) :=
     cfgResults.foldl (fun acc cfgEnv =>
       let (accEnvs, accStats) := acc
       if cfgEnv.error.isSome then
         (cfgEnv :: accEnvs, accStats)
       else
         let (envs, stats) := Statement.eval cfgEnv old_var_subst postcond_asserts
-        (accEnvs ++ envs, Statistics.merge accStats stats)) init₂
-  (postResults, Statistics.merge preStats (Statistics.merge cfgStats postStats))
+        (envs.reverse ++ accEnvs, accStats.merge stats)) emptyAcc
+  (postResultsRev.reverse, preStats.merge (cfgStats.merge postStats))
 
 /--
 Evaluate a single procedure: generate fresh variables for parameters,
