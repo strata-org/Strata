@@ -84,6 +84,13 @@ def spawn (path : String) (args : Array String) : IO IncrementalSolverState := d
   let solver ← Solver.spawn path args
   return { solver }
 
+/-- Run a computation that may throw, converting IO.Error to Except String. -/
+private def wrapExcept (action : IncrementalSolverM α) : IncrementalSolverM (Except String α) := do
+  try
+    return .ok (← action)
+  catch e =>
+    return .error (toString e)
+
 /-- Shared helper for constructing quantified terms. -/
 private def mkQuantHelper (qk : QuantifierKind)
     (bindings : List (String × TermType))
@@ -216,20 +223,19 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
     return Term.var ⟨smtName, ty⟩
 
-  declareFun name argTys retTy := do
+  declareFun name argTys retTy := wrapExcept do
     let retStr ← typeToStr retTy
-    if argTys.isEmpty then do
+    if argTys.isEmpty then
       emitln s!"(declare-const {quoteIdent name} {retStr})"
-      return .ok (Term.var ⟨name, retTy⟩)
-    else do
+    else
       let mut argStrs := []
       for ty in argTys.reverse do
         argStrs := (← typeToStr ty) :: argStrs
       let inline := String.intercalate " " argStrs
       emitln s!"(declare-fun {quoteIdent name} ({inline}) {retStr})"
-      return .ok (Term.var ⟨name, retTy⟩)
+    return Term.var ⟨name, retTy⟩
 
-  defineFun name args retTy body := do
+  defineFun name args retTy body := wrapExcept do
     let retStr ← typeToStr retTy
     let mut typedArgs := []
     for (n, ty) in args.reverse do
@@ -238,7 +244,6 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let inline := String.intercalate " " typedArgs
     let bodyStr ← termToStr body
     emitln s!"(define-fun {quoteIdent name} ({inline}) {retStr} {bodyStr})"
-    return .ok ()
 
   declareSort name arity := do
     emitln s!"(declare-sort {name} {arity})"
@@ -294,10 +299,9 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   mkExists bindings callback := do
     mkQuantHelper .exist bindings callback
 
-  assert t := do
+  assert t := wrapExcept do
     let s ← termToStr t
     emitln s!"(assert {s})"
-    return .ok ()
 
   checkSat := do
     emitln "(check-sat)"
