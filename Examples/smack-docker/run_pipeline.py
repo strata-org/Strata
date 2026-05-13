@@ -193,8 +193,9 @@ def run_cbmc_backend(core_st: Path, tmpdir: Path, result: PipelineResult):
 
     # Step 1: Core -> GOTO JSON
     rc, stdout, stderr = run_cmd([
-        str(STRATA_CORE_TO_GOTO), str(core_st),
-        "--output-dir", str(tmpdir)
+        str(STRATA_CORE_TO_GOTO),
+        "--output-dir", str(tmpdir),
+        str(core_st)
     ], timeout=120)
     if rc != 0:
         err = stderr.strip()
