@@ -557,8 +557,7 @@ def dischargeObligationIncremental
   (_label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
-  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) :=
-  open _root_.Strata.SMT.IncrementalSolver in do
+  : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
   let baseFlags := getSolverFlags options
   let needsIncremental := satisfiabilityCheck && validityCheck
   let solverSpecificFlags := match options.solver with
@@ -567,68 +566,25 @@ def dischargeObligationIncremental
       if needsIncremental && !baseFlags.contains "--incremental" then
         base ++ #["--incremental"]
       else base
-    | "z3" => #["-in"]  -- z3 reads from stdin with -in
+    | "z3" => #["-in"]
     | _ => #[]
   let allFlags := solverSpecificFlags ++ baseFlags
-  let solverState ← spawn options.solver allFlags
-  let action : _root_.Strata.SMT.IncrementalSolverM (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
-    let solver := _root_.Strata.SMT.IncrementalSolver.mkIncrementalSolver
-    -- Solver-specific prelude (options like smt.mbqi, auto_config)
-    let prelude : _root_.Strata.SMT.IncrementalSolverM Unit := match options.solver with
+  let encodeDecl (solver : Strata.SMT.AbstractSolver Term TermType
+                            Strata.SMT.IncrementalSolverM) :
+      Strata.SMT.IncrementalSolverM Imperative.SMT.EncodedObligation := do
+    let prelude : Strata.SMT.IncrementalSolverM Unit := match options.solver with
       | "z3" => do
         solver.setOption "smt.mbqi" "false"
         solver.setOption "auto_config" "false"
       | _ => pure ()
-    -- Encode all declarations and assertions through the AbstractSolver API.
     let (obligationId, ids, estate) ←
       _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract solver ctx prelude
         assumptionTerms obligationTerm
         (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
-    -- Variable terms for getValue
-    let varIds := ids.map fun id => Term.var ⟨id, .bool⟩
-    -- Helper to get model via solver.getValue and parse it.
-    -- Called only when the decision is SAT or UNKNOWN.
-    let getModelForVars : _root_.Strata.SMT.IncrementalSolverM (Imperative.SMT.Model Expression.Ident) := do
-      if varIds.isEmpty then return []
-      match ← solver.getValue varIds with
-      | .ok pairs =>
-        match pairs with
-        | [(.prim (.string rawOutput), _)] =>
-          let rawModel ← Imperative.SMT.parseModelDDM rawOutput
-          match Imperative.SMT.processModel (typedVarToSMTFn ctx) vars rawModel estate with
-          | .ok model => return model
-          | .error _ => return []
-        | _ => return []
-      | .error _ => return []
-    -- Issue check-sat commands through the AbstractSolver API.
-    let decisionToResult (decision : Except String Decision)
-        : _root_.Strata.SMT.IncrementalSolverM (Imperative.SMT.Result Expression.Ident) := do
-      match decision with
-      | .ok .sat => return .sat (← getModelForVars)
-      | .ok .unknown =>
-        let model ← getModelForVars
-        return if model.isEmpty then .unknown else .unknown (some model)
-      | .ok .unsat => return .unsat
-      | .error msg => return .err msg
-    let bothChecks := satisfiabilityCheck && validityCheck
-    let mut satResult : Imperative.SMT.Result Expression.Ident := .unknown
-    let mut valResult : Imperative.SMT.Result Expression.Ident := .unknown
-    if bothChecks then
-      satResult ← decisionToResult (← solver.checkSatAssuming [obligationId])
-      let negObligation ← _root_.Strata.SMT.Encoder.unwrap "mkNot" (← solver.mkNot obligationId)
-      valResult ← decisionToResult (← solver.checkSatAssuming [negObligation])
-    else
-      if satisfiabilityCheck then
-        _root_.Strata.SMT.Encoder.unwrap "assert" (← solver.assert obligationId)
-        satResult ← decisionToResult (← solver.checkSat)
-      else if validityCheck then
-        let negObligation ← _root_.Strata.SMT.Encoder.unwrap "mkNot" (← solver.mkNot obligationId)
-        _root_.Strata.SMT.Encoder.unwrap "assert" (← solver.assert negObligation)
-        valResult ← decisionToResult (← solver.checkSat)
-    solver.close
-    return .ok (satResult, valResult, estate)
-  let (result, _) ← action.run solverState
-  return result
+    return { obligationId, assumptionIds := ids, estate }
+  Imperative.SMT.dischargeObligationIncremental (P := Core.Expression)
+    encodeDecl (typedVarToSMTFn ctx) vars options.solver allFlags
+    satisfiabilityCheck validityCheck
 
 end -- public section
 end Core.SMT
