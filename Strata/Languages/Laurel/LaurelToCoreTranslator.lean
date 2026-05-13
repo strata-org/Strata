@@ -492,11 +492,11 @@ def translateStmt (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt with
       | none =>
-          return [.exit (some "$body") md]
+          return [.exit "$body" md]
       | some _ =>
           emitDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           modify fun s => { s with coreProgramHasSuperfluousErrors := true }
-          return [.exit (some "$body") md]
+          return [.exit "$body" md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -504,7 +504,7 @@ def translateStmt (stmt : StmtExprMd)
       let bodyStmts ← translateStmt body
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
-      return [Imperative.Stmt.exit (some target) md]
+      return [Imperative.Stmt.exit target md]
   | .Hole _ _ =>
       -- Hole in statement position: treat as havoc (no-op).
       -- This can occur when an unmodeled call's Block is flattened.

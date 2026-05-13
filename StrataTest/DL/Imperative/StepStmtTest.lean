@@ -104,42 +104,85 @@ def noCmd : EvalCmdParam MiniPureExpr CmdT := fun _ _ _ _ _ => False
 
 ---------------------------------------------------------------------
 
-/-! ## Test: `loop { exit }` exactly exits the loop, not the outer block.
+/-! ## Test: `block "L" { loop { exit "L" } }` exits the loop via labeled exit.
 
-A minimal program `loop { exit }` is shown to step to `.terminal`.  This
-verifies that an unlabeled `exit` inside the body terminates just the
-loop (and not the enclosing block).
+The `exit "L"` propagates out of body's per-iteration block and the loop's
+recursive step (mismatch propagates), reaching the labeled outer block.
+
+With the new per-iteration loop semantics (each body wrapped in its own block),
+`exit "L"` propagates correctly because labeled exits propagate through both
+the body's anonymous block (label .none ≠ .some "L", mismatch) and the seq
+context (step_seq_exit), then is caught by the outer labeled block.
 -/
 
-/-- The test program: a deterministic `while (true)` loop whose only body
-    statement is an unlabeled `exit`. -/
+/-- The test program: a labeled outer block containing a deterministic
+    `while (true)` loop whose body is `exit "L"`. -/
 def prog : Stmt MiniPureExpr CmdT :=
-  .loop (.det .tt) none [] [.exit none .empty] .empty
+  .block "L"
+    [.loop (.det .tt) none [] [.exit "L" .empty] .empty]
+    .empty
 
 /-- The test: `.stmt prog ρ₀ →* .terminal ρ₀` -/
 theorem progReachesTerminal :
     StepStmtStar MiniPureExpr noCmd miniExtendEval
       (.stmt prog ρ₀) (.terminal ρ₀) := by
-  -- Each step explicitly named; Lean fills the rest.
   have htt : ρ₀.eval ρ₀.store HasBool.tt = some HasBool.tt := rfl
-  -- Step 1: step_loop_enter with hasInvFailure = false.
+  -- Step 1: step_block — enter the outer labeled block.
+  refine .step _ _ _ StepStmt.step_block ?_
+  -- Step 2: step_block_body step_stmts_cons.
+  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
+  -- Step 3: step_block_body (step_seq_inner step_loop_enter).
   refine .step _ _ _
-    (StepStmt.step_loop_enter (hasInvFailure := false) htt ?inv_bool ?inv_iff
-      miniEval_wfBool) ?rest
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner
+        (StepStmt.step_loop_enter (hasInvFailure := false) htt ?inv_bool ?inv_iff
+          miniEval_wfBool))) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
-  -- Post-state: ρ₀' = {ρ₀ with hasFailure := ρ₀.hasFailure || false} definitionally equal to ρ₀.
-  -- Step 2: step_block_body (step_stmts_cons).
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?rest2
-  -- Step 3: step_block_body (step_seq_inner step_exit).
+  -- Now: outer block (L) > seq > seq > body's block (.none) > stmts [exit "L"]
+  -- Step 4: descend into the inner seq, then into the body's block,
+  --         then through stmts_cons.
   refine .step _ _ _
-    (StepStmt.step_block_body (StepStmt.step_seq_inner StepStmt.step_exit)) ?rest3
-  -- Step 4: step_block_body step_seq_exit.
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?rest4
-  -- Step 5: step_block_exit_none.
-  exact .step _ _ _ StepStmt.step_block_exit_none (.refl _)
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner
+        (StepStmt.step_seq_inner
+          (StepStmt.step_block_body StepStmt.step_stmts_cons)))) ?_
+  -- Step 5: fire the exit "L".
+  refine .step _ _ _
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner
+        (StepStmt.step_seq_inner
+          (StepStmt.step_block_body
+            (StepStmt.step_seq_inner StepStmt.step_exit))))) ?_
+  -- Step 6: step_seq_exit (inner-most seq propagates the exiting).
+  refine .step _ _ _
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner
+        (StepStmt.step_seq_inner
+          (StepStmt.step_block_body StepStmt.step_seq_exit)))) ?_
+  -- Step 7: body's `.block .none` mismatches "L" — propagate via step_block_exit_mismatch.
+  refine .step _ _ _
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner
+        (StepStmt.step_seq_inner
+          (StepStmt.step_block_exit_mismatch (by intro h; cases h))))) ?_
+  -- Step 8-9: propagate exiting through outer seq layers.
+  refine .step _ _ _
+    (StepStmt.step_block_body
+      (StepStmt.step_seq_inner StepStmt.step_seq_exit)) ?_
+  refine .step _ _ _
+    (StepStmt.step_block_body StepStmt.step_seq_exit) ?_
+  -- Step 10: outer block "L" matches the exit label.
+  -- The store projection equals ρ₀.store since no inits happened.
+  have hproj : projectStore (P := MiniPureExpr) ρ₀.store ρ₀.store = ρ₀.store := by
+    funext x
+    simp [projectStore]
+    intro h; rfl
+  conv => rhs; rw [show ρ₀ = { ρ₀ with store := projectStore ρ₀.store ρ₀.store } from by
+    simp [hproj]]
+  exact .step _ _ _ (StepStmt.step_block_exit_match rfl) (.refl _)
 
 ---------------------------------------------------------------------
 
@@ -148,7 +191,7 @@ theorem progReachesTerminal :
 
 def progIteThen : Stmt MiniPureExpr CmdT :=
   .block "L"
-    [.ite (.det .tt) [.exit none .empty] [] .empty]
+    [.ite (.det .tt) [.exit "L" .empty] [] .empty]
     .empty
 
 /-- The test: `.stmt progIteThen ρ₀ →* .terminal ρ₀` via the `then` branch. -/
@@ -156,29 +199,26 @@ theorem progIteThenReachesTerminal :
     StepStmtStar MiniPureExpr noCmd miniExtendEval
       (.stmt progIteThen ρ₀) (.terminal ρ₀) := by
   have htt : ρ₀.eval ρ₀.store HasBool.tt = some HasBool.tt := rfl
-  -- Step 1: step_block — enter the outer block.
-  refine .step _ _ _ StepStmt.step_block ?rest1
-  -- Step 2: step_block_body (step_stmts_cons) — break the singleton stmts list.
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?rest2
-  -- Step 3: step_block_body (step_seq_inner step_ite_true) — take the then branch.
+  refine .step _ _ _ StepStmt.step_block ?_
+  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
   refine .step _ _ _
     (StepStmt.step_block_body
-      (StepStmt.step_seq_inner (StepStmt.step_ite_true htt miniEval_wfBool))) ?rest3
-  -- Step 4: step_block_body (step_seq_inner step_stmts_cons) — destructure the then body.
+      (StepStmt.step_seq_inner (StepStmt.step_ite_true htt miniEval_wfBool))) ?_
   refine .step _ _ _
-    (StepStmt.step_block_body (StepStmt.step_seq_inner StepStmt.step_stmts_cons)) ?rest4
-  -- Step 5: step_block_body (step_seq_inner (step_seq_inner step_exit)) — fire the exit.
+    (StepStmt.step_block_body (StepStmt.step_seq_inner StepStmt.step_stmts_cons)) ?_
   refine .step _ _ _
     (StepStmt.step_block_body
-      (StepStmt.step_seq_inner (StepStmt.step_seq_inner StepStmt.step_exit))) ?rest5
-  -- Step 6: step_block_body (step_seq_inner step_seq_exit) — propagate past the inner seq.
+      (StepStmt.step_seq_inner (StepStmt.step_seq_inner StepStmt.step_exit))) ?_
   refine .step _ _ _
     (StepStmt.step_block_body
-      (StepStmt.step_seq_inner StepStmt.step_seq_exit)) ?rest6
-  -- Step 7: step_block_body step_seq_exit — propagate past the outer seq.
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?rest7
-  -- Step 8: step_block_exit_none — the outer block catches the unlabeled exit.
-  exact .step _ _ _ StepStmt.step_block_exit_none (.refl _)
+      (StepStmt.step_seq_inner StepStmt.step_seq_exit)) ?_
+  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?_
+  -- Outer block "L" matches the labeled exit; project store (identity here).
+  have hproj : projectStore (P := MiniPureExpr) ρ₀.store ρ₀.store = ρ₀.store := by
+    funext x; simp [projectStore]; intro _; rfl
+  conv => rhs; rw [show ρ₀ = { ρ₀ with store := projectStore ρ₀.store ρ₀.store } from by
+    simp [hproj]]
+  exact .step _ _ _ (StepStmt.step_block_exit_match rfl) (.refl _)
 
 ---------------------------------------------------------------------
 
@@ -187,7 +227,7 @@ theorem progIteThenReachesTerminal :
 
 def progIteElse : Stmt MiniPureExpr CmdT :=
   .block "L"
-    [.ite (.det .ff) [] [.exit none .empty] .empty]
+    [.ite (.det .ff) [] [.exit "L" .empty] .empty]
     .empty
 
 /-- The test: `.stmt progIteElse ρ₀ →* .terminal ρ₀` via the `else` branch. -/
@@ -210,7 +250,12 @@ theorem progIteElseReachesTerminal :
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner StepStmt.step_seq_exit)) ?rest6
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?rest7
-  exact .step _ _ _ StepStmt.step_block_exit_none (.refl _)
+  -- Outer block "L" matches the labeled exit; project store (identity here).
+  have hproj : projectStore (P := MiniPureExpr) ρ₀.store ρ₀.store = ρ₀.store := by
+    funext x; simp [projectStore]; intro _; rfl
+  conv => rhs; rw [show ρ₀ = { ρ₀ with store := projectStore ρ₀.store ρ₀.store } from by
+    simp [hproj]]
+  exact .step _ _ _ (StepStmt.step_block_exit_match rfl) (.refl _)
 
 ---------------------------------------------------------------------
 
@@ -400,62 +445,76 @@ each iteration the init'd variable is projected away. -/
 def progLoopScope : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
   .loop .nondet none [] [.cmd (.init "y" .Bool (.det .tt) .empty)] .empty
 
-/-- After stepping the loop, the final store should still be `storeWithX`
-    (the variable "y" is projected away by the anonymous block). -/
+/-- After stepping the loop through one iteration and exiting, the final
+    store should still be `storeWithX` (the variable "y" is projected away
+    by the per-iteration anonymous block).  With the new semantics, each
+    iteration's body runs in its own block scope. -/
 theorem loopScopeTest :
     StepStmtStar MiniPureExpr stdEvalCmd miniExtendEval
       (.stmt progLoopScope ρ_x)
       (.terminal { store := storeWithX, eval := miniEval, hasFailure := false }) := by
-  -- Step 1: step_loop_nondet_enter — enter the loop body wrapped in anon block.
+  -- Step 1: step_loop_nondet_enter — produces:
+  --   .seq (.block .none ρ_x.store (.stmts [init y] ρ_x')) [loop ...]
   refine .step _ _ _
     (StepStmt.step_loop_nondet_enter (hasInvFailure := false) ?_ ?_) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
-  -- Now config is:
-  -- .block .none storeWithX (.stmts [init y; loop...] ρ_x)
-  -- Step 2: step_block_body (step_stmts_cons)
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
-  -- Step 3: step_block_body (step_seq_inner step_cmd) — init y := tt
+  -- Step 2: step_seq_inner (step_block_body step_stmts_cons)
   refine .step _ _ _
-    (StepStmt.step_block_body
-      (StepStmt.step_seq_inner
-        (StepStmt.step_cmd
-          (EvalCmd.eval_init (P := MiniPureExpr)
-            (show miniEval storeWithX .tt = some .tt from rfl)
-            (InitState.init
-              (show storeWithX "y" = none from rfl)
-              (show storeWithXY "y" = some .tt from rfl)
-              storeWithXY_frame)
-            miniEval_wfVar)))) ?_
-  -- Step 4: step_block_body (step_seq_done) — inner stmt is terminal, advance to rest
+    (StepStmt.step_seq_inner
+      (StepStmt.step_block_body StepStmt.step_stmts_cons)) ?_
+  -- Step 3: step_seq_inner (step_block_body (step_seq_inner step_cmd)) — init y
   refine .step _ _ _
-    (StepStmt.step_block_body StepStmt.step_seq_done) ?_
-  -- Step 5: step_block_body (step_stmts_cons) — process [loop...]
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
-  -- Step 6: step_block_body (step_seq_inner step_loop_nondet_exit) — loop exits
+    (StepStmt.step_seq_inner
+      (StepStmt.step_block_body
+        (StepStmt.step_seq_inner
+          (StepStmt.step_cmd
+            (EvalCmd.eval_init (P := MiniPureExpr)
+              (show miniEval storeWithX .tt = some .tt from rfl)
+              (InitState.init
+                (show storeWithX "y" = none from rfl)
+                (show storeWithXY "y" = some .tt from rfl)
+                storeWithXY_frame)
+              miniEval_wfVar))))) ?_
+  -- Step 4: step_seq_inner (step_block_body step_seq_done) — inner stmt terminal
   refine .step _ _ _
-    (StepStmt.step_block_body
-      (StepStmt.step_seq_inner
-        (StepStmt.step_loop_nondet_exit (hasInvFailure := false) ?_ ?_))) ?_
+    (StepStmt.step_seq_inner
+      (StepStmt.step_block_body StepStmt.step_seq_done)) ?_
+  -- Step 5: step_seq_inner (step_block_body step_stmts_nil)
+  refine .step _ _ _
+    (StepStmt.step_seq_inner
+      (StepStmt.step_block_body StepStmt.step_stmts_nil)) ?_
+  -- Step 6: step_seq_inner step_block_done — body's block projects, dropping "y"
+  refine .step _ _ _
+    (StepStmt.step_seq_inner StepStmt.step_block_done) ?_
+  -- After projection, env's store is projectStore storeWithX storeWithXY = storeWithX
+  have hproj : projectStore (P := MiniPureExpr) storeWithX storeWithXY = storeWithX := by
+    funext v
+    simp [projectStore, storeWithX, storeWithXY]
+    split <;> simp_all
+  -- Step 7: step_seq_done — seq advances with projected env to [loop ...]
+  refine .step _ _ _ StepStmt.step_seq_done ?_
+  -- Step 8: step_stmts_cons
+  refine .step _ _ _ StepStmt.step_stmts_cons ?_
+  -- Step 9: step_seq_inner step_loop_nondet_exit
+  refine .step _ _ _
+    (StepStmt.step_seq_inner
+      (StepStmt.step_loop_nondet_exit (hasInvFailure := false) ?_ ?_)) ?_
   · intro _ hmem; nomatch hmem
   · constructor <;> intro h
     · cases h
     · rcases h with ⟨_, hmem, _⟩; nomatch hmem
-  -- Step 7: step_block_body step_seq_done — terminal propagates
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_done) ?_
-  -- Step 8: step_block_body step_stmts_nil — empty list terminates
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_nil) ?_
-  -- Step 9: step_block_done — block projects store, removing "y".
-  have hproj : projectStore (P := MiniPureExpr) storeWithX storeWithXY = storeWithX := by
-    ext v
-    simp [projectStore, storeWithX, storeWithXY]
-    split <;> simp_all
+  -- Step 10: step_seq_done
+  refine .step _ _ _ StepStmt.step_seq_done ?_
+  -- Step 11: step_stmts_nil — final terminal
+  -- The final env's store should be storeWithX after the projection.
+  -- Need to reconcile the env shape.
   conv => rhs; rw [show Env.mk storeWithX miniEval false =
-    { (Env.mk storeWithXY miniEval false) with store := projectStore storeWithX storeWithXY }
-    from by simp [hproj]]
-  exact .step _ _ _ StepStmt.step_block_done (.refl _)
+    { Env.mk (projectStore storeWithX storeWithXY) miniEval false with
+      hasFailure := false || false } from by simp [hproj, Bool.or_false]]
+  exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
 ---------------------------------------------------------------------
 

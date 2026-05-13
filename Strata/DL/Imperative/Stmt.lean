@@ -43,10 +43,9 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
              (invariants : List (String × P.Expr))
              (body : List (Stmt P Cmd)) (md : MetaData P)
-  /-- An exit statement that transfers control out of the nearest enclosing
-  block with the given label. If no label is provided, exits the nearest
-  enclosing block. -/
-  | exit     (label : Option String) (md : MetaData P)
+  /-- An exit statement that transfers control out of the enclosing block
+  with the given label. -/
+  | exit     (label : String) (md : MetaData P)
   /-- A function declaration within a statement block. -/
   | funcDecl (decl : PureFunc P) (md : MetaData P)
   /-- A type declaration within a statement block. -/
@@ -80,7 +79,7 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
-    (exit_case : ∀ (label : Option String) (md : MetaData P),
+    (exit_case : ∀ (label : String) (md : MetaData P),
       motive (Stmt.exit label md))
     (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
       motive (Stmt.funcDecl decl md))
@@ -373,9 +372,7 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
       let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}{invFmt}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
-  | .exit label md => match label with
-    | some l => f!"{md}exit {l}"
-    | none => f!"{md}exit"
+  | .exit label md => f!"{md}exit {label}"
   | .funcDecl _ md => f!"{md}funcDecl <function>"
   | .typeDecl tc md => f!"{md}type {tc.name} (arity {tc.numargs})"
 
@@ -407,29 +404,24 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 by an enclosing `block` — either within `s` itself or with a label in
 `labels` (representing blocks that enclose `s` externally).
 
-When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`.
+When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`. -/
 
-The labels have type `Option String` (not `String`) so that `exit` without
-destination block label can be considered as covered even when it is surrounded
-by unlabeled blocks (`[None]`). -/
-
-@[expose] def Stmt.exitsCoveredByBlocks : List (Option String) → Stmt P CmdT → Prop
+@[expose] def Stmt.exitsCoveredByBlocks : List String → Stmt P CmdT → Prop
   | _, .cmd _ => True
-  | labels, .block l ss _ => Block.exitsCoveredByBlocks (.some l :: labels) ss
+  | labels, .block l ss _ => Block.exitsCoveredByBlocks (l :: labels) ss
   | labels, .ite _ tss ess _ => Block.exitsCoveredByBlocks labels tss ∧ Block.exitsCoveredByBlocks labels ess
   | labels, .loop _ _ _ body _ => Block.exitsCoveredByBlocks labels body
-  | labels, .exit none _ => labels.length > 0
-  | labels, .exit (some l) _ => .some l ∈ labels
+  | labels, .exit l _ => l ∈ labels
   | _, .funcDecl _ _ => True
   | _, .typeDecl _ _ => True
 where
-  Block.exitsCoveredByBlocks : List (Option String) → List (Stmt P CmdT) → Prop
+  Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
     | _, [] => True
     | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
 
 theorem block_exitsCoveredByBlocks_append
     {P : PureExpr} {CmdT : Type}
-    (labels : List (Option String)) (ss₁ ss₂ : List (Stmt P CmdT))
+    (labels : List String) (ss₁ ss₂ : List (Stmt P CmdT))
     (h₁ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₁)
     (h₂ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₂) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels (ss₁ ++ ss₂) := by
@@ -441,7 +433,7 @@ theorem block_exitsCoveredByBlocks_append
     can only help. -/
 theorem exitsCoveredByBlocks_weaken
     {P : PureExpr} {CmdT : Type}
-    (labels₁ labels₂ : List (Option String))
+    (labels₁ labels₂ : List String)
     (hsub : ∀ l, l ∈ labels₁ → l ∈ labels₂) :
     (∀ (s : Stmt P CmdT),
       s.exitsCoveredByBlocks labels₁ → s.exitsCoveredByBlocks labels₂) ∧
@@ -466,8 +458,8 @@ theorem exitsCoveredByBlocks_weaken
   | cmd _ => intros; trivial
   | block l ss _ ih =>
     intro labels₁ labels₂ hsub h
-    show Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (.some l :: labels₂) ss
-    exact ih (.some l :: labels₁) (.some l :: labels₂)
+    show Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (l :: labels₂) ss
+    exact ih (l :: labels₁) (l :: labels₂)
       (fun x hx => by cases hx with
         | head => exact .head _
         | tail _ hm => exact .tail _ (hsub x hm))
@@ -478,14 +470,9 @@ theorem exitsCoveredByBlocks_weaken
   | loop _ _ _ body _ ih =>
     intro labels₁ labels₂ hsub h
     exact ih labels₁ labels₂ hsub h
-  | exit label _ =>
+  | exit l _ =>
     intro labels₁ labels₂ hsub h
-    cases label with
-    | none =>
-      show labels₂.length > 0
-      exact List.length_pos_iff_exists_mem.mpr
-        (let ⟨x, hx⟩ := List.length_pos_iff_exists_mem.mp h; ⟨x, hsub x hx⟩)
-    | some l => exact hsub (.some l) h
+    exact hsub l h
   | funcDecl _ _ => intros; trivial
   | typeDecl _ _ => intros; trivial
   | nil => intros; trivial
@@ -497,7 +484,7 @@ theorem exitsCoveredByBlocks_weaken
     for any labels (since `.cmd` has no exit statements). -/
 theorem all_cmd_exitsCoveredByBlocks
     {P : PureExpr} {CmdT : Type}
-    (labels : List (Option String)) (ss : List (Stmt P CmdT))
+    (labels : List String) (ss : List (Stmt P CmdT))
     (h : ∀ s ∈ ss, ∃ c, s = Stmt.cmd c) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss := by
   induction ss with

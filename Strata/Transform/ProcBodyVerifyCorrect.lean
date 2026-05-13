@@ -25,7 +25,7 @@ open Core Core.ProcBodyVerify Imperative Lambda Transform Core.WF
 private theorem coreIsAtAssert_not_terminal (ρ : Env Expression) (a : AssertId Expression) :
     ¬ coreIsAtAssert (.terminal ρ) a := by simp [coreIsAtAssert]
 
-private theorem coreIsAtAssert_not_exiting (lbl : Option String) (ρ : Env Expression) (a : AssertId Expression) :
+private theorem coreIsAtAssert_not_exiting (lbl : String) (ρ : Env Expression) (a : AssertId Expression) :
     ¬ coreIsAtAssert (.exiting lbl ρ) a := by simp [coreIsAtAssert]
 
 /-! ## Input Environment Reconstruction, from the prefix statements of ProcBodyVerify

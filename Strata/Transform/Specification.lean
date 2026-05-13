@@ -91,7 +91,7 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
   /-- Terminal configuration. -/
   terminalCfg : Env P → CfgT
   /-- Exiting configuration. -/
-  exitingCfg : Option String → Env P → CfgT
+  exitingCfg : String → Env P → CfgT
   /-- Assert detection in configurations. -/
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/

@@ -96,13 +96,14 @@ inductive StepKleene
       (.terminal ρ)
 
   /-- A loop can execute one iteration then continue looping.
-      The body+recursion is wrapped in a block (matching the deterministic
-      `step_loop_enter` structure): variables init'd inside are projected
-      away when the block exits. -/
+      Each iteration's body runs in its own block scope, sequenced with the
+      recursive loop step.  When the body's block terminates, projection drops
+      any variables initialized inside the body, so the next iteration starts
+      with the same `isSome`-domain as the loop entry. -/
   | step_loop_step :
     StepKleene EvalCmd
       (.stmt (.loop s) ρ)
-      (.block ρ.store (.seq (.stmt s ρ) (.loop s)))
+      (.seq (.block ρ.store (.stmt s ρ)) (.loop s))
 
   /-- A block statement enters a block context, saving the parent store. -/
   | step_block :
