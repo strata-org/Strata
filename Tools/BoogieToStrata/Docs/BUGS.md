@@ -1,5 +1,35 @@
 # Known Bugs in BoogieToStrata
 
+## 0. Multi-target gotos now supported via CFG emission
+
+**Status**: Resolved
+
+Previously, BoogieToStrata failed on procedures with 3+ target gotos
+("Unsupported: goto with multiple targets") and on 2-target gotos without
+matching inverse assume guards. As of the CFG emission change, procedures
+containing any goto are now emitted using Strata Core's native `cfg` syntax
+instead of structured while/if/exit blocks.
+
+- 1-target goto → `goto L;`
+- 2-target goto → `goto L1, L2;` (nondeterministic)
+- 3+ target goto → chained binary nondet via synthetic `__nondet_N` blocks
+- Procedures without gotos continue to use the structured path unchanged.
+
+Local variables for CFG procedures are emitted as `out` parameters since
+CFG blocks have per-block scoping.
+
+**Known limitation**: Strata's type checker currently errors on 2-target
+nondet gotos (`goto L1, L2;`) with "Cannot find this fvar in the context!
+$__nondet_0". This is a Strata-side issue, not a BoogieToStrata bug. Files
+with only single-target gotos type-check successfully. All CFG output parses
+successfully.
+
+The `strip_smack_prelude.py` script may no longer be needed for procedures
+whose only issue was multi-target gotos, though it's still useful for
+reducing translation size by removing prelude implementations.
+
+---
+
 ## 1. Function parameter names can shadow type synonyms
 
 **Status**: Open
