@@ -56,6 +56,7 @@ end
 --   inductive chain. Uncomment to see the error:
 --   "(kernel) invalid nested inductive datatype 'EvalList'',
 --    nested inductive datatypes parameters cannot contain local variables."
+/-
 mutual
 inductive BadStar (n : Nat) : Nat → Nat → Prop where
   | refl : BadStar n c c
@@ -64,3 +65,4 @@ inductive BadStar (n : Nat) : Nat → Nat → Prop where
 inductive BadCmd (n : Nat) : Nat → Nat → Nat → Prop where
   | call : BadStar n σ σ' → BadCmd n x σ σ'
 end
+-/
