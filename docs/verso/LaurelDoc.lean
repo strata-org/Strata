@@ -126,9 +126,9 @@ declarations.
 
 ## Metadata
 
-All AST nodes can carry metadata via the `WithMetadata` wrapper.
+All AST nodes can carry metadata via the `AstNode` wrapper.
 
-{docstring Strata.Laurel.WithMetadata}
+{docstring Strata.Laurel.AstNode}
 
 # Procedures
 
@@ -137,8 +137,6 @@ Procedures are the main unit of specification and verification in Laurel.
 {docstring Strata.Laurel.Procedure}
 
 {docstring Strata.Laurel.Parameter}
-
-{docstring Strata.Laurel.Determinism}
 
 {docstring Strata.Laurel.Body}
 

@@ -22,10 +22,13 @@ public section
 ---------------------------------------------------------------------
 
 /--
-A counterexample derived from an SMT solver is a map from an identifier
+A model derived from an SMT solver is a map from an identifier
 to an `SMT.Term`.
 -/
-@[expose] abbrev CounterEx (Ident : Type) := Map Ident Strata.SMT.Term
+@[expose] abbrev Model (Ident : Type) := Map Ident Strata.SMT.Term
+
+/-- Backward-compatible alias. -/
+@[deprecated Model (since := "2026-04-03")] abbrev CounterEx := @Model
 
 /-- Render an `SMT.Term` to a string via the SMTDDM translation. -/
 private def termToString (t : Strata.SMT.Term) : String :=
@@ -33,24 +36,24 @@ private def termToString (t : Strata.SMT.Term) : String :=
   | .ok s => s
   | .error _ => repr t |>.pretty
 
-def CounterEx.format {Ident} [ToFormat Ident] (cex : CounterEx Ident) : Format :=
-  match cex with
+def Model.format {Ident} [ToFormat Ident] (m : Model Ident) : Format :=
+  match m with
   | [] => ""
   | [(id, v)] => f!"({id}, {termToString v})"
   | (id, v) :: rest =>
-    (f!"({id}, {termToString v}) ") ++ CounterEx.format rest
+    (f!"({id}, {termToString v}) ") ++ Model.format rest
 
-instance {Ident} [ToFormat Ident] : ToFormat (CounterEx Ident) where
-  format := CounterEx.format
+instance {Ident} [ToFormat Ident] : ToFormat (Model Ident) where
+  format := Model.format
 
 /--
 Result from an SMT solver.
 -/
 inductive Result (Ident : Type) where
   -- Also see Strata.SMT.Decision.
-  | sat (cex : CounterEx Ident)
+  | sat (model : Model Ident)
   | unsat
-  | unknown
+  | unknown (candidateModel : Option (Model Ident) := none)
   | err (msg : String)
   deriving DecidableEq, Repr
 
@@ -65,7 +68,13 @@ def Result.formatWithVerbose {Ident} [ToFormat Ident]
       f!"sat"
     else f!"sat\nModel: {m}"
   | .unsat => f!"unsat"
-  | .unknown => f!"unknown"
+  | .unknown m =>
+    match m with
+    | some model =>
+      if (not verbose) || model.isEmpty then
+        f!"unknown"
+      else f!"unknown\nCandidate model: {model}"
+    | none => f!"unknown"
   | .err msg => f!"err {msg}"
 
 instance {Ident} [ToFormat Ident]: ToFormat (Result Ident) where
@@ -105,6 +114,26 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stderr: {repr output.stderr}\n\
   --                         stdout: {repr output.stdout}"
   return output
+
+/-- Classifies the error when the solver fails to produce a valid verdict. -/
+inductive SolverError where
+  | timeout (detail : String)
+  | crash (detail : String)
+
+instance : ToString SolverError where
+  toString
+    | .timeout d => s!"Solver timeout: {d}"
+    | .crash d   => s!"Solver crash: {d}"
+
+/-- True when the word "timeout" appears as a whitespace-delimited token
+    in the solver's stdout or stderr. z3 emits "timeout" as a standalone
+    line on stdout; cvc5 prints "interrupted by timeout." on stderr.
+    Only called when verdict parsing has already failed. -/
+private def isTimeoutOutput (output : IO.Process.Output) : Bool :=
+  let hasWord (s : String) := s.splitOn "\n" |>.any fun line =>
+    line.splitOn " " |>.any fun tok =>
+      tok.trimAscii.toString == "timeout" || tok.trimAscii.toString == "timeout."
+  hasWord output.stdout || hasWord output.stderr
 
 ---------------------------------------------------------------------
 -- SMTDDM-based parsing
@@ -168,7 +197,7 @@ value in the model.
 private def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
-    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
+    (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
   match vars with
   | [] => return []
   | (var, ty) :: vrest =>
@@ -197,7 +226,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (vars : List P.TypedIdent) (output : IO.Process.Output)
     (E : Strata.SMT.EncoderState) (smtsolver : String)
     (satisfiabilityCheck validityCheck : Bool)
-    : IO (Except Format (Result P.Ident × Result P.Ident)) := do
+    : IO (Except SolverError (Result P.Ident × Result P.Ident)) := do
   let stdout := output.stdout
 
   -- Helper to parse a single verdict and model
@@ -225,21 +254,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     | "unknown" => return some (.unknown, skipToNextVerdict rest)
     | _ => return none
 
-  -- Parse results based on which checks are enabled
-  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
-  | some (satResult, remaining) =>
-    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
-    | some (validityResult, _) => return .ok (satResult, validityResult)
-    | none =>
-      let stderr := output.stderr
-      let hasExecError := stderr.contains "could not execute external process"
-      let hasFileError := stderr.contains "No such file or directory"
-      let suggestion :=
-        if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
-          s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
-        else ""
-      return .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
-  | none =>
+  let mkError (output : IO.Process.Output) : SolverError :=
     let stderr := output.stderr
     let hasExecError := stderr.contains "could not execute external process"
     let hasFileError := stderr.contains "No such file or directory"
@@ -247,19 +262,34 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
       if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
         s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
       else ""
-    return .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+    let detail := s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+    if isTimeoutOutput output then .timeout detail else .crash detail
 
+  -- Parse results based on which checks are enabled
+  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
+  | some (satResult, remaining) =>
+    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
+    | some (validityResult, _) => return .ok (satResult, validityResult)
+    | none =>
+      return .error (mkError output)
+  | none =>
+    return .error (mkError output)
+
+/-- Emit a block of `set-info` attributes describing the source location and
+    an optional application-specific `(name, rawValue)` pair. `message.snd` is
+    a raw Lean string; it will be quoted and SMT-LIB-escaped (doubled `""`)
+    before emission. -/
 def addLocationInfo {P : PureExpr} [BEq P.Ident]
   (md : Imperative.MetaData P) (message : String × String)
   : Strata.SMT.SolverM Unit := do
   match Imperative.getFileRange md with
     | .some fileRange => do
-      Strata.SMT.Solver.setInfo "file" s!"\"{format fileRange.file}\""
+      Strata.SMT.Solver.setInfoString "file" (toString (format fileRange.file))
       Strata.SMT.Solver.setInfo "start" s!"{fileRange.range.start}"
       Strata.SMT.Solver.setInfo "stop" s!"{fileRange.range.stop}"
       -- TODO: the following should probably be stored in metadata so it can be
       -- set in an application-specific way.
-      Strata.SMT.Solver.setInfo message.fst message.snd
+      Strata.SMT.Solver.setInfoString message.fst message.snd
     | .none => pure ()
 
 /--
@@ -276,8 +306,9 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (vars : List P.TypedIdent)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
-  (satisfiabilityCheck validityCheck : Bool) :
-  IO (Except Format (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+  (satisfiabilityCheck validityCheck : Bool)
+  (skipSolver : Bool := false) :
+  IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
@@ -285,6 +316,9 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   let ((_ids, estate), _solverState) ← encodeSMT.run solver
 
   if printFilename then IO.println s!"Wrote problem to {filename}."
+
+  if skipSolver then
+    return .ok (.unknown, .unknown, estate)
 
   let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
   match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
@@ -307,17 +341,17 @@ structure VCResult (P : Imperative.PureExpr) where
   result : SMT.Result P.Ident := .unknown
   estate : Strata.SMT.EncoderState := Strata.SMT.EncoderState.init
 
-instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.CounterEx P.Ident)]
+instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.Model P.Ident)]
   : ToFormat (VCResult P) where
   format r :=
     let result_fmt := match r.result with
-      | .sat cex  =>
-        if cex.isEmpty then
-          f!"failed\nNo counterexample available."
+      | .sat model  =>
+        if model.isEmpty then
+          f!"failed\nNo model available."
         else
-          f!"failed\nCounterexample: {cex}"
+          f!"failed\nModel: {model}"
       | .unsat => f!"verified"
-      | .unknown => f!"unknown"
+      | .unknown _ => f!"unknown"
       | .err msg => f!"err {msg}"
     f!"Obligation: {r.obligation.label}\n\
                  Result: {result_fmt}"

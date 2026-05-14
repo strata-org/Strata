@@ -5,11 +5,8 @@
 -/
 module
 
-public import Lean.Parser.Types
 
-public import Strata.DDM.AST
 public import Strata.DDM.Elab.LoadedDialects
-public import Strata.DDM.Parser
 import all Strata.DDM.Util.Lean
 import all Strata.DDM.Util.PrattParsingTables
 

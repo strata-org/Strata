@@ -40,8 +40,10 @@ def core_pgm := TransM.run Inhabited.default (translateProgram pgm)
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: type set := Map int bool;
-function diff (a : (Map int bool), b : (Map int bool)) : Map int bool;
+info: ok: program Core;
+
+type set := Map int bool;
+function diff (a : Map int bool, b : Map int bool) : Map int bool;
 function lambda_0 (l_0 : bool, l_1 : int, l_2 : int) : Map int int;
 axiom [a1]: forall a : (Map int bool) :: forall b : (Map int bool) ::  { diff(a, b) }
   diff(a, b) == diff(b, a);

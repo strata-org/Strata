@@ -25,17 +25,25 @@ public section
 ---------------------------------------------------------------------
 
 /--
+A call argument is either an input expression, an in-out variable, or an
+output variable.
+-/
+inductive CallArg (P : PureExpr) where
+  /-- An input argument: a by-value expression. -/
+  | inArg (e : P.Expr)
+  /-- An input-output argument: a mutable variable passed by reference. -/
+  | inoutArg (id : P.Ident)
+  /-- An output-only argument: a variable whose final value is returned to the caller. -/
+  | outArg (id : P.Ident)
+
+/--
 Extend Imperative's commands by adding a procedure call.
 -/
 inductive CmdExt (P : PureExpr) where
+  /-- A standard imperative command. -/
   | cmd (c : Imperative.Cmd P)
-  /--
-  Procedure calls, where `lhs` refers to the variables modified by the call.
-  -/
-  -- Note: currently the procName in call statement is a String.
-  -- Maybe procedure names should just be plain strings since there is no
-  -- "scoped procedures" or "generated procedures"
-  | call (lhs : List P.Ident) (procName : String) (args : List P.Expr)
+  /-- A procedure call with the given name and arguments. -/
+  | call (procName : String) (args : List (CallArg P))
          (md : MetaData P)
 
 /--
@@ -49,20 +57,58 @@ instance : HasPassiveCmds Expression Command where
   assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
-  havoc x md := .cmd (.havoc x md)
+  havoc x md := .cmd (.set x .nondet md)
 
 instance : HasInit Expression Command where
   init x ty e md := .cmd (.init x ty e md)
 
-instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
-    [ToFormat (List P.Ident)] [ToFormat P.Expr] :
-    ToFormat (CmdExt P) where
-  format c := match c with
-    | .cmd c => format c
-    | .call lhs pname args _md =>
-      f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
-      f!"{pname}({nestD <| group <| joinSep args ("," ++ line)})"
+namespace CallArg
 
+def getInArgs (args : List (CallArg P)) : List P.Expr :=
+  args.filterMap fun | .inArg e => some e | _ => none
+
+def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .inoutArg id => some id | _ => none
+
+def getOutArgs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .outArg id => some id | _ => none
+
+def getLhs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .inoutArg id | .outArg id => some id | _ => none
+
+def getOutOnly (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .outArg id => some id | _ => none
+
+def replaceInArgs (args : List (CallArg P)) (newExprs : List P.Expr) : List (CallArg P) :=
+  go args newExprs
+where
+  go : List (CallArg P) → List P.Expr → List (CallArg P)
+  | [], _ => []
+  | .inArg _ :: rest, e :: es => .inArg e :: go rest es
+  | .inArg e :: rest, [] => .inArg e :: go rest []
+  | a :: rest, es => a :: go rest es
+
+theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
+    (replaceInArgs args newExprs).length = args.length := by
+  simp [replaceInArgs]
+  suffices ∀ es, (replaceInArgs.go args es).length = args.length from this newExprs
+  induction args with
+  | nil => simp [replaceInArgs.go]
+  | cons a rest ih =>
+    intro es
+    match a, es with
+    | .inArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inArg _, [] => simp [replaceInArgs.go, ih]
+    | .inoutArg _, es => simp [replaceInArgs.go, ih]
+    | .outArg _, es => simp [replaceInArgs.go, ih]
+
+def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
+  args.filterMap fun
+    | .inArg e => some e
+    | .inoutArg id => some (Lambda.LExpr.fvar () id none)
+    | .outArg _ => none
+
+end CallArg
 ---------------------------------------------------------------------
 
 @[expose]
@@ -71,16 +117,16 @@ abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 abbrev Statements := List Statement
 
 @[expose, match_pattern]
-abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
+abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[expose, match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
     (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name (.det expr) md))
 @[expose, match_pattern]
 abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name .nondet md))
 @[expose, match_pattern]
 abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
@@ -88,9 +134,9 @@ abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Ex
 abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
 @[expose, match_pattern]
-abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
+abbrev Statement.call (pname : String) (args : List (CallArg Expression))
     (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
+  @Stmt.cmd Expression Command (CmdExt.call pname args md)
 @[expose, match_pattern]
 abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
@@ -110,13 +156,15 @@ def Command.eraseTypes (c : Command) : Command :=
   | .cmd c =>
     match c with
     | .init name ty e md => .cmd $ .init name ty (e.map Lambda.LExpr.eraseTypes) md
-    | .set name e md => .cmd $ .set name e.eraseTypes md
-    | .havoc name md => .cmd $ .havoc name md
+    | .set name e md => .cmd $ .set name (e.map Lambda.LExpr.eraseTypes) md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
     | .assume label b md => .cmd $ .assume label b.eraseTypes md
     | .cover label b md => .cmd $ .cover label b.eraseTypes md
-  | .call lhs pname args md =>
-    .call lhs pname (args.map Lambda.LExpr.eraseTypes) md
+  | .call pname args md =>
+    .call pname (args.map fun
+      | .inArg e => .inArg (Lambda.LExpr.eraseTypes e)
+      | .inoutArg id => .inoutArg id
+      | .outArg id => .outArg id) md
 
 mutual
 def Statement.eraseTypes (s : Statement) : Statement :=
@@ -152,7 +200,7 @@ end
 def Command.getVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.getVars
-  | .call _ _ args _ => args.flatMap HasVarsPure.getVars
+  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasVarsPure.getVars
 
 instance : HasVarsPure Expression Command where
   getVars := Command.getVars
@@ -165,7 +213,7 @@ def Command.definedVars (c : Command) : List Expression.Ident :=
 def Command.modifiedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.modifiedVars
-  | .call lhs _ _ _ => lhs
+  | .call _ args _ => CallArg.getLhs args
 
 def Command.touchedVars (c : Command) : List Expression.Ident :=
   Command.definedVars c ++ Command.modifiedVars c
@@ -194,9 +242,11 @@ def Command.modifiedVarsTrans
   (π : String → Option ProcType) (c : Command)
   : List Expression.Ident := match c with
   | .cmd c => Cmd.modifiedVars (P:=Expression) c
-  | .call lhs f _ _ => match π f with
+  | .call f args _ =>
+    let lhs := CallArg.getLhs args
+    match π f with
     | some proc => lhs ++ HasVarsTrans.modifiedVarsTrans π proc
-    | none => lhs -- TODO: throw error?
+    | none => lhs
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
@@ -230,11 +280,12 @@ def Command.getVarsTrans
   (π : String → Option ProcType) (c : Command)
   : List Expression.Ident := match c with
   | .cmd c => Cmd.getVars (P:=Expression) c
-  | .call lhs f args _ =>
-    args.flatMap HasVarsPure.getVars ++
+  | .call f args _ =>
+    let lhs := CallArg.getLhs args
+    (CallArg.getInputExprs args).flatMap HasVarsPure.getVars ++
     match π f with
     | some proc => lhs ++ HasVarsTrans.getVarsTrans π proc
-    | none => [] -- TODO: throw error?
+    | none => []
 
 mutual
 /-- Get all variables get by the statement `s`. -/
@@ -335,8 +386,8 @@ def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
-  | .init lhs ty rhs metadata =>
-    .init lhs ty (rhs.map (Lambda.LExpr.substFvar · fr to)) metadata
+  | .init lhs ty e metadata =>
+    .init lhs ty (e.map (Lambda.LExpr.substFvar · fr to)) metadata
   | .set lhs rhs metadata =>
     .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
   | .havoc _ _ => s
@@ -346,18 +397,21 @@ def Statement.substFvar (s : Core.Statement)
     .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .cover lbl b metadata =>
     .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .call lhs pname args metadata =>
-    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
+  | .call pname args metadata =>
+    .call pname (args.map fun
+      | .inArg e => .inArg (Lambda.LExpr.substFvar e fr to)
+      | .inoutArg id => .inoutArg id
+      | .outArg id => .outArg id) metadata
 
   | .block lbl b metadata =>
     .block lbl (Block.substFvar b fr to) metadata
   | .ite cond thenb elseb metadata =>
-    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
+    .ite (cond.map (Lambda.LExpr.substFvar · fr to)) (Block.substFvar thenb fr to)
           (Block.substFvar elseb fr to) metadata
   | .loop guard measure invariant body metadata =>
-    .loop (Lambda.LExpr.substFvar guard fr to)
+    .loop (guard.map (Lambda.LExpr.substFvar · fr to))
           (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (invariant.map (Lambda.LExpr.substFvar · fr to))
+          (invariant.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
           (Block.substFvar body fr to)
           metadata
   | .exit _ _ => s
@@ -385,9 +439,11 @@ def Statement.renameLhs (s : Core.Statement)
     .init (if lhs.name == fr then to else lhs) ty rhs metadata
   | .set lhs rhs metadata =>
     .set (if lhs.name == fr then to else lhs) rhs metadata
-  | .call lhs pname args metadata =>
-    .call (lhs.map (fun l =>
-      if l.name == fr  then to else l)) pname args metadata
+  | .call pname args metadata =>
+    .call pname (args.map fun
+      | .inArg e => .inArg e
+      | .inoutArg l => .inoutArg (if l.name == fr then to else l)
+      | .outArg l => .outArg (if l.name == fr then to else l)) metadata
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
   | .ite x thenb elseb m =>
@@ -402,6 +458,64 @@ def Statement.renameLhs (s : Core.Statement)
   | .typeDecl _ _ => s  -- Type declarations don't have lhs variables
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
+
+---------------------------------------------------------------------
+
+/-- Apply a function to all user-facing expressions in a Core command. -/
+def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Command
+  | .cmd (.assert l e md) => .cmd (.assert l (f e) md)
+  | .cmd (.assume l e md) => .cmd (.assume l (f e) md)
+  | .cmd (.cover l e md) => .cmd (.cover l (f e) md)
+  | .cmd (.init n ty (.det e) md) => .cmd (.init n ty (.det (f e)) md)
+  | .cmd (.set n (.det e) md) => .cmd (.set n (.det (f e)) md)
+  | .call pname args md => .call pname (args.map fun
+      | .inArg e => .inArg (f e)
+      | a => a) md
+  | c => c
+
+/-- Apply a function to all user-facing expressions in a statement. -/
+def Statement.mapExprs (f : Expression.Expr → Expression.Expr) (s : Statement) : Statement :=
+  Imperative.Stmt.mapExpr f (Command.mapExpr f) s
+
+/-- Apply a function to all user-facing expressions in a list of statements. -/
+def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
+    (ss : Statements) : Statements :=
+  ss.map (Statement.mapExprs f)
+
+/-- Collect all user-facing expressions from a statement. -/
+def Statement.collectExprs :
+    Statement → List Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) => [e]
+  | .cmd (.cmd (.assume _ e _)) => [e]
+  | .cmd (.cmd (.cover _ e _)) => [e]
+  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
+  | .cmd (.cmd (.set _ (.det e) _)) => [e]
+  | .cmd (.call _ args _) => args.filterMap fun
+      | .inArg e => some e
+      | _ => none
+  | .block _ ss _ => ss.flatMap Statement.collectExprs
+  | .ite (.det c) tss ess _ =>
+    [c] ++ tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .ite .nondet tss ess _ =>
+    tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .loop (.det g) measure inv body _ =>
+    [g] ++ measure.toList ++
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+  | .loop .nondet measure inv body _ =>
+    measure.toList ++
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+  | .cmd (.cmd (.init _ _ .nondet _)) => []
+  | .cmd (.cmd (.set _ .nondet _)) => []
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Collect all user-facing expressions from a list of statements. -/
+def Statements.collectExprs
+    (ss : Statements) : List Expression.Expr :=
+  ss.flatMap Statement.collectExprs
 
 ---------------------------------------------------------------------
 

@@ -13,49 +13,51 @@ namespace Core
 open Lambda
 open Strata.SMT
 
-/-- info: "(define-fun t0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n" -/
+/--
+info: "(assert (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
+-/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant () .all "n" (.some .int) (LExpr.noTrigger ())
    (.quant () .exist "m" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 /--
-info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (= i x)))\n"
+info: "; x\n(declare-const x Int)\n(assert (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant () .exist "i" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant ()  .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /-- info: "Cannot encode expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
+info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant () .exist "i" (.some .int)
    (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
@@ -68,36 +70,36 @@ info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\
    }})
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Env.init.exprEnv.config.factory.push $
+          Env.init.exprEnv.config.factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
       }
    }})
 
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((m Int) (n Int)) (= (f n m) x)))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (= (f n m) x)))\n"
 -/
 #guard_msgs in -- No valid trigger
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Env.init.exprEnv.config.factory.push $
+          Env.init.exprEnv.config.factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
       }
    }})
@@ -108,10 +110,10 @@ section ArrayTheory
 
 -- Test map select with Array theory enabled
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun t1 () Int i)\n(define-fun t2 () Int (select t0 t1))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n(assert (select m i))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
     (.fvar () "m" (.some (mapTy .int .int))))
     (.fvar () "i" (.some .int)))
@@ -125,10 +127,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 
 -- Test map update with Array theory enabled
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun t1 () Int i)\n; v\n(declare-const v Int)\n(define-fun t2 () Int v)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n(assert (store m i v))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
     (.fvar () "m" (.some (mapTy .int .int))))
     (.fvar () "i" (.some .int)))
@@ -143,10 +145,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 
 -- Test nested map operations with Array theory
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; i\n(declare-const i Int)\n(define-fun t1 () Int i)\n; v\n(declare-const v Int)\n(define-fun t2 () Int v)\n(define-fun t3 () (Array Int Int) (store t0 t1 t2))\n; j\n(declare-const j Int)\n(define-fun t4 () Int j)\n(define-fun t5 () Int (select t3 t4))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n(declare-const v Int)\n; j\n(declare-const j Int)\n(assert (select (store m i v) j))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
     (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
       (.fvar () "m" (.some (mapTy .int .int))))
@@ -163,10 +165,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 
 -- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
 /--
-info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(define-fun t1 () Int (getFirst t0))\n"
+info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(assert (getFirst m))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
            (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
   (useArrayTheory := true)
@@ -174,53 +176,76 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Core.Factory.push $
+          Core.Factory.pushIfNew $
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
             [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] []
       }
    }})
 
--- Test empty string falls back to generated names
-/-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
+-- Test that all bound variables get globally unique generated names
+/-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant () .all "" (.some .int) (LExpr.noTrigger ())
    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test name clash between two nested quantifiers with same name
--- Expected: Inner x should be disambiguated to x@1
-/-- info: "(define-fun t0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
+-- Test nested quantifiers with same user name get disambiguated human-readable names
+/--
+info: "(assert (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
+-/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test x, x, x@1 scenario: nested quantifiers both named "x", then bvar named "x@1"
--- Expected: outer x stays x, inner x becomes x@1, bvar "x@1" becomes x@2
-/-- info: "(define-fun t0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n" -/
+-- Test triply nested quantifiers all get distinct disambiguated human-readable names
+/--
+info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
+-/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
     (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
      (.eq () (.bvar () 0) (.bvar () 2)))))
 
 
-/-- info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/
+/--
+info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
+-/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+
+-- Test that bound variable names are globally unique across multiple terms.
+-- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
+#guard
+  match toSMTTerms Env.init [
+    -- Term 1: ∀ x:Int. x = x
+    (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+     (.eq () (.bvar () 0) (.bvar () 0))),
+    -- Term 2: ∀ y:Bool. y
+    (.quant () .all "" (.some .bool) (LExpr.noTrigger ())
+     (.bvar () 0))
+  ] SMT.Context.default with
+  | .ok ([t1, t2], _) =>
+    match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
+    | .ok s1, .ok s2 =>
+      s1 == "(forall (($__bv0 Int)) true)" &&
+      s2 == "(forall (($__bv1 Bool)) $__bv1)"
+    | _, _ => false
+  | _ => false
 
 -- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
 -- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
 /--
-info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t1 () Bool (= t0 \"{\"\"key\"\":\"\"val\"\"}\"))\n"
+info: "; x\n(declare-const x String)\n(assert (= x \"{\"\"key\"\":\"\"val\"\"}\"))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.eq () (.fvar () "x" (.some .string)) (.strConst () "{\"key\":\"val\"}"))
 
 -- Test that negative integer constants are lowered to (- N) form
@@ -230,10 +255,10 @@ info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t
 
 -- Test that Real.Div encodes to `/` (real division) not `div` (integer division).
 /--
-info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-const y Real)\n(define-fun t1 () Real y)\n(define-fun t2 () Real (|/| t0 t1))\n"
+info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x y))\n"
 -/
 #guard_msgs in
-#eval toSMTTermString
+#eval toSMTCommandsWithAssert
   (.app ()
     (.app ()
       (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
@@ -265,6 +290,189 @@ end ArrayTheory
     | unreachable!
   return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
 
+/-! ## Test that get-value ids exclude non-nullary UFs -/
+
+-- encodeCore should only include nullary UFs (constants) in the ids passed to
+-- get-value. Non-nullary UFs like `f(x : Int) : Int` cannot be queried via
+-- get-value in some SMT solvers.
+/-- info: (["c"], true) -/
+#guard_msgs in
+#eval show IO _ from do
+  -- Non-nullary UF: f(x : Int) : Int — should be excluded from ids
+  let uf_f := UF.mk "f" [TermVar.mk "x" TermType.int] TermType.int
+  -- Nullary UF: c : Int — should be included in ids
+  let uf_c := UF.mk "c" [] TermType.int
+  let ctx : SMT.Context := { SMT.Context.default with ufs := #[uf_f, uf_c] }
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression := #[]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let ((ids, _estate), _) ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "test"))
+  -- ids should contain "c" but not "f"
+  let hasF := ids.any (· == "f")
+  return (ids, !hasF)
+
+/-! ## Test that final-message falls back to label when metadata has no message -/
+
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "assert_bounds_check")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression := #[]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  IO.print smt
+
+/-! ## Test that final-message uses propertySummary when present -/
+
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "Division by zero is impossible")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression :=
+    Imperative.MetaData.empty.withPropertySummary "Division by zero is impossible"
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  IO.print smt
+
+/-! ## Regression: `:final-message` / `:sat-message` / `:unsat-message`
+    must escape embedded double quotes by doubling them (`""`) per
+    SMT-LIB 2.6+, not with C-style `\"` escaping.
+
+    Before the fix, a property summary containing `"` would render as
+    `(set-info :final-message "... \"FOO\" ...")` which SMT-LIB parsers
+    reject: the backslash is a literal character in string contexts, and
+    the following `"` closes the string, leaving `FOO\"...` outside as
+    unexpected tokens. See
+    https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf
+    §3.1.2. -/
+
+/-- Run `encodeCore` on a trivial `true` obligation with the given metadata
+    and check flags, and return the resulting SMT-LIB text. -/
+private def captureEncodeCore (md : Imperative.MetaData Core.Expression)
+    (satCheck validityCheck : Bool) (label : String := "test") : IO String := do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := satCheck) (validityCheck := validityCheck) (label := label))
+  let contents ← b.get
+  return if h : contents.data.IsValidUTF8
+         then String.fromUTF8 contents.data h
+         else ""
+
+/-- Metadata carrying only a property summary (no file range). -/
+private def summaryMd (summary : String) : Imperative.MetaData Core.Expression :=
+  Imperative.MetaData.empty.withPropertySummary summary
+
+/-- Metadata carrying only a file range (no property summary); used to
+    exercise `addLocationInfo`. -/
+private def fileRangeMd (file : String) : Imperative.MetaData Core.Expression :=
+  let fr : Strata.FileRange := ⟨.file file, Strata.SourceRange.none⟩
+  Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+
+/-! Embedded double quotes in the property summary must be doubled (`""`). -/
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "Expected len(kwargs[""JobName""]) >= 1, got stringLen(kwargs[JobName])")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let smt ← captureEncodeCore
+    (summaryMd "Expected len(kwargs[\"JobName\"]) >= 1, got stringLen(kwargs[JobName])")
+    false true
+  IO.print smt
+
+/-! A backslash in the property summary is a *literal* character in SMT-LIB
+    2.6+ strings (no special meaning), so no escape is needed. -/
+/--
+info: (set-info :final-message "path/with\backslash")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let smt ← captureEncodeCore (summaryMd "path/with\\backslash") false true
+  for line in smt.splitOn "\n" do
+    if line.startsWith "(set-info :final-message" then
+      IO.println line
+
+/-! In full-check mode (both satisfiability and validity), `addLocationInfo`
+    emits `:sat-message` and `:unsat-message`. These values must not carry
+    pre-wrapping literal quote characters — before the fix, the
+    `bothChecks` branch passed `"\"Property can be satisfied\""` which, once
+    `setInfoString` re-quoted it, rendered as `"""Property..."""` (a
+    well-formed SMT-LIB string whose content has literal leading and
+    trailing `"`). -/
+/--
+info: (set-info :sat-message "Property can be satisfied")
+(set-info :unsat-message "Property is always true")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let smt ← captureEncodeCore (fileRangeMd "test.st") true true
+  for line in smt.splitOn "\n" do
+    if line.startsWith "(set-info :sat-message"
+        ∨ line.startsWith "(set-info :unsat-message" then
+      IO.println line
+
+/-! ## SMT encoding of str.prefixof / str.suffixof -/
+
+/--
+info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.prefixof s1 s2))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.app () (.app () strPrefixOfOp (.fvar () "s1" (.some .string)))
+    (.fvar () "s2" (.some .string)))
+
+/--
+info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.suffixof s1 s2))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
+    (.fvar () "s2" (.some .string)))
+
 end Core
 
 /-! ## End-to-End Test with Complete Program -/
@@ -276,11 +484,8 @@ def simpleMapProgram :=
 #strata
 program Core;
 
-var m : Map int int;
-
-procedure UpdateAndRead(k : int, v : int) returns (result : int)
+procedure UpdateAndRead(inout m : Map int int, k : int, v : int, out result : int)
 spec {
-    modifies m;
     ensures result == v;
 }
 {
@@ -292,7 +497,7 @@ spec {
 -- Test verification with axiomatized maps (default)
 /--
 info:
-Obligation: UpdateAndRead_ensures_1
+Obligation: UpdateAndRead_ensures_0
 Property: assert
 Result: ✅ pass
 -/
@@ -302,7 +507,7 @@ Result: ✅ pass
 -- Test verification with Array theory
 /--
 info:
-Obligation: UpdateAndRead_ensures_1
+Obligation: UpdateAndRead_ensures_0
 Property: assert
 Result: ✅ pass
 -/
@@ -314,9 +519,7 @@ def quotedStringProgram :=
 #strata
 program Core;
 
-var x: string;
-
-procedure Test() returns ()
+procedure Test(x: string)
 spec { ensures true; }
 {
   assume x == "{\"key\":\"val\"}";

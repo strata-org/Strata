@@ -1,0 +1,3 @@
+class StandaloneClass:
+    def compute(self, x: int) -> str:
+        ...

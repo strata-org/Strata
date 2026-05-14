@@ -1,0 +1,6 @@
+test_tuple_unpack.py(3, 4): ✅ pass - set_a_calls_Any_get_0
+test_tuple_unpack.py(3, 4): ✅ pass - set_b_calls_Any_get_0
+test_tuple_unpack.py(4, 4): ✅ pass - unpack first
+test_tuple_unpack.py(5, 4): ✅ pass - unpack second
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

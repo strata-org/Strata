@@ -23,6 +23,8 @@ inductive FuncAttr where
   | inlineIfConstr (paramIdx : Nat)
   /-- Use concrete evaluation when argument at `paramIdx` is a constructor application. -/
   | evalIfConstr (paramIdx : Nat)
+  /-- Use concrete evaluation when argument at `paramIdx` is a canonical value. -/
+  | evalIfCanonical (paramIdx : Nat)
   deriving DecidableEq, Repr, Inhabited, BEq
 
 open Std (ToFormat Format format)
@@ -32,6 +34,7 @@ instance : ToFormat FuncAttr where
     | .inline => "inline"
     | .inlineIfConstr i => f!"inlineIfConstr {i}"
     | .evalIfConstr i => f!"evalIfConstr {i}"
+    | .evalIfCanonical i => f!"evalIfCanonical {i}"
 
 instance : ToFormat (Array FuncAttr) where
   format attrs := Format.joinSep (attrs.toList.map format) ", "
@@ -43,6 +46,10 @@ def FuncAttr.findInlineIfConstr (attrs : Array FuncAttr) : Option Nat :=
 /-- Return the `paramIdx` of the first `evalIfConstr` attribute, if any. -/
 def FuncAttr.findEvalIfConstr (attrs : Array FuncAttr) : Option Nat :=
   attrs.findSome? fun | .evalIfConstr i => some i | _ => none
+
+/-- Return the `paramIdx` of the first `evalIfCanonical` attribute, if any. -/
+def FuncAttr.findEvalIfCanonical (attrs : Array FuncAttr) : Option Nat :=
+  attrs.findSome? fun | .evalIfCanonical i => some i | _ => none
 
 end Strata.DL.Util
 end

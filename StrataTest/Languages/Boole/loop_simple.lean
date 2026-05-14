@@ -29,7 +29,27 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" loop_simple_program
+/-- info: Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: sum_assert
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" loop_simple_program (options := .quiet)
 
 open Strata.SMT
 

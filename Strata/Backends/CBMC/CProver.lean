@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -------------------------------------------------------------------------------
 
-import Strata.Backends.CBMC.GOTO.Program
-import Strata.Backends.CBMC.GOTO.InstToJson
+public import Strata.Backends.CBMC.GOTO.Program
+public import Strata.Backends.CBMC.GOTO.InstToJson

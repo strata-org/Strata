@@ -16,11 +16,9 @@ type Matrix := Map int (Map int int);
 
 procedure matrix_transpose (A: Matrix, m: int, n: int) returns (B: Matrix)
 {
-  var i: int;
   var j: int;
 
-  i := 0;
-  while (i < m)
+  for i: int := 0 to (m - 1)
   {
     j := 0;
     while (j < n)
@@ -31,11 +29,11 @@ procedure matrix_transpose (A: Matrix, m: int, n: int) returns (B: Matrix)
       B[i][j] := A[j][i];
       j := j + 1;
     }
-    i := i + 1;
   }
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" matrix_transpose_example
 
 theorem matrix_transpose_smt_vcs_correct : Strata.smtVCsCorrect matrix_transpose_example := by

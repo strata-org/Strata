@@ -15,7 +15,7 @@ open Std (ToFormat Format format)
 /-! ## Verifier for `ArithPrograms`
 
 Here, we build an end-to-end verifier for `ArithPrograms`. We hook up the DDM
-translator with the type checker + partial evaluator, followed by the SMT
+translator with the type checker + symbolic simulator, followed by the SMT
 encoder. We then write some basic functions to invoke an SMT solver on every
 verification condition.
 -/
@@ -56,7 +56,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
                 "cvc5" filename.toString
-                #["--produce-models"] false false true)
+                #["--produce-models"] false false true false)
         match ans with
         | Except.ok (_, result, estate) =>
            let vcres := { obligation, result, estate }

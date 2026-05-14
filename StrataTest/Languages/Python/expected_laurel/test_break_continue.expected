@@ -1,31 +1,12 @@
-
-==== Verification Results ====
-List_get_body_calls_List_get_0: ✅ pass
-List_take_body_calls_List_take_0: ✅ pass
-List_drop_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_take_1: ✅ pass
-List_set_body_calls_List_set_0: ✅ pass
-DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
-Any_get_body_calls_DictStrAny_get_0: ✅ pass
-Any_get_body_calls_List_get_1: ✅ pass
-Any_get!_body_calls_DictStrAny_get_0: ✅ pass
-Any_get!_body_calls_List_get_1: ✅ pass
-Any_set_body_calls_List_set_0: ✅ pass
-Any_set!_body_calls_List_set_0: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
-PAnd_body_calls_Any_to_bool_0: ✅ pass
-POr_body_calls_Any_to_bool_0: ✅ pass
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
-loop_guard_calls_Any_to_bool_0: ✅ pass
-loop_guard_calls_Any_to_bool_0: ✅ pass
-loop_guard_end_calls_Any_to_bool_0: ✅ pass
+test_break_continue.py(2, 4): ✅ pass - assert(36)
+test_break_continue.py(3, 10): ✅ pass - Check PNot exception
+test_break_continue.py(1, 26): ✅ pass - (test_while_break ensures) Return type constraint
+test_break_continue.py(7, 4): ✅ pass - assert(129)
+test_break_continue.py(8, 10): ✅ pass - Check PNot exception
+test_break_continue.py(6, 29): ✅ pass - (test_while_continue ensures) Return type constraint
+test_break_continue.py(14, 4): ✅ pass - assume_assume(267)_calls_PIn_0
+test_break_continue.py(12, 24): ✅ pass - (test_for_break ensures) Return type constraint
+test_break_continue.py(19, 4): ✅ pass - assume_assume(362)_calls_PIn_0
+test_break_continue.py(17, 27): ✅ pass - (test_for_continue ensures) Return type constraint
+DETAIL: 10 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

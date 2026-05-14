@@ -88,13 +88,13 @@ Flatten the Maps `ms` to get a single map.
 Searching for `(x : α)` after flattening will proceed from the newest to
 the oldest Map.
 -/
-def Maps.toSingleMap (ms : Maps α β) : Map α β :=
+@[expose] def Maps.toSingleMap (ms : Maps α β) : Map α β :=
   ms.flatten
 
 /--
 Look up `(x : α)` in all the maps in `ms`.
 -/
-def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
+@[expose] def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
   match ms with
   | [] => none
   | m :: rest =>
@@ -106,7 +106,7 @@ def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
 Look up `(x : α)` in all the maps in `ms`, returning the default element `d` if
 `x` is not found.
 -/
-def Maps.findD [DecidableEq α] (ms : Maps α β) (x : α) (d : β) : β :=
+@[expose] def Maps.findD [DecidableEq α] (ms : Maps α β) (x : α) (d : β) : β :=
   match ms with
   | [] => d
   | m :: rest =>
@@ -586,6 +586,76 @@ theorem Maps.keys_erase_mem_of_ne [DecidableEq α] {S : Maps α β} {a x : α}
 theorem Maps.addInNewest_cons (scope : Map α β) (rest : Maps α β) (m : Map α β) :
     Maps.addInNewest (scope :: rest) m = (scope ++ m) :: rest := by
   simp [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+
+/-- `Maps.findD` returns the default when `Maps.find?` is `none`. -/
+theorem Maps.findD_find?_none [DecidableEq α]
+    (ms : Maps α β) (x : α) (d : β)
+    (h : Maps.find? ms x = none) :
+    Maps.findD ms x d = d := by
+  induction ms with
+  | nil => simp [Maps.findD]
+  | cons m rest ih =>
+    simp only [Maps.find?, Maps.findD] at h ⊢
+    split <;> simp_all
+
+/-- `Maps.findD` returns the found value when `Maps.find?` is `some v`. -/
+theorem Maps.findD_find?_some [DecidableEq α]
+    (ms : Maps α β) (x : α) (d : β) (v : β)
+    (h : Maps.find? ms x = some v) :
+    Maps.findD ms x d = v := by
+  induction ms with
+  | nil => simp [Maps.find?] at h
+  | cons m rest ih =>
+    simp only [Maps.find?, Maps.findD] at h ⊢
+    split <;> simp_all
+
+/-- `Maps.find?` returning `some v` implies `(x, v)` is in `toSingleMap`. -/
+theorem Maps.find?_mem_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) (v : β)
+    (h : Maps.find? ms x = some v) : List.Mem (x, v) ms.toSingleMap := by
+  induction ms with
+  | nil => simp [Maps.find?] at h
+  | cons m rest ih =>
+    simp only [Maps.find?] at h
+    simp only [Maps.toSingleMap, List.flatten]
+    cases hf : Map.find? m x with
+    | none => rw [hf] at h; exact List.mem_append_right _ (ih h)
+    | some w =>
+      rw [hf] at h; injection h with h; subst h
+      exact List.mem_append_left _ (Map.find?_mem m x w hf)
+
+/-- If `Maps.find?` returns `none`, then `Map.find?` on the flattened map also returns `none`. -/
+theorem Maps.find?_none_toSingleMap [DecidableEq α]
+    (ms : Maps α β) (x : α) (h : Maps.find? ms x = none) :
+    Map.find? ms.toSingleMap x = none := by
+  induction ms with
+  | nil =>
+    show Map.find? ([] : Maps α β).flatten x = none
+    rfl
+  | cons m rest ih =>
+    simp only [Maps.find?] at h
+    cases hm : Map.find? m x with
+    | some v => rw [hm] at h; simp at h
+    | none =>
+      rw [hm] at h
+      have ih_rest := ih h
+      have hm_not_mem := Map.findNone_eq_notmem_mapfst.mpr hm
+      have hr_not_mem := Map.findNone_eq_notmem_mapfst.mpr ih_rest
+      apply Map.findNone_eq_notmem_mapfst.mp
+      show ¬ x ∈ List.map Prod.fst ((m :: rest : Maps α β).flatten)
+      grind
+
+theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
+    Map.find? ms.toSingleMap x = Maps.find? ms x := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    unfold Map at m
+    show Map.find? ((m ++ rest.flatten)) x = _
+    rw [Map.find?_append]
+    simp only [Maps.find?]
+    cases Map.find? m x with
+    | none => exact ih
+    | some v => rfl
 
 ---------------------------------------------------------------------
 end

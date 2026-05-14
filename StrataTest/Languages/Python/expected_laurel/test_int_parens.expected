@@ -1,0 +1,8 @@
+test_int_parens.py(2, 4): ✅ pass - assert(27)
+test_int_parens.py(3, 4): ✅ pass - assert(42)
+test_int_parens.py(4, 4): ✅ pass - assert(57)
+test_int_parens.py(5, 13): ✅ pass - Check PMul exception
+test_int_parens.py(5, 4): ✅ pass - assert(72)
+test_int_parens.py(6, 4): ✅ pass - parenthesized expression
+DETAIL: 6 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

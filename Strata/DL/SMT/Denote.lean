@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SMTEncoder
+public import Strata.Languages.Core.SMTEncoder
+
+public section
 
 /-!
 # Denotation of SMT terms for the Strata DSL
@@ -15,6 +18,11 @@ currently supported. The core entry point is `denoteTerm`, which builds a
 `TermDenoteResult` describing both the type of a term and a semantic interpreter
 for it. The surrounding infrastructure tracks the well-formedness of
 term and uninterpreted-function contexts so that evaluation is safe.
+
+The denotation uses propositional extensionality (`propext`) and
+`Classical.propDecidable` (excluded middle) to make `if`-then-`else` over
+`Prop`-valued conditions definable. Downstream correctness proofs
+(see `FactoryCorrect.lean`) inherit these dependencies.
 -/
 
 open Strata.SMT
@@ -24,7 +32,7 @@ theorem List.getElem_of_findIdx?_eq_some {xs : List α} {mkTypeFunType : α → 
   have ⟨h1, h2⟩ := List.findIdx?_eq_some_iff_getElem.mp h
   exact h2.1
 
-def mkTypeFunType (n : Nat) : Type 1 := n.repeat (Type → ·) Type
+@[expose] def mkTypeFunType (n : Nat) : Type 1 := n.repeat (Type → ·) Type
 
 def applyTypeArg {n : Nat} (tf : mkTypeFunType (n + 1)) (α : Type) : mkTypeFunType n :=
   tf α
@@ -39,7 +47,7 @@ def mkNonemptyPred {n : Nat} (us : mkTypeFunType n) : Prop :=
   | 0     => Nonempty us
   | _ + 1 => ∀ (α : Type), mkNonemptyPred (applyTypeArg us α)
 
-def applyNonemptyPred {n : Nat} {fα : mkTypeFunType n} (hfα : mkNonemptyPred fα) (αs : List Type) (h : αs.length = n) :
+@[reducible] def applyNonemptyPred {n : Nat} {fα : mkTypeFunType n} (hfα : mkNonemptyPred fα) (αs : List Type) (h : αs.length = n) :
     Nonempty (applyTypeArgs fα αs h) :=
   match n, αs with
   | 0, []          => hfα
@@ -134,7 +142,7 @@ def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
 mutual
 
 /-- Interpret primitive SMT types as Lean types, when supported. -/
-def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
+@[expose] def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
   match pty with
   | .bool => return fun _ => Prop
   | .int => return fun _ => Int
@@ -188,7 +196,7 @@ Interpret an SMT `TermType` as a Lean `Type`, when supported.
 
 Returns `none` when we lack an interpretation (e.g. for reals).
 -/
-def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
+@[expose] def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
   match ty with
   | .prim pty => denotePrimSort sctx pty
   | .option ty =>
@@ -252,6 +260,7 @@ theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome)
               Option.isSome_bind, Option.isSome_some, Option.any_true] at h
   have ⟨h1 , h2⟩ := (Option.any_eq_true_iff_get _ _).mp h
   exact ⟨h1, h2⟩
+
 
 theorem arrow_of_denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     have has := denoteFunSortCons_isSome h
@@ -380,7 +389,7 @@ Check that denoted argument types match declared variable types.
 
 If lengths differ, this returns `false`.
 -/
-@[simp]
+@[simp, expose]
 noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
   match as, vs with
   | [], [] => true
@@ -410,13 +419,13 @@ theorem argTypesAlign_length_eq (h : argTypesAlign as vs) : as.length = vs.lengt
     have h' : as.length = vs.length := argTypesAlign_length_eq (Bool.and_eq_true_iff.mp h).right
     simpa using congrArg Nat.succ h'
 
-theorem argTypesAlign_true (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
-  exact argTypesAlign_true_with_len h (argTypesAlign_length_eq h)
+theorem argTypesAlign_true {as : List (TermDenoteResult ctx)} {vs : List TermVar} (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty :=
+  argTypesAlign_true_with_len h (argTypesAlign_length_eq h)
 
-theorem argTypesAlign_arg_types (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty := by
-  exact argTypesAlign_true h
+theorem argTypesAlign_arg_types {as : List (TermDenoteResult ctx)} {vs : List TermVar} (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty :=
+  argTypesAlign_true h
 
 -- Note: `noncomputable` because of a compiler error
 /--
@@ -549,6 +558,7 @@ def buildForall (ctx : Context) (vs : List TermVar)
     : Prop :=
   buildQuant bindForallVar ctx vs hTys bodyFt tdi
 
+
 mutual
 
 /-
@@ -560,7 +570,7 @@ Noncomputable because of `ite` case. Two conditions are needed to make this func
 Attempt to interpret a single SMT term under `ctx`, returning its Lean type
 and semantics when successful.
 -/
-noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
+@[expose] noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
   match t with
   -- Variable lookup: if `v` is declared in `ctx.tctx.vs` and its sort can be
   -- interpreted, return the corresponding semantic value from `tdi.tΓ.vs`.
@@ -874,7 +884,7 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
 /--
 Interpret every term in a list, short-circuiting if any sub-term fails.
 -/
-noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (TermDenoteResult ctx)) := do
+@[expose] noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (TermDenoteResult ctx)) := do
   match ts with
   | [] => return []
   | a :: as =>
@@ -882,7 +892,7 @@ noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (T
     let as ← denoteTerms ctx as
     return a :: as
 
-noncomputable def leftAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
+@[expose] noncomputable def leftAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let t₁ :: t₂ :: ts := ts | none
@@ -932,7 +942,7 @@ where
       else
         none
 
-noncomputable def chainable (ctx ty h)
+@[expose] noncomputable def chainable (ctx ty h)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → Prop)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let t₁ :: t₂ :: ts := ts | none
@@ -946,7 +956,7 @@ noncomputable def chainable (ctx ty h)
   else
     none
 
-noncomputable def chainable.go (ctx ty h)
+@[expose] noncomputable def chainable.go (ctx ty h)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → Prop)
     (ft : TermDenoteInput ctx → Prop) (ft₁ : (tdi : TermDenoteInput ctx) → (denoteSort ctx.sctx ty).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do match ts with
@@ -960,20 +970,36 @@ noncomputable def chainable.go (ctx ty h)
 
 end
 
+
 /--
 Interpret a ground boolean term in the empty context.
 -/
-@[simp]
-noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
+@[expose, simp] noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
   let some ⟨.prim .bool, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
 Interpret a ground integer term in the empty context.
 -/
-@[simp]
-noncomputable def denoteIntTermAux (t : Term) : Option Int := do
+@[expose, simp] noncomputable def denoteIntTermAux (t : Term) : Option Int := do
   let some ⟨.prim .int, _, fi⟩ := denoteTerm {} t | none
+  return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+
+/--
+Interpret a ground bitvector term in the empty context.
+-/
+@[expose, simp] noncomputable def denoteBVTermAux (n : Nat) (t : Term) : Option (BitVec n) := do
+  let some ⟨.prim (.bitvec m), _, fi⟩ := denoteTerm {} t | none
+  if h : m = n then
+    return h ▸ fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  else
+    none
+
+/--
+Interpret a ground string term in the empty context.
+-/
+@[expose, simp] noncomputable def denoteStringTermAux (t : Term) : Option String := do
+  let some ⟨.prim .string, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--

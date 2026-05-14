@@ -19,8 +19,8 @@ def typeCheckAndPartialEval (cmds : Commands) : Except Format (Commands × Eval.
   return (cmds, S)
 
 private def testProgram1 : Commands :=
-  [.init "x" .Num (some (.Var "y" (.some .Num))) .empty,
-   .havoc "x" .empty,
+  [.init "x" .Num (.det (.Var "y" (.some .Num))) .empty,
+   .set "x" .nondet .empty,
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Var "y" none)) .empty]
 
 /--
@@ -48,8 +48,8 @@ genNum: 1
 
 
 private def testProgram2 : Commands :=
-  [.init "x" .Num (some (.Num 0)) .empty,
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)) .empty,
+  [.init "x" .Num (.det (.Num 0)) .empty,
+   .set "x" (.det (.Plus (.Var "x" .none) (.Num 100))) .empty,
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--

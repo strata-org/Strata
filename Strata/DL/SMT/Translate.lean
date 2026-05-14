@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Lean.Expr
-import Lean.ToExpr
-import Strata.Languages.Core.SMTEncoder
+import Lean.Meta.Basic
+
+public import Strata.Languages.Core.SMTEncoder
+
+public section
 
 open Lean
 open Strata hiding Expr
@@ -271,6 +274,14 @@ def translateSort (ty : TermType) : TranslateM Expr := do
     let as ← as.mapM translateSort
     return mkAppN t as.toArray
 
+/--
+Translate an SMT term to a Lean expression, together with its Lean type.
+
+The first component is the actual type of the second component, not just a
+hint. Consumers use it as the type argument for generated Lean constructs such
+as `Eq` and `ite`, and helpers such as `leftAssocOp` propagate it as the result
+type of compound expressions.
+-/
 def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
   match t with
   | .var v =>
@@ -322,7 +333,7 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (as, a) := ((a :: as).dropLast, (a :: as).getLast?.get rfl)
     return (mkProp, as.foldr mkArrow a)
   | .prim (.int x) =>
-    return (mkProp, toExpr x)
+    return (mkInt, toExpr x)
   | .app .neg [a] _ =>
     let (_, a) ← translateTerm a
     return (mkInt, .app mkIntNeg a)

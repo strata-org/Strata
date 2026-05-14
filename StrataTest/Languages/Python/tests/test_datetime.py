@@ -26,5 +26,5 @@ assert start_dt == start
 end_dt : datetime = datetime.strptime(str(end), "%Y-%m-%d")
 assert end_dt == end
 
-# This is unknown
+# This is provable: start = end - 7 days, and start_dt == start, end_dt == end
 assert start_dt <= end_dt

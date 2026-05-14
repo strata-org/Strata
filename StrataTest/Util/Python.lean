@@ -200,22 +200,17 @@ def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."
 
 /-- Run an action with a Python 3 command that has `strata.gen` installed.
-    Skips silently if Python is unavailable, unless `PYTHON_TEST` is set
-    in which case it throws. -/
+    Throws if Python is unavailable or `strata.gen` is not installed. -/
 def withPython (action : System.FilePath → IO Unit) : IO Unit := do
-  let required := (← IO.getEnv "PYTHON_TEST").isSome
-  let pythonCmd ←
-    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
-    | .ok cmd => pure cmd
-    | .error msg =>
-      if required then throw msg
-      return ()
+  let pythonCmd ← findPython3 (minVersion := 11) (maxVersion := 14)
   if not (← pythonCheckModule pythonCmd "strata.gen") then
-    if required then
-      throw <| .userError
-        s!"Python Strata libraries not installed in {pythonCmd}."
-    return ()
+    throw <| .userError
+      s!"Python Strata libraries not installed in {pythonCmd}."
   action pythonCmd
+
+/-- Check if `needle` is a substring of `haystack`. -/
+def containsSubstr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length != 1
 
 end Strata.Python
 end

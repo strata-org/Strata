@@ -1,0 +1,5 @@
+test_augmul.py(2, 4): ✅ pass - assert(23)
+test_augmul.py(3, 4): ✅ pass - Check PMul exception
+test_augmul.py(4, 4): ✅ pass - augmented mul
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

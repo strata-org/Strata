@@ -24,6 +24,21 @@ programs. These constructs are parameterized by `PureExpr`, which can be
 instantiated with any language construct that does not have side-effects.
 -/
 
+/-! ## Deterministic or Non-deterministic Expressions
+
+`ExprOrNondet` represents a value that is either a deterministic expression or
+a non-deterministic (arbitrary) choice. This is used in commands where the
+right-hand side can be either a concrete expression or a havoc.
+-/
+
+/-- A value that is either a deterministic expression or a non-deterministic choice. -/
+inductive ExprOrNondet (P : PureExpr) where
+  /-- A deterministic expression. -/
+  | det (e : P.Expr)
+  /-- A non-deterministic (arbitrary) value. -/
+  | nondet
+  deriving Inhabited
+
 /-! ## Commands
 
 Commands form the core of the Imperative dialect. They include constructs for
@@ -37,13 +52,12 @@ Commands don't create local control flow, and are typically used as a parameter
 to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- Define a variable called `name` with type `ty` and optional initial value `e`.
-      When `e` is `none`, the variable is initialized with an arbitrary value. -/
-  | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P))
-  /-- Assign `e` to a pre-existing variable `name`. -/
-  | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P))
-  /-- Assigns an arbitrary value to an existing variable `name`. -/
-  | havoc    (name : P.Ident) (md : (MetaData P))
+  /-- Define a variable called `name` with type `ty` and value `e`.
+      When `e` is `.nondet`, the variable is initialized with an arbitrary value. -/
+  | init     (name : P.Ident) (ty : P.Ty) (e : ExprOrNondet P) (md : (MetaData P))
+  /-- Assign `e` to a pre-existing variable `name`.
+      When `e` is `.nondet`, assigns an arbitrary value (havoc semantics). -/
+  | set      (name : P.Ident) (e : ExprOrNondet P) (md : (MetaData P))
   /-- Checks if condition `b` is true on _all_ paths on which this command is
     encountered. Reports an error if `b` does not hold on _any_ of these paths.
   -/
@@ -60,13 +74,13 @@ inductive Cmd (P : PureExpr) : Type where
 @[expose] abbrev Cmds (P : PureExpr) := List (Cmd P)
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
-  default := .havoc default default
+  default := .set default .nondet default
 
 ---------------------------------------------------------------------
 
 def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   match c with
-  | .init _ _ _ md | .set _ _ md | .havoc _ md
+  | .init _ _ _ md | .set _ _ md
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
@@ -84,26 +98,34 @@ class HasHavoc (P : PureExpr) (CmdT : Type) where
   havoc : P.Ident → MetaData P → CmdT
 
 instance : HasHavoc P (Cmd P) where
-  havoc x md := .havoc x md
+  havoc x md := .set x .nondet md
 
-/-- Declare a variable with a given type and optional initial value. -/
+/-- Declare a variable with a given type and value (deterministic or non-deterministic). -/
 class HasInit (P : PureExpr) (CmdT : Type) where
-  init : P.Ident → P.Ty → Option P.Expr → MetaData P → CmdT
+  init : P.Ident → P.Ty → ExprOrNondet P → MetaData P → CmdT
 
 instance : HasInit P (Cmd P) where
   init x ty e md := .init x ty e md
 
 ---------------------------------------------------------------------
 
+/-- Get all variables accessed by an `ExprOrNondet`. -/
+def ExprOrNondet.getVars [HasVarsPure P P.Expr] (e : ExprOrNondet P) : List P.Ident :=
+  match e with
+  | .det e => HasVarsPure.getVars e
+  | .nondet => []
+
+/-- Map a function over the expression in an `ExprOrNondet`. -/
+def ExprOrNondet.map {P Q : PureExpr} (f : P.Expr → Q.Expr) : ExprOrNondet P → ExprOrNondet Q
+  | .det e => .det (f e)
+  | .nondet => .nondet
+
 mutual
 /-- Get all variables accessed by `c`. -/
 def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
   match c with
-  | .init _ _ eOpt _ => match eOpt with
-    | some e => HasVarsPure.getVars e
-    | none => []
-  | .set _ e _ => HasVarsPure.getVars e
-  | .havoc _ _ => []
+  | .init _ _ e _ => e.getVars
+  | .set _ e _ => e.getVars
   | .assert _ e _ => HasVarsPure.getVars e
   | .assume _ e _ => HasVarsPure.getVars e
   | .cover _ e _ => HasVarsPure.getVars e
@@ -142,7 +164,6 @@ def Cmd.modifiedVars (c : Cmd P) : List P.Ident :=
   match c with
   | .init _ _ _ _ => []
   | .set name _ _ => [name]
-  | .havoc name _ => [name]
   | .assert _ _ _ => []
   | .assume _ _ _ => []
   | .cover _ _ _ => []
@@ -168,13 +189,22 @@ instance (P : PureExpr) : HasVarsImp P (Cmds P) where
 
 open Std (ToFormat Format format)
 
+def formatExprOrNondet (P : PureExpr) (e : ExprOrNondet P)
+    [ToFormat P.Expr] : Format :=
+  match e with
+  | .det e => format e
+  | .nondet => f!"*"
+
+instance [ToFormat P.Expr] : ToFormat (ExprOrNondet P) where
+  format e := formatExprOrNondet P e
+
 def formatCmd (P : PureExpr) (c : Cmd P)
     [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .init name ty (some e) _md => f!"init ({name} : {ty}) := {e}"
-  | .init name ty none _md => f!"init ({name} : {ty})"
-  | .set name e _md => f!"{name} := {e}"
-  | .havoc name _md => f!"havoc {name}"
+  | .init name ty (.det e) _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty .nondet _md => f!"init ({name} : {ty})"
+  | .set name (.det e) _md => f!"{name} := {e}"
+  | .set name .nondet _md => f!"havoc {name}"
   | .assert label b _md => f!"assert [{label}] {b}"
   | .assume label b _md => f!"assume [{label}] {b}"
   | .cover label b _md => f!"cover [{label}] {b}"

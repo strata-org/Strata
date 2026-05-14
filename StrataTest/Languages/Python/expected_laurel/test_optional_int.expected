@@ -1,0 +1,4 @@
+test_optional_int.py(5, 4): ✅ pass - optional with value
+test_optional_int.py(7, 4): ✅ pass - optional set to None
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

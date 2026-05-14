@@ -24,7 +24,7 @@ def issue436Pgm : Strata.Program :=
 #strata
 program Core;
 
-procedure test(cond : bool, x : int, y : int) returns () {
+procedure test(cond : bool, x : int, y : int) {
   if (cond) {
     function f(a : int) : int { a + x }
     var r1 : int := f(10);
@@ -40,19 +40,67 @@ procedure test(cond : bool, x : int, y : int) returns () {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: procedure test (cond : bool, x : int, y : int) returns ()
+info: ok: program Core;
+
+procedure test (cond : bool, x : int, y : int)
 {
   if (cond) {
     function f (a : int) : int { a + x }
     var r1 : int := f(10);
-    } else {
+  } else {
     function f (a : int) : int { a + y }
     var r2 : int := f(20);
-    }
-  };
+  }
+};
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue436Pgm).stripMetaData))
+
+---------------------------------------------------------------------
+-- Regression test: variables declared inside a named block must not
+-- leak to the parent scope.  Before the fix in Translate.lean,
+-- `block_statement` propagated all bindings (including `var y`) to
+-- the enclosing scope, causing `x` in `assert [use_x]: x == 2`
+-- to resolve to `y` instead (wrong de Bruijn index).
+---------------------------------------------------------------------
+
+def blockScopePgm :=
+#strata
+program Core;
+
+procedure test() {
+  var x : int;
+  x := 1;
+  blk: {
+    var y : int;
+    y := 2;
+    x := y;
+  }
+  assert [use_x]: x == 2;
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure test ()
+{
+  var x : int;
+  x := 1;
+  blk: {
+    var y : int;
+    y := 2;
+    x := y;
+  }
+  assert [use_x]: x == 2;
+};
+-/
+#guard_msgs in
+#eval (Std.format (Core.typeCheck .default (translatePgm blockScopePgm).stripMetaData))
 
 ---------------------------------------------------------------------
 -- Regression test for issue #445: function declaration statement
@@ -64,7 +112,7 @@ def issue445Pgm :=
 #strata
 program Core;
 
-procedure test() returns ()
+procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
@@ -79,14 +127,15 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: procedure test () returns ()
+info: ok: program Core;
+
+procedure test ()
 {
   var x : int := 1;
   function safeDiv (y : int) : int { y div x }
   assert [assert_0]: 5 div x > 0;
   var z : int := safeDiv(5);
-  };
-
+};
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue445Pgm).stripMetaData))

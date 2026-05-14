@@ -1,0 +1,4 @@
+test_any_arithmetic.py(6, 13): ✅ pass - Check PAdd exception
+test_any_arithmetic.py(7, 4): ✅ pass - arithmetic on Any
+DETAIL: 2 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

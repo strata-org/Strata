@@ -22,15 +22,10 @@ function assertAndAssumeInFunctions(a: int) returns (r: int)
   a
 };
 
-// Lettish bindings in functions not yet supported
-// because Core expressions do not support let bindings
 function letsInFunction() returns (r: int) {
   var x: int := 0;
-//^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var y: int := x + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var z: int := y + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   z
 };
 
@@ -41,8 +36,8 @@ function localVariableWithoutInitializer(): int {
 };
 
 function deadCodeAfterIfElse(x: int) returns (r: int) {
-  if (x > 0) { return 1 } else { return 2 };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
+  if x > 0 then { return 1 } else { return 2 };
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
   return 3
 };
 "

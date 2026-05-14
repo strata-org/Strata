@@ -13,7 +13,7 @@ def blockLabelUniqueTestPgm1 :=
 #strata
 program Core;
 
-procedure test () returns () {
+procedure test () {
   foo: {
     if (true) {
       foo: { exit foo; }   // ambiguous: inner or outer foo?
@@ -26,7 +26,7 @@ procedure test () returns () {
 #end
 
 /--
-error:  ❌ Type checking error.
+error: ❌ Type checking error.
 Block label "foo" shadows an enclosing block.
 -/
 #guard_msgs in
@@ -38,7 +38,7 @@ def blockLabelUniqueTestPgm2 :=
 #strata
 program Core;
 
-procedure test () returns () {
+procedure test () {
   foo: { exit foo; }
   foo: { exit foo; }
 };

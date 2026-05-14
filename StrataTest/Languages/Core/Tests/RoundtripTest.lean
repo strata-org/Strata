@@ -27,7 +27,11 @@ open Lean.Parser (InputContext)
 /-- Parse a string as a Core program and translate to AST. -/
 private def parseAndTranslate (input : String) : IO Core.Program := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Core]
-  let inputCtx := Strata.Parser.stringInputContext ⟨"roundtrip-test"⟩ input
+  -- Strip "program Core;\n\n" header if present
+  let body := if input.startsWith "program Core;\n\n" then
+    (input.drop "program Core;\n\n".length).toString
+  else input
+  let inputCtx := Strata.Parser.stringInputContext ⟨"roundtrip-test"⟩ body
   let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
   let (ast, errs) := TransM.run Inhabited.default (translateProgram strataProgram)
   if !errs.isEmpty then
@@ -96,13 +100,15 @@ datatype Tree (a : Type) {
 #end
 
 /--
-info: datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+info: program Core;
+
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
-datatype Tree (a : Type) {(
-  (Leaf(val : a))),
-  (Node(left : (Tree a), right : (Tree a)))
+datatype Tree (a : Type) {
+  Leaf(val : a),
+  Node(left : Tree a, right : Tree a)
 };
 -/
 #guard_msgs in
@@ -141,7 +147,7 @@ private def testProceduresRoundtrip : Program :=
 #strata
 program Core;
 
-procedure Test(x : bool) returns (y : bool)
+procedure Test(x : bool, out y : bool)
 spec {
   requires x == true;
   ensures y == x;

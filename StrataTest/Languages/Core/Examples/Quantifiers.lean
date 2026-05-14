@@ -12,7 +12,7 @@ namespace Strata
 def quantPgm :=
 #strata
 program Core;
-procedure Test(x : int) returns (r : int)
+procedure Test(x : int, out r : int)
 spec {
   ensures [good]: (forall y : int :: exists z : int :: r + (z + y) == y + (z + r));
   ensures [bad]: (forall q : int :: q < x);
@@ -35,7 +35,7 @@ axiom [g_neg]: forall x : int, y : int :: { g(x, y) } x > 0 ==> g(x, y) < 0;
 axiom [f_and_g]: forall x : int, y : int :: { g(x, y) } { f(x) } g(x, y) < f(x);
 axiom [f_and_g2]: forall x : int, y : int :: { g(x, y), f(x) } g(x, y) < f(x);
 
-procedure TestTriggers(x : int) returns (r : int)
+procedure TestTriggers(x : int, out r : int)
 spec {
   ensures [f_and_g]: r < 0;
 }
@@ -59,33 +59,12 @@ forall l : int :: !(l == l + 1)
 Label: good
 Property: assert
 Obligation:
-forall y : int :: exists z : int :: $__x0 + 1 + (z + y) == y + (z + ($__x0 + 1))
+forall y : int :: exists z : int :: x@1 + 1 + (z + y) == y + (z + (x@1 + 1))
 
 Label: bad
 Property: assert
 Obligation:
-forall q : int :: q < $__x0
-
-
-
-Result: Obligation: bad
-Property: assert
-Result: ❌ fail
-Model:
-($__x0, 0)
-
-
-[DEBUG] Evaluated program:
-procedure Test (x : int) returns (r : int)
-spec {
-  ensures [good]: forall y : int :: exists z : int :: r + (z + y) == y + (z + r);
-  ensures [bad]: forall q : int :: q < x;
-  } {
-  assert [good_assert]: forall l : ($__unknown_type) :: !(l == l + 1);
-  r := $__x0 + 1;
-  assert [good]: forall y : ($__unknown_type) :: exists z : ($__unknown_type) :: $__x0 + 1 + (z + y) == y + (z + ($__x0 + 1));
-  assert [bad]: forall q : ($__unknown_type) :: q < $__x0;
-  };
+forall q : int :: q < x@1
 
 ---
 info:
@@ -101,7 +80,7 @@ Obligation: bad
 Property: assert
 Result: ❌ fail
 Model:
-($__x0, 0)
+(x@1, 0)
 -/
 #guard_msgs in
 #eval verify quantPgm (options := .default)
@@ -123,7 +102,7 @@ f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
 f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
   g(x, y) < f(x)
 Obligation:
-f($__x0) > 0
+f(x@1) > 0
 
 Label: multi_trigger_assert
 Property: assert
@@ -137,7 +116,7 @@ f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
 f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
   g(x, y) < f(x)
 Obligation:
-forall y : int :: g($__x0, y) < f($__x0)
+forall y : int :: g(x@1, y) < f(x@1)
 
 Label: f_and_g
 Property: assert
@@ -151,7 +130,7 @@ f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
 f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
   g(x, y) < f(x)
 Obligation:
-g(f($__x0), $__x0) < 0
+g(f(x@1), x@1) < 0
 
 ---
 info:
