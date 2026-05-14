@@ -395,7 +395,7 @@ def bvBinaryOpMap {M} [Inhabited M] :
   (.SAddOverflow, fun ty arg1 arg2 => .bv_sadd_overflow default ty arg1 arg2),
   (.SSubOverflow, fun ty arg1 arg2 => .bv_ssub_overflow default ty arg1 arg2),
   (.SMulOverflow, fun ty arg1 arg2 => .bv_smul_overflow default ty arg1 arg2),
-  (.SDivOverflow, fun ty arg1 arg2 => .le default ty arg1 arg2),
+  (.SDivOverflow, fun ty arg1 arg2 => .bv_sdiv_overflow default ty arg1 arg2),
   (.UAddOverflow, fun ty arg1 arg2 => .bv_uadd_overflow default ty arg1 arg2),
   (.USubOverflow, fun ty arg1 arg2 => .bv_usub_overflow default ty arg1 arg2),
   (.UMulOverflow, fun ty arg1 arg2 => .bv_umul_overflow default ty arg1 arg2)

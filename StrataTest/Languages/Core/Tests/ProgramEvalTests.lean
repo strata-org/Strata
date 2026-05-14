@@ -349,34 +349,34 @@ func Bv64.SafeUNeg :  ((x : bv64)) → bv64
   requires !(Bv.NegOverflow(x));
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv1.SafeSMod :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv8.SafeSDiv :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv8.SafeSMod :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv16.SafeSDiv :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv16.SafeSMod :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv32.SafeSDiv :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv32.SafeSMod :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 
 
 Datatypes:

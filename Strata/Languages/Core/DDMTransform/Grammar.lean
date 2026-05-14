@@ -192,6 +192,7 @@ fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.NegOverflow" "(" a ")";
 fn bv_sadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SAddOverflow" "(" a ", " b ")";
 fn bv_ssub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SSubOverflow" "(" a ", " b ")";
 fn bv_smul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SMulOverflow" "(" a ", " b ")";
+fn bv_sdiv_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SDivOverflow" "(" a ", " b ")";
 fn bv_uadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UAddOverflow" "(" a ", " b ")";
 fn bv_usub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.USubOverflow" "(" a ", " b ")";
 fn bv_umul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UMulOverflow" "(" a ", " b ")";
