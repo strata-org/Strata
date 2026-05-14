@@ -288,7 +288,14 @@ inductive CoreStepStar
 
 /-- Evaluate the commands in a deterministic basic block, then transfer
     control based on the block's terminator. Defined mutually to satisfy
-    strict positivity (uses `EvalCommand` for command evaluation). -/
+    strict positivity (uses `EvalCommand` for command evaluation).
+
+    This mirrors `Imperative.EvalDetBlock` but cannot directly reuse it:
+    Lean's kernel rejects nested inductives whose parameters reference local
+    variables of the mutual block (`EvalCommand` here). Since `EvalDetBlock`
+    internally uses `EvalCmds` (another inductive), passing `EvalCommand` as
+    its `EvalCmd` parameter creates a nested inductive dependency that the
+    kernel disallows. -/
 inductive CoreEvalDetBlock
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
@@ -324,19 +331,8 @@ inductive CoreEvalCmds
     CoreEvalCmds π φ δ σ' cs σ'' failed' →
     CoreEvalCmds π φ δ σ (c :: cs) σ'' (failed || failed')
 
-/-- Single step of a deterministic CFG: look up the current block by label
-    and evaluate it. Defined mutually for strict positivity. -/
-inductive CoreCFGStep
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
-    DetCFG → CFGConfig String Expression →
-    CFGConfig String Expression → Prop where
-  | eval_next :
-    List.lookup t cfg.blocks = .some b →
-    CoreEvalDetBlock π φ σ b config →
-    CoreCFGStep π φ cfg (.cont t σ failed) (updateFailure config failed)
-
-/-- Reflexive-transitive closure of `CoreCFGStep`. -/
+/-- Reflexive-transitive closure of CFG steps for the Core language. Each
+    step looks up a block by label and evaluates it via `CoreEvalDetBlock`. -/
 inductive CoreCFGStepStar
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
@@ -344,10 +340,11 @@ inductive CoreCFGStepStar
     CFGConfig String Expression → Prop where
   | refl : CoreCFGStepStar π φ cfg c c
   | step :
-    CoreCFGStep π φ cfg c₁ c₂ →
-    CoreCFGStepStar π φ cfg c₂ c₃ →
+    List.lookup t cfg.blocks = .some b →
+    CoreEvalDetBlock π φ σ b config →
+    CoreCFGStepStar π φ cfg (updateFailure config failed) c₃ →
     ----
-    CoreCFGStepStar π φ cfg c₁ c₃
+    CoreCFGStepStar π φ cfg (.cont t σ failed) c₃
 
 /-- Execution of a procedure body: either structured (via `CoreStepStar`)
     or unstructured CFG (via `CoreCFGStepStar`).
