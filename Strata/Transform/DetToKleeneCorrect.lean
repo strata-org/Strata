@@ -34,6 +34,10 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasV
 
 abbrev Lang.det (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (isAtAssert P)
+    (initEnvWF := fun _ ρ =>
+      WellFormedSemanticEvalBool ρ.eval ∧
+      WellFormedSemanticEvalVal ρ.eval ∧
+      WellFormedSemanticEvalVar ρ.eval)
 
 def isAtKleeneAssert : KleeneConfig P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, a => a.label = label ∧ a.expr = expr
@@ -50,7 +54,10 @@ abbrev Lang.kleene : Lang P where
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
   getEnv := KleeneConfig.getEnv
-  initEnvWF := fun _ _ => True
+  initEnvWF := fun _ ρ =>
+    WellFormedSemanticEvalBool ρ.eval ∧
+    WellFormedSemanticEvalVal ρ.eval ∧
+    WellFormedSemanticEvalVar ρ.eval
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 
@@ -1198,8 +1205,9 @@ theorem detToKleene_overapproximates
     (extendEval : ExtendEval P) :
     Transform.Overapproximates (Lang.det extendEval) (Lang.kleene (P := P))
       (StmtToKleeneStmt (P := P)) := by
-  intro st ns ht ρ₀ hwfb hwfv _hswf
-  refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, trivial⟩
+  intro st ns ht ρ₀ hswf
+  obtain ⟨hwfb, hwfv, hwfvar⟩ := hswf
+  refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
   · exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv
   · intro lbl hstar
     exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval st

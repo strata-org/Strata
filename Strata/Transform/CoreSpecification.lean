@@ -58,8 +58,12 @@ structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expressio
   readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s →
     (ρ.store n).isSome
   defsUndefined : ∀ n ∈ Stmt.definedVars s, (ρ.store n).isNone
+  definedVarsNodup : (Stmt.definedVars s).Nodup
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfVal  : WellFormedSemanticEvalVal ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval
   evalCong : WellFormedCoreEvalCong ρ.eval
   exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
 
@@ -70,8 +74,12 @@ structure BlockInitEnvWF (reserved : List String) (bss : Statements)
   readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss →
     (ρ.store n).isSome
   defsUndefined : ∀ n ∈ Block.definedVars bss, (ρ.store n).isNone
+  definedVarsNodup : (Block.definedVars bss).Nodup
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfVal  : WellFormedSemanticEvalVal ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval
   evalCong : WellFormedCoreEvalCong ρ.eval
   exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
 

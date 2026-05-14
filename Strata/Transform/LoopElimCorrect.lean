@@ -4703,7 +4703,11 @@ private theorem InitEnvWF.toBlock_block {reserved : List String} {l : String}
     have heq : Stmt.definedVars (.block l bss md : Statement) =
                Block.definedVars bss := rfl
     rw [heq]; exact hn)
+  definedVarsNodup := h.definedVarsNodup
   reservedFresh := h.reservedFresh
+  wfBool := h.wfBool
+  wfVal  := h.wfVal
+  wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
 
@@ -4734,7 +4738,16 @@ private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md)
     simp only [Stmt.definedVars, List.mem_append]; left; exact hn)
+  definedVarsNodup := by
+    have hnd : (Stmt.definedVars (.ite c tss ess md : Statement)).Nodup := h.definedVarsNodup
+    have heq : Stmt.definedVars (.ite c tss ess md : Statement) =
+               Block.definedVars tss ++ Block.definedVars ess := rfl
+    rw [heq] at hnd
+    exact (List.nodup_append.mp hnd).1
   reservedFresh := h.reservedFresh
+  wfBool := h.wfBool
+  wfVal  := h.wfVal
+  wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
 
@@ -4761,7 +4774,16 @@ private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md)
     simp only [Stmt.definedVars, List.mem_append]; right; exact hn)
+  definedVarsNodup := by
+    have hnd : (Stmt.definedVars (.ite c tss ess md : Statement)).Nodup := h.definedVarsNodup
+    have heq : Stmt.definedVars (.ite c tss ess md : Statement) =
+               Block.definedVars tss ++ Block.definedVars ess := rfl
+    rw [heq] at hnd
+    exact (List.nodup_append.mp hnd).2.1
   reservedFresh := h.reservedFresh
+  wfBool := h.wfBool
+  wfVal  := h.wfVal
+  wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
 
@@ -4788,7 +4810,16 @@ private theorem BlockInitEnvWF.toStmt_head {reserved : List String} {s : Stateme
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Block.definedVars (s :: ss)
     simp only [Block.definedVars, List.mem_append]; left; exact hn)
+  definedVarsNodup := by
+    have hnd : (Block.definedVars (s :: ss)).Nodup := h.definedVarsNodup
+    have heq : Block.definedVars (s :: ss) =
+               Stmt.definedVars s ++ Block.definedVars ss := rfl
+    rw [heq] at hnd
+    exact (List.nodup_append.mp hnd).1
   reservedFresh := h.reservedFresh
+  wfBool := h.wfBool
+  wfVal  := h.wfVal
+  wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
 
@@ -4817,7 +4848,16 @@ private theorem BlockInitEnvWF.toBlock_tail_pure {reserved : List String}
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Block.definedVars (s :: ss)
     simp only [Block.definedVars, List.mem_append]; right; exact hn)
+  definedVarsNodup := by
+    have hnd : (Block.definedVars (s :: ss)).Nodup := h.definedVarsNodup
+    have heq : Block.definedVars (s :: ss) =
+               Stmt.definedVars s ++ Block.definedVars ss := rfl
+    rw [heq] at hnd
+    exact (List.nodup_append.mp hnd).2.1
   reservedFresh := h.reservedFresh
+  wfBool := h.wfBool
+  wfVal  := h.wfVal
+  wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
 
@@ -7084,7 +7124,13 @@ theorem loopElim_overapproximatesAggressive
       (fun s => open Classical in
                 if Stmt.noFuncDecl s = Bool.true ∧ stmtOk σ s
                 then some (stmtResult σ s) else none) := by
-  intro st st' ht ρ₀ hwfb hwfv hwfvar hswf
+  intro st st' ht ρ₀ hswf
+  -- hswf has type (LangCore π φ reserved).initEnvWF st ρ₀, which unfolds to
+  -- InitEnvWF reserved st ρ₀.  We extract its WF eval fields explicitly.
+  have hswf' : InitEnvWF reserved st ρ₀ := hswf
+  have hwfb := hswf'.wfBool
+  have hwfv := hswf'.wfVal
+  have hwfvar := hswf'.wfVar
   simp only at ht
   split at ht
   · rename_i hcond
@@ -7133,7 +7179,11 @@ theorem loopElim_overapproximatesAggressive
       refine
         { readWritesDefined := ?_,
           defsUndefined := ?_,
+          definedVarsNodup := ?_,
           reservedFresh := hswf.reservedFresh,
+          wfBool := hswf.wfBool,
+          wfVal := hswf.wfVal,
+          wfVar := hswf.wfVar,
           evalCong := hswf.evalCong,
           exprCongr := hswf.exprCongr }
       · intro n hn hnd
@@ -7150,6 +7200,9 @@ theorem loopElim_overapproximatesAggressive
             exfalso
             have hsome : (ρ₀.store n).isSome := by rw [h]; rfl
             exact hswf.reservedFresh n hsome loopElimReservedPrefix h_loop_reserved hpref
+      · -- Nodup: transformed `definedVars` = source's `definedVars` ∪ fresh
+        -- `$__loop_measure_<n>` ids. These are mutually disjoint.
+        sorry
   · exact absurd ht (by nofun)
 
 end Core.LoopElim
