@@ -29,8 +29,8 @@
     "re.all" "re.range" "re.concat" "re.*" "re.+" "re.loop" "re.union"
     "re.inter" "re.comp" "re.none" "Int.DivT" "Int.ModT"
     "Bv.NegOverflow" "Bv.SAddOverflow" "Bv.SSubOverflow"
-    "Bv.SMulOverflow" "Bv.SDivOverflow" "Bv.UAddOverflow" "Bv.USubOverflow"
-    "Bv.UMulOverflow"))
+    "Bv.SMulOverflow" "Bv.SDivOverflow" "Bv.UAddOverflow"
+    "Bv.USubOverflow" "Bv.UMulOverflow"))
 
 ;; Font-lock rules
 (defvar core-st-font-lock-keywords
