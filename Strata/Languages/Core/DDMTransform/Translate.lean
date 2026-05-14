@@ -358,14 +358,6 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
 
 ---------------------------------------------------------------------
 
-def translateLhs (arg : Arg) : TransM Core.CoreIdent := do
-  let .op op := arg
-    | TransM.error s!"translateLhs expected op {repr arg}"
-  match op.name, op.args with
-  | q`Core.lhsIdent, #[id] => translateIdent Core.CoreIdent id
-  -- (TODO) Implement lhsArray.
-  | _, _ => TransM.error s!"translateLhs: unimplemented for {repr arg}"
-
 def translateBindMk (bindings : TransBindings) (arg : Arg) :
    TransM (Core.CoreIdent × List TyIdentifier × LMonoTy) := do
   let .op op := arg
@@ -889,6 +881,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.re_all, [] =>
     let fn ← translateFn .none q`Core.re_all
     return fn
+  -- Sequence.empty (1 type arg, 0 value args)
+  | .fn _ q`Core.seq_empty, [_atp] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Empty)
+         (.some (Core.seqTy ety))
+     return fn
   -- Unary function applications
   | .fn _ fni, [xa] =>
     match fni with
@@ -959,7 +958,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      return .mkApp () fn [m, i, x]
   -- Seq operations
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | .fn _ q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
@@ -1281,6 +1279,36 @@ private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg)
   | q`Core.condDet, #[ca] => pure (.det (← translateExpr p bindings ca))
   | _, _ => TransM.error s!"translateCondBool: unexpected {repr op.name}"
 
+/-- Build a nested map-update expression: `nestMapUpdate base [i1, i2] v` produces
+    `map_update(base, i1, map_update(map_select(base, i1), i2, v))`. -/
+private def nestMapUpdate (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr)
+    (rhs : Core.Expression.Expr) : Core.Expression.Expr :=
+  let selectOp := Core.coreOpExpr (.map .Select)
+  let updateOp := Core.coreOpExpr (.map .Update)
+  match idxs with
+  | [] => rhs
+  | [i] => .mkApp () updateOp [base, i, rhs]
+  | i :: rest =>
+    let inner := .mkApp () selectOp [base, i]
+    let updatedInner := nestMapUpdate inner rest rhs
+    .mkApp () updateOp [base, i, updatedInner]
+
+/-- Decompose an LHS into a base identifier and a (reversed) list of index
+    expressions. For `m[k1][k2]`, returns `(m, [k2, k1])`. -/
+partial def translateLhsParts (p : Program) (bindings : TransBindings) (arg : Arg) :
+    TransM (Core.CoreIdent × List Core.Expression.Expr) := do
+  let .op op := arg
+    | TransM.error s!"translateLhsParts expected op {repr arg}"
+  match op.name, op.args with
+  | q`Core.lhsIdent, #[id] =>
+    let ident ← translateIdent Core.CoreIdent id
+    return (ident, [])
+  | q`Core.lhsArray, #[_tpa, lhsa, idxa] =>
+    let (ident, idxsRev) ← translateLhsParts p bindings lhsa
+    let idx ← translateExpr p bindings idxa
+    return (ident, idx :: idxsRev)
+  | _, _ => TransM.error s!"translateLhsParts: unimplemented for {repr arg}"
+
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
@@ -1311,10 +1339,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.initStatement, args =>
     translateInitStatement p bindings args (← getOpMetaData op)
   | q`Core.assign, #[_tpa, lhsa, ea] =>
-    let lhs ← translateLhs lhsa
+    let (lhs, idxsRev) ← translateLhsParts p bindings lhsa
     let val ← translateExpr p bindings ea
     let md ← getOpMetaData op
-    return ([.set lhs val md], bindings)
+    let rhs := match idxsRev.reverse with
+      | [] => val
+      | idxs => nestMapUpdate (.fvar () lhs none) idxs val
+    return ([.set lhs rhs md], bindings)
   | q`Core.havoc_statement, #[ida] =>
     let id ← translateIdent Core.CoreIdent ida
     let md ← getOpMetaData op

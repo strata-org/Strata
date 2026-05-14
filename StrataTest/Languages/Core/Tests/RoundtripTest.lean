@@ -79,9 +79,6 @@ type Foo (a : Type, b : Type) := Map b a;
 
 -------------------------------------------------------------------------------
 -- Test: Polymorphic datatypes with parameterized types
--- NOTE: Datatype formatting has extra parentheses around constructors
--- (known issue in the file header). This test verifies the first format
--- succeeds without errors.
 -------------------------------------------------------------------------------
 
 private def testDatatypesRoundtrip : Program :=
@@ -115,6 +112,10 @@ datatype Tree (a : Type) {
 #eval do
   let (ast, _) := TransM.run Inhabited.default (translateProgram testDatatypesRoundtrip)
   IO.println f!"{Core.formatProgram ast}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testDatatypesRoundtrip
 
 -------------------------------------------------------------------------------
 -- Test: Functions and axioms with quantifiers
@@ -194,5 +195,41 @@ function g(x : Map int bool) : int;
 /-- info: OK -/
 #guard_msgs in
 #eval roundtrip testTypeArgsRoundtrip
+
+-------------------------------------------------------------------------------
+-- Test: Array assignment (lhsArray: m[k] := v)
+-------------------------------------------------------------------------------
+
+private def testLhsArrayRoundtrip : Program :=
+#strata
+program Core;
+
+procedure MapUpdate(m : Map int int, out m : Map int int)
+spec {
+  ensures true;
+} {
+  m[0] := 1;
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testLhsArrayRoundtrip
+
+-------------------------------------------------------------------------------
+-- Test: Sequence.empty with explicit type annotation
+-------------------------------------------------------------------------------
+
+private def testSeqEmptyRoundtrip : Program :=
+#strata
+program Core;
+
+function f(s : Sequence int) : bool;
+axiom [f_ax]: f(Sequence.empty<int>()) == true;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testSeqEmptyRoundtrip
 
 end Strata.Test.Roundtrip

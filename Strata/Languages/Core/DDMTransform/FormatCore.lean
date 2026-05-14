@@ -37,8 +37,6 @@ Known issues:
   translation in the latter's metadata field and recover them in the future.
 
 - Misc. formatting issues
-  -- Remove extra parentheses around constructors in datatypes, assignments,
-  etc.
   -- Remove extra indentation from the last brace of a block or the `end`
   keyword of a mutual block.
 -/
@@ -295,7 +293,6 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | .re .All => pure (.re_all default)
   | .re .AllChar => pure (.re_allchar default)
   | .re .None => pure (.re_none default)
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
@@ -556,7 +553,15 @@ partial def lexprToExpr {M} [Inhabited M]
         pure (.fvar default (ctx.allFreeVars.size))
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
-  | .op _ name _ => lopToExpr name.name []
+  | .op _ name ty => do
+    -- seq_empty needs the type annotation to render the explicit type parameter
+    if name.name == "Sequence.empty" then
+      let tyCST ← match ty with
+        | some (.tcons "Sequence" [ety]) => lmonoTyToCoreType ety
+        | _ => pure (CoreType.tvar default unknownTypeVar)
+      pure (.seq_empty default tyCST)
+    else
+      lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
   | .abs _ prettyName ty body => labsToExpr prettyName ty body (qLevel + 1)
   | .quant _ qkind prettyName ty trigger body =>
@@ -744,6 +749,29 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   modify (·.pushBoundVar name.val)
   pure (.funcDecl_statement default name typeArgs b r preconds bodyExpr inline?)
 
+/-- Decompose nested `map_update(base, idx, val)` where `base` is (or starts
+    with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices
+    in left-to-right order, or `none` if the expression is not this pattern. -/
+private def decomposeMapUpdate (varName : String)
+    (e : Lambda.LExpr CoreLParams.mono)
+    : Option (List (Lambda.LExpr CoreLParams.mono) × Lambda.LExpr CoreLParams.mono) :=
+  -- map_update(base, idx, val) = app(app(app(op "update" _) base) idx) val
+  match e with
+  | .app _ (.app _ (.app _ (.op _ opName _) base) idx) val =>
+    if opName.name == "update" then
+      match base with
+      | .fvar _ ident _ =>
+        if ident.name == varName then some ([idx], val)
+        else none
+      -- Nested: map_update(map_update(fvar, i1, ...), i2, val) is not the
+      -- pattern we produce (we use map_update(fvar, i1, map_update(select(...), i2, val))).
+      -- For nested lhsArray like m[k1][k2] := v, the translation produces:
+      -- map_update(fvar(m), k1, map_update(map_select(fvar(m), k1), k2, v))
+      -- We detect this by checking if val is itself a map_update with a select base.
+      | _ => none
+    else none
+  | _ => none
+
 mutual
 /-- Convert `Core.Statement` to `CoreDDM.Statement` -/
 partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
@@ -767,9 +795,20 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     modify (·.pushBoundVar name.toPretty)
     pure result
   | .set name expr _md => do
-    let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
-    let exprCST ← lexprToExpr expr 0
-    -- Type annotation required by CST but not semantically used.
+    -- Detect map_update(name, idx, val) pattern to produce lhsArray syntax
+    let (lhs, exprCST) ← match decomposeMapUpdate name.name expr with
+      | some (idxs, val) => do
+        let baseLhs := Lhs.lhsIdent default ⟨default, name.name⟩
+        let lhs ← idxs.foldlM (init := baseLhs) fun acc idx => do
+          let idxCST ← lexprToExpr idx 0
+          let tyCST := CoreType.tvar default unknownTypeVar
+          pure (Lhs.lhsArray default tyCST acc idxCST)
+        let valCST ← lexprToExpr val 0
+        pure (lhs, valCST)
+      | none => do
+        let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
+        let exprCST ← lexprToExpr expr 0
+        pure (lhs, exprCST)
     let tyCST := CoreType.tvar default unknownTypeVar
     pure (.assign default tyCST lhs exprCST)
   | .havoc name _md => do
