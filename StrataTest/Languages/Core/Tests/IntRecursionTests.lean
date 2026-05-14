@@ -195,7 +195,7 @@ Result: ✅ pass -/
 #eval verify powerPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 8: compound measure — decreases on expression over params
+-- Test 6: compound measure — decreases on expression over params
 -- merge of two sorted lists with decreases listLen(l1) + listLen(l2)
 -- NOTE: without `nat` or `ensures`, cannot prove length nonneg
 ---------------------------------------------------------------------
@@ -292,7 +292,7 @@ Result: ✅ pass -/
 #eval verify compoundMeasurePgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 9: compound measure with provable non-negativity
+-- Test 7: compound measure with provable non-negativity
 -- decreases m + n where m >= 0 and n >= 0 are preconditions
 ---------------------------------------------------------------------
 
@@ -346,7 +346,7 @@ Result: ✅ pass -/
 #eval verify compoundArithPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 10: mutual int recursion
+-- Test 8: mutual int recursion
 ---------------------------------------------------------------------
 
 def mutualIntRecPgm : Program :=
@@ -395,7 +395,7 @@ Result: ✅ pass -/
 #eval verify mutualIntRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 11: int-recursive function is a pure UF — no definitional axioms.
+-- Test 9: int-recursive function is a pure UF — no definitional axioms.
 -- Cannot prove fib(n) == fib(n-1) + fib(n-2) since fib has no axioms.
 ---------------------------------------------------------------------
 
@@ -467,7 +467,7 @@ Result: ✅ pass -/
 #eval verify intRecUFPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 12: concrete evaluation — factorial evaluates concretely
+-- Test 10: concrete evaluation — factorial evaluates concretely
 ---------------------------------------------------------------------
 
 def factorialConcretePgm : Program :=

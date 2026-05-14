@@ -134,4 +134,29 @@ function bad (n : int) : int
 #guard_msgs in
 #eval verify decreasesMutualCallPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 6: error — mutual block mixes structural and int-valued measures
+---------------------------------------------------------------------
+
+def mixedMutualPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+}
+function countdown (n : int) : int
+  decreases n
+{
+  if n <= 0 then 0 else countdown(n - 1)
+};
+#end
+
+/-- error: mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure -/
+#guard_msgs in
+#eval verify mixedMutualPgm (options := .quiet)
+
 end Strata.RecursiveFunctionErrorTest

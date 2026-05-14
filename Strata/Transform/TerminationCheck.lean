@@ -55,14 +55,6 @@ inductive DecreasesKind where
   | structural (paramIdx : Nat) (dtName : String)
   | intValued (measure : Expression.Expr)
 
-/-- Find the decreasing parameter index for a function: explicit `measure`
-    (from `decreases` clause), or fallback to `@[cases]` (`inlineIfConstr`). -/
-private def getDecreasesIdx (func : Function) : Option Nat :=
-  match func.measure with
-  | some (.fvar _ id _) => func.inputs.keys.findIdx? (· == id)
-  | some _ => none
-  | none => FuncAttr.findInlineIfConstr func.attr
-
 /-- Validate that a parameter index refers to a known ADT type, returning `.structural`. -/
 private def validateStructuralParam (func : Function) (tf : @TypeFactory Unit)
     (idx : Nat)
@@ -105,7 +97,6 @@ private def adtNameOf (ty : LMonoTy) : String :=
   match ty with
   | .tcons n _ => n
   | _ => ""
-
 
 /-- Check if an expression contains a call to any operation in the given name list. -/
 private def containsOpCall (e : Expression.Expr) (names : List String) : Bool :=
@@ -194,29 +185,35 @@ private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
 /-- Compute the call-site measure expression. For structural, wraps the
     decreasing arg with adtRank. For int-valued, substitutes formals with actuals. -/
 private def computeCallMeasure
+    (calleeName : String)
     (calleeKind : DecreasesKind)
     (calleeFormals : List Expression.Ident)
     (calleeInputTys : List LMonoTy)
     (callArgs : List Expression.Expr)
-    : Option Expression.Expr :=
+    : Except String Expression.Expr :=
   match calleeKind with
-  | .structural calleeIdx calleeDtName => do
-    let arg ← callArgs[calleeIdx]?
-    let calleeAdtTy ← calleeInputTys[calleeIdx]?
-    some (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
+  | .structural calleeIdx calleeDtName =>
+    match callArgs[calleeIdx]?, calleeInputTys[calleeIdx]? with
+    | some arg, some calleeAdtTy =>
+      .ok (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
+    | _, _ => .error s!"termination checking '{calleeName}': decreasing parameter index {calleeIdx} is out of range at call site"
   | .intValued calleeMeasure =>
-    some (LExpr.substFvarsLifting calleeMeasure (calleeFormals.zip callArgs))
+    if calleeFormals.length != callArgs.length then
+      .error s!"termination checking '{calleeName}': call has {callArgs.length} arguments but function expects {calleeFormals.length}"
+    else
+      .ok (LExpr.substFvarsLifting calleeMeasure (calleeFormals.zip callArgs))
 
 /-- Compute the caller's measure expression from its DecreasesKind. -/
 private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
-    : Option Expression.Expr :=
+    : Except String Expression.Expr :=
   match kind with
-  | .structural idx dtName => do
-    let param ← func.inputs.keys[idx]?
-    let adtTy ← func.inputs.values[idx]?
-    some (LExpr.mkApp () (.op () (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
-      [.fvar () param (.some adtTy)])
-  | .intValued m => some m
+  | .structural idx dtName =>
+    match func.inputs.keys[idx]?, func.inputs.values[idx]? with
+    | some param, some adtTy =>
+      .ok (LExpr.mkApp () (.op () (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
+        [.fvar () param (.some adtTy)])
+    | _, _ => .error s!"termination checking '{func.name.name}': decreasing parameter index {idx} is out of range"
+  | .intValued m => .ok m
 
 /-- Generate a termination-checking procedure for a single function.
     Returns `none` if the function has no recursive calls or no valid
@@ -236,7 +233,7 @@ private def mkTermCheckProc
     (md : Imperative.MetaData Expression)
     : Except String (Option (Decl × Nat)) := do
   let some body := func.body | return none
-  let some callerMeasure := computeCallerMeasure func callerKind | return none
+  let callerMeasure ← computeCallerMeasure func callerKind
   let needsNonNeg := match callerKind with
     | .intValued _ => true
     | .structural _ _ => false
@@ -244,8 +241,8 @@ private def mkTermCheckProc
       : Except String (List Expression.Expr) := do
     match funcKindMap.find? (fun (n, _, _, _) => n == calleeName) with
     | some (_, calleeKind, calleeFormals, calleeInputTys) =>
-      match computeCallMeasure calleeKind calleeFormals calleeInputTys callArgs with
-      | some callMeasure =>
+      match computeCallMeasure calleeName calleeKind calleeFormals calleeInputTys callArgs with
+      | .ok callMeasure =>
         if callMeasure.hasBVar then
           .error s!"termination checking '{func.name.name}': decreasing argument contains a bound variable"
         else if containsOpCall callMeasure recFuncNames then
@@ -259,7 +256,7 @@ private def mkTermCheckProc
             .ok [nonNeg, decrease]
           else
             .ok [decrease]
-      | none => .ok []
+      | .error msg => .error msg
     | none => .ok []
   let obligations ← extractTermObligations body recFuncNames mkObligations
   if obligations.isEmpty then return none
@@ -354,6 +351,13 @@ where
             | .ok kind =>
               funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
         let funcKindMap := funcKindList.reverse
+        -- Reject mutual blocks that mix structural and int-valued measures.
+        let hasStructural := funcKindMap.any fun (_, k, _, _) => match k with
+          | .structural _ _ => true | .intValued _ => false
+        let hasIntValued := funcKindMap.any fun (_, k, _, _) => match k with
+          | .intValued _ => true | .structural _ _ => false
+        if hasStructural && hasIntValued then
+          throwErr "mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure"
         -- Step 2: Generate adtRank function declarations and per-constructor axioms
         -- for structural functions only.
         let allAdtNames := funcKindMap.filterMap fun (_, kind, _, _) =>
@@ -375,7 +379,7 @@ where
           fun (n, d) => if emittedAdtRank.contains n then none else some d
         let emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
         incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
-        -- Step 4: Generate a $$term procedure per function with adtRank
+        -- Step 3: Generate a $$term procedure per function with adtRank
         -- decrease assertions at each recursive call site.
         let recNames := funcs.map (·.name.name)
         let termDecls ← funcs.filterMapM fun func => do
@@ -391,7 +395,7 @@ where
               addTermProcToCallGraph (termProcName func.name.name)
               return some decl
             | .ok none => return none
-        -- Step 5: Splice adtRank decls before the rec block, term procs after.
+        -- Step 4: Splice adtRank decls before the rec block, term procs after.
         let (changed, rest') ← transformDecls rest tf emittedAdtRank
         if newFuncDecls.isEmpty && termDecls.isEmpty then
           return (changed, d :: rest')
