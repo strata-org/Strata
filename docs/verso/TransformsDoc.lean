@@ -117,13 +117,13 @@ without `@[cases]` are encoded as pure uninterpreted functions with no axioms.
 Termination checking is always on for `rec` functions. Strata supports two
 termination modes:
 
-- **Structural (ADT):** The TermCheck pipeline phase generates a
+- *Structural (ADT):* The TermCheck pipeline phase generates a
   `D..adtRank : D → Int` uninterpreted function with per-constructor axioms
   establishing that recursive fields have strictly smaller rank, and a `f$$term`
   verification procedure that asserts `adtRank(callArg) < adtRank(callerParam)`
   at each recursive call site.
 
-- **Int-valued:** For functions with an int-valued `decreases` expression, the
+- *Int-valued:* For functions with an int-valued `decreases` expression, the
   `f$$term` procedure asserts two obligations at each recursive call site:
   `0 <= call_measure` (non-negativity) and `call_measure < caller_measure`
   (strict decrease), where `call_measure` is the `decreases` expression with

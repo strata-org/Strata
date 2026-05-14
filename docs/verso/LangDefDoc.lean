@@ -434,8 +434,8 @@ evaluation transform, when applied.
 
 ### Recursive Functions
 
-Strata supports two kinds of recursive functions: **structural recursion** over
-algebraic datatypes, and **int-valued recursion** with integer termination
+Strata supports two kinds of recursive functions: *structural recursion* over
+algebraic datatypes, and *int-valued recursion* with integer termination
 measures. Both single and mutually recursive functions are supported.
 Recursive functions cannot be marked `inline`.
 
