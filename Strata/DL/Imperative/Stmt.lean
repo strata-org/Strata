@@ -238,7 +238,11 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
-  | .loop guard _ _ bss _ => guard.getVars ++ Block.getVars bss
+  | .loop guard measure invariants bss _ =>
+    guard.getVars ++
+    (measure.map HasVarsPure.getVars).getD [] ++
+    (invariants.flatMap fun lp => HasVarsPure.getVars lp.2) ++
+    Block.getVars bss
   | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body, excluding formal parameters

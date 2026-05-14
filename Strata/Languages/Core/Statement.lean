@@ -197,7 +197,7 @@ end
 
 ---------------------------------------------------------------------
 
-def Command.getVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.getVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.getVars
   | .call _ args _ => (CallArg.getInputExprs args).flatMap HasVarsPure.getVars
