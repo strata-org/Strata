@@ -501,8 +501,9 @@ rec function diagonal (m : int, n : int) : int
 
 Every recursive function must have at least a `@[cases]` annotation or a
 `decreases` clause; Strata rejects recursive functions without a termination hint.
-If a function has both `@[cases]` and an int-valued `decreases` clause, the
-int-valued measure takes priority for termination checking.
+If a function has both `@[cases]` and an int-valued `decreases` clause,
+`@[cases]` is used for unfolding in the SMT solver, while `decreases` is used
+for termination checking.
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block:

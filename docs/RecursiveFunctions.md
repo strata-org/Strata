@@ -68,8 +68,9 @@ rec function fib (n : int) : int
 - If `decreases` is an expression of type `int`, int-valued termination is used.
   `@[cases]` is not required.
 - The expression may be compound (e.g., `decreases m + n`).
-- If both `@[cases]` and an int-valued `decreases` are present, the int-valued
-  measure takes priority for termination checking.
+- If both `@[cases]` and an int-valued `decreases` are present, `@[cases]` is
+  used for unfolding in the SMT solver, while `decreases` is used for
+  termination checking.
 
 ### Mutually Recursive Functions
 
