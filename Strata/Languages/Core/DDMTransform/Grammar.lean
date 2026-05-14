@@ -150,6 +150,14 @@ fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " 
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
 fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
 
+fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.NegOverflow" "(" a ")";
+fn bv_sadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SAddOverflow" "(" a ", " b ")";
+fn bv_ssub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SSubOverflow" "(" a ", " b ")";
+fn bv_smul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SMulOverflow" "(" a ", " b ")";
+fn bv_uadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UAddOverflow" "(" a ", " b ")";
+fn bv_usub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.USubOverflow" "(" a ", " b ")";
+fn bv_umul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UMulOverflow" "(" a ", " b ")";
+
 fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
 fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";
 fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a ", " b ")";
@@ -300,7 +308,7 @@ op command_fndecl (name : Ident,
   "function " name typeArgs b " : " r ";\n";
 
 category Inline;
-op inline () : Inline => "inline";
+op inline () : Inline => "inline ";
 
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,

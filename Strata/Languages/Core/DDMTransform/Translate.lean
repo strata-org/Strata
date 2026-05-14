@@ -636,6 +636,14 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
   | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
+  | _, q`Core.bv_neg_overflow  => return Core.bv32NegOverflowOp
+  | _, q`Core.bv_sadd_overflow => return Core.bv32SAddOverflowOp
+  | _, q`Core.bv_ssub_overflow => return Core.bv32SSubOverflowOp
+  | _, q`Core.bv_smul_overflow => return Core.bv32SMulOverflowOp
+  | _, q`Core.bv_uadd_overflow => return Core.bv32UAddOverflowOp
+  | _, q`Core.bv_usub_overflow => return Core.bv32USubOverflowOp
+  | _, q`Core.bv_umul_overflow => return Core.bv32UMulOverflowOp
+
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
   | _, q`Core.str_substr   => return Core.strSubstrOp

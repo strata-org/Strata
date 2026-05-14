@@ -51,7 +51,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 x > y
 
@@ -60,7 +60,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 f(x + y) > 7
 
@@ -69,7 +69,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 y == 2
 
@@ -78,7 +78,7 @@ Property: assert
 Assumptions:
 a1: x == 5
 a2: y == 2
-f1: forall __q0 : int :: f(__q0) > __q0
+f1: forall y : int :: f(y) > y
 Obligation:
 f(y) > y
 
@@ -136,10 +136,10 @@ VCs:
 Label: axiomPgm2_main_assert
 Property: assert
 Assumptions:
-f_g_ax: forall __q0 : int ::  { f(__q0) }
-  f(__q0) == g(__q0) + 1
-g_ax: forall __q0 : int ::  { g(__q0), f(__q0) }
-  g(__q0) == __q0 * 2
+f_g_ax: forall x : int ::  { f(x) }
+  f(x) == g(x) + 1
+g_ax: forall x : int ::  { g(x), f(x) }
+  g(x) == x * 2
 Obligation:
 $__x0 >= 0 ==> f($__x0) > $__x0
 

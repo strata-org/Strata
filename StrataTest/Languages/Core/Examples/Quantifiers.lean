@@ -54,17 +54,17 @@ VCs:
 Label: good_assert
 Property: assert
 Obligation:
-forall __q0 : int :: !(__q0 == __q0 + 1)
+forall l : int :: !(l == l + 1)
 
 Label: good
 Property: assert
 Obligation:
-forall __q0 : int :: exists __q1 : int :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1))
+forall y : int :: exists z : int :: $__x0 + 1 + (z + y) == y + (z + ($__x0 + 1))
 
 Label: bad
 Property: assert
 Obligation:
-forall __q0 : int :: __q0 < $__x0
+forall q : int :: q < $__x0
 
 
 
@@ -78,13 +78,13 @@ Model:
 [DEBUG] Evaluated program:
 procedure Test (x : int) returns (r : int)
 spec {
-  ensures [good]: forall __q0 : int :: exists __q1 : int :: r + (__q1 + __q0) == __q0 + (__q1 + r);
-  ensures [bad]: forall __q0 : int :: __q0 < x;
+  ensures [good]: forall y : int :: exists z : int :: r + (z + y) == y + (z + r);
+  ensures [bad]: forall q : int :: q < x;
   } {
-  assert [good_assert]: forall __q0 : ($__unknown_type) :: !(__q0 == __q0 + 1);
+  assert [good_assert]: forall l : ($__unknown_type) :: !(l == l + 1);
   r := $__x0 + 1;
-  assert [good]: forall __q0 : ($__unknown_type) :: exists __q1 : ($__unknown_type) :: $__x0 + 1 + (__q1 + __q0) == __q0 + (__q1 + ($__x0 + 1));
-  assert [bad]: forall __q0 : ($__unknown_type) :: __q0 < $__x0;
+  assert [good]: forall y : ($__unknown_type) :: exists z : ($__unknown_type) :: $__x0 + 1 + (z + y) == y + (z + ($__x0 + 1));
+  assert [bad]: forall q : ($__unknown_type) :: q < $__x0;
   };
 
 ---
@@ -114,42 +114,42 @@ VCs:
 Label: trigger_assert
 Property: assert
 Assumptions:
-f_pos: forall __q0 : int ::  { f(__q0) }
-  f(__q0) > 0
-g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
-  __q0 > 0 ==> g(__q0, __q1) < 0
-f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
-f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
+f_pos: forall x : int ::  { f(x) }
+  f(x) > 0
+g_neg: forall x : int :: forall y : int ::  { g(x, y) }
+  x > 0 ==> g(x, y) < 0
+f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
+f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
 Obligation:
 f($__x0) > 0
 
 Label: multi_trigger_assert
 Property: assert
 Assumptions:
-f_pos: forall __q0 : int ::  { f(__q0) }
-  f(__q0) > 0
-g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
-  __q0 > 0 ==> g(__q0, __q1) < 0
-f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
-f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
+f_pos: forall x : int ::  { f(x) }
+  f(x) > 0
+g_neg: forall x : int :: forall y : int ::  { g(x, y) }
+  x > 0 ==> g(x, y) < 0
+f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
+f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
 Obligation:
-forall __q0 : int :: g($__x0, __q0) < f($__x0)
+forall y : int :: g($__x0, y) < f($__x0)
 
 Label: f_and_g
 Property: assert
 Assumptions:
-f_pos: forall __q0 : int ::  { f(__q0) }
-  f(__q0) > 0
-g_neg: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1) }
-  __q0 > 0 ==> g(__q0, __q1) < 0
-f_and_g: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
-f_and_g2: forall __q0 : int :: forall __q1 : int ::  { g(__q0, __q1), f(__q0) }
-  g(__q0, __q1) < f(__q0)
+f_pos: forall x : int ::  { f(x) }
+  f(x) > 0
+g_neg: forall x : int :: forall y : int ::  { g(x, y) }
+  x > 0 ==> g(x, y) < 0
+f_and_g: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
+f_and_g2: forall x : int :: forall y : int ::  { g(x, y), f(x) }
+  g(x, y) < f(x)
 Obligation:
 g(f($__x0), $__x0) < 0
 

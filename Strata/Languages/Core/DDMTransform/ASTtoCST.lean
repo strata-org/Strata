@@ -411,9 +411,23 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv64.Extract_7_0" => pure (.bvextract_7_0_64 default arg)
   | "Bv64.Extract_15_0" => pure (.bvextract_15_0_64 default arg)
   | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default arg)
-  | _ => do
-    ToCSTM.logError "handleUnaryOps" "unary op" name
-    pure (.not default arg)
+  | _ =>
+    -- Check for NegOverflow pattern: "BvN.NegOverflow"
+    let parts := name.splitOn "."
+    match parts with
+    | [sizeStr, "NegOverflow"] =>
+      if sizeStr.startsWith "Bv" then
+        let ty : CoreType M := match sizeStr with
+          | "Bv1" => .bv1 default | "Bv8" => .bv8 default
+          | "Bv16" => .bv16 default | "Bv32" => .bv32 default
+          | "Bv64" => .bv64 default | _ => .bv32 default
+        pure (.bv_neg_overflow default ty arg)
+      else do
+        ToCSTM.logError "handleUnaryOps" "unary op" name
+        pure (.not default arg)
+    | _ => do
+      ToCSTM.logError "handleUnaryOps" "unary op" name
+      pure (.not default arg)
 
 /-- Map from bitvector binary operation base names to DDM Expr constructors -/
 def bvBinaryOpMap {M} [Inhabited M] :
@@ -439,7 +453,13 @@ def bvBinaryOpMap {M} [Inhabited M] :
   ("SLe", fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
   ("SLt", fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
   ("SGe", fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
-  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2)
+  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
+  ("SAddOverflow", fun ty arg1 arg2 => .bv_sadd_overflow default ty arg1 arg2),
+  ("SSubOverflow", fun ty arg1 arg2 => .bv_ssub_overflow default ty arg1 arg2),
+  ("SMulOverflow", fun ty arg1 arg2 => .bv_smul_overflow default ty arg1 arg2),
+  ("UAddOverflow", fun ty arg1 arg2 => .bv_uadd_overflow default ty arg1 arg2),
+  ("USubOverflow", fun ty arg1 arg2 => .bv_usub_overflow default ty arg1 arg2),
+  ("UMulOverflow", fun ty arg1 arg2 => .bv_umul_overflow default ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/
@@ -613,8 +633,8 @@ partial def lexprToExpr {M} [Inhabited M]
   | .abs _ _ _ _ => do
     ToCSTM.logError "lexprToExpr" "lambda not supported in CoreDDM" ""
     pure (.btrue default)  -- Default to true literal
-  | .quant _ qkind _ ty trigger body =>
-    lquantToExpr qkind ty trigger body (qLevel + 1)
+  | .quant _ qkind prettyName ty trigger body =>
+    lquantToExpr qkind prettyName ty trigger body (qLevel + 1)
 
 /-- Extract trigger patterns from Lambda's trigger expression representation -/
 partial def extractTriggerPatterns {M} [Inhabited M]
@@ -649,11 +669,13 @@ partial def extractTriggerPatterns {M} [Inhabited M]
     pure #[expr]
 
 partial def lquantToExpr {M} [Inhabited M]
-    (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
+    (qkind : Lambda.QuantifierKind) (prettyName : String)
+    (ty : Option Lambda.LMonoTy)
     (trigger : Lambda.LExpr CoreLParams.mono) (body : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
-  let name : Ann String M := ⟨default, mkQuantVarName (qLevel - 1)⟩
+  let varName := if prettyName.isEmpty then mkQuantVarName (qLevel - 1) else prettyName
+  let name : Ann String M := ⟨default, varName⟩
   modify ToCSTContext.pushScope
   modify (·.addScopedBoundVars #[name.val])
   let tyExpr ← match ty with
@@ -755,7 +777,9 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   let paramNames := results.map (·.2)
   let b : Bindings M := .mkBindings default ⟨default, bindings⟩
   let r ← lTyToCoreType decl.output
-  let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
+  let inline? : Ann (Option (Inline M)) M :=
+    if decl.attr.any (· == .inline) then ⟨default, some (.inline default)⟩
+    else ⟨default, none⟩
   -- Add formals to the context
   modify (·.addScopedBoundVars (reverse? := false) paramNames)
   -- Convert preconditions
@@ -1003,7 +1027,9 @@ def funcToCST {M} [Inhabited M]
     -- Convert preconditions
     let preconds ← precondsToSpecElts func.preconditions
     let bodyExpr ← lexprToExpr body 0
-    let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
+    let inline? : Ann (Option (Inline M)) M :=
+      if func.attr.any (· == .inline) then ⟨default, some (.inline default)⟩
+      else ⟨default, none⟩
     pure (.command_fndef default name typeArgs b r preconds bodyExpr inline?)
   modify ToCSTContext.popScope
   -- Register function name as free variable.

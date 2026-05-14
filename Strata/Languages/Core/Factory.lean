@@ -442,6 +442,30 @@ def bv64Extract_31_0_Op  := bv64Extract_31_0_Func.opExpr
 def bv64Extract_15_0_Op  := bv64Extract_15_0_Func.opExpr
 def bv64Extract_7_0_Op   := bv64Extract_7_0_Func.opExpr
 
+/-- Bitvector overflow predicate factory functions -/
+def bv32NegOverflowFunc : WFLFunc CoreLParams :=
+  unaryFuncUneval "Bv32.NegOverflow" (.bitvec 32) .bool
+def bv32SAddOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Bv32.SAddOverflow" (.bitvec 32) (.bitvec 32) .bool
+def bv32SSubOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Bv32.SSubOverflow" (.bitvec 32) (.bitvec 32) .bool
+def bv32SMulOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Bv32.SMulOverflow" (.bitvec 32) (.bitvec 32) .bool
+def bv32UAddOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Bv32.UAddOverflow" (.bitvec 32) (.bitvec 32) .bool
+def bv32USubOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Bv32.USubOverflow" (.bitvec 32) (.bitvec 32) .bool
+def bv32UMulOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Bv32.UMulOverflow" (.bitvec 32) (.bitvec 32) .bool
+
+def bv32NegOverflowOp : Expression.Expr := bv32NegOverflowFunc.opExpr
+def bv32SAddOverflowOp : Expression.Expr := bv32SAddOverflowFunc.opExpr
+def bv32SSubOverflowOp : Expression.Expr := bv32SSubOverflowFunc.opExpr
+def bv32SMulOverflowOp : Expression.Expr := bv32SMulOverflowFunc.opExpr
+def bv32UAddOverflowOp : Expression.Expr := bv32UAddOverflowFunc.opExpr
+def bv32USubOverflowOp : Expression.Expr := bv32USubOverflowFunc.opExpr
+def bv32UMulOverflowOp : Expression.Expr := bv32UMulOverflowFunc.opExpr
+
 def emptyTriggersOp : Expression.Expr := emptyTriggersFunc.opExpr
 def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
 def emptyTriggerGroupOp : Expression.Expr := emptyTriggerGroupFunc.opExpr
