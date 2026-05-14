@@ -22,15 +22,31 @@ private def parseCoreText (input : String) : IO Core.Program := do
   | .ok program => pure program
   | .error msg => throw (IO.userError msg)
 
+private def printCFGProcInfo (prog : Core.Program) : IO Unit := do
+  for d in prog.decls do
+    match d with
+    | .proc p _ =>
+      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
+      match p.body with
+      | .cfg c =>
+        IO.println s!"  CFG entry: {c.entry}, {c.blocks.length} blocks"
+        for (lbl, blk) in c.blocks do
+          let transferDesc := match blk.transfer with
+            | .condGoto _ l1 l2 _ => if l1 == l2 then s!"goto {l1}" else s!"branch → {l1}/{l2}"
+            | .finish _ => "return"
+          IO.println s!"  Block '{lbl}': {blk.cmds.length} cmds, {transferDesc}"
+      | .structured _ => IO.println "  ERROR: expected CFG body"
+    | _ => pure ()
+
 /-! ## Deterministic CFG with conditional branch -/
 
 /--
 info: Procedure: Max
   CFG entry: entry, 4 blocks
-  Block 'entry': 0 cmds
-  Block 'then_branch': 1 cmds
-  Block 'else_branch': 1 cmds
-  Block 'done': 0 cmds
+  Block 'entry': 0 cmds, branch → then_branch/else_branch
+  Block 'then_branch': 1 cmds, goto done
+  Block 'else_branch': 1 cmds, goto done
+  Block 'done': 0 cmds, return
 -/
 #guard_msgs in
 #eval do
@@ -57,17 +73,7 @@ cfg entry {
   }
 };
 "
-  for d in prog.decls do
-    match d with
-    | .proc p _ =>
-      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
-      match p.body with
-      | .cfg c =>
-        IO.println s!"  CFG entry: {c.entry}, {c.blocks.length} blocks"
-        for (lbl, blk) in c.blocks do
-          IO.println s!"  Block '{lbl}': {blk.cmds.length} cmds"
-      | .structured _ => IO.println "  ERROR: expected CFG body"
-    | _ => pure ()
+  printCFGProcInfo prog
 
 /-! ## Nondeterministic CFG with multi-target goto -/
 
@@ -100,20 +106,7 @@ cfg entry {
   }
 };
 "
-  for d in prog.decls do
-    match d with
-    | .proc p _ =>
-      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
-      match p.body with
-      | .cfg c =>
-        IO.println s!"  CFG entry: {c.entry}, {c.blocks.length} blocks"
-        for (lbl, blk) in c.blocks do
-          let transferDesc := match blk.transfer with
-            | .condGoto _ l1 l2 _ => if l1 == l2 then s!"goto {l1}" else s!"branch → {l1}/{l2}"
-            | .finish _ => "return"
-          IO.println s!"  Block '{lbl}': {blk.cmds.length} cmds, {transferDesc}"
-      | .structured _ => IO.println "  ERROR: expected CFG body"
-    | _ => pure ()
+  printCFGProcInfo prog
 
 /-! ## CFG loop pattern -/
 
@@ -149,20 +142,7 @@ cfg entry {
   }
 };
 "
-  for d in prog.decls do
-    match d with
-    | .proc p _ =>
-      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
-      match p.body with
-      | .cfg c =>
-        IO.println s!"  CFG entry: {c.entry}, {c.blocks.length} blocks"
-        for (lbl, blk) in c.blocks do
-          let transferDesc := match blk.transfer with
-            | .condGoto _ l1 l2 _ => if l1 == l2 then s!"goto {l1}" else s!"branch → {l1}/{l2}"
-            | .finish _ => "return"
-          IO.println s!"  Block '{lbl}': {blk.cmds.length} cmds, {transferDesc}"
-      | .structured _ => IO.println "  ERROR: expected CFG body"
-    | _ => pure ()
+  printCFGProcInfo prog
 
 /-! ## Empty block (just a transfer) -/
 
@@ -181,20 +161,7 @@ cfg start {
   }
 };
 "
-  for d in prog.decls do
-    match d with
-    | .proc p _ =>
-      IO.println s!"Procedure: {Core.CoreIdent.toPretty p.header.name}"
-      match p.body with
-      | .cfg c =>
-        IO.println s!"  CFG entry: {c.entry}, {c.blocks.length} blocks"
-        for (lbl, blk) in c.blocks do
-          let transferDesc := match blk.transfer with
-            | .condGoto _ l1 l2 _ => if l1 == l2 then s!"goto {l1}" else s!"branch → {l1}/{l2}"
-            | .finish _ => "return"
-          IO.println s!"  Block '{lbl}': {blk.cmds.length} cmds, {transferDesc}"
-      | .structured _ => IO.println "  ERROR: expected CFG body"
-    | _ => pure ()
+  printCFGProcInfo prog
 
 /-! ## End-to-end: type-checking accepts well-formed CFG procedures -/
 

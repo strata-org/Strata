@@ -281,7 +281,8 @@ def inlineCallCmd
         -- CFG-level inlining is a separate, more complex pass that operates
         -- entirely in the CFG domain (graph splicing).
         let procBodyStmts ← match proc.body with
-        | .cfg _ => return .none
+        | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+            "cannot inline procedure with CFG body into structured code")
         | .structured ss => pure ss
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
