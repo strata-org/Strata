@@ -28,6 +28,9 @@ inductive EvalCmds
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT) :
   SemanticEval P → SemanticStore P → List CmdT → SemanticStore P → Bool → Prop where
+  | _enableNesting :
+    EvalCmd δ σ c σ' failed →
+    EvalCmds P EvalCmd δ₀ σ₀ cs σ₁ f₀
   | eval_cmds_none :
     EvalCmds P EvalCmd δ σ [] σ false
   | eval_cmds_some :
@@ -61,6 +64,9 @@ inductive EvalDetBlock
   (extendEval : ExtendEval P)
   [HasNot P] :
   SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
+  | _enableNesting :
+    EvalCmd δ σ c σ' failed →
+    EvalDetBlock P EvalCmd extendEval σ₀ b config
 
   | step_goto_true :
     EvalCmds P EvalCmd δ σ cs σ' failed →
