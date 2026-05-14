@@ -975,7 +975,7 @@ rec function bad (@[cases] xs : IntList) : bool
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a bound variable -/
+/-- error: termination checking 'bad': decreasing argument contains a bound variable-/
 #guard_msgs in
 #eval verify boundVarDecrArgPgm (options := .quiet)
 
@@ -995,7 +995,7 @@ rec function bad (@[cases] xs : IntList) : IntList
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a recursive call -/
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
 #eval verify recCallInDecrArgPgm (options := .quiet)
 

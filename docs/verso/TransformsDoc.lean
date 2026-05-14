@@ -107,16 +107,28 @@ Functions with bodies are inlined by the partial evaluator where possible.
 Functions without bodies are declared as uninterpreted functions.
 
 Recursive functions are simplified by the partial evaluator but are encoded as
-uninterpreted functions with per-constructor axioms in the SMT encoding. For
-each constructor `C` of the ADT at the `@[cases]` parameter, the encoding
-generates an axiom representing the corresponding rewrite rule (e.g.,
-`List.length Nil = 0` and `forall h t, List.length (Cons h t) = 1 + List.length t`).
+uninterpreted functions in the SMT encoding. For structural recursive functions
+(those with `@[cases]`), per-constructor axioms are generated: for each
+constructor `C` of the ADT at the `@[cases]` parameter, an axiom representing
+the corresponding rewrite rule (e.g., `List.length Nil = 0` and
+`forall h t, List.length (Cons h t) = 1 + List.length t`). Int-recursive
+functions (those with an int-valued `decreases` clause but no `@[cases]`) are
+encoded as pure uninterpreted functions with no axioms.
 
-Termination checking is always on for `rec` functions. For each recursive
-function, the TermCheck pipeline phase generates a `D..adtRank : D → Int`
-uninterpreted function with per-constructor axioms establishing that recursive
-fields have strictly smaller rank, and a `f$$term` verification procedure that
-asserts `adtRank(callArg) < adtRank(callerParam)` at each recursive call site.
+Termination checking is always on for `rec` functions. Strata supports two
+termination modes:
+
+- **Structural (ADT):** The TermCheck pipeline phase generates a
+  `D..adtRank : D → Int` uninterpreted function with per-constructor axioms
+  establishing that recursive fields have strictly smaller rank, and a `f$$term`
+  verification procedure that asserts `adtRank(callArg) < adtRank(callerParam)`
+  at each recursive call site.
+
+- **Int-valued:** For functions with an int-valued `decreases` expression, the
+  `f$$term` procedure asserts two obligations at each recursive call site:
+  `0 <= call_measure` (non-negativity) and `call_measure < caller_measure`
+  (strict decrease), where `call_measure` is the `decreases` expression with
+  formals substituted by the actual arguments at the call site.
 
 ## Axiom Encoding
 

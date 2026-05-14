@@ -534,4 +534,72 @@ Result: ✅ pass -/
 #guard_msgs in
 #eval verify factorialConcretePgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 11: @[cases] with int-valued decreases — int measure takes priority
+-- but @[cases] allows unfolding
+---------------------------------------------------------------------
+
+def casesWithIntMeasurePgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function sumFirst (@[cases] xs : IntList, n : int) : int
+  requires n >= 0;
+  decreases n
+{
+  if n <= 0 then 0
+  else if IntList..isNil(xs) then 0
+  else IntList..hd(xs) + sumFirst(IntList..tl(xs), n - 1)
+};
+
+procedure TestSumFirstCons(h : int, t : IntList, n : int) spec {
+  requires n >= 1;
+  ensures true;
+}
+{
+  assert [consUnfold]: sumFirst(Cons(h, t), 1) == h + sumFirst(t, 0);
+};
+#end
+
+/-- info:
+Obligation: sumFirst_body_calls_IntList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: sumFirst_body_calls_IntList..tl_1
+Property: assert
+Result: ✅ pass
+
+Obligation: sumFirst_body_calls_sumFirst_2
+Property: assert
+Result: ✅ pass
+
+Obligation: sumFirst_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: sumFirst_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_consUnfold_calls_sumFirst_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_consUnfold_calls_sumFirst_1
+Property: assert
+Result: ✅ pass
+
+Obligation: consUnfold
+Property: assert
+Result: ✅ pass
+
+Obligation: TestSumFirstCons_ensures_1
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify casesWithIntMeasurePgm (options := .quiet)
+
 end Strata.IntRecursionTermCheckTest

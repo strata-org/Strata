@@ -434,13 +434,18 @@ evaluation transform, when applied.
 
 ### Recursive Functions
 
-Currently, only recursive functions over algebraic datatypes are supported (both
-single and mutually recursive). Recursive functions are declared with the `rec`
-keyword, and exactly one parameter must be annotated with `@[cases]` to indicate
-the algebraic datatype argument for per-constructor axiom generation: one
-unfolding axiom is generated for each constructor of the datatype,
-case-splitting on the `@[cases]` parameter.
+Strata supports two kinds of recursive functions: **structural recursion** over
+algebraic datatypes, and **int-valued recursion** with integer termination
+measures. Both single and mutually recursive functions are supported.
 Recursive functions cannot be marked `inline`.
+
+#### Structural Recursion (ADT)
+
+Structural recursive functions are declared with the `rec` keyword, and exactly
+one parameter must be annotated with `@[cases]` to indicate the algebraic
+datatype argument for per-constructor axiom generation: one unfolding axiom is
+generated for each constructor of the datatype, case-splitting on the `@[cases]`
+parameter.
 
 ```
 rec function listLen (@[cases] xs : IntList) : int
@@ -464,8 +469,40 @@ rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
 };
 ```
 
+#### Int-Valued Recursion
+
+When the `decreases` clause specifies an expression of type `int` (rather than
+a datatype-typed parameter), the function uses int-valued termination checking.
+These functions do NOT require `@[cases]`.
+
+```
+rec function fib (n : int) : int
+  decreases n
+{
+  if n <= 1 then n else fib(n - 1) + fib(n - 2)
+};
+```
+
+The `decreases` expression may be an arbitrary integer expression over the
+function's parameters:
+
+```
+rec function diagonal (m : int, n : int) : int
+  requires m >= 0;
+  requires n >= 0;
+  decreases m + n
+{
+  if m <= 0 then (if n <= 0 then 0 else diagonal(m, n - 1))
+  else diagonal(m - 1, n)
+};
+```
+
+#### General Rules
+
 Every recursive function must have at least a `@[cases]` annotation or a
 `decreases` clause; Strata rejects recursive functions without a termination hint.
+If a function has both `@[cases]` and an int-valued `decreases` clause, the
+int-valued measure takes priority for termination checking.
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block:

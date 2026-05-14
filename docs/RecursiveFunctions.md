@@ -9,21 +9,19 @@ This document describes the recursive function infrastructure in Strata Core.
 
 ## Overview
 
-Strata Core supports recursive functions that recurse on algebraic datatypes
-(ADTs). At the SMT level, a recursive function is encoded as an **uninterpreted
-function (UF)** together with **per-constructor axioms** equipped with
-**triggers**.
+Strata Core supports two kinds of recursive functions:
 
-Both single and mutually recursive functions are supported.
+1. **Structural recursion** over algebraic datatypes (ADTs), driven by `@[cases]`.
+2. **Int-valued recursion** with an integer termination measure (`decreases <int expr>`).
+
+Both single and mutually recursive functions are supported in both modes.
 
 ## Syntax
 
 ### Single Recursive Functions
 
-Recursive functions are declared with the `rec` keyword. Exactly one parameter
-must be annotated with `@[cases]` to indicate the ADT argument being recursed on.
-A single recursive function is a `rec` block containing one function, terminated
-by `;`:
+Recursive functions are declared with the `rec` keyword. A single recursive
+function is a `rec` block containing one function, terminated by `;`:
 
 ```
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
@@ -34,16 +32,17 @@ rec function listLen (@[cases] xs : IntList) : int
 };
 ```
 
-The `@[cases]` annotation tells the axiom generator which parameter drives the
-per-constructor axiom generation (partial evaluation). Only one `@[cases]`
-parameter is allowed per function.
+For structural recursion, exactly one parameter must be annotated with `@[cases]`
+to indicate the ADT argument. The `@[cases]` annotation tells the axiom
+generator which parameter drives per-constructor axiom generation (partial
+evaluation). For int-valued recursion, `@[cases]` is not required.
 
 Recursive functions cannot be marked `inline`.
 
 ### The `decreases` Clause
 
-An optional `decreases` clause specifies which parameter is used as the
-termination measure. It appears after the preconditions and before the body:
+An optional `decreases` clause specifies the termination measure. It appears
+after the preconditions and before the body.
 
 ```
 rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
@@ -55,20 +54,31 @@ rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
 };
 ```
 
-- If `decreases` is omitted, the `@[cases]` parameter is used as the termination
-  measure (this is the common case where both coincide).
-- If `decreases` is provided, it overrides only the termination check. The
-  `@[cases]` parameter still controls per-constructor axiom generation.
-- The `decreases` expression must name a parameter whose type is a known ADT.
-- `@[cases]` is always required, even when `decreases` is provided.
+```
+rec function fib (n : int) : int
+  decreases n
+{
+  if n <= 1 then n else fib(n - 1) + fib(n - 2)
+};
+```
+
+- If `decreases` is omitted, the `@[cases]` parameter is used as the measure.
+- If `decreases` names a datatype-typed parameter, structural termination is
+  used. The `@[cases]` parameter still controls axiom generation independently.
+- If `decreases` is an expression of type `int`, int-valued termination is used.
+  `@[cases]` is not required.
+- The expression may be compound (e.g., `decreases m + n`).
+- If both `@[cases]` and an int-valued `decreases` are present, the int-valued
+  measure takes priority for termination checking.
 
 ### Mutually Recursive Functions
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block. The block starts with `rec`, lists each function (without `rec`
-on subsequent functions), and ends with `;`. Each function in the block must
-have its own `@[cases]` parameter. All functions in the block can call each
-other (and themselves). The functions may operate on different datatypes:
+on subsequent functions), and ends with `;`. All functions in the block can call
+each other (and themselves). Each function must have either a `@[cases]`
+parameter or a `decreases` clause. The functions may operate on different
+datatypes:
 
 ```
 datatype RoseTree { Leaf(val: int), Node(children: RoseList) }
@@ -94,9 +104,10 @@ function listSize (@[cases] xs : RoseList) : int
    all function bodies with full mutual visibility. The `@[cases]` binding is
    translated to an `inlineIfConstr` attribute recording the parameter index.
 
-2. **Axiom Generation (`RecursiveAxioms.lean`):** For each constructor `C` of
-   the ADT at the `@[cases]` parameter, a universally quantified axiom is
-   generated:
+2. **Axiom Generation (`RecursiveAxioms.lean`):** For structural recursive
+   functions (those with `@[cases]`), per-constructor axioms are generated.
+   For each constructor `C` of the ADT at the `@[cases]` parameter, a
+   universally quantified axiom is generated:
 
    ```
    ∀ (params..., fields...). f(..., C(fields...), ...) = PE(f(..., C(fields...), ...))
@@ -112,8 +123,9 @@ function listSize (@[cases] xs : RoseList) : int
    function in the block.
 
 3. **SMT Encoding (`SMTEncoder.lean`):** Each function is declared as an
-   **uninterpreted function**. The per-constructor axioms from step 2 are
-   emitted as quantified SMT assertions with `:pattern` annotations.
+   **uninterpreted function**. For structural recursive functions, the
+   per-constructor axioms from step 2 are emitted as quantified SMT assertions
+   with `:pattern` annotations. Int-recursive functions have no axioms.
 
 ### SMT Encoding Example
 
@@ -140,28 +152,38 @@ so the encoder emits it as a concrete equality rather than a quantified axiom.
 
 ## Termination Checking
 
-Termination checking is always on for all `rec` functions. It verifies that
-recursive calls pass a structurally smaller argument by encoding a well-founded
-ordering on ADTs using `adtRank` functions.
+Termination checking is always on for all `rec` functions. The TermCheck
+pipeline phase generates a `f$$term` verification procedure for each recursive
+function, asserting that the termination measure decreases at each recursive
+call site, guarded by path conditions through `ite` branches.
 
-For each recursive function, the TermCheck pipeline phase:
+### Structural Termination (ADT)
+
+For structural recursion, TermCheck:
 
 1. Generates a `D..adtRank : D → Int` uninterpreted function and per-constructor
    axioms establishing that recursive fields have strictly smaller rank.
-2. Generates a `f$$term` verification procedure that asserts
-   `adtRank(callArg) < adtRank(callerParam)` at each recursive call site,
-   guarded by the path condition through `ite` branches.
+2. Generates a `f$$term` procedure that asserts
+   `adtRank(callArg) < adtRank(callerParam)` at each recursive call site.
+
+### Int-Valued Termination
+
+For int-valued recursion, TermCheck generates a `f$$term` procedure that asserts
+two obligations at each recursive call site:
+- `0 <= call_measure` (non-negativity)
+- `call_measure < caller_measure` (strict decrease)
+
+Where `call_measure` is the `decreases` expression with formals substituted by
+the actual arguments at the call site. No `adtRank` axioms are needed.
+
+### Failure Modes
 
 A function that fails its termination check will produce an `unknown` or `fail`
 result on its `_terminates_` obligations. Non-terminating definitions like
-`f(xs) = f(xs)` or `f(xs) = f(Cons(1, xs))` are caught this way.
+`f(xs) = f(xs)` or `f(n) = f(n + 1)` are caught this way.
 
 ## Current Limitations
 
-- **ADT recursion only:** The `@[cases]` and `decreases` mechanisms only support
-  structural recursion on algebraic datatypes. Recursion on other types
-  (e.g., `int`) or non-structural recursion patterns are not yet supported.
-  Arbitrary integer measures and lexicographic orderings are planned.
 - **Monomorphic SMT encoding only:** Polymorphic recursive functions are not yet
   supported at the SMT encoding level. This applies to both single and mutually
   recursive functions.
@@ -169,3 +191,9 @@ result on its `_terminates_` obligations. Non-terminating definitions like
   recursive function statements (local declarations) are not supported.
 - **No procedure termination checking:** Self-recursive procedures do not yet
   have termination checking support.
+- **No lexicographic measures:** Only single-expression measures are supported.
+  Lexicographic tuple measures are planned.
+- **No nat type:** Non-negativity of compound int-valued measures involving
+  function calls (e.g., `listLen(l1) + listLen(l2)`) may require explicit
+  preconditions, since the SMT solver cannot always infer that a function
+  returns a non-negative value.
