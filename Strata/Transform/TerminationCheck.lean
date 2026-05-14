@@ -15,10 +15,14 @@ public import Strata.Languages.Core.PipelinePhase
 This transformation generates termination-checking procedures for recursive
 function blocks. For each `recFuncBlock`, it:
 
-1. Generates `D..adtRank` UF declarations and per-constructor axioms for the
-   datatypes used as decreasing measures.
-2. Generates a `$$term` procedure per function that asserts `adtRank` decreases
-   at each recursive call site.
+1. Determines the termination measure for each function: either structural
+   (decreasing on an ADT parameter via `adtRank`) or int-valued (a
+   user-supplied integer expression that decreases).
+2. For structural recursion, generates `D..adtRank` function declarations and
+   per-constructor axioms for the relevant datatypes.
+3. Generates a `$$term` procedure per function that asserts the measure
+   decreases at each recursive call site (and is non-negative for int-valued
+   measures).
 -/
 
 public section
@@ -61,10 +65,9 @@ private def getDecreasesIdx (func : Function) : Option Nat :=
 
 /-- Validate that a parameter index refers to a known ADT type, returning `.structural`. -/
 private def validateStructuralParam (func : Function) (tf : @TypeFactory Unit)
-    (idx : Nat) (requiresCases : Bool)
+    (idx : Nat)
     : Except String DecreasesKind := do
-  let casesIdx := FuncAttr.findInlineIfConstr func.attr
-  if requiresCases && casesIdx.isNone then
+  if FuncAttr.findInlineIfConstr func.attr |>.isNone then
     .error s!"recursive function '{func.name.name}': structural recursion requires @[cases]"
   match func.inputs.values[idx]? with
   | some (.tcons n _) =>
@@ -82,18 +85,16 @@ private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
   let casesIdx := FuncAttr.findInlineIfConstr func.attr
   match func.measure with
   | some (.fvar _ id _) =>
-    match func.inputs.keys.findIdx? (· == id) with
-    | some idx =>
-      match func.inputs.values[idx]? with
-      | some .int => .ok (.intValued (.fvar () id (.some .int)))
-      | _ => validateStructuralParam func tf idx (casesIdx.isNone)
+    match func.inputs.findWithIdx? id with
+    | some (_, .int) => .ok (.intValued (.fvar () id (.some .int)))
+    | some (idx, _) => validateStructuralParam func tf idx
     | none =>
       .error s!"recursive function '{func.name.name}': decreases variable '{id}' is not a parameter"
   | some measure =>
     .ok (.intValued measure)
   | none =>
     match casesIdx with
-    | some idx => validateStructuralParam func tf idx false
+    | some idx => validateStructuralParam func tf idx
     | none =>
       .error s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
 
@@ -202,7 +203,7 @@ private def computeCallMeasure
   | .structural calleeIdx calleeDtName => do
     let arg ← callArgs[calleeIdx]?
     let calleeAdtTy ← calleeInputTys[calleeIdx]?
-    some (.app () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) arg)
+    some (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
   | .intValued calleeMeasure =>
     some (LExpr.substFvarsLifting calleeMeasure (calleeFormals.zip callArgs))
 
@@ -213,8 +214,8 @@ private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
   | .structural idx dtName => do
     let param ← func.inputs.keys[idx]?
     let adtTy ← func.inputs.values[idx]?
-    some (.app () (.op () (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
-      (.fvar () param (.some adtTy)))
+    some (LExpr.mkApp () (.op () (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
+      [.fvar () param (.some adtTy)])
   | .intValued m => some m
 
 /-- Generate a termination-checking procedure for a single function.
@@ -246,9 +247,9 @@ private def mkTermCheckProc
       match computeCallMeasure calleeKind calleeFormals calleeInputTys callArgs with
       | some callMeasure =>
         if callMeasure.hasBVar then
-          .error s!"termination checking: decreasing argument contains a bound variable"
+          .error s!"termination checking '{func.name.name}': decreasing argument contains a bound variable"
         else if containsOpCall callMeasure recFuncNames then
-          .error s!"termination checking: decreasing argument contains a recursive call"
+          .error s!"termination checking '{func.name.name}': decreasing argument contains a recursive call"
         else
           let decrease := LExpr.mkApp () (@intLtFunc CoreLParams).opExpr
             [callMeasure, callerMeasure]
@@ -353,7 +354,7 @@ where
             | .ok kind =>
               funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
         let funcKindMap := funcKindList.reverse
-        -- Step 2: Generate adtRank UF declarations and per-constructor axioms
+        -- Step 2: Generate adtRank function declarations and per-constructor axioms
         -- for structural functions only.
         let allAdtNames := funcKindMap.filterMap fun (_, kind, _, _) =>
           match kind with

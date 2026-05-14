@@ -106,7 +106,7 @@ rec function bad (n : int) : int
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a recursive call -/
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
 #eval verify decreasesRecCallPgm (options := .quiet)
 
@@ -130,7 +130,7 @@ function bad (n : int) : int
 };
 #end
 
-/-- error: termination checking: decreasing argument contains a recursive call -/
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
 #guard_msgs in
 #eval verify decreasesMutualCallPgm (options := .quiet)
 
