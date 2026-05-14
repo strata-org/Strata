@@ -1696,7 +1696,7 @@ partial def translateCFGBody (p : Program) (bindings : TransBindings) (arg : Arg
 /-- Translate a procedure with CFG body -/
 def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 5
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 6
   let pname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let (sig, ret) ← translateBindingsPartitioned bindings op.args[2]!
@@ -1711,7 +1711,20 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
     | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[3]!}"
   let (requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
-  let (cfg, bindings) ← translateCFGBody p bindings op.args[4]!
+  -- args[4] is the locals Block (var declarations); bindings already include
+  -- the declared variables from DDM scope propagation, so we just need to
+  -- translate the statements to register them as init commands in the CFG.
+  let (localStmts, bindings) ← translateBlock p bindings op.args[4]!
+  let (cfg, bindings) ← translateCFGBody p bindings op.args[5]!
+  -- Prepend local var declarations (as commands) to the entry block
+  let localCmds ← localStmts.filterMapM fun stmt =>
+    match stmt with
+    | .cmd c => pure (some c)
+    | _ => pure none
+  let cfg := match cfg.blocks with
+    | (lbl, blk) :: rest =>
+      { cfg with blocks := (lbl, { blk with cmds := localCmds ++ blk.cmds }) :: rest }
+    | [] => cfg
   let origBindings := { origBindings with gen := bindings.gen }
   let md ← getOpMetaData op
   return (.proc { header := { name := pname,

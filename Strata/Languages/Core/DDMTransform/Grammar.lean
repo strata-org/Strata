@@ -499,15 +499,18 @@ category CFGBody;
 op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
   "cfg " entry " {\n" indent(2, blocks) "\n}";
 
-// Procedure with CFG body
+// Procedure with CFG body.
+// Local variable declarations go between the spec and the cfg body,
+// wrapped in braces. They are scoped across all blocks.
 op command_cfg_procedure (name : Ident,
                           typeArgs : Option TypeArgs,
                           @[scope(typeArgs)] b : Bindings,
                           @[scope(b)] s : Option Spec,
-                          @[scope(b)] body : CFGBody) :
+                          @[scope(b)] locals : Block,
+                          @[scope(locals)] body : CFGBody) :
   Command =>
   @[prec(10)] "procedure " name typeArgs b "\n"
-              s body ";\n";
+              s locals "\n" body ";\n";
 
 #end
 

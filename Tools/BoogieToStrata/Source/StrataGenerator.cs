@@ -1881,8 +1881,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         return false;
     }
 
-    private void WriteProcedureHeader(Procedure proc,
-                                      IEnumerable<Variable>? extraOutParams = null) {
+    private void WriteProcedureHeader(Procedure proc) {
         // Modifies globals become inout params; read-only globals become input params.
         var modifiesNames = new HashSet<string>(proc.Modifies.Select(m => m.Name));
         var modifiesGlobals = _globalVariables.Where(g => modifiesNames.Contains(g.Name)).ToList();
@@ -1897,9 +1896,6 @@ public class StrataGenerator : ReadOnlyVisitor {
         WriteFormals(readOnlyGlobals, ref needComma);
         WriteFormals(proc.InParams, ref needComma);
         WriteFormals(proc.OutParams, ref needComma, "out ");
-        if (extraOutParams != null) {
-            WriteFormals(extraOutParams, ref needComma, "out ");
-        }
         WriteLine(")");
 
         // Spec: no modifies clause; only requires and ensures.
@@ -2001,14 +1997,24 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Implementation VisitImplementation(Implementation node) {
         var isCFG = HasGotoCmd(node);
-        WriteProcedureHeader(node.Proc,
-            extraOutParams: isCFG ? node.LocVars : null);
+        WriteProcedureHeader(node.Proc);
 
         if (isCFG) {
-            // CFG syntax: procedure name(params, out locals) spec { ... } cfg entry { ... };
-            // Local variables become out parameters so they are in procedure scope
-            // (CFG blocks have per-block scoping and can't share local declarations).
+            // CFG syntax: procedure name(params)
+            //   { var x : int; var y : int; }
+            //   cfg entry { ... };
+            // Local variables are declared in a block before the cfg body,
+            // scoped across all blocks by the DDM grammar.
             WriteLine();
+            WriteLine("{");
+            IncIndent();
+            foreach (var v in node.LocVars) {
+                Indent($"var {Name(v.Name)} : ");
+                VisitType(v.TypedIdent.Type);
+                WriteLine(";");
+            }
+            DecIndent();
+            WriteLine("}");
             EmitCFGBody(node);
             WriteLine(";");
             WriteLine();
