@@ -35,6 +35,21 @@ structure Env (P : PureExpr) where
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
+/-- A well-formed evaluator extension preserves all `WellFormedSemanticEval*`
+    predicates through funcDecl steps.  This is the only step that modifies the
+    evaluator (`step_funcDecl`); all other small-step rules leave it unchanged.
+
+    Concrete instantiations of `extendEval` (e.g., lookup-table extensions in
+    Core) should prove this once at the instantiation site. -/
+structure WFEvalExtension (P : PureExpr) [HasBool P] [HasNot P] [HasFvar P] [HasVal P]
+    (extendEval : ExtendEval P) : Prop where
+  preserves_wfBool : ∀ δ σ decl, WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalBool (extendEval δ σ decl)
+  preserves_wfVal : ∀ δ σ decl, WellFormedSemanticEvalVal δ →
+    WellFormedSemanticEvalVal (extendEval δ σ decl)
+  preserves_wfVar : ∀ δ σ decl, WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalVar (extendEval δ σ decl)
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -1118,6 +1133,120 @@ theorem block_noFuncDecl_preserves_eval
     (hterm : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')) :
     ρ'.eval = ρ.eval :=
   smallStep_noFuncDecl_preserves_eval_block P EvalCmd extendEval ss ρ ρ' hnofd hterm
+
+/-! ## WF preservation under WFEvalExtension (no `noFuncDecl` requirement) -/
+
+variable [HasFvar P] [HasVal P]
+
+/-- Single step preserves `WellFormedSemanticEvalBool` when the evaluator
+    extension is well-formed (no `noFuncDecl` requirement). -/
+private theorem step_preserves_wfBool_wfExtend
+    (hwf_ext : WFEvalExtension P extendEval)
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (hwfb : WellFormedSemanticEvalBool c₁.getEnv.eval) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
+      WellFormedSemanticEvalBool a.getEnv.eval →
+      WellFormedSemanticEvalBool b.getEnv.eval from this c₁ c₂ hstep hwfb
+  intro a b hstep
+  induction hstep with
+  | step_cmd => intro h; simp [Config.getEnv]; exact h
+  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
+  | step_ite_nondet_false | step_loop_enter | step_loop_exit
+  | step_loop_nondet_enter | step_loop_nondet_exit | step_exit
+  | step_typeDecl | step_stmts_nil | step_stmts_cons
+  | step_seq_done | step_seq_exit
+  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
+    intro h; exact h
+  | step_funcDecl =>
+    intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfBool _ _ _ h
+  | step_seq_inner _ ih => intro h; exact ih h
+  | step_block_body _ ih => intro h; exact ih h
+
+private theorem step_preserves_wfVal_wfExtend
+    (hwf_ext : WFEvalExtension P extendEval)
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (hwfv : WellFormedSemanticEvalVal c₁.getEnv.eval) :
+    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
+      WellFormedSemanticEvalVal a.getEnv.eval →
+      WellFormedSemanticEvalVal b.getEnv.eval from this c₁ c₂ hstep hwfv
+  intro a b hstep
+  induction hstep with
+  | step_cmd => intro h; simp [Config.getEnv]; exact h
+  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
+  | step_ite_nondet_false | step_loop_enter | step_loop_exit
+  | step_loop_nondet_enter | step_loop_nondet_exit | step_exit
+  | step_typeDecl | step_stmts_nil | step_stmts_cons
+  | step_seq_done | step_seq_exit
+  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
+    intro h; exact h
+  | step_funcDecl =>
+    intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfVal _ _ _ h
+  | step_seq_inner _ ih => intro h; exact ih h
+  | step_block_body _ ih => intro h; exact ih h
+
+private theorem step_preserves_wfVar_wfExtend
+    (hwf_ext : WFEvalExtension P extendEval)
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (hwfvar : WellFormedSemanticEvalVar c₁.getEnv.eval) :
+    WellFormedSemanticEvalVar c₂.getEnv.eval := by
+  suffices ∀ a b, StepStmt P EvalCmd extendEval a b →
+      WellFormedSemanticEvalVar a.getEnv.eval →
+      WellFormedSemanticEvalVar b.getEnv.eval from this c₁ c₂ hstep hwfvar
+  intro a b hstep
+  induction hstep with
+  | step_cmd => intro h; simp [Config.getEnv]; exact h
+  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
+  | step_ite_nondet_false | step_loop_enter | step_loop_exit
+  | step_loop_nondet_enter | step_loop_nondet_exit | step_exit
+  | step_typeDecl | step_stmts_nil | step_stmts_cons
+  | step_seq_done | step_seq_exit
+  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
+    intro h; exact h
+  | step_funcDecl =>
+    intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfVar _ _ _ h
+  | step_seq_inner _ ih => intro h; exact ih h
+  | step_block_body _ ih => intro h; exact ih h
+
+/-- `WellFormedSemanticEvalBool` is preserved under `StepStmtStar` when the
+    evaluator extension is well-formed.  Generalises
+    `smallStep_noFuncDecl_preserves_eval` to programs with funcDecl. -/
+theorem star_preserves_wfBool
+    (hwf_ext : WFEvalExtension P extendEval)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
+    (hwfb : WellFormedSemanticEvalBool c₁.getEnv.eval) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  induction hstar with
+  | refl => exact hwfb
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_wfBool_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfb)
+
+theorem star_preserves_wfVal
+    (hwf_ext : WFEvalExtension P extendEval)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
+    (hwfv : WellFormedSemanticEvalVal c₁.getEnv.eval) :
+    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+  induction hstar with
+  | refl => exact hwfv
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_wfVal_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfv)
+
+theorem star_preserves_wfVar
+    (hwf_ext : WFEvalExtension P extendEval)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval c₁ c₂)
+    (hwfvar : WellFormedSemanticEvalVar c₁.getEnv.eval) :
+    WellFormedSemanticEvalVar c₂.getEnv.eval := by
+  induction hstar with
+  | refl => exact hwfvar
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_wfVar_wfExtend P EvalCmd extendEval hwf_ext _ _ hstep hwfvar)
 
 end -- section
 
