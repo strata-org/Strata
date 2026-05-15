@@ -13,24 +13,73 @@ import Strata.Languages.Python.PythonLaurelCorePrelude
 /-!
 # Name Resolution Pass
 
-Assigns a unique numeric ID to every definition and reference node in a
-Laurel program, then resolves references to their definitions.
+Turns a freshly parsed Laurel `Program` (where every `Identifier` has
+`uniqueId := none`) into a program where every definition has a fresh numeric
+ID and every reference points to the ID of the definition it names. The pass
+also synthesizes a `HighType` for every `StmtExpr` and emits diagnostics for
+unresolved names, duplicate definitions, kind mismatches (e.g. using a
+constant where a type is expected), and type mismatches.
+
+The entry point is `resolve`. It returns a `ResolutionResult` containing the
+resolved program, a `SemanticModel` (the `refToDef` map and ID counters), and
+the accumulated diagnostics.
 
 ## Design
 
-The resolution pass operates in two phases:
+The resolution pass operates in two phases.
 
 ### Phase 1: ID Assignment and Reference Resolution
-Walks the AST, assigning fresh unique IDs to all definition nodes and
-resolving references by looking up names in the current lexical scope.
-After this phase, every definition and reference node has its `id` field
-filled in.
+
+Walks the AST under `ResolveM`, a state monad over `ResolveState`. Phase 1:
+- assigns fresh unique IDs to all definition nodes via `defineNameCheckDup`,
+- resolves references by looking up names in the current lexical scope via
+  `resolveRef` (and `resolveFieldRef` for fields, which uses the target's
+  declared type to build a qualified lookup key),
+- opens fresh nested scopes via `withScope` for blocks, quantifiers,
+  procedure bodies, and constrained-type constraint/witness expressions,
+- synthesizes a `HighType` for every `StmtExpr` and runs the type-checking
+  helpers (`checkBool`, `checkNumeric`, `checkAssignable`, `checkComparable`)
+  on assignments, call arguments, condition positions, functional bodies, and
+  constant initializers.
+
+Before any bodies are walked, `preRegisterTopLevel` registers every top-level
+name (types and their constructors / testers / destructors / instance
+procedures / fields, constants, static procedures) into scope with a
+placeholder `ResolvedNode`. The placeholders are overwritten with real nodes
+as each definition is fully resolved. This is what allows declaration order to
+not matter inside a Laurel program.
+
+When a reference fails to resolve, or a `UserDefined` type reference resolves
+to the wrong kind, Phase 1 records the name as `ResolvedNode.unresolved` (or
+the type as `HighType.Unknown`) and continues. Both are treated as wildcards
+by the type checker, so subsequent uses do not produce cascading errors.
+
+After this phase, every definition and reference node has its `uniqueId`
+field filled in.
 
 ### Phase 2: Build refToDef Map
+
 Walks the *resolved* AST (where all definitions already have their UUIDs)
-and builds a map from each definition's ID to its `ResolvedNode`. Because this
-happens after Phase 1, the `ResolvedNode` values in the map contain the fully
-resolved sub-trees (e.g. a procedure's parameters already have their IDs).
+and builds a map from each definition's ID to its `ResolvedNode`. Because
+this happens after Phase 1, the `ResolvedNode` values in the map contain the
+fully resolved sub-trees (e.g. a procedure's parameters already have their
+IDs).
+
+### Scopes
+
+Three forms of scope are maintained on `ResolveState`:
+- `scope` — the current lexical scope, mapping name → `(uniqueId, ResolvedNode)`,
+  saved and restored by `withScope`.
+- `currentScopeNames` — names defined at the current nesting level only, used
+  by `defineNameCheckDup` to detect duplicates.
+- `typeScopes` — per-composite-type scopes mapping field names to scope
+  entries. Built by `resolveTypeDefinition` *before* descending into instance
+  procedures (and inheriting from `extending` parents), so that field
+  references inside method bodies can be resolved.
+- `instanceTypeName` — when resolving inside an instance procedure, the
+  owning composite type's name. Used by `resolveFieldRef` as a fallback so
+  that a bare `self.field` reference resolves through the type scope when
+  `self` has type `Any`.
 
 ### Definition nodes (introduce a name into scope)
 - `Variable.Declare` — local variable declaration (in `Assign` targets or `Var`)
@@ -51,10 +100,10 @@ resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 - `StmtExpr.Exit` — exit a labelled block
 - `HighType.UserDefined` — type reference
 
-Each of these nodes carries an `id : Nat` field (defaulting to `0`).
-The ID assignment pass fills in unique values. The resolution pass then
-builds a map from reference IDs to `ResolvedNode` values describing the
-definition each reference resolves to.
+Each of these nodes carries a `uniqueId : Option Nat` field (defaulting to
+`none`). Phase 1 fills in unique values; Phase 2 then builds a map from
+reference IDs to `ResolvedNode` values describing the definition each
+reference resolves to.
 -/
 
 namespace Strata.Laurel
