@@ -641,12 +641,14 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 #### Quantifier
 
 ```
-  Γ, x : T ⊢ body ⇒ _
+  Γ, x : T ⊢ body ⇐ TBool
 ─────────────────────────────────────────────────  (Quantifier, impl)
  Γ ⊢ Quantifier mode ⟨x, T⟩ trig body ⇒ TBool
 ```
 
-The bound variable `x : T` is introduced in scope only for the body (and trigger).
+The bound variable `x : T` is introduced in scope only for the body (and trigger). The body
+is checked against {name Strata.Laurel.HighType.TBool}`TBool` since a quantifier is a
+proposition; without this, `forall x: int :: x + 1` would be silently accepted.
 
 #### Assigned
 

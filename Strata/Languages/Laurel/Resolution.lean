@@ -678,7 +678,7 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
       let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
       let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; do
         let (e', _) ← synthStmtExpr pv.val; pure e')
-      let (body', _) ← synthStmtExpr body
+      let body' ← checkStmtExpr body { val := .TBool, source := body.source }
       pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
   | .Assigned name =>
     let (name', _) ← synthStmtExpr name
