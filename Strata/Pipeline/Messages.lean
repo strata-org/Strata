@@ -550,9 +550,9 @@ public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinall
     timing window. Use this instead of `withRepeatedPhase` when the work
     being timed is a pure (non-monadic) expression. -/
 @[noinline]
-public def withRepeatedPhasePure {α} [Inhabited α]
-    (ctx : PipelineContext) (name : String) (expr : Unit → α) : BaseIO α := do
-  ctx.withRepeatedPhase name (m := BaseIO) (pure (expr ()))
+public def withRepeatedPhasePure {α} (ctx : PipelineContext) (name : String)
+    (expr : Unit → α) : BaseIO α := do
+  ctx.withRepeatedPhase (m := ReaderT Unit BaseIO) name (pure ∘ expr) ()
 
 end PipelineContext
 
