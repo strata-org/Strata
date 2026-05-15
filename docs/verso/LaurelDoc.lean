@@ -246,9 +246,7 @@ includes {name Strata.Laurel.StmtExpr.Return}`Return`,
 Each construct is given as a derivation. `Γ` is the current lexical scope (see
 {name Strata.Laurel.ResolveState}`ResolveState`'s `scope`); it threads identically through
 every premise and conclusion unless a rule explicitly extends it (written `Γ, x : T`).
-`(impl)` = implemented; `(planned)` = intended, not yet wired in. `(impl-ish)` = implemented
-but still calls a legacy helper (`checkBool` / `checkNumeric` / `checkAssignable`) instead of
-going through `checkStmtExpr`; functionally equivalent under `<:`.
+`(impl)` = implemented; `(planned)` = intended, not yet wired in.
 
 ### Index
 
@@ -261,7 +259,7 @@ going through `checkStmtExpr`; functionally equivalent under `<:`.
 - *Verification statements* — Assert, Assume
 - *Assignment* — Assign-Single, Assign-Multi
 - *Calls* — Static-Call, Static-Call-Multi, Instance-Call
-- *Primitive operations* — Op-Bool, Op-Cmp, Op-Eq, Op-Arith, Op-Concat (planned)
+- *Primitive operations* — Op-Bool, Op-Cmp, Op-Eq, Op-Arith, Op-Concat
 - *Object forms* — New-Ok, New-Fallback; AsType; IsType; RefEq; PureFieldUpdate
 - *Verification expressions* — Quantifier, Assigned, Old, Fresh, ProveBy
 - *Untyped forms* — This; Abstract / All / ContractOf
@@ -365,7 +363,8 @@ spuriously.
 
 Picks the then-branch type arbitrarily; the two branches are *not* compared, since a
 statement-position `if` often pairs a value branch with a `return`/`exit`/`assert`. The
-enclosing `checkAssignable` or Sub provides the actual check downstream.
+enclosing context's check (Sub, or a containing `checkSubtype` like an assignment) provides
+the actual check downstream.
 
 #### If-Check
 
@@ -463,7 +462,7 @@ Set from `proc.outputs` in {name Strata.Laurel.resolveProcedure}`resolveProcedur
 
 ```
   Γ ⊢ cond ⇐ TBool      Γ ⊢ invs_i ⇐ TBool      Γ ⊢ dec ⇐ ?      Γ ⊢ body ⇒ _
-───────────────────────────────────────────────────────────────────────────────  (While, impl-ish)
+───────────────────────────────────────────────────────────────────────────────  (While, impl)
                   Γ ⊢ While cond invs dec body ⇒ TVoid
 ```
 
@@ -476,7 +475,7 @@ target is a numeric type.
 
 ```
        Γ ⊢ cond ⇐ TBool
-──────────────────────────────  (Assert, impl-ish)
+──────────────────────────────  (Assert, impl)
    Γ ⊢ Assert cond ⇒ TVoid
 ```
 
@@ -484,7 +483,7 @@ target is a numeric type.
 
 ```
       Γ ⊢ cond ⇐ TBool
-─────────────────────────────  (Assume, impl-ish)
+─────────────────────────────  (Assume, impl)
  Γ ⊢ Assume cond ⇒ TVoid
 ```
 
@@ -494,7 +493,7 @@ target is a numeric type.
 
 ```
   Γ(x) = T_x      Γ ⊢ e ⇒ T_e      T_e <: T_x
-───────────────────────────────────────────────  (Assign-Single, impl-ish)
+───────────────────────────────────────────────  (Assign-Single, impl)
             Γ ⊢ Assign [x] e ⇒ TVoid
 ```
 
@@ -502,7 +501,7 @@ target is a numeric type.
 
 ```
   Γ ⊢ targets_i = x_i      Γ(x_i) = T_i      Γ ⊢ e ⇒ MultiValuedExpr Us      |Ts| = |Us|      U_i <: T_i
-─────────────────────────────────────────────────────────────────────────────────────────────────────────  (Assign-Multi, impl-ish)
+─────────────────────────────────────────────────────────────────────────────────────────────────────────  (Assign-Multi, impl)
                                   Γ ⊢ Assign targets e ⇒ TVoid
 ```
 
@@ -513,7 +512,7 @@ target is a numeric type.
 ```
   Γ(callee) = static-procedure with inputs Ts and outputs [T]
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise)
-─────────────────────────────────────────────────────────────  (Static-Call, impl-ish)
+─────────────────────────────────────────────────────────────  (Static-Call, impl)
               Γ ⊢ StaticCall callee args ⇒ T
 ```
 
@@ -522,7 +521,7 @@ target is a numeric type.
 ```
   Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n], n ≠ 1
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise)
-──────────────────────────────────────────────────────────────────────────────────  (Static-Call-Multi, impl-ish)
+──────────────────────────────────────────────────────────────────────────────────  (Static-Call-Multi, impl)
        Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
 ```
 
@@ -531,7 +530,7 @@ target is a numeric type.
 ```
   Γ ⊢ target ⇒ _      Γ(callee) = instance-procedure with inputs [self; Ts] and outputs [T]
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise; self is dropped)
-─────────────────────────────────────────────────────────────────────────────────────────────  (Instance-Call, impl-ish)
+─────────────────────────────────────────────────────────────────────────────────────────────  (Instance-Call, impl)
                        Γ ⊢ InstanceCall target callee args ⇒ T
 ```
 
@@ -545,7 +544,7 @@ target is a numeric type.
 
 ```
   Γ ⊢ args_i ⇐ TBool                              op ∈ {And, Or, AndThen, OrElse, Not, Implies}
-──────────────────────────────────  (Op-Bool, impl-ish)
+──────────────────────────────────  (Op-Bool, impl)
  Γ ⊢ PrimitiveOp op args ⇒ TBool
 ```
 
@@ -553,7 +552,7 @@ target is a numeric type.
 
 ```
   Γ ⊢ args_i ⇐ Numeric                            op ∈ {Lt, Leq, Gt, Geq}
-─────────────────────────────────  (Op-Cmp, impl-ish)
+─────────────────────────────────  (Op-Cmp, impl)
  Γ ⊢ PrimitiveOp op args ⇒ TBool
 ```
 
@@ -561,7 +560,7 @@ target is a numeric type.
 
 ```
   Γ ⊢ lhs ⇒ T_l      Γ ⊢ rhs ⇒ T_r      T_l <: T_r ∨ T_r <: T_l                op ∈ {Eq, Neq}
-─────────────────────────────────────────────────────────────────  (Op-Eq, impl-ish)
+─────────────────────────────────────────────────────────────────  (Op-Eq, impl)
             Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
 ```
 
@@ -569,7 +568,7 @@ target is a numeric type.
 
 ```
   Γ ⊢ args_i ⇐ Numeric      Γ ⊢ args.head ⇒ T                op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
-──────────────────────────────────────────────────  (Op-Arith, impl-ish)
+──────────────────────────────────────────────────  (Op-Arith, impl)
             Γ ⊢ PrimitiveOp op args ⇒ T
 ```
 
@@ -581,11 +580,9 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 
 ```
   Γ ⊢ args_i ⇐ TString                            op = StrConcat
-─────────────────────────────────────  (Op-Concat, planned)
+─────────────────────────────────────  (Op-Concat, impl)
  Γ ⊢ PrimitiveOp op args ⇒ TString
 ```
-
-Operand check not yet implemented — `StrConcat` accepts any operands today.
 
 ### Object forms
 
