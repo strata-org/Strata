@@ -262,6 +262,10 @@ structure ResolveState where
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
+  /-- When resolving inside a procedure body, the declared output types (in
+      declaration order). `none` means no enclosing procedure. Used by `Return`
+      to type-check the optional return value and to flag arity/shape mismatches. -/
+  expectedReturnTypes : Option (List HighTypeMd) := none
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -543,8 +547,29 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     pure (.While cond' invs' dec' body', { val := .TVoid, source := source })
   | .Exit target => pure (.Exit target, { val := .TVoid, source := source })
   | .Return val => do
+    -- Match the optional return value against the enclosing procedure's
+    -- declared outputs. `expectedReturnTypes = none` means we're not inside a
+    -- procedure body (e.g. resolving a constant initializer); skip the check.
+    let expected := (← get).expectedReturnTypes
     let val' ← val.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← synthStmtExpr a.val; pure e')
+      match expected with
+      | some [singleOutput] => checkStmtExpr a.val singleOutput
+      | _ => let (e', _) ← synthStmtExpr a.val; pure e')
+    -- Arity/shape diagnostics independent of the value's own type.
+    match val, expected with
+    | none,   some []          => pure ()
+    | none,   some [_]         => pure ()  -- Dafny-style early exit
+    | none,   some _           => pure ()  -- multi-output: bare return is fine
+    | some _, some []          =>
+      let diag := diagnosticFromSource source
+        "void procedure cannot return a value"
+      modify fun s => { s with errors := s.errors.push diag }
+    | some _, some [_]         => pure ()  -- value already checked above
+    | some _, some _           =>
+      let diag := diagnosticFromSource source
+        "multi-output procedure cannot use 'return e'; assign to named outputs instead"
+      modify fun s => { s with errors := s.errors.push diag }
+    | _,      none             => pure ()  -- no enclosing procedure
     pure (.Return val', { val := .TVoid, source := source })
   | .LiteralInt v => pure (.LiteralInt v, { val := .TInt, source := source })
   | .LiteralBool v => pure (.LiteralBool v, { val := .TBool, source := source })
@@ -834,7 +859,10 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
+    let savedReturns := (← get).expectedReturnTypes
+    modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
     let (body', bodyTy) ← resolveBody proc.body
+    modify fun s => { s with expectedReturnTypes := savedReturns }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
@@ -875,7 +903,10 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
+    let savedReturns := (← get).expectedReturnTypes
+    modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
     let (body', bodyTy) ← resolveBody proc.body
+    modify fun s => { s with expectedReturnTypes := savedReturns }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
