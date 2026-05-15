@@ -265,7 +265,7 @@ instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
 
 mutual
 /-- Get all variables defined by the statement `s`. -/
-@[simp, expose]
+@[expose]
 def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
@@ -276,7 +276,7 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .typeDecl _ _ => []  -- Type declarations don't define variables
   | _ => []
 
-@[simp, expose]
+@[expose]
 def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
@@ -285,7 +285,7 @@ end
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
-@[simp, expose]
+@[expose]
 def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
@@ -296,7 +296,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
-@[simp, expose]
+@[expose]
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
@@ -307,14 +307,14 @@ mutual
 /-- Get all variables modified/defined by the statement `s`.
     Note that we need a separate function because order matters here for sub-blocks
  -/
-@[simp, expose]
+@[expose]
 def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .block _ bss _ => Block.modifiedOrDefinedVars bss
   | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
 
-@[simp, expose]
+@[expose]
 def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
@@ -323,12 +323,12 @@ end
 
 mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
-@[simp, expose]
+@[expose]
 def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (s : Stmt P C) : List P.Ident :=
   Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
 
-@[simp, expose]
+@[expose]
 def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss ++ Block.getVars ss
