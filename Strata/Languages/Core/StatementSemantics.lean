@@ -286,53 +286,12 @@ inductive CoreStepStar
     ----
     CoreStepStar π φ c₁ c₃
 
-/-- Evaluate the commands in a deterministic basic block, then transfer
-    control based on the block's terminator. Defined mutually to satisfy
-    strict positivity (uses `EvalCommand` for command evaluation).
-
-    This mirrors `Imperative.EvalDetBlock` but cannot directly reuse it:
-    Lean's kernel rejects nested inductives whose parameters reference local
-    variables of the mutual block (`EvalCommand` here). Since `EvalDetBlock`
-    internally uses `EvalCmds` (another inductive), passing `EvalCommand` as
-    its `EvalCmd` parameter creates a nested inductive dependency that the
-    kernel disallows. -/
-inductive CoreEvalDetBlock
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
-    CoreStore → DetBlock String Command Expression →
-    CFGConfig String Expression → Prop where
-  | step_goto_true :
-    CoreEvalCmds π φ δ σ cs σ' failed →
-    δ σ c = .some HasBool.tt →
-    WellFormedSemanticEvalBool δ →
-    CoreEvalDetBlock π φ
-      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ' failed)
-  | step_goto_false :
-    CoreEvalCmds π φ δ σ cs σ' failed →
-    δ σ c = .some HasBool.ff →
-    WellFormedSemanticEvalBool δ →
-    CoreEvalDetBlock π φ
-      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ' failed)
-  | step_terminal :
-    CoreEvalCmds π φ δ σ cs σ' failed →
-    CoreEvalDetBlock π φ
-      σ ⟨ cs, .finish _ ⟩ (.terminal σ' failed)
-
-/-- Evaluate a list of commands sequentially. Defined mutually because
-    `EvalCommand` is being defined in the same block. -/
-inductive CoreEvalCmds
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
-    CoreEval → CoreStore → List Command → CoreStore → Bool → Prop where
-  | eval_cmds_none :
-    CoreEvalCmds π φ δ σ [] σ false
-  | eval_cmds_some :
-    EvalCommand π φ δ σ c σ' failed →
-    CoreEvalCmds π φ δ σ' cs σ'' failed' →
-    CoreEvalCmds π φ δ σ (c :: cs) σ'' (failed || failed')
-
-/-- Reflexive-transitive closure of CFG steps for the Core language. Each
-    step looks up a block by label and evaluates it via `CoreEvalDetBlock`. -/
+/-- Reflexive-transitive closure of CFG steps for the Core language.
+    Each step looks up a block by label and evaluates it using the generic
+    `Imperative.EvalDetBlock` instantiated with `EvalCommand`. This works
+    because `EvalDetBlock` has a `_enableNesting` constructor that directly
+    references `EvalCmd`, satisfying the Lean kernel's nested inductive
+    requirement. See `StrataTest/Languages/Core/Tests/NestedInductiveRestriction.lean`. -/
 inductive CoreCFGStepStar
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
@@ -341,7 +300,7 @@ inductive CoreCFGStepStar
   | refl : CoreCFGStepStar π φ cfg c c
   | step :
     List.lookup t cfg.blocks = .some b →
-    CoreEvalDetBlock π φ σ b config →
+    Imperative.EvalDetBlock Expression (EvalCommand π φ) (EvalPureFunc φ) σ b config →
     CoreCFGStepStar π φ cfg (updateFailure config failed) c₃ →
     ----
     CoreCFGStepStar π φ cfg (.cont t σ failed) c₃
