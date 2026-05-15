@@ -645,8 +645,8 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
-    for (argTy, paramTy) in argTypes.zip paramTypes do
-      checkSubtype source paramTy argTy
+    for ((a, aTy), paramTy) in (args'.zip argTypes).zip paramTypes do
+      checkSubtype a.source paramTy aTy
     pure (.StaticCall callee' args', retTy)
   | .PrimitiveOp op args =>
     let results ← args.mapM synthStmtExpr
@@ -662,12 +662,12 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
       | .StrConcat => HighType.TString
     match op with
     | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-      for aTy in argTypes do
-        checkSubtype source { val := .TBool, source := aTy.source } aTy
+      for (a, aTy) in args'.zip argTypes do
+        checkSubtype a.source { val := .TBool, source := a.source } aTy
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
-      for aTy in argTypes do
+      for (a, aTy) in args'.zip argTypes do
         unless isNumeric aTy do
-          typeMismatch aTy.source (some expr) "expected a numeric type" aTy
+          typeMismatch a.source (some expr) "expected a numeric type" aTy
     | .Eq | .Neq =>
       match argTypes with
       | [lhsTy, rhsTy] =>
@@ -677,8 +677,8 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
           modify fun s => { s with errors := s.errors.push diag }
       | _ => pure ()
     | .StrConcat =>
-      for aTy in argTypes do
-        checkSubtype source { val := .TString, source := aTy.source } aTy
+      for (a, aTy) in args'.zip argTypes do
+        checkSubtype a.source { val := .TString, source := a.source } aTy
     pure (.PrimitiveOp op args', { val := resultTy, source := source })
   | .New ref =>
     let ref' ← resolveRef ref source
@@ -709,9 +709,9 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let (lhs', lhsTy) ← synthStmtExpr lhs
     let (rhs', rhsTy) ← synthStmtExpr rhs
     unless isReference lhsTy do
-      typeMismatch lhsTy.source (some expr) "expected a reference type" lhsTy
+      typeMismatch lhs'.source (some expr) "expected a reference type" lhsTy
     unless isReference rhsTy do
-      typeMismatch rhsTy.source (some expr) "expected a reference type" rhsTy
+      typeMismatch rhs'.source (some expr) "expected a reference type" rhsTy
     pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
     let (target', _) ← synthStmtExpr target
@@ -731,8 +731,8 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let (retTy, paramTypes) ← getCallInfo callee
     -- Skip first param (self) when matching args.
     let callParamTypes := match paramTypes with | _ :: rest => rest | [] => []
-    for (argTy, paramTy) in argTypes.zip callParamTypes do
-      checkSubtype source paramTy argTy
+    for ((a, aTy), paramTy) in (args'.zip argTypes).zip callParamTypes do
+      checkSubtype a.source paramTy aTy
     pure (.InstanceCall target' callee' args', retTy)
   | .Quantifier mode param trigger body =>
     withScope do
@@ -751,7 +751,7 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
   | .Fresh val =>
     let (val', valTy) ← synthStmtExpr val
     unless isReference valTy do
-      typeMismatch valTy.source (some expr) "expected a reference type" valTy
+      typeMismatch val'.source (some expr) "expected a reference type" valTy
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
     let cond' ← checkStmtExpr condExpr { val := .TBool, source := condExpr.source }
