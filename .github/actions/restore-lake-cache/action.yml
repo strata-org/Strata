@@ -7,8 +7,9 @@ description: >
     lake-<os>-<arch>-<lean-toolchain>-<lake-manifest>-<all .st files>-<sha>
   with three fallback keys dropping each trailing component in turn.
   Consolidates the ~15-line cache block previously duplicated across
-  ci.yml's build_and_test_lean, check_pending_python, build_python,
-  cbmc.yml, and python-fuzz.yml.
+  ci.yml's build_and_test_lean, check_pending_python, build_python and
+  cbmc.yml; intended to also be adopted by the python-fuzz workflow once
+  that lands (see https://github.com/strata-org/Strata/pull/984).
 
 inputs:
   fail-on-cache-miss:
@@ -24,8 +25,13 @@ inputs:
     default: ".lake"
   key-prefix:
     description: >
-      Prefix used in the cache key. Change this only for workflows that
-      cache something other than the main Lean build (e.g. docs/verso).
+      Prefix used in the cache key. The action also hashes the
+      repo-root `lean-toolchain` and `lake-manifest.json`, so changing
+      only this prefix is appropriate for caches keyed on the same
+      root-level Lean build (e.g. distinguishing different artifact
+      names with the same source set). Sub-projects with their own
+      toolchain/manifest do not currently fit this action and should
+      not reuse it as-is.
     required: false
     default: "lake"
 

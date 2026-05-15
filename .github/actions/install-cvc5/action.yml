@@ -4,7 +4,9 @@ name: Install cvc5
 description: >
   Download a static cvc5 build and put it on the PATH. Supports both
   x86_64 and aarch64 Linux runners. Consolidates the cvc5 install logic
-  previously duplicated across ci.yml, cbmc.yml, python-fuzz.yml, etc.
+  previously duplicated across ci.yml and cbmc.yml; intended to also be
+  adopted by the python-fuzz workflow once that lands (see
+  https://github.com/strata-org/Strata/pull/984).
 
 inputs:
   version:
