@@ -45,47 +45,74 @@ public section
 /-! ## Detecting whether `Array<T>` is used anywhere -/
 
 /-- Return `true` if `ty` contains a `TArray` anywhere. -/
-partial def containsTArray : HighType → Bool
+def containsTArray (ty : HighType) : Bool := match _hht : ty with
   | .TArray _ => true
   | .TSet et => containsTArray et.val
   | .TSeq et => containsTArray et.val
   | .TTypedField vt => containsTArray vt.val
   | .TMap kt vt => containsTArray kt.val || containsTArray vt.val
-  | .Applied base args => containsTArray base.val || args.any (containsTArray ·.val)
+  | .Applied base args => containsTArray base.val || args.attach.any (fun ⟨x, _⟩ => containsTArray x.val)
   | .Pure base => containsTArray base.val
-  | .Intersection types => types.any (containsTArray ·.val)
+  | .Intersection types => types.attach.any (fun ⟨x, _⟩ => containsTArray x.val)
   | _ => false
+termination_by sizeOf ty
+decreasing_by
+  all_goals simp_wf
+  -- Single-child cases.
+  all_goals (try (
+    have := AstNode.sizeOf_val_lt (‹AstNode HighType› : AstNode HighType)
+    omega))
+  -- Two-child cases (TMap): need haves for both kt and vt. Use the of_eq
+  -- lemmas with the match hypothesis _hht.
+  all_goals (try (
+    have hk := HighType.sizeOf_tmap_kt_val_lt_of_eq _hht
+    have hv := HighType.sizeOf_tmap_vt_val_lt_of_eq _hht
+    subst _hht; simp at hk hv; omega))
+  -- Applied base case: similar.
+  all_goals (try (
+    have := HighType.sizeOf_applied_base_val_lt_of_eq _hht
+    subst _hht; simp_all; omega))
+  -- args.any / types.any: x ∈ list (provided by .attach), recurse on x.val.
+  all_goals (
+    have mem_h : (‹AstNode HighType› : AstNode HighType) ∈ (‹List (AstNode HighType)› : List (AstNode HighType)) := ‹_›
+    have := List.sizeOf_lt_of_mem mem_h
+    have := AstNode.sizeOf_val_lt (‹AstNode HighType› : AstNode HighType)
+    omega)
 
 /-- Walk a `StmtExprMd` and return `true` if any embedded `HighType` contains `TArray`. -/
-partial def stmtExprUsesTArray (expr : StmtExprMd) : Bool :=
-  match expr.val with
+def stmtExprUsesTArray (expr : StmtExprMd) : Bool :=
+  match _h : expr.val with
   | .Var (.Declare p) => containsTArray p.type.val
   | .Var (.Field t _) => stmtExprUsesTArray t
   | .Var (.Local _) => false
   | .Quantifier _ p trig body =>
-      containsTArray p.type.val || (trig.map stmtExprUsesTArray).getD false ||
+      containsTArray p.type.val ||
+      (trig.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)) ||
       stmtExprUsesTArray body
   | .AsType t ty => stmtExprUsesTArray t || containsTArray ty.val
   | .IsType t ty => stmtExprUsesTArray t || containsTArray ty.val
   | .Hole _ (some ty) => containsTArray ty.val
   | .IfThenElse c th el =>
       stmtExprUsesTArray c || stmtExprUsesTArray th ||
-      (el.map stmtExprUsesTArray).getD false
-  | .Block stmts _ => stmts.any stmtExprUsesTArray
+      (el.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x))
+  | .Block stmts _ => stmts.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)
   | .While c invs dec body =>
-      stmtExprUsesTArray c || invs.any stmtExprUsesTArray ||
-      (dec.map stmtExprUsesTArray).getD false || stmtExprUsesTArray body
-  | .Return v => (v.map stmtExprUsesTArray).getD false
+      stmtExprUsesTArray c ||
+      invs.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x) ||
+      (dec.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)) ||
+      stmtExprUsesTArray body
+  | .Return v => v.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)
   | .Assign targets v =>
-      targets.any (fun t => match t.val with
+      targets.attach.any (fun ⟨t, _⟩ => match _htv : t.val with
         | .Declare p => containsTArray p.type.val
         | .Field target _ => stmtExprUsesTArray target
         | .Local _ => false)
       || stmtExprUsesTArray v
   | .PureFieldUpdate t _ v => stmtExprUsesTArray t || stmtExprUsesTArray v
-  | .StaticCall _ args => args.any stmtExprUsesTArray
-  | .InstanceCall t _ args => stmtExprUsesTArray t || args.any stmtExprUsesTArray
-  | .PrimitiveOp _ args => args.any stmtExprUsesTArray
+  | .StaticCall _ args => args.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)
+  | .InstanceCall t _ args =>
+      stmtExprUsesTArray t || args.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)
+  | .PrimitiveOp _ args => args.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)
   | .ReferenceEquals l r => stmtExprUsesTArray l || stmtExprUsesTArray r
   | .Assigned n => stmtExprUsesTArray n
   | .Old v | .Fresh v => stmtExprUsesTArray v
@@ -95,8 +122,23 @@ partial def stmtExprUsesTArray (expr : StmtExprMd) : Bool :=
   | .ContractOf _ f => stmtExprUsesTArray f
   | .Subscript t i u =>
       stmtExprUsesTArray t || stmtExprUsesTArray i ||
-      (u.map stmtExprUsesTArray).getD false
+      (u.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x))
   | _ => false
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try term_by_mem)
+  -- Assign-target list, .Field inner
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := Variable.sizeOf_field_target_lt_of_eq _htv
+    simp_all; omega))
+  -- Top-level .Subscript via _h (target/index/value children)
+  all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _h; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _h; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _h; omega))
 
 /-- Check whether a parameter's type involves `TArray`. -/
 private def parameterUsesTArray (p : Parameter) : Bool := containsTArray p.type.val

@@ -69,8 +69,8 @@ private def msgArrayElementNotInt (actual : String) : String :=
 /-! ## Type-position walk (Array element type diagnostic) -/
 
 /-- Collect diagnostics for any `Array<T>` whose element type is not `int`. -/
-partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
-  match ty.val with
+def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
+  match _hht : ty.val with
   | .TArray et =>
     let here : List DiagnosticModel :=
       match et.val with
@@ -89,6 +89,27 @@ partial def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
   | .Pure base => validateHighType base
   | .Intersection tys => tys.flatMap validateHighType
   | _ => []
+termination_by sizeOf ty
+decreasing_by
+  all_goals simp_wf
+  all_goals (try term_by_mem)
+  all_goals (try (have := HighType.sizeOf_tarray_et_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_tset_et_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_tseq_et_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_ttypedfield_vt_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_tmap_kt_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_tmap_vt_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_applied_base_lt_of_eq _hht; omega))
+  all_goals (try (have := HighType.sizeOf_pure_base_lt_of_eq _hht; omega))
+  -- For Applied args / Intersection types list iteration:
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := HighType.sizeOf_applied_args_lt_of_eq _hht
+    omega))
+  all_goals (try (
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := HighType.sizeOf_intersection_types_lt_of_eq _hht
+    omega))
 
 /-! ## Expression-position walk (Subscript and call diagnostics) -/
 

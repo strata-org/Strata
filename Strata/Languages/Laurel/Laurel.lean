@@ -438,6 +438,172 @@ theorem StmtExpr.sizeOf_assign_value_lt_of_eq {e : AstNode StmtExpr}
   have : sizeOf e.val = sizeOf (StmtExpr.Assign targets value) := congrArg sizeOf h
   omega
 
+/-- Helper lemmas for proving termination of `HighType` walkers that recurse
+on `AstNode HighType` children of compound type constructors. Each says
+`sizeOf child < sizeOf (Constructor child)`, derived by `simp; omega`. -/
+theorem HighType.sizeOf_tset_et_lt (et : AstNode HighType) :
+    sizeOf et < sizeOf (HighType.TSet et) := by simp
+
+theorem HighType.sizeOf_tseq_et_lt (et : AstNode HighType) :
+    sizeOf et < sizeOf (HighType.TSeq et) := by simp
+
+theorem HighType.sizeOf_ttypedfield_vt_lt (vt : AstNode HighType) :
+    sizeOf vt < sizeOf (HighType.TTypedField vt) := by simp
+
+theorem HighType.sizeOf_tarray_et_lt (et : AstNode HighType) :
+    sizeOf et < sizeOf (HighType.TArray et) := by simp
+
+theorem HighType.sizeOf_tmap_kt_lt (kt vt : AstNode HighType) :
+    sizeOf kt < sizeOf (HighType.TMap kt vt) := by simp; omega
+
+theorem HighType.sizeOf_tmap_vt_lt (kt vt : AstNode HighType) :
+    sizeOf vt < sizeOf (HighType.TMap kt vt) := by simp; omega
+
+theorem HighType.sizeOf_pure_base_lt (base : AstNode HighType) :
+    sizeOf base < sizeOf (HighType.Pure base) := by simp
+
+theorem HighType.sizeOf_applied_base_lt (base : AstNode HighType) (args : List (AstNode HighType)) :
+    sizeOf base < sizeOf (HighType.Applied base args) := by simp; omega
+
+theorem HighType.sizeOf_applied_args_lt (base : AstNode HighType) (args : List (AstNode HighType)) :
+    sizeOf args < sizeOf (HighType.Applied base args) := by simp; omega
+
+theorem HighType.sizeOf_intersection_types_lt (types : List (AstNode HighType)) :
+    sizeOf types < sizeOf (HighType.Intersection types) := by simp
+
+/-- Variant: works directly with an `AstNode HighType` whose `.val` is the relevant
+constructor. Mirrors `Variable.sizeOf_field_target_lt_of_eq`. -/
+theorem HighType.sizeOf_tset_et_lt_of_eq {ty : AstNode HighType} {et : AstNode HighType}
+    (h : ty.val = HighType.TSet et) : sizeOf et < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tset_et_lt et
+  have : sizeOf ty.val = sizeOf (HighType.TSet et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tseq_et_lt_of_eq {ty : AstNode HighType} {et : AstNode HighType}
+    (h : ty.val = HighType.TSeq et) : sizeOf et < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tseq_et_lt et
+  have : sizeOf ty.val = sizeOf (HighType.TSeq et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_ttypedfield_vt_lt_of_eq {ty : AstNode HighType} {vt : AstNode HighType}
+    (h : ty.val = HighType.TTypedField vt) : sizeOf vt < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_ttypedfield_vt_lt vt
+  have : sizeOf ty.val = sizeOf (HighType.TTypedField vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tarray_et_lt_of_eq {ty : AstNode HighType} {et : AstNode HighType}
+    (h : ty.val = HighType.TArray et) : sizeOf et < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tarray_et_lt et
+  have : sizeOf ty.val = sizeOf (HighType.TArray et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_kt_lt_of_eq {ty : AstNode HighType}
+    {kt vt : AstNode HighType} (h : ty.val = HighType.TMap kt vt) :
+    sizeOf kt < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tmap_kt_lt kt vt
+  have : sizeOf ty.val = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_vt_lt_of_eq {ty : AstNode HighType}
+    {kt vt : AstNode HighType} (h : ty.val = HighType.TMap kt vt) :
+    sizeOf vt < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tmap_vt_lt kt vt
+  have : sizeOf ty.val = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_pure_base_lt_of_eq {ty : AstNode HighType} {base : AstNode HighType}
+    (h : ty.val = HighType.Pure base) : sizeOf base < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_pure_base_lt base
+  have : sizeOf ty.val = sizeOf (HighType.Pure base) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_applied_base_lt_of_eq {ty : AstNode HighType}
+    {base : AstNode HighType} {args : List (AstNode HighType)}
+    (h : ty.val = HighType.Applied base args) : sizeOf base < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_applied_base_lt base args
+  have : sizeOf ty.val = sizeOf (HighType.Applied base args) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_applied_args_lt_of_eq {ty : AstNode HighType}
+    {base : AstNode HighType} {args : List (AstNode HighType)}
+    (h : ty.val = HighType.Applied base args) : sizeOf args < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_applied_args_lt base args
+  have : sizeOf ty.val = sizeOf (HighType.Applied base args) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_intersection_types_lt_of_eq {ty : AstNode HighType}
+    {types : List (AstNode HighType)}
+    (h : ty.val = HighType.Intersection types) : sizeOf types < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_intersection_types_lt types
+  have : sizeOf ty.val = sizeOf (HighType.Intersection types) := congrArg sizeOf h
+  omega
+
+/-- Variants for use in `containsTArray`-style walkers that recurse on
+`et.val` rather than `et`: directly chain through both the constructor
+unfold and `AstNode.sizeOf_val_lt` to give `sizeOf et.val < sizeOf ty`
+when `ty = .Constructor et`. -/
+theorem HighType.sizeOf_tset_et_val_lt_of_eq {ty : HighType} {et : AstNode HighType}
+    (h : ty = HighType.TSet et) : sizeOf et.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt et
+  have := HighType.sizeOf_tset_et_lt et
+  have : sizeOf ty = sizeOf (HighType.TSet et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tseq_et_val_lt_of_eq {ty : HighType} {et : AstNode HighType}
+    (h : ty = HighType.TSeq et) : sizeOf et.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt et
+  have := HighType.sizeOf_tseq_et_lt et
+  have : sizeOf ty = sizeOf (HighType.TSeq et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_ttypedfield_vt_val_lt_of_eq {ty : HighType} {vt : AstNode HighType}
+    (h : ty = HighType.TTypedField vt) : sizeOf vt.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt vt
+  have := HighType.sizeOf_ttypedfield_vt_lt vt
+  have : sizeOf ty = sizeOf (HighType.TTypedField vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_kt_val_lt_of_eq {ty : HighType}
+    {kt vt : AstNode HighType} (h : ty = HighType.TMap kt vt) :
+    sizeOf kt.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt kt
+  have := HighType.sizeOf_tmap_kt_lt kt vt
+  have : sizeOf ty = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_vt_val_lt_of_eq {ty : HighType}
+    {kt vt : AstNode HighType} (h : ty = HighType.TMap kt vt) :
+    sizeOf vt.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt vt
+  have := HighType.sizeOf_tmap_vt_lt kt vt
+  have : sizeOf ty = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_pure_base_val_lt_of_eq {ty : HighType} {base : AstNode HighType}
+    (h : ty = HighType.Pure base) : sizeOf base.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt base
+  have := HighType.sizeOf_pure_base_lt base
+  have : sizeOf ty = sizeOf (HighType.Pure base) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_applied_base_val_lt_of_eq {ty : HighType}
+    {base : AstNode HighType} {args : List (AstNode HighType)}
+    (h : ty = HighType.Applied base args) : sizeOf base.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt base
+  have := HighType.sizeOf_applied_base_lt base args
+  have : sizeOf ty = sizeOf (HighType.Applied base args) := congrArg sizeOf h
+  omega
+
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
 def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
   return { c with condition := ← f c.condition }
