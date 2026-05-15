@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.CoreTransform
+public import Strata.Transform.TerminationCheck
 public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
@@ -376,6 +377,10 @@ where
     | d :: rest =>
       match d with
       | .proc proc md => do
+        if TermCheck.isTermProc proc.header.name.name then
+          let (changed, rest') ← transformDecls rest
+          return (changed, d :: rest')
+        else
         let F ← getFactory
         let (changed, body') ← transformStmts proc.body
         setFactory F

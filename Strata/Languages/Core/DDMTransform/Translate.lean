@@ -51,10 +51,7 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 /- Metadata -/
 
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  let file := ictx.fileName
-  let uri: Uri := .file file
-  let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  Imperative.MetaData.ofSourceRange (.file ictx.fileName) sr
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
   return op.ann.toMetaData (← StateT.get).inputCtx
@@ -1335,10 +1332,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.exit_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
-    return ([.exit (some l) md], bindings)
-  | q`Core.exit_unlabeled_statement, #[] =>
-    let md ← getOpMetaData op
-    return ([.exit none md], bindings)
+    return ([.exit l md], bindings)
   | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa
@@ -1716,7 +1710,7 @@ Translate a single function within a mutual recursive block.
 partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
     (fnOp : Operation) (siblingExprs : Array Core.Expression.Expr) :
     TransM Core.Function := do
-  let _ ← @checkOp Core.Function fnOp q`Core.recfn_decl 6
+  let _ ← @checkOp Core.Function fnOp q`Core.recfn_decl 7
   let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
   let typeArgs ← translateTypeArgs fnOp.args[1]!
   let (sig, casesIdx) ← translateBindingsWithCases preBindings fnOp.args[2]!
@@ -1733,10 +1727,12 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
     | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
     | none => #[]
   let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
-  let body ← translateExpr p bodyBindings fnOp.args[5]!
+  let measure ← translateMeasure p bodyBindings fnOp.args[5]!
+  let body ← translateExpr p bodyBindings fnOp.args[6]!
   return { name := fname, typeArgs := typeArgs.toList, isRecursive := true,
            inputs := sig, output := ret, body := some body,
-           attr := casesAttr, preconditions := preconds }
+           attr := casesAttr, preconditions := preconds,
+           measure := measure }
 
 /--
 Translate a `command_recfndefs` block (one or more mutually recursive functions).
