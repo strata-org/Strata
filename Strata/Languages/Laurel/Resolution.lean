@@ -737,7 +737,7 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
 
 /-- Resolve a statement expression, discarding the synthesized type.
     Use when only the resolved expression is needed (invariants, decreases, etc.). -/
-private def synthStmtExprExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
+private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
   let (e', _) ← synthStmtExpr e; pure e'
 
 /-- Check-mode resolution: resolve `e` and verify its type is a consistent
@@ -790,12 +790,12 @@ def resolveBody (body : Body) : ResolveM (Body × HighTypeMd) := do
     let (b', ty) ← synthStmtExpr b
     return (.Transparent b', ty)
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM synthStmtExprExpr)
-    let impl' ← impl.mapM synthStmtExprExpr
-    let mods' ← mods.mapM synthStmtExprExpr
+    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
+    let impl' ← impl.mapM resolveStmtExpr
+    let mods' ← mods.mapM resolveStmtExpr
     return (.Opaque posts' impl' mods', { val := .TVoid, source := none })
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM synthStmtExprExpr)
+    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
     return (.Abstract posts', { val := .TVoid, source := none })
   | .External => return (.External, { val := .TVoid, source := none })
 
@@ -805,8 +805,8 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM synthStmtExprExpr)
-    let dec' ← proc.decreases.mapM synthStmtExprExpr
+    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    let dec' ← proc.decreases.mapM resolveStmtExpr
     let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -820,7 +820,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
         if bodyTy.val != HighType.TVoid then
           checkAssignable proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM synthStmtExprExpr
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
@@ -846,8 +846,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM synthStmtExprExpr)
-    let dec' ← proc.decreases.mapM synthStmtExprExpr
+    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    let dec' ← proc.decreases.mapM resolveStmtExpr
     let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -860,7 +860,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
         if bodyTy.val != HighType.TVoid then
           checkAssignable proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM synthStmtExprExpr
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
