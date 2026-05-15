@@ -516,17 +516,25 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
 
+mutual
 def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
   match _: exprMd with
   | AstNode.mk expr source =>
   let (val', ty) ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
-    let (cond', condTy) ← synthStmtExpr cond
-    checkBool cond'.source condTy
+    -- Condition is checked against TBool. The result type is TVoid when the
+    -- else branch is absent (statement form: the then-branch's value is
+    -- discarded), otherwise the then-branch's synthesized type. We don't
+    -- compare the two branches against each other since statement-position
+    -- ifs commonly mix a value branch with a TVoid branch (return/exit).
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
     let (thenBr', thenTy) ← synthStmtExpr thenBr
     let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; do
       let (e', _) ← synthStmtExpr a.val; pure e')
-    pure (.IfThenElse cond' thenBr' elseBr', thenTy)
+    let resultTy := match elseBr with
+      | none => { val := .TVoid, source := source }
+      | some _ => thenTy
+    pure (.IfThenElse cond' thenBr' elseBr', resultTy)
   | .Block stmts label =>
     -- Synth-mode block: non-last statements have their synthesized type discarded
     -- (lax rule, matches Java/Python/JS expression-statement semantics).
@@ -732,13 +740,10 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
       pure (.Hole det ty', ty')
     | none => pure (.Hole det none, { val := .Unknown, source := source })
   return ({ val := val', source := source }, ty)
-  termination_by exprMd
-  decreasing_by all_goals term_by_mem
-
-/-- Resolve a statement expression, discarding the synthesized type.
-    Use when only the resolved expression is needed (invariants, decreases, etc.). -/
-private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
-  let (e', _) ← synthStmtExpr e; pure e'
+  termination_by (exprMd, 0)
+  decreasing_by all_goals first
+    | (apply Prod.Lex.left; term_by_mem)
+    | (apply Prod.Lex.right; decide)
 
 /-- Check-mode resolution: resolve `e` and verify its type is a consistent
     subtype of `expected`. Bidirectional rules for individual constructs push
@@ -752,11 +757,9 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
     -- Bespoke check rule: discard non-last statement types (lax), push
     -- `expected` into the last statement. Empty block reduces to subsumption
     -- of TVoid against `expected`.
-    -- The init traversal calls `synthStmtExpr`, a different function, so it
-    -- needs no termination proof; only the recursive `checkStmtExpr last`
-    -- call needs `last ∈ stmts`, supplied by `List.mem_of_getLast?`.
     withScope do
-      let init' ← stmts.dropLast.mapM (fun s => do
+      let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
+        have : s ∈ stmts := List.dropLast_subset stmts hMem
         let (s', _) ← synthStmtExpr s; pure s')
       match _lastResult: stmts.getLast? with
       | none =>
@@ -774,8 +777,16 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
     unless isConsistentSubtype actual expected do
       typeMismatch source (formatType expected) actual
     pure e'
-  termination_by exprMd
-  decreasing_by all_goals term_by_mem
+  termination_by (exprMd, 1)
+  decreasing_by all_goals first
+    | (apply Prod.Lex.left; term_by_mem)
+    | (try subst_eqs; apply Prod.Lex.right; decide)
+end
+
+/-- Resolve a statement expression, discarding the synthesized type.
+    Use when only the resolved expression is needed (invariants, decreases, etc.). -/
+private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let (e', _) ← synthStmtExpr e; pure e'
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
