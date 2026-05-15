@@ -417,24 +417,35 @@ private def formatType (ty : HighTypeMd) : String :=
     "(" ++ ", ".intercalate parts ++ ")"
   | other => toString (formatHighTypeVal other)
 
-/-- Emit a type mismatch diagnostic. -/
-private def typeMismatch (source : Option FileRange) (expected : String) (actual : HighTypeMd) : ResolveM Unit := do
-  let actualStr := formatType actual
-  let diag := diagnosticFromSource source s!"Type mismatch: expected {expected}, but got '{actualStr}'"
+/-- Emit a type mismatch diagnostic. With a `construct`, the message is
+    "'<construct.constrName>' <problem>, got '<actual>'"; without,
+    "<problem>, got '<actual>'". -/
+private def typeMismatch (source : Option FileRange) (construct : Option StmtExpr)
+    (problem : String) (actual : HighTypeMd) : ResolveM Unit := do
+  let constructor := match construct with
+    | some c => s!"'{c.constrName}' "
+    | none   => ""
+  let diag := diagnosticFromSource source s!"{constructor}{problem}, got '{formatType actual}'"
   modify fun s => { s with errors := s.errors.push diag }
 
 /-- Subtyping. Stub: structural equality via `highEq`.
     TODO: To be replaced with a real check that walks `extending` chains for composites, unfolds aliases, and unwraps constrained types to their base. -/
 private def isSubtype (sub sup : HighTypeMd) : Bool := highEq sub sup
 
-/-- Gradual consistency-subtyping (Siek–Taha style): `Unknown` is the dynamic
-    type and is consistent with everything in either direction. `TCore` is a
-    migration escape hatch and is bivariantly compatible for now. -/
-private def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
-  match sub.val, sup.val with
+/-- Consistency (Siek–Taha): the symmetric gradual relation. `Unknown` is the
+    dynamic type and is consistent with everything; otherwise the relation
+    delegates to structural equality. `TCore` is a temporary migration
+    escape hatch. -/
+private def isConsistent (a b : HighTypeMd) : Bool :=
+  match a.val, b.val with
   | .Unknown, _ | _, .Unknown => true
   | .TCore _, _ | _, .TCore _ => true
-  | _, _ => isSubtype sub sup
+  | _, _ => highEq a b
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For the flat type
+    lattice this collapses to `sub ~ sup ∨ sub <: sup`. -/
+private def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
+  isConsistent sub sup || isSubtype sub sup
 
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
     `actual` is not a consistent subtype of `expected`. Used at sites where the
@@ -442,20 +453,20 @@ private def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
     output) — equivalent to `checkStmtExpr e expected` but without re-synthesizing. -/
 private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   unless isConsistentSubtype actual expected do
-    typeMismatch source (s!"'{formatType expected}'") actual
+    typeMismatch source none s!"expected '{formatType expected}'" actual
 
-/-- Test whether a type is in the set of numeric primitives, modulo gradual
-    consistency. Used by Op-Cmp / Op-Arith. -/
-private def isConsistentNumeric (ty : HighTypeMd) : Bool :=
+/-- Test whether a type is in the set of numeric primitives. `Unknown` and
+    `TCore` are accepted as gradual escape hatches. Used by Op-Cmp / Op-Arith. -/
+private def isNumeric (ty : HighTypeMd) : Bool :=
   match ty.val with
   | .TInt | .TReal | .TFloat64 | .Unknown => true
   | .TCore _ => true
   | _ => false
 
-/-- Test whether a type is a user-defined reference type, modulo gradual
-    consistency. Used by Fresh and ReferenceEquals, which only make sense on
-    composite/datatype references. -/
-private def isConsistentReference (ty : HighTypeMd) : Bool :=
+/-- Test whether a type is a user-defined reference type. `Unknown` and `TCore`
+    are accepted as gradual escape hatches. Used by Fresh and ReferenceEquals,
+    which only make sense on composite/datatype references. -/
+private def isReference (ty : HighTypeMd) : Bool :=
   match ty.val with
   | .UserDefined _ | .Unknown => true
   | .TCore _ => true
@@ -630,14 +641,14 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
         checkSubtype source { val := .TBool, source := aTy.source } aTy
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
       for aTy in argTypes do
-        unless isConsistentNumeric aTy do typeMismatch aTy.source "a numeric type" aTy
+        unless isNumeric aTy do
+          typeMismatch aTy.source (some expr) "expected a numeric type" aTy
     | .Eq | .Neq =>
-      -- Symmetric: pass if either direction is consistent.
       match argTypes with
       | [lhsTy, rhsTy] =>
-        unless isConsistentSubtype lhsTy rhsTy || isConsistentSubtype rhsTy lhsTy do
+        unless isConsistent lhsTy rhsTy do
           let diag := diagnosticFromSource source
-            s!"Operands of '==' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
+            s!"Operands of '{op}' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
           modify fun s => { s with errors := s.errors.push diag }
       | _ => pure ()
     | .StrConcat =>
@@ -672,10 +683,10 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
   | .ReferenceEquals lhs rhs =>
     let (lhs', lhsTy) ← synthStmtExpr lhs
     let (rhs', rhsTy) ← synthStmtExpr rhs
-    unless isConsistentReference lhsTy do
-      typeMismatch lhsTy.source "a reference type" lhsTy
-    unless isConsistentReference rhsTy do
-      typeMismatch rhsTy.source "a reference type" rhsTy
+    unless isReference lhsTy do
+      typeMismatch lhsTy.source (some expr) "expected a reference type" lhsTy
+    unless isReference rhsTy do
+      typeMismatch rhsTy.source (some expr) "expected a reference type" rhsTy
     pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
     let (target', _) ← synthStmtExpr target
@@ -714,8 +725,8 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     pure (.Old val', valTy)
   | .Fresh val =>
     let (val', valTy) ← synthStmtExpr val
-    unless isConsistentReference valTy do
-      typeMismatch valTy.source "a reference type" valTy
+    unless isReference valTy do
+      typeMismatch valTy.source (some expr) "expected a reference type" valTy
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
     let cond' ← checkStmtExpr condExpr { val := .TBool, source := condExpr.source }
@@ -761,9 +772,7 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
         let (s', _) ← synthStmtExpr s; pure s')
       match _lastResult: stmts.getLast? with
       | none =>
-        let tvoid : HighTypeMd := { val := .TVoid, source := source }
-        unless isConsistentSubtype tvoid expected do
-          typeMismatch source (formatType expected) tvoid
+        checkSubtype source expected { val := .TVoid, source := source }
         pure { val := .Block init' label, source := source }
       | some last =>
         have := List.mem_of_getLast? _lastResult
@@ -772,8 +781,7 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
     let (e', actual) ← synthStmtExpr exprMd
-    unless isConsistentSubtype actual expected do
-      typeMismatch source (formatType expected) actual
+    checkSubtype source expected actual
     pure e'
   termination_by (exprMd, 1)
   decreasing_by all_goals first
