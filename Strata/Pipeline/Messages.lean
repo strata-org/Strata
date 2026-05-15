@@ -538,16 +538,14 @@ public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinall
   finally
     st.restore ctx
 
-/-- Time a pure expression as a repeated subphase. Forces evaluation via
-    `IO.Ref.set` so the compiler cannot hoist the computation outside the
+/-- Time a pure expression as a repeated subphase. The `@[noinline]`
+    attribute prevents the compiler from hoisting `expr` outside the
     timing window. Use this instead of `withRepeatedPhase` when the work
     being timed is a pure (non-monadic) expression. -/
 @[noinline]
 public def withRepeatedPhasePure {α} [Inhabited α]
     (ctx : PipelineContext) (name : String) (expr : Unit → α) : BaseIO α := do
-  let ref ← IO.mkRef (default : α)
-  ctx.withRepeatedPhase name (m := BaseIO) do ref.set (expr ())
-  ref.get
+  ctx.withRepeatedPhase name (m := BaseIO) (pure (expr ()))
 
 end PipelineContext
 

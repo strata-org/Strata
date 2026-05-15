@@ -157,3 +157,25 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
     check e.end_ns.isSome s!"Parent entry should have end_ns set"
     check (e.count == 1) s!"Parent count should be 1, got {e.count}"
   | none => throw <| IO.userError "unreachable"
+
+/-! ### Test 7: withRepeatedPhasePure evaluates expression and aggregates timing -/
+
+#eval show IO Unit from do
+  let ctx ← mkCtx
+  let evalRef ← IO.mkRef (0 : Nat)
+  ctx.withPhase "outer" (m := IO) do
+    for _ in List.range 4 do
+      let _ ← ctx.withRepeatedPhasePure "compute" fun () =>
+        dbg_trace "withRepeatedPhasePure: evaluating"
+        42
+      evalRef.modify (· + 1)
+  let count ← evalRef.get
+  check (count == 4) s!"Expected 4 evaluations, got {count}"
+  let entries ← ctx.getTimingEntries
+  let computePhase := Phase.base "outer" |>.subphase "compute"
+  let computeEntries := entries.filter (fun e => e.phase == computePhase)
+  check (computeEntries.size == 1)
+    s!"Expected 1 aggregated compute entry, got {computeEntries.size}"
+  match computeEntries[0]? with
+  | some e => check (e.count == 4) s!"Expected count 4, got {e.count}"
+  | none => throw <| IO.userError "unreachable"
