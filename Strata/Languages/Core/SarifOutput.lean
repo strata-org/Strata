@@ -77,15 +77,12 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
-  let fileRangeElem ← md.findElem Imperative.MetaData.fileRange
-  match fileRangeElem.value with
-  | .fileRange fr =>
-    let fileMap ← files.find? fr.file
-    let startPos := fileMap.toPosition fr.range.start
-    let uri := match fr.file with
-               | .file path => path
-    pure { uri, startLine := startPos.line, startColumn := startPos.column }
-  | _ => none
+  let fr ← Imperative.getFileRange md
+  let fileMap ← files.find? fr.file
+  let startPos := fileMap.toPosition fr.range.start
+  let uri := match fr.file with
+             | .file path => path
+  pure { uri, startLine := startPos.line, startColumn := startPos.column }
 
 /-- Convert PropertyType to a property classification string for SARIF output -/
 def propertyTypeToClassification : Imperative.PropertyType → String

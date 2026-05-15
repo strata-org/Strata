@@ -585,8 +585,8 @@ private def evalOneStmt (old_var_subst : SubstMap)
     | .nondet =>
       let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
       let freshVar : Expression.Expr := .fvar () freshName none
-      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet Imperative.MetaData.empty
-      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss Imperative.MetaData.empty
+      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
+      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
       evalSub Ewn [initStmt, iteStmt] nextSplitId
     | .det c =>
       let cond' := Ewn.env.exprEval c
