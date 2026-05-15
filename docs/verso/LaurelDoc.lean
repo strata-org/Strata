@@ -262,7 +262,8 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 - *Primitive operations* — Op-Bool, Op-Cmp, Op-Eq, Op-Arith, Op-Concat
 - *Object forms* — New-Ok, New-Fallback; AsType; IsType; RefEq; PureFieldUpdate
 - *Verification expressions* — Quantifier, Assigned, Old, Fresh, ProveBy
-- *Untyped forms* — This; Abstract / All / ContractOf
+- *Self reference* — This-Inside, This-Outside
+- *Untyped forms* — Abstract / All / ContractOf
 - *Holes* — Hole-Some, Hole-None-Synth, Hole-None-Check (planned)
 
 ### Subsumption
@@ -555,10 +556,13 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 ```
 
 ```
-       Γ ⊢ target ⇒ T_t      Γ ⊢ newVal ⇒ _
-───────────────────────────────────────────────  (PureFieldUpdate, impl)
-   Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t
+   Γ ⊢ target ⇒ T_t      Γ(f) = T_f      Γ ⊢ newVal ⇐ T_f
+─────────────────────────────────────────────────────────────  (PureFieldUpdate, impl)
+       Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t
 ```
+
+`f` is resolved against `T_t` (or the enclosing instance type) and `newVal` is checked
+against the field's declared type.
 
 ### Verification expressions
 
@@ -596,12 +600,26 @@ proposition; without this, `forall x: int :: x + 1` would be silently accepted.
        Γ ⊢ ProveBy v proof ⇒ T
 ```
 
-### Untyped forms
+### Self reference
 
 ```
-──────────────────────────  (This, impl)
-   Γ ⊢ This ⇒ Unknown
+  Γ.instanceTypeName = some T
+──────────────────────────────────  (This-Inside, impl)
+ Γ ⊢ This ⇒ UserDefined T
+
+
+  Γ.instanceTypeName = none
+──────────────────────────────  (This-Outside, impl)
+   Γ ⊢ This ⇒ Unknown    [emits "'this' is not allowed outside instance methods"]
 ```
+
+`Γ.instanceTypeName` is the
+{name Strata.Laurel.ResolveState}`ResolveState` field set by
+{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure` for the duration of
+an instance method body. With it, `this.field` and instance-method dispatch synthesize real
+types instead of being wildcarded through {name Strata.Laurel.HighType.Unknown}`Unknown`.
+
+### Untyped forms
 
 ```
 ─────────────────────────────────────────────  (Abstract / All / ContractOf, impl)
