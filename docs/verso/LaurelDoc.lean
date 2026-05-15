@@ -201,27 +201,30 @@ internal interface used by other rules.
 
 ### Gradual typing
 
-The relation `<:` is implemented by two Lean functions — both currently stubs, both
-intended to be sharpened:
+The relation `<:` (used in Sub) is built from three Lean functions:
 
 - `isSubtype` — pure subtyping. The stub is structural equality via
   {name Strata.Laurel.highEq}`highEq`. The eventual real version walks the `extending`
   chain for {name Strata.Laurel.CompositeType}`CompositeType`, unfolds
   {name Strata.Laurel.TypeAlias}`TypeAlias` to its target, and unwraps
   {name Strata.Laurel.ConstrainedType}`ConstrainedType` to its base.
-- `isConsistentSubtype` — gradual consistency, in the Siek–Taha sense.
-  {name Strata.Laurel.HighType.Unknown}`Unknown` is the dynamic type `?` and is consistent
-  with everything in either direction; otherwise the relation delegates to `isSubtype`.
-  {name Strata.Laurel.HighType.TCore}`TCore` is bivariantly consistent for now, as a
-  clearly-labelled migration escape hatch from the Core language — this carve-out is
-  intentionally temporary.
+- `isConsistent` — the symmetric gradual relation `~` (Siek–Taha):
+  {name Strata.Laurel.HighType.Unknown}`Unknown` is the dynamic type and is consistent with
+  everything; otherwise structural equality.
+- `isConsistentSubtype` — defined as `isConsistent ∨ isSubtype`. For our flat lattice this
+  is the standard collapse of `∃R. T ~ R ∧ R <: U`.
 
-Subsumption (and every bespoke check rule) uses `isConsistentSubtype`, never raw
-`isSubtype`. That single choice is what makes the system *gradual*: an expression of type
+{name Strata.Laurel.HighType.TCore}`TCore` is bivariantly consistent for now as a temporary
+migration escape hatch from the Core language; the carve-out lives in `isConsistent` and is
+intentionally temporary.
+
+Sub (and every bespoke check rule) uses `isConsistentSubtype`. That single choice is what
+makes the system *gradual*: an expression of type
 {name Strata.Laurel.HighType.Unknown}`Unknown` (a hole, an unresolved name, a `Hole _ none`)
 flows freely into any typed slot, and any expression flows freely into a slot of type
 {name Strata.Laurel.HighType.Unknown}`Unknown`. Strict checking is applied between
-fully-known types only.
+fully-known types only. The symmetric `isConsistent` is used directly by Op-Eq, where the
+operand types must be mutually consistent (no subtype direction is privileged).
 
 A previous iteration was synth-only with three *bivariantly-compatible* wildcards:
 {name Strata.Laurel.HighType.Unknown}`Unknown`,
@@ -500,10 +503,13 @@ target is a numeric type.
 ```
 
 ```
-  Γ ⊢ lhs ⇒ T_l      Γ ⊢ rhs ⇒ T_r      T_l <: T_r ∨ T_r <: T_l                op ∈ {Eq, Neq}
-─────────────────────────────────────────────────────────────────  (Op-Eq, impl)
-            Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
+  Γ ⊢ lhs ⇒ T_l      Γ ⊢ rhs ⇒ T_r      T_l ~ T_r                op ∈ {Eq, Neq}
+─────────────────────────────────────────────────────────  (Op-Eq, impl)
+        Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
 ```
+
+`~` is the consistency relation `isConsistent` — symmetric, with the
+{name Strata.Laurel.HighType.Unknown}`Unknown` wildcard.
 
 ```
   Γ ⊢ args_i ⇐ Numeric      Γ ⊢ args.head ⇒ T                op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
