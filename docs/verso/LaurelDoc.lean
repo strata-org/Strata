@@ -268,7 +268,7 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 - *Self reference* — This-Inside, This-Outside
 - *Untyped forms* — Abstract / All
 - *ContractOf* — ContractOf-Bool, ContractOf-Set, ContractOf-Error
-- *Holes* — Hole-Some, Hole-None-Synth, Hole-None-Check (planned)
+- *Holes* — Hole-Some, Hole-None-Synth, Hole-None-Check
 
 ### Subsumption
 
@@ -727,14 +727,17 @@ exists so resolution remains exhaustive over `StmtExpr`.
 ```
 
 ```
-       Unknown <: T
-─────────────────────────  (Hole-None-Check, planned)
- Γ ⊢ Hole d none ⇐ T
+─────────────────────────────────────  (Hole-None-Check, impl)
+ Γ ⊢ Hole d none ⇐ T   ↦   Hole d (some T)
 ```
 
-In check mode today, `Hole d none ⇐ T` reduces to subsumption (`Unknown <: T`, which always
-holds). The planned rule would record the inferred `T` on the hole node so downstream
-passes can see it, instead of leaving `none` until the hole-inference pass.
+In check mode, an untyped hole records the expected type `T` on the node directly. The
+subsumption check is trivial (`Unknown <: T` always holds), so this rule never fails — it
+just preserves the type information that's available at the check-mode boundary instead of
+discarding it. A separate
+{name Strata.Laurel.InferHoleTypes}`InferHoleTypes` pass still runs after resolution to
+annotate holes that ended up in synth-only positions; over time, as more constructs gain
+bespoke check rules, fewer holes will need that pass.
 
 # Translation Pipeline
 

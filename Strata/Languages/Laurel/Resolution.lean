@@ -836,6 +836,11 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
     if elseBr.isNone then
       checkSubtype source expected { val := .TVoid, source := source }
     pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
+  | .Hole det none =>
+    -- Untyped hole in check mode: record the expected type on the node so
+    -- downstream passes don't have to infer it again. Subsumption is trivial
+    -- (Unknown <: T always holds).
+    pure { val := .Hole det (some expected), source := source }
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
     let (e', actual) ← synthStmtExpr exprMd
