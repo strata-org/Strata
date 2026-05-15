@@ -37,10 +37,10 @@ Walks the AST under `ResolveM`, a state monad over `ResolveState`. Phase 1:
   declared type to build a qualified lookup key),
 - opens fresh nested scopes via `withScope` for blocks, quantifiers,
   procedure bodies, and constrained-type constraint/witness expressions,
-- synthesizes a `HighType` for every `StmtExpr` and runs the type-checking
-  helpers (`checkBool`, `checkNumeric`, `checkAssignable`, `checkComparable`)
-  on assignments, call arguments, condition positions, functional bodies, and
-  constant initializers.
+- synthesizes a `HighType` for every `StmtExpr` and checks it (via
+  `checkStmtExpr` for fresh subexpressions, or `checkSubtype` when a type is
+  already in hand) on assignments, call arguments, condition positions,
+  functional bodies, and constant initializers.
 
 Before any bodies are walked, `preRegisterTopLevel` registers every top-level
 name (types and their constructors / testers / destructors / instance
@@ -436,54 +436,21 @@ private def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
   | .TCore _, _ | _, .TCore _ => true
   | _, _ => isSubtype sub sup
 
-/-- Check that a type is boolean, emitting a diagnostic if not. -/
-private def checkBool (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
+/-- Type-level subtype check: emits the standard "expected/got" diagnostic when
+    `actual` is not a consistent subtype of `expected`. Used at sites where the
+    actual type is already in hand (assignment, call args, body vs declared
+    output) — equivalent to `checkStmtExpr e expected` but without re-synthesizing. -/
+private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
+  unless isConsistentSubtype actual expected do
+    typeMismatch source (s!"'{formatType expected}'") actual
+
+/-- Test whether a type is in the set of numeric primitives, modulo gradual
+    consistency. Used by Op-Cmp / Op-Arith. -/
+private def isConsistentNumeric (ty : HighTypeMd) : Bool :=
   match ty.val with
-  | .TBool | .Unknown => pure ()
-  | .UserDefined _ => pure ()  -- constrained types may wrap bool
-  | _ => typeMismatch source "bool" ty
-
-/-- Check that a type is numeric (int, real, or float64), emitting a diagnostic if not. -/
-private def checkNumeric (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
-  match ty.val with
-  | .TInt | .TReal | .TFloat64 | .Unknown => pure ()
-  | .UserDefined _ => pure ()  -- constrained types may wrap numeric types
-  | _ => typeMismatch source "a numeric type" ty
-
-/-- Check that two types are compatible, emitting a diagnostic if not.
-    UserDefined types are always considered compatible with each other since
-    subtype relationships (inheritance) are not tracked during resolution.
-    TCore types are not checked since they are pass-through types from the Core language. -/
-private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
-  match expected.val, actual.val with
-  | .Unknown, _ => pure ()
-  | _, .Unknown => pure ()
-  | .UserDefined _, _ => pure ()  -- subtype relationships not tracked here
-  | _, .UserDefined _ => pure ()  -- subtype relationships not tracked here
-  | .TCore _, _ => pure ()  -- pass-through Core types not checked during resolution
-  | _, .TCore _ => pure ()  -- pass-through Core types not checked during resolution
-  | _, _ =>
-    if !highEq expected actual then
-      let expectedStr := formatType expected
-      let actualStr := formatType actual
-      let diag := diagnosticFromSource source s!"Type mismatch: expected '{expectedStr}', but got '{actualStr}'"
-      modify fun s => { s with errors := s.errors.push diag }
-
-/-- Check that two types are comparable (for == and !=), emitting a symmetric diagnostic if not. -/
-private def checkComparable (source : Option FileRange) (lhsTy : HighTypeMd) (rhsTy : HighTypeMd) : ResolveM Unit := do
-  match lhsTy.val, rhsTy.val with
-  | .Unknown, _ => pure ()
-  | _, .Unknown => pure ()
-  | .UserDefined _, _ => pure ()
-  | _, .UserDefined _ => pure ()
-  | .TCore _, _ => pure ()
-  | _, .TCore _ => pure ()
-  | _, _ =>
-    if !highEq lhsTy rhsTy then
-      let lhsStr := formatType lhsTy
-      let rhsStr := formatType rhsTy
-      let diag := diagnosticFromSource source s!"Operands of '==' have incompatible types '{lhsStr}' and '{rhsStr}'"
-      modify fun s => { s with errors := s.errors.push diag }
+  | .TInt | .TReal | .TFloat64 | .Unknown => true
+  | .TCore _ => true
+  | _ => false
 
 /-- Get the type of a resolved variable reference from scope. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
@@ -547,10 +514,9 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
         | none => { val := .TVoid, source := source }
       pure (.Block stmts' label, lastTy)
   | .While cond invs dec body =>
-    let (cond', condTy) ← synthStmtExpr cond
-    checkBool cond'.source condTy
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
     let invs' ← invs.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← synthStmtExpr a.val; pure e')
+      checkStmtExpr a.val { val := .TBool, source := a.val.source })
     let dec' ← dec.attach.mapM (fun a => have := a.property; do
       let (e', _) ← synthStmtExpr a.val; pure e')
     let (body', _) ← synthStmtExpr body
@@ -614,7 +580,7 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
             | some (_, node) => pure node.getType
             | none => pure { val := HighType.Unknown, source := fieldName.source : HighTypeMd }
         let tTy ← targetTy
-        checkAssignable source tTy valueTy
+        checkSubtype source tTy valueTy
     pure (.Assign targets' value', valueTy)
   | .Var (.Field target fieldName) =>
     let (target', _) ← synthStmtExpr target
@@ -633,9 +599,8 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
-    -- Check argument types match parameter types
     for (argTy, paramTy) in argTypes.zip paramTypes do
-      checkAssignable source paramTy argTy
+      checkSubtype source paramTy argTy
     pure (.StaticCall callee' args', retTy)
   | .PrimitiveOp op args =>
     let results ← args.mapM synthStmtExpr
@@ -649,18 +614,25 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
         | some headTy => headTy.val
         | none => HighType.TInt
       | .StrConcat => HighType.TString
-    -- Type check operands
     match op with
     | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-      for aTy in argTypes do checkBool source aTy
+      for aTy in argTypes do
+        checkSubtype source { val := .TBool, source := aTy.source } aTy
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
-      for aTy in argTypes do checkNumeric source aTy
+      for aTy in argTypes do
+        unless isConsistentNumeric aTy do typeMismatch aTy.source "a numeric type" aTy
     | .Eq | .Neq =>
-      -- Check that operands are compatible with each other (symmetric check)
+      -- Symmetric: pass if either direction is consistent.
       match argTypes with
-      | [lhsTy, rhsTy] => checkComparable source lhsTy rhsTy
+      | [lhsTy, rhsTy] =>
+        unless isConsistentSubtype lhsTy rhsTy || isConsistentSubtype rhsTy lhsTy do
+          let diag := diagnosticFromSource source
+            s!"Operands of '==' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
+          modify fun s => { s with errors := s.errors.push diag }
       | _ => pure ()
-    | .StrConcat => pure ()
+    | .StrConcat =>
+      for aTy in argTypes do
+        checkSubtype source { val := .TString, source := aTy.source } aTy
     pure (.PrimitiveOp op args', { val := resultTy, source := source })
   | .New ref =>
     let ref' ← resolveRef ref source
@@ -695,10 +667,10 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
-    -- Check argument types match parameter types (skip first param which is 'self')
+    -- Skip first param (self) when matching args.
     let callParamTypes := match paramTypes with | _ :: rest => rest | [] => []
     for (argTy, paramTy) in argTypes.zip callParamTypes do
-      checkAssignable source paramTy argTy
+      checkSubtype source paramTy argTy
     pure (.InstanceCall target' callee' args', retTy)
   | .Quantifier mode param trigger body =>
     withScope do
@@ -718,12 +690,10 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let (val', _) ← synthStmtExpr val
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
-    let (cond', condTy) ← synthStmtExpr condExpr
-    checkBool cond'.source condTy
+    let cond' ← checkStmtExpr condExpr { val := .TBool, source := condExpr.source }
     pure (.Assert { condition := cond', summary }, { val := .TVoid, source := source })
   | .Assume cond =>
-    let (cond', condTy) ← synthStmtExpr cond
-    checkBool cond'.source condTy
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
     pure (.Assume cond', { val := .TVoid, source := source })
   | .ProveBy val proof =>
     let (val', valTy) ← synthStmtExpr val
@@ -829,7 +799,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
       | [singleOutput] =>
         -- Only check when body produces a value (not void from return/while/assign)
         if bodyTy.val != HighType.TVoid then
-          checkAssignable proc.name.source singleOutput.type bodyTy
+          checkSubtype proc.name.source singleOutput.type bodyTy
       | _ => pure ()
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
@@ -869,7 +839,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
       match proc.outputs with
       | [singleOutput] =>
         if bodyTy.val != HighType.TVoid then
-          checkAssignable proc.name.source singleOutput.type bodyTy
+          checkSubtype proc.name.source singleOutput.type bodyTy
       | _ => pure ()
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
