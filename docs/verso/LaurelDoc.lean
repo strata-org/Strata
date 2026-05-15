@@ -272,6 +272,61 @@ through nested {name Strata.Laurel.StmtExpr.Block}`Block` /
 {name Strata.Laurel.StmtExpr.Quantifier}`Quantifier`. Empty blocks reduce to subsumption of
 {name Strata.Laurel.HighType.TVoid}`TVoid` against the expected type.
 
+## IfThenElse
+
+{name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse cond t e_opt` has been converted to
+*partial* bidirectional form. Today the implementation has a synth rule but reaches check
+mode only through the subsumption fallback; a bespoke check rule that pushes the expected
+type into both branches is the planned next step.
+
+The synth rule:
+
+- *Condition.* `cond` is checked against {name Strata.Laurel.HighType.TBool}`TBool` via a
+  recursive `checkStmtExpr cond TBool` call. This replaces the previous synth-then-`checkBool`
+  pattern with the clean bidirectional one — the expected type is pushed inward, so a
+  literal `if 5 then …` flags the literal directly rather than the surrounding `if`.
+- *Branches.* `thenBr` is synthesized; if present, `elseBr` is synthesized too. The two
+  branch types are *not* compared against each other. The reason is that in Laurel's
+  unified statement-expression model, statement-position `if`s commonly mix a value
+  branch with a {name Strata.Laurel.HighType.TVoid}`TVoid` branch (early
+  {name Strata.Laurel.StmtExpr.Return}`return`, {name Strata.Laurel.StmtExpr.Exit}`exit`, an
+  {name Strata.Laurel.StmtExpr.Assert}`assert`, …), which a strict equality check on
+  branches would reject incorrectly.
+- *Result type.* When `elseBr` is `none`, the result is
+  {name Strata.Laurel.HighType.TVoid}`TVoid` — the construct is in statement form and the
+  then-branch's value is discarded. When `elseBr` is `some _`, the result is the
+  then-branch's synthesized type. The arbitrary preference for the then-branch here is
+  harmless: the result is always consumed by an enclosing `checkAssignable` /
+  subsumption-fallback, which gives a one-sided check against the surrounding context's
+  expected type.
+
+The change to `none` → {name Strata.Laurel.HighType.TVoid}`TVoid` closes a soundness gap in
+the previous design, where `if c then 5` synthesized {name Strata.Laurel.HighType.TInt}`TInt`
+unconditionally — even though there is no value when `c` is false — so an assignment
+`x: int := if c then 5` would have type-checked. With the new rule, the synthesized type is
+{name Strata.Laurel.HighType.TVoid}`TVoid` and the assignment is correctly rejected.
+
+The planned bespoke check rule is straightforward: `cond ⇐ TBool`, `thenBr ⇐ expected`, and
+`elseBr ⇐ expected` if present; if absent, fall back to subsumption of
+{name Strata.Laurel.HighType.TVoid}`TVoid` against the expected type. The benefit is the
+same as for `Block`: errors fire at the offending sub-expression rather than the
+surrounding `if`, and the expected type propagates through nested control flow.
+
+## Mutual recursion and termination
+
+{name Strata.Laurel.synthStmtExpr}`synthStmtExpr` and
+{name Strata.Laurel.checkStmtExpr}`checkStmtExpr` are now mutually recursive: the synth rule
+for {name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse` invokes check-mode resolution for
+the condition, and the check function falls back to synth via the subsumption rule.
+
+Termination uses a lexicographic measure `(exprMd, tag)` where the tag is `0` for
+{name Strata.Laurel.synthStmtExpr}`synthStmtExpr` and `1` for
+{name Strata.Laurel.checkStmtExpr}`checkStmtExpr`. Any descent into a strict subterm
+decreases via `Prod.Lex.left` (first component shrinks); the subsumption rule
+`check e → synth e` calls synth on the *same* expression, which decreases via
+`Prod.Lex.right` (second component goes from 1 to 0). This is the standard well-founded
+encoding for bidirectional systems where one direction calls the other on the same input.
+
 ## Mode assignment per construct
 
 The intended mode for each construct (some are still being converted to bidirectional in
@@ -281,7 +336,7 @@ the implementation):
 |---|---|---|
 | Literals, `Var .Local`, `Var .Field`, `New T`, `IsType`, `ReferenceEquals`, `Quantifier`, `Assigned`, `Fresh`, `Hole _ (some T)`, `StaticCall`, `InstanceCall` | synth | type is determined locally |
 | `Var .Declare`, `Exit`, `Return`, `While`, `Assert`, `Assume`, `Assign` | synth ⇒ {name Strata.Laurel.HighType.TVoid}`TVoid` | side-effecting; condition operands checked inward |
-| `IfThenElse cond t e_opt` | bespoke check | `cond ⇐ TBool`; `t ⇐ T`; `e ⇐ T` if present |
+| `IfThenElse cond t e_opt` | synth (`cond ⇐ TBool`); planned bespoke check | see below |
 | `Block` | bespoke check | `s_1..s_{n-1}` synth, `s_n ⇐ T`; synth uses last's synthesized type |
 | `Hole _ none` | bespoke check | check mode succeeds with `expected`; synth mode → `Unknown` |
 | `AsType e T` | synth ⇒ `T` | the cast is the user's claim; no check on `e` |
