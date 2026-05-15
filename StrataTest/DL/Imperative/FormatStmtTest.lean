@@ -148,11 +148,7 @@ info: while
 
 -- 14. exit with label
 /-- info: exit target -/
-#guard_msgs in #eval! format (Stmt.exit (some "target") .empty : S)
-
--- 14b. exit without label
-/-- info: exit -/
-#guard_msgs in #eval! format (Stmt.exit none .empty : S)
+#guard_msgs in #eval! format (Stmt.exit "target" .empty : S)
 
 -- 15. funcDecl
 /-- info: funcDecl <function> -/

@@ -149,27 +149,17 @@ match ss with
                         transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
-| .exit l? _md :: _ => do
-  -- Find the continuation of the block labeled `l`, or the most recently-added
-  -- block if `l` is `.none`.
+| .exit l _md :: _ => do
+  -- Find the continuation of the block labeled `l`.
   let bk :=
-    match (l?, exitConts) with
+    match exitConts.lookup (.some l) with
+    | .some k => k
     -- Just keep going if this is an invalid exit. We assume a prior
     -- check to avoid this.
-    | (.none, []) => k
-    | (.none, (_, k) :: _) => k
-    | (.some l, _) =>
-      match exitConts.lookup (.some l) with
-      | .some k => k
-      -- Just keep going if this is an invalid exit. We assume a prior
-      -- check to avoid this.
-      | .none => k
+    | .none => k
   -- Flush the accumulated commands, going to the continuation calculated above.
   -- Any statements after the `.exit` are skipped.
-  let exitName :=
-    match l? with
-    | .some l => s!"block${l}$"
-    | .none => "block$"
+  let exitName := s!"block${l}$"
   flushCmds exitName accum .none bk
 
 def stmtsToCFGM

@@ -540,8 +540,6 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
     return .exit l (← toCoreMetaData m)
-  | .exit_unlabeled_statement m =>
-    return .exit none (← toCoreMetaData m)
   | .typeDecl_statement m ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []

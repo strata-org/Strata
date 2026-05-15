@@ -325,7 +325,7 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Cor
 
 def handleCallThrow (jmp_target : String) : Core.Statement :=
   let cond := .app pySynthLoc (.op pySynthLoc "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar pySynthLoc "maybe_except" none)
-  .ite (.det cond) [.exit (some jmp_target) .empty] [] .empty
+  .ite (.det cond) [.exit jmp_target .empty] [] .empty
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
   let mut m : Map String String := []
@@ -630,7 +630,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     | .none =>
       [.set "exception_ty_matches" (.boolConst pySynthLoc false) md]
     let cond := .fvar pySynthLoc "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.exit (some jmp_targets[1]!) md]
+    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.exit jmp_targets[1]! md]
     set_ex_ty_matches ++ [.ite (.det cond) body_if_matches [] md]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
@@ -730,8 +730,8 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       ([.ite (.det (PyExprToCore guard_ctx test).expr) (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst md], none)
     | .Return _ v =>
       match v.val with
-      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr md, .exit (some jmp_targets[0]!) md], none) -- TODO: need to thread return value name here. For now, assume "ret"
-      | .none => ([.exit (some jmp_targets[0]!) md], none)
+      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr md, .exit jmp_targets[0]! md], none) -- TODO: need to thread return value name here. For now, assume "ret"
+      | .none => ([.exit jmp_targets[0]! md], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
       let guard := .app pySynthLoc (Core.coreOpExpr (.bool .Not)) (.eq pySynthLoc (.app pySynthLoc (.op pySynthLoc "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst pySynthLoc 0))

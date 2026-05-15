@@ -183,7 +183,7 @@ instance (P : PureExpr) : HasVarsImp P (Cmds P) where
   definedVars := Cmds.definedVars
   modifiedVars := Cmds.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := List.flatMap HasVarsImp.touchedVars
+  modifiedOrDefinedVars := List.flatMap HasVarsImp.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 
