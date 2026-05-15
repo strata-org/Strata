@@ -19,15 +19,70 @@ changes!**
 
 ## Prerequisites
 
-1. **Lean4**: Strata is built on Lean4; see the build specified in the
+1. **Lean4**: Strata is built on Lean4; see the version specified in the
    `lean-toolchain` file.
 
-   You can install Lean4 by following the instructions [here](https://lean-lang.org/).
+   Install Lean4 by following the instructions at [lean-lang.org](https://lean-lang.org/).
 
-2. **SMT Solver**: Analysis tools in Strata use SMT solvers for program
-   verification.
-   - Install an SMT solver. You can use any solver you want, but the unit
-     tests assume `cvc5` is on your `PATH` [cvc5](https://cvc5.github.io/).
+2. **SMT Solvers**: The verification pipeline and tests require SMT solvers
+   (`cvc5` and `z3`). See [Installing dependencies → SMT Solvers](#smt-solvers)
+   below.
+
+3. **Python 3.11+**: required for Python-related tests and the `strata`
+   Python tooling. See [Installing dependencies → Python](#python) below.
+
+4. **Java JDK (11 or later)**: required for Java code generation tests.
+   See [Installing dependencies → Java](#java-for-code-generation-tests) below.
+
+5. **ion-java jar (1.11.11)**: required for the Java/Ion integration test.
+   See [Installing dependencies → Java](#java-for-code-generation-tests) below.
+
+### Installing dependencies
+
+#### SMT Solvers
+
+Download static builds (single binary, no library dependencies) and
+place them on your `PATH`:
+
+- cvc5 releases: https://github.com/cvc5/cvc5/releases
+- z3 releases: https://github.com/Z3Prover/z3/releases
+
+```bash
+# Download the appropriate static build for your platform from the
+# release pages above, then copy the binaries somewhere on your PATH:
+cp /path/to/cvc5 /path/to/z3 ~/.local/bin/
+# or: sudo cp /path/to/cvc5 /path/to/z3 /usr/local/bin/
+```
+
+#### Python
+
+Python 3.11 or later is required. Install the `strata` Python package inside a
+virtual environment (recommended; avoids PEP 668's `externally-managed-environment`
+error on Debian/Ubuntu 23.04+):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install ./Tools/Python
+```
+
+#### Java (for code generation tests)
+
+A JDK (11+) providing `javac` must be on your `PATH`. For running the
+Java/Ion integration test, download the ion-java jar:
+
+```bash
+wget -q -O StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar \
+  https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
+```
+
+### Verifying your setup
+
+```bash
+cvc5 --version    # should print version info
+z3 --version      # should print version info
+python3 --version # should be 3.11+
+```
 
 ## Build
 
@@ -43,6 +98,26 @@ To build executable files only and omit proof checks that might take a long time
 
 ```bash
 lake build strata:exe strata StrataToCBMC StrataCoreToGoto
+```
+
+### Running specific test subsets
+
+Two kinds of tests coexist in this repo:
+
+- **Elaboration-time tests** (`#guard_msgs`) live under `StrataTest/` and run as
+  part of `lake build`. No output means they passed.
+- **Uncached extra tests** live under `StrataTestExtra/` and run via `lake test`.
+  These accept prefix filters:
+
+```bash
+# Run all extra tests except Python (which requires the Python package)
+lake test -- --exclude Languages.Python
+
+# Run only Python extra tests (requires `pip install ./Tools/Python`)
+lake test -- Languages.Python
+
+# Run all extra tests (Python tests will fail without the Python package above)
+lake test
 ```
 
 ## Running Analyses on Existing Strata Programs
@@ -80,7 +155,9 @@ modes.
 
 ### When running unit tests: "error: no such file or directory (error code: 2)"
 
-This is likely due to `cvc5` or `z3` not being in the PATH environment variable. Add them and try again.
+This is likely due to `cvc5` or `z3` not being in the `PATH` environment
+variable. See [Installing dependencies → SMT Solvers](#smt-solvers) for
+how to install them.
 
 ## License
 
@@ -88,4 +165,3 @@ The contents of this repository are licensed under the terms of either
 the Apache-2.0 or MIT license, at your choice. See
 [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for
 details of the two licenses.
-

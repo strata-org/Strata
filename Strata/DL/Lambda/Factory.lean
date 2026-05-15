@@ -79,8 +79,10 @@ Helper constructor for LFunc to maintain backward compatibility.
     (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
     (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
     (axioms : List (LExpr T.mono) := [])
-    (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := []) : LFunc T :=
-  Func.mk name typeArgs isConstr isRecursive inputs output body attr concreteEval axioms preconditions
+    (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
+    (measure : Option (LExpr T.mono) := .none) : LFunc T :=
+  { name, typeArgs, isConstr, isRecursive, inputs, output, body, attr,
+    concreteEval, axioms, preconditions, measure }
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }

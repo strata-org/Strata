@@ -243,6 +243,30 @@ private def mkBitVecAppend (w v : Nat) : Expr :=
          (mkBitVec w) (mkBitVec v) (mkBitVec (w + v))
          (mkApp2 (.const ``BitVec.instHAppendHAddNat []) (toExpr w) (toExpr v))
 
+private def mkStringAppend : Expr :=
+  mkApp4 (.const ``HAppend.hAppend [0, 0, 0])
+         mkString mkString mkString
+         (mkApp2 (.const ``instHAppendOfAppend [0]) mkString
+                 (.const ``instAppendString []))
+
+/--
+Length of a string as an `Int` (via `Int.ofNat`), matching the semantics used
+in `Denote.lean`.
+-/
+private def mkStringLength (s : Expr) : Expr :=
+  .app (.const ``Int.ofNat []) (.app (.const ``String.length []) s)
+
+/--
+Throw unless `α` is the Lean `String` type (as produced by `mkString`). Used
+to guard string-theory operations so that a malformed SMT term such as
+`(.app .str_length [.prim (.int 0)] ...)` is rejected up front, matching the
+behaviour of `Denote.denoteTerm`.
+-/
+private def expectString (α : Expr) : TranslateM Unit :=
+  match α with
+  | .const ``String [] => return ()
+  | _ => throw m!"Error: expected String type, got '{α}'"
+
 def symbolToName (s : String) : Name :=
   -- Quote the string if a natural translation to Name fails
   if s.toName == .anonymous then
@@ -500,6 +524,28 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (α, x) ← translateTerm x
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
+  -- SMT-Lib theory of strings
+  | .prim (.string s) =>
+    return (mkString, toExpr s)
+  | .app .str_length [s] _ =>
+    let (α, s) ← translateTerm s
+    expectString α
+    return (mkInt, mkStringLength s)
+  | .app .str_concat as _ =>
+    -- `Denote.leftAssoc` requires at least two operands and checks that each
+    -- operand has the expected type.  Mirror that here rather than delegating
+    -- to `leftAssocOp`, which does neither.
+    let a :: b :: as := as
+      | throw m!"Error: str_concat expects at least two operands, got '{as.length}'"
+    let (α, a) ← translateTerm a
+    expectString α
+    let (β, b) ← translateTerm b
+    expectString β
+    let as ← as.mapM fun t => do
+      let (γ, e) ← translateTerm t
+      expectString γ
+      return e
+    return (mkString, as.foldl (mkApp2 mkStringAppend) (mkApp2 mkStringAppend a b))
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
