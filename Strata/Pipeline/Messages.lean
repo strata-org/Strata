@@ -68,8 +68,13 @@ inductive MessageImpact where
   | configurationError
   deriving BEq, DecidableEq, Hashable, Ord, Repr
 
-/-- Whether this impact level represents an error (vs a warning). -/
-def MessageImpact.isError : MessageImpact → Bool
+/--
+Whether this impact level typically warrants aborting the pipeline.
+
+N.B. Pipeline steps may want a custom abort strategy rather than
+relying on this predicate.
+-/
+def MessageImpact.isFatal : MessageImpact → Bool
   | .internalError => true
   | .configurationError => true
   | .internalWarning => false
@@ -587,7 +592,7 @@ public def addMessage (msg : Pipeline.PipelineMessage) : Pipeline.PipelineM Unit
     fields := fields ++ [("start", .num msg.loc.start.byteIdx), ("stop", .num msg.loc.stop.byteIdx)]
   ctx.emitMetric (Lean.Json.mkObj fields)
   if ctx.outputMode == .verbose then
-    let tag := if msg.kind.impact.isError then "error" else "warning"
+    let tag := toString msg.kind.impact
     let indent := String.replicate ((msg.phase.depth - 1) * 2) ' '
     let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
 

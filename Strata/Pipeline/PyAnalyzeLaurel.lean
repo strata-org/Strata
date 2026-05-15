@@ -61,7 +61,7 @@ private def runPipeline (config : PyAnalyzeConfig)
       let phase ← getPhase
       for msg in PipelineMessage.fromDiagnostics phase diags do
         addMessage msg
-        if msg.kind.impact.isError then throw ()
+        if msg.kind.impact.isFatal then throw ()
       match coreOpt with
       | some core => pure (core, stats)
       | none =>

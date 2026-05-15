@@ -151,7 +151,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
     for msg in errors do
       Pipeline.addMessage msg
-      if msg.kind.impact.isError then throw ()
+      if msg.kind.impact.isFatal then throw ()
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     allExhaustiveClasses := exhaustiveClasses.fold (init := allExhaustiveClasses) fun s name => s.insert name
@@ -223,7 +223,7 @@ private def readDispatchOverloadsM
     let (overloads, errors) := Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     for msg in errors do
       Pipeline.addMessage msg
-      if msg.kind.impact.isError then throw ()
+      if msg.kind.impact.isFatal then throw ()
     tbl := mergeOverloads tbl overloads
   return tbl
 
