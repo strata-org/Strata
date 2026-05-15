@@ -66,7 +66,7 @@ def typeAsStaticCall := r"
 composite Foo { }
 procedure bar() opaque {
   var x: int := Foo()
-//              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, constant
+//              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, datatype destructor, constant
 };
 "
 

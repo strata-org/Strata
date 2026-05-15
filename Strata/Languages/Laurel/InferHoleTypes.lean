@@ -37,21 +37,18 @@ private def inferComparisonArgType (model : SemanticModel) (args : List StmtExpr
 
 /-- Get the expected type for each argument of a call from the callee's parameter list.
 
-    For datatype destructors like `Any..as_ListAny!` or testers like `Any..isfrom_str`,
-    the callee is registered as `.parameter` or `.datatypeConstructor` in the model,
-    so we cannot read a full parameter list from it. These are unary and their single
-    input is the datatype itself, which we recover from the callee's textual prefix
-    (the part before `..`). -/
+    Auto-generated datatype destructors (`TypeName..fieldName[!]`) and testers
+    (`TypeName..isCtor`) are unary, taking the datatype itself as their single
+    input. Their `ResolvedNode` (`.datatypeDestructor` / `.datatypeConstructor`)
+    carries the resolved type Identifier (with its `uniqueId`), so we can
+    construct the input `HighType` directly without falling back to textual
+    decoding of the override name. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
   match model.get callee with
   | .staticProcedure proc => some (proc.inputs.map (·.type))
-  | .parameter _ | .datatypeConstructor .. =>
-    -- Auto-generated datatype destructor/tester: `TypeName..fieldOrCtor[!]`.
-    -- The single input is the datatype (first segment before `..`).
-    match callee.text.splitOn ".." with
-    | typeName :: _ :: _ =>
-      some [⟨.UserDefined { text := typeName }, none⟩]
-    | _ => none
+  | .datatypeConstructor typeName _
+  | .datatypeDestructor typeName _ =>
+      some [⟨.UserDefined typeName, callee.source⟩]
   | _ => none
 
 inductive InferHoleTypesStats where
