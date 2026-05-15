@@ -423,6 +423,19 @@ private def typeMismatch (source : Option FileRange) (expected : String) (actual
   let diag := diagnosticFromSource source s!"Type mismatch: expected {expected}, but got '{actualStr}'"
   modify fun s => { s with errors := s.errors.push diag }
 
+/-- Subtyping. Stub: structural equality via `highEq`.
+    TODO: To be replaced with a real check that walks `extending` chains for composites, unfolds aliases, and unwraps constrained types to their base. -/
+private def isSubtype (sub sup : HighTypeMd) : Bool := highEq sub sup
+
+/-- Gradual consistency-subtyping (Siek–Taha style): `Unknown` is the dynamic
+    type and is consistent with everything in either direction. `TCore` is a
+    migration escape hatch and is bivariantly compatible for now. -/
+private def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
+  match sub.val, sup.val with
+  | .Unknown, _ | _, .Unknown => true
+  | .TCore _, _ | _, .TCore _ => true
+  | _, _ => isSubtype sub sup
+
 /-- Check that a type is boolean, emitting a diagnostic if not. -/
 private def checkBool (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
   match ty.val with
@@ -503,38 +516,41 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
 
-def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
+def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
   match _: exprMd with
   | AstNode.mk expr source =>
   let (val', ty) ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
-    let (cond', condTy) ← resolveStmtExpr cond
+    let (cond', condTy) ← synthStmtExpr cond
     checkBool cond'.source condTy
-    let (thenBr', thenTy) ← resolveStmtExpr thenBr
+    let (thenBr', thenTy) ← synthStmtExpr thenBr
     let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
+      let (e', _) ← synthStmtExpr a.val; pure e')
     pure (.IfThenElse cond' thenBr' elseBr', thenTy)
   | .Block stmts label =>
+    -- Synth-mode block: non-last statements have their synthesized type discarded
+    -- (lax rule, matches Java/Python/JS expression-statement semantics).
+    -- The last statement's synthesized type becomes the block's type.
     withScope do
-      let results ← stmts.mapM resolveStmtExpr
+      let results ← stmts.mapM synthStmtExpr
       let stmts' := results.map (·.1)
       let lastTy := match results.getLast? with
         | some (_, ty) => ty
         | none => { val := .TVoid, source := source }
       pure (.Block stmts' label, lastTy)
   | .While cond invs dec body =>
-    let (cond', condTy) ← resolveStmtExpr cond
+    let (cond', condTy) ← synthStmtExpr cond
     checkBool cond'.source condTy
     let invs' ← invs.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
+      let (e', _) ← synthStmtExpr a.val; pure e')
     let dec' ← dec.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
-    let (body', _) ← resolveStmtExpr body
+      let (e', _) ← synthStmtExpr a.val; pure e')
+    let (body', _) ← synthStmtExpr body
     pure (.While cond' invs' dec' body', { val := .TVoid, source := source })
   | .Exit target => pure (.Exit target, { val := .TVoid, source := source })
   | .Return val => do
     let val' ← val.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
+      let (e', _) ← synthStmtExpr a.val; pure e')
     pure (.Return val', { val := .TVoid, source := source })
   | .LiteralInt v => pure (.LiteralInt v, { val := .TInt, source := source })
   | .LiteralBool v => pure (.LiteralBool v, { val := .TBool, source := source })
@@ -556,14 +572,14 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
         let ref' ← resolveRef ref source
         pure (⟨.Local ref', vs⟩ : VariableMd)
       | .Field target fieldName =>
-        let (target', _) ← resolveStmtExpr target
+        let (target', _) ← synthStmtExpr target
         let fieldName' ← resolveFieldRef target' fieldName source
         pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
       | .Declare param =>
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-    let (value', valueTy) ← resolveStmtExpr value
+    let (value', valueTy) ← synthStmtExpr value
     -- Check that LHS target count matches the RHS arity (derived from the value type).
     let expectedOutputCount := match valueTy.val with
       | .MultiValuedExpr tys => tys.length
@@ -593,19 +609,19 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
         checkAssignable source tTy valueTy
     pure (.Assign targets' value', valueTy)
   | .Var (.Field target fieldName) =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
     let ty ← getVarType fieldName
     pure (.Var (.Field target' fieldName'), ty)
   | .PureFieldUpdate target fieldName newVal =>
-    let (target', targetTy) ← resolveStmtExpr target
+    let (target', targetTy) ← synthStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    let (newVal', _) ← resolveStmtExpr newVal
+    let (newVal', _) ← synthStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
-    let results ← args.mapM resolveStmtExpr
+    let results ← args.mapM synthStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
@@ -614,7 +630,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
       checkAssignable source paramTy argTy
     pure (.StaticCall callee' args', retTy)
   | .PrimitiveOp op args =>
-    let results ← args.mapM resolveStmtExpr
+    let results ← args.mapM synthStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let resultTy := match op with
@@ -652,22 +668,22 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
     pure (.New ref', ty)
   | .This => pure (.This, { val := .Unknown, source := source })
   | .ReferenceEquals lhs rhs =>
-    let (lhs', _) ← resolveStmtExpr lhs
-    let (rhs', _) ← resolveStmtExpr rhs
+    let (lhs', _) ← synthStmtExpr lhs
+    let (rhs', _) ← synthStmtExpr rhs
     pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let ty' ← resolveHighType ty
     pure (.AsType target' ty', ty')
   | .IsType target ty =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let ty' ← resolveHighType ty
     pure (.IsType target' ty', { val := .TBool, source := source })
   | .InstanceCall target callee args =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let callee' ← resolveRef callee source
       (expected := #[.instanceProcedure, .staticProcedure])
-    let results ← args.mapM resolveStmtExpr
+    let results ← args.mapM synthStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
@@ -681,32 +697,32 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
       let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; do
-        let (e', _) ← resolveStmtExpr pv.val; pure e')
-      let (body', _) ← resolveStmtExpr body
+        let (e', _) ← synthStmtExpr pv.val; pure e')
+      let (body', _) ← synthStmtExpr body
       pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
   | .Assigned name =>
-    let (name', _) ← resolveStmtExpr name
+    let (name', _) ← synthStmtExpr name
     pure (.Assigned name', { val := .TBool, source := source })
   | .Old val =>
-    let (val', valTy) ← resolveStmtExpr val
+    let (val', valTy) ← synthStmtExpr val
     pure (.Old val', valTy)
   | .Fresh val =>
-    let (val', _) ← resolveStmtExpr val
+    let (val', _) ← synthStmtExpr val
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
-    let (cond', condTy) ← resolveStmtExpr condExpr
+    let (cond', condTy) ← synthStmtExpr condExpr
     checkBool cond'.source condTy
     pure (.Assert { condition := cond', summary }, { val := .TVoid, source := source })
   | .Assume cond =>
-    let (cond', condTy) ← resolveStmtExpr cond
+    let (cond', condTy) ← synthStmtExpr cond
     checkBool cond'.source condTy
     pure (.Assume cond', { val := .TVoid, source := source })
   | .ProveBy val proof =>
-    let (val', valTy) ← resolveStmtExpr val
-    let (proof', _) ← resolveStmtExpr proof
+    let (val', valTy) ← synthStmtExpr val
+    let (proof', _) ← synthStmtExpr proof
     pure (.ProveBy val' proof', valTy)
   | .ContractOf ty fn =>
-    let (fn', _) ← resolveStmtExpr fn
+    let (fn', _) ← synthStmtExpr fn
     pure (.ContractOf ty fn', { val := .Unknown, source := source })
   | .Abstract => pure (.Abstract, { val := .Unknown, source := source })
   | .All => pure (.All, { val := .Unknown, source := source })
@@ -721,8 +737,45 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
 
 /-- Resolve a statement expression, discarding the synthesized type.
     Use when only the resolved expression is needed (invariants, decreases, etc.). -/
-private def resolveStmtExprExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
-  let (e', _) ← resolveStmtExpr e; pure e'
+private def synthStmtExprExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let (e', _) ← synthStmtExpr e; pure e'
+
+/-- Check-mode resolution: resolve `e` and verify its type is a consistent
+    subtype of `expected`. Bidirectional rules for individual constructs push
+    `expected` into subexpressions; everything else falls back to subsumption
+    (synth, then `isConsistentSubtype actual expected`). -/
+def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd := do
+  match _: exprMd with
+  | AstNode.mk expr source =>
+  match _: expr with
+  | .Block stmts label =>
+    -- Bespoke check rule: discard non-last statement types (lax), push
+    -- `expected` into the last statement. Empty block reduces to subsumption
+    -- of TVoid against `expected`.
+    -- The init traversal calls `synthStmtExpr`, a different function, so it
+    -- needs no termination proof; only the recursive `checkStmtExpr last`
+    -- call needs `last ∈ stmts`, supplied by `List.mem_of_getLast?`.
+    withScope do
+      let init' ← stmts.dropLast.mapM (fun s => do
+        let (s', _) ← synthStmtExpr s; pure s')
+      match _lastResult: stmts.getLast? with
+      | none =>
+        let tvoid : HighTypeMd := { val := .TVoid, source := source }
+        unless isConsistentSubtype tvoid expected do
+          typeMismatch source (formatType expected) tvoid
+        pure { val := .Block init' label, source := source }
+      | some last =>
+        have := List.mem_of_getLast? _lastResult
+        let last' ← checkStmtExpr last expected
+        pure { val := .Block (init' ++ [last']) label, source := source }
+  | _ =>
+    -- Subsumption fallback: synth then check `actual <: expected`.
+    let (e', actual) ← synthStmtExpr exprMd
+    unless isConsistentSubtype actual expected do
+      typeMismatch source (formatType expected) actual
+    pure e'
+  termination_by exprMd
+  decreasing_by all_goals term_by_mem
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
@@ -734,15 +787,15 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
 def resolveBody (body : Body) : ResolveM (Body × HighTypeMd) := do
   match body with
   | .Transparent b =>
-    let (b', ty) ← resolveStmtExpr b
+    let (b', ty) ← synthStmtExpr b
     return (.Transparent b', ty)
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExprExpr)
-    let impl' ← impl.mapM resolveStmtExprExpr
-    let mods' ← mods.mapM resolveStmtExprExpr
+    let posts' ← posts.mapM (·.mapM synthStmtExprExpr)
+    let impl' ← impl.mapM synthStmtExprExpr
+    let mods' ← mods.mapM synthStmtExprExpr
     return (.Opaque posts' impl' mods', { val := .TVoid, source := none })
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExprExpr)
+    let posts' ← posts.mapM (·.mapM synthStmtExprExpr)
     return (.Abstract posts', { val := .TVoid, source := none })
   | .External => return (.External, { val := .TVoid, source := none })
 
@@ -752,8 +805,8 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExprExpr)
-    let dec' ← proc.decreases.mapM resolveStmtExprExpr
+    let pres' ← proc.preconditions.mapM (·.mapM synthStmtExprExpr)
+    let dec' ← proc.decreases.mapM synthStmtExprExpr
     let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -767,7 +820,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
         if bodyTy.val != HighType.TVoid then
           checkAssignable proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM resolveStmtExprExpr
+    let invokeOn' ← proc.invokeOn.mapM synthStmtExprExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
@@ -793,8 +846,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExprExpr)
-    let dec' ← proc.decreases.mapM resolveStmtExprExpr
+    let pres' ← proc.preconditions.mapM (·.mapM synthStmtExprExpr)
+    let dec' ← proc.decreases.mapM synthStmtExprExpr
     let (body', bodyTy) ← resolveBody proc.body
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
@@ -807,7 +860,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
         if bodyTy.val != HighType.TVoid then
           checkAssignable proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM resolveStmtExprExpr
+    let invokeOn' ← proc.invokeOn.mapM synthStmtExprExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -849,8 +902,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- in scope when resolving the constraint and witness expressions.
     let (valueName', constraint', witness') ← withScope do
       let valueName' ← defineNameCheckDup ct.valueName (.quantifierVar ct.valueName base')
-      let (constraint', _) ← resolveStmtExpr ct.constraint
-      let (witness', _) ← resolveStmtExpr ct.witness
+      let (constraint', _) ← synthStmtExpr ct.constraint
+      let (witness', _) ← synthStmtExpr ct.witness
       return (valueName', constraint', witness')
     return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
@@ -876,11 +929,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
-  let init' ← c.initializer.mapM fun e => do
-    let (e', eTy) ← resolveStmtExpr e
-    if eTy.val != HighType.TVoid then
-      checkAssignable e'.source ty' eTy
-    pure e'
+  let init' ← c.initializer.mapM (checkStmtExpr · ty')
   let name' ← resolveRef c.name
   return { name := name', type := ty', initializer := init' }
 
