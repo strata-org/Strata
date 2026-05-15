@@ -250,7 +250,26 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 but still calls a legacy helper (`checkBool` / `checkNumeric` / `checkAssignable`) instead of
 going through `checkStmtExpr`; functionally equivalent under `<:`.
 
-### Sub (subsumption)
+### Index
+
+- *Subsumption* — Sub
+- *Literals* — Lit-Int, Lit-Bool, Lit-String, Lit-Decimal
+- *Variables* — Var-Local, Var-Field, Var-Declare
+- *Control flow* — If-NoElse, If-Synth, If-Check (planned); Block-Synth, Block-Synth-Empty,
+  Block-Check, Block-Check-Empty; Exit; Return-None, Return-Some, Return-Some-Checked
+  (planned); While
+- *Verification statements* — Assert, Assume
+- *Assignment* — Assign-Single, Assign-Multi
+- *Calls* — Static-Call, Static-Call-Multi, Instance-Call
+- *Primitive operations* — Op-Bool, Op-Cmp, Op-Eq, Op-Arith, Op-Concat (planned)
+- *Object forms* — New-Ok, New-Fallback; AsType; IsType; RefEq; PureFieldUpdate
+- *Verification expressions* — Quantifier, Assigned, Old, Fresh, ProveBy
+- *Untyped forms* — This; Abstract / All / ContractOf
+- *Holes* — Hole-Some, Hole-None-Synth, Hole-None-Check (planned)
+
+### Subsumption
+
+#### Sub
 
 ```
 Γ ⊢ e ⇒ A      A <: B
@@ -260,35 +279,39 @@ going through `checkStmtExpr`; functionally equivalent under `<:`.
 
 Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
 
-### LiteralInt
+### Literals
+
+#### Lit-Int
 
 ```
 ──────────────────────────  (Lit-Int, impl)
  Γ ⊢ LiteralInt n ⇒ TInt
 ```
 
-### LiteralBool
+#### Lit-Bool
 
 ```
 ───────────────────────────  (Lit-Bool, impl)
  Γ ⊢ LiteralBool b ⇒ TBool
 ```
 
-### LiteralString
+#### Lit-String
 
 ```
 ─────────────────────────────────  (Lit-String, impl)
  Γ ⊢ LiteralString s ⇒ TString
 ```
 
-### LiteralDecimal
+#### Lit-Decimal
 
 ```
 ──────────────────────────────────  (Lit-Decimal, impl)
  Γ ⊢ LiteralDecimal d ⇒ TReal
 ```
 
-### Var (.Local)
+### Variables
+
+#### Var-Local
 
 ```
         Γ(x) = T
@@ -296,7 +319,7 @@ Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
  Γ ⊢ Var (.Local x) ⇒ T
 ```
 
-### Var (.Field)
+#### Var-Field
 
 ```
   Γ ⊢ e ⇒ _      Γ(f) = T_f
@@ -307,7 +330,7 @@ Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
 Resolution looks `f` up against the type of `e` (or the enclosing instance type for
 `self.f`); the typing rule itself is path-agnostic.
 
-### Var (.Declare)
+#### Var-Declare
 
 ```
   x ∉ dom(Γ)
@@ -318,100 +341,125 @@ Resolution looks `f` up against the type of `e` (or the enclosing instance type 
 `⊣ Γ, x : T` records that the surrounding `Γ` is extended with the new binding for the
 remainder of the enclosing scope.
 
-### IfThenElse
+### Control flow
+
+#### If-NoElse
 
 ```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇒ T
 ─────────────────────────────────────────────  (If-NoElse, impl)
  Γ ⊢ IfThenElse cond thenBr none ⇒ TVoid
+```
 
+The construct synthesizes {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no
+value when `cond` is false; without this, `x : int := if c then 5` would type-check
+spuriously.
 
+#### If-Synth
+
+```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇒ T_t      Γ ⊢ elseBr ⇒ T_e
 ──────────────────────────────────────────────────────────────  (If-Synth, impl)
  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇒ T_t
+```
 
+Picks the then-branch type arbitrarily; the two branches are *not* compared, since a
+statement-position `if` often pairs a value branch with a `return`/`exit`/`assert`. The
+enclosing `checkAssignable` or Sub provides the actual check downstream.
 
+#### If-Check
+
+```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇐ T      Γ ⊢ elseBr ⇐ T
 ──────────────────────────────────────────────────────────  (If-Check, planned)
  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T
 ```
 
-If-NoElse uses {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no value when
-`cond` is false; without it, `x : int := if c then 5` would type-check spuriously.
-
-If-Synth picks the then-branch arbitrarily and does *not* compare branches: a statement-
-position `if` often pairs a value branch with a `return`/`exit`/`assert`. The surrounding
-context's `checkAssignable` or Sub provides the actual check downstream.
-
-### Block
+#### Block-Synth
 
 ```
 Γ_0 = Γ      Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i  (1 ≤ i < n)      Γ_{n-1} ⊢ s_n ⇒ T
 ───────────────────────────────────────────────────────────────────────────  (Block-Synth, impl)
  Γ ⊢ Block [s_1; …; s_n] label ⇒ T
-
-
-─────────────────────────────  (Block-Synth-Empty, impl)
- Γ ⊢ Block [] label ⇒ TVoid
-
-
-Γ_0 = Γ      Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i  (1 ≤ i < n)      Γ_{n-1} ⊢ s_n ⇐ T
-───────────────────────────────────────────────────────────────────────────  (Block-Check, impl)
- Γ ⊢ Block [s_1; …; s_n] label ⇐ T
-
-
-  TVoid <: T
-─────────────────────────  (Block-Check-Empty, impl)
- Γ ⊢ Block [] label ⇐ T
 ```
 
-The notation `Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i` says each statement is resolved in the scope produced
-by its predecessor and may itself extend the scope (`Var (.Declare …)` does); the
-`Γ_{n-1}` that types `s_n` is the scope after all earlier declarations. Bindings introduced
-inside the block don't escape — `Γ` is what surrounds the block.
+`Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i` says each statement is resolved in the scope produced by its
+predecessor and may itself extend it (`Var (.Declare …)` does); `s_n` is typed in
+`Γ_{n-1}`. Bindings introduced inside the block don't escape — `Γ` is what surrounds the
+block.
 
 Non-last statements are synthesized but their types discarded (the lax rule). This matches
 Java/Python/JS where `f(x);` is normal even when `f` returns a value. The trade-off: `5;`
 is silently accepted; flagging it belongs to a lint.
 
-Check mode pushes `T` into the *last* statement instead of comparing the block's
-synthesized type at the boundary. Errors then fire at the offending subexpression, and `T`
-keeps propagating through nested {name Strata.Laurel.StmtExpr.Block}`Block` /
+#### Block-Synth-Empty
+
+```
+─────────────────────────────  (Block-Synth-Empty, impl)
+ Γ ⊢ Block [] label ⇒ TVoid
+```
+
+#### Block-Check
+
+```
+Γ_0 = Γ      Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i  (1 ≤ i < n)      Γ_{n-1} ⊢ s_n ⇐ T
+───────────────────────────────────────────────────────────────────────────  (Block-Check, impl)
+ Γ ⊢ Block [s_1; …; s_n] label ⇐ T
+```
+
+Pushes `T` into the *last* statement rather than comparing the block's synthesized type at
+the boundary. Errors fire at the offending subexpression, and `T` keeps propagating through
+nested {name Strata.Laurel.StmtExpr.Block}`Block` /
 {name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse` /
 {name Strata.Laurel.StmtExpr.Hole}`Hole` /
 {name Strata.Laurel.StmtExpr.Quantifier}`Quantifier`.
 
-### Exit
+#### Block-Check-Empty
+
+```
+  TVoid <: T
+─────────────────────────  (Block-Check-Empty, impl)
+ Γ ⊢ Block [] label ⇐ T
+```
+
+#### Exit
 
 ```
 ────────────────────────  (Exit, impl)
  Γ ⊢ Exit target ⇒ TVoid
 ```
 
-### Return
+#### Return-None
 
 ```
 ─────────────────────────────  (Return-None, impl)
  Γ ⊢ Return none ⇒ TVoid
+```
 
+#### Return-Some
 
+```
       Γ ⊢ e ⇒ _
 ──────────────────────────────  (Return-Some, impl)
  Γ ⊢ Return (some e) ⇒ TVoid
+```
 
+The value's synthesized type is currently discarded, so `return 0` in a `bool`-returning
+procedure isn't caught. Replaced by Return-Some-Checked once the expected return type is
+threaded through {name Strata.Laurel.ResolveState}`ResolveState`.
 
+#### Return-Some-Checked
+
+```
   Γ_proc.outputs = [T]      Γ ⊢ e ⇐ T
 ──────────────────────────────────────  (Return-Some-Checked, planned)
        Γ ⊢ Return (some e) ⇒ TVoid
 ```
 
-`Return-Some` currently throws away the value's type, so `return 0` in a `bool`-returning
-procedure isn't caught. The planned rule threads the expected return type through
-{name Strata.Laurel.ResolveState}`ResolveState` (set from `proc.outputs` in
-{name Strata.Laurel.resolveProcedure}`resolveProcedure` /
-{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure`).
+Set from `proc.outputs` in {name Strata.Laurel.resolveProcedure}`resolveProcedure` /
+{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure`.
 
-### While
+#### While
 
 ```
   Γ ⊢ cond ⇐ TBool      Γ ⊢ invs_i ⇐ TBool      Γ ⊢ dec ⇐ ?      Γ ⊢ body ⇒ _
@@ -419,10 +467,12 @@ procedure isn't caught. The planned rule threads the expected return type throug
                   Γ ⊢ While cond invs dec body ⇒ TVoid
 ```
 
-`dec` (the optional decreases clause) is currently resolved without a type check; the
-intended target is a numeric type, not yet enforced.
+`dec` (the optional decreases clause) is resolved without a type check today; the intended
+target is a numeric type.
 
-### Assert
+### Verification statements
+
+#### Assert
 
 ```
        Γ ⊢ cond ⇐ TBool
@@ -430,7 +480,7 @@ intended target is a numeric type, not yet enforced.
    Γ ⊢ Assert cond ⇒ TVoid
 ```
 
-### Assume
+#### Assume
 
 ```
       Γ ⊢ cond ⇐ TBool
@@ -438,35 +488,45 @@ intended target is a numeric type, not yet enforced.
  Γ ⊢ Assume cond ⇒ TVoid
 ```
 
-### Assign
+### Assignment
+
+#### Assign-Single
 
 ```
   Γ(x) = T_x      Γ ⊢ e ⇒ T_e      T_e <: T_x
 ───────────────────────────────────────────────  (Assign-Single, impl-ish)
             Γ ⊢ Assign [x] e ⇒ TVoid
+```
 
+#### Assign-Multi
 
+```
   Γ ⊢ targets_i = x_i      Γ(x_i) = T_i      Γ ⊢ e ⇒ MultiValuedExpr Us      |Ts| = |Us|      U_i <: T_i
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────  (Assign-Multi, impl-ish)
                                   Γ ⊢ Assign targets e ⇒ TVoid
 ```
 
-### StaticCall
+### Calls
+
+#### Static-Call
 
 ```
   Γ(callee) = static-procedure with inputs Ts and outputs [T]
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise)
 ─────────────────────────────────────────────────────────────  (Static-Call, impl-ish)
               Γ ⊢ StaticCall callee args ⇒ T
+```
 
+#### Static-Call-Multi
 
+```
   Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n], n ≠ 1
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise)
 ──────────────────────────────────────────────────────────────────────────────────  (Static-Call-Multi, impl-ish)
        Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
 ```
 
-### InstanceCall
+#### Instance-Call
 
 ```
   Γ ⊢ target ⇒ _      Γ(callee) = instance-procedure with inputs [self; Ts] and outputs [T]
@@ -475,7 +535,13 @@ intended target is a numeric type, not yet enforced.
                        Γ ⊢ InstanceCall target callee args ⇒ T
 ```
 
-### PrimitiveOp (logical)
+### Primitive operations
+
+`Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
+{name Strata.Laurel.HighType.TReal}`TReal`,
+{name Strata.Laurel.HighType.TFloat64}`TFloat64`".
+
+#### Op-Bool
 
 ```
   Γ ⊢ args_i ⇐ TBool                              op ∈ {And, Or, AndThen, OrElse, Not, Implies}
@@ -483,7 +549,7 @@ intended target is a numeric type, not yet enforced.
  Γ ⊢ PrimitiveOp op args ⇒ TBool
 ```
 
-### PrimitiveOp (comparison)
+#### Op-Cmp
 
 ```
   Γ ⊢ args_i ⇐ Numeric                            op ∈ {Lt, Leq, Gt, Geq}
@@ -491,11 +557,7 @@ intended target is a numeric type, not yet enforced.
  Γ ⊢ PrimitiveOp op args ⇒ TBool
 ```
 
-`Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
-{name Strata.Laurel.HighType.TReal}`TReal`,
-{name Strata.Laurel.HighType.TFloat64}`TFloat64`".
-
-### PrimitiveOp (equality)
+#### Op-Eq
 
 ```
   Γ ⊢ lhs ⇒ T_l      Γ ⊢ rhs ⇒ T_r      T_l <: T_r ∨ T_r <: T_l                op ∈ {Eq, Neq}
@@ -503,7 +565,7 @@ intended target is a numeric type, not yet enforced.
             Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
 ```
 
-### PrimitiveOp (arithmetic)
+#### Op-Arith
 
 ```
   Γ ⊢ args_i ⇐ Numeric      Γ ⊢ args.head ⇒ T                op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
@@ -515,7 +577,7 @@ intended target is a numeric type, not yet enforced.
 etc. without unification. Known relaxation: `int + real` passes (each operand individually
 passes `Numeric`); a proper fix needs numeric promotion or unification.
 
-### PrimitiveOp (string concatenation)
+#### Op-Concat
 
 ```
   Γ ⊢ args_i ⇐ TString                            op = StrConcat
@@ -525,20 +587,25 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 
 Operand check not yet implemented — `StrConcat` accepts any operands today.
 
-### New
+### Object forms
+
+#### New-Ok
 
 ```
   Γ(ref) is a composite or datatype T
 ──────────────────────────────────────────  (New-Ok, impl)
        Γ ⊢ New ref ⇒ UserDefined T
+```
 
+#### New-Fallback
 
+```
   Γ(ref) is not a composite or datatype
 ─────────────────────────────────────────  (New-Fallback, impl)
         Γ ⊢ New ref ⇒ Unknown
 ```
 
-### AsType
+#### AsType
 
 ```
       Γ ⊢ target ⇒ _
@@ -548,7 +615,7 @@ Operand check not yet implemented — `StrConcat` accepts any operands today.
 
 `target` is resolved but not checked against `T` — the cast is the user's claim.
 
-### IsType
+#### IsType
 
 ```
        Γ ⊢ target ⇒ _
@@ -556,7 +623,7 @@ Operand check not yet implemented — `StrConcat` accepts any operands today.
  Γ ⊢ IsType target T ⇒ TBool
 ```
 
-### ReferenceEquals
+#### RefEq
 
 ```
         Γ ⊢ lhs ⇒ _      Γ ⊢ rhs ⇒ _
@@ -564,7 +631,17 @@ Operand check not yet implemented — `StrConcat` accepts any operands today.
  Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
 ```
 
-### Quantifier
+#### PureFieldUpdate
+
+```
+       Γ ⊢ target ⇒ T_t      Γ ⊢ newVal ⇒ _
+───────────────────────────────────────────────  (PureFieldUpdate, impl)
+   Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t
+```
+
+### Verification expressions
+
+#### Quantifier
 
 ```
   Γ, x : T ⊢ body ⇒ _
@@ -574,7 +651,7 @@ Operand check not yet implemented — `StrConcat` accepts any operands today.
 
 The bound variable `x : T` is introduced in scope only for the body (and trigger).
 
-### Assigned
+#### Assigned
 
 ```
        Γ ⊢ name ⇒ _
@@ -582,7 +659,7 @@ The bound variable `x : T` is introduced in scope only for the body (and trigger
  Γ ⊢ Assigned name ⇒ TBool
 ```
 
-### Old
+#### Old
 
 ```
    Γ ⊢ v ⇒ T
@@ -590,7 +667,7 @@ The bound variable `x : T` is introduced in scope only for the body (and trigger
  Γ ⊢ Old v ⇒ T
 ```
 
-### Fresh
+#### Fresh
 
 ```
      Γ ⊢ v ⇒ _
@@ -598,7 +675,7 @@ The bound variable `x : T` is introduced in scope only for the body (and trigger
  Γ ⊢ Fresh v ⇒ TBool
 ```
 
-### ProveBy
+#### ProveBy
 
 ```
    Γ ⊢ v ⇒ T      Γ ⊢ proof ⇒ _
@@ -606,47 +683,49 @@ The bound variable `x : T` is introduced in scope only for the body (and trigger
        Γ ⊢ ProveBy v proof ⇒ T
 ```
 
-### PureFieldUpdate
+### Untyped forms
 
-```
-       Γ ⊢ target ⇒ T_t      Γ ⊢ newVal ⇒ _
-───────────────────────────────────────────────  (PureFieldUpdate, impl)
-   Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t
-```
-
-### This
+#### This
 
 ```
 ──────────────────────────  (This, impl)
    Γ ⊢ This ⇒ Unknown
 ```
 
-### Abstract / All / ContractOf
+#### Abstract / All / ContractOf
 
 ```
 ─────────────────────────────────────────────  (Abstract / All / ContractOf, impl)
  Γ ⊢ Abstract / All / ContractOf … ⇒ Unknown
 ```
 
-### Hole
+### Holes
+
+#### Hole-Some
 
 ```
 ────────────────────────────  (Hole-Some, impl)
  Γ ⊢ Hole d (some T) ⇒ T
+```
 
+#### Hole-None-Synth
 
+```
 ─────────────────────────────────  (Hole-None-Synth, impl)
    Γ ⊢ Hole d none ⇒ Unknown
+```
 
+#### Hole-None-Check
 
+```
        Unknown <: T
 ─────────────────────────  (Hole-None-Check, planned)
  Γ ⊢ Hole d none ⇐ T
 ```
 
 In check mode today, `Hole d none ⇐ T` reduces to subsumption (`Unknown <: T`, which always
-holds). The planned bespoke rule would record the inferred `T` on the hole node so
-downstream passes can see it, instead of leaving `none` until the hole-inference pass.
+holds). The planned rule would record the inferred `T` on the hole node so downstream
+passes can see it, instead of leaving `none` until the hole-inference pass.
 
 # Translation Pipeline
 
