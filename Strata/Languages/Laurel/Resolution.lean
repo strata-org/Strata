@@ -764,8 +764,31 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let (proof', _) ← synthStmtExpr proof
     pure (.ProveBy val' proof', valTy)
   | .ContractOf ty fn =>
+    -- `fn` must be a direct identifier reference resolving to a procedure.
+    -- Anything else (arbitrary expressions, references to non-procedures) is
+    -- ill-formed: a contract belongs to a *named* procedure.
     let (fn', _) ← synthStmtExpr fn
-    pure (.ContractOf ty fn', { val := .Unknown, source := source })
+    let s ← get
+    let fnIsProcRef : Bool := match fn'.val with
+      | .Var (.Local ref) =>
+        match s.scope.get? ref.text with
+        | some (_, node) =>
+          node.kind == .staticProcedure ||
+          node.kind == .instanceProcedure ||
+          node.kind == .unresolved
+        | none => true  -- unresolved name already reported
+      | _ => false
+    unless fnIsProcRef do
+      let diag := diagnosticFromSource fn.source
+        "'contractOf' expected a procedure reference"
+      modify fun s => { s with errors := s.errors.push diag }
+    -- Result type: Bool for pre/postconditions, set of heap references for
+    -- reads/modifies. The element type of the set is left as Unknown for now
+    -- since the rule doesn't recover it from `fn`.
+    let resultTy : HighType := match ty with
+      | .Precondition | .PostCondition => .TBool
+      | .Reads | .Modifies => .TSet { val := .Unknown, source := none }
+    pure (.ContractOf ty fn', { val := resultTy, source := source })
   | .Abstract => pure (.Abstract, { val := .Unknown, source := source })
   | .All => pure (.All, { val := .Unknown, source := source })
   | .Hole det type => match type with

@@ -266,7 +266,8 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 - *Object forms* — New-Ok, New-Fallback; AsType; IsType; RefEq; PureFieldUpdate
 - *Verification expressions* — Quantifier, Assigned, Old, Fresh, ProveBy
 - *Self reference* — This-Inside, This-Outside
-- *Untyped forms* — Abstract / All / ContractOf
+- *Untyped forms* — Abstract / All
+- *ContractOf* — ContractOf-Bool, ContractOf-Set, ContractOf-Error
 - *Holes* — Hole-Some, Hole-None-Synth, Hole-None-Check (planned)
 
 ### Subsumption
@@ -669,9 +670,49 @@ types instead of being wildcarded through {name Strata.Laurel.HighType.Unknown}`
 ### Untyped forms
 
 ```
-─────────────────────────────────────────────  (Abstract / All / ContractOf, impl)
- Γ ⊢ Abstract / All / ContractOf … ⇒ Unknown
+─────────────────────────────────  (Abstract / All, impl)
+ Γ ⊢ Abstract / All … ⇒ Unknown
 ```
+
+### ContractOf
+
+`ContractOf ty fn` extracts a procedure's contract clause as a value: its preconditions
+(`Precondition`), postconditions (`PostCondition`), reads set (`Reads`), or modifies set
+(`Modifies`). `fn` must be a direct identifier reference to a procedure — a contract belongs
+to a *named* procedure, not an arbitrary expression.
+
+```
+  fn = Var (.Local id)      Γ(id) ∈ {staticProcedure, instanceProcedure}
+─────────────────────────────────────────────────────────────────────────  (ContractOf-Bool, impl)
+       Γ ⊢ ContractOf Precondition fn ⇒ TBool
+       Γ ⊢ ContractOf PostCondition fn ⇒ TBool
+
+
+  fn = Var (.Local id)      Γ(id) ∈ {staticProcedure, instanceProcedure}
+─────────────────────────────────────────────────────────────────────────  (ContractOf-Set, impl)
+       Γ ⊢ ContractOf Reads fn ⇒ TSet Unknown
+       Γ ⊢ ContractOf Modifies fn ⇒ TSet Unknown
+```
+
+`Precondition` and `PostCondition` are propositions, hence
+{name Strata.Laurel.HighType.TBool}`TBool`. `Reads` and `Modifies` are sets of heap-allocated
+locations — composite/datatype references and fields. The element type is left as
+{name Strata.Laurel.HighType.Unknown}`Unknown` for now since the rule doesn't yet recover it
+from `fn`'s declared modifies/reads clauses.
+
+```
+  fn is not a procedure reference
+─────────────────────────────────────────────  (ContractOf-Error, impl)
+   Γ ⊢ ContractOf … fn — error: "'contractOf' expected a procedure reference"
+```
+
+When `fn` doesn't resolve to a procedure (e.g. it's an arbitrary expression, or resolves to
+a constant/variable), the diagnostic fires and the construct synthesizes
+{name Strata.Laurel.HighType.Unknown}`Unknown` to suppress cascading errors.
+
+The constructor is reserved for future use — Laurel's grammar has no `contractOf`
+production today, and the translator emits "not yet implemented" for it. The typing rule
+exists so resolution remains exhaustive over `StmtExpr`.
 
 ### Holes
 
