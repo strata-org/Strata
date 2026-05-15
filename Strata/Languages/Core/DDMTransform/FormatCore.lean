@@ -684,23 +684,23 @@ partial def leqToExpr {M} [Inhabited M]
 
 partial def lappToExpr {M} [Inhabited M]
     (e : Lambda.LExpr CoreLParams.mono)
-    (qLevel : Nat) (acc : List (CoreDDM.Expr M) := [])
-    : ToCSTM M (CoreDDM.Expr M) :=
-  match e with
-  | .app _ (.app m fn e1) e2 => do
-    let e2Expr ← lexprToExpr e2 qLevel
-    lappToExpr (.app m fn e1) qLevel (e2Expr :: acc)
-  | .app _ (.op _ fn _) e1 => do
-    let e1Expr ← lexprToExpr e1 qLevel
-    lopToExpr fn.name (e1Expr :: acc)
-  | .app _ fn e1 => do
+    (qLevel : Nat)
+    : ToCSTM M (CoreDDM.Expr M) := do
+  let (head, args) := Lambda.getLFuncCall e
+  match head with
+  | .op _ fn _ =>
+    let argExprs ← args.mapM (lexprToExpr · qLevel)
+    lopToExpr fn.name argExprs
+  | .app _ fn arg =>
+    -- getLFuncCall couldn't decompose further (fn is not .app or .op)
     let fnCST ← lexprToExpr fn qLevel
-    let e1Expr ← lexprToExpr e1 qLevel
-    pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
-  | _ => do
-    -- Non-application head (e.g. lambda applied to arguments)
-    let eCST ← lexprToExpr e qLevel
-    pure <| acc.foldl (fun fnAcc arg => .app default fnAcc arg) eCST
+    let argCST ← lexprToExpr arg qLevel
+    let argExprs ← args.mapM (lexprToExpr · qLevel)
+    pure <| (argCST :: argExprs).foldl (fun fnAcc a => .app default fnAcc a) fnCST
+  | _ =>
+    let fnCST ← lexprToExpr head qLevel
+    let argExprs ← args.mapM (lexprToExpr · qLevel)
+    pure <| argExprs.foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
 end
 
 /-- Convert preconditions to CST spec elements -/
