@@ -336,17 +336,23 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bv ⟨32, .SafeNeg⟩ | .bv ⟨32, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv32 default) arg)
   | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
   -- Overflow predicates
-  | .bv ⟨w, .SNegOverflow⟩ =>
-    let bvTy := match w with
-      | 1 => CoreType.bv1 default | 8 => .bv8 default
-      | 16 => .bv16 default | 32 => .bv32 default
-      | _ => .bv64 default
+  | .bv ⟨w, .SNegOverflow⟩ => do
+    let bvTy ← match w with
+      | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
+      | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
+      | 64 => pure (.bv64 default)
+      | _ => do
+        ToCSTM.logError "handleUnaryOps" "unsupported width for SNegOverflow" (toString w)
+        pure (.bv64 default)
     pure (.bv_neg_overflow default bvTy arg)
-  | .bv ⟨w, .UNegOverflow⟩ =>
-    let bvTy := match w with
-      | 1 => CoreType.bv1 default | 8 => .bv8 default
-      | 16 => .bv16 default | 32 => .bv32 default
-      | _ => .bv64 default
+  | .bv ⟨w, .UNegOverflow⟩ => do
+    let bvTy ← match w with
+      | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
+      | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
+      | 64 => pure (.bv64 default)
+      | _ => do
+        ToCSTM.logError "handleUnaryOps" "unsupported width for UNegOverflow" (toString w)
+        pure (.bv64 default)
     pure (.bv_uneg_overflow default bvTy arg)
   -- Bitvector extract ops
   | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)

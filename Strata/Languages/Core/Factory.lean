@@ -936,7 +936,6 @@ def bv64Extract_31_0_Op  := bv64Extract_31_0_Func.opExpr
 def bv64Extract_15_0_Op  := bv64Extract_15_0_Func.opExpr
 def bv64Extract_7_0_Op   := bv64Extract_7_0_Func.opExpr
 
-
 def emptyTriggersOp : Expression.Expr := emptyTriggersFunc.opExpr
 def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
 def emptyTriggerGroupOp : Expression.Expr := emptyTriggerGroupFunc.opExpr
