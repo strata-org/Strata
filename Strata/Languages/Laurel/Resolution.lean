@@ -432,25 +432,6 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
   let diag := diagnosticFromSource source s!"{constructor}{problem}, got '{formatType actual}'"
   modify fun s => { s with errors := s.errors.push diag }
 
-/-- Subtyping. Stub: structural equality via `highEq`.
-    TODO: To be replaced with a real check that walks `extending` chains for composites, unfolds aliases, and unwraps constrained types to their base. -/
-private def isSubtype (sub sup : HighTypeMd) : Bool := highEq sub sup
-
-/-- Consistency (Siek–Taha): the symmetric gradual relation. `Unknown` is the
-    dynamic type and is consistent with everything; otherwise the relation
-    delegates to structural equality. `TCore` is a temporary migration
-    escape hatch. -/
-private def isConsistent (a b : HighTypeMd) : Bool :=
-  match a.val, b.val with
-  | .Unknown, _ | _, .Unknown => true
-  | .TCore _, _ | _, .TCore _ => true
-  | _, _ => highEq a b
-
-/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For the flat type
-    lattice this collapses to `sub ~ sup ∨ sub <: sup`. -/
-private def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
-  isConsistent sub sup || isSubtype sub sup
-
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
     `actual` is not a consistent subtype of `expected`. Used at sites where the
     actual type is already in hand (assignment, call args, body vs declared
