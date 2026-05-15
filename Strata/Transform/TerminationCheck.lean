@@ -71,10 +71,11 @@ private def validateStructuralParam (func : Function) (tf : @TypeFactory Unit)
     .error s!"recursive function '{func.name.name}': decreasing parameter index {idx} is out of range"
 
 /-- Determine the `DecreasesKind` for a recursive function, validating types
-    against the TypeFactory. -/
+    against the TypeFactory. This is the single source of truth for validating
+    ADT-valued (fvar) measures, which require TypeFactory information not
+    available during type checking in `FunctionType`. -/
 private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
     : Except String DecreasesKind := do
-  let casesIdx := FuncAttr.findInlineIfConstr func.attr
   match func.measure with
   | some (.fvar _ id _) =>
     match func.inputs.findWithIdx? id with
@@ -85,7 +86,7 @@ private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
   | some measure =>
     .ok (.intValued measure)
   | none =>
-    match casesIdx with
+    match FuncAttr.findInlineIfConstr func.attr with
     | some idx => validateStructuralParam func tf idx
     | none =>
       .error s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
@@ -234,6 +235,7 @@ private def mkTermCheckProc
     : Except String (Option (Decl × Nat)) := do
   let some body := func.body | return none
   let callerMeasure ← computeCallerMeasure func callerKind
+  -- Safe to use caller's kind: mixed mutual blocks are rejected in `termCheck`
   let needsNonNeg := match callerKind with
     | .intValued _ => true
     | .structural _ _ => false
