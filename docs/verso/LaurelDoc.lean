@@ -734,10 +734,9 @@ exists so resolution remains exhaustive over `StmtExpr`.
 In check mode, an untyped hole records the expected type `T` on the node directly. The
 subsumption check is trivial (`Unknown <: T` always holds), so this rule never fails — it
 just preserves the type information that's available at the check-mode boundary instead of
-discarding it. A separate
-{name Strata.Laurel.InferHoleTypes}`InferHoleTypes` pass still runs after resolution to
-annotate holes that ended up in synth-only positions; over time, as more constructs gain
-bespoke check rules, fewer holes will need that pass.
+discarding it. A separate `InferHoleTypes` pass still runs after resolution to annotate holes that ended
+up in synth-only positions; over time, as more constructs gain bespoke check rules, fewer
+holes will need that pass.
 
 # Translation Pipeline
 
