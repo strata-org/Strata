@@ -267,8 +267,6 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 
 ### Subsumption
 
-#### Sub
-
 ```
 Γ ⊢ e ⇒ A      A <: B
 ─────────────────────  (Sub, impl)
@@ -279,28 +277,20 @@ Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
 
 ### Literals
 
-#### Lit-Int
-
 ```
 ──────────────────────────  (Lit-Int, impl)
  Γ ⊢ LiteralInt n ⇒ TInt
 ```
-
-#### Lit-Bool
 
 ```
 ───────────────────────────  (Lit-Bool, impl)
  Γ ⊢ LiteralBool b ⇒ TBool
 ```
 
-#### Lit-String
-
 ```
 ─────────────────────────────────  (Lit-String, impl)
  Γ ⊢ LiteralString s ⇒ TString
 ```
-
-#### Lit-Decimal
 
 ```
 ──────────────────────────────────  (Lit-Decimal, impl)
@@ -309,15 +299,11 @@ Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
 
 ### Variables
 
-#### Var-Local
-
 ```
         Γ(x) = T
 ───────────────────────────  (Var-Local, impl)
  Γ ⊢ Var (.Local x) ⇒ T
 ```
-
-#### Var-Field
 
 ```
   Γ ⊢ e ⇒ _      Γ(f) = T_f
@@ -327,8 +313,6 @@ Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
 
 Resolution looks `f` up against the type of `e` (or the enclosing instance type for
 `self.f`); the typing rule itself is path-agnostic.
-
-#### Var-Declare
 
 ```
   x ∉ dom(Γ)
@@ -341,8 +325,6 @@ remainder of the enclosing scope.
 
 ### Control flow
 
-#### If-NoElse
-
 ```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇒ T
 ─────────────────────────────────────────────  (If-NoElse, impl)
@@ -352,8 +334,6 @@ remainder of the enclosing scope.
 The construct synthesizes {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no
 value when `cond` is false; without this, `x : int := if c then 5` would type-check
 spuriously.
-
-#### If-Synth
 
 ```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇒ T_t      Γ ⊢ elseBr ⇒ T_e
@@ -366,15 +346,11 @@ statement-position `if` often pairs a value branch with a `return`/`exit`/`asser
 enclosing context's check (Sub, or a containing `checkSubtype` like an assignment) provides
 the actual check downstream.
 
-#### If-Check
-
 ```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇐ T      Γ ⊢ elseBr ⇐ T
 ──────────────────────────────────────────────────────────  (If-Check, planned)
  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T
 ```
-
-#### Block-Synth
 
 ```
 Γ_0 = Γ      Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i  (1 ≤ i < n)      Γ_{n-1} ⊢ s_n ⇒ T
@@ -391,14 +367,10 @@ Non-last statements are synthesized but their types discarded (the lax rule). Th
 Java/Python/JS where `f(x);` is normal even when `f` returns a value. The trade-off: `5;`
 is silently accepted; flagging it belongs to a lint.
 
-#### Block-Synth-Empty
-
 ```
 ─────────────────────────────  (Block-Synth-Empty, impl)
  Γ ⊢ Block [] label ⇒ TVoid
 ```
-
-#### Block-Check
 
 ```
 Γ_0 = Γ      Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i  (1 ≤ i < n)      Γ_{n-1} ⊢ s_n ⇐ T
@@ -413,29 +385,21 @@ nested {name Strata.Laurel.StmtExpr.Block}`Block` /
 {name Strata.Laurel.StmtExpr.Hole}`Hole` /
 {name Strata.Laurel.StmtExpr.Quantifier}`Quantifier`.
 
-#### Block-Check-Empty
-
 ```
   TVoid <: T
 ─────────────────────────  (Block-Check-Empty, impl)
  Γ ⊢ Block [] label ⇐ T
 ```
 
-#### Exit
-
 ```
 ────────────────────────  (Exit, impl)
  Γ ⊢ Exit target ⇒ TVoid
 ```
 
-#### Return-None
-
 ```
 ─────────────────────────────  (Return-None, impl)
  Γ ⊢ Return none ⇒ TVoid
 ```
-
-#### Return-Some
 
 ```
       Γ ⊢ e ⇒ _
@@ -447,8 +411,6 @@ The value's synthesized type is currently discarded, so `return 0` in a `bool`-r
 procedure isn't caught. Replaced by Return-Some-Checked once the expected return type is
 threaded through {name Strata.Laurel.ResolveState}`ResolveState`.
 
-#### Return-Some-Checked
-
 ```
   Γ_proc.outputs = [T]      Γ ⊢ e ⇐ T
 ──────────────────────────────────────  (Return-Some-Checked, planned)
@@ -457,8 +419,6 @@ threaded through {name Strata.Laurel.ResolveState}`ResolveState`.
 
 Set from `proc.outputs` in {name Strata.Laurel.resolveProcedure}`resolveProcedure` /
 {name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure`.
-
-#### While
 
 ```
   Γ ⊢ cond ⇐ TBool      Γ ⊢ invs_i ⇐ TBool      Γ ⊢ dec ⇐ ?      Γ ⊢ body ⇒ _
@@ -471,15 +431,11 @@ target is a numeric type.
 
 ### Verification statements
 
-#### Assert
-
 ```
        Γ ⊢ cond ⇐ TBool
 ──────────────────────────────  (Assert, impl)
    Γ ⊢ Assert cond ⇒ TVoid
 ```
-
-#### Assume
 
 ```
       Γ ⊢ cond ⇐ TBool
@@ -489,15 +445,11 @@ target is a numeric type.
 
 ### Assignment
 
-#### Assign-Single
-
 ```
   Γ(x) = T_x      Γ ⊢ e ⇒ T_e      T_e <: T_x
 ───────────────────────────────────────────────  (Assign-Single, impl)
             Γ ⊢ Assign [x] e ⇒ TVoid
 ```
-
-#### Assign-Multi
 
 ```
   Γ ⊢ targets_i = x_i      Γ(x_i) = T_i      Γ ⊢ e ⇒ MultiValuedExpr Us      |Ts| = |Us|      U_i <: T_i
@@ -507,8 +459,6 @@ target is a numeric type.
 
 ### Calls
 
-#### Static-Call
-
 ```
   Γ(callee) = static-procedure with inputs Ts and outputs [T]
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise)
@@ -516,16 +466,12 @@ target is a numeric type.
               Γ ⊢ StaticCall callee args ⇒ T
 ```
 
-#### Static-Call-Multi
-
 ```
   Γ(callee) = static-procedure with inputs Ts and outputs [T_1; …; T_n], n ≠ 1
   Γ ⊢ args ⇒ Us      U_i <: T_i (pairwise)
 ──────────────────────────────────────────────────────────────────────────────────  (Static-Call-Multi, impl)
        Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
 ```
-
-#### Instance-Call
 
 ```
   Γ ⊢ target ⇒ _      Γ(callee) = instance-procedure with inputs [self; Ts] and outputs [T]
@@ -540,15 +486,11 @@ target is a numeric type.
 {name Strata.Laurel.HighType.TReal}`TReal`,
 {name Strata.Laurel.HighType.TFloat64}`TFloat64`".
 
-#### Op-Bool
-
 ```
   Γ ⊢ args_i ⇐ TBool                              op ∈ {And, Or, AndThen, OrElse, Not, Implies}
 ──────────────────────────────────  (Op-Bool, impl)
  Γ ⊢ PrimitiveOp op args ⇒ TBool
 ```
-
-#### Op-Cmp
 
 ```
   Γ ⊢ args_i ⇐ Numeric                            op ∈ {Lt, Leq, Gt, Geq}
@@ -556,15 +498,11 @@ target is a numeric type.
  Γ ⊢ PrimitiveOp op args ⇒ TBool
 ```
 
-#### Op-Eq
-
 ```
   Γ ⊢ lhs ⇒ T_l      Γ ⊢ rhs ⇒ T_r      T_l <: T_r ∨ T_r <: T_l                op ∈ {Eq, Neq}
 ─────────────────────────────────────────────────────────────────  (Op-Eq, impl)
             Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
 ```
-
-#### Op-Arith
 
 ```
   Γ ⊢ args_i ⇐ Numeric      Γ ⊢ args.head ⇒ T                op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
@@ -576,8 +514,6 @@ target is a numeric type.
 etc. without unification. Known relaxation: `int + real` passes (each operand individually
 passes `Numeric`); a proper fix needs numeric promotion or unification.
 
-#### Op-Concat
-
 ```
   Γ ⊢ args_i ⇐ TString                            op = StrConcat
 ─────────────────────────────────────  (Op-Concat, impl)
@@ -586,23 +522,17 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 
 ### Object forms
 
-#### New-Ok
-
 ```
   Γ(ref) is a composite or datatype T
 ──────────────────────────────────────────  (New-Ok, impl)
        Γ ⊢ New ref ⇒ UserDefined T
 ```
 
-#### New-Fallback
-
 ```
   Γ(ref) is not a composite or datatype
 ─────────────────────────────────────────  (New-Fallback, impl)
         Γ ⊢ New ref ⇒ Unknown
 ```
-
-#### AsType
 
 ```
       Γ ⊢ target ⇒ _
@@ -612,23 +542,17 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 
 `target` is resolved but not checked against `T` — the cast is the user's claim.
 
-#### IsType
-
 ```
        Γ ⊢ target ⇒ _
 ─────────────────────────────────  (IsType, impl)
  Γ ⊢ IsType target T ⇒ TBool
 ```
 
-#### RefEq
-
 ```
         Γ ⊢ lhs ⇒ _      Γ ⊢ rhs ⇒ _
 ───────────────────────────────────────  (RefEq, impl)
  Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
 ```
-
-#### PureFieldUpdate
 
 ```
        Γ ⊢ target ⇒ T_t      Γ ⊢ newVal ⇒ _
@@ -637,8 +561,6 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 ```
 
 ### Verification expressions
-
-#### Quantifier
 
 ```
   Γ, x : T ⊢ body ⇐ TBool
@@ -650,15 +572,11 @@ The bound variable `x : T` is introduced in scope only for the body (and trigger
 is checked against {name Strata.Laurel.HighType.TBool}`TBool` since a quantifier is a
 proposition; without this, `forall x: int :: x + 1` would be silently accepted.
 
-#### Assigned
-
 ```
        Γ ⊢ name ⇒ _
 ─────────────────────────────  (Assigned, impl)
  Γ ⊢ Assigned name ⇒ TBool
 ```
-
-#### Old
 
 ```
    Γ ⊢ v ⇒ T
@@ -666,15 +584,11 @@ proposition; without this, `forall x: int :: x + 1` would be silently accepted.
  Γ ⊢ Old v ⇒ T
 ```
 
-#### Fresh
-
 ```
      Γ ⊢ v ⇒ _
 ─────────────────────  (Fresh, impl)
  Γ ⊢ Fresh v ⇒ TBool
 ```
-
-#### ProveBy
 
 ```
    Γ ⊢ v ⇒ T      Γ ⊢ proof ⇒ _
@@ -684,14 +598,10 @@ proposition; without this, `forall x: int :: x + 1` would be silently accepted.
 
 ### Untyped forms
 
-#### This
-
 ```
 ──────────────────────────  (This, impl)
    Γ ⊢ This ⇒ Unknown
 ```
-
-#### Abstract / All / ContractOf
 
 ```
 ─────────────────────────────────────────────  (Abstract / All / ContractOf, impl)
@@ -700,21 +610,15 @@ proposition; without this, `forall x: int :: x + 1` would be silently accepted.
 
 ### Holes
 
-#### Hole-Some
-
 ```
 ────────────────────────────  (Hole-Some, impl)
  Γ ⊢ Hole d (some T) ⇒ T
 ```
 
-#### Hole-None-Synth
-
 ```
 ─────────────────────────────────  (Hole-None-Synth, impl)
    Γ ⊢ Hole d none ⇒ Unknown
 ```
-
-#### Hole-None-Check
 
 ```
        Unknown <: T
