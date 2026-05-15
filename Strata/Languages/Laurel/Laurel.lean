@@ -489,6 +489,25 @@ instance : BEq HighTypeMd where
 
 deriving instance BEq for HighType
 
+/-- Subtyping. Stub: structural equality via `highEq`.
+    TODO: walk `extending` chains for composites, unfold aliases, unwrap
+    constrained types to their base. -/
+def isSubtype (sub sup : HighTypeMd) : Bool := highEq sub sup
+
+/-- Consistency (Siek–Taha): the symmetric gradual relation. `Unknown` is the
+    dynamic type and is consistent with everything; otherwise structural
+    equality. `TCore` is a temporary migration escape hatch. -/
+def isConsistent (a b : HighTypeMd) : Bool :=
+  match a.val, b.val with
+  | .Unknown, _ | _, .Unknown => true
+  | .TCore _, _ | _, .TCore _ => true
+  | _, _ => highEq a b
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
+    this collapses to `sub ~ sup ∨ sub <: sup`. -/
+def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
+  isConsistent sub sup || isSubtype sub sup
+
 def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
