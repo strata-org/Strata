@@ -160,8 +160,8 @@ mismatches against the surrounding context become diagnostics. The implementatio
 There are two operations on expressions, written here in standard bidirectional notation:
 
 ```
-e ⇒ T            -- "e synthesizes T"     (synthStmtExpr)
-e ⇐ T            -- "e checks against T"  (checkStmtExpr)
+Γ ⊢ e ⇒ T            -- "e synthesizes T"     (synthStmtExpr)
+Γ ⊢ e ⇐ T            -- "e checks against T"  (checkStmtExpr)
 ```
 
 Synthesis returns a type inferred from the expression itself; checking verifies that the
@@ -170,9 +170,9 @@ is determined locally (synth) or by context (check). The two judgments are conne
 single change-of-direction rule, *subsumption*:
 
 ```
-e ⇒ A      A <: B
-─────────────────  (Sub)
-     e ⇐ B
+Γ ⊢ e ⇒ A      A <: B
+─────────────────────  (Sub)
+     Γ ⊢ e ⇐ B
 ```
 
 Subsumption is the *only* place the checker switches from check to synth mode. It fires as
