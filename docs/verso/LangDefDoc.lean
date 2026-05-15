@@ -502,8 +502,8 @@ rec function diagonal (m : int, n : int) : int
 Every recursive function must have at least a `@[cases]` annotation or a
 `decreases` clause; Strata rejects recursive functions without a termination hint.
 If a function has both `@[cases]` and an int-valued `decreases` clause,
-`@[cases]` is used for unfolding in the SMT solver, while `decreases` is used
-for termination checking.
+`@[cases]` enables per-constructor axiom generation and partial evaluation,
+while `decreases` is used for termination checking.
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block:
@@ -519,6 +519,36 @@ function listSize (@[cases] xs : RoseList) : int
   else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
 };
 ```
+
+#### Termination Checking
+
+Termination checking is always on for all `rec` functions.
+
+For **structural recursion**, Strata checks that recursive calls pass a
+structurally smaller argument at the termination measure position. A rank
+function is generated for the datatype, and each recursive call must have
+strictly smaller rank than the caller's parameter.
+
+For **int-valued recursion**, two obligations are checked at each recursive
+call site:
+- The measure at the call site is non-negative (`0 <= call_measure`).
+- The measure strictly decreases (`call_measure < caller_measure`).
+
+A function that fails its termination check will produce a verification failure
+on its `_terminates_` obligations.
+
+#### Current Limitations
+
+- Polymorphic recursive functions are not yet supported.
+- Recursive functions must be declared at the top level (not as local
+  declarations inside procedures).
+- Only single-expression termination measures are supported; lexicographic
+  measures are not yet supported.
+- There is no way currently to give additional information for the
+  proofs of non-negativity for int-valued measures. For example,
+  using the measure `listLen(l1) + listLen(l2)` will produce currently
+  unprovable obligations about the nonnegativity of `listLen` over
+  arbitrary lists.
 
 ## Axioms
 

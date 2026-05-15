@@ -395,6 +395,101 @@ Result: ✅ pass -/
 #eval verify mutualIntRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
+-- Test 8b: mutual int recursion — concrete evaluation via PE
+---------------------------------------------------------------------
+
+def mutualIntRecConcretePgm : Program :=
+#strata
+program Core;
+
+rec function isEven (n : int) : bool
+  requires n >= 0;
+  decreases n
+{
+  if n <= 0 then true else isOdd(n - 1)
+}
+function isOdd (n : int) : bool
+  requires n >= 0;
+  decreases n
+{
+  if n <= 0 then false else isEven(n - 1)
+};
+
+procedure TestMutualConcrete() spec {
+  ensures true;
+}
+{
+  assert [even4]: isEven(4) == true;
+  assert [odd3]: isOdd(3) == true;
+  assert [even3]: isEven(3) == false;
+  assert [odd4]: isOdd(4) == false;
+};
+#end
+
+/-- info:
+Obligation: isEven_body_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_body_calls_isEven_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_even4_calls_isEven_0
+Property: assert
+Result: ✅ pass
+
+Obligation: even4
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_odd3_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd3
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_even3_calls_isEven_0
+Property: assert
+Result: ✅ pass
+
+Obligation: even3
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_odd4_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: odd4
+Property: assert
+Result: ✅ pass
+
+Obligation: TestMutualConcrete_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval verify mutualIntRecConcretePgm (options := .quiet)
+
+---------------------------------------------------------------------
 -- Test 9: int-recursive function is a pure UF — no definitional axioms.
 -- Cannot prove fib(n) == fib(n-1) + fib(n-2) since fib has no axioms.
 ---------------------------------------------------------------------
@@ -601,5 +696,31 @@ Property: assert
 Result: ✅ pass -/
 #guard_msgs in
 #eval verify casesWithIntMeasurePgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 12: constant measure `decreases 10` should fail termination
+---------------------------------------------------------------------
+
+def constantMeasureFailPgm : Program :=
+#strata
+program Core;
+
+rec function loop (n : int) : int
+  decreases 10
+{
+  if n <= 0 then 0 else loop(n - 1)
+};
+#end
+
+/-- info:
+Obligation: loop_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: loop_terminates_1
+Property: assert
+Result: ❌ fail -/
+#guard_msgs in
+#eval verify constantMeasureFailPgm (options := .quiet)
 
 end Strata.IntRecursionTermCheckTest
