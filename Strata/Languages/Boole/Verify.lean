@@ -161,9 +161,7 @@ private def constructorListToList : BooleDDM.ConstructorList SourceRange → Lis
 
 private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData Core.Expression) := do
   let file := (← get).fileName
-  let uri : Uri := .file file
-  let fileRangeElt := ⟨Imperative.MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩
-  return #[fileRangeElt]
+  return Imperative.MetaData.ofSourceRange (.file file) sr
 
 private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
   Lambda.LExpr.mkApp () op args
@@ -540,8 +538,6 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
     return .exit l (← toCoreMetaData m)
-  | .exit_unlabeled_statement m =>
-    return .exit none (← toCoreMetaData m)
   | .typeDecl_statement m ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []
@@ -862,7 +858,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let funcList := funcs.toList
     let (fsRev, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
       match func with
-      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ _decreases body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
         let siblingBvars := prevNames.map fun sn =>
           (.op () (mkIdent sn) none : Core.Expression.Expr)
