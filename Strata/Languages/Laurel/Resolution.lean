@@ -778,6 +778,16 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
         have := List.mem_of_getLast? _lastResult
         let last' ← checkStmtExpr last expected
         pure { val := .Block (init' ++ [last']) label, source := source }
+  | .IfThenElse cond thenBr elseBr =>
+    -- Push `expected` into both branches (rather than going through the synth
+    -- rule + Sub at the boundary). Without an else branch, fall back to
+    -- subsumption of TVoid against `expected`.
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
+    let thenBr' ← checkStmtExpr thenBr expected
+    let elseBr' ← elseBr.attach.mapM (fun ⟨e, _⟩ => checkStmtExpr e expected)
+    if elseBr.isNone then
+      checkSubtype source expected { val := .TVoid, source := source }
+    pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
     let (e', actual) ← synthStmtExpr exprMd
