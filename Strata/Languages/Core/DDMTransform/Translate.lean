@@ -51,10 +51,7 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 /- Metadata -/
 
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  let file := ictx.fileName
-  let uri: Uri := .file file
-  let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  Imperative.MetaData.ofSourceRange (.file ictx.fileName) sr
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
   return op.ann.toMetaData (← StateT.get).inputCtx
@@ -1335,10 +1332,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.exit_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
-    return ([.exit (some l) md], bindings)
-  | q`Core.exit_unlabeled_statement, #[] =>
-    let md ← getOpMetaData op
-    return ([.exit none md], bindings)
+    return ([.exit l md], bindings)
   | q`Core.funcDecl_statement, #[namea, _typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
     let inputs ← translateMonoDeclList bindings bindingsa

@@ -414,7 +414,7 @@ def withOldBindings
     aid.label = label ∧ aid.expr = expr
   | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
   | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .block _ inner, aid => coreIsAtAssert inner aid
+  | .block _ _ inner, aid => coreIsAtAssert inner aid
   | .seq inner _, aid => coreIsAtAssert inner aid
   | _, _ => False
 
@@ -429,6 +429,13 @@ def withOldBindings
 structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
   preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
     Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
+  preserves_wfVar : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVar δ →
+    Imperative.WellFormedSemanticEvalVar (EvalPureFunc φ δ σ decl)
+  preserves_wfCong : ∀ δ σ decl, WellFormedCoreEvalCong δ →
+    WellFormedCoreEvalCong (EvalPureFunc φ δ σ decl)
+  preserves_wfExprCongr : ∀ δ σ decl,
+    @Imperative.WellFormedSemanticEvalExprCongr Expression _ δ →
+    @Imperative.WellFormedSemanticEvalExprCongr Expression _ (EvalPureFunc φ δ σ decl)
 
 ---------------------------------------------------------------------
 

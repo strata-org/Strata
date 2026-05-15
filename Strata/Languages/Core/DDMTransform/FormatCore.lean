@@ -828,12 +828,8 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | .nondet =>
       pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
   | .exit label _md => do
-    match label with
-    | some l =>
-      let labelAnn : Ann String M := ⟨default, l⟩
-      pure (.exit_statement default labelAnn)
-    | none =>
-      pure (.exit_unlabeled_statement default)
+    let labelAnn : Ann String M := ⟨default, label⟩
+    pure (.exit_statement default labelAnn)
   | .funcDecl decl _md => funcDeclToStatement decl
   | .typeDecl tc _md =>
     let nameAnn : Ann String M := ⟨default, tc.name⟩

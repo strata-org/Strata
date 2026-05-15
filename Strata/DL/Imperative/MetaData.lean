@@ -8,9 +8,10 @@ module
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Util.DecidableEq
 public import Strata.Util.FileRange
+public import Strata.Util.Provenance
 
 namespace Imperative
-open Strata
+open Strata (DiagnosticModel DiagnosticType FileRange Provenance Uri SourceRange)
 
 public section
 
@@ -69,23 +70,23 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
       | .label s => f!"MetaDataElem.Field.label {s}"
     Repr.addAppParen res prec
 
-/-- A metadata value, which can be either an expression, a message, or a fileRange -/
+/-- A metadata value, which can be either an expression, a message, a switch, or a provenance. -/
 inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a structured expression. -/
   | expr (e : P.Expr)
   /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
-  /-- Metadata value in the form of a fileRange. -/
-  | fileRange (r: FileRange)
   /-- Metadata value in the form of a boolean switch. -/
   | switch (b : Bool)
+  /-- Metadata value in the form of a provenance (source location or synthesized origin). -/
+  | provenance (p : Provenance)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
               | .expr e => f!"{e}"
               | .msg s => f!"{s}"
-              | .fileRange r => f!"{r}"
               | .switch b => f!"{b}"
+              | .provenance p => f!"{p}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -93,16 +94,16 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       match v with
       | .expr e => f!".expr {reprPrec e prec}"
       | .msg s => f!".msg {s}"
-      | .fileRange fr => f!".fileRange {fr}"
       | .switch b => f!".switch {repr b}"
+      | .provenance p => f!".provenance {repr p}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   match v1, v2 with
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
-  | .fileRange r1, .fileRange r2 => r1 == r2
   | .switch b1, .switch b2 => b1 == b2
+  | .provenance p1, .provenance p2 => p1 == p2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -178,7 +179,8 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 @[match_pattern]
-abbrev MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+abbrev MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
+
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 @[match_pattern]
@@ -222,18 +224,31 @@ def MetaData.hasSatisfiabilityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData 
     | _ => false
   | none => false
 
+/-- Get the provenance from metadata. -/
+def getProvenance {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option Provenance := do
+  let elem ← md.findElem Imperative.MetaData.provenanceField
+  match elem.value with
+  | .provenance p => some p
+  | _ => none
+
 def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
-  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
-  match fileRangeElement.value with
-    | .fileRange fileRange =>
-      some fileRange
-    | _ => none
+  let p ← getProvenance md
+  p.toFileRange
+
+/-- Create metadata with a provenance element. -/
+def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
+  #[{ fld := MetaData.provenanceField, value := .provenance p }]
+
+/-- Create metadata from a source range and URI, storing provenance. -/
+def MetaData.ofSourceRange {P : PureExpr} (uri : Uri) (sr : SourceRange) : MetaData P :=
+  MetaData.ofProvenance (Provenance.ofSourceRange uri sr)
 
 /-- Create a DiagnosticModel from metadata and a message.
-    Uses the file range from metadata if available, otherwise uses a default location. -/
+    Uses provenance or file range from metadata if available, otherwise uses a default location. -/
 def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
-  match getFileRange md with
-  | some fr => DiagnosticModel.withRange fr msg type
+  match getProvenance md with
+  | some (.loc uri range) => DiagnosticModel.withRange { file := uri, range } msg type
+  | some (.synthesized _) => DiagnosticModel.fromMessage msg type
   | none => DiagnosticModel.fromMessage msg type
 
 /-- Create a DiagnosticModel from metadata and a Format message. -/
@@ -261,7 +276,16 @@ def getRelatedFileRanges {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array F
   md.filterMap fun elem =>
     if elem.fld == Imperative.MetaData.relatedFileRange then
       match elem.value with
-      | .fileRange fr => some fr
+      | .provenance p => p.toFileRange
+      | _ => none
+    else none
+
+/-- Get all related provenances from metadata, in order. -/
+private def getRelatedProvenances {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array Provenance :=
+  md.filterMap fun elem =>
+    if elem.fld == Imperative.MetaData.relatedFileRange then
+      match elem.value with
+      | .provenance p => some p
       | _ => none
     else none
 
@@ -270,20 +294,21 @@ def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
   md.filter (fun e => !(e.fld == fld))
 
-/-- Replace the primary file range with a new one, shifting existing related
-    file ranges and prepending the old primary range. -/
+/-- Replace the primary provenance with a new one, shifting existing related
+    provenances and prepending the old primary provenance. -/
 def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (callSiteRange : MetaData P) : MetaData P :=
-  match getFileRange callSiteRange, getFileRange md with
-  | some csRange, some origRange =>
-    let existingRelated := getRelatedFileRanges md
-    let md := md.eraseElem MetaData.fileRange
+  match getProvenance callSiteRange, getProvenance md with
+  | some csProv, some origProv =>
+    let existingRelated := getRelatedProvenances md
+    let md := md.eraseElem MetaData.provenanceField
     let md := md.eraseAllElems MetaData.relatedFileRange
-    let md := md.pushElem MetaData.fileRange (.fileRange csRange)
-    let md := md.pushElem MetaData.relatedFileRange (.fileRange origRange)
-    existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.fileRange fr)) md
-  | some csRange, none =>
-    md.pushElem MetaData.fileRange (.fileRange csRange)
+    let md := md.pushElem MetaData.provenanceField (.provenance csProv)
+    let md := md.pushElem MetaData.relatedFileRange (.provenance origProv)
+    existingRelated.foldl (fun md p => md.pushElem MetaData.relatedFileRange (.provenance p)) md
+  | some csProv, none =>
+    let md := md.eraseElem MetaData.provenanceField
+    md.pushElem MetaData.provenanceField (.provenance csProv)
   | none, _ => md
 
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/
