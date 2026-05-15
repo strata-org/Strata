@@ -660,6 +660,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
   | .some .bv1, q`Core.bv_neg_overflow   => return Core.bv1SNegOverflowOp
+  | .some .bv1, q`Core.bv_uneg_overflow  => return Core.bv1UNegOverflowOp
   | .some .bv1, q`Core.bv_sadd_overflow  => return Core.bv1SAddOverflowOp
   | .some .bv1, q`Core.bv_ssub_overflow  => return Core.bv1SSubOverflowOp
   | .some .bv1, q`Core.bv_smul_overflow  => return Core.bv1SMulOverflowOp
@@ -668,6 +669,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv1, q`Core.bv_usub_overflow  => return Core.bv1USubOverflowOp
   | .some .bv1, q`Core.bv_umul_overflow  => return Core.bv1UMulOverflowOp
   | .some .bv8, q`Core.bv_neg_overflow   => return Core.bv8SNegOverflowOp
+  | .some .bv8, q`Core.bv_uneg_overflow  => return Core.bv8UNegOverflowOp
   | .some .bv8, q`Core.bv_sadd_overflow  => return Core.bv8SAddOverflowOp
   | .some .bv8, q`Core.bv_ssub_overflow  => return Core.bv8SSubOverflowOp
   | .some .bv8, q`Core.bv_smul_overflow  => return Core.bv8SMulOverflowOp
@@ -676,6 +678,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv8, q`Core.bv_usub_overflow  => return Core.bv8USubOverflowOp
   | .some .bv8, q`Core.bv_umul_overflow  => return Core.bv8UMulOverflowOp
   | .some .bv16, q`Core.bv_neg_overflow  => return Core.bv16SNegOverflowOp
+  | .some .bv16, q`Core.bv_uneg_overflow => return Core.bv16UNegOverflowOp
   | .some .bv16, q`Core.bv_sadd_overflow => return Core.bv16SAddOverflowOp
   | .some .bv16, q`Core.bv_ssub_overflow => return Core.bv16SSubOverflowOp
   | .some .bv16, q`Core.bv_smul_overflow => return Core.bv16SMulOverflowOp
@@ -684,6 +687,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv16, q`Core.bv_usub_overflow => return Core.bv16USubOverflowOp
   | .some .bv16, q`Core.bv_umul_overflow => return Core.bv16UMulOverflowOp
   | .some .bv32, q`Core.bv_neg_overflow  => return Core.bv32SNegOverflowOp
+  | .some .bv32, q`Core.bv_uneg_overflow => return Core.bv32UNegOverflowOp
   | .some .bv32, q`Core.bv_sadd_overflow => return Core.bv32SAddOverflowOp
   | .some .bv32, q`Core.bv_ssub_overflow => return Core.bv32SSubOverflowOp
   | .some .bv32, q`Core.bv_smul_overflow => return Core.bv32SMulOverflowOp
@@ -692,6 +696,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv32, q`Core.bv_usub_overflow => return Core.bv32USubOverflowOp
   | .some .bv32, q`Core.bv_umul_overflow => return Core.bv32UMulOverflowOp
   | .some .bv64, q`Core.bv_neg_overflow  => return Core.bv64SNegOverflowOp
+  | .some .bv64, q`Core.bv_uneg_overflow => return Core.bv64UNegOverflowOp
   | .some .bv64, q`Core.bv_sadd_overflow => return Core.bv64SAddOverflowOp
   | .some .bv64, q`Core.bv_ssub_overflow => return Core.bv64SSubOverflowOp
   | .some .bv64, q`Core.bv_smul_overflow => return Core.bv64SMulOverflowOp
@@ -923,6 +928,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.bv_neg_overflow, [tpa, xa] =>
     let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let fn ← translateFn ty q`Core.bv_neg_overflow
+    let x ← translateExpr p bindings xa
+    return .mkApp () fn [x]
+  | .fn _ q`Core.bv_uneg_overflow, [tpa, xa] =>
+    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let fn ← translateFn ty q`Core.bv_uneg_overflow
     let x ← translateExpr p bindings xa
     return .mkApp () fn [x]
   -- Strings

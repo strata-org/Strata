@@ -188,7 +188,8 @@ fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " 
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
 fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
 
-fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.NegOverflow" "(" a ")";
+fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.SNegOverflow" "(" a ")";
+fn bv_uneg_overflow (tp : Type, a : tp) : bool => "Bv.UNegOverflow" "(" a ")";
 fn bv_sadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SAddOverflow" "(" a ", " b ")";
 fn bv_ssub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SSubOverflow" "(" a ", " b ")";
 fn bv_smul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SMulOverflow" "(" a ", " b ")";

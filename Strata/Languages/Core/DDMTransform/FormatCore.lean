@@ -336,12 +336,18 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bv ⟨32, .SafeNeg⟩ | .bv ⟨32, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv32 default) arg)
   | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
   -- Overflow predicates
-  | .bv ⟨w, .SNegOverflow⟩ | .bv ⟨w, .UNegOverflow⟩ =>
+  | .bv ⟨w, .SNegOverflow⟩ =>
     let bvTy := match w with
       | 1 => CoreType.bv1 default | 8 => .bv8 default
       | 16 => .bv16 default | 32 => .bv32 default
       | _ => .bv64 default
     pure (.bv_neg_overflow default bvTy arg)
+  | .bv ⟨w, .UNegOverflow⟩ =>
+    let bvTy := match w with
+      | 1 => CoreType.bv1 default | 8 => .bv8 default
+      | 16 => .bv16 default | 32 => .bv32 default
+      | _ => .bv64 default
+    pure (.bv_uneg_overflow default bvTy arg)
   -- Bitvector extract ops
   | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)
   | .bvExtract 16 15 15 => pure (.bvextract_15_15 default arg)
@@ -749,7 +755,7 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   modify (·.pushBoundVar name.val)
   pure (.funcDecl_statement default name typeArgs b r preconds bodyExpr inline?)
 
-/-- Decompose nested `map_update(base, idx, val)` where `base` is (or starts
+/-- Decompose a single-level `map_update(base, idx, val)` where `base` is (or starts
     with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices
     in left-to-right order, or `none` if the expression is not this pattern. -/
 private def decomposeMapUpdate (varName : String)
