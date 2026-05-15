@@ -220,7 +220,8 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           | some i => (args[i]? |>.map (isCanonicalValue σ.config.factory)).getD false
           | none => false
         if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
-          constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr)) then
+          constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
+          (FuncAttr.hasInlineIfAllCanonical lfunc.attr && args.all (isCanonicalValue σ.config.factory))) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           -- Apply type substitution to instantiate polymorphic type variables.

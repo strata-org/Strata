@@ -69,11 +69,100 @@ decreases xs
 #end
 
 /--
-error: ❌ Symbolic evaluation error.
-Recursive function 'listLen' requires a @[cases] parameter
+error: recursive function 'listLen': structural recursion requires @[cases]
 -/
 #guard_msgs in
 #eval Core.verify noCasesPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 3: error — decreases on non-int expression
+---------------------------------------------------------------------
+
+def decreasesNonIntPgm : Program :=
+#strata
+program Core;
+
+function f () : bool;
+
+rec function bad (n : int) : int
+  decreases f
+{
+  if n <= 0 then 0 else bad(n - 1)
+};
+#end
+
+/-- error: ❌ Type checking error.
+recursive function 'bad': non-variable decreases expression must have type int, got 'bool'. For structural recursion, use a parameter name-/
+#guard_msgs in
+#eval verify decreasesNonIntPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 4: error — decreasing argument contains recursive call
+---------------------------------------------------------------------
+
+def decreasesRecCallPgm : Program :=
+#strata
+program Core;
+
+rec function bad (n : int) : int
+  decreases n
+{
+  if n <= 0 then 0 else bad(bad(n - 1))
+};
+#end
+
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
+#guard_msgs in
+#eval verify decreasesRecCallPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 5: error — decreases expression calls function in same mutual block
+---------------------------------------------------------------------
+
+def decreasesMutualCallPgm : Program :=
+#strata
+program Core;
+
+rec function size (n : int) : int
+  decreases n
+{
+  if n <= 0 then 0 else 1 + size(n - 1)
+}
+function bad (n : int) : int
+  decreases size(n)
+{
+  if n <= 0 then 0 else bad(n - 1)
+};
+#end
+
+/-- error: termination checking 'bad': decreasing argument contains a recursive call -/
+#guard_msgs in
+#eval verify decreasesMutualCallPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 6: error — mutual block mixes structural and int-valued measures
+---------------------------------------------------------------------
+
+def mixedMutualPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+}
+function countdown (n : int) : int
+  decreases n
+{
+  if n <= 0 then 0 else countdown(n - 1)
+};
+#end
+
+/-- error: mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure -/
+#guard_msgs in
+#eval verify mixedMutualPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
 
