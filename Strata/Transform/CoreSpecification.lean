@@ -58,7 +58,15 @@ structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expressio
   readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s →
     (ρ.store n).isSome
   defsUndefined : ∀ n ∈ Stmt.definedVars s, (ρ.store n).isNone
-  definedVarsNodup : (Stmt.definedVars s).Nodup
+  /-- Source's `definedVars` don't use any of the reserved prefixes.  Together
+      with `reservedFresh` (on `ρ.store`), this ensures that transform-introduced
+      fresh names with reserved prefixes don't collide with source names.
+
+      Note: this is used by the OUTPUT-side `InitEnvWF` with the post-transform
+      `reserved` list (the input list with the transform's `newPrefix` erased).
+      Source defs not having any of those prefixes carries through. -/
+  definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
   wfBool : WellFormedSemanticEvalBool ρ.eval
@@ -74,7 +82,8 @@ structure BlockInitEnvWF (reserved : List String) (bss : Statements)
   readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss →
     (ρ.store n).isSome
   defsUndefined : ∀ n ∈ Block.definedVars bss, (ρ.store n).isNone
-  definedVarsNodup : (Block.definedVars bss).Nodup
+  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss, ∀ p ∈ reserved,
+    ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
   wfBool : WellFormedSemanticEvalBool ρ.eval
@@ -83,19 +92,18 @@ structure BlockInitEnvWF (reserved : List String) (bss : Statements)
   evalCong : WellFormedCoreEvalCong ρ.eval
   exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
 
-/-- The `Lang Expression` bundle for Core small-step semantics, parameterised
-    by a list of reserved name prefixes. Transforms that introduce fresh names
-    via `init` (e.g., loop-elim's `$__loop_measure_*`) require the caller to
-    reserve their prefixes, ensuring those names are absent from the entry
-    store. -/
+/-- The `Lang Expression` bundle for Core small-step semantics. The
+    `initEnvWF` field takes a list of reserved name prefixes; transforms
+    that introduce fresh names via `init` (e.g., loop-elim's
+    `$__loop_measure_*`) erase their own prefix from the list when
+    discharging the L₂ side's `initEnvWF`. -/
 @[expose] def Lang.core
     (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
-    (reserved : List String) :
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
-    (InitEnvWF reserved)
+    InitEnvWF
 
 /-! ## Well-formed program state at the entry of procedure -/
 
@@ -139,14 +147,13 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 /-- A specific assertion `a` in procedure `proc` is valid
     for initial program states satisfying the preconditions (`ProcEnvWF`).
 
-    The `reserved` parameter lists name prefixes that downstream transforms
-    own (e.g., `["$__loop"]` for loop-elim). It is propagated to `Lang.core`'s
-    `initEnvWF`. The default `reserved = []` imposes no prefix constraints. -/
+    `AssertValidWhen` only uses the language's reachability/star and isAtAssert
+    predicates, so the `Lang.core`'s `initEnvWF` (parameterized by reserved
+    prefixes) doesn't affect this definition. -/
 @[expose] def AssertValidInProcedure
-    (reserved : List String)
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
-  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ reserved)
+  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
     (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
 
 /-- A procedure is correct with respect to its specification.
@@ -200,10 +207,10 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
     (1) assert validity in the body, and
     (2) postcondition validity on termination.
 -/
-structure ProcedureCorrect (reserved : List String) (proc : Procedure)
+structure ProcedureCorrect (proc : Procedure)
     (p : Program) : Prop where
   /-- (1) The asserts in the body of proc are valid. -/
-  assertsValid : ∀ a, AssertValidInProcedure π φ reserved proc a
+  assertsValid : ∀ a, AssertValidInProcedure π φ proc a
   /-- (2) The postconditions hold on termination. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →

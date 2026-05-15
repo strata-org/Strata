@@ -97,15 +97,22 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
   /-- Extract env from a configuration. -/
   getEnv : CfgT → Env P
   /-- Initial environment well-formedness: includes store definedness for touched
-      variables and any evaluator well-formedness conditions needed by the language. -/
-  initEnvWF : StmtT → Env P → Prop
+      variables and any evaluator well-formedness conditions needed by the language.
+
+      The `List String` parameter lists "fresh-prefixes": prefixes of identifiers
+      that must NOT appear in the initial environment.  Downstream transforms
+      reserve such prefixes so they can introduce fresh names with that prefix
+      without colliding with user names.  `Overapproximates` and
+      `OverapproximatesAggressively` extend this list with the transform's own
+      `prefixIdent` for the L₂ side. -/
+  initEnvWF : List String → StmtT → Env P → Prop
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
 abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop)
-    (initEnvWF : Stmt P CmdT → Env P → Prop := fun _ _ => True) :
+    (initEnvWF : List String → Stmt P CmdT → Env P → Prop := fun _ _ _ => True) :
     Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, initEnvWF⟩
@@ -601,14 +608,44 @@ When `L₁ = L₂`, this specializes to the single-language case. -/
 public def CanFail (L : Lang P) (s : L.StmtT) (ρ₀ : Env P) : Prop :=
   ∃ cfg, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg
 
+/-- `PrefixDisjoint newPrefix prefixIdents` says: every prefix in
+    `prefixIdents` is prefix-disjoint from `newPrefix`, i.e., neither
+    is a string prefix of the other (as `Char` lists).
+
+    Used as a precondition on `Overapproximates`/`OverapproximatesAggressively`
+    instantiated at `prefixIdents.erase newPrefix` — i.e., applied to all
+    OTHER reserved prefixes.  This ensures that names introduced by a
+    transform with prefix `newPrefix` (e.g. `newPrefix ++ "_..."`) cannot
+    accidentally have any other reserved prefix `p` as a string prefix.
+    The implication is one-directional: if `p` were a string prefix of
+    `newPrefix`, then `p` would also be a string prefix of any name
+    `newPrefix ++ "..."`, violating the freshness invariant after
+    `newPrefix` is erased. -/
+public def PrefixDisjoint (newPrefix : String) (prefixIdents : List String) : Prop :=
+  ∀ p ∈ prefixIdents,
+    ¬ p.toList.isPrefixOf newPrefix.toList ∧
+    ¬ newPrefix.toList.isPrefixOf p.toList
+
 /-- Overapproximation: terminal/exiting envs reachable from the
     source are also reachable from the target, and failing programs
-    are preserved. -/
-def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
-  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    are preserved.
+
+    `newPrefix` is the identifier prefix that the transform `T` may introduce
+    in its output.  The L₂ side's `initEnvWF` is invoked with `newPrefix`
+    ERASED from the L₁ side's prefix list — since the output may use names
+    with that prefix, the prefix can no longer be treated as "fresh" for
+    downstream transforms.
+
+    The hypothesis `newPrefix ∈ prefixIdents` ensures the user reserved this
+    prefix when establishing the input WF (i.e., the input doesn't use it). -/
+def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (newPrefix : String) : Prop :=
+  ∀ (prefixIdents : List String) (st : L₁.StmtT) (st' : L₂.StmtT),
     T st = some st' →
+    newPrefix ∈ prefixIdents →
+    PrefixDisjoint newPrefix (prefixIdents.erase newPrefix) →
     ∀ (ρ₀ : Env P),
-      L₁.initEnvWF st ρ₀ →
+      L₁.initEnvWF prefixIdents st ρ₀ →
       -- Terminal/exiting envs are a subset.
       (∀ (ρ' : Env P),
         (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
@@ -620,47 +657,28 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
       -- Fail preservation.
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
       ∧
-      -- Store WF preservation.
-      L₂.initEnvWF st' ρ₀
+      -- Store WF preservation: `newPrefix` is erased from the prefix list
+      -- since the output may have introduced names with that prefix.
+      L₂.initEnvWF (prefixIdents.erase newPrefix) st' ρ₀
 
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
 theorem overapproximates_triple (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT)
+    (T : L₁.StmtT → Option L₂.StmtT) (newPrefix : String)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
-    (hsem : Overapproximates L₁ L₂ T)
+    (hsem : Overapproximates L₁ L₂ T newPrefix)
     {Pre Post : Env P → Prop}
     (htriple : Hoare.Triple L₂ Pre s' Post)
-    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.initEnvWF st ρ₀) :
+    (hswf : ∀ ρ₀ : Env P, Pre ρ₀ → L₁.initEnvWF [newPrefix] st ρ₀) :
     Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  have hr := hsem st s' ht ρ₀ (hswf ρ₀ hpre)
+  have hmem : newPrefix ∈ [newPrefix] := List.mem_singleton.mpr rfl
+  -- After erasing `newPrefix` from `[newPrefix]`, we get `[]`, so
+  -- `PrefixDisjoint` is vacuously true.
+  have hpd : PrefixDisjoint newPrefix ([newPrefix].erase newPrefix) := by
+    intro p hp; simp [List.erase_cons_head] at hp
+  have hr := hsem [newPrefix] st s' ht hmem hpd ρ₀ (hswf ρ₀ hpre)
   exact htriple ρ₀ ρ' hpre hwfb hf₀ (hr.1 ρ' |>.1 hstar)
-
-theorem overapproximates_id (L₁ : Lang P) :
-    Overapproximates L₁ L₁ some := by
-  intro st s' ht ρ₀ hswf
-  simp at ht; subst ht
-  exact ⟨fun _ => ⟨id, fun _ => id⟩, id, hswf⟩
-
-theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
-    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
-    (h₁ : Overapproximates L₁ L₂ T₁)
-    (h₂ : Overapproximates L₂ L₃ T₂) :
-    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ hswf
-  simp [bind, Option.bind] at ht
-  match h : T₁ st with
-  | some s' =>
-    rw [h] at ht
-    have hr₁ := h₁ st s' h ρ₀ hswf
-    have hr₂ := h₂ s' s'' ht ρ₀ hr₁.2.2
-    refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, ?_⟩
-    · intro hstar; exact (hr₂.1 ρ').1 ((hr₁.1 ρ').1 hstar)
-    · intro lbl hstar; exact (hr₂.1 ρ').2 lbl ((hr₁.1 ρ').2 lbl hstar)
-    · intro hfail; exact hr₂.2.1 (hr₁.2.1 hfail)
-    · exact hr₂.2.2
-  | none => rw [h] at ht; exact absurd ht (by nofun)
 
 /-! ## Aggressive overapproximation
 
@@ -670,12 +688,18 @@ terminal/exiting env exactly.  This models transforms like loop elimination
 where `assert(I); assume(I)` may cause the target to fail when the
 invariant doesn't hold. -/
 
-/-- Aggressive overapproximation: The target program can assert-fail spuriously -/
-public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
-  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+/-- Aggressive overapproximation: The target program can assert-fail spuriously.
+
+    `newPrefix` is the identifier prefix that the transform `T` may introduce
+    in its output (see `Overapproximates`). -/
+public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (newPrefix : String) : Prop :=
+  ∀ (prefixIdents : List String) (st : L₁.StmtT) (st' : L₂.StmtT),
     T st = some st' →
+    newPrefix ∈ prefixIdents →
+    PrefixDisjoint newPrefix (prefixIdents.erase newPrefix) →
     ∀ (ρ₀ : Env P),
-      L₁.initEnvWF st ρ₀ →
+      L₁.initEnvWF prefixIdents st ρ₀ →
       -- Terminal case
       (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
         CanFail L₂ st' ρ₀ ∨
@@ -691,68 +715,21 @@ public def OverapproximatesAggressively (L₁ L₂ : Lang P) (T : L₁.StmtT →
       -- Fail preservation, but does not exactly track the counterexample.
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
       ∧
-      -- Store WF preservation.
-      L₂.initEnvWF st' ρ₀
+      -- Store WF preservation: `newPrefix` is erased from the prefix list.
+      L₂.initEnvWF (prefixIdents.erase newPrefix) st' ρ₀
 
 /-- `Overapproximates` implies `OverapproximatesAggressively`. -/
 theorem Overapproximates.toAggressive (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT)
-    (h : Overapproximates L₁ L₂ T) :
-    OverapproximatesAggressively L₁ L₂ T := by
-  intro st s' ht ρ₀ hswf
-  have hr := h st s' ht ρ₀ hswf
+    (T : L₁.StmtT → Option L₂.StmtT) (newPrefix : String)
+    (h : Overapproximates L₁ L₂ T newPrefix) :
+    OverapproximatesAggressively L₁ L₂ T newPrefix := by
+  intro prefixIdents st s' ht hmem hpd ρ₀ hswf
+  have hr := h prefixIdents st s' ht hmem hpd ρ₀ hswf
   refine ⟨?_, ?_, hr.2.1, hr.2.2⟩
   · intro ρ' hstar
     exact .inr (fun _ => (hr.1 ρ').1 hstar)
   · intro lbl ρ' hstar
     exact .inr (fun _ => (hr.1 ρ').2 lbl hstar)
-
-theorem OverapproximatesAggressively_id (L₁ : Lang P) :
-    OverapproximatesAggressively L₁ L₁ some := by
-  intro st st' ht ρ₀ hswf
-  simp at ht; subst ht
-  refine ⟨?_, ?_, id, hswf⟩
-  · intro ρ' hstar
-    exact .inr (fun _ => hstar)
-  · intro lbl ρ' hstar
-    exact .inr (fun _ => hstar)
-
-theorem OverapproximatesAggressively_comp (L₁ L₂ L₃ : Lang P)
-    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
-    (h₁ : OverapproximatesAggressively L₁ L₂ T₁)
-    (h₂ : OverapproximatesAggressively L₂ L₃ T₂) :
-    OverapproximatesAggressively L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ hswf
-  simp [bind, Option.bind] at ht
-  match h : T₁ st with
-  | some s' =>
-    rw [h] at ht
-    have ⟨h₁_term, h₁_exit, h₁_fail, h₁_swf⟩ := h₁ st s' h ρ₀ hswf
-    have ⟨h₂_term, h₂_exit, h₂_fail, h₂_swf⟩ := h₂ s' s'' ht ρ₀ h₁_swf
-    refine ⟨?_, ?_, fun hf => h₂_fail (h₁_fail hf), h₂_swf⟩
-    · -- Terminal case
-      intro ρ' hstar
-      match h₁_term ρ' hstar with
-      | .inl canfail₂ => exact .inl (h₂_fail canfail₂)
-      | .inr hright =>
-        by_cases hf : ρ'.hasFailure = false
-        · have hterm₂ := hright hf
-          match h₂_term ρ' hterm₂ with
-          | .inl canfail₃ => exact .inl canfail₃
-          | .inr hright₃ => exact .inr (fun _ => hright₃ hf)
-        · exact .inr (fun hf' => absurd hf' hf)
-    · -- Exiting case
-      intro lbl ρ' hstar
-      match h₁_exit lbl ρ' hstar with
-      | .inl canfail₂ => exact .inl (h₂_fail canfail₂)
-      | .inr hright =>
-        by_cases hf : ρ'.hasFailure = false
-        · have hexit₂ := hright hf
-          match h₂_exit lbl ρ' hexit₂ with
-          | .inl canfail₃ => exact .inl canfail₃
-          | .inr hright₃ => exact .inr (fun _ => hright₃ hf)
-        · exact .inr (fun hf' => absurd hf' hf)
-  | none => rw [h] at ht; exact absurd ht (by nofun)
 
 /-! ## Statement-list overapproximation (Imperative-specific)
 
@@ -776,7 +753,7 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
-  initEnvWF := fun _ ρ =>
+  initEnvWF := fun _ _ ρ =>
     WellFormedSemanticEvalBool ρ.eval ∧
     WellFormedSemanticEvalVal ρ.eval ∧
     WellFormedSemanticEvalVar ρ.eval
@@ -830,8 +807,11 @@ private theorem seq_hasFailure_cases
 private theorem overapproximates_stmts_canfail
     (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : String)
     (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String) (hmem : newPrefix ∈ prefixIdents)
+    (hpd : PrefixDisjoint newPrefix (prefixIdents.erase newPrefix))
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
@@ -862,7 +842,7 @@ private theorem overapproximates_stmts_canfail
         | .inl ⟨inner_cfg, hf_inner, hreach_inner⟩ =>
           have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
             ⟨inner_cfg, hf_inner, hreach_inner⟩
-          have hcanfail_s' := (hsem s s' hs ρ₀ trivial).2.1 hcanfail_s
+          have hcanfail_s' := (hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).2.1 hcanfail_s
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_s'
           exact ⟨.seq cfg' rest', by simp [Config.getEnv]; exact hf',
             .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach')⟩
@@ -879,7 +859,7 @@ private theorem overapproximates_stmts_canfail
             ⟨tail_cfg, hf_tail, htail⟩
           have hcanfail_rest' := ih rest' hrm ρ₁ hwfb₁ hwfv₁ hwfvar₁ hcanfail_rest
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_rest'
-          have hterm_s' := (hsem s s' hs ρ₀ trivial).1 ρ₁ |>.1 hterm_s
+          have hterm_s' := (hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).1 ρ₁ |>.1 hterm_s
           exact ⟨cfg', hf',
             ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁ hterm_s')
@@ -888,7 +868,11 @@ private theorem overapproximates_stmts_canfail
 private theorem overapproximates_stmts_aux
     (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
+    (newPrefix : String)
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String) (hmem : newPrefix ∈ prefixIdents)
+    (hpd : PrefixDisjoint newPrefix (prefixIdents.erase newPrefix))
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
@@ -927,7 +911,7 @@ private theorem overapproximates_stmts_aux
           have ⟨hwfb₁, hwfv₁, hwfvar₁⟩ := eval_preserved ρ₁ hterm_s
           exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-              ((hsem s s' hs ρ₀ trivial).1 ρ₁ |>.1 hterm_s))
+              ((hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).1 ρ₁ |>.1 hterm_s))
             ((ih rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfvar₁).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
@@ -937,37 +921,41 @@ private theorem overapproximates_stmts_aux
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendEval _ _ rest'
-                ((hsem s s' hs ρ₀ trivial).1 ρ' |>.2 lbl hexit_s))
+                ((hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).1 ρ' |>.2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
             have ⟨hwfb₁, hwfv₁, hwfvar₁⟩ := eval_preserved ρ₁ hterm_s
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-                ((hsem s s' hs ρ₀ trivial).1 ρ₁ |>.1 hterm_s))
+                ((hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).1 ρ₁ |>.1 hterm_s))
               ((ih rest' hrm ρ₁ ρ' hwfb₁ hwfv₁ hwfvar₁).2 lbl hexit_rest)
 
 theorem overapproximates_stmts
     (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : String)
     (hsem : Overapproximates
         (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
-        (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T) :
+        (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix) :
     Overapproximates
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
-      (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ hwf
+      (fun ss => ss.mapM T) newPrefix := by
+  intro prefixIdents ss ss' hmap hmem hpd ρ₀ hwf
   obtain ⟨hwfb, hwfv, hwfvar⟩ := hwf
-  refine ⟨fun ρ' => overapproximates_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T hsem ss
-    ss' hmap ρ₀ ρ' hwfb hwfv hwfvar, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
-  exact overapproximates_stmts_canfail evalCmd extendEval isAtAssertFn hwf_ext T hsem ss
-    ss' hmap ρ₀ hwfb hwfv hwfvar
+  refine ⟨fun ρ' => overapproximates_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+    hsem prefixIdents hmem hpd ss ss' hmap ρ₀ ρ' hwfb hwfv hwfvar, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
+  exact overapproximates_stmts_canfail evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+    hsem prefixIdents hmem hpd ss ss' hmap ρ₀ hwfb hwfv hwfvar
 
 private theorem overapproximatesAggressively_stmts_canfail
     (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : String)
     (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String) (hmem : newPrefix ∈ prefixIdents)
+    (hpd : PrefixDisjoint newPrefix (prefixIdents.erase newPrefix))
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
@@ -998,7 +986,7 @@ private theorem overapproximatesAggressively_stmts_canfail
         | .inl ⟨inner_cfg, hf_inner, hreach_inner⟩ =>
           have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
             ⟨inner_cfg, hf_inner, hreach_inner⟩
-          have hcanfail_s' := (hsem s s' hs ρ₀ trivial).2.2.1 hcanfail_s
+          have hcanfail_s' := (hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).2.2.1 hcanfail_s
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_s'
           exact ⟨.seq cfg' rest', by simp [Config.getEnv]; exact hf',
             .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach')⟩
@@ -1014,7 +1002,7 @@ private theorem overapproximatesAggressively_stmts_canfail
           have hcanfail_rest' := ih rest' hrm ρ₁ hwfb₁ hwfv₁ hwfvar₁ hcanfail_rest
           obtain ⟨cfg', hf', hreach'⟩ := hcanfail_rest'
           -- hsem gives CanFail ∨ (hasFailure = false → terminates) for s' at ρ₁
-          match (hsem s s' hs ρ₀ trivial).1 ρ₁ hterm_s with
+          match (hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).1 ρ₁ hterm_s with
           | .inl canfail_s' =>
             obtain ⟨cfg'', hf'', hreach''⟩ := canfail_s'
             exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
@@ -1029,7 +1017,7 @@ private theorem overapproximatesAggressively_stmts_canfail
                 cases h : ρ₁.hasFailure <;> simp_all
               have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) s ρ₀ :=
                 ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁', hterm_s⟩
-              have hcanfail_s' := (hsem s s' hs ρ₀ trivial).2.2.1 hcanfail_s
+              have hcanfail_s' := (hsem prefixIdents s s' hs hmem hpd ρ₀ trivial).2.2.1 hcanfail_s
               obtain ⟨cfg'', hf'', hreach''⟩ := hcanfail_s'
               exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
                 .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendEval _ _ rest' hreach'')⟩
@@ -1046,8 +1034,11 @@ private theorem lift_canfail_to_stmts
 private theorem overapproximatesAggressively_stmts_aux
     (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (newPrefix : String)
     (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix)
+    (prefixIdents : List String) (hmem : newPrefix ∈ prefixIdents)
+    (hpd : PrefixDisjoint newPrefix (prefixIdents.erase newPrefix))
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
@@ -1081,7 +1072,8 @@ private theorem overapproximatesAggressively_stmts_aux
       exact ⟨star_preserves_wfBool P evalCmd extendEval hwf_ext hterm_s hwfb,
              star_preserves_wfVal P evalCmd extendEval hwf_ext hterm_s hwfv,
              star_preserves_wfVar P evalCmd extendEval hwf_ext hterm_s hwfvar⟩
-    have ⟨hsem_term, hsem_exit, hsem_fail, _hsem_swf⟩ := hsem s s' hs ρ₀ trivial
+    have ⟨hsem_term, hsem_exit, hsem_fail, _hsem_swf⟩ :=
+      hsem prefixIdents s s' hs hmem hpd ρ₀ trivial
     -- Helper for the common pattern: ρ₁.hasFailure = true → s can fail → s' can fail → lift
     have canfail_from_failure : ∀ (ρ₁ : Env P),
         StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
@@ -1180,20 +1172,22 @@ private theorem overapproximatesAggressively_stmts_aux
 theorem overapproximatesAggressively_stmts
     (hwf_ext : WFEvalExtension P extendEval)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T) :
+    (newPrefix : String)
+    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T newPrefix) :
     OverapproximatesAggressively
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
-      (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ hwf
+      (fun ss => ss.mapM T) newPrefix := by
+  intro prefixIdents ss ss' hmap hmem hpd ρ₀ hwf
   obtain ⟨hwfb, hwfv, hwfvar⟩ := hwf
   refine ⟨fun ρ' hstar => ?_, fun lbl ρ' hstar => ?_, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
-  · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T hsem ss
-      ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).1 hstar
-  · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T hsem ss
-      ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).2 lbl hstar
-  · exact overapproximatesAggressively_stmts_canfail evalCmd extendEval isAtAssertFn hwf_ext T hsem ss
-      ss' hmap ρ₀ hwfb hwfv hwfvar
+  · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+      hsem prefixIdents hmem hpd ss ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).1 hstar
+  · exact (overapproximatesAggressively_stmts_aux evalCmd extendEval isAtAssertFn hwf_ext T newPrefix
+      hsem prefixIdents hmem hpd ss ss' hmap ρ₀ ρ' hwfb hwfv hwfvar).2 lbl hstar
+  · exact overapproximatesAggressively_stmts_canfail evalCmd extendEval isAtAssertFn hwf_ext T
+      newPrefix hsem prefixIdents hmem hpd ss ss' hmap ρ₀ hwfb hwfv hwfvar
 
 end ImperativeStmts
 

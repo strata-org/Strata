@@ -630,20 +630,19 @@ private theorem ensuresToAsserts_mem_is_assert
     then `ProcedureCorrect` holds for the procedure. -/
 theorem procBodyVerify_procedureCorrect
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (reserved : List String)
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (verifyStmt : Statement) (st' : CoreTransformState)
     -- `h_transform`: procToVerifyStmt returned successfully.
     (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
     (h_correct : Specification.AllAssertsValid
-      (Core.Specification.Lang.core π φ reserved) verifyStmt)
+      (Core.Specification.Lang.core π φ) verifyStmt)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
     (h_wf_ext : Core.WFEvalExtension φ)
     -- `h_wf_proc`: the procedure is well-formed
     (h_wf_proc : WF.WFProcedureProp p proc) :
     -- Conclusion: ProcedureCorrect holds.
-    Core.Specification.ProcedureCorrect π φ reserved proc p := by
+    Core.Specification.ProcedureCorrect π φ proc p := by
 
   obtain ⟨prefixStmts, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc

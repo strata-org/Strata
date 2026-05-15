@@ -34,7 +34,7 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasV
 
 abbrev Lang.det (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (isAtAssert P)
-    (initEnvWF := fun _ ρ =>
+    (initEnvWF := fun _ _ ρ =>
       WellFormedSemanticEvalBool ρ.eval ∧
       WellFormedSemanticEvalVal ρ.eval ∧
       WellFormedSemanticEvalVar ρ.eval)
@@ -54,7 +54,7 @@ abbrev Lang.kleene : Lang P where
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
   getEnv := KleeneConfig.getEnv
-  initEnvWF := fun _ ρ =>
+  initEnvWF := fun _ _ ρ =>
     WellFormedSemanticEvalBool ρ.eval ∧
     WellFormedSemanticEvalVal ρ.eval ∧
     WellFormedSemanticEvalVar ρ.eval
@@ -1202,10 +1202,10 @@ private theorem canfail_simulation
     The exiting case is ruled out since the transform returns `none` for
     `.exit` sub-statements. -/
 theorem detToKleene_overapproximates
-    (extendEval : ExtendEval P) :
+    (extendEval : ExtendEval P) (newPrefix : String) :
     Transform.Overapproximates (Lang.det extendEval) (Lang.kleene (P := P))
-      (StmtToKleeneStmt (P := P)) := by
-  intro st ns ht ρ₀ hswf
+      (StmtToKleeneStmt (P := P)) newPrefix := by
+  intro prefixIdents st ns ht hmem hpd ρ₀ hswf
   obtain ⟨hwfb, hwfv, hwfvar⟩ := hswf
   refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, ⟨hwfb, hwfv, hwfvar⟩⟩
   · exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv
