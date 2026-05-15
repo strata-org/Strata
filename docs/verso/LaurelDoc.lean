@@ -258,7 +258,7 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 - *Variables* — Var-Local, Var-Field, Var-Declare
 - *Control flow* — If-NoElse, If-Synth, If-Check, If-Check-NoElse; Block-Synth,
   Block-Synth-Empty, Block-Check, Block-Check-Empty; Exit; Return-None, Return-Some,
-  Return-Some-Checked (planned); While
+  Return-Void-Error, Return-Multi-Error; While
 - *Verification statements* — Assert, Assume
 - *Assignment* — Assign-Single, Assign-Multi
 - *Calls* — Static-Call, Static-Call-Multi, Instance-Call
@@ -411,29 +411,48 @@ nested {name Strata.Laurel.StmtExpr.Block}`Block` /
  Γ ⊢ Exit target ⇒ TVoid
 ```
 
+`Return` matches the optional return value against the enclosing procedure's declared
+outputs. The expected output types are threaded through
+{name Strata.Laurel.ResolveState}`ResolveState`'s `expectedReturnTypes`, set from
+`proc.outputs` by {name Strata.Laurel.resolveProcedure}`resolveProcedure` /
+{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure` for the duration of
+the body. `none` means "no enclosing procedure" — e.g. resolving a constant initializer —
+and skips all `Return` checks.
+
 ```
 ─────────────────────────────  (Return-None, impl)
  Γ ⊢ Return none ⇒ TVoid
 ```
 
-```
-      Γ ⊢ e ⇒ _
-──────────────────────────────  (Return-Some, impl)
- Γ ⊢ Return (some e) ⇒ TVoid
-```
-
-The value's synthesized type is currently discarded, so `return 0` in a `bool`-returning
-procedure isn't caught. Replaced by Return-Some-Checked once the expected return type is
-threaded through {name Strata.Laurel.ResolveState}`ResolveState`.
+A bare `return;` is allowed in any context. In a single-output procedure it acts as a
+Dafny-style early exit — the output parameter retains whatever was last assigned to it.
 
 ```
   Γ_proc.outputs = [T]      Γ ⊢ e ⇐ T
-──────────────────────────────────────  (Return-Some-Checked, planned)
+──────────────────────────────────────  (Return-Some, impl)
        Γ ⊢ Return (some e) ⇒ TVoid
 ```
 
-Set from `proc.outputs` in {name Strata.Laurel.resolveProcedure}`resolveProcedure` /
-{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure`.
+In a single-output procedure, the value is checked against the declared output type. This
+closes the prior soundness gap where `return 0` in a `bool`-returning procedure went
+uncaught.
+
+```
+  Γ_proc.outputs = []
+─────────────────────────────────  (Return-Void-Error, impl)
+   Γ ⊢ Return (some e) — error: "void procedure cannot return a value"
+
+
+  Γ_proc.outputs = [T_1; …; T_n]   (n ≥ 2)
+──────────────────────────────────────────────────────────  (Return-Multi-Error, impl)
+   Γ ⊢ Return (some e) — error: "multi-output procedure cannot
+                                  use 'return e'; assign to named outputs instead"
+```
+
+Multi-output procedures use named-output assignment (`r := …` on the declared output
+parameters). `return e` syntactically takes a single
+{name Strata.Laurel.StmtExpr.Return}`Option StmtExpr`, so it cannot carry multiple values;
+flagging it points users at the named-output convention.
 
 ```
   Γ ⊢ cond ⇐ TBool      Γ ⊢ invs_i ⇐ TBool      Γ ⊢ dec ⇐ ?      Γ ⊢ body ⇒ _
