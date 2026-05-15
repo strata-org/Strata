@@ -2211,10 +2211,10 @@ theorem CoreStepStar_rec
       CoreStepStar π φ c₂ c₃ → motive c₂ c₃ → motive c₁ c₃)
     {c₁ c₂ : CoreConfig}
     (h : CoreStepStar π φ c₁ c₂) : motive c₁ c₂ := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       motive c₁ c₂ by
-    exact this _ _ (CoreStepStar_to_StepStmtStar h)
+    exact h_gen _ _ (CoreStepStar_to_StepStmtStar h)
   intro c₁ c₂ h'
   induction h' with
   | refl => exact h_refl _
@@ -2283,7 +2283,7 @@ theorem core_step_preserves_wfBool
     WellFormedSemanticEvalBool c₂.getEnv.eval := by
   induction hstep with
   | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | cmd_sem _ | call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
         simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfBool _ _ _ hwf
@@ -2296,10 +2296,10 @@ theorem core_wfBool_preserved
     (hwf₀ : WellFormedSemanticEvalBool c₁.getEnv.eval)
     (hstar : CoreStepStar π φ c₁ c₂) :
     WellFormedSemanticEvalBool c₂.getEnv.eval := by
-  suffices ∀ c₁ c₂, WellFormedSemanticEvalBool c₁.getEnv.eval →
+  suffices h_gen : ∀ c₁ c₂, WellFormedSemanticEvalBool c₁.getEnv.eval →
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       WellFormedSemanticEvalBool c₂.getEnv.eval from
-    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+    h_gen c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
   intro c₁ c₂ hwf₀ h
   induction h with
   | refl => exact hwf₀
@@ -2314,7 +2314,7 @@ theorem core_step_preserves_wfVar
     WellFormedSemanticEvalVar c₂.getEnv.eval := by
   induction hstep with
   | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | cmd_sem _ | call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
         simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfVar _ _ _ hwf
@@ -2327,10 +2327,10 @@ theorem core_wfVar_preserved
     (hwf₀ : WellFormedSemanticEvalVar c₁.getEnv.eval)
     (hstar : CoreStepStar π φ c₁ c₂) :
     WellFormedSemanticEvalVar c₂.getEnv.eval := by
-  suffices ∀ c₁ c₂, WellFormedSemanticEvalVar c₁.getEnv.eval →
+  suffices h_gen : ∀ c₁ c₂, WellFormedSemanticEvalVar c₁.getEnv.eval →
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       WellFormedSemanticEvalVar c₂.getEnv.eval from
-    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+    h_gen c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
   intro c₁ c₂ hwf₀ h
   induction h with
   | refl => exact hwf₀
@@ -2345,7 +2345,7 @@ theorem core_step_preserves_wfCong
     WellFormedCoreEvalCong c₂.getEnv.eval := by
   induction hstep with
   | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | cmd_sem _ | call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
         simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfCong _ _ _ hwf
@@ -2358,10 +2358,10 @@ theorem core_wfCong_preserved
     (hwf₀ : WellFormedCoreEvalCong c₁.getEnv.eval)
     (hstar : CoreStepStar π φ c₁ c₂) :
     WellFormedCoreEvalCong c₂.getEnv.eval := by
-  suffices ∀ c₁ c₂, WellFormedCoreEvalCong c₁.getEnv.eval →
+  suffices h_gen : ∀ c₁ c₂, WellFormedCoreEvalCong c₁.getEnv.eval →
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       WellFormedCoreEvalCong c₂.getEnv.eval from
-    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+    h_gen c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
   intro c₁ c₂ hwf₀ h
   induction h with
   | refl => exact hwf₀
@@ -2376,7 +2376,7 @@ theorem core_step_preserves_wfExprCongr
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval := by
   induction hstep with
   | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | cmd_sem _ | call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
         simp [Config.getEnv]; exact hwf
   | step_block => simp [Config.getEnv]; exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfExprCongr _ _ _ hwf
@@ -2389,10 +2389,11 @@ theorem core_wfExprCongr_preserved
     (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₁.getEnv.eval)
     (hstar : CoreStepStar π φ c₁ c₂) :
     @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval := by
-  suffices ∀ c₁ c₂, @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₁.getEnv.eval →
+  suffices h_gen : ∀ c₁ c₂,
+      @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₁.getEnv.eval →
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval from
-    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+    h_gen c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
   intro c₁ c₂ hwf₀ h
   induction h with
   | refl => exact hwf₀
@@ -2445,12 +2446,12 @@ theorem stmts_allAssert_preserves_store
       | step_stmts_cons =>
         have ⟨ρ₁, h_s, h_r⟩ := core_seq_reaches_terminal h_rest
         have h_store₁ : ρ₁.store = ρ.store := by
-          suffices ∀ (c₁ c₂ : CoreConfig),
+          suffices h_gen : ∀ (c₁ c₂ : CoreConfig),
               CoreStepStar π φ c₁ c₂ →
               c₁ = .stmt (Statement.assert l e md) ρ →
               c₂ = .terminal ρ₁ →
               ρ₁.store = ρ.store by
-            exact this _ _ h_s rfl rfl
+            exact h_gen _ _ h_s rfl rfl
           intro c₁ c₂ hstar heq₁ heq₂
           subst heq₁
           cases hstar with
@@ -2512,7 +2513,7 @@ theorem core_noFailure_preserved
     (hf₀ : c₁.getEnv.hasFailure = Bool.false)
     (hstar : CoreStepStar π φ c₁ c₂) :
     c₂.getEnv.hasFailure = Bool.false := by
-  suffices ∀ c₁ c₂,
+  suffices h_gen : ∀ c₁ c₂,
       (∀ (a : AssertId Expression) (cfg : CoreConfig),
         CoreStepStar π φ c₁ cfg →
         coreIsAtAssert cfg a →
@@ -2520,7 +2521,7 @@ theorem core_noFailure_preserved
       c₁.getEnv.hasFailure = Bool.false →
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       c₂.getEnv.hasFailure = Bool.false from
-    this c₁ c₂ hvalid hf₀ (CoreStepStar_to_StepStmtStar hstar)
+    h_gen c₁ c₂ hvalid hf₀ (CoreStepStar_to_StepStmtStar hstar)
   intro c₁ c₂ hvalid hf₀ h
   induction h with
   | refl => exact hf₀

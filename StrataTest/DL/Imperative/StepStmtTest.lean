@@ -108,11 +108,6 @@ def noCmd : EvalCmdParam MiniPureExpr CmdT := fun _ _ _ _ _ => False
 
 The `exit "L"` propagates out of body's per-iteration block and the loop's
 recursive step (mismatch propagates), reaching the labeled outer block.
-
-With the new per-iteration loop semantics (each body wrapped in its own block),
-`exit "L"` propagates correctly because labeled exits propagate through both
-the body's anonymous block (label .none ≠ .some "L", mismatch) and the seq
-context (step_seq_exit), then is caught by the outer labeled block.
 -/
 
 /-- The test program: a labeled outer block containing a deterministic
