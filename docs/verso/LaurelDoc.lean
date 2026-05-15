@@ -234,128 +234,290 @@ The bidirectional design replaces that with two cleanly-separated concerns:
   current stub is conservative (structural equality only); it can be tightened
   incrementally without changing any callers.
 
-## Block and `TVoid`
+## Notation
 
-Statement-position constructs that produce no value synthesize
-{name Strata.Laurel.HighType.TVoid}`TVoid`:
-{name Strata.Laurel.StmtExpr.Return}`Return`,
-{name Strata.Laurel.StmtExpr.Exit}`Exit`,
-{name Strata.Laurel.StmtExpr.While}`While`,
-{name Strata.Laurel.StmtExpr.Assert}`Assert`,
-{name Strata.Laurel.StmtExpr.Assume}`Assume`,
-{name Strata.Laurel.Variable.Declare}`Var Declare`, and the opaque/abstract/external bodies.
-This makes blocks compose cleanly: control-flow statements don't pollute a block's
-synthesized type.
+Typing rules are written in the standard derivation-tree form: premises above the line,
+conclusion below, rule name on the right.
 
-A {name Strata.Laurel.StmtExpr.Block}`Block` is statement chaining `{ s_1; …; s_n }`. The
-checker treats it permissively in two ways:
+```
+premise_1   premise_2   …   premise_n
+─────────────────────────────────────  (Rule-Name)
+              conclusion
+```
 
-1. *Non-last statements are not required to be {name Strata.Laurel.HighType.TVoid}`TVoid`.*
-   In synth mode their types are computed and discarded; in check mode they are still
-   synthesized rather than checked against `void`. This matches Java/Python/JavaScript
-   expression-statement semantics: `f(x);` where `f` returns a value is normal idiomatic
-   code, and forcing an explicit discard would be hostile to the imperative style Laurel
-   targets. The cost is that `5;` (a literal in statement position) is silently accepted; if
-   we ever want to flag that, it should land as a lint, not a type error.
+We use:
 
-2. *The last statement is the block's type.* Empty blocks have type
-   {name Strata.Laurel.HighType.TVoid}`TVoid`. This is what lets a transparent functional
-   procedure body be `{ … some statements …; expr }`.
+- `e ⇒ T` — _e_ synthesizes _T_ (synth mode, `synthStmtExpr`).
+- `e ⇐ T` — _e_ checks against _T_ (check mode, `checkStmtExpr`).
+- `T <: U` — gradual consistency-subtyping, i.e. `isConsistentSubtype T U`.
+- `Γ` for the lexical scope is left implicit — every rule threads it identically.
 
-In check mode, the bespoke `Block` rule pushes the expected type into the *last* statement
-rather than checking the block's synthesized type at the boundary. This buys two things:
-errors fire at the actual offending sub-expression (e.g. inside a deeply nested
-{name Strata.Laurel.StmtExpr.IfThenElse}`if`), and the expected type keeps propagating
-through nested {name Strata.Laurel.StmtExpr.Block}`Block` /
+Side-effecting constructs synthesize {name Strata.Laurel.HighType.TVoid}`TVoid`. This
+includes {name Strata.Laurel.StmtExpr.Return}`Return`,
+{name Strata.Laurel.StmtExpr.Exit}`Exit`, {name Strata.Laurel.StmtExpr.While}`While`,
+{name Strata.Laurel.StmtExpr.Assert}`Assert`, {name Strata.Laurel.StmtExpr.Assume}`Assume`,
+{name Strata.Laurel.Variable.Declare}`Var Declare`, and the opaque/abstract/external bodies
+— they're recorded in the rules below.
+
+## Subsumption (the synth↔check boundary)
+
+```
+e ⇒ A      A <: B
+─────────────────  (Sub)
+     e ⇐ B
+```
+
+Subsumption is the *only* place check switches to synth. It fires as the default fallback
+in `checkStmtExpr` for every construct without a bespoke check rule. Bespoke check rules
+push the expected type *into* subexpressions, which keeps errors localized.
+
+## Typing rules
+
+Below, each construct is given as a derivation. Rules marked with ✓ in the implementation
+column are implemented today; rules marked ✗ are planned. The current implementation has
+bespoke check rules for {name Strata.Laurel.StmtExpr.Block}`Block` only; everything else
+reaches check mode through Sub. Where a synth rule pushes an expected type into a
+subexpression (e.g. `cond ⇐ TBool` in {name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse`),
+that's listed as a premise.
+
+### Literals and references
+
+```
+                                                          (Lit-Int)  ✓
+─────────────                ────────────────                ─────────────────
+ LiteralInt n ⇒ TInt          LiteralBool b ⇒ TBool          LiteralString s ⇒ TString
+
+────────────────────────                       Γ(x) = T
+ LiteralDecimal d ⇒ TReal                  ─────────────────  (Var-Local)  ✓
+                                            Var (.Local x) ⇒ T
+
+  e ⇒ _      Γ(f) = T_f                            Γ(x) ↦ T fresh
+─────────────────────────  (Var-Field)  ✓     ─────────────────────────  (Var-Declare)  ✓
+   Var (.Field e f) ⇒ T_f                       Var (.Declare ⟨x, T⟩) ⇒ TVoid
+```
+
+`Var (.Field e f)` resolves `f` against the type of `e` (or the enclosing instance type for
+`self.f`); the typing rule is independent of which path resolution took.
+
+### IfThenElse
+
+```
+cond ⇐ TBool      thenBr ⇒ T
+─────────────────────────────  (If-NoElse)  ✓
+   IfThenElse cond thenBr none ⇒ TVoid
+
+cond ⇐ TBool      thenBr ⇒ T_t      elseBr ⇒ T_e
+─────────────────────────────────────────────────  (If-Synth)  ✓
+   IfThenElse cond thenBr (some elseBr) ⇒ T_t
+
+cond ⇐ TBool      thenBr ⇐ T      elseBr ⇐ T
+─────────────────────────────────────────────  (If-Check)  ✗ (planned)
+       IfThenElse cond thenBr (some elseBr) ⇐ T
+```
+
+If-Synth picks the then-branch type by convention; the result is always consumed by an
+enclosing `checkAssignable` or by Sub, which provides a one-sided check against the
+surrounding context. The two branches are deliberately not compared against each other:
+statement-position `if`s commonly mix a value branch with a
+{name Strata.Laurel.HighType.TVoid}`TVoid` branch (early `return`, `exit`, `assert`, …),
+which a strict equality check would reject incorrectly.
+
+If-NoElse synthesizes {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no value
+to give back when `cond` is false. This rejects `x : int := if c then 5` at the assignment.
+
+### Block
+
+```
+                           none of these statements has a typing premise
+                          (their synthesized types are discarded — lax)
+                           ───────────────────────────────────────────
+                                  s_1 ⇒ _      …      s_{n-1} ⇒ _      s_n ⇒ T
+                          ────────────────────────────────────────────────────────  (Block-Synth)  ✓
+                                            Block [s_1; …; s_n] label ⇒ T
+
+────────────────────  (Block-Synth-Empty)  ✓
+ Block [] label ⇒ TVoid
+
+  s_1 ⇒ _    …    s_{n-1} ⇒ _      s_n ⇐ T
+─────────────────────────────────────────────  (Block-Check)  ✓
+       Block [s_1; …; s_n] label ⇐ T
+
+  TVoid <: T
+─────────────────────  (Block-Check-Empty)  ✓
+ Block [] label ⇐ T
+```
+
+Block-Synth is lax: non-last statements are synthesized but their types are discarded.
+This matches Java/Python/JavaScript expression-statement semantics: `f(x);` where `f`
+returns a value is normal idiomatic code. The cost is that `5;` (a literal in statement
+position) is silently accepted; flagging it would belong to a lint, not the type checker.
+
+Block-Check pushes the expected type into the *last* statement rather than checking the
+block's synthesized type at the boundary. Errors then fire at the offending subexpression
+inside `s_n` rather than at the surrounding {name Strata.Laurel.StmtExpr.Block}`Block`, and
+the expected type keeps propagating through nested
+{name Strata.Laurel.StmtExpr.Block}`Block` /
 {name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse` /
 {name Strata.Laurel.StmtExpr.Hole}`Hole` /
-{name Strata.Laurel.StmtExpr.Quantifier}`Quantifier`. Empty blocks reduce to subsumption of
-{name Strata.Laurel.HighType.TVoid}`TVoid` against the expected type.
+{name Strata.Laurel.StmtExpr.Quantifier}`Quantifier`. Empty blocks reduce to a subsumption
+check of {name Strata.Laurel.HighType.TVoid}`TVoid` against the expected type.
 
-## IfThenElse
+### Statements that synthesize TVoid
 
-{name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse cond t e_opt` has been converted to
-*partial* bidirectional form. Today the implementation has a synth rule but reaches check
-mode only through the subsumption fallback; a bespoke check rule that pushes the expected
-type into both branches is the planned next step.
+```
+─────────────────  (Exit)  ✓        cond ⇐ TBool      invs ⇐ TBool      dec ⇐ ?      body ⇒ _
+ Exit target ⇒ TVoid           ────────────────────────────────────────────────────────────────  (While)  ✓-ish
+                                                  While cond invs dec body ⇒ TVoid
 
-The synth rule:
 
-- *Condition.* `cond` is checked against {name Strata.Laurel.HighType.TBool}`TBool` via a
-  recursive `checkStmtExpr cond TBool` call. This replaces the previous synth-then-`checkBool`
-  pattern with the clean bidirectional one — the expected type is pushed inward, so a
-  literal `if 5 then …` flags the literal directly rather than the surrounding `if`.
-- *Branches.* `thenBr` is synthesized; if present, `elseBr` is synthesized too. The two
-  branch types are *not* compared against each other. The reason is that in Laurel's
-  unified statement-expression model, statement-position `if`s commonly mix a value
-  branch with a {name Strata.Laurel.HighType.TVoid}`TVoid` branch (early
-  {name Strata.Laurel.StmtExpr.Return}`return`, {name Strata.Laurel.StmtExpr.Exit}`exit`, an
-  {name Strata.Laurel.StmtExpr.Assert}`assert`, …), which a strict equality check on
-  branches would reject incorrectly.
-- *Result type.* When `elseBr` is `none`, the result is
-  {name Strata.Laurel.HighType.TVoid}`TVoid` — the construct is in statement form and the
-  then-branch's value is discarded. When `elseBr` is `some _`, the result is the
-  then-branch's synthesized type. The arbitrary preference for the then-branch here is
-  harmless: the result is always consumed by an enclosing `checkAssignable` /
-  subsumption-fallback, which gives a one-sided check against the surrounding context's
-  expected type.
+─────────────────────────  (Return-None)  ✓        e ⇒ _
+ Return none ⇒ TVoid                       ─────────────────────  (Return-Some)  ✓
+                                            Return (some e) ⇒ TVoid
 
-The change to `none` → {name Strata.Laurel.HighType.TVoid}`TVoid` closes a soundness gap in
-the previous design, where `if c then 5` synthesized {name Strata.Laurel.HighType.TInt}`TInt`
-unconditionally — even though there is no value when `c` is false — so an assignment
-`x: int := if c then 5` would have type-checked. With the new rule, the synthesized type is
-{name Strata.Laurel.HighType.TVoid}`TVoid` and the assignment is correctly rejected.
 
-The planned bespoke check rule is straightforward: `cond ⇐ TBool`, `thenBr ⇐ expected`, and
-`elseBr ⇐ expected` if present; if absent, fall back to subsumption of
-{name Strata.Laurel.HighType.TVoid}`TVoid` against the expected type. The benefit is the
-same as for `Block`: errors fire at the offending sub-expression rather than the
-surrounding `if`, and the expected type propagates through nested control flow.
+cond ⇐ TBool                          cond ⇐ TBool
+──────────────────  (Assert)  ✓-ish   ──────────────  (Assume)  ✓-ish
+ Assert cond ⇒ TVoid                   Assume cond ⇒ TVoid
+
+
+  Γ(x) = T_x      e ⇒ T_e      T_e <: T_x                              targets ⇒ Ts      e ⇒ MultiValuedExpr Us      |Ts| = |Us|     U_i <: T_i
+─────────────────────────────────────────  (Assign-Single)  ✓-ish    ───────────────────────────────────────────────────────────────────  (Assign-Multi)  ✓-ish
+        Assign [x] e ⇒ TVoid                                                                 Assign targets e ⇒ TVoid
+```
+
+✓-ish marks rules that are implemented but still call the legacy `checkBool` /
+`checkAssignable` helpers rather than `checkStmtExpr cond TBool`. Functionally equivalent
+under the gradual relation `<:` (since `checkBool` accepts the same types as
+`isConsistentSubtype _ TBool` modulo the temporary {name Strata.Laurel.HighType.TCore}`TCore`
+carve-out); slated to be migrated to `checkStmtExpr`.
+
+The {name Strata.Laurel.StmtExpr.Return}`Return`-with-value rule today only resolves `e`
+without checking it against the enclosing procedure's declared output type. The intended
+rule is:
+
+```
+  Γ_proc.outputs = [T]     e ⇐ T
+─────────────────────────────────  (Return-Some-Checked)  ✗ (planned)
+       Return (some e) ⇒ TVoid
+```
+
+This requires threading the expected return type through `ResolveState`. Without it,
+`return 0` in a `bool`-returning procedure goes uncaught.
+
+### Calls and primitive operations
+
+```
+  callee resolves to procedure with inputs Ts and outputs [T]
+  args ⇒ Us      U_i <: T_i (pairwise)
+──────────────────────────────────────────────────────────────  (Static-Call)  ✓-ish
+                  StaticCall callee args ⇒ T
+
+  callee resolves to procedure with inputs Ts and outputs [T_1; …; T_n]   (n ≠ 1)
+  args ⇒ Us      U_i <: T_i (pairwise)
+─────────────────────────────────────────────────────────────────────────────────  (Static-Call-Multi)  ✓-ish
+                  StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
+
+  target ⇒ _      callee resolves with inputs [self; Ts] and outputs [T]
+  args ⇒ Us      U_i <: T_i (pairwise; self is dropped)
+─────────────────────────────────────────────────────────────────────────  (Instance-Call)  ✓-ish
+              InstanceCall target callee args ⇒ T
+
+
+  args ⇐ TBool (each)
+──────────────────────────────  (Op-Bool)  ✓-ish    op ∈ {And, Or, AndThen, OrElse, Not, Implies}
+ PrimitiveOp op args ⇒ TBool
+
+
+  args ⇐ Numeric (each)
+─────────────────────────────  (Op-Cmp)  ✓-ish      op ∈ {Lt, Leq, Gt, Geq}
+ PrimitiveOp op args ⇒ TBool
+
+
+  lhs ⇒ T_l      rhs ⇒ T_r      T_l <: T_r ∨ T_r <: T_l
+──────────────────────────────────────────────────────────  (Op-Eq)  ✓-ish     op ∈ {Eq, Neq}
+              PrimitiveOp op [lhs; rhs] ⇒ TBool
+
+
+  args ⇐ Numeric (each)      args.head ⇒ T
+──────────────────────────────────────────  (Op-Arith)  ✓-ish    op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
+       PrimitiveOp op args ⇒ T
+
+
+  args ⇐ TString (each)                 — current implementation: no operand check
+─────────────────────────────  (Op-Concat)  ✓-ish
+ PrimitiveOp op args ⇒ TString
+```
+
+`Numeric` abbreviates "consistent with one of
+{name Strata.Laurel.HighType.TInt}`TInt`, {name Strata.Laurel.HighType.TReal}`TReal`,
+{name Strata.Laurel.HighType.TFloat64}`TFloat64`". Today this is enforced by `checkNumeric`
+rather than a `checkStmtExpr` chain; equivalent under the gradual relation.
+
+Op-Arith's "result is the type of the first argument" rule handles `int + int → int`,
+`real + real → real`, etc. without a unification step. A consequence: `int + real` is *not*
+flagged because each operand individually passes the numeric check. A real fix would be a
+numeric-promotion or unification rule; for now this is a known relaxation.
+
+Op-Concat currently performs no operand check; the rule above describes the intended
+behavior.
+
+### Object-related and verification forms
+
+```
+  ref resolves to a composite or datatype T
+─────────────────────────────────────────────  (New-Ok)  ✓     otherwise New ref ⇒ Unknown
+            New ref ⇒ UserDefined T
+
+
+─────────────────  (This)  ✓                   ────────────────────────────  (Abstract / All / ContractOf)  ✓
+ This ⇒ Unknown                                 Abstract / All / ContractOf … ⇒ Unknown
+
+
+  lhs ⇒ _      rhs ⇒ _
+─────────────────────────  (RefEq)  ✓               target ⇒ _
+ ReferenceEquals lhs rhs ⇒ TBool                ──────────────────  (AsType)  ✓
+                                                 AsType target T ⇒ T
+
+
+  target ⇒ _                                    body ⇒ _
+─────────────────  (IsType)  ✓                ──────────────────────────  (Quantifier)  ✓
+ IsType target T ⇒ TBool                       Quantifier mode ⟨x, T⟩ trig body ⇒ TBool
+
+
+   name ⇒ _                          v ⇒ T                        v ⇒ _
+─────────────────  (Assigned)  ✓     ────────────  (Old)  ✓       ──────────────  (Fresh)  ✓
+ Assigned name ⇒ TBool                Old v ⇒ T                    Fresh v ⇒ TBool
+
+
+  v ⇒ T      proof ⇒ _                     target ⇒ T_t      newVal ⇒ _
+──────────────────────  (ProveBy)  ✓        ─────────────────────────────────  (PureFieldUpdate)  ✓
+ ProveBy v proof ⇒ T                         PureFieldUpdate target f newVal ⇒ T_t
+```
+
+### Holes
+
+```
+                                                                                    Unknown <: T
+─────────────────────  (Hole-Some)  ✓        ─────────────────────  (Hole-None-Synth)  ✓     ─────────────────────  (Hole-None-Check)  ✗ (planned)
+ Hole d (some T) ⇒ T                          Hole d none ⇒ Unknown                            Hole d none ⇐ T
+```
+
+In check mode, `Hole d none ⇐ T` reduces to subsumption today (`Unknown <: T`, which always
+holds). The planned bespoke rule would record the inferred `T` on the hole node so
+downstream passes can see it, instead of leaving `none` until the hole-inference pass.
 
 ## Mutual recursion and termination
 
-{name Strata.Laurel.synthStmtExpr}`synthStmtExpr` and
-{name Strata.Laurel.checkStmtExpr}`checkStmtExpr` are now mutually recursive: the synth rule
-for {name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse` invokes check-mode resolution for
-the condition, and the check function falls back to synth via the subsumption rule.
+`synthStmtExpr` and `checkStmtExpr` are mutually recursive: the synth rule for
+{name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse` invokes check-mode resolution for the
+condition, and the check function falls back to synth via Sub.
 
 Termination uses a lexicographic measure `(exprMd, tag)` where the tag is `0` for
-{name Strata.Laurel.synthStmtExpr}`synthStmtExpr` and `1` for
-{name Strata.Laurel.checkStmtExpr}`checkStmtExpr`. Any descent into a strict subterm
-decreases via `Prod.Lex.left` (first component shrinks); the subsumption rule
-`check e → synth e` calls synth on the *same* expression, which decreases via
-`Prod.Lex.right` (second component goes from 1 to 0). This is the standard well-founded
-encoding for bidirectional systems where one direction calls the other on the same input.
-
-## Mode assignment per construct
-
-The intended mode for each construct (some are still being converted to bidirectional in
-the implementation):
-
-| Construct | Mode | Notes |
-|---|---|---|
-| Literals, `Var .Local`, `Var .Field`, `New T`, `IsType`, `ReferenceEquals`, `Quantifier`, `Assigned`, `Fresh`, `Hole _ (some T)`, `StaticCall`, `InstanceCall` | synth | type is determined locally |
-| `Var .Declare`, `Exit`, `Return`, `While`, `Assert`, `Assume`, `Assign` | synth ⇒ {name Strata.Laurel.HighType.TVoid}`TVoid` | side-effecting; condition operands checked inward |
-| `IfThenElse cond t e_opt` | synth (`cond ⇐ TBool`); planned bespoke check | see below |
-| `Block` | bespoke check | `s_1..s_{n-1}` synth, `s_n ⇐ T`; synth uses last's synthesized type |
-| `Hole _ none` | bespoke check | check mode succeeds with `expected`; synth mode → `Unknown` |
-| `AsType e T` | synth ⇒ `T` | the cast is the user's claim; no check on `e` |
-| `Old`, `ProveBy v _`, `PureFieldUpdate t _ _` | propagate type of subexpr | unchanged |
-| `This`, `Abstract`, `All`, `ContractOf` | synth ⇒ {name Strata.Laurel.HighType.Unknown}`Unknown` | type not tracked |
-
-{name Strata.Laurel.StmtExpr.PrimitiveOp}`PrimitiveOp` operands are checked inward against
-the operator's expected operand type ({name Strata.Laurel.HighType.TBool}`TBool` for
-logical, numeric for arithmetic and ordering, {name Strata.Laurel.HighType.TString}`TString`
-for `StrConcat`). {name Strata.Laurel.Operation.Eq}`Eq`/{name Strata.Laurel.Operation.Neq}`Neq`
-synthesize both operands and require consistency in either direction
-(`isConsistentSubtype l r ∨ isConsistentSubtype r l`).
-
-Arithmetic ops `Neg`/`Add`/…/`ModT` synthesize *the type of the first argument*. This is how
-the checker handles {name Strata.Laurel.HighType.TInt}`TInt` /
-{name Strata.Laurel.HighType.TReal}`TReal` / {name Strata.Laurel.HighType.TFloat64}`TFloat64`
-without a unification step. A consequence: `int + real` is not flagged today, since each
-operand passes the numeric check individually. A real fix would be a numeric-promotion or
-unification rule; for now this is a known relaxation.
+`synthStmtExpr` and `1` for `checkStmtExpr`. Any descent into a strict subterm decreases
+via `Prod.Lex.left` (first component shrinks); Sub calls synth on the *same* expression,
+which decreases via `Prod.Lex.right` (second component goes from 1 to 0). This is the
+standard well-founded encoding for bidirectional systems where one direction calls the
+other on the same input.
 
 ## Two helpers for resolution sites
 
