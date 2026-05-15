@@ -743,6 +743,47 @@ inference-time types for consistency under `~`; a disagreement fires the diagnos
 *"hole annotated with 'T_resolution' but context expects 'T_inference'"*, surfacing what
 would otherwise be a silent overwrite.
 
+## Future structural changes
+
+The current pipeline has resolution and several downstream passes that recompute or
+re-derive type information that resolution already synthesized. A few cleanups worth
+considering:
+
+### Rename `Resolution.lean` → `NameTypeResolution.lean`
+
+The pass resolves names *and* type-checks expressions in one walk; the file name only
+advertises the first half. A rename (e.g. `NameTypeResolution.lean` or
+`ResolutionAndTyping.lean`) would describe what the pass actually does. The
+`SemanticModel` and `ResolvedNode` types could keep their names — they're about resolved
+references, not typing.
+
+### Eliminate `LaurelTypes.computeExprType` by caching types
+
+`LaurelTypes.lean` exports `computeExprType : SemanticModel → StmtExprMd → HighTypeMd`,
+which five later passes call (`LaurelToCoreTranslator`, `ModifiesClauses`,
+`LiftImperativeExpressions`, `HeapParameterization`, `TypeHierarchy`) to ask "what's the
+type of this expression?" after resolution. Resolution already synthesizes the same types
+during its walk, then discards them. Two ways to remove the duplication:
+
+- *Cache types on the AST.* Add a `HighTypeMd` field to `StmtExpr` (or a parallel
+  `Std.HashMap Nat HighTypeMd` keyed by node-id, attached to `SemanticModel`), populate it
+  during resolution, and have later passes read it. `computeExprType` becomes a lookup,
+  not a re-traversal.
+- *Make the cache opt-in.* Same idea, but only enable the type-cache for passes that need
+  it. Less invasive but partially defeats the point.
+
+The duplication isn't a correctness issue today (both paths produce consistent results),
+just wasted work and a maintenance hazard.
+
+### Shrink or remove `InferHoleTypes`
+
+`InferHoleTypes` walks the post-resolution AST a second time to annotate holes. Now that
+Hole-None-Check writes the expected type during resolution for holes in check-mode
+positions, the post-pass only needs to handle holes in synth-only positions (e.g. call
+arguments resolved through `synthStmtExpr` instead of `checkStmtExpr`). As more constructs
+gain bespoke check rules, fewer holes will reach `InferHoleTypes`; eventually the pass
+can be deleted entirely.
+
 # Translation Pipeline
 
 Laurel programs are verified by translating them to Strata Core and then invoking the Core
