@@ -452,6 +452,15 @@ private def isConsistentNumeric (ty : HighTypeMd) : Bool :=
   | .TCore _ => true
   | _ => false
 
+/-- Test whether a type is a user-defined reference type, modulo gradual
+    consistency. Used by Fresh and ReferenceEquals, which only make sense on
+    composite/datatype references. -/
+private def isConsistentReference (ty : HighTypeMd) : Bool :=
+  match ty.val with
+  | .UserDefined _ | .Unknown => true
+  | .TCore _ => true
+  | _ => false
+
 /-- Get the type of a resolved variable reference from scope. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
   let s ← get
@@ -661,8 +670,12 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
       modify fun s => { s with errors := s.errors.push diag }
       pure (.This, { val := .Unknown, source := source })
   | .ReferenceEquals lhs rhs =>
-    let (lhs', _) ← synthStmtExpr lhs
-    let (rhs', _) ← synthStmtExpr rhs
+    let (lhs', lhsTy) ← synthStmtExpr lhs
+    let (rhs', rhsTy) ← synthStmtExpr rhs
+    unless isConsistentReference lhsTy do
+      typeMismatch lhsTy.source "a reference type" lhsTy
+    unless isConsistentReference rhsTy do
+      typeMismatch rhsTy.source "a reference type" rhsTy
     pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
     let (target', _) ← synthStmtExpr target
@@ -700,7 +713,9 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let (val', valTy) ← synthStmtExpr val
     pure (.Old val', valTy)
   | .Fresh val =>
-    let (val', _) ← synthStmtExpr val
+    let (val', valTy) ← synthStmtExpr val
+    unless isConsistentReference valTy do
+      typeMismatch valTy.source "a reference type" valTy
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
     let cond' ← checkStmtExpr condExpr { val := .TBool, source := condExpr.source }

@@ -550,10 +550,17 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
 ```
 
 ```
-        Γ ⊢ lhs ⇒ _      Γ ⊢ rhs ⇒ _
-───────────────────────────────────────  (RefEq, impl)
- Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
+  Γ ⊢ lhs ⇒ T_l      Γ ⊢ rhs ⇒ T_r      isReference T_l      isReference T_r
+─────────────────────────────────────────────────────────────────────────────  (RefEq, impl)
+                       Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
 ```
+
+`isReference T` holds when `T` is a {name Strata.Laurel.HighType.UserDefined}`UserDefined`,
+{name Strata.Laurel.HighType.Unknown}`Unknown`, or {name Strata.Laurel.HighType.TCore}`TCore`
+type. Reference equality is meaningless on primitives. Compatibility between `T_l` and
+`T_r` (e.g. rejecting `Cat === Dog` for unrelated user-defined types) is delegated to
+future tightening of `<:` — today, two distinct user-defined names already mismatch
+structurally, so the check would only fire under stronger subtyping.
 
 ```
    Γ ⊢ target ⇒ T_t      Γ(f) = T_f      Γ ⊢ newVal ⇐ T_f
@@ -589,10 +596,14 @@ proposition; without this, `forall x: int :: x + 1` would be silently accepted.
 ```
 
 ```
-     Γ ⊢ v ⇒ _
-─────────────────────  (Fresh, impl)
- Γ ⊢ Fresh v ⇒ TBool
+  Γ ⊢ v ⇒ T      isReference T
+─────────────────────────────────  (Fresh, impl)
+       Γ ⊢ Fresh v ⇒ TBool
 ```
+
+`isReference T` is the same predicate as in {name Strata.Laurel.StmtExpr.ReferenceEquals}`ReferenceEquals`.
+{name Strata.Laurel.StmtExpr.Fresh}`Fresh` only makes sense on heap-allocated references;
+`fresh(5)` is rejected.
 
 ```
    Γ ⊢ v ⇒ T      Γ ⊢ proof ⇒ _
