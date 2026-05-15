@@ -280,12 +280,47 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let resultExpr ← match firstTarget.val with
         | .Local varName => pure (⟨.Var (.Local (← getSubst varName)), source⟩)
         | .Declare param =>
-          -- Declaration with initializer: check if substitution exists
+          -- Declaration with initializer in expression position. If we already
+          -- have a substitution for this name (because a later traversal pass
+          -- introduced one), use the snapshot. Otherwise, fully lower this
+          -- declaration: recursively transform the initializer (so any inner
+          -- assignments / unlabeled blocks / nondeterministic holes get
+          -- lifted), then emit the lifted declaration as a prepended statement
+          -- in correct execution order. Return a reference to the declared
+          -- name as the expression's value.
           let hasSubst := (← get).subst.lookup param.name |>.isSome
           if hasSubst then
             pure (⟨.Var (.Local (← getSubst param.name)), source⟩)
           else
-            return expr
+            -- Run the inner transformation with a fresh prepend stack so we
+            -- can distinguish side-effects from this declaration's initializer
+            -- from those already accumulated by previously-processed (later in
+            -- program order) statements in the right-to-left traversal.
+            let outerPrepends := (← get).prependedStmts
+            modify fun s => { s with prependedStmts := [] }
+            let seqValue ← transformExpr value
+            let innerPrepends ← takePrepends
+            -- Reassemble in correct execution order (front = earliest):
+            --   outerPrepends   - already-lifted statements from later
+            --                     positions; their snapshot decls must precede
+            --                     any reference inserted via substitution into
+            --                     this declaration's initializer.
+            --   innerPrepends   - side effects from evaluating `value`; they
+            --                     must execute before the declaration binds.
+            --   liftedDecl      - this declaration with the transformed value.
+            -- Note: this means later-position prepends (outerPrepends) end up
+            -- at the front of state, contradicting the usual right-to-left
+            -- invariant. That's safe here because outerPrepends only contain
+            -- snapshot/havoc decls and lifted assignments that commute with
+            -- this declaration up to the substitutions applied to seqValue.
+            let liftedDecl : StmtExprMd := ⟨.Assign targets seqValue, source⟩
+            modify fun s => { s with
+              prependedStmts := outerPrepends ++ innerPrepends ++ [liftedDecl] }
+            -- The expression value of `var t := init` is the just-declared `t`.
+            -- Returning a `.Var (.Local name)` lets `onlyKeepSideEffectStmtsAndLast`
+            -- drop this slot from the surrounding block (the side effect is
+            -- already captured in the prepended declaration above).
+            return ⟨.Var (.Local param.name), source⟩
         | _ =>
           dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
           return expr
@@ -375,25 +410,13 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return ⟨.IfThenElse seqCond seqThen seqElse, source⟩
 
   | .Block stmts labelOption =>
-      -- Recursively transform sub-expressions (creates SSA snapshots for
-      -- assignments in expression position, via the `Assign` case above).
+      -- Recursively transform sub-expressions (this also creates SSA snapshots
+      -- for assignments in expression position, via the `.Assign` case above).
+      -- We keep the Block structure: `LaurelToCoreTranslator` natively handles
+      -- singleton blocks (`{ e }`) and `var x := init`-prefixed blocks (as
+      -- let-bindings), so we should not collapse those structures here.
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-      if labelOption.isNone then
-        match hne : newStmts with
-        | [] => return ⟨ .Block [] labelOption, source⟩
-        | head :: rest =>
-          -- Unlabeled block in expression position: hoist side-effects via
-          -- onlyKeepSideEffectStmtsAndLast (prepends asserts, var declares,
-          -- declare-assigns, drops plain assigns already processed), and
-          -- return the last element as the expression value. This lowers
-          -- the block structure so the Laurel-to-Core translator no longer
-          -- sees a Block in expression position. Pattern is commonly emitted
-          -- by PythonToLaurel: { asserts; Call } or { havoc; Hole }
-          -- (PR #1019 for unmodeled calls).
-          let _ ← onlyKeepSideEffectStmtsAndLast (head :: rest)
-          return (head :: rest).getLast (by simp)
-      else
-        return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, source⟩
+      return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, source⟩
 
   | .Var (.Declare param) =>
       -- If the substitution map has an entry for this variable, it was
