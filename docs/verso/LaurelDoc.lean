@@ -243,10 +243,10 @@ includes {name Strata.Laurel.StmtExpr.Return}`Return`,
 
 ## Typing rules
 
-Each construct is given as a derivation. Premises sit above the line, conclusion below.
-Rules tagged `(impl)` are implemented; rules tagged `(planned)` describe the intended
-behavior but aren't yet wired in. `Γ` (the lexical scope) is left implicit; every rule
-threads it identically.
+Each construct is given as a derivation. `(impl)` = implemented; `(planned)` = intended,
+not yet wired in. `(impl-ish)` = implemented but still calls a legacy helper (`checkBool` /
+`checkNumeric`/`checkAssignable`) instead of going through `checkStmtExpr`; functionally
+equivalent under `<:`.
 
 ### Sub (subsumption)
 
@@ -256,8 +256,7 @@ e ⇒ A      A <: B
      e ⇐ B
 ```
 
-The default fallback in `checkStmtExpr`. Used by every construct that doesn't have a
-bespoke check rule.
+Fallback in `checkStmtExpr` whenever no bespoke check rule applies.
 
 ### LiteralInt
 
@@ -303,8 +302,8 @@ bespoke check rule.
  Var (.Field e f) ⇒ T_f
 ```
 
-`f` is resolved against the type of `e` (or the enclosing instance type for `self.f`); the
-typing rule is independent of which path resolution took.
+Resolution looks `f` up against the type of `e` (or the enclosing instance type for
+`self.f`); the typing rule itself is path-agnostic.
 
 ### Var (.Declare)
 
@@ -332,15 +331,12 @@ cond ⇐ TBool      thenBr ⇐ T      elseBr ⇐ T
  IfThenElse cond thenBr (some elseBr) ⇐ T
 ```
 
-If-NoElse synthesizes {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no value
-to give back when `cond` is false. Without this rule, `x : int := if c then 5` would
-type-check spuriously.
+If-NoElse uses {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no value when
+`cond` is false; without it, `x : int := if c then 5` would type-check spuriously.
 
-If-Synth picks the then-branch type; the result is always consumed by an enclosing
-`checkAssignable` or by Sub, which provides a one-sided check against the surrounding
-context. The two branches are deliberately not compared against each other: statement-position
-`if`s commonly mix a value branch with a {name Strata.Laurel.HighType.TVoid}`TVoid` branch
-(early `return`, `exit`, `assert`, …), which a strict equality check would reject incorrectly.
+If-Synth picks the then-branch arbitrarily and does *not* compare branches: a statement-
+position `if` often pairs a value branch with a `return`/`exit`/`assert`. The surrounding
+context's `checkAssignable` or Sub provides the actual check downstream.
 
 ### Block
 
@@ -364,15 +360,13 @@ context. The two branches are deliberately not compared against each other: stat
  Block [] label ⇐ T
 ```
 
-The non-last statements are synthesized but their types are discarded — this is the lax
-rule. It matches Java/Python/JavaScript expression-statement semantics: `f(x);` where `f`
-returns a value is normal idiomatic code. The cost is that `5;` (a literal in statement
-position) is silently accepted; flagging it would belong to a lint, not the type checker.
+Non-last statements are synthesized but their types discarded (the lax rule). This matches
+Java/Python/JS where `f(x);` is normal even when `f` returns a value. The trade-off: `5;`
+is silently accepted; flagging it belongs to a lint.
 
-In check mode, the expected type is pushed into the *last* statement rather than checked at
-the boundary. Errors then fire at the offending subexpression inside `s_n`, and the
-expected type keeps propagating through nested
-{name Strata.Laurel.StmtExpr.Block}`Block` /
+Check mode pushes `T` into the *last* statement instead of comparing the block's
+synthesized type at the boundary. Errors then fire at the offending subexpression, and `T`
+keeps propagating through nested {name Strata.Laurel.StmtExpr.Block}`Block` /
 {name Strata.Laurel.StmtExpr.IfThenElse}`IfThenElse` /
 {name Strata.Laurel.StmtExpr.Hole}`Hole` /
 {name Strata.Laurel.StmtExpr.Quantifier}`Quantifier`.
@@ -401,11 +395,11 @@ expected type keeps propagating through nested
        Return (some e) ⇒ TVoid
 ```
 
-The current `Return-Some` rule discards the value's synthesized type. The planned rule
-threads the expected return type through {name Strata.Laurel.ResolveState}`ResolveState`
-(set from `proc.outputs` in {name Strata.Laurel.resolveProcedure}`resolveProcedure` /
-{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure`), so `return 0` in
-a `bool`-returning procedure can be caught at the `Return` site.
+`Return-Some` currently throws away the value's type, so `return 0` in a `bool`-returning
+procedure isn't caught. The planned rule threads the expected return type through
+{name Strata.Laurel.ResolveState}`ResolveState` (set from `proc.outputs` in
+{name Strata.Laurel.resolveProcedure}`resolveProcedure` /
+{name Strata.Laurel.resolveInstanceProcedure}`resolveInstanceProcedure`).
 
 ### While
 
@@ -415,9 +409,8 @@ a `bool`-returning procedure can be caught at the `Return` site.
        While cond invs dec body ⇒ TVoid
 ```
 
-`impl-ish` here means the rule is implemented but `cond` and `invs_i` go through the legacy
-`checkBool` helper rather than `checkStmtExpr cond TBool`. Functionally equivalent under
-`<:`; slated for migration.
+`dec` (the optional decreases clause) is currently resolved without a type check; the
+intended target is a numeric type, not yet enforced.
 
 ### Assert
 
@@ -490,8 +483,7 @@ a `bool`-returning procedure can be caught at the `Return` site.
 
 `Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
 {name Strata.Laurel.HighType.TReal}`TReal`,
-{name Strata.Laurel.HighType.TFloat64}`TFloat64`". Today this is enforced by `checkNumeric`
-rather than a `checkStmtExpr` chain; equivalent under `<:`.
+{name Strata.Laurel.HighType.TFloat64}`TFloat64`".
 
 ### PrimitiveOp (equality)
 
@@ -509,10 +501,9 @@ rather than a `checkStmtExpr` chain; equivalent under `<:`.
        PrimitiveOp op args ⇒ T
 ```
 
-The "result is the type of the first argument" rule handles `int + int → int`,
-`real + real → real` etc. without unification. A consequence: `int + real` is *not*
-flagged today — each operand individually passes `Numeric`. A real fix would be a
-numeric-promotion or unification rule; for now this is a known relaxation.
+"Result is the type of the first argument" handles `int + int → int`, `real + real → real`,
+etc. without unification. Known relaxation: `int + real` passes (each operand individually
+passes `Numeric`); a proper fix needs numeric promotion or unification.
 
 ### PrimitiveOp (string concatenation)
 
@@ -522,8 +513,7 @@ numeric-promotion or unification rule; for now this is a known relaxation.
  PrimitiveOp op args ⇒ TString
 ```
 
-The current implementation performs no operand check on `StrConcat`; the planned rule
-above describes the intended behavior.
+Operand check not yet implemented — `StrConcat` accepts any operands today.
 
 ### New
 
@@ -546,7 +536,7 @@ above describes the intended behavior.
  AsType target T ⇒ T
 ```
 
-`AsType` does not check `target` against `T` — the cast is the user's claim.
+`target` is resolved but not checked against `T` — the cast is the user's claim.
 
 ### IsType
 
