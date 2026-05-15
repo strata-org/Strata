@@ -590,7 +590,8 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
   | .PureFieldUpdate target fieldName newVal =>
     let (target', targetTy) ← synthStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    let (newVal', _) ← synthStmtExpr newVal
+    let fieldTy ← getVarType fieldName'
+    let newVal' ← checkStmtExpr newVal fieldTy
     pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
@@ -646,7 +647,19 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     let ty := if kindOk then { val := HighType.UserDefined ref', source := source }
               else { val := HighType.Unknown, source := source }
     pure (.New ref', ty)
-  | .This => pure (.This, { val := .Unknown, source := source })
+  | .This =>
+    let s ← get
+    match s.instanceTypeName with
+    | some typeName =>
+      let typeId : Identifier :=
+        match s.scope.get? typeName with
+        | some (uid, _) => { text := typeName, uniqueId := some uid, source := source }
+        | none => { text := typeName, source := source }
+      pure (.This, { val := .UserDefined typeId, source := source })
+    | none =>
+      let diag := diagnosticFromSource source "'this' is not allowed outside instance methods"
+      modify fun s => { s with errors := s.errors.push diag }
+      pure (.This, { val := .Unknown, source := source })
   | .ReferenceEquals lhs rhs =>
     let (lhs', _) ← synthStmtExpr lhs
     let (rhs', _) ← synthStmtExpr rhs
