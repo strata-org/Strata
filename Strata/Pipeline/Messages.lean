@@ -20,7 +20,6 @@ private def printlnFlush (msg : String) : BaseIO Unit := do
 /-- Nanoseconds to milliseconds with rounding. -/
 def nsToMs (ns : Nat) : Nat := (ns + 500000) / 1000000
 
-
 /-- A phase represents a position in the phase hierarchy.
     Top-level phases have a single entry; subphases have multiple.
     Ordering is determined by position in the timing array, not by name. -/
@@ -244,9 +243,72 @@ structure PhaseTimingEntry where
   timeout : Bool := false
   count : Nat := 1
 
+/-- Aggregated data for a single repeated phase (recursive for arbitrary nesting). -/
+structure RepeatedPhaseData where
+  count : Nat
+  totalNs : Nat
+  /-- Aggregated timings for nested subphases, in first-seen order. -/
+  children : Array (String × RepeatedPhaseData) := #[]
+  deriving Inhabited
+
+namespace RepeatedPhaseData
+
+/-- Merge `incoming` children into `existing`, summing counts/totals for
+    matching names and recursively merging their children. -/
+partial def mergeChildren (existing incoming : Array (String × RepeatedPhaseData))
+    : Array (String × RepeatedPhaseData) :=
+  incoming.foldl (init := existing) fun acc (name, data) =>
+    match acc.findIdx? (·.1 == name) with
+    | some idx =>
+      let (_, prev) := acc[idx]!
+      acc.modify idx fun _ => (name, {
+        count := prev.count + data.count,
+        totalNs := prev.totalNs + data.totalNs,
+        children := mergeChildren prev.children data.children })
+    | none => acc.push (name, data)
+
+end RepeatedPhaseData
+
+/-- Upsert a repeated phase entry: find by name in the array, merge elapsed
+    and children, or append a new entry. -/
+private def addRepeatedEntry (arr : Array (String × RepeatedPhaseData))
+    (name : String) (elapsed : Nat) (children : Array (String × RepeatedPhaseData))
+    : Array (String × RepeatedPhaseData) :=
+  match arr.findIdx? (·.1 == name) with
+  | some idx =>
+    let (_, prev) := arr[idx]!
+    arr.modify idx fun _ => (name, {
+      count := prev.count + 1,
+      totalNs := prev.totalNs + elapsed,
+      children := RepeatedPhaseData.mergeChildren prev.children children })
+  | none => arr.push (name, { count := 1, totalNs := elapsed, children })
+
 /-- Pipeline context carrying immutable config and mutable state as individual IORefs.
     This design allows any monad with BaseIO access to use pipeline capabilities
-    by passing a PipelineContext value directly. -/
+    by passing a PipelineContext value directly.
+
+    **Phase tracking state machine:**
+
+    The phase system operates in two modes controlled by `insideRepeatedRef`:
+    - Mode N (normal): `withPhase` records individual timing entries and prints
+      `[start]`/`[end]` in profile mode.
+    - Mode R (repeated): `withPhase` silently aggregates timing into the
+      enclosing `repeatedPhasesRef` — no print, no individual `timingRef` entry.
+
+    `withRepeatedPhase` always transitions to mode R, saves/restores all
+    phase-tracking refs, and on exit merges accumulated children back into
+    the parent's `repeatedPhasesRef`.  `withPhase` never changes the mode.
+
+    **Invariants:**
+    - `currentPhaseRef` always reflects the innermost active scope's full path.
+    - `repeatedPhasesRef` is scoped: saved on entry, restored on exit of both
+      `withPhase` and `withRepeatedPhase` — no cross-scope leakage.
+    - In mode R, all timing flows through `repeatedPhasesRef` only; `timingRef`
+      is not touched until the enclosing mode-N `withPhase` flushes.
+
+    **Thread safety:** PipelineContext is NOT thread-safe.  The phase-tracking
+    refs assume single-threaded sequential access.  Concurrent `withPhase` or
+    `withRepeatedPhase` calls on the same context will corrupt state. -/
 structure PipelineContext where
   private mk ::
   outputMode : OutputMode
@@ -257,9 +319,9 @@ structure PipelineContext where
   private userCodeErrorsRef : IO.Ref (Array PipelineMessage)
   private timingRef : IO.Ref (Array PhaseTimingEntry)
   private currentPhaseRef : IO.Ref Phase
+  private insideRepeatedRef : IO.Ref Bool
   private messageCountAtPhaseStartRef : IO.Ref Nat
-  /-- Repeated phases in first-invoked order. Each entry is (name, count, totalNs). -/
-  private repeatedPhasesRef : IO.Ref (Array (String × Nat × Nat))
+  private repeatedPhasesRef : IO.Ref (Array (String × RepeatedPhaseData))
   private metricsHandle : Option IO.FS.Handle := none
 
 namespace PipelineContext
@@ -274,12 +336,13 @@ def create (outputMode : OutputMode := .default)
   let userCodeErrorsRef ← IO.mkRef (α := Array PipelineMessage) #[]
   let timingRef ← IO.mkRef (α := Array PhaseTimingEntry) #[]
   let currentPhaseRef ← IO.mkRef (α := Phase) default
+  let insideRepeatedRef ← IO.mkRef false
   let messageCountAtPhaseStartRef ← IO.mkRef 0
-  let repeatedPhasesRef ← IO.mkRef (α := Array (String × Nat × Nat)) #[]
+  let repeatedPhasesRef ← IO.mkRef (α := Array (String × RepeatedPhaseData)) #[]
   return { outputMode, pipelineStartTime := startTime, skipTiming,
            messagesRef, toolErrorsRef, userCodeErrorsRef, timingRef,
-           currentPhaseRef, messageCountAtPhaseStartRef, repeatedPhasesRef,
-           metricsHandle }
+           currentPhaseRef, insideRepeatedRef, messageCountAtPhaseStartRef,
+           repeatedPhasesRef, metricsHandle }
 
 /-- All accumulated pipeline messages. -/
 def getMessages (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
@@ -309,49 +372,75 @@ def elapsedNs (ctx : PipelineContext) : BaseIO Nat := do
   let now ← IO.monoNanosNow
   return now - ctx.pipelineStartTime
 
-/-- Start a new phase: record timing and print [start] in profile/verbose mode. -/
-private def startPhase (ctx : PipelineContext) (phase : Phase) : BaseIO Unit := do
+/-- Saved state for `withPhase`, captured on entry and used to restore on exit. -/
+private structure PhaseSavedState where
+  inRepeated : Bool
+  parent : Phase
+  savedRepeated : Array (String × RepeatedPhaseData)
+  startNs : Nat
+
+/-- Save phase state, set up the new phase, record timing and print [start].
+    In mode R (insideRepeated), suppresses output and timingRef push. -/
+private def startPhase (ctx : PipelineContext) (name : String) : BaseIO PhaseSavedState := do
+  let inRepeated ← ctx.insideRepeatedRef.get
+  let parent ← ctx.currentPhaseRef.get
+  let savedRepeated ← ctx.repeatedPhasesRef.get
+  ctx.repeatedPhasesRef.set #[]
+  let startNs ← IO.monoNanosNow
+  let phase := parent.subphase name
   let now ← ctx.elapsedNs
-  ctx.timingRef.modify (·.push { phase, start_ns := now })
   ctx.currentPhaseRef.set phase
   let messages ← ctx.messagesRef.get
   ctx.messageCountAtPhaseStartRef.set messages.size
-  if ctx.outputMode == .profile || ctx.outputMode == .verbose then
-    let indent := String.replicate ((phase.depth - 1) * 2) ' '
-    let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
-    printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
+  unless inRepeated do
+    ctx.timingRef.modify (·.push { phase, start_ns := now })
+    if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+      let indent := String.replicate ((phase.depth - 1) * 2) ' '
+      let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
+      printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
+  return { inRepeated, parent, savedRepeated, startNs }
 
-/-- End the current phase: flush aggregated repeated subphases, record end time,
-    print [warnings] summary in profile mode. -/
-private def endPhase (ctx : PipelineContext) : BaseIO Unit := do
+/-- Recursively flush `RepeatedPhaseData` entries to `timingRef` and print
+    `[profile]` lines. `parentPhase` is the phase under which these entries
+    are nested. -/
+private partial def flushRepeatedEntries (ctx : PipelineContext)
+    (parentPhase : Phase) (entries : Array (String × RepeatedPhaseData))
+    : BaseIO Unit := do
+  if entries.isEmpty then return
+  let childIndent := String.replicate (parentPhase.depth * 2) ' '
+  for (name, data) in entries do
+    let subphase := parentPhase.subphase name
+    ctx.timingRef.modify (·.push { phase := subphase, start_ns := 0,
+                                    end_ns := some data.totalNs, count := data.count })
+    if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+      let avg := if data.count > 0 then nsToMs (data.totalNs / data.count) else 0
+      let timeSuffix := if ctx.skipTiming then ""
+        else s!" (×{data.count}, total: {nsToMs data.totalNs}ms, avg: {avg}ms)"
+      printlnFlush s!"{childIndent}[profile] {name}{timeSuffix}"
+    ctx.emitMetric (Lean.Json.mkObj [
+      ("type", .str "timing"), ("phase", .str subphase.display),
+      ("start_ms", .num 0), ("end_ms", .num (nsToMs data.totalNs)),
+      ("count", .num data.count)])
+    flushRepeatedEntries ctx subphase data.children
+
+/-- End the current phase in mode N: flush aggregated repeated subphases,
+    record end time, print [warnings] summary in profile mode. -/
+private def endPhaseNormal (ctx : PipelineContext) : BaseIO Unit := do
   let currentPhase ← ctx.currentPhaseRef.get
-  if currentPhase.path.isEmpty then return
-  -- Flush aggregated repeated subphases
+  let timing ← ctx.timingRef.get
+  let parentIdx := timing.size - 1
   let repeated ← ctx.repeatedPhasesRef.get
-  if !repeated.isEmpty then
-    let childIndent := String.replicate (currentPhase.depth * 2) ' '
-    for (name, count, totalNs) in repeated do
-      let subphase := currentPhase.subphase name
-      ctx.timingRef.modify (·.push { phase := subphase, start_ns := 0, end_ns := some totalNs, count })
-      if ctx.outputMode == .profile || ctx.outputMode == .verbose then
-        let avg := if count > 0 then nsToMs (totalNs / count) else 0
-        let timeSuffix := if ctx.skipTiming then ""
-          else s!" (×{count}, total: {nsToMs totalNs}ms, avg: {avg}ms)"
-        printlnFlush s!"{childIndent}[profile] {name}{timeSuffix}"
-      ctx.emitMetric (Lean.Json.mkObj [
-        ("type", .str "timing"), ("phase", .str subphase.display),
-        ("start_ms", .num 0), ("end_ms", .num (nsToMs totalNs)),
-        ("count", .num count)])
-    ctx.repeatedPhasesRef.set #[]
+  flushRepeatedEntries ctx currentPhase repeated
   let now ← ctx.elapsedNs
   let timing ← ctx.timingRef.get
-  if h : timing.size > 0 then
-    let lastIdx := timing.size - 1
-    let last := timing[lastIdx]
-    ctx.timingRef.set (timing.set lastIdx { last with end_ns := some now })
+  if h : parentIdx < timing.size then
+    let parent := timing[parentIdx]
+    ctx.timingRef.set (timing.modify parentIdx fun e => { e with end_ns := some now })
     ctx.emitMetric (Lean.Json.mkObj [
-      ("type", .str "timing"), ("phase", .str currentPhase.display),
-      ("start_ms", .num (nsToMs last.start_ns)), ("end_ms", .num (nsToMs now))])
+      ("type", .str "timing"),
+      ("phase", .str currentPhase.display),
+      ("start_ms", .num (nsToMs parent.start_ns)),
+      ("end_ms", .num (nsToMs now))])
   if ctx.outputMode == .profile || ctx.outputMode == .verbose then
     let messages ← ctx.messagesRef.get
     let msgStart ← ctx.messageCountAtPhaseStartRef.get
@@ -365,49 +454,89 @@ private def endPhase (ctx : PipelineContext) : BaseIO Unit := do
       let parts := counts.toArray.map fun (cat, n) => s!"{n} {cat}"
       let summary := String.intercalate ", " parts.toList
       printlnFlush s!"{indent}[warnings] {currentPhase.leaf}: {summary}"
-  ctx.currentPhaseRef.set {}
+
+/-- End the current phase in mode R: accumulate elapsed time and nested
+    children into the parent's `repeatedPhasesRef`. No print, no timingRef.
+    Returns the merged repeated-phases array for the parent. -/
+private def endPhaseRepeated (ctx : PipelineContext) (st : PhaseSavedState)
+    : BaseIO (Array (String × RepeatedPhaseData)) := do
+  let currentPhase ← ctx.currentPhaseRef.get
+  let children ← ctx.repeatedPhasesRef.get
+  let now ← IO.monoNanosNow
+  let elapsed := now - st.startNs
+  return addRepeatedEntry st.savedRepeated currentPhase.leaf elapsed children
+
+private def PhaseSavedState.restore (st : PhaseSavedState) (ctx : PipelineContext) : BaseIO Unit := do
+  let repeatedPhases ←
+    if st.inRepeated then ctx.endPhaseRepeated st
+    else do ctx.endPhaseNormal; pure st.savedRepeated
+  ctx.currentPhaseRef.set st.parent
+  ctx.repeatedPhasesRef.set repeatedPhases
+  let msgs ← ctx.messagesRef.get
+  ctx.messageCountAtPhaseStartRef.set msgs.size
 
 /-- Run an action as a named subphase of the current phase. Nesting is
     determined by call structure — at the root the phase is top-level,
-    inside a withPhase it becomes a child. Records timing, prints
-    [start]/[end] in profile/verbose mode. Restores parent on completion
-    (even if the action throws). -/
+    inside a withPhase it becomes a child.
+
+    In mode N: records timing, prints [start]/[end] in profile/verbose mode.
+    In mode R: silently aggregates timing into the parent's repeatedPhasesRef.
+
+    Restores parent on completion (even if the action throws). -/
 @[noinline]
 public def withPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
     (ctx : PipelineContext) (name : String) (action : m α) : m α := do
-  let parent ← (ctx.currentPhaseRef.get : BaseIO _)
-  let savedRepeated ← (ctx.repeatedPhasesRef.get : BaseIO _)
-  (ctx.repeatedPhasesRef.set #[] : BaseIO _)
-  (ctx.startPhase (parent.subphase name) : BaseIO _)
+  let st ← ctx.startPhase name
   try
     action
   finally
-    (ctx.endPhase : BaseIO _)
-    (ctx.currentPhaseRef.set parent : BaseIO _)
-    (ctx.repeatedPhasesRef.set savedRepeated : BaseIO _)
-    -- Advance parent's message start so it only reports messages added after this child
-    let msgs ← (ctx.messagesRef.get : BaseIO _)
-    (ctx.messageCountAtPhaseStartRef.set msgs.size : BaseIO _)
+    st.restore ctx
+
+/-- Saved state for `withRepeatedPhase`, captured on entry and used to restore on exit. -/
+private structure RepeatedSavedState where
+  name : String
+  parent : Phase
+  savedInsideRepeated : Bool
+  savedRepeated : Array (String × RepeatedPhaseData)
+  startNs : Nat
+
+/-- Save phase state, set up a repeated subphase, enter mode R.
+    Suppresses output — timing is aggregated into the parent on restore. -/
+private def startRepeatedPhase (ctx : PipelineContext) (name : String) : BaseIO RepeatedSavedState := do
+  let parent ← ctx.currentPhaseRef.get
+  let savedInsideRepeated ← ctx.insideRepeatedRef.get
+  let savedRepeated ← ctx.repeatedPhasesRef.get
+  ctx.currentPhaseRef.set (parent.subphase name)
+  ctx.insideRepeatedRef.set true
+  ctx.repeatedPhasesRef.set #[]
+  let startNs ← IO.monoNanosNow
+  return { name, parent, savedInsideRepeated, savedRepeated, startNs }
+
+@[inline] private def RepeatedSavedState.restore (st : RepeatedSavedState) (ctx : PipelineContext) : BaseIO Unit := do
+  let t2 ← IO.monoNanosNow
+  let elapsed := t2 - st.startNs
+  let children ← ctx.repeatedPhasesRef.get
+  ctx.currentPhaseRef.set st.parent
+  ctx.insideRepeatedRef.set st.savedInsideRepeated
+  ctx.repeatedPhasesRef.set (addRepeatedEntry st.savedRepeated st.name elapsed children)
 
 /-- Run an action as a repeated subphase. Instead of recording individual
     timing entries, accumulates count and total duration into the parent's
     `repeatedPhasesRef`. When the parent phase ends, the aggregated results
-    are flushed as single timing entries. Silent per-iteration. -/
+    are flushed as single timing entries. Silent per-iteration.
+
+    Sets `currentPhaseRef` so nested `emitMessage` calls get the correct
+    phase tag.  Sets `insideRepeatedRef` to true so nested `withPhase` calls
+    aggregate silently.  Saves/restores `repeatedPhasesRef` for child
+    isolation. -/
 @[noinline]
 public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinally m]
     (ctx : PipelineContext) (name : String) (action : m α) : m α := do
-  let t1 ← (IO.monoNanosNow : BaseIO _)
+  let st ← ctx.startRepeatedPhase name
   try
     action
   finally
-    let t2 ← (IO.monoNanosNow : BaseIO _)
-    let elapsed := t2 - t1
-    (ctx.repeatedPhasesRef.modify fun arr =>
-      match arr.findIdx? (·.1 == name) with
-      | some idx =>
-        let (n, count, total) := arr[idx]!
-        arr.set! idx (n, count + 1, total + elapsed)
-      | none => arr.push (name, 1, elapsed) : BaseIO _)
+    st.restore ctx
 
 /-- Time a pure expression as a repeated subphase. Forces evaluation via
     `IO.Ref.set` so the compiler cannot hoist the computation outside the
@@ -417,16 +546,7 @@ public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinall
 public def withRepeatedPhasePure {α} [Inhabited α]
     (ctx : PipelineContext) (name : String) (expr : Unit → α) : BaseIO α := do
   let ref ← IO.mkRef (default : α)
-  let t1 ← IO.monoNanosNow
-  ref.set (expr ())
-  let t2 ← IO.monoNanosNow
-  let elapsed := t2 - t1
-  ctx.repeatedPhasesRef.modify fun arr =>
-    match arr.findIdx? (·.1 == name) with
-    | some idx =>
-      let (n, count, total) := arr[idx]!
-      arr.set! idx (n, count + 1, total + elapsed)
-    | none => arr.push (name, 1, elapsed)
+  ctx.withRepeatedPhase name (m := BaseIO) do ref.set (expr ())
   ref.get
 
 end PipelineContext
