@@ -40,6 +40,17 @@ namespace Strata
 
 public section
 
+/-- Collect (name, type) pairs from all `init` commands in a statement list. -/
+private def collectInitTypesFromStmts : List Core.Statement →
+    List (Core.Expression.Ident × Core.Expression.Ty)
+  | [] => []
+  | .cmd (.cmd (.init name ty _ _)) :: rest => (name, ty) :: collectInitTypesFromStmts rest
+  | .block _ stmts _ :: rest => collectInitTypesFromStmts stmts ++ collectInitTypesFromStmts rest
+  | .ite _ t e _ :: rest =>
+    collectInitTypesFromStmts t ++ collectInitTypesFromStmts e ++ collectInitTypesFromStmts rest
+  | .loop _ _ _ body _ :: rest => collectInitTypesFromStmts body ++ collectInitTypesFromStmts rest
+  | _ :: rest => collectInitTypesFromStmts rest
+
 def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
   | some new => ⟨new, id.metadata⟩
@@ -275,20 +286,28 @@ def procedureToGotoCtx
   let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals := (Imperative.Block.definedVars body).map Core.CoreIdent.toPretty
+  let localTypes := collectInitTypesFromStmts body
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
   let rn : Std.HashMap String String :=
     (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
       (init := {}) fun m (k, v) => m.insert k v
-  -- Seed the type environment with renamed input and output parameter types
+  -- Seed the type environment with renamed input, output, and local variable types
   let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
+  let localEntries : Map Core.Expression.Ident Core.Expression.Ty :=
+    localTypes.filterMap fun (name, ty) =>
+      let prettyName := Core.CoreIdent.toPretty name
+      if locals.contains prettyName then
+        let renamed := CProverGOTO.mkLocalSymbol pname prettyName
+        some (((renamed : Core.CoreIdent)), ty)
+      else none
   let Env' : Core.Expression.TyEnv :=
     Lambda.TEnv.addInNewestContext (T := ⟨Core.ExpressionMetadata, Unit⟩)
-      Env (inputEntries ++ outputEntries)
+      Env (inputEntries ++ outputEntries ++ localEntries)
   -- Emit axioms as ASSUME instructions at the start of the body
   let mut axiomInsts : Array CProverGOTO.Instruction := #[]
   let mut axiomLoc : Nat := 0
