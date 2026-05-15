@@ -65,9 +65,9 @@ private def runPipeline (config : PyAnalyzeConfig)
       match coreOpt with
       | some core => pure (core, stats)
       | none =>
-        emitFatalMessage (file := uri) .laurelToCoreError s!"Laurel to Core translation failed: {diags}"
+        emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel to Core translation failed: {diags}"
     | .error e =>
-      emitFatalMessage (file := uri) .laurelToCoreError s!"Laurel translation error: {e}"
+      emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel translation error: {e}"
 
   if config.skipVerification then
     return (PyAnalyzeOutcome.verified #[] coreProgram, laurelPassStats)
@@ -96,16 +96,16 @@ private def runPipeline (config : PyAnalyzeConfig)
     | .ok r =>
       pure r.mergeByAssertion
     | .error msg =>
-      emitFatalMessage (file := uri) .verificationError msg
+      emitMessageAndAbort (file := uri) .verificationError msg
 
   for vcResult in vcResults do
     match vcResult.outcome with
     | .error (.encoding msg) =>
-      emitFatalMessage (file := uri) .verificationError msg
+      emitMessageAndAbort (file := uri) .verificationError msg
     | .error (.solverTimeout msg) =>
       emitMessage .verificationTimeout msg
     | .error (.solverCrash msg) =>
-      emitFatalMessage (file := uri) .verificationError msg
+      emitMessageAndAbort (file := uri) .verificationError msg
     | .ok _ => pure ()
 
   return (PyAnalyzeOutcome.verified vcResults coreProgram, laurelPassStats)

@@ -26,6 +26,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 1: withRepeatedPhase aggregates count and total -/
 
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   ctx.withPhase "outer" (m := IO) do
@@ -43,6 +44,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 2: withPhase nested inside withRepeatedPhase records timing -/
 
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   ctx.withPhase "outer" (m := IO) do
@@ -68,6 +70,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 3: Messages inside withRepeatedPhase get correct phase tag -/
 
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   let pipelineAction : PipelineM Unit := do
@@ -86,6 +89,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 4: Nested withRepeatedPhase does not corrupt parent -/
 
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   ctx.withPhase "outer" (m := IO) do
@@ -112,6 +116,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 5: Multiple distinct withPhase inside withRepeatedPhase -/
 
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   ctx.withPhase "outer" (m := IO) do
@@ -141,6 +146,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 6: Parent timing entry gets correct end_ns with repeated children -/
 
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   ctx.withPhase "parent" (m := IO) do
@@ -160,6 +166,13 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
 
 /-! ### Test 7: withRepeatedPhasePure evaluates expression and aggregates timing -/
 
+/--
+info: withRepeatedPhasePure: evaluating
+withRepeatedPhasePure: evaluating
+withRepeatedPhasePure: evaluating
+withRepeatedPhasePure: evaluating
+-/
+#guard_msgs in
 #eval show IO Unit from do
   let ctx ← mkCtx
   let evalRef ← IO.mkRef (0 : Nat)

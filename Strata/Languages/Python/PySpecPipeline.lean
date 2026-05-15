@@ -29,7 +29,7 @@ and translates through to Core for verification.
 
 namespace Strata
 
-open Pipeline (emitMessage emitFatalMessage)
+open Pipeline (emitMessage emitMessageAndAbort)
 open Python (OverloadTable)
 
 /-! ### Types -/
@@ -146,7 +146,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg =>
-        emitFatalMessage .pySpecReadError msg (file := ionFile)
+        emitMessageAndAbort .pySpecReadError msg (file := ionFile)
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
     for msg in errors do
@@ -158,7 +158,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
     match extractFunctionSignatures sigs modulePrefix with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg =>
-      emitFatalMessage .functionSignatureError msg (file := ionFile)
+      emitMessageAndAbort .functionSignatureError msg (file := ionFile)
     for td in program.types do
       combinedTypes := combinedTypes.push (td, ionPath)
     for proc in program.staticProcedures do
@@ -174,7 +174,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
       | .Alias ta => ta.name
     match seenTypes.get? ident.text with
     | some prevFile =>
-      emitFatalMessage .typeNameCollision s!"'{ident.text}' already defined in {prevFile}"
+      emitMessageAndAbort .typeNameCollision s!"'{ident.text}' already defined in {prevFile}"
         (file := srcFile) (loc := ident.source.map (·.range) |>.getD default)
     | none =>
       seenTypes := seenTypes.insert ident.text srcFile
@@ -184,7 +184,7 @@ private def buildPySpecLaurelM (pyspecEntries : Array (String × String))
   for (proc, srcFile) in combinedProcedures do
     match seenProcs[proc.name.text]? with
     | some prevFile =>
-      emitFatalMessage .procedureNameCollision s!"'{proc.name.text}' already defined in {prevFile}"
+      emitMessageAndAbort .procedureNameCollision s!"'{proc.name.text}' already defined in {prevFile}"
         (file := srcFile) (loc := proc.name.source.map (·.range) |>.getD default)
     | none =>
       seenProcs := seenProcs.insert proc.name.text srcFile
@@ -219,7 +219,7 @@ private def readDispatchOverloadsM
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg =>
-        emitFatalMessage .pySpecReadError msg (file := ionFile)
+        emitMessageAndAbort .pySpecReadError msg (file := ionFile)
     let (overloads, errors) := Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
     for msg in errors do
       Pipeline.addMessage msg
@@ -250,10 +250,10 @@ private def resolveModules (modules : Array String) (specDir : System.FilePath)
   for modName in modules do
     match Python.Specs.ModuleName.ofString modName with
     | .error _ =>
-      emitFatalMessage .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
+      emitMessageAndAbort .invalidModuleName s!"invalid module name '{modName}'" (file := specDir)
     | .ok mod =>
       let some entry ← resolveModuleEntry mod specDir
-        | emitFatalMessage .missingPySpecModule
+        | emitMessageAndAbort .missingPySpecModule
             s!"PySpec module '{modName}' not found in {specDir}" (file := specDir)
       entries := entries.push entry
   return entries
@@ -416,7 +416,7 @@ public def translateCombinedLaurel (combined : Laurel.Program)
     Laurel metadata (useful when the Ion file was generated from a
     `.py` source and you want line numbers to refer to the original).
 
-    Runs in `PipelineM`. Fatal errors abort via `emitFatalMessage`. -/
+    Runs in `PipelineM`. Fatal errors abort via `emitMessageAndAbort`. -/
 public def pythonAndSpecToLaurel
     (pythonIonPath : String)
     (dispatchModules : Array String := #[])
@@ -428,7 +428,7 @@ public def pythonAndSpecToLaurel
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
     | .error msg =>
-      emitFatalMessage (file := pythonIonPath) .pySpecParsingError msg
+      emitMessageAndAbort (file := pythonIonPath) .pySpecParsingError msg
 
   let result ← Pipeline.withPhase "resolveAndBuildPrelude" do
     resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir
@@ -439,13 +439,13 @@ public def pythonAndSpecToLaurel
   let (laurelProgram, _ctx) ←
     match Python.pythonToLaurel preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) =>
-      emitFatalMessage (file := sourcePath.getD pythonIonPath) (loc := range)
+      emitMessageAndAbort (file := sourcePath.getD pythonIonPath) (loc := range)
         .laurelLoweringUserError msg
     | .error (.unsupportedConstruct msg ast) =>
-      emitFatalMessage (file := sourcePath.getD pythonIonPath)
+      emitMessageAndAbort (file := sourcePath.getD pythonIonPath)
         .laurelLoweringNotImpl s!"Unsupported construct: {msg}\nAST: {ast}"
     | .error e =>
-      emitFatalMessage (file := sourcePath.getD pythonIonPath)
+      emitMessageAndAbort (file := sourcePath.getD pythonIonPath)
         .laurelLoweringError s!"Python to Laurel translation failed: {e}"
     | .ok result => pure result
 
@@ -453,7 +453,7 @@ public def pythonAndSpecToLaurel
     match Laurel.filterPrelude result.laurelProgram laurelProgram with
     | .ok prog => pure prog
     | .error msg =>
-      emitFatalMessage (file := sourcePath.getD pythonIonPath) .laurelLoweringError msg
+      emitMessageAndAbort (file := sourcePath.getD pythonIonPath) .laurelLoweringError msg
 
   let combined := combinePySpecLaurel filteredPrelude laurelProgram
   return combined

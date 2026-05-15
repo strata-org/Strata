@@ -322,6 +322,8 @@ structure PipelineContext where
   private insideRepeatedRef : IO.Ref Bool
   private messageCountAtPhaseStartRef : IO.Ref Nat
   private repeatedPhasesRef : IO.Ref (Array (String × RepeatedPhaseData))
+  /-- Caller-owned handle for JSONL metrics. The pipeline appends and flushes
+      per record but does not open or close the handle. -/
   private metricsHandle : Option IO.FS.Handle := none
 
 namespace PipelineContext
@@ -551,7 +553,7 @@ end PipelineContext
 
 /-- The pipeline monad: a reader over PipelineContext with EIO Unit.
     Computations accumulate diagnostic messages in PipelineContext.messagesRef.
-    `emitFatalMessage` throws `()` to abort, but multiple messages (including
+    `emitMessageAndAbort` throws `()` to abort, but multiple messages (including
     multiple error-impact messages) may accumulate before or across aborts.
     The caller of `PipelineM.run` is responsible for inspecting the accumulated
     messages and the outcome to determine the appropriate exit code. -/
@@ -589,7 +591,9 @@ public def addMessage (msg : Pipeline.PipelineMessage) : Pipeline.PipelineM Unit
     let indent := String.replicate ((msg.phase.depth - 1) * 2) ' '
     let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
 
-/-- Emit a diagnostic message and continue. Tags with current phase. -/
+/-- Emit a diagnostic message and continue. Tags with current phase.
+    The impact classification is for downstream consumers — callers may
+    accumulate multiple fatal-impact messages before aborting. -/
 public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
   let phase ← (← read) |>.currentPhaseRef.get
@@ -597,7 +601,7 @@ public def emitMessage (kind : Pipeline.MessageKind) (message : String)
 
 /-- Emit a diagnostic message and abort the pipeline.
     Polymorphic return type allows use in expression position. -/
-public def emitFatalMessage (kind : Pipeline.MessageKind) (message : String)
+public def emitMessageAndAbort (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath) (loc : SourceRange := default) : Pipeline.PipelineM α := do
   emitMessage kind message file loc
   throw ()
