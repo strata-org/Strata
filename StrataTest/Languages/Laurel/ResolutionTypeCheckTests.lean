@@ -84,7 +84,7 @@ procedure wh() opaque {
 def logicalAndNotBool := r"
 function foo(x: int, y: bool): bool {
   x && y
-//^^^^^^ error: expected 'bool', got 'int'
+//^ error: expected 'bool', got 'int'
 };
 "
 
@@ -95,8 +95,8 @@ function foo(x: int, y: bool): bool {
 
 def comparisonNotNumeric := r"
 function cmp(x: string, y: int): bool {
-//              ^^^^^^ error: '<' expected a numeric type, got 'string'
   x < y
+//^ error: '<' expected a numeric type, got 'string'
 };
 "
 
@@ -133,7 +133,7 @@ def callArgTypeMismatch := r"
 function bar(x: int): int { x };
 function foo(): int {
   bar(true)
-//^^^^^^^^^ error: expected 'int', got 'bool'
+//    ^^^^ error: expected 'int', got 'bool'
 };
 "
 
