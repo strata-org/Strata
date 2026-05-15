@@ -524,12 +524,12 @@ function listSize (@[cases] xs : RoseList) : int
 
 Termination checking is always on for all `rec` functions.
 
-For **structural recursion**, Strata checks that recursive calls pass a
+For _structural recursion_, Strata checks that recursive calls pass a
 structurally smaller argument at the termination measure position. A rank
 function is generated for the datatype, and each recursive call must have
 strictly smaller rank than the caller's parameter.
 
-For **int-valued recursion**, two obligations are checked at each recursive
+For _int-valued recursion_, two obligations are checked at each recursive
 call site:
 - The measure at the call site is non-negative (`0 <= call_measure`).
 - The measure strictly decreases (`call_measure < caller_measure`).
