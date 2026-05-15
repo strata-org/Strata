@@ -722,11 +722,12 @@ def pyAnalyzeLaurelCommand : Command where
       exitPyAnalyzeInternalError lastErr.message
     -- Priority 2: user code errors
     if let some lastErr := userErrors.back? then
-      let location ← reportUserCodeError lastErr.loc lastErr.message mfm (sourcePath.getD filePath)
       emitOutcome "userError" ExitCode.userError (detail := lastErr.message)
+      let location ← reportUserCodeError lastErr.loc lastErr.message mfm (sourcePath.getD filePath)
       exitPyAnalyzeUserError s!"{lastErr.message}{location}"
     match outcome with
     | .verified vcResults _coreProgram =>
+      emitOutcome "verified" 0
       -- Print per-VC results by default, unless SARIF mode is used
       if !outputSarif then
         let mut s := ""
@@ -750,8 +751,6 @@ def pyAnalyzeLaurelCommand : Command where
           | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
           | none => Map.empty
         Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
-      -- Priority 3: verification failures (exit 2 or 0)
-      emitOutcome "verified" 0
       printPyAnalyzeSummary vcResults options.checkMode
     | .failed =>
       -- Priority 4: known limitations
