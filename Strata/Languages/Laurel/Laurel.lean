@@ -100,6 +100,20 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
+instance : ToString Operation where
+  toString
+    | .Eq => "=="          | .Neq => "!="
+    | .And => "&&"         | .Or => "||"
+    | .Not => "!"          | .Implies => "==>"
+    | .AndThen => "&&!"    | .OrElse => "||!"
+    | .Neg => "-"          | .Add => "+"
+    | .Sub => "-"          | .Mul => "*"
+    | .Div => "/"          | .Mod => "%"
+    | .DivT => "/t"        | .ModT => "%t"
+    | .Lt => "<"           | .Leq => "<="
+    | .Gt => ">"           | .Geq => ">="
+    | .StrConcat => "++"
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -333,6 +347,40 @@ inductive StmtExpr : Type where
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
+
+/-- A short user-facing name for the construct, used in diagnostic messages. -/
+def StmtExpr.constrName : StmtExpr → String
+  | .IfThenElse ..       => "if"
+  | .Block ..            => "block"
+  | .While ..            => "while"
+  | .Exit ..             => "exit"
+  | .Return ..           => "return"
+  | .LiteralInt ..       => "integer literal"
+  | .LiteralBool ..      => "boolean literal"
+  | .LiteralString ..    => "string literal"
+  | .LiteralDecimal ..   => "decimal literal"
+  | .Var ..              => "variable"
+  | .Assign ..           => ":="
+  | .PureFieldUpdate ..  => "field update"
+  | .StaticCall ..       => "call"
+  | .PrimitiveOp op _    => toString op
+  | .New ..              => "new"
+  | .This                => "this"
+  | .ReferenceEquals ..  => "reference equality"
+  | .AsType ..           => "as"
+  | .IsType ..           => "is"
+  | .InstanceCall ..     => "method call"
+  | .Quantifier ..       => "quantifier"
+  | .Assigned ..         => "assigned"
+  | .Old ..              => "old"
+  | .Fresh ..            => "fresh"
+  | .Assert ..           => "assert"
+  | .Assume ..           => "assume"
+  | .ProveBy ..          => "by"
+  | .ContractOf ..       => "contractOf"
+  | .Abstract            => "abstract"
+  | .All                 => "all"
+  | .Hole ..             => "hole"
 
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
