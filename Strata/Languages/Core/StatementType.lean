@@ -181,20 +181,13 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-        | .exit label md => do try
+        | .exit l md => do try
           match op with
           | .some _ =>
-            match label with
-            | .none =>
-              if labels.isEmpty then
-                .error <| md.toDiagnosticF f!"{s}: exit occurs outside any block."
-              else
-                .ok (s, Env, C)
-            | .some l =>
-              if labels.contains l then
-                .ok (s, Env, C)
-              else
-                .error <| md.toDiagnosticF f!"{s}: exit label \"{l}\" does not match any enclosing block."
+            if labels.contains l then
+              .ok (s, Env, C)
+            else
+              .error <| md.toDiagnosticF f!"{s}: exit label \"{l}\" does not match any enclosing block."
           | .none => .error <| md.toDiagnosticF f!"{s} occurs outside a procedure."
           catch e =>
             -- Add source location to error messages.
