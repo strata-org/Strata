@@ -854,6 +854,9 @@ and semantics when successful.
   | .app (.zero_extend i) [x] _ =>
     let ⟨.prim (.bitvec n), _, x⟩ ← denoteTerm ctx x | none
     return ⟨.prim (.bitvec (n + i)), rfl, fun Γ => BitVec.zeroExtend (n + i) (x Γ)⟩
+  | .app .bv2nat [x] _ =>
+    let ⟨.prim (.bitvec _), _, x⟩ ← denoteTerm ctx x | none
+    return ⟨.prim .int, rfl, fun Γ => Int.ofNat (x Γ).toNat⟩
   -- SMT-Lib theory of strings
   | .prim (.string s) =>
     return ⟨.prim .string, rfl, fun _ => s⟩

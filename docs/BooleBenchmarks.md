@@ -154,18 +154,19 @@ seeds live in
 
 **Additional gaps per benchmark:**
 
-| B | Gap | Status | Notes |
-|---|-----|--------|-------|
-| 1 | `u128` intermediate products | ○ open | 25 u64×u64 cross-limb products are u128 in Rust; in Boole, model as `int` — no separate feature needed, resolves with #13 |
-| 1 | #13 `FieldElement51.limbs: [u64; 5]` | ○ open | Sub-case of #13: `limbs` is a struct field whose type is itself a fixed-size array. Planned encoding: flatten into five named `int` fields (`limb0`…`limb4`) rather than `Map int bv64` — same gap, not a separate one |
-| 2 | #15 `[u8; 64]` byte arrays | ○ open | `input: &[u8; 64]` as `Map int bv8`; SMT backend resolved by PR #795; remaining gap is Boole syntax (initializer, write-back) |
-| 5 | #15 `[u8; 32]` byte arrays | ○ open | Same as B2; SMT backend resolved by PR #795 |
-| 2 | `reduce()` spec function | ✓ done | Axiom pattern verified in [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean); `u8_64_as_group_canonical` can now use recursive form (#1167 merged); manual axioms unchanged |
-| 2 | `is_uniform_scalar` axiom | ○ open | Probabilistic postcondition needs abstract `is_uniform_bytes`/`is_uniform_scalar` predicates as Boole axioms |
-| 3 | #14 `Option<EdwardsPoint>` return | ○ open | Boole has no native `Option<T>` type and no `matches` destructuring in spec clauses; see [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) |
-| 3 | `field_square` / `sqrt_ratio_i` axioms | ○ open | Needed for the full decompress body |
-| 4 | Pair return type | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support in Boole |
-| 4 | Field op axioms | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
-| 5 | Inline `let`-block postcondition | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) |
-| 5 | Montgomery ladder invariant | ○ open | Needs Montgomery curve differential addition axioms (Costello-Smith 2017, eq. 4); loop structure demonstrated in [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) |
+| # | Gap | FR# | Status | Notes |
+|---|-----|-----|--------|-------|
+| 1 | `u128` intermediate products | — | ○ open | 25 u64×u64 cross-limb products are u128 in Rust; in Boole, model as `int` — no separate feature needed, resolves with Gap #13 |
+| 1 | `FieldElement51.limbs: [u64; 5]` | #13 | ○ open | Sub-case of Gap #13: `limbs` is a struct field whose type is itself a fixed-size array. Planned encoding: flatten into five named `int` fields (`limb0`…`limb4`) rather than `Map int bv64` — same gap, not a separate one |
+| 2 | `[u8; 64]` byte arrays | #25 | ○ open | `input: &[u8; 64]` as `Map int bv8`; SMT backend resolved by PR #795; remaining gap is Boole syntax (initializer, write-back) |
+| 5 | `[u8; 32]` byte arrays | #25 | ○ open | Same as B2; SMT backend resolved by PR #795 |
+| 2,5 | Widening casts (`e as_int`) | #6 | ✓ done | `Bv{n}.ToNat` → `bv2nat`; bv1/8/16/32/64/128; see [`cast_expr.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_expr.lean) |
+| 2 | `reduce()` spec function | — | ✓ done | Axiom pattern verified in [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean); `u8_64_as_group_canonical` gains a recursive definition once Gap #11 closes (→ #1167), pure UF in SMT, manual axioms unchanged |
+| 2 | `is_uniform_scalar` axiom | — | ○ open | Probabilistic postcondition needs abstract `is_uniform_bytes`/`is_uniform_scalar` predicates as Boole axioms |
+| 3 | `Option<EdwardsPoint>` return | — | ○ open | Boole has no native `Option<T>` type and no `matches` destructuring in spec clauses; see [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) |
+| 3 | `field_square` / `sqrt_ratio_i` axioms | — | ○ open | Needed for the full decompress body |
+| 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support in Boole |
+| 4 | Field op axioms | — | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
+| 5 | Inline `let`-block postcondition | — | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) |
+| 5 | Montgomery ladder invariant | — | ○ open | Needs Montgomery curve differential addition axioms (Costello-Smith 2017, eq. 4); loop structure demonstrated in [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) |
 

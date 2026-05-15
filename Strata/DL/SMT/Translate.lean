@@ -542,6 +542,9 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
       expectString γ
       return e
     return (mkString, as.foldl (mkApp2 mkStringAppend) (mkApp2 mkStringAppend a b))
+  | .app .bv2nat [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do

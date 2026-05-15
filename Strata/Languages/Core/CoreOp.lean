@@ -51,6 +51,8 @@ inductive BvOpKind where
   -- Overflow predicates
   | SAddOverflow | SSubOverflow | SMulOverflow | SNegOverflow | SDivOverflow
   | UAddOverflow | USubOverflow | UMulOverflow | UNegOverflow
+  -- Cross-sort conversion
+  | ToNat
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 structure BvOp where
@@ -69,7 +71,7 @@ def BvOpKind.isPredicate : BvOpKind → Bool
   | _ => false
 
 def BvOpKind.isUnary : BvOpKind → Bool
-  | .Neg | .Not => true
+  | .Neg | .Not | .ToNat => true
   | _ => false
 
 def BvOpKind.names : List (BvOpKind × String) :=
@@ -89,7 +91,8 @@ def BvOpKind.names : List (BvOpKind × String) :=
    (.SMulOverflow, "SMulOverflow"), (.SNegOverflow, "SNegOverflow"),
    (.SDivOverflow, "SDivOverflow"),
    (.UAddOverflow, "UAddOverflow"), (.USubOverflow, "USubOverflow"),
-   (.UMulOverflow, "UMulOverflow"), (.UNegOverflow, "UNegOverflow")]
+   (.UMulOverflow, "UMulOverflow"), (.UNegOverflow, "UNegOverflow"),
+   (.ToNat, "ToNat")]
 
 def BvOpKind.toString (k : BvOpKind) : String := lookupName names k
 instance : ToString BvOpKind := ⟨BvOpKind.toString⟩

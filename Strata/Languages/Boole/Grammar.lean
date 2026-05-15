@@ -134,6 +134,10 @@ fn seq_drop_first (A : Type, s : Sequence A) : Sequence A =>
 fn seq_subrange (A : Type, s : Sequence A, lo : int, hi : int) : Sequence A =>
   "Sequence.subrange" "(" s ", " lo ", " hi ")";
 
+// Widening cast: `e as_int` converts any bitvector to an integer (unsigned).
+// Lowers to a native `Bv{n}.ToNat : bvN → int` Core op → SMT-LIB `bv2nat`.
+// Supported widths: 1, 8, 16, 32, 64, 128. No axioms injected.
+fn cast_to_int (T : Type, e : T) : int => @[prec(80)] e " as_int";
 
 category Step;
 op step(e: Expr) : Step =>

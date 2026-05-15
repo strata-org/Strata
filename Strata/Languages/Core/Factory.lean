@@ -770,9 +770,19 @@ def bvExtractFunc (size hi lo : Nat) : WFLFunc CoreLParams :=
   unaryFuncUneval s!"Bv{size}.Extract_{hi}_{lo}"
     (.bitvec size) (.bitvec (hi + 1 - lo)) rfl rfl
 
+def bvToNatFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Bv{size}.ToNat" (.bitvec size) .int rfl rfl
+
 def bv8ConcatFunc  := bvConcatFunc 8
 def bv16ConcatFunc := bvConcatFunc 16
 def bv32ConcatFunc := bvConcatFunc 32
+
+def bv1ToNatFunc   := bvToNatFunc 1
+def bv8ToNatFunc   := bvToNatFunc 8
+def bv16ToNatFunc  := bvToNatFunc 16
+def bv32ToNatFunc  := bvToNatFunc 32
+def bv64ToNatFunc  := bvToNatFunc 64
+def bv128ToNatFunc := bvToNatFunc 128
 
 def bv8Extract_7_7_Func    := bvExtractFunc  8  7  7
 def bv16Extract_15_15_Func := bvExtractFunc 16 15 15
@@ -864,6 +874,12 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv8ConcatFunc,
   bv16ConcatFunc,
   bv32ConcatFunc,
+  bv1ToNatFunc,
+  bv8ToNatFunc,
+  bv16ToNatFunc,
+  bv32ToNatFunc,
+  bv64ToNatFunc,
+  bv128ToNatFunc,
   bv8Extract_7_7_Func,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,

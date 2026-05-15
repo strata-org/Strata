@@ -98,6 +98,12 @@ func TriggerGroup.addTrigger : ∀[a]. ((x : a) (t : TriggerGroup)) → TriggerG
 func Bv8.Concat :  ((x : bv8) (y : bv8)) → bv16;
 func Bv16.Concat :  ((x : bv16) (y : bv16)) → bv32;
 func Bv32.Concat :  ((x : bv32) (y : bv32)) → bv64;
+func Bv1.ToNat :  ((x : bv1)) → int;
+func Bv8.ToNat :  ((x : bv8)) → int;
+func Bv16.ToNat :  ((x : bv16)) → int;
+func Bv32.ToNat :  ((x : bv32)) → int;
+func Bv64.ToNat :  ((x : bv64)) → int;
+func Bv128.ToNat :  ((x : bv128)) → int;
 func Bv8.Extract_7_7 :  ((x : bv8)) → bv1;
 func Bv16.Extract_15_15 :  ((x : bv16)) → bv1;
 func Bv16.Extract_7_0 :  ((x : bv16)) → bv8;

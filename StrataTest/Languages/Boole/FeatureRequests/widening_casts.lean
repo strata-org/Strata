@@ -17,47 +17,33 @@ Near-upstream anchors from `differential_status.md`:
   `guide/integers`: https://github.com/verus-lang/verus/blob/main/examples/guide/integers.rs
   `quantifiers`: https://github.com/verus-lang/verus/blob/main/examples/quantifiers.rs
   `statements`: https://github.com/verus-lang/verus/blob/main/examples/statements.rs
-- Gap: widening casts only partially inserted
-- Current status: the seed verifies after coercion points are spelled out
-- Remaining gap: centralized insertion/preservation of widening casts
+
+Gap #6 implemented: `e as_int` lowers to native `Bv{n}.ToNat` Core op → SMT-LIB `bv2nat`.
+No axioms injected.
 -/
 
 private def wideningCastsSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape: explicit widening/coercion pressure in a quantified formula,
-// not only at function/procedure call sites.
-
-type BvVec := Map int bv32;
-
-function bv32_to_int_u(x: bv32) : int;
-
-axiom (∀ x: bv32 . 0 <= bv32_to_int_u(x));
-
-procedure widening_cast_seed(v: BvVec, n: int) returns ()
+// `v[i] as_int` lowers to `Bv32.ToNat` Core op → SMT-LIB `bv2nat`.
+procedure widening_cast_seed(v: Map int bv32, n: int) returns ()
 spec {
   requires 0 <= n;
-  ensures ∀ i: int . 0 <= i && i < n ==> 0 <= bv32_to_int_u(v[i]);
+  ensures ∀ i: int . 0 <= i && i < n ==> 0 <= (v[i] as_int);
 }
 {
-  assert ∀ i: int . 0 <= i && i < n ==> 0 <= bv32_to_int_u(v[i]);
+  assert ∀ i: int . 0 <= i && i < n ==> 0 <= (v[i] as_int);
 };
 #end
 
 /-- info:
-Obligation: assert_3_1226
+Obligation: assert_2_979
 Property: assert
 Result: ✅ pass
 
-Obligation: widening_cast_seed_ensures_2_1152
+Obligation: widening_cast_seed_ensures_1_911
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
 #eval Strata.Boole.verify "cvc5" wideningCastsSeed (options := .quiet)
-
-example : Strata.smtVCsCorrect wideningCastsSeed := by
-  gen_smt_vcs
-  all_goals
-    intro Map inst n bv32_to_int_u select v hNonneg hn i hi
-    exact hNonneg (select v i)

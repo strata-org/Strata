@@ -8,9 +8,7 @@ This document tracks the selected Boole feature-request seeds kept under
 - Prioritize Rust-facing language support over Verus-only proof-visibility features.
 - Treat `opaque`, `reveal`, `hide`, `reveal_with_fuel`, `closed`, and `HasType`
   as lower-priority compatibility items unless they unblock a broader Rust path.
-- Keep widening casts/coercions active; prefer a centralized type-directed coercion
-  pass. This likely overlaps with `nat`/`int` boundary work given how Verus
-  internalizes fixed-width arithmetic.
+- Widening casts (`e as_int`) fully implemented (Gap #6) for bv1/8/16/32/64/128; covers all B2–B5 bitvector casts. Gap #8 (`nat` as a first-class type) is not a cast blocker — Boole has no `nat` type, so `nat`/`int` coercions are identity.
 
 ## Implemented feature requests
 
@@ -64,6 +62,9 @@ This document tracks the selected Boole feature-request seeds kept under
   - `fun x : T => body` lowers to nested Core `.abs` nodes; `(f)(x)` lowers to `.app () f x`.
   - Remaining gap: first-class function values as procedure parameters / local variables still need abstract-type encoding for the SMT path.
   - Benchmark: [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean).
+- **Widening casts** (`e as_int`)
+  - `e as_int` lowers to `Bv{n}.ToNat` (Core op) → SMT-LIB `bv2nat`; widths 1/8/16/32/64/128.
+  - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean).
 
 ## Semantic preservation requests
 
@@ -72,7 +73,7 @@ This document tracks the selected Boole feature-request seeds kept under
 3. **`reveal_with_fuel`**: Lower priority. Preserve the requested fuel amount instead of lowering it to an unrestricted reveal.
 4. **`closed` visibility**: Lower priority. Keep closed spec-function bodies hidden across module boundaries.
 5. **Overflow guards**: Lower priority. Preserve `HasType`-style arithmetic overflow checks if Verus-specific guards are worth modeling directly.
-6. **Widening casts outside call sites**: Insert or preserve cast/coercion structure in comparisons, quantifiers, and other expressions with a centralized type-directed coercion pass.
+6. **Widening casts**: Implemented.
 7. **`decreases` metadata**: Implemented.
 
 ## Type/model requests
@@ -127,7 +128,8 @@ These are the curated one-gap Boole seeds.
 | [`opaque_reveal_hide.lean`](../StrataTest/Languages/Boole/FeatureRequests/opaque_reveal_hide.lean) | `opaque`/`reveal` (#1), `hide` (#2), `closed` (#4) | Verus `generics`, `test_expand_errors`, `debug_expand`, `modules` | Lower priority |
 | [`reveal_with_fuel.lean`](../StrataTest/Languages/Boole/FeatureRequests/reveal_with_fuel.lean) | `reveal_with_fuel` (#3) | Verus `test_expand_errors`, `recursion` | Lower priority |
 | [`early_return.lean`](../StrataTest/Languages/Boole/early_return.lean) | Early return | Verus SST `return` translation gap from `differential_status.md` | Implemented (#871) |
-| [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean) | Widening casts (#6) | Verus `guide/integers`, `quantifiers`, `statements` | Active |
+| [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean) | Widening casts (#6) | Verus `guide/integers`, `quantifiers`, `statements` | Updated to use `e as_int`; map-lookup case `v[i] as_int` verified |
+| [`cast_expr.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_expr.lean) | `e as_int` widening cast (#6) | dalek-lite `scalar.rs` B2/B5 | Gap #6 closed; bv1/8/16/32/64/128 |
 | [`choose_operator.lean`](../StrataTest/Languages/Boole/choose_operator.lean) | `choose` (#18) | Verus `trigger_loops` (`choose_example`, `quantifier_example`) | Implemented (#1075) |
 | [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order values (#17) | Verus `fun_ext`, `trait_for_fn` | Active |
 | [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean) | Lambda / closure (#17) | Local reduced Rust/Verus-style lambda example | Implemented (#1075); remaining gap: first-class function values as procedure parameters/variables |

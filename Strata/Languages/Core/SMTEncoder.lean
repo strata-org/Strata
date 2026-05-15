@@ -547,6 +547,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | .bv ⟨_, .SGt⟩  => .ok (.app Op.bvsgt,      .bool,   ctx)
     | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
     | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat, .bitvec (n * 2), ctx)
+    | .bv ⟨_, .ToNat⟩  => .ok (.app Op.bv2nat,   .int,           ctx)
 
     | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
     | .str .Concat   => .ok (.app Op.str_concat,    .string, ctx)
