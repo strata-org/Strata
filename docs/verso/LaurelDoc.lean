@@ -260,7 +260,7 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
   Block-Synth-Empty, Block-Check, Block-Check-Empty; Exit; Return-None, Return-Some,
   Return-Void-Error, Return-Multi-Error; While
 - *Verification statements* — Assert, Assume
-- *Assignment* — Assign-Single, Assign-Multi
+- *Assignment* — Assign
 - *Calls* — Static-Call, Static-Call-Multi, Instance-Call
 - *Primitive operations* — Op-Bool, Op-Cmp, Op-Eq, Op-Arith, Op-Concat
 - *Object forms* — New-Ok, New-Fallback; AsType; IsType; RefEq; PureFieldUpdate
@@ -481,16 +481,23 @@ target is a numeric type.
 ### Assignment
 
 ```
-  Γ(x) = T_x      Γ ⊢ e ⇒ T_e      T_e <: T_x
-───────────────────────────────────────────────  (Assign-Single, impl)
-            Γ ⊢ Assign [x] e ⇒ TVoid
+  Γ ⊢ targets_i ⇒ T_i      Γ ⊢ e ⇒ T_e      ExpectedTy <: T_e
+─────────────────────────────────────────────────────────────────  (Assign, impl)
+                Γ ⊢ Assign targets e ⇒ TVoid
+
+  where  ExpectedTy = T_1                       if |targets| = 1
+                   = MultiValuedExpr [T_1; …; T_n]  otherwise
 ```
 
-```
-  Γ ⊢ targets_i = x_i      Γ(x_i) = T_i      Γ ⊢ e ⇒ MultiValuedExpr Us      |Ts| = |Us|      U_i <: T_i
-─────────────────────────────────────────────────────────────────────────────────────────────────────────  (Assign-Multi, impl)
-                                  Γ ⊢ Assign targets e ⇒ TVoid
-```
+The target's declared type `T_i` comes from the variable's scope entry (for
+{name Strata.Laurel.Variable.Local}`Local` and {name Strata.Laurel.Variable.Field}`Field`)
+or from the {name Strata.Laurel.Variable.Declare}`Declare`-bound parameter type. Both
+single- and multi-target forms collapse into one tuple-vs-tuple check: when the RHS is a
+{name Strata.Laurel.HighType.MultiValuedExpr}`MultiValuedExpr`, both arity and per-position
+type mismatches surface in a single diagnostic of shape *"expected '(int, int, int)', got
+'(int, string)'"*. When the RHS is {name Strata.Laurel.HighType.TVoid}`TVoid` (a
+side-effecting statement: `while`, `return`, …), all checks are skipped — there's no value
+to assign.
 
 ### Calls
 

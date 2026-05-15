@@ -599,33 +599,33 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
     let (value', valueTy) ← synthStmtExpr value
-    -- Check that LHS target count matches the RHS arity (derived from the value type).
-    let expectedOutputCount := match valueTy.val with
-      | .MultiValuedExpr tys => tys.length
-      | _ => 1
-    if valueTy.val != HighType.TVoid && targets'.length != expectedOutputCount then
-      let diag := diagnosticFromSource source
-        s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
-      modify fun s => { s with errors := s.errors.push diag }
-    -- Type check: for single-target assignments, check value type matches target type
-    -- Skip when value type is void (RHS is a statement like while/return that doesn't produce a value)
-    -- Skip when there's an arity mismatch (already reported above)
-    if targets'.length == 1 && targets'.length == expectedOutputCount && valueTy.val != HighType.TVoid then
-      if let some target := targets'.head? then
-        let targetTy := match target.val with
-          | .Local ref => do
-            let s ← get
-            match s.scope.get? ref.text with
-            | some (_, node) => pure node.getType
-            | none => pure { val := HighType.Unknown, source := ref.source : HighTypeMd }
-          | .Declare param => pure param.type
-          | .Field _ fieldName => do
-            let s ← get
-            match s.scope.get? fieldName.text with
-            | some (_, node) => pure node.getType
-            | none => pure { val := HighType.Unknown, source := fieldName.source : HighTypeMd }
-        let tTy ← targetTy
-        checkSubtype source tTy valueTy
+    -- Compute the target's declared type, regardless of whether it's a Local,
+    -- a Field, or a fresh Declare.
+    let targetType (t : VariableMd) : ResolveM HighTypeMd := do
+      let s ← get
+      match t.val with
+      | .Local ref =>
+        match s.scope.get? ref.text with
+        | some (_, node) => pure node.getType
+        | none => pure { val := .Unknown, source := ref.source }
+      | .Declare param => pure param.type
+      | .Field _ fieldName =>
+        match s.scope.get? fieldName.text with
+        | some (_, node) => pure node.getType
+        | none => pure { val := .Unknown, source := fieldName.source }
+    -- Skip all checks when the RHS is a statement (TVoid) — no value to assign.
+    if valueTy.val != HighType.TVoid then
+      let targetTys ← targets'.mapM targetType
+      -- Build the expected type from the targets' declared types: a single
+      -- type when there's one target, a tuple (MultiValuedExpr) otherwise.
+      -- This matches the shape of `valueTy`, which is itself MultiValuedExpr
+      -- exactly when the RHS produces multiple values. A single tuple-vs-tuple
+      -- check then covers both arity and per-position type mismatches in one
+      -- diagnostic.
+      let expectedTy : HighTypeMd := match targetTys with
+        | [single] => single
+        | _        => { val := .MultiValuedExpr targetTys, source := source }
+      checkSubtype source expectedTy valueTy
     pure (.Assign targets' value', valueTy)
   | .Var (.Field target fieldName) =>
     let (target', _) ← synthStmtExpr target
