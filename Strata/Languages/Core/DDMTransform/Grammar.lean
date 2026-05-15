@@ -289,7 +289,6 @@ op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
 op exit_statement (label : Ident) : Statement => "exit " label ";";
-op exit_unlabeled_statement : Statement => "exit;";
 
 category SpecElt;
 category Free;
@@ -382,8 +381,9 @@ op recfn_decl (name : Ident,
                @[scope(typeArgs)] b : Bindings,
                @[scope(typeArgs)] r : Type,
                @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
+               @[scope(b)] decreases : Option Measure,
                @[scope(b)] c : r) : RecFnDecl =>
-  "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
+  "function " name typeArgs b " : " r indent(2, preconds) "\n" indent(2, decreases) "{\n  " indent(2, c) "\n}";
 
 @[scope(recfns), preRegisterFunctions(recfns)]
 op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>

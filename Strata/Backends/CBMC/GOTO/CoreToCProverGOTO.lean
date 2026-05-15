@@ -108,8 +108,8 @@ def convertMetaData (md : Imperative.MetaData Core.Expression)
     match elem.fld with
     | .label l => match elem.value with
       | .msg s => some ⟨.label l, .msg s⟩
-      | .fileRange r => some ⟨.label l, .fileRange r⟩
       | .switch b => some ⟨.label l, .switch b⟩
+      | .provenance p => some ⟨.label l, .provenance p⟩
       | .expr _ => none
     | .var _ => none
 
