@@ -418,8 +418,8 @@ decreasing_by
   -- For subTarget inside .Assign target list .Field — uses the match
   -- hypothesis _htv : t.val = Variable.Field ...
   all_goals (try (
-    have h_t_mem := List.sizeOf_lt_of_mem ‹_›
-    have h_sub_t := Variable.sizeOf_field_target_lt_of_eq _htv
+    have := List.sizeOf_lt_of_mem ‹_›
+    have := Variable.sizeOf_field_target_lt_of_eq _htv
     simp_all; omega))
   -- For target/index/value inside .Subscript at the top level (expression
   -- position) — uses the match hypothesis _h : expr.val = .Subscript ...
