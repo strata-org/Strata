@@ -256,9 +256,9 @@ every premise and conclusion unless a rule explicitly extends it (written `Γ, x
 - *Subsumption* — Sub
 - *Literals* — Lit-Int, Lit-Bool, Lit-String, Lit-Decimal
 - *Variables* — Var-Local, Var-Field, Var-Declare
-- *Control flow* — If-NoElse, If-Synth, If-Check (planned); Block-Synth, Block-Synth-Empty,
-  Block-Check, Block-Check-Empty; Exit; Return-None, Return-Some, Return-Some-Checked
-  (planned); While
+- *Control flow* — If-NoElse, If-Synth, If-Check, If-Check-NoElse; Block-Synth,
+  Block-Synth-Empty, Block-Check, Block-Check-Empty; Exit; Return-None, Return-Some,
+  Return-Some-Checked (planned); While
 - *Verification statements* — Assert, Assume
 - *Assignment* — Assign-Single, Assign-Multi
 - *Calls* — Static-Call, Static-Call-Multi, Instance-Call
@@ -352,9 +352,20 @@ the actual check downstream.
 
 ```
 Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇐ T      Γ ⊢ elseBr ⇐ T
-──────────────────────────────────────────────────────────  (If-Check, planned)
+──────────────────────────────────────────────────────────  (If-Check, impl)
  Γ ⊢ IfThenElse cond thenBr (some elseBr) ⇐ T
+
+
+Γ ⊢ cond ⇐ TBool      Γ ⊢ thenBr ⇐ T      TVoid <: T
+─────────────────────────────────────────────────────  (If-Check-NoElse, impl)
+ Γ ⊢ IfThenElse cond thenBr none ⇐ T
 ```
+
+Check mode pushes `T` into both branches (rather than going through If-Synth + Sub at the
+boundary). Errors fire at the offending branch instead of the surrounding `if`. Without an
+else branch, the construct can only succeed when `T` admits
+{name Strata.Laurel.HighType.TVoid}`TVoid` — the same subsumption check `Block-Check-Empty`
+performs for an empty block.
 
 ```
 Γ_0 = Γ      Γ_{i-1} ⊢ s_i ⇒ _ ⊣ Γ_i  (1 ≤ i < n)      Γ_{n-1} ⊢ s_n ⇒ T
