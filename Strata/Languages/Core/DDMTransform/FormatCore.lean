@@ -297,6 +297,17 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
 
+/-- Convert a bitvector width to the corresponding CoreType, logging an error and
+    falling back to bv64 for unsupported widths. -/
+def bvTypeOfWidth {M} [Inhabited M] (caller : String) (w : Nat) : ToCSTM M (CoreType M) :=
+  match w with
+  | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
+  | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
+  | 64 => pure (.bv64 default)
+  | _ => do
+    ToCSTM.logError caller s!"unsupported BV width {w}" (toString w)
+    pure (.bv64 default)
+
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
@@ -337,22 +348,10 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
   -- Overflow predicates
   | .bv ⟨w, .SNegOverflow⟩ => do
-    let bvTy ← match w with
-      | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
-      | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
-      | 64 => pure (.bv64 default)
-      | _ => do
-        ToCSTM.logError "handleUnaryOps" "unsupported width for SNegOverflow" (toString w)
-        pure (.bv64 default)
+    let bvTy ← bvTypeOfWidth "handleUnaryOps" w
     pure (.bv_neg_overflow default bvTy arg)
   | .bv ⟨w, .UNegOverflow⟩ => do
-    let bvTy ← match w with
-      | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
-      | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
-      | 64 => pure (.bv64 default)
-      | _ => do
-        ToCSTM.logError "handleUnaryOps" "unsupported width for UNegOverflow" (toString w)
-        pure (.bv64 default)
+    let bvTy ← bvTypeOfWidth "handleUnaryOps" w
     pure (.bv_uneg_overflow default bvTy arg)
   -- Bitvector extract ops
   | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)
