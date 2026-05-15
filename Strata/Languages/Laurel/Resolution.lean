@@ -13,24 +13,73 @@ import Strata.Languages.Python.PythonLaurelCorePrelude
 /-!
 # Name Resolution Pass
 
-Assigns a unique numeric ID to every definition and reference node in a
-Laurel program, then resolves references to their definitions.
+Turns a freshly parsed Laurel `Program` (where every `Identifier` has
+`uniqueId := none`) into a program where every definition has a fresh numeric
+ID and every reference points to the ID of the definition it names. The pass
+also synthesizes a `HighType` for every `StmtExpr` and emits diagnostics for
+unresolved names, duplicate definitions, kind mismatches (e.g. using a
+constant where a type is expected), and type mismatches.
+
+The entry point is `resolve`. It returns a `ResolutionResult` containing the
+resolved program, a `SemanticModel` (the `refToDef` map and ID counters), and
+the accumulated diagnostics.
 
 ## Design
 
-The resolution pass operates in two phases:
+The resolution pass operates in two phases.
 
 ### Phase 1: ID Assignment and Reference Resolution
-Walks the AST, assigning fresh unique IDs to all definition nodes and
-resolving references by looking up names in the current lexical scope.
-After this phase, every definition and reference node has its `id` field
-filled in.
+
+Walks the AST under `ResolveM`, a state monad over `ResolveState`. Phase 1:
+- assigns fresh unique IDs to all definition nodes via `defineNameCheckDup`,
+- resolves references by looking up names in the current lexical scope via
+  `resolveRef` (and `resolveFieldRef` for fields, which uses the target's
+  declared type to build a qualified lookup key),
+- opens fresh nested scopes via `withScope` for blocks, quantifiers,
+  procedure bodies, and constrained-type constraint/witness expressions,
+- synthesizes a `HighType` for every `StmtExpr` and checks it (via
+  `checkStmtExpr` for fresh subexpressions, or `checkSubtype` when a type is
+  already in hand) on assignments, call arguments, condition positions,
+  functional bodies, and constant initializers.
+
+Before any bodies are walked, `preRegisterTopLevel` registers every top-level
+name (types and their constructors / testers / destructors / instance
+procedures / fields, constants, static procedures) into scope with a
+placeholder `ResolvedNode`. The placeholders are overwritten with real nodes
+as each definition is fully resolved. This is what allows declaration order to
+not matter inside a Laurel program.
+
+When a reference fails to resolve, or a `UserDefined` type reference resolves
+to the wrong kind, Phase 1 records the name as `ResolvedNode.unresolved` (or
+the type as `HighType.Unknown`) and continues. Both are treated as wildcards
+by the type checker, so subsequent uses do not produce cascading errors.
+
+After this phase, every definition and reference node has its `uniqueId`
+field filled in.
 
 ### Phase 2: Build refToDef Map
+
 Walks the *resolved* AST (where all definitions already have their UUIDs)
-and builds a map from each definition's ID to its `ResolvedNode`. Because this
-happens after Phase 1, the `ResolvedNode` values in the map contain the fully
-resolved sub-trees (e.g. a procedure's parameters already have their IDs).
+and builds a map from each definition's ID to its `ResolvedNode`. Because
+this happens after Phase 1, the `ResolvedNode` values in the map contain the
+fully resolved sub-trees (e.g. a procedure's parameters already have their
+IDs).
+
+### Scopes
+
+Three forms of scope are maintained on `ResolveState`:
+- `scope` — the current lexical scope, mapping name → `(uniqueId, ResolvedNode)`,
+  saved and restored by `withScope`.
+- `currentScopeNames` — names defined at the current nesting level only, used
+  by `defineNameCheckDup` to detect duplicates.
+- `typeScopes` — per-composite-type scopes mapping field names to scope
+  entries. Built by `resolveTypeDefinition` *before* descending into instance
+  procedures (and inheriting from `extending` parents), so that field
+  references inside method bodies can be resolved.
+- `instanceTypeName` — when resolving inside an instance procedure, the
+  owning composite type's name. Used by `resolveFieldRef` as a fallback so
+  that a bare `self.field` reference resolves through the type scope when
+  `self` has type `Any`.
 
 ### Definition nodes (introduce a name into scope)
 - `Variable.Declare` — local variable declaration (in `Assign` targets or `Var`)
@@ -51,10 +100,29 @@ resolved sub-trees (e.g. a procedure's parameters already have their IDs).
 - `StmtExpr.Exit` — exit a labelled block
 - `HighType.UserDefined` — type reference
 
-Each of these nodes carries an `id : Nat` field (defaulting to `0`).
-The ID assignment pass fills in unique values. The resolution pass then
-builds a map from reference IDs to `ResolvedNode` values describing the
-definition each reference resolves to.
+Each of these nodes carries a `uniqueId : Option Nat` field (defaulting to
+`none`). Phase 1 fills in unique values; Phase 2 then builds a map from
+reference IDs to `ResolvedNode` values describing the definition each
+reference resolves to.
+
+## Future structural changes
+
+A few open structural questions worth recording — see the *Type checking* section of
+`LaurelDoc.lean` for context.
+
+- *Rename to `NameTypeResolution`.* This pass resolves names and type-checks expressions in
+  one walk. The current name only mentions half of what it does. `NameTypeResolution.lean`
+  (or similar) would advertise both responsibilities.
+- *Eliminate `LaurelTypes.computeExprType` by caching types.* Five later passes
+  (`LaurelToCoreTranslator`, `ModifiesClauses`, `LiftImperativeExpressions`,
+  `HeapParameterization`, `TypeHierarchy`) re-derive `StmtExpr` types after resolution.
+  Resolution already synthesizes those types and discards them. Caching per-node types on
+  `SemanticModel` (or directly on the AST) would let the later passes look them up instead
+  of recomputing.
+- *Shrink or remove `InferHoleTypes`.* `Hole-None-Check` already records expected types
+  during resolution for holes in check-mode positions. Holes in synth-only positions still
+  need the post-pass, but as more constructs gain bespoke check rules, fewer holes need
+  it; eventually the pass can go away.
 -/
 
 namespace Strata.Laurel
@@ -213,6 +281,10 @@ structure ResolveState where
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
+  /-- When resolving inside a procedure body, the declared output types (in
+      declaration order). `none` means no enclosing procedure. Used by `Return`
+      to type-check the optional return value and to flag arity/shape mismatches. -/
+  expectedReturnTypes : Option (List HighTypeMd) := none
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -368,60 +440,41 @@ private def formatType (ty : HighTypeMd) : String :=
     "(" ++ ", ".intercalate parts ++ ")"
   | other => toString (formatHighTypeVal other)
 
-/-- Emit a type mismatch diagnostic. -/
-private def typeMismatch (source : Option FileRange) (expected : String) (actual : HighTypeMd) : ResolveM Unit := do
-  let actualStr := formatType actual
-  let diag := diagnosticFromSource source s!"Type mismatch: expected {expected}, but got '{actualStr}'"
+/-- Emit a type mismatch diagnostic. With a `construct`, the message is
+    "'<construct.constrName>' <problem>, got '<actual>'"; without,
+    "<problem>, got '<actual>'". -/
+private def typeMismatch (source : Option FileRange) (construct : Option StmtExpr)
+    (problem : String) (actual : HighTypeMd) : ResolveM Unit := do
+  let constructor := match construct with
+    | some c => s!"'{c.constrName}' "
+    | none   => ""
+  let diag := diagnosticFromSource source s!"{constructor}{problem}, got '{formatType actual}'"
   modify fun s => { s with errors := s.errors.push diag }
 
-/-- Check that a type is boolean, emitting a diagnostic if not. -/
-private def checkBool (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
+/-- Type-level subtype check: emits the standard "expected/got" diagnostic when
+    `actual` is not a consistent subtype of `expected`. Used at sites where the
+    actual type is already in hand (assignment, call args, body vs declared
+    output) — equivalent to `checkStmtExpr e expected` but without re-synthesizing. -/
+private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
+  unless isConsistentSubtype actual expected do
+    typeMismatch source none s!"expected '{formatType expected}'" actual
+
+/-- Test whether a type is in the set of numeric primitives. `Unknown` and
+    `TCore` are accepted as gradual escape hatches. Used by Op-Cmp / Op-Arith. -/
+private def isNumeric (ty : HighTypeMd) : Bool :=
   match ty.val with
-  | .TBool | .Unknown => pure ()
-  | .UserDefined _ => pure ()  -- constrained types may wrap bool
-  | _ => typeMismatch source "bool" ty
+  | .TInt | .TReal | .TFloat64 | .Unknown => true
+  | .TCore _ => true
+  | _ => false
 
-/-- Check that a type is numeric (int, real, or float64), emitting a diagnostic if not. -/
-private def checkNumeric (source : Option FileRange) (ty : HighTypeMd) : ResolveM Unit := do
+/-- Test whether a type is a user-defined reference type. `Unknown` and `TCore`
+    are accepted as gradual escape hatches. Used by Fresh and ReferenceEquals,
+    which only make sense on composite/datatype references. -/
+private def isReference (ty : HighTypeMd) : Bool :=
   match ty.val with
-  | .TInt | .TReal | .TFloat64 | .Unknown => pure ()
-  | .UserDefined _ => pure ()  -- constrained types may wrap numeric types
-  | _ => typeMismatch source "a numeric type" ty
-
-/-- Check that two types are compatible, emitting a diagnostic if not.
-    UserDefined types are always considered compatible with each other since
-    subtype relationships (inheritance) are not tracked during resolution.
-    TCore types are not checked since they are pass-through types from the Core language. -/
-private def checkAssignable (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
-  match expected.val, actual.val with
-  | .Unknown, _ => pure ()
-  | _, .Unknown => pure ()
-  | .UserDefined _, _ => pure ()  -- subtype relationships not tracked here
-  | _, .UserDefined _ => pure ()  -- subtype relationships not tracked here
-  | .TCore _, _ => pure ()  -- pass-through Core types not checked during resolution
-  | _, .TCore _ => pure ()  -- pass-through Core types not checked during resolution
-  | _, _ =>
-    if !highEq expected actual then
-      let expectedStr := formatType expected
-      let actualStr := formatType actual
-      let diag := diagnosticFromSource source s!"Type mismatch: expected '{expectedStr}', but got '{actualStr}'"
-      modify fun s => { s with errors := s.errors.push diag }
-
-/-- Check that two types are comparable (for == and !=), emitting a symmetric diagnostic if not. -/
-private def checkComparable (source : Option FileRange) (lhsTy : HighTypeMd) (rhsTy : HighTypeMd) : ResolveM Unit := do
-  match lhsTy.val, rhsTy.val with
-  | .Unknown, _ => pure ()
-  | _, .Unknown => pure ()
-  | .UserDefined _, _ => pure ()
-  | _, .UserDefined _ => pure ()
-  | .TCore _, _ => pure ()
-  | _, .TCore _ => pure ()
-  | _, _ =>
-    if !highEq lhsTy rhsTy then
-      let lhsStr := formatType lhsTy
-      let rhsStr := formatType rhsTy
-      let diag := diagnosticFromSource source s!"Operands of '==' have incompatible types '{lhsStr}' and '{rhsStr}'"
-      modify fun s => { s with errors := s.errors.push diag }
+  | .UserDefined _ | .Unknown => true
+  | .TCore _ => true
+  | _ => false
 
 /-- Get the type of a resolved variable reference from scope. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
@@ -454,38 +507,69 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
 
-def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
+mutual
+def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
   match _: exprMd with
   | AstNode.mk expr source =>
   let (val', ty) ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
-    let (cond', condTy) ← resolveStmtExpr cond
-    checkBool cond'.source condTy
-    let (thenBr', thenTy) ← resolveStmtExpr thenBr
+    -- Condition is checked against TBool. The result type is TVoid when the
+    -- else branch is absent (statement form: the then-branch's value is
+    -- discarded), otherwise the then-branch's synthesized type. We don't
+    -- compare the two branches against each other since statement-position
+    -- ifs commonly mix a value branch with a TVoid branch (return/exit).
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
+    let (thenBr', thenTy) ← synthStmtExpr thenBr
     let elseBr' ← elseBr.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
-    pure (.IfThenElse cond' thenBr' elseBr', thenTy)
+      let (e', _) ← synthStmtExpr a.val; pure e')
+    let resultTy := match elseBr with
+      | none => { val := .TVoid, source := source }
+      | some _ => thenTy
+    pure (.IfThenElse cond' thenBr' elseBr', resultTy)
   | .Block stmts label =>
+    -- Synth-mode block: non-last statements have their synthesized type discarded
+    -- (lax rule, matches Java/Python/JS expression-statement semantics).
+    -- The last statement's synthesized type becomes the block's type.
     withScope do
-      let results ← stmts.mapM resolveStmtExpr
+      let results ← stmts.mapM synthStmtExpr
       let stmts' := results.map (·.1)
       let lastTy := match results.getLast? with
         | some (_, ty) => ty
         | none => { val := .TVoid, source := source }
       pure (.Block stmts' label, lastTy)
   | .While cond invs dec body =>
-    let (cond', condTy) ← resolveStmtExpr cond
-    checkBool cond'.source condTy
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
     let invs' ← invs.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
+      checkStmtExpr a.val { val := .TBool, source := a.val.source })
     let dec' ← dec.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
-    let (body', _) ← resolveStmtExpr body
+      let (e', _) ← synthStmtExpr a.val; pure e')
+    let (body', _) ← synthStmtExpr body
     pure (.While cond' invs' dec' body', { val := .TVoid, source := source })
   | .Exit target => pure (.Exit target, { val := .TVoid, source := source })
   | .Return val => do
+    -- Match the optional return value against the enclosing procedure's
+    -- declared outputs. `expectedReturnTypes = none` means we're not inside a
+    -- procedure body (e.g. resolving a constant initializer); skip the check.
+    let expected := (← get).expectedReturnTypes
     let val' ← val.attach.mapM (fun a => have := a.property; do
-      let (e', _) ← resolveStmtExpr a.val; pure e')
+      match expected with
+      | some [singleOutput] => checkStmtExpr a.val singleOutput
+      | _ => let (e', _) ← synthStmtExpr a.val; pure e')
+    -- Arity/shape diagnostics independent of the value's own type.
+    match val, expected with
+    | none,   some []          => pure ()
+    | none,   some [_]         => pure ()  -- Dafny-style early exit
+    | none,   some _           => pure ()  -- multi-output: bare return is fine
+    | some _, some []          =>
+      let diag := diagnosticFromSource source
+        "void procedure cannot return a value"
+      modify fun s => { s with errors := s.errors.push diag }
+    | some _, some [_]         => pure ()  -- value already checked above
+    | some _, some _           =>
+      let diag := diagnosticFromSource source
+        "multi-output procedure cannot use 'return e'; assign to named outputs instead"
+      modify fun s => { s with errors := s.errors.push diag }
+    | _,      none             => pure ()  -- no enclosing procedure
     pure (.Return val', { val := .TVoid, source := source })
   | .LiteralInt v => pure (.LiteralInt v, { val := .TInt, source := source })
   | .LiteralBool v => pure (.LiteralBool v, { val := .TBool, source := source })
@@ -507,65 +591,65 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
         let ref' ← resolveRef ref source
         pure (⟨.Local ref', vs⟩ : VariableMd)
       | .Field target fieldName =>
-        let (target', _) ← resolveStmtExpr target
+        let (target', _) ← synthStmtExpr target
         let fieldName' ← resolveFieldRef target' fieldName source
         pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
       | .Declare param =>
         let ty' ← resolveHighType param.type
         let name' ← defineNameCheckDup param.name (.var param.name ty')
         pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-    let (value', valueTy) ← resolveStmtExpr value
-    -- Check that LHS target count matches the RHS arity (derived from the value type).
-    let expectedOutputCount := match valueTy.val with
-      | .MultiValuedExpr tys => tys.length
-      | _ => 1
-    if valueTy.val != HighType.TVoid && targets'.length != expectedOutputCount then
-      let diag := diagnosticFromSource source
-        s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
-      modify fun s => { s with errors := s.errors.push diag }
-    -- Type check: for single-target assignments, check value type matches target type
-    -- Skip when value type is void (RHS is a statement like while/return that doesn't produce a value)
-    -- Skip when there's an arity mismatch (already reported above)
-    if targets'.length == 1 && targets'.length == expectedOutputCount && valueTy.val != HighType.TVoid then
-      if let some target := targets'.head? then
-        let targetTy := match target.val with
-          | .Local ref => do
-            let s ← get
-            match s.scope.get? ref.text with
-            | some (_, node) => pure node.getType
-            | none => pure { val := HighType.Unknown, source := ref.source : HighTypeMd }
-          | .Declare param => pure param.type
-          | .Field _ fieldName => do
-            let s ← get
-            match s.scope.get? fieldName.text with
-            | some (_, node) => pure node.getType
-            | none => pure { val := HighType.Unknown, source := fieldName.source : HighTypeMd }
-        let tTy ← targetTy
-        checkAssignable source tTy valueTy
+    let (value', valueTy) ← synthStmtExpr value
+    -- Compute the target's declared type, regardless of whether it's a Local,
+    -- a Field, or a fresh Declare.
+    let targetType (t : VariableMd) : ResolveM HighTypeMd := do
+      let s ← get
+      match t.val with
+      | .Local ref =>
+        match s.scope.get? ref.text with
+        | some (_, node) => pure node.getType
+        | none => pure { val := .Unknown, source := ref.source }
+      | .Declare param => pure param.type
+      | .Field _ fieldName =>
+        match s.scope.get? fieldName.text with
+        | some (_, node) => pure node.getType
+        | none => pure { val := .Unknown, source := fieldName.source }
+    -- Skip all checks when the RHS is a statement (TVoid) — no value to assign.
+    if valueTy.val != HighType.TVoid then
+      let targetTys ← targets'.mapM targetType
+      -- Build the expected type from the targets' declared types: a single
+      -- type when there's one target, a tuple (MultiValuedExpr) otherwise.
+      -- This matches the shape of `valueTy`, which is itself MultiValuedExpr
+      -- exactly when the RHS produces multiple values. A single tuple-vs-tuple
+      -- check then covers both arity and per-position type mismatches in one
+      -- diagnostic.
+      let expectedTy : HighTypeMd := match targetTys with
+        | [single] => single
+        | _        => { val := .MultiValuedExpr targetTys, source := source }
+      checkSubtype source expectedTy valueTy
     pure (.Assign targets' value', valueTy)
   | .Var (.Field target fieldName) =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
     let ty ← getVarType fieldName
     pure (.Var (.Field target' fieldName'), ty)
   | .PureFieldUpdate target fieldName newVal =>
-    let (target', targetTy) ← resolveStmtExpr target
+    let (target', targetTy) ← synthStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    let (newVal', _) ← resolveStmtExpr newVal
+    let fieldTy ← getVarType fieldName'
+    let newVal' ← checkStmtExpr newVal fieldTy
     pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
   | .StaticCall callee args =>
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .constant])
-    let results ← args.mapM resolveStmtExpr
+    let results ← args.mapM synthStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
-    -- Check argument types match parameter types
-    for (argTy, paramTy) in argTypes.zip paramTypes do
-      checkAssignable source paramTy argTy
+    for ((a, aTy), paramTy) in (args'.zip argTypes).zip paramTypes do
+      checkSubtype a.source paramTy aTy
     pure (.StaticCall callee' args', retTy)
   | .PrimitiveOp op args =>
-    let results ← args.mapM resolveStmtExpr
+    let results ← args.mapM synthStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let resultTy := match op with
@@ -576,18 +660,25 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
         | some headTy => headTy.val
         | none => HighType.TInt
       | .StrConcat => HighType.TString
-    -- Type check operands
     match op with
     | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-      for aTy in argTypes do checkBool source aTy
+      for (a, aTy) in args'.zip argTypes do
+        checkSubtype a.source { val := .TBool, source := a.source } aTy
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
-      for aTy in argTypes do checkNumeric source aTy
+      for (a, aTy) in args'.zip argTypes do
+        unless isNumeric aTy do
+          typeMismatch a.source (some expr) "expected a numeric type" aTy
     | .Eq | .Neq =>
-      -- Check that operands are compatible with each other (symmetric check)
       match argTypes with
-      | [lhsTy, rhsTy] => checkComparable source lhsTy rhsTy
+      | [lhsTy, rhsTy] =>
+        unless isConsistent lhsTy rhsTy do
+          let diag := diagnosticFromSource source
+            s!"Operands of '{op}' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
+          modify fun s => { s with errors := s.errors.push diag }
       | _ => pure ()
-    | .StrConcat => pure ()
+    | .StrConcat =>
+      for (a, aTy) in args'.zip argTypes do
+        checkSubtype a.source { val := .TString, source := a.source } aTy
     pure (.PrimitiveOp op args', { val := resultTy, source := source })
   | .New ref =>
     let ref' ← resolveRef ref source
@@ -601,64 +692,103 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
     let ty := if kindOk then { val := HighType.UserDefined ref', source := source }
               else { val := HighType.Unknown, source := source }
     pure (.New ref', ty)
-  | .This => pure (.This, { val := .Unknown, source := source })
+  | .This =>
+    let s ← get
+    match s.instanceTypeName with
+    | some typeName =>
+      let typeId : Identifier :=
+        match s.scope.get? typeName with
+        | some (uid, _) => { text := typeName, uniqueId := some uid, source := source }
+        | none => { text := typeName, source := source }
+      pure (.This, { val := .UserDefined typeId, source := source })
+    | none =>
+      let diag := diagnosticFromSource source "'this' is not allowed outside instance methods"
+      modify fun s => { s with errors := s.errors.push diag }
+      pure (.This, { val := .Unknown, source := source })
   | .ReferenceEquals lhs rhs =>
-    let (lhs', _) ← resolveStmtExpr lhs
-    let (rhs', _) ← resolveStmtExpr rhs
+    let (lhs', lhsTy) ← synthStmtExpr lhs
+    let (rhs', rhsTy) ← synthStmtExpr rhs
+    unless isReference lhsTy do
+      typeMismatch lhs'.source (some expr) "expected a reference type" lhsTy
+    unless isReference rhsTy do
+      typeMismatch rhs'.source (some expr) "expected a reference type" rhsTy
     pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let ty' ← resolveHighType ty
     pure (.AsType target' ty', ty')
   | .IsType target ty =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let ty' ← resolveHighType ty
     pure (.IsType target' ty', { val := .TBool, source := source })
   | .InstanceCall target callee args =>
-    let (target', _) ← resolveStmtExpr target
+    let (target', _) ← synthStmtExpr target
     let callee' ← resolveRef callee source
       (expected := #[.instanceProcedure, .staticProcedure])
-    let results ← args.mapM resolveStmtExpr
+    let results ← args.mapM synthStmtExpr
     let args' := results.map (·.1)
     let argTypes := results.map (·.2)
     let (retTy, paramTypes) ← getCallInfo callee
-    -- Check argument types match parameter types (skip first param which is 'self')
+    -- Skip first param (self) when matching args.
     let callParamTypes := match paramTypes with | _ :: rest => rest | [] => []
-    for (argTy, paramTy) in argTypes.zip callParamTypes do
-      checkAssignable source paramTy argTy
+    for ((a, aTy), paramTy) in (args'.zip argTypes).zip callParamTypes do
+      checkSubtype a.source paramTy aTy
     pure (.InstanceCall target' callee' args', retTy)
   | .Quantifier mode param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
       let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; do
-        let (e', _) ← resolveStmtExpr pv.val; pure e')
-      let (body', _) ← resolveStmtExpr body
+        let (e', _) ← synthStmtExpr pv.val; pure e')
+      let body' ← checkStmtExpr body { val := .TBool, source := body.source }
       pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
   | .Assigned name =>
-    let (name', _) ← resolveStmtExpr name
+    let (name', _) ← synthStmtExpr name
     pure (.Assigned name', { val := .TBool, source := source })
   | .Old val =>
-    let (val', valTy) ← resolveStmtExpr val
+    let (val', valTy) ← synthStmtExpr val
     pure (.Old val', valTy)
   | .Fresh val =>
-    let (val', _) ← resolveStmtExpr val
+    let (val', valTy) ← synthStmtExpr val
+    unless isReference valTy do
+      typeMismatch val'.source (some expr) "expected a reference type" valTy
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
-    let (cond', condTy) ← resolveStmtExpr condExpr
-    checkBool cond'.source condTy
+    let cond' ← checkStmtExpr condExpr { val := .TBool, source := condExpr.source }
     pure (.Assert { condition := cond', summary }, { val := .TVoid, source := source })
   | .Assume cond =>
-    let (cond', condTy) ← resolveStmtExpr cond
-    checkBool cond'.source condTy
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
     pure (.Assume cond', { val := .TVoid, source := source })
   | .ProveBy val proof =>
-    let (val', valTy) ← resolveStmtExpr val
-    let (proof', _) ← resolveStmtExpr proof
+    let (val', valTy) ← synthStmtExpr val
+    let (proof', _) ← synthStmtExpr proof
     pure (.ProveBy val' proof', valTy)
   | .ContractOf ty fn =>
-    let (fn', _) ← resolveStmtExpr fn
-    pure (.ContractOf ty fn', { val := .Unknown, source := source })
+    -- `fn` must be a direct identifier reference resolving to a procedure.
+    -- Anything else (arbitrary expressions, references to non-procedures) is
+    -- ill-formed: a contract belongs to a *named* procedure.
+    let (fn', _) ← synthStmtExpr fn
+    let s ← get
+    let fnIsProcRef : Bool := match fn'.val with
+      | .Var (.Local ref) =>
+        match s.scope.get? ref.text with
+        | some (_, node) =>
+          node.kind == .staticProcedure ||
+          node.kind == .instanceProcedure ||
+          node.kind == .unresolved
+        | none => true  -- unresolved name already reported
+      | _ => false
+    unless fnIsProcRef do
+      let diag := diagnosticFromSource fn.source
+        "'contractOf' expected a procedure reference"
+      modify fun s => { s with errors := s.errors.push diag }
+    -- Result type: Bool for pre/postconditions, set of heap references for
+    -- reads/modifies. The element type of the set is left as Unknown for now
+    -- since the rule doesn't recover it from `fn`.
+    let resultTy : HighType := match ty with
+      | .Precondition | .PostCondition => .TBool
+      | .Reads | .Modifies => .TSet { val := .Unknown, source := none }
+    pure (.ContractOf ty fn', { val := resultTy, source := source })
   | .Abstract => pure (.Abstract, { val := .Unknown, source := source })
   | .All => pure (.All, { val := .Unknown, source := source })
   | .Hole det type => match type with
@@ -667,13 +797,65 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) 
       pure (.Hole det ty', ty')
     | none => pure (.Hole det none, { val := .Unknown, source := source })
   return ({ val := val', source := source }, ty)
-  termination_by exprMd
-  decreasing_by all_goals term_by_mem
+  termination_by (exprMd, 0)
+  decreasing_by all_goals first
+    | (apply Prod.Lex.left; term_by_mem)
+    | (apply Prod.Lex.right; decide)
+
+/-- Check-mode resolution: resolve `e` and verify its type is a consistent
+    subtype of `expected`. Bidirectional rules for individual constructs push
+    `expected` into subexpressions; everything else falls back to subsumption
+    (synth, then `isConsistentSubtype actual expected`). -/
+def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd := do
+  match _: exprMd with
+  | AstNode.mk expr source =>
+  match _: expr with
+  | .Block stmts label =>
+    -- Bespoke check rule: discard non-last statement types (lax), push
+    -- `expected` into the last statement. Empty block reduces to subsumption
+    -- of TVoid against `expected`.
+    withScope do
+      let init' ← stmts.dropLast.attach.mapM (fun ⟨s, hMem⟩ => do
+        have : s ∈ stmts := List.dropLast_subset stmts hMem
+        let (s', _) ← synthStmtExpr s; pure s')
+      match _lastResult: stmts.getLast? with
+      | none =>
+        checkSubtype source expected { val := .TVoid, source := source }
+        pure { val := .Block init' label, source := source }
+      | some last =>
+        have := List.mem_of_getLast? _lastResult
+        let last' ← checkStmtExpr last expected
+        pure { val := .Block (init' ++ [last']) label, source := source }
+  | .IfThenElse cond thenBr elseBr =>
+    -- Push `expected` into both branches (rather than going through the synth
+    -- rule + Sub at the boundary). Without an else branch, fall back to
+    -- subsumption of TVoid against `expected`.
+    let cond' ← checkStmtExpr cond { val := .TBool, source := cond.source }
+    let thenBr' ← checkStmtExpr thenBr expected
+    let elseBr' ← elseBr.attach.mapM (fun ⟨e, _⟩ => checkStmtExpr e expected)
+    if elseBr.isNone then
+      checkSubtype source expected { val := .TVoid, source := source }
+    pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
+  | .Hole det none =>
+    -- Untyped hole in check mode: record the expected type on the node so
+    -- downstream passes don't have to infer it again. Subsumption is trivial
+    -- (Unknown <: T always holds).
+    pure { val := .Hole det (some expected), source := source }
+  | _ =>
+    -- Subsumption fallback: synth then check `actual <: expected`.
+    let (e', actual) ← synthStmtExpr exprMd
+    checkSubtype source expected actual
+    pure e'
+  termination_by (exprMd, 1)
+  decreasing_by all_goals first
+    | (apply Prod.Lex.left; term_by_mem)
+    | (try subst_eqs; apply Prod.Lex.right; decide)
+end
 
 /-- Resolve a statement expression, discarding the synthesized type.
     Use when only the resolved expression is needed (invariants, decreases, etc.). -/
-private def resolveStmtExprExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
-  let (e', _) ← resolveStmtExpr e; pure e'
+private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let (e', _) ← synthStmtExpr e; pure e'
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
@@ -685,15 +867,15 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
 def resolveBody (body : Body) : ResolveM (Body × HighTypeMd) := do
   match body with
   | .Transparent b =>
-    let (b', ty) ← resolveStmtExpr b
+    let (b', ty) ← synthStmtExpr b
     return (.Transparent b', ty)
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExprExpr)
-    let impl' ← impl.mapM resolveStmtExprExpr
-    let mods' ← mods.mapM resolveStmtExprExpr
+    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
+    let impl' ← impl.mapM resolveStmtExpr
+    let mods' ← mods.mapM resolveStmtExpr
     return (.Opaque posts' impl' mods', { val := .TVoid, source := none })
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExprExpr)
+    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
     return (.Abstract posts', { val := .TVoid, source := none })
   | .External => return (.External, { val := .TVoid, source := none })
 
@@ -703,9 +885,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExprExpr)
-    let dec' ← proc.decreases.mapM resolveStmtExprExpr
+    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    let dec' ← proc.decreases.mapM resolveStmtExpr
+    let savedReturns := (← get).expectedReturnTypes
+    modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
     let (body', bodyTy) ← resolveBody proc.body
+    modify fun s => { s with expectedReturnTypes := savedReturns }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
@@ -716,9 +901,9 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
       | [singleOutput] =>
         -- Only check when body produces a value (not void from return/while/assign)
         if bodyTy.val != HighType.TVoid then
-          checkAssignable proc.name.source singleOutput.type bodyTy
+          checkSubtype proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM resolveStmtExprExpr
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
@@ -744,9 +929,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExprExpr)
-    let dec' ← proc.decreases.mapM resolveStmtExprExpr
+    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    let dec' ← proc.decreases.mapM resolveStmtExpr
+    let savedReturns := (← get).expectedReturnTypes
+    modify fun s => { s with expectedReturnTypes := some (outputs'.map (·.type)) }
     let (body', bodyTy) ← resolveBody proc.body
+    modify fun s => { s with expectedReturnTypes := savedReturns }
     if !proc.isFunctional && body'.isTransparent then
       let diag := diagnosticFromSource proc.name.source
         s!"transparent procedures are not yet supported. Add 'opaque' to make the procedure opaque"
@@ -756,9 +944,9 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
       match proc.outputs with
       | [singleOutput] =>
         if bodyTy.val != HighType.TVoid then
-          checkAssignable proc.name.source singleOutput.type bodyTy
+          checkSubtype proc.name.source singleOutput.type bodyTy
       | _ => pure ()
-    let invokeOn' ← proc.invokeOn.mapM resolveStmtExprExpr
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
@@ -800,8 +988,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- in scope when resolving the constraint and witness expressions.
     let (valueName', constraint', witness') ← withScope do
       let valueName' ← defineNameCheckDup ct.valueName (.quantifierVar ct.valueName base')
-      let (constraint', _) ← resolveStmtExpr ct.constraint
-      let (witness', _) ← resolveStmtExpr ct.witness
+      let (constraint', _) ← synthStmtExpr ct.constraint
+      let (witness', _) ← synthStmtExpr ct.witness
       return (valueName', constraint', witness')
     return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
@@ -827,11 +1015,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
-  let init' ← c.initializer.mapM fun e => do
-    let (e', eTy) ← resolveStmtExpr e
-    if eTy.val != HighType.TVoid then
-      checkAssignable e'.source ty' eTy
-    pure e'
+  let init' ← c.initializer.mapM (checkStmtExpr · ty')
   let name' ← resolveRef c.name
   return { name := name', type := ty', initializer := init' }
 

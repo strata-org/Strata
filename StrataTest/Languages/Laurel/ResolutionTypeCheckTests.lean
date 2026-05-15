@@ -39,7 +39,7 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
 def ifCondNotBool := r"
 function foo(x: int): int {
   if x then 1 else 0
-//   ^ error: expected bool, but got 'int'
+//   ^ error: expected 'bool', got 'int'
 };
 "
 
@@ -50,7 +50,7 @@ def assertCondNotBool := r"
 procedure baz() opaque {
   var x: int := 42;
   assert x
-//       ^ error: expected bool, but got 'int'
+//       ^ error: expected 'bool', got 'int'
 };
 "
 
@@ -61,7 +61,7 @@ def assumeCondNotBool := r"
 procedure qux() opaque {
   var x: int := 42;
   assume x
-//       ^ error: expected bool, but got 'int'
+//       ^ error: expected 'bool', got 'int'
 };
 "
 
@@ -72,7 +72,7 @@ def whileCondNotBool := r"
 procedure wh() opaque {
   var x: int := 1;
   while (x) { }
-//       ^ error: expected bool, but got 'int'
+//       ^ error: expected 'bool', got 'int'
 };
 "
 
@@ -84,7 +84,7 @@ procedure wh() opaque {
 def logicalAndNotBool := r"
 function foo(x: int, y: bool): bool {
   x && y
-//^^^^^^ error: expected bool, but got 'int'
+//^ error: expected 'bool', got 'int'
 };
 "
 
@@ -96,7 +96,7 @@ function foo(x: int, y: bool): bool {
 def comparisonNotNumeric := r"
 function cmp(x: string, y: int): bool {
   x < y
-//^^^^^ error: expected a numeric type, but got 'string'
+//^ error: '<' expected a numeric type, got 'string'
 };
 "
 
@@ -108,7 +108,7 @@ function cmp(x: string, y: int): bool {
 def assignTypeMismatch := r"
 procedure foo() opaque {
   var x: int := true
-//^^^^^^^^^^^^^^^^^^ error: expected 'int', but got 'bool'
+//^^^^^^^^^^^^^^^^^^ error: expected 'int', got 'bool'
 };
 "
 
@@ -119,7 +119,7 @@ procedure foo() opaque {
 
 def returnTypeMismatch := r"
 function foo(): int {
-//       ^^^ error: expected 'int', but got 'bool'
+//       ^^^ error: expected 'int', got 'bool'
   true
 };
 "
@@ -133,7 +133,7 @@ def callArgTypeMismatch := r"
 function bar(x: int): int { x };
 function foo(): int {
   bar(true)
-//^^^^^^^^^ error: expected 'int', but got 'bool'
+//    ^^^^ error: expected 'int', got 'bool'
 };
 "
 
@@ -169,30 +169,30 @@ def assignTargetCountMismatch := r"
 procedure multi() returns (a: int, b: int) opaque;
 procedure test() opaque {
   var x: int := multi()
-//^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch:1 targets but right-hand side produces 2 values
+//^^^^^^^^^^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
 };
 "
 
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "AssignTargetCountMismatch" assignTargetCountMismatch 156 processResolution
 
-/-! ## UserDefined type pass-through (known limitation)
+/-! ## UserDefined cross-type assignment (now rejected)
 
-UserDefined types skip strict assignability checks because subtype/inheritance
-relationships are not tracked during resolution. This test documents that
-cross-type assignments are silently accepted today. When hierarchy tracking
-lands, this test should be updated to expect a rejection. -/
+Cross-type assignments between unrelated user-defined types are rejected
+because `isSubtype` is currently structural equality. Once `isSubtype` walks
+`extending` chains, this test will need a related-types example to keep
+exercising the success path. -/
 
-def userDefinedPassThrough := r"
+def userDefinedCrossType := r"
 composite Dog { }
 composite Cat { }
 procedure test() opaque {
   var x: Dog := new Cat
+//^^^^^^^^^^^^^^^^^^^^^ error: expected 'Dog', got 'Cat'
 };
 "
 
--- This should produce NO diagnostics (UserDefined types are not checked against each other)
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "UserDefinedPassThrough" userDefinedPassThrough 170 processResolution
+#eval testInputWithOffset "UserDefinedCrossType" userDefinedCrossType 170 processResolution
 
 end Laurel
