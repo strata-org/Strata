@@ -84,45 +84,36 @@ def spawn (path : String) (args : Array String) : IO IncrementalSolverState := d
   let solver ← Solver.spawn path args
   return { solver }
 
-/-- Run a computation that may throw, converting IO.Error to Except String. -/
-private def wrapExcept (action : IncrementalSolverM α) : IncrementalSolverM (Except String α) := do
-  try
-    return .ok (← action)
-  catch e =>
-    return .error (toString e)
-
 /-- Shared helper for constructing quantified terms. -/
 private def mkQuantHelper (qk : QuantifierKind)
     (bindings : List (String × TermType))
-    (callback : List Term → IncrementalSolverM (Except String (Term × List (List Term))))
-    : IncrementalSolverM (Except String Term) := do
+    (callback : List Term → IncrementalSolverM (Term × List (List Term)))
+    : IncrementalSolverM Term := do
   let vars := bindings.map fun (name, ty) => TermVar.mk name ty
   let varTerms := vars.map Term.var
-  match ← callback varTerms with
-  | .error msg => return .error msg
-  | .ok (body, triggers) =>
-    let tr := match triggers with
-      | [] => Term.app .triggers [] .trigger
-      | groups =>
-        let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
-        Term.app .triggers triggerTerms .trigger
-    return .ok (Term.quant qk vars tr body)
+  let (body, triggers) ← callback varTerms
+  let tr := match triggers with
+    | [] => Term.app .triggers [] .trigger
+    | groups =>
+      let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
+      Term.app .triggers triggerTerms .trigger
+  return (Term.quant qk vars tr body)
 
 /-- Shared helper for binary comparison operations. -/
 private def mkBinCmp (op : Op) (opName : String) (ts : List Term)
-    : IncrementalSolverM (Except String Term) :=
-  return match ts with
-    | [] | [_] => .error s!"{opName}: need at least two arguments"
-    | [t1, t2] => .ok (Term.app op [t1, t2] .bool)
-    | _ => .error s!"{opName}: pairwise comparison not yet supported"
+    : IncrementalSolverM Term :=
+  match ts with
+    | [] | [_] => throw (IO.userError s!"{opName}: need at least two arguments")
+    | [t1, t2] => return (Term.app op [t1, t2] .bool)
+    | _ => throw (IO.userError s!"{opName}: pairwise comparison not yet supported")
 
 /-- Shared helper for variadic arithmetic operations. -/
 private def mkVarArith (op : Op) (opName : String) (ts : List Term)
-    : IncrementalSolverM (Except String Term) :=
-  return match ts with
-    | [] => .error s!"{opName}: empty argument list"
-    | [t] => .ok t
-    | t :: rest => .ok (rest.foldl (fun acc x => Term.app op [acc, x] acc.typeOf) t)
+    : IncrementalSolverM Term :=
+  match ts with
+    | [] => throw (IO.userError s!"{opName}: empty argument list")
+    | [t] => return t
+    | t :: rest => return (rest.foldl (fun acc x => Term.app op [acc, x] acc.typeOf) t)
 
 /-- Parse a solver check-sat response into a `Decision`. -/
 def parseDecision (line : String) : Except String Decision :=
@@ -134,7 +125,7 @@ def parseDecision (line : String) : Except String Decision :=
 
 /-- Format datatype constructors as SMT-LIB strings. -/
 private def formatConstrs (constrs : List (String × List (String × TermType)))
-    : IncrementalSolverM (Except String (List String)) := do
+    : IncrementalSolverM (List String) := do
   let mut result := []
   for (cname, fields) in constrs.reverse do
     if fields.isEmpty then
@@ -145,7 +136,7 @@ private def formatConstrs (constrs : List (String × List (String × TermType)))
         let tyStr ← typeToStr fty
         fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
       result := s!"({cname} {String.intercalate " " fieldStrs})" :: result
-  return .ok result
+  return result
 
 /-- Construct the sort for a datatype given its name and type parameter names. -/
 private def mkDatatypeSort (name : String) (params : List String) : TermType × List TermType :=
@@ -174,45 +165,45 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   stringSort := return .string
   regexSort := return .regex
   bitvecSort n := return .bitvec n
-  arraySort k v := return .ok (.constr "Array" [k, v])
+  arraySort k v := return .constr "Array" [k, v]
   constrSort name args := return .constr name args
 
   mkBool b := return Term.bool b
   mkInt i := return Term.int i
   mkPrim p := return .prim p
-  mkAppOp op args retTy := return .ok (.app op args retTy)
+  mkAppOp op args retTy := return .app op args retTy
 
-  mkAnd ts := return .ok (ts.foldl Factory.and (Term.bool true))
-  mkOr ts := return .ok (ts.foldl Factory.or (Term.bool false))
-  mkNot t := return .ok (Factory.not t)
-  mkImplies t1 t2 := return .ok (Factory.implies t1 t2)
+  mkAnd ts := return (ts.foldl Factory.and (Term.bool true))
+  mkOr ts := return (ts.foldl Factory.or (Term.bool false))
+  mkNot t := return (Factory.not t)
+  mkImplies t1 t2 := return (Factory.implies t1 t2)
 
   mkAdd ts := mkVarArith .add "mkAdd" ts
   mkSub ts := mkVarArith .sub "mkSub" ts
   mkMul ts := mkVarArith .mul "mkMul" ts
-  mkDiv t1 t2 := return .ok (Term.app .div [t1, t2] t1.typeOf)
-  mkMod t1 t2 := return .ok (Term.app .mod [t1, t2] t1.typeOf)
-  mkNeg t := return .ok (Term.app .neg [t] t.typeOf)
-  mkAbs t := return .ok (Term.app .abs [t] t.typeOf)
+  mkDiv t1 t2 := return (Term.app .div [t1, t2] t1.typeOf)
+  mkMod t1 t2 := return (Term.app .mod [t1, t2] t1.typeOf)
+  mkNeg t := return (Term.app .neg [t] t.typeOf)
+  mkAbs t := return (Term.app .abs [t] t.typeOf)
 
-  mkEq ts := return match ts with
-    | [] | [_] => .error "mkEq: need at least two arguments"
-    | [t1, t2] => .ok (Factory.eq t1 t2)
+  mkEq ts := match ts with
+    | [] | [_] => throw (IO.userError "mkEq: need at least two arguments")
+    | [t1, t2] => return (Factory.eq t1 t2)
     | t1 :: t2 :: rest =>
-      .ok (rest.foldl (fun acc x => Factory.and acc (Factory.eq t1 x)) (Factory.eq t1 t2))
+      return (rest.foldl (fun acc x => Factory.and acc (Factory.eq t1 x)) (Factory.eq t1 t2))
   mkLt ts := mkBinCmp .lt "mkLt" ts
   mkLe ts := mkBinCmp .le "mkLe" ts
   mkGt ts := mkBinCmp .gt "mkGt" ts
   mkGe ts := mkBinCmp .ge "mkGe" ts
 
-  mkIte c t f := return .ok (Factory.ite c t f)
+  mkIte c t f := return (Factory.ite c t f)
 
-  mkSelect arr idx := return .ok (Term.app .select [arr, idx] arr.typeOf)
-  mkStore arr idx val := return .ok (Term.app .store [arr, idx, val] arr.typeOf)
-  mkApp fn args := return match fn with
-    | .app (.uf uf) _ _ => .ok (Term.app (.uf uf) args uf.out)
-    | .app (.datatype_op kind name) _ retTy => .ok (Term.app (.datatype_op kind name) args retTy)
-    | _ => .error "mkApp: expected a function handle (uninterpreted function or datatype op)"
+  mkSelect arr idx := return (Term.app .select [arr, idx] arr.typeOf)
+  mkStore arr idx val := return (Term.app .store [arr, idx, val] arr.typeOf)
+  mkApp fn args := match fn with
+    | .app (.uf uf) _ _ => return (Term.app (.uf uf) args uf.out)
+    | .app (.datatype_op kind name) _ retTy => return (Term.app (.datatype_op kind name) args retTy)
+    | _ => throw (IO.userError "mkApp: expected a function handle (uninterpreted function or datatype op)")
 
   declareNew name ty := do
     let st ← get
@@ -223,7 +214,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
     return Term.var ⟨smtName, ty⟩
 
-  declareFun name argTys retTy := wrapExcept do
+  declareFun name argTys retTy := do
     let retStr ← typeToStr retTy
     if argTys.isEmpty then
       emitln s!"(declare-const {quoteIdent name} {retStr})"
@@ -235,7 +226,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
       emitln s!"(declare-fun {quoteIdent name} ({inline}) {retStr})"
     return Term.var ⟨name, retTy⟩
 
-  defineFun name args retTy body := wrapExcept do
+  defineFun name args retTy body := do
     let retStr ← typeToStr retTy
     let mut typedArgs := []
     for (n, ty) in args.reverse do
@@ -247,50 +238,44 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   declareSort name arity := do
     emitln s!"(declare-sort {name} {arity})"
-    return .ok (.constr name (List.replicate arity (.constr "_" [])))
+    return (.constr name (List.replicate arity (.constr "_" [])))
 
   declareDatatype name params callback := do
     let (selfSort, paramSorts) := mkDatatypeSort name params
     match callback selfSort paramSorts with
-    | .error msg => return .error msg
+    | .error msg => throw (IO.userError msg)
     | .ok constrs =>
-      let cStrs ← formatConstrs constrs
-      match cStrs with
-      | .error msg => return .error msg
-      | .ok strs =>
-        let cInline := "\n  " ++ String.intercalate "\n  " strs
-        if params.isEmpty then
-          emitln s!"(declare-datatype {name} ({cInline}))"
-        else
-          let pInline := String.intercalate " " params
-          emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
-        return .ok { sort := selfSort, constructors := mkConstructorHandles selfSort constrs }
+      let strs ← formatConstrs constrs
+      let cInline := "\n  " ++ String.intercalate "\n  " strs
+      if params.isEmpty then
+        emitln s!"(declare-datatype {name} ({cInline}))"
+      else
+        let pInline := String.intercalate " " params
+        emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
+      return { sort := selfSort, constructors := mkConstructorHandles selfSort constrs }
 
   declareDatatypes dts callback := do
-    if dts.isEmpty then return .ok []
+    if dts.isEmpty then return []
     let sortsAndParams := dts.map fun (name, params) => mkDatatypeSort name params
     let selfSorts := sortsAndParams.map (·.1)
     let paramSorts := sortsAndParams.map (·.2)
     match callback selfSorts paramSorts with
-    | .error msg => return .error msg
+    | .error msg => throw (IO.userError msg)
     | .ok allConstrs =>
       let sortDecls := dts.map fun (name, params) => s!"({name} {params.length})"
       let sortDeclStr := String.intercalate " " sortDecls
       let mut bodies := []
       for ((_, params), constrs) in (dts.zip allConstrs).reverse do
-        let cStrs ← formatConstrs constrs
-        match cStrs with
-        | .error msg => return .error msg
-        | .ok strs =>
-          let cInline := String.intercalate " " strs
-          if params.isEmpty then
-            bodies := s!"({cInline})" :: bodies
-          else
-            let pInline := String.intercalate " " params
-            bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
+        let strs ← formatConstrs constrs
+        let cInline := String.intercalate " " strs
+        if params.isEmpty then
+          bodies := s!"({cInline})" :: bodies
+        else
+          let pInline := String.intercalate " " params
+          bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
       let bodyStr := String.intercalate "\n  " bodies
       emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
-      return .ok (selfSorts.zip allConstrs |>.map fun (sort, constrs) =>
+      return (selfSorts.zip allConstrs |>.map fun (sort, constrs) =>
         { sort, constructors := mkConstructorHandles sort constrs })
 
   mkForall bindings callback := do
@@ -299,14 +284,16 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   mkExists bindings callback := do
     mkQuantHelper .exist bindings callback
 
-  assert t := wrapExcept do
+  assert t := do
     let s ← termToStr t
     emitln s!"(assert {s})"
 
   checkSat := do
     emitln "(check-sat)"
     let result ← readln
-    return parseDecision result
+    match parseDecision result with
+    | .ok d => return d
+    | .error msg => throw (IO.userError msg)
 
   checkSatAssuming assumptions := do
     let mut strs := []
@@ -319,24 +306,26 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let inline := String.intercalate " " strs
     emitln s!"(check-sat-assuming ({inline}))"
     let result ← readln
-    return parseDecision result
+    match parseDecision result with
+    | .ok d => return d
+    | .error msg => throw (IO.userError msg)
 
-  getModel := return .error "getModel: not yet implemented for incremental backend"
+  getModel := throw (IO.userError "getModel: not yet implemented for incremental backend")
 
   getUnsatAssumptions := do
     emitln "(get-unsat-assumptions)"
     let response ← readln
     -- Response is "(lit1 lit2 ...)" — strip parens and split
     let inner := response.replace "(" "" |>.replace ")" ""
-    if inner.trimAscii.toString.isEmpty then return .ok []
+    if inner.trimAscii.toString.isEmpty then return []
     let literals := inner.trimAscii.toString.splitOn " " |>.filter (!·.isEmpty)
     let assumptionMap := (← get).lastAssumptions
     let mut result := []
     for lit in literals.reverse do
       match assumptionMap.get? lit with
       | some t => result := t :: result
-      | none => return .error s!"getUnsatAssumptions: unknown literal '{lit}'"
-    return .ok result
+      | none => throw (IO.userError s!"getUnsatAssumptions: unknown literal '{lit}'")
+    return result
 
   getValue ts := do
     -- Send get-value command with the given terms
@@ -360,9 +349,9 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
           else if c == ')' then parenDepth := parenDepth - 1
         if parenDepth ≤ 0 then reading := false
     -- Return the raw output as a single pair (the verifier parses it)
-    return .ok [(Term.string modelOutput, Term.string modelOutput)]
+    return [(Term.string modelOutput, Term.string modelOutput)]
 
-  termToSMTLibString t := return .ok (← termToStr t)
+  termToSMTLibString t := return (← termToStr t)
 
   reset := emitln "(reset)"
 

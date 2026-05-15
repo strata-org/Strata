@@ -321,44 +321,37 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
     let getModelForVars : Strata.SMT.IncrementalSolverM (Model P.Ident) := do
       if varIds.isEmpty then return []
       try
-        match ← solver.getValue varIds with
-        | .ok pairs =>
-          match pairs with
-          | [(.prim (.string rawOutput), _)] =>
-            let rawModel ← parseModelDDM rawOutput
-            match processModel typedVarToSMTFn vars rawModel estate with
-            | .ok model => return model
-            | .error _ => return []
-          | _ => return []
-        | .error _ => return []
+        let pairs ← solver.getValue varIds
+        match pairs with
+        | [(.prim (.string rawOutput), _)] =>
+          let rawModel ← parseModelDDM rawOutput
+          match processModel typedVarToSMTFn vars rawModel estate with
+          | .ok model => return model
+          | .error _ => return []
+        | _ => return []
       catch _ => return []
-    let decisionToResult (decision : Except String Strata.SMT.Decision) :
+    let decisionToResult (decision : Strata.SMT.Decision) :
         Strata.SMT.IncrementalSolverM (Result P.Ident) := do
       match decision with
-      | .ok .sat => return .sat (← getModelForVars)
-      | .ok .unknown =>
+      | .sat => return .sat (← getModelForVars)
+      | .unknown =>
         let model ← getModelForVars
         return if model.isEmpty then .unknown else .unknown (some model)
-      | .ok .unsat => return .unsat
-      | .error msg => return .err msg
-    let unwrap {α : Type} (label : String) (r : Except String α) : Strata.SMT.IncrementalSolverM α :=
-      match r with
-      | .ok a => return a
-      | .error msg => throw (IO.userError s!"{label}: {msg}")
+      | .unsat => return .unsat
     let bothChecks := satisfiabilityCheck && validityCheck
     let mut satResult : Result P.Ident := .unknown
     let mut valResult : Result P.Ident := .unknown
     if bothChecks then
       satResult ← decisionToResult (← solver.checkSatAssuming [obligationId])
-      let negObligation ← unwrap "mkNot" (← solver.mkNot obligationId)
+      let negObligation ← solver.mkNot obligationId
       valResult ← decisionToResult (← solver.checkSatAssuming [negObligation])
     else
       if satisfiabilityCheck then
-        unwrap "assert" (← solver.assert obligationId)
+        solver.assert obligationId
         satResult ← decisionToResult (← solver.checkSat)
       else if validityCheck then
-        let negObligation ← unwrap "mkNot" (← solver.mkNot obligationId)
-        unwrap "assert" (← solver.assert negObligation)
+        let negObligation ← solver.mkNot obligationId
+        solver.assert negObligation
         valResult ← decisionToResult (← solver.checkSat)
     solver.close
     return .ok (satResult, valResult, estate)
