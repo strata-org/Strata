@@ -1,0 +1,8 @@
+*.bpl
+*.bc
+*.ll
+*_stripped.bpl
+*.symtab.json
+*.goto.json
+*.gb
+*.core.st

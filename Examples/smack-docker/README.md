@@ -1,144 +1,134 @@
-# Running SMACK with Finch
+# SMACK → BoogieToStrata Pipeline
+
+End-to-end pipeline for verifying SMACK-generated Boogie programs through
+the Strata toolchain. Source `.c` programs live in `programs/`. SMACK,
+BoogieToStrata, and the verifier backends are run via the scripts in this
+directory.
+
+## Pipeline
+
+```
+.c → SMACK (Docker) → .bpl → BoogieToStrata → .core.st → backend
+                                                          ├── strata verify (deductive)
+                                                          ├── strata verify (bugFinding)
+                                                          └── StrataCoreToGoto + symtab2gb + cbmc
+```
 
 ## Prerequisites
 
-- [Finch](https://github.com/runfinch/finch) installed and VM initialized (`finch vm init`)
-- The `smack` container image built (see below)
+- [Finch](https://github.com/runfinch/finch) installed and the VM initialized
+  (`finch vm init`).
+- The `smack` container image built (instructions below).
+- The Strata project built locally (`lake build` from the repo root) so the
+  `strata` and `StrataCoreToGoto` binaries are available under
+  `.lake/build/bin/`.
+- `cbmc` (≥6.9) and `symtab2gb` on `PATH` if running the cbmc backend.
+  On macOS: `brew install cbmc`.
 
-## Building the SMACK Image
+## Building the SMACK image
 
 ```bash
-cd ~/smack-docker
+cd Examples/smack-docker
 finch build --platform linux/amd64 -t smack .
 ```
 
-> The image uses `--platform linux/amd64` because SMACK's dependencies (dotnet-sdk-5.0, Z3 x86_64 binaries) are not available for ARM64.
+The image uses `--platform linux/amd64` because SMACK's dependencies
+(dotnet-sdk-5.0, Z3 x86_64 binaries) are not available for ARM64.
 
-## Running SMACK
+## Regenerating .bpl from .c
 
-### Verify a C program
-
-```bash
-finch run --rm --entrypoint /bin/sh \
-  -v /path/to/your/programs:/programs \
-  smack -c '. /home/user/smack.environment && cd /programs && smack yourfile.c'
-```
-
-### Generate Boogie output without verification
+The `.bpl` files are not committed to the repo (they are SMACK-generated and
+each ~16k lines). Regenerate them locally:
 
 ```bash
 finch run --rm --entrypoint /bin/sh \
-  -v /path/to/your/programs:/programs \
-  smack -c '. /home/user/smack.environment && cd /programs && smack --no-verify -bpl output.bpl yourfile.c'
+  -v "$PWD/programs:/programs" \
+  smack -c '. /home/user/smack.environment && \
+            cd /programs && \
+            for f in *.c; do \
+              smack --no-verify -bpl "${f%.c}.bpl" "$f"; \
+            done'
 ```
 
-### Interactive session
+This produces one `.bpl` per `.c`. The `.gitignore` in `programs/` keeps
+these out of version control.
+
+## Running the multi-backend pipeline
 
 ```bash
-finch run --rm -it --entrypoint /bin/sh \
-  -v /path/to/your/programs:/programs \
-  smack -c "/bin/bash --rcfile /home/user/.bashrc"
+python3 run_pipeline.py --backends deductive,bugFinding,cbmc
 ```
 
-Then inside the container:
+By default this picks up every `.bpl` in `programs/`. Pass specific files
+to restrict the run:
 
 ```bash
-cd /programs
-smack simple_add.c
-smack --no-verify -bpl out.bpl loop_sum.c
+python3 run_pipeline.py --backends deductive programs/simple_add.bpl
 ```
 
-## Notes
+The script handles each program through the full chain:
+strip prelude → BoogieToStrata → fix_core_st → backend(s).
 
-- `-v /host/path:/programs` mounts your local directory into the container.
-- `--entrypoint /bin/sh` is required due to a binfmt quirk with amd64 emulation on ARM hosts.
-- `. /home/user/smack.environment` sets up PATH for `smack`, `z3`, `boogie`, and `corral`.
-- Verification runs under x86_64 QEMU emulation, so it will be slower than native execution.
+## Current verification results
 
-## Example
-
-Given `simple_add.c`:
-
-```c
-#include "smack.h"
-
-int main(void) {
-  int x = 1;
-  int y = 2;
-  int z = x + y;
-  assert(z == 3);
-  return 0;
-}
-```
-
-Run:
-
-```bash
-finch run --rm --entrypoint /bin/sh \
-  -v ~/smack-docker/programs:/programs \
-  smack -c '. /home/user/smack.environment && cd /programs && smack simple_add.c'
-```
-
-Expected output:
+Snapshot from the latest run on the 12-program benchmark. `OK` columns
+report pipeline-stage success; backend columns report verification outcome.
 
 ```
-SMACK program verifier version 2.8.0
-SMACK found no errors with unroll bound 1.
+Program                  |  Strip |    B2S |    Fix |    deductive |   bugFinding |         cbmc
+---------------------------------------------------------------------------------------------------
+abs_func                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+array_sum                |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+aws_array_eq             |     OK |     OK |     OK |         WARN |         WARN |         FAIL
+aws_byte_cursor_advance  |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+aws_ring_buffer          |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+loop_sum                 |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+max_func                 |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+nondet_branch            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+pointer_arith            |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+simple_add               |     OK |     OK |     OK |         PASS |      PARTIAL |         FAIL
+simple_assert            |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+swap                     |     OK |     OK |     OK |      PARTIAL |      PARTIAL |         FAIL
+
+     deductive: 4 pass, 7 partial, 1 warn
+    bugFinding: 0 pass, 11 partial, 1 warn
+          cbmc: 0 pass, 12 fail
 ```
 
-## Verifying with BoogieToStrata
+## Known blockers
 
-SMACK-generated `.bpl` files can be verified through the Strata pipeline:
+- **CBMC: structured-body assumption.** `coreToGotoFiles` dispatches every
+  procedure through `procedureToGotoCtx`, which assumes a structured body
+  and errors on CFG procedures with "expected structured body, got CFG".
+  Fix path: dispatch CFG bodies through `procedureToGotoCtxViaCFG`. Affects
+  all 12 programs at the cbmc stage.
+- **CoreToGoto: inout-parameter double-collection.** Inout parameters
+  (e.g., `_exn`) are assigned in the body, so `definedVars` collects them
+  as locals and they get renamed with `mkLocalSymbol` (`main::1::_exn`)
+  while the type env only knows the formal name (`main::_exn`). Surfaces
+  as `LExpr.fvar` with `ty=none`. Affects 7 programs.
+- **bugFinding partials.** Symbolic execution finds potential
+  counterexamples for assertions on programs whose preconditions are
+  insufficient. Expected behaviour for SMACK programs as currently
+  translated; not a pipeline bug.
+- **CI build failure in `FormatCore.lean`.** The CFG procedure grammar
+  gained a `locals : Block` argument on this branch, but
+  `Strata/Languages/Core/DDMTransform/FormatCore.lean:991` still calls
+  `Command.command_cfg_procedure` with the old 5-arg signature. The
+  build errors with `Application type mismatch: cfgBody has type
+  CFGBody M but is expected to have type CoreDDM.Block M`, followed by
+  a downstream `noncomputable` failure on `Core.formatProcedure`.
+  Address after the cleanup is merged.
 
-```
-.bpl → strip_smack_prelude.py → BoogieToStrata → .core.st → strata verify
-```
+See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
+for translator-level status.
 
-### Why stripping is needed
+## Scripts in this directory
 
-SMACK's Boogie output includes prelude procedures (`__SMACK_and32`, `__SMACK_or64`, etc.)
-whose bodies use unstructured multi-target gotos that BoogieToStrata does not yet support.
-The `strip_smack_prelude.py` script removes these bodies, leaving them as uninterpreted
-procedure declarations. User-defined functions and `main` are preserved.
-
-### Workflow
-
-```bash
-# 1. Generate Boogie from C via SMACK
-finch run --rm --entrypoint /bin/sh \
-  -v ~/Documents/Strata2/Examples/smack-docker/programs:/programs \
-  smack -c '. /home/user/smack.environment && cd /programs && smack --no-verify -bpl out.bpl yourfile.c'
-
-# 2. Strip prelude implementations
-python3 strip_smack_prelude.py programs/out.bpl programs/out_stripped.bpl
-
-# 3. Translate to Strata Core (requires dotnet and BoogieToStrata built)
-#    BoogieToStrata must have InferModifies=true and Prune=true set
-cd ../../Tools/BoogieToStrata
-dotnet run --project Source/BoogieToStrata.csproj -- \
-  ../../Examples/smack-docker/programs/out_stripped.bpl > out.core.st
-
-# 4. Fix known translation issues (forward refs, param/type shadowing)
-cd ../../Examples/smack-docker
-python3 fix_core_st.py out.core.st
-
-# 5. Verify
-../../.lake/build/bin/strata verify out.core.st
-```
-
-### Known limitations
-
-- **Multi-target gotos**: Prelude procedures with unstructured CFGs must be stripped.
-  They become uninterpreted, so their semantics are lost to the verifier. Even some
-  user-level code (if/else, ternary operators) produces multi-target gotos from LLVM.
-- **Irreducible control flow**: Programs with loops containing early returns produce
-  irreducible CFGs that BoogieToStrata cannot structure.
-- **InferModifies + Prune**: BoogieToStrata must have `InferModifies = true` and
-  `Prune = true` set (on branch `htd/smack`) because SMACK omits `modifies` clauses
-  and includes ~1400 unused prelude functions.
-- **Namespace collisions**: SMACK emits `const main : ref;` which conflicts with
-  `procedure main(...)` in Strata's single namespace.
-- **Assert encoding**: SMACK's `assert()` compiles to a call to `assert_.i32()`,
-  not a Strata `assert` statement — the verifier generates no VCs for these.
-- **Type synonym resolution**: Strata panics on comparison operators applied to
-  types that are synonyms of `int` (e.g., `ref := i64 := int`).
+- `run_pipeline.py` — end-to-end multi-backend driver.
+- `strip_smack_prelude.py` — removes SMACK prelude bodies before
+  translation; reduces translation work and avoids unstructured CFGs in
+  prelude-only procedures.
+- `fix_core_st.py` — post-processes BoogieToStrata output to work around
+  a few known translation issues.
+- `Dockerfile` — builds the SMACK container image.
