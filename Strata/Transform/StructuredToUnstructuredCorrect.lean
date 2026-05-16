@@ -3623,7 +3623,22 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
   | .block label body md :: rest =>
     sorry
   | .exit label md :: rest =>
-    sorry
+    -- Vacuous: structured semantics for .exit produces .exiting, never .terminal.
+    exfalso
+    cases h_term with
+    | step _ _ _ hstep1 hrest1 =>
+      cases hstep1 with
+      | step_stmts_cons =>
+        have ⟨ρ_mid, h_inner, _h_tail⟩ :=
+          seq_reaches_terminal P (EvalCmd P) extendEval hrest1
+        cases h_inner with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_exit =>
+            -- After step_exit the config is .exiting label ρ₀, which cannot
+            -- step further to .terminal.
+            cases hrest2 with
+            | step _ _ _ h _ => cases h
   | .funcDecl decl md :: rest =>
     -- Precluded by h_nofd : Block.noFuncDecl ss = true
     simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
