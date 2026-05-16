@@ -6542,11 +6542,10 @@ private theorem definedVars_havoc_map (xs : List Expression.Ident)
   induction xs with
   | nil => simp [Block.definedVars]
   | cons x rest ih =>
-    show Stmt.definedVars (Stmt.cmd (HasHavoc.havoc x md)) false ++
-         Block.definedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) false = []
+    simp only [List.map_cons, Block.definedVars]
     rw [ih]
-    show HasVarsImp.definedVars (HasHavoc.havoc x md) false ++ [] = []
-    simp [HasVarsImp.definedVars, HasHavoc.havoc, Command.definedVars, Cmd.definedVars]
+    show @Stmt.definedVars Expression Command _ (Stmt.cmd (HasHavoc.havoc x md : Command)) false ++ [] = []
+    simp [Stmt.definedVars, HasVarsImp.definedVars, HasHavoc.havoc, Command.definedVars, Cmd.definedVars]
 
 /-- A `mapIdx` of asserts has empty `Block.definedVars`. -/
 private theorem definedVars_mapIdx_assert
@@ -6559,13 +6558,10 @@ private theorem definedVars_mapIdx_assert
   | nil => simp [List.mapIdx_nil, Block.definedVars]
   | cons x rest ih =>
     rw [List.mapIdx_cons]
-    show Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md)) false ++
-         Block.definedVars
-           (rest.mapIdx (fun i le =>
-              Stmt.cmd (HasPassiveCmds.assert (label (i + 1) le) le.2 md))) false = []
+    simp only [Block.definedVars]
     rw [ih]
-    show HasVarsImp.definedVars (HasPassiveCmds.assert (label 0 x) x.2 md) false ++ [] = []
-    simp [HasVarsImp.definedVars, HasPassiveCmds.assert,
+    show @Stmt.definedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) false ++ [] = []
+    simp [Stmt.definedVars, HasVarsImp.definedVars, HasPassiveCmds.assert,
       Command.definedVars, Cmd.definedVars]
 
 /-- A `mapIdx` of assumes has empty `Block.definedVars`. -/
@@ -6579,13 +6575,10 @@ private theorem definedVars_mapIdx_assume
   | nil => simp [List.mapIdx_nil, Block.definedVars]
   | cons x rest ih =>
     rw [List.mapIdx_cons]
-    show Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md)) false ++
-         Block.definedVars
-           (rest.mapIdx (fun i le =>
-              Stmt.cmd (HasPassiveCmds.assume (label (i + 1) le) le.2 md))) false = []
+    simp only [Block.definedVars]
     rw [ih]
-    show HasVarsImp.definedVars (HasPassiveCmds.assume (label 0 x) x.2 md) false ++ [] = []
-    simp [HasVarsImp.definedVars, HasPassiveCmds.assume,
+    show @Stmt.definedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md : Command)) false ++ [] = []
+    simp [Stmt.definedVars, HasVarsImp.definedVars, HasPassiveCmds.assume,
       Command.definedVars, Cmd.definedVars]
 
 /-- The prefix `"$__loop"` is a list-prefix of `"$__loop_measure_<n>"`. -/
@@ -6615,8 +6608,19 @@ private theorem block_modifiedOrDefinedVars_append (ss₁ ss₂ : Statements) :
     Block.modifiedOrDefinedVars (ss₁ ++ ss₂) false =
       Block.modifiedOrDefinedVars ss₁ false ++ Block.modifiedOrDefinedVars ss₂ false := by
   induction ss₁ with
-  | nil => simp [Block.modifiedOrDefinedVars]
-  | cons s rest ih => simp [Block.modifiedOrDefinedVars, ih, List.append_assoc]
+  | nil => simp [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
+  | cons s rest ih =>
+    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars,
+               block_modifiedVars_append, block_definedVars_append]
+    rw [List.append_assoc, List.append_assoc, List.append_assoc, List.append_assoc, List.append_assoc]
+    apply congrArg
+    rw [← List.append_assoc, ← List.append_assoc, ← List.append_assoc]
+    apply congrArg
+    rw [List.append_assoc, List.append_assoc]
+    apply congrArg
+    simp only [Block.modifiedOrDefinedVars] at ih
+    rw [← block_modifiedVars_append, ← block_definedVars_append] at ih
+    exact ih
 
 /-- Havoc-only command lists have empty `Block.getVars` (havoc reads nothing). -/
 private theorem getVars_havoc_map (xs : List Expression.Ident)
@@ -6639,20 +6643,22 @@ private theorem getVars_havoc_map (xs : List Expression.Ident)
 private theorem modifiedOrDefinedVars_havoc_map (xs : List Expression.Ident)
     (md : MetaData Expression) :
     @Block.modifiedOrDefinedVars Expression Command _
-        (xs.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) = xs := by
+        (xs.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) false = xs := by
   induction xs with
   | nil => simp [Block.modifiedOrDefinedVars]
   | cons x rest ih =>
-    show Stmt.modifiedOrDefinedVars (Stmt.cmd (HasHavoc.havoc x md)) ++
-         Block.modifiedOrDefinedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) =
-         x :: rest
-    rw [ih]
-    show (Stmt.definedVars (Stmt.cmd (HasHavoc.havoc x md)) ++
-          Stmt.modifiedVars (Stmt.cmd (HasHavoc.havoc x md))) ++ rest = x :: rest
-    show (HasVarsImp.definedVars (HasHavoc.havoc x md) ++
-          HasVarsImp.modifiedVars (HasHavoc.havoc x md)) ++ rest = x :: rest
-    simp [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasHavoc.havoc,
-      Command.definedVars, Command.modifiedVars, Cmd.definedVars, Cmd.modifiedVars]
+    show Block.modifiedOrDefinedVars
+           (Stmt.cmd (HasHavoc.havoc x md) :: rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md)))
+           false = x :: rest
+    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
+    -- ih: Block.modifiedOrDefinedVars (rest.map ...) false = rest
+    -- which is: Block.modifiedVars (rest.map ...) ++ Block.definedVars (rest.map ...) false = rest
+    have : Block.modifiedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md : Command))) ++
+           Block.definedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md : Command))) false = rest := by
+      rw [← Block.modifiedOrDefinedVars]; exact ih
+    rw [this]
+    simp [Stmt.modifiedVars, Stmt.definedVars, HasVarsImp.definedVars, HasVarsImp.modifiedVars,
+      HasHavoc.havoc, Command.definedVars, Command.modifiedVars, Cmd.definedVars, Cmd.modifiedVars]
 
 /-- A `mapIdx` of asserts has empty `Block.modifiedOrDefinedVars`. -/
 private theorem modifiedOrDefinedVars_mapIdx_assert
@@ -6660,19 +6666,15 @@ private theorem modifiedOrDefinedVars_mapIdx_assert
     (label : Nat → (String × Expression.Expr) → String) :
     @Block.modifiedOrDefinedVars Expression Command _
       (inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assert (label i le) le.2 md)) = [] := by
+        Stmt.cmd (HasPassiveCmds.assert (label i le) le.2 md)) false = [] := by
   induction inv generalizing label with
   | nil => simp [List.mapIdx_nil, Block.modifiedOrDefinedVars]
   | cons x rest ih =>
     rw [List.mapIdx_cons]
-    show Stmt.modifiedOrDefinedVars
-           (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md)) ++
-         Block.modifiedOrDefinedVars
-           (rest.mapIdx (fun i le =>
-              Stmt.cmd (HasPassiveCmds.assert (label (i + 1) le) le.2 md))) = []
+    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
     rw [ih]
-    show (Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md)) ++
-          Stmt.modifiedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md))) ++ [] = []
+    show Stmt.modifiedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) ++
+         [] ++ (Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) false ++ []) = []
     simp [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assert,
       Command.definedVars, Command.modifiedVars, Cmd.definedVars, Cmd.modifiedVars]
 
@@ -6682,19 +6684,15 @@ private theorem modifiedOrDefinedVars_mapIdx_assume
     (label : Nat → (String × Expression.Expr) → String) :
     @Block.modifiedOrDefinedVars Expression Command _
       (inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assume (label i le) le.2 md)) = [] := by
+        Stmt.cmd (HasPassiveCmds.assume (label i le) le.2 md)) false = [] := by
   induction inv generalizing label with
   | nil => simp [List.mapIdx_nil, Block.modifiedOrDefinedVars]
   | cons x rest ih =>
     rw [List.mapIdx_cons]
-    show Stmt.modifiedOrDefinedVars
-           (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md)) ++
-         Block.modifiedOrDefinedVars
-           (rest.mapIdx (fun i le =>
-              Stmt.cmd (HasPassiveCmds.assume (label (i + 1) le) le.2 md))) = []
+    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
     rw [ih]
-    show (Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md)) ++
-          Stmt.modifiedVars (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md))) ++ [] = []
+    show Stmt.modifiedVars (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md : Command)) ++
+         [] ++ (Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md : Command)) false ++ []) = []
     simp [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assume,
       Command.definedVars, Command.modifiedVars, Cmd.definedVars, Cmd.modifiedVars]
 
@@ -6888,23 +6886,24 @@ private theorem mem_definedVars_stmtResult
     rw [stmtResult_typeDecl] at hn; exact .inl hn
   | .block l bss md =>
     rw [stmtResult_block] at hn
-    -- Stmt.definedVars (.block l bss md) = Block.definedVars bss (by rfl)
-    have hn' : n ∈ Block.definedVars (blockResult σ bss) false := hn
+    have hn' : n ∈ Block.definedVars (blockResult σ bss) false := by
+      simpa [Stmt.definedVars] using hn
     have := mem_definedVars_blockResult σ bss (stmtOk_block_inner hok) n hn'
     rcases this with h | h
-    · exact .inl h
+    · exact .inl (by simpa [Stmt.definedVars] using h)
     · exact .inr h
   | .ite c tss ess md =>
     rw [stmtResult_ite] at hn
     have hn' : n ∈ Block.definedVars (blockResult σ tss) false ++
-                   Block.definedVars (blockResult (blockPostState σ tss) ess) false := hn
+                   Block.definedVars (blockResult (blockPostState σ tss) ess) false := by
+      simpa [Stmt.definedVars] using hn
     rcases List.mem_append.mp hn' with h | h
     · rcases mem_definedVars_blockResult σ tss (stmtOk_ite_left hok) n h with h | h
-      · exact .inl (List.mem_append_left _ h)
+      · exact .inl (by simpa [Stmt.definedVars] using List.mem_append_left _ h)
       · exact .inr h
     · rcases mem_definedVars_blockResult (blockPostState σ tss) ess
                 (stmtOk_ite_right hok) n h with h | h
-      · exact .inl (List.mem_append_right _ h)
+      · exact .inl (by simpa [Stmt.definedVars] using List.mem_append_right _ h)
       · exact .inr h
   | .loop guard measure inv body md =>
     -- The loop body is *not* recursively transformed by `stmtResult` — only the
@@ -6924,19 +6923,19 @@ private theorem mem_definedVars_blockResult
   match bss with
   | [] =>
     rw [blockResult_nil] at hn
-    have : n ∈ Block.definedVars ([] : Statements) false := hn
-    simp [Block.definedVars] at this
+    simp [Block.definedVars] at hn
   | s :: rest =>
     rw [blockResult_cons] at hn
     have hn' : n ∈ Stmt.definedVars (stmtResult σ s) false ++
-                   Block.definedVars (blockResult (stmtPostState σ s) rest) false := hn
+                   Block.definedVars (blockResult (stmtPostState σ s) rest) false := by
+      simpa [Block.definedVars] using hn
     rcases List.mem_append.mp hn' with h | h
     · rcases mem_definedVars_stmtResult σ s (blockOk_cons_left hok) n h with h | h
-      · exact .inl (List.mem_append_left _ h)
+      · exact .inl (by simpa [Block.definedVars] using List.mem_append_left _ h)
       · exact .inr h
     · rcases mem_definedVars_blockResult (stmtPostState σ s) rest
               (blockOk_cons_right hok) n h with h | h
-      · exact .inl (List.mem_append_right _ h)
+      · exact .inl (by simpa [Block.definedVars] using List.mem_append_right _ h)
       · exact .inr h
 end
 
