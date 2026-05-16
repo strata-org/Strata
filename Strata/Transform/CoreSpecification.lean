@@ -55,9 +55,9 @@ open Core Imperative
       `$__loop_measure_N`) to preserve the invariant cleanly. -/
 structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expression) :
     Prop where
-  readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s →
+  readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s false →
     (ρ.store n).isSome
-  defsUndefined : ∀ n ∈ Stmt.definedVars s, (ρ.store n).isNone
+  defsUndefined : ∀ n ∈ Stmt.definedVars s false, (ρ.store n).isNone
   /-- Source's `definedVars` don't use any of the reserved prefixes.  Together
       with `reservedFresh` (on `ρ.store`), this ensures that transform-introduced
       fresh names with reserved prefixes don't collide with source names.
@@ -65,7 +65,7 @@ structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expressio
       Note: this is used by the OUTPUT-side `InitEnvWF` with the post-transform
       `reserved` list (the input list with the transform's `newPrefix` erased).
       Source defs not having any of those prefixes carries through. -/
-  definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s, ∀ p ∈ reserved,
+  definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ reserved,
     ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList
@@ -81,10 +81,10 @@ structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expressio
     statements `bss` from env `ρ`. -/
 structure BlockInitEnvWF (reserved : List String) (bss : Statements)
     (ρ : Env Expression) : Prop where
-  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss →
+  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss false →
     (ρ.store n).isSome
-  defsUndefined : ∀ n ∈ Block.definedVars bss, (ρ.store n).isNone
-  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss, ∀ p ∈ reserved,
+  defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
+  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ reserved,
     ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ reserved, ¬ p.toList.isPrefixOf n.name.toList

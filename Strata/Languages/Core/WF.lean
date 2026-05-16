@@ -139,7 +139,7 @@ structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : L
 
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
-  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
+  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body false).Nodup
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   ioNotOld : ∀ id ∈ ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs,

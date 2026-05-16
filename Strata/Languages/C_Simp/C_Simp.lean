@@ -44,7 +44,7 @@ abbrev Command := Imperative.Cmd Expression
 abbrev Statement := Imperative.Stmt Expression Command
 
 instance : Imperative.HasVarsImp Expression Command where
-  definedVars := Imperative.Cmd.definedVars
+  definedVars c _excludeScoped := Imperative.Cmd.definedVars c
   modifiedVars := Imperative.Cmd.modifiedVars
 
 -- Our statement language is `DL/Imp` with `DL/Lambda` as the expression language

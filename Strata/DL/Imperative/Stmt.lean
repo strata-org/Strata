@@ -272,21 +272,24 @@ instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
 mutual
 /-- Get all variables defined by the statement `s`. -/
 @[simp, expose]
-def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C)
+    (excludeScoped : Bool) : List P.Ident :=
   match s with
-  | .cmd cmd => HasVarsImp.definedVars cmd
-  | .block _ bss _ => Block.definedVars bss
-  | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
-  | .loop _ _ _ body _ => Block.definedVars body
-  | .funcDecl decl _ => [decl.name]  -- Function declaration defines the function name
-  | .typeDecl _ _ => []  -- Type declarations don't define variables
+  | .cmd cmd => HasVarsImp.definedVars cmd excludeScoped -- excludeScoped doesn't matter
+  | .block _ bss _ => if excludeScoped then [] else Block.definedVars bss excludeScoped
+  | .ite _ tbss ebss _ =>
+    if excludeScoped then [] else Block.definedVars tbss excludeScoped ++ Block.definedVars ebss excludeScoped
+  | .loop _ _ _ body _ => if excludeScoped then [] else Block.definedVars body excludeScoped
+  | .funcDecl decl _ => [decl.name]
+  | .typeDecl _ _ => []
   | _ => []
 
 @[simp, expose]
-def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+def Block.definedVars [HasVarsImp P C] (ss : Block P C)
+    (excludeScoped : Bool) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.definedVars s ++ Block.definedVars srest
+  | s :: srest => Stmt.definedVars s excludeScoped ++ Block.definedVars srest excludeScoped
 end
 
 mutual
@@ -309,35 +312,28 @@ def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
 end
 
-mutual
-/-- Get all variables modified/defined by the statement `s` (the write-set).
-    Note that we need a separate function because order matters here for sub-blocks
- -/
+/-- Get all variables modified/defined by the statement `s` (the write-set). -/
 @[simp, expose]
-def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
-  match s with
-  | .block _ bss _ => Block.modifiedOrDefinedVars bss
-  | .ite _ tbss ebss _ => Block.modifiedOrDefinedVars tbss ++ Block.modifiedOrDefinedVars ebss
-  | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
+def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C)
+    (excludeScoped : Bool): List P.Ident :=
+  s.modifiedVars ++ s.definedVars excludeScoped
 
 @[simp, expose]
-def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
-  match ss with
-  | [] => []
-  | s :: srest => Stmt.modifiedOrDefinedVars s ++ Block.modifiedOrDefinedVars srest
-end
+def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C)
+    (excludeScoped : Bool): List P.Ident :=
+  ss.modifiedVars ++ ss.definedVars excludeScoped
 
 mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
 @[simp, expose]
 def Stmt.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (s : Stmt P C) : List P.Ident :=
-  Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
+  Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
 
 @[simp, expose]
 def Block.touchedVars [HasVarsImp P C] [HasVarsPure P P.Expr] [HasVarsPure P C]
     (ss : Block P C) : List P.Ident :=
-  Block.modifiedOrDefinedVars ss ++ Block.getVars ss
+  Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
 end
 
 mutual
@@ -362,62 +358,47 @@ mutual
 end
 
 mutual
-/-- Def-use well-formedness check for a statement, parameterized by `outer` —
-    the list of identifiers already in scope at entry.  Returns true iff:
-    (a) every variable read or written by `s` is either in `outer` or declared
-        (via `definedVars`) by a sub-block of `s`;
-    (b) variables newly declared by `s` (its `definedVars`) do not shadow
-        `outer`; and
-    (c) recursively for every sub-block, the appropriate extended `outer` makes
-        the sub-block def-use well-formed.
-
-    From `Stmt.defUseWellFormed outer s = true` we can derive both
-    `Stmt.touchedVars s \ Stmt.definedVars s ⊆ outer` and
-    `Stmt.definedVars s` is disjoint from `outer`. -/
+/-- Def-use well-formedness check for a statement. Any use of a variable must be
+    followed by the definition of the var. -/
 @[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
     [HasVarsPure P C] [DecidableEq P.Ident]
-    (outer : P.Ident → Bool) (s : Stmt P C) : Bool :=
+    (definedVars : P.Ident → Bool) (s : Stmt P C) : Bool :=
   match s with
   | .cmd c =>
-    (HasVarsPure.getVars (P := P) c).all (fun n =>
-      outer n || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
-    (HasVarsImp.modifiedVars (P := P) c).all (fun n =>
-      outer n || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
-    (HasVarsImp.definedVars (P := P) c).all (fun n => !outer n)
-  | .block _ bss _ => Block.defUseWellFormed outer bss
+    (HasVarsPure.getVars (P := P) c).all (fun n => definedVars n) &&
+    (HasVarsImp.modifiedVars (P := P) c).all (fun n => definedVars n) &&
+    (HasVarsImp.definedVars (P := P) c true).all (fun n => definedVars n)
+  | .block _ bss _ => Block.defUseWellFormed definedVars bss
   | .ite cond tbss ebss _ =>
-    cond.getVars.all (fun n => outer n) &&
-    Block.defUseWellFormed outer tbss && Block.defUseWellFormed outer ebss
+    cond.getVars.all (fun n => definedVars n) &&
+    Block.defUseWellFormed definedVars tbss && Block.defUseWellFormed definedVars ebss
   | .loop guard measure invariants body _ =>
-    guard.getVars.all (fun n => outer n) &&
-    ((measure.map HasVarsPure.getVars).getD []).all (fun n => outer n) &&
+    guard.getVars.all (fun n => definedVars n) &&
+    ((measure.map HasVarsPure.getVars).getD []).all (fun n => definedVars n) &&
     (invariants.flatMap fun lp => HasVarsPure.getVars lp.2).all
-      (fun n => outer n) &&
-    Block.defUseWellFormed outer body
+      (fun n => definedVars n) &&
+    Block.defUseWellFormed definedVars body
   | .exit _ _ => true
-  | .funcDecl _ _ => false
+  | .funcDecl _ _ => false /- TODO -/
   | .typeDecl _ _ => true
 
 @[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
     [HasVarsPure P C] [DecidableEq P.Ident]
-    (outer : P.Ident → Bool) (bss : Block P C) : Bool :=
+    (definedVars : P.Ident → Bool) (bss : Block P C) : Bool :=
   match bss with
   | [] => true
   | s :: rest =>
-    Stmt.defUseWellFormed outer s &&
-      Block.defUseWellFormed (fun n => outer n || decide (n ∈ Stmt.definedVars s)) rest
+    Stmt.defUseWellFormed definedVars s &&
+      Block.defUseWellFormed (fun n => definedVars n || decide (n ∈ Stmt.definedVars s true)) rest
 end
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  modifiedOrDefinedVars := Stmt.modifiedOrDefinedVars
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
-  modifiedOrDefinedVars := Block.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 

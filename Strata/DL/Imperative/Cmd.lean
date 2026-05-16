@@ -176,14 +176,12 @@ def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
   termination_by (sizeOf cs)
 
 instance (P : PureExpr) : HasVarsImp P (Cmd P) where
-  definedVars := Cmd.definedVars
+  definedVars c _ := Cmd.definedVars c
   modifiedVars := Cmd.modifiedVars
 
 instance (P : PureExpr) : HasVarsImp P (Cmds P) where
-  definedVars := Cmds.definedVars
+  definedVars c _ := Cmds.definedVars c
   modifiedVars := Cmds.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  modifiedOrDefinedVars := List.flatMap HasVarsImp.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 

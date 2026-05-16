@@ -219,20 +219,16 @@ def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
   Command.definedVars c ++ Command.modifiedVars c
 
 instance : HasVarsImp Expression Command where
-  definedVars := Command.definedVars
+  definedVars c _ := Command.definedVars c
   modifiedVars := Command.modifiedVars
-  modifiedOrDefinedVars := Command.modifiedOrDefinedVars
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
-  modifiedOrDefinedVars := Stmt.modifiedOrDefinedVars
 
 instance : HasVarsImp Expression (List Statement) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  modifiedOrDefinedVars := Block.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------
 
@@ -330,13 +326,13 @@ def Command.definedVarsTrans
 -- since call statement does not define any new variables
 def Statement.definedVarsTrans
   (_ : String → Option ProcType) (s : Statement) :=
-  Stmt.definedVars s
+  Stmt.definedVars s false
 
 -- don't need to transitively lookup for procedures
 -- since call statement does not define any new variables
 def Statements.definedVarsTrans
   (_ : String → Option ProcType) (s : Statements) :=
-  Block.definedVars s
+  Block.definedVars s false
 
 mutual
 /-- get all variables modified or defined by the statement `s` (write-set, transitive). -/

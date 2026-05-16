@@ -5082,7 +5082,7 @@ private theorem defUseWellFormed_cons {outer : Expression.Ident → Bool}
     {s : Statement} {ss : Statements}
     (h : Block.defUseWellFormed outer (s :: ss) = Bool.true) :
     Stmt.defUseWellFormed outer s = Bool.true ∧
-    Block.defUseWellFormed (fun n => outer n || decide (n ∈ Stmt.definedVars s)) ss = Bool.true := by
+    Block.defUseWellFormed (fun n => outer n || decide (n ∈ Stmt.definedVars s true)) ss = Bool.true := by
   unfold Block.defUseWellFormed at h
   simp only [Bool.and_eq_true] at h
   exact h

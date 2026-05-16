@@ -139,7 +139,7 @@ def Stmt.removeLoopsM
     -- Havoc only loop-carried variables. Variables declared inside the loop
     -- body are block-local and should not be treated as pre-existing state by
     -- the passive loop encoding.
-    let local_defs := Block.definedVars bss
+    let local_defs := Block.definedVars bss false
     let assigned_vars :=
       (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
     -- Freshness check: generated block labels must not collide with exit

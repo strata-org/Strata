@@ -94,7 +94,7 @@ private def renameAllLocalNames (c:Procedure)
   let proc_name := c.header.name.name
 
   -- Make a map for renaming local variables
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars) c.body
+  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars false) c.body
   let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
                   c.header.outputs.unzip.fst
   let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name

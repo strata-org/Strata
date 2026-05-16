@@ -299,10 +299,6 @@ structure Procedure where
 
 open Imperative
 
-def Procedure.definedVars (_ : Procedure) : List Expression.Ident := []
-def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
-  p.header.outputs.keys
-
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
   (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++
@@ -312,8 +308,8 @@ instance : HasVarsPure Expression Procedure where
   getVars := Procedure.getVars
 
 instance : HasVarsImp Expression Procedure where
-  definedVars := Procedure.definedVars
-  modifiedVars := Procedure.modifiedVars
+  definedVars _ _ := []
+  modifiedVars p := p.header.outputs.keys
 
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   { p with body := Statements.eraseTypes p.body, spec := p.spec }
@@ -351,7 +347,6 @@ instance : HasVarsProcTrans Expression Procedure where
   modifiedVarsTrans := Procedure.modifiedVarsTrans
   getVarsTrans := Procedure.getVarsTrans
   definedVarsTrans := λ _ _ ↦ [] -- procedures cannot define global variables
-  modifiedOrDefinedVarsTrans := Procedure.modifiedVarsTrans
   allVarsTrans :=
     λ π p ↦ Procedure.getVarsTrans π p ++ Procedure.modifiedVarsTrans π p
 
@@ -360,14 +355,12 @@ instance : HasVarsTrans Expression Statement Procedure where
   modifiedVarsTrans := Statement.modifiedVarsTrans
   getVarsTrans := Statement.getVarsTrans
   definedVarsTrans := Statement.definedVarsTrans
-  modifiedOrDefinedVarsTrans := Statement.modifiedOrDefinedVarsTrans
   allVarsTrans := Statement.allVarsTrans
 
 instance : HasVarsTrans Expression (List Statement) Procedure where
   modifiedVarsTrans := Statements.modifiedVarsTrans
   getVarsTrans := Statements.getVarsTrans
   definedVarsTrans := Statements.definedVarsTrans
-  modifiedOrDefinedVarsTrans := Statements.modifiedOrDefinedVarsTrans
   allVarsTrans := Statements.allVarsTrans
 
 end
