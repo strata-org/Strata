@@ -766,22 +766,17 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
 private def decomposeMapUpdate (varName : String)
     (e : Lambda.LExpr CoreLParams.mono)
     : Option (List (Lambda.LExpr CoreLParams.mono) × Lambda.LExpr CoreLParams.mono) :=
-  -- map_update(base, idx, val) = app(app(app(op "update" _) base) idx) val
-  match e with
-  | .app _ (.app _ (.app _ (.op _ opName _) base) idx) val =>
+  let (head, args) := Lambda.getLFuncCall e
+  match head, args with
+  | .op _ opName _, [base, idx, val] =>
     if opName.name == "update" then
       match base with
       | .fvar _ ident _ =>
         if ident.name == varName then some ([idx], val)
         else none
-      -- Nested: map_update(map_update(fvar, i1, ...), i2, val) is not the
-      -- pattern we produce (we use map_update(fvar, i1, map_update(select(...), i2, val))).
-      -- For nested lhsArray like m[k1][k2] := v, the translation produces:
-      -- map_update(fvar(m), k1, map_update(map_select(fvar(m), k1), k2, v))
-      -- We detect this by checking if val is itself a map_update with a select base.
       | _ => none
     else none
-  | _ => none
+  | _, _ => none
 
 mutual
 /-- Convert `Core.Statement` to `CoreDDM.Statement` -/
