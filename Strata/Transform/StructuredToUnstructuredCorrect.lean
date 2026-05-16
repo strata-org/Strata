@@ -7,9 +7,11 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.KleeneSemanticsProps
 public import Strata.Transform.StructuredToUnstructured
 public import Strata.Transform.Specification
 public import Strata.DL.Util.StringGen
+import all Strata.DL.Imperative.BasicBlock
 
 /-! # Structured-to-Unstructured Transformation Correctness
 
@@ -3341,7 +3343,7 @@ accumulated commands, if the structured execution of `ss` from `ρ₀` terminate
 (or exits), then the CFG blocks produced by `stmtsToBlocks` can step from the
 entry label to the continuation `k` (or the resolved exit target). -/
 
-private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P]
     (extendEval : ExtendEval P)
     (pfx : String)
@@ -3359,7 +3361,8 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasBool P] [Has
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse ρ₀.store hf_accum)
     (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
     (cfg : CFG String (DetBlock String (Cmd P) P))
-    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks) :
+    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
+    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
     StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
       (.cont k ρ₀.store ρ₀.hasFailure) := by
@@ -3380,7 +3383,40 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasBool P] [Has
   case isFalse h_nonempty =>
     -- accum is non-empty: flushCmds generates a fresh label `entry` and a single block
     -- (entry, { cmds := accum.reverse, transfer := .goto k })
-    sorry
+    simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
+    injection h_gen with h_pair h_gen_eq
+    injection h_pair with h_entry_eq h_blks_eq
+    subst h_entry_eq; subst h_blks_eq
+    -- entry = (gen pfx gen).fst, blocks = [(entry, { cmds := accum.reverse, transfer := .goto k })]
+    have h_mem :
+        ((StringGenState.gen pfx gen).fst,
+          ({ cmds := accum.reverse, transfer := DetTransferCmd.goto k }
+            : DetBlock String (Cmd P) P)) ∈ cfg.blocks :=
+      h_cfg_blocks _ (List.Mem.head _)
+    -- Build EvalDetBlock via the goto bridge: .goto k = .condGoto HasBool.tt k k _.
+    have h_cond_tt : ρ₀.eval ρ₀.store HasBool.tt = .some HasBool.tt :=
+      eval_tt_is_tt ρ₀.eval ρ₀.store hwfv
+    have h_goto_eq :
+        (DetTransferCmd.goto k : DetTransferCmd String P) =
+          DetTransferCmd.condGoto HasBool.tt k k .empty := rfl
+    have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
+        σ_base ⟨accum.reverse, DetTransferCmd.goto k⟩
+        (.cont k ρ₀.store hf_accum) := by
+      rw [h_goto_eq]
+      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond_tt hwfb
+    have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
+        some { cmds := accum.reverse, transfer := DetTransferCmd.goto k } :=
+      List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
+    have h_step : @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont (StringGenState.gen pfx gen).fst σ_base hf_base)
+        (updateFailure (.cont k ρ₀.store hf_accum) hf_base) :=
+      StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+    have h_uf : @updateFailure String P (.cont k ρ₀.store hf_accum) hf_base =
+        CFGConfig.cont k ρ₀.store ρ₀.hasFailure := by
+      simp [updateFailure, h_hf, Bool.or_comm]
+    rw [h_uf] at h_step
+    exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
 
 private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
@@ -3415,7 +3451,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have h_ρ : ρ₀ = ρ' := stmts_nil_terminal (EvalCmd P) extendEval _ _ h_term
     subst h_ρ
     exact flushCmds_simulation extendEval "l$" k accum gen gen' entry blocks h_gen
-      σ_base hf_base hf_accum ρ₀ hwfb hwfv h_accum h_hf cfg h_cfg_blocks
+      σ_base hf_base hf_accum ρ₀ hwfb hwfv h_accum h_hf cfg h_cfg_blocks h_cfg_nodup
   | .cmd c :: rest =>
     unfold stmtsToBlocks at h_gen
     -- Structured semantics: execute c then rest
