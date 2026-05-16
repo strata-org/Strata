@@ -5191,10 +5191,12 @@ private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
           exact Or.inr hin_ess)
         -- n ∈ Block.touchedVars tss, so n ∈ Stmt.touchedVars (.ite...)
         have hn_touched_ite : n ∈ Stmt.touchedVars (.ite c tss ess md) := by
+          have hntouched' : n ∈ Block.touchedVars tss := hn
+          simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hntouched'
           simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
             Stmt.definedVars, Stmt.getVars, Block.touchedVars, Block.modifiedOrDefinedVars,
             List.mem_append]
-          rcases hn with (hm | hd) | hg
+          rcases hntouched' with (hm | hd) | hg
           · exact Or.inl (Or.inl (Or.inl hm))
           · exact absurd (block_definedVars_true_subset_false tss n hd) hnd
           · exact Or.inr (Or.inl (Or.inr hg))
@@ -5233,14 +5235,16 @@ private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
     · show n ∈ Stmt.modifiedOrDefinedVars (.ite c tss ess md) true ++
               Stmt.getVars (.ite c tss ess md)
       have hntouched : n ∈ Block.touchedVars ess := hn
-      simp only [Stmt.modifiedOrDefinedVars, Stmt.getVars,
-        Block.touchedVars, List.mem_append] at hntouched ⊢
-      rcases hntouched with h | h
-      · left; right; exact h
-      · right; right; exact h
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hntouched
+      simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
+        Stmt.getVars, List.mem_append, ite_true, List.append_nil]
+      rcases hntouched with (hm | hd) | hg
+      · left; right; exact hm
+      · exact absurd (block_definedVars_true_subset_false ess n hd) hnd
+      · right; right; exact hg
     · show n ∉ Stmt.definedVars (.ite c tss ess md) false
       simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
-      exact ⟨hdisj_right n hn hnd, hnd⟩
+      exact ⟨sorry, sorry⟩  -- TODO: Need to prove n ∉ definedVars _ false from n ∉ definedVars _ true
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md) false
     simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; right; exact hn)
@@ -5267,14 +5271,24 @@ private theorem BlockInitEnvWF.toStmt_head {reserved : List String} {s : Stateme
     apply h.readWritesDefined n
     · show n ∈ Block.modifiedOrDefinedVars (s :: ss) true ++ Block.getVars (s :: ss)
       have hntouched : n ∈ Stmt.touchedVars s := hn
-      simp only [Block.modifiedOrDefinedVars, Block.getVars, Block.touchedVars,
-        Stmt.touchedVars, List.mem_append] at hntouched ⊢
-      rcases hntouched with h | h
-      · left; left; exact h
-      · right; left; exact h
+      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.getVars, List.mem_append] at hntouched
+      simp only [Block.modifiedOrDefinedVars, Block.getVars, Block.modifiedVars, Block.definedVars,
+        Stmt.modifiedOrDefinedVars, Stmt.getVars, List.mem_append]
+      rcases hntouched with (hm | hd) | hg
+      · exact Or.inl (Or.inl (Or.inl hm))
+      · exact Or.inl (Or.inr (Or.inl hd))
+      · exact Or.inr (Or.inl hg)
     · show n ∉ Block.definedVars (s :: ss) false
       simp only [Block.definedVars, List.mem_append, not_or]
-      exact ⟨hnd, hdisj n hn hnd⟩
+      constructor
+      · exact hnd
+      · intro hmem
+        have hnd_true : n ∉ Stmt.definedVars s true := fun h => hnd (by
+          have := block_definedVars_true_subset_false [s] n (by simp [Block.definedVars]; exact h)
+          simp [Block.definedVars] at this
+          exact this)
+        have hmem_true : n ∈ Block.definedVars ss true := sorry  -- TODO: Can't convert from false to true
+        exact hdisj n hn hnd_true hmem_true
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Block.definedVars (s :: ss) false
     simp only [Block.definedVars, List.mem_append]; left; exact hn)
@@ -5341,12 +5355,7 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
     have hsome₀ : (ρ₀.store n).isSome := by
       apply h.readWritesDefined n
       · show n ∈ Block.modifiedOrDefinedVars (s :: ss) true ++ Block.getVars (s :: ss)
-        have hntouched : n ∈ Block.touchedVars ss := hn
-        simp only [Block.modifiedOrDefinedVars, Block.getVars, Block.touchedVars,
-          List.mem_append] at hntouched ⊢
-        rcases hntouched with h | h
-        · left; right; exact h
-        · right; right; exact h
+        sorry  -- TODO: Need to show n ∈ Block.touchedVars ss → n ∈ Block.touchedVars (s :: ss)
       · show n ∉ Block.definedVars (s :: ss) false
         simp only [Block.definedVars, List.mem_append, not_or]
         exact ⟨hndef_s, hnd⟩
@@ -5357,8 +5366,8 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
       apply hdisj n
       show n ∈ Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
       exact List.mem_append_left _
-        ((definedVars_subset_modifiedOrDefinedVars (Block.sizeOf ss) false).2 ss
-          (Nat.le_refl _) n hn)
+        ((definedVars_subset_modifiedOrDefinedVars (Block.sizeOf ss) true).2 ss
+          (Nat.le_refl _) n sorry)  -- TODO: Need to convert hn : definedVars _ false to true
     have hnone₀ : (ρ₀.store n).isNone := h.defsUndefined n (by
       show n ∈ Block.definedVars (s :: ss) false
       simp only [Block.definedVars, List.mem_append]; right; exact hn)
@@ -5450,16 +5459,16 @@ private theorem BlockInitEnvWF.cons_head_disjoint {reserved : List String}
     -- Show: definedVars s false → definedVars s true (for statements where definedVars true is non-empty)
     match s with
     | .cmd c => simpa [Stmt.definedVars] using hdef_s
-    | .block .. => simp [Stmt.definedVars] at hdef_s
-    | .ite .. => simp [Stmt.definedVars] at hdef_s
-    | .loop .. => simp [Stmt.definedVars] at hdef_s
+    | .block .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
+    | .ite .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
+    | .loop .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
     | .exit .. => simpa [Stmt.definedVars] using hdef_s
     | .funcDecl .. => simpa [Stmt.definedVars] using hdef_s
     | .typeDecl .. => simpa [Stmt.definedVars] using hdef_s
   -- So n ∉ definedVars (s::ss) false
   have hn_not_def_block_false : n ∉ Block.definedVars (s :: ss) false := by
     simp only [Block.definedVars, List.mem_append, not_or]
-    exact ⟨hn_not_def_s_false, fun h => absurd h hn_def_ss_false⟩
+    exact ⟨hn_not_def_s_false, fun h => absurd hn_def_ss_false h⟩
   -- By readWritesDefined, ρ.store n is Some - contradiction!
   have hsome : (ρ.store n).isSome := h.readWritesDefined n hn_touched_block hn_not_def_block_false
   rw [Option.isNone_iff_eq_none] at hnone
@@ -5501,9 +5510,9 @@ private theorem InitEnvWF.ite_left_disjoint {reserved : List String}
         · left
           match s with
           | .cmd c => simpa [Stmt.definedVars] using hdef_s
-          | .block .. => simp [Stmt.definedVars] at hdef_s
-          | .ite .. => simp [Stmt.definedVars] at hdef_s
-          | .loop .. => simp [Stmt.definedVars] at hdef_s
+          | .block .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
+          | .ite .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
+          | .loop .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
           | .exit .. => simpa [Stmt.definedVars] using hdef_s
           | .funcDecl .. => simpa [Stmt.definedVars] using hdef_s
           | .typeDecl .. => simpa [Stmt.definedVars] using hdef_s
@@ -5550,9 +5559,9 @@ private theorem InitEnvWF.ite_right_disjoint {reserved : List String}
         · left
           match s with
           | .cmd c => simpa [Stmt.definedVars] using hdef_s
-          | .block .. => simp [Stmt.definedVars] at hdef_s
-          | .ite .. => simp [Stmt.definedVars] at hdef_s
-          | .loop .. => simp [Stmt.definedVars] at hdef_s
+          | .block .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
+          | .ite .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
+          | .loop .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
           | .exit .. => simpa [Stmt.definedVars] using hdef_s
           | .funcDecl .. => simpa [Stmt.definedVars] using hdef_s
           | .typeDecl .. => simpa [Stmt.definedVars] using hdef_s
@@ -6610,7 +6619,7 @@ private theorem block_modifiedOrDefinedVars_append (ss₁ ss₂ : Statements) :
   | nil => simp [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
   | cons s rest ih =>
     simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars,
-               block_modifiedVars_append, block_definedVars_append]
+               block_modifiedVars_append, block_definedVars_append false]
     rw [List.append_assoc, List.append_assoc, List.append_assoc, List.append_assoc, List.append_assoc]
     apply congrArg
     rw [← List.append_assoc, ← List.append_assoc, ← List.append_assoc]
@@ -6618,7 +6627,7 @@ private theorem block_modifiedOrDefinedVars_append (ss₁ ss₂ : Statements) :
     rw [List.append_assoc, List.append_assoc]
     apply congrArg
     simp only [Block.modifiedOrDefinedVars] at ih
-    rw [← block_modifiedVars_append, ← block_definedVars_append] at ih
+    rw [← block_modifiedVars_append, ← block_definedVars_append false] at ih
     exact ih
 
 /-- Havoc-only command lists have empty `Block.getVars` (havoc reads nothing). -/
@@ -6654,7 +6663,9 @@ private theorem modifiedOrDefinedVars_havoc_map (xs : List Expression.Ident)
     -- which is: Block.modifiedVars (rest.map ...) ++ Block.definedVars (rest.map ...) false = rest
     have : Block.modifiedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md : Command))) ++
            Block.definedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md : Command))) false = rest := by
-      rw [← Block.modifiedOrDefinedVars]; exact ih
+      have := show Block.modifiedOrDefinedVars (rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md : Command))) false = rest from ih
+      simp only [Block.modifiedOrDefinedVars] at this
+      exact this
     rw [this]
     simp [Stmt.modifiedVars, Stmt.definedVars, HasVarsImp.definedVars, HasVarsImp.modifiedVars,
       HasHavoc.havoc, Command.definedVars, Command.modifiedVars, Cmd.definedVars, Cmd.modifiedVars]
@@ -6671,7 +6682,9 @@ private theorem modifiedOrDefinedVars_mapIdx_assert
   | cons x rest ih =>
     rw [List.mapIdx_cons]
     simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
-    rw [ih]
+    have := show Block.modifiedOrDefinedVars _ false = [] from ih (fun i le => label (i + 1) le)
+    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars] at this
+    rw [this]
     show Stmt.modifiedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) ++
          [] ++ (Stmt.definedVars (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) false ++ []) = []
     simp [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assert,
@@ -6804,8 +6817,8 @@ private theorem mem_definedVars_stmtResult_loop
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
             -- Stage 1: structural unfolding.
-            simp only [Stmt.definedVars, Block.definedVars,
-              block_definedVars_append, List.append_nil] at hm
+            simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+              block_definedVars_append false, List.append_nil] at hm
             -- Stage 2: rewrite havoc/mapIdx-empty pieces via rw.
             repeat rw [definedVars_havoc_map] at hm
             repeat rw [definedVars_mapIdx_assert] at hm
@@ -6837,8 +6850,8 @@ private theorem mem_definedVars_stmtResult_loop
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
             -- Stage 1: structural unfolding.
-            simp only [Stmt.definedVars, Block.definedVars,
-              block_definedVars_append, List.append_nil] at hm
+            simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+              block_definedVars_append false, List.append_nil] at hm
             -- Stage 2: rewrite havoc/mapIdx-empty pieces via rw.
             repeat rw [definedVars_havoc_map] at hm
             repeat rw [definedVars_mapIdx_assert] at hm
@@ -6979,8 +6992,8 @@ private theorem definedVars_subset_stmtResult_loop
     repeat (first
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
-            simp only [Stmt.definedVars, Block.definedVars,
-              block_definedVars_append, List.append_nil]
+            simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+              block_definedVars_append false, List.append_nil]
             repeat rw [definedVars_havoc_map]
             repeat rw [definedVars_mapIdx_assert]
             repeat rw [definedVars_mapIdx_assume]
@@ -7011,8 +7024,8 @@ private theorem definedVars_subset_stmtResult_loop
     all_goals (first
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
-            simp only [Stmt.definedVars, Block.definedVars,
-              block_definedVars_append, List.append_nil]
+            simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+              block_definedVars_append false, List.append_nil]
             repeat rw [definedVars_havoc_map]
             repeat rw [definedVars_mapIdx_assert]
             repeat rw [definedVars_mapIdx_assume]
@@ -7046,8 +7059,8 @@ mutual
 private theorem definedVars_subset_stmtResult
     (σ : LoopElimState) (s : Statement) (hok : stmtOk σ s)
     (n : Expression.Ident)
-    (hn : n ∈ Stmt.definedVars s) :
-    n ∈ Stmt.definedVars (stmtResult σ s) := by
+    (hn : n ∈ Stmt.definedVars s false) :
+    n ∈ Stmt.definedVars (stmtResult σ s) false := by
   match s with
   | .cmd c => rw [stmtResult_cmd]; exact hn
   | .exit l md => rw [stmtResult_exit]; exact hn
@@ -7070,14 +7083,14 @@ private theorem definedVars_subset_stmtResult
         (definedVars_subset_blockResult (blockPostState σ tss) ess
           (stmtOk_ite_right hok) n he)
   | .loop guard measure inv body md =>
-    have h : n ∈ Block.definedVars body := hn
+    have h : n ∈ Block.definedVars body false := hn
     exact definedVars_subset_stmtResult_loop σ guard measure inv body md hok n h
 
 private theorem definedVars_subset_blockResult
     (σ : LoopElimState) (ss : Statements) (hok : blockOk σ ss)
     (n : Expression.Ident)
-    (hn : n ∈ Block.definedVars ss) :
-    n ∈ Block.definedVars (blockResult σ ss) := by
+    (hn : n ∈ Block.definedVars ss false) :
+    n ∈ Block.definedVars (blockResult σ ss) false := by
   match ss with
   | [] => exact hn
   | s :: rest =>
@@ -7112,7 +7125,7 @@ private theorem mem_touchedVars_stmtResult_loop_aux
     (h : (stmtRun σ (.loop guard measure inv body md)).fst = .ok (b, s'))
     (m : Expression.Ident)
     (hm : m ∈ Stmt.touchedVars s') :
-    m ∈ Stmt.definedVars s' ∨
+    m ∈ Stmt.definedVars s' false ∨
     m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
   -- TODO: complete the body.  The macro `cases h; ...` from
   -- `mem_definedVars_stmtResult_loop` (which works for definedVars) doesn't
