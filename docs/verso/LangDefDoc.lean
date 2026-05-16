@@ -242,8 +242,7 @@ arrangements, including sequencing, alternation, and iteration. Sequencing
 statements occurs by grouping them into blocks. Loops can be annotated with
 optional invariants and decreasing measures, which can be used for deductive
 verification. An `exit` statement transfers control out of the nearest
-enclosing block with a matching label, or, if no label is provided, the nearest
-enclosing block. In addition, statements include
+enclosing block with a matching label. In addition, statements include
 `funcDecl` for local function declarations (which extend the expression
 evaluator within a scope) and `typeDecl` for local type declarations.
 
