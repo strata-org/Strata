@@ -42,6 +42,7 @@ def StringGenState.emp : StringGenState := { cs := .emp, generated := [] }
   followed by an underscore (`_`), followed by a unique number given by its
   underlying counter `σ.cs`.
  -/
+@[expose]
 def StringGenState.gen (pf : String) (σ : StringGenState) : String × StringGenState :=
   let (counter, cs) := Counter.genCounter σ.cs
   let newString : String := (pf ++ "_" ++ toString counter)
@@ -291,4 +292,75 @@ theorem StringGenState.WFMono :
     simp only [H.right, H.left, String.IsSuffix, String.toList_append, List.append_assoc]
     apply List.suffix_append
   · apply Hwf.right.right.right <;> assumption
+
+/-! ## Convenience helpers for the list of generated string labels -/
+
+/-- The empty generator state is well-formed. -/
+theorem StringGenState.wf_emp : StringGenState.WF StringGenState.emp := by
+  simp [StringGenState.WF, Counter.WF]
+
+/-- Convenience: the list of generated string labels in a `StringGenState`. -/
+def StringGenState.stringGens (σ : StringGenState) : List String :=
+  σ.generated.unzip.2
+
+/-- After generating, the new state's labels list is the new label cons'd onto the old. -/
+theorem StringGenState.stringGens_gen
+    (pf : String) (σ : StringGenState) :
+    StringGenState.stringGens (StringGenState.gen pf σ).2
+      = (StringGenState.gen pf σ).1 :: StringGenState.stringGens σ := by
+  simp [StringGenState.gen, StringGenState.stringGens]
+
+/-- The freshly generated label is not in the old state's labels list, given WF. -/
+theorem StringGenState.stringGens_gen_not_in
+    (pf : String) (σ : StringGenState) (hwf : StringGenState.WF σ) :
+    (StringGenState.gen pf σ).1 ∉ StringGenState.stringGens σ := by
+  intro h_in
+  have hwf' : StringGenState.WF (StringGenState.gen pf σ).2 :=
+    StringGenState.WFMono hwf rfl
+  have h_gens_eq : StringGenState.stringGens (StringGenState.gen pf σ).2
+      = (StringGenState.gen pf σ).1 :: StringGenState.stringGens σ :=
+    StringGenState.stringGens_gen pf σ
+  have h_nodup : (StringGenState.stringGens (StringGenState.gen pf σ).2).Nodup := by
+    simp only [StringGenState.WF] at hwf'
+    exact hwf'.2.2.1
+  rw [h_gens_eq] at h_nodup
+  rw [List.nodup_cons] at h_nodup
+  exact h_nodup.1 h_in
+
+/-! ## GenStep: well-formed monotone transitions of a `StringGenState`
+
+A `GenStep gen gen'` witnesses that `gen` transitioned to `gen'` via some
+sequence of `gen` operations: well-formedness is preserved and the set of
+generated labels only grows. Useful as a reusable abstraction for any
+monadic computation in `StringGenM`. -/
+
+/-- A "generator step": a transition from `gen` to `gen'` that preserves
+well-formedness and only adds new labels (never removes them). -/
+structure StringGenState.GenStep (gen gen' : StringGenState) : Prop where
+  wf_mono : StringGenState.WF gen → StringGenState.WF gen'
+  subset  : StringGenState.stringGens gen ⊆ StringGenState.stringGens gen'
+
+namespace StringGenState.GenStep
+
+/-- Identity transition. -/
+theorem refl (gen : StringGenState) : GenStep gen gen :=
+  ⟨id, fun _ h => h⟩
+
+/-- Composition of transitions. -/
+theorem trans {gen gen_mid gen' : StringGenState}
+    (h₁ : GenStep gen gen_mid) (h₂ : GenStep gen_mid gen') :
+    GenStep gen gen' :=
+  ⟨h₂.wf_mono ∘ h₁.wf_mono, fun _ hx => h₂.subset (h₁.subset hx)⟩
+
+/-- A single `gen` call is a `GenStep`. -/
+theorem of_gen (pf : String) (σ : StringGenState) :
+    GenStep σ (StringGenState.gen pf σ).2 := by
+  refine ⟨?_, ?_⟩
+  · intro hwf; exact StringGenState.WFMono hwf rfl
+  · intro x hx
+    rw [StringGenState.stringGens_gen]
+    exact List.mem_cons.mpr (Or.inr hx)
+
+end StringGenState.GenStep
+
 end

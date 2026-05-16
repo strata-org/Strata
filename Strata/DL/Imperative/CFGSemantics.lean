@@ -39,7 +39,7 @@ inductive CFGConfig (l : Type) (P : PureExpr): Type where
 
 /-- Monotonically update the `failure` flag in a `CFGConfig`. It will be set to
 `true` if the provided Boolean is `true`. -/
-def updateFailure : CFGConfig l P → Bool → CFGConfig l P
+@[expose] def updateFailure : CFGConfig l P → Bool → CFGConfig l P
 | .cont t σ failed, failed' => .cont t σ (failed || failed')
 | .terminal σ failed, failed' => .terminal σ (failed || failed')
 
@@ -131,6 +131,7 @@ inductive StepCFG
 Operational semantics to evaluate an arbitrary number of blocks in a
 control-flow graph in sequence. The reflexive, transitive closure of `StepCFG`.
 -/
+@[expose]
 def StepCFGStar
   {Blk l CmdT : Type}
   [BEq l]
