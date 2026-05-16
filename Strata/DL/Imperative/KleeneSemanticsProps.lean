@@ -37,6 +37,28 @@ theorem eval_tt_is_tt
 /-! ## Kleene small-step helpers -/
 
 omit [HasVal P] [HasBoolVal P] in
+theorem kleene_block_inner_star
+    (σ_parent : SemanticStore P)
+    (inner inner' : KleeneConfig P (Cmd P))
+    (h : StepKleeneStar P (EvalCmd P) inner inner') :
+    StepKleeneStar P (EvalCmd P) (.block σ_parent inner) (.block σ_parent inner') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
+
+omit [HasVal P] [HasBoolVal P] in
+/-- Lift an inner execution through a block wrapper to terminal (with projection). -/
+theorem kleene_block_terminal
+    (σ_parent : SemanticStore P)
+    (inner : KleeneConfig P (Cmd P)) (ρ' : Env P)
+    (h : StepKleeneStar P (EvalCmd P) inner (.terminal ρ')) :
+    StepKleeneStar P (EvalCmd P) (.block σ_parent inner)
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store }) :=
+  ReflTrans_Transitive _ _ _ _
+    (kleene_block_inner_star σ_parent inner (.terminal ρ') h)
+    (.step _ _ _ .step_block_done (.refl _))
+
+omit [HasVal P] [HasBoolVal P] in
 theorem kleene_seq_inner_star
     (inner inner' : KleeneConfig P (Cmd P)) (s2 : KleeneStmt P (Cmd P))
     (h : StepKleeneStar P (EvalCmd P) inner inner') :

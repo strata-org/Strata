@@ -158,11 +158,16 @@ def recFnDeclToCST {M} [Inhabited M]
   let r ← lmonoTyToCoreType func.output
   modify (·.addScopedBoundVars (reverse? := false) paramNames)
   let preconds ← precondsToSpecElts func.preconditions
+  let decreases : Ann (Option (Measure M)) M ← match func.measure with
+    | some m =>
+      let mExpr ← lexprToExpr m 0
+      pure ⟨default, some (.measure_mk default mExpr)⟩
+    | none => pure ⟨default, none⟩
   let bodyExpr ← match func.body with
     | some body => lexprToExpr body 0
     | none => pure (.btrue default)  -- shouldn't happen for recursive functions
   modify ToCSTContext.popScope
-  pure (.recfn_decl default name typeArgs b r preconds bodyExpr)
+  pure (.recfn_decl default name typeArgs b r preconds decreases bodyExpr)
 
 /-- Convert a function declaration to CST -/
 def funcToCST {M} [Inhabited M]

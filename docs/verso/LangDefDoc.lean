@@ -242,8 +242,7 @@ arrangements, including sequencing, alternation, and iteration. Sequencing
 statements occurs by grouping them into blocks. Loops can be annotated with
 optional invariants and decreasing measures, which can be used for deductive
 verification. An `exit` statement transfers control out of the nearest
-enclosing block with a matching label, or, if no label is provided, the nearest
-enclosing block. In addition, statements include
+enclosing block with a matching label. In addition, statements include
 `funcDecl` for local function declarations (which extend the expression
 evaluator within a scope) and `typeDecl` for local type declarations.
 
@@ -437,7 +436,10 @@ evaluation transform, when applied.
 Currently, only recursive functions over algebraic datatypes are supported (both
 single and mutually recursive). Recursive functions are declared with the `rec`
 keyword, and exactly one parameter must be annotated with `@[cases]` to indicate
-the algebraic datatype argument being recursed on.
+the algebraic datatype argument for per-constructor axiom generation: one
+unfolding axiom is generated for each constructor of the datatype,
+case-splitting on the `@[cases]` parameter.
+Recursive functions cannot be marked `inline`.
 
 ```
 rec function listLen (@[cases] xs : IntList) : int
@@ -445,6 +447,24 @@ rec function listLen (@[cases] xs : IntList) : int
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
 ```
+
+An optional `decreases` clause specifies which parameter is used as the
+termination measure. It appears after the preconditions and before the body.
+If omitted, the `@[cases]` parameter is used. If provided, it overrides only the
+termination check — `@[cases]` still controls axiom generation.
+
+```
+rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
+  decreases ys
+{
+  if IntList..isNil(xs) then 0
+  else if IntList..isNil(ys) then 0
+  else 1 + zipLen(IntList..tl(xs), IntList..tl(ys))
+};
+```
+
+Every recursive function must have at least a `@[cases]` annotation or a
+`decreases` clause; Strata rejects recursive functions without a termination hint.
 
 Mutually recursive functions are declared as multiple functions within a single
 `rec` block:
