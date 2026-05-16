@@ -2036,7 +2036,7 @@ private theorem StepStmtStar_wfv_preserved {P : PureExpr} [HasFvar P] [HasBool P
 /-- When `flushCmds` emits a block with a `condGoto` transfer and the condition
 evaluates to true at the post-command store `ρ₀.store`, the CFG steps from the
 entry to the true-branch label. -/
-private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasNot P]
     (extendEval : ExtendEval P)
     (accum : List (Cmd P))
     (e : P.Expr) (tl fl : String) (md : MetaData P)
@@ -2066,17 +2066,10 @@ private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasBool P] [
   subst h_entry_eq; subst h_blks_eq
   have h_mem := h_cfg_accum _ (List.Mem.head _)
   have h_lkp := h_lookup _ _ h_mem
-  -- Instance equality (HasBool from explicit class vs HasNot.toHasBool diamond)
-  have h_inst_eq : (inferInstance : HasBool P) = HasNot.toHasBool := by
-    sorry  -- Instance equality (orthogonal to flushCmds fix)
-  have h_cond' : ρ₀.eval ρ₀.store e = .some (@HasBool.tt P HasNot.toHasBool) := by
-    rw [← h_inst_eq]; exact h_cond
-  have hwfb' : @WellFormedSemanticEvalBool P HasNot.toHasBool _ ρ₀.eval := by
-    rw [← h_inst_eq]; exact hwfb
   have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
       σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
       (.cont tl ρ₀.store hf_accum) :=
-    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond' hwfb'
+    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum h_cond hwfb
   have h_step : @StepCFG _ _ (Cmd P) _ P
       (EvalDetBlock P (EvalCmd P) extendEval) cfg
       (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -2091,7 +2084,7 @@ private theorem flushCmds_condGoto_true {P : PureExpr} [HasFvar P] [HasBool P] [
 /-- When `flushCmds` emits a block with a `condGoto` transfer and the condition
 evaluates to false at the post-command store `ρ₀.store`, the CFG steps from the
 entry to the false-branch label. -/
-private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P]
     (extendEval : ExtendEval P)
     (accum : List (Cmd P))
     (e : P.Expr) (tl fl : String) (md : MetaData P)
@@ -2120,16 +2113,10 @@ private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasBool P] 
   subst h_entry_eq; subst h_blks_eq
   have h_mem := h_cfg_accum _ (List.Mem.head _)
   have h_lkp := h_lookup _ _ h_mem
-  have h_inst_eq : (inferInstance : HasBool P) = HasNot.toHasBool := by
-    sorry  -- Instance equality (orthogonal to flushCmds fix)
-  have h_cond' : ρ₀.eval ρ₀.store e = .some (@HasBool.ff P HasNot.toHasBool) := by
-    rw [← h_inst_eq]; exact h_cond
-  have hwfb' : @WellFormedSemanticEvalBool P HasNot.toHasBool _ ρ₀.eval := by
-    rw [← h_inst_eq]; exact hwfb
   have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
       σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
       (.cont fl ρ₀.store hf_accum) :=
-    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum h_cond' hwfb'
+    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum h_cond hwfb
   have h_step : @StepCFG _ _ (Cmd P) _ P
       (EvalDetBlock P (EvalCmd P) extendEval) cfg
       (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
@@ -2189,7 +2176,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasBool P] [Has
     -- (entry, { cmds := accum.reverse, transfer := .goto k })
     sorry
 
-private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     (extendEval : ExtendEval P)
     (k : String) (ss : List (Stmt P (Cmd P)))
@@ -2562,7 +2549,7 @@ private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNo
 /-- If the structured program reaches a terminal state, the CFG also reaches
     the corresponding terminal state. Requires that the initial failure flag is
     false, since the CFG always starts with failure = false. -/
-theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
@@ -2628,7 +2615,7 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 
     Since CFGs have no "exiting" configs (exits are compiled to jumps), the
     exiting case is ruled out by the `h_exits` precondition. -/
-theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
