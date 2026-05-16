@@ -1182,20 +1182,6 @@ theorem hasUnderscoreDigitSuffix_of_mem
     String.HasUnderscoreDigitSuffix s :=
   StringGenState.hasUnderscoreDigitSuffix_of_mem_generated hwf h
 
-/-- A weaker invariant for `stmtsToBlocks`: just the `GenStep` part
-(WF preservation + monotone label list). This holds without any
-disjointness assumption and is used to bootstrap the full invariant. -/
-private theorem stmtsToBlocks_genStep
-    {P : PureExpr} [HasBool P] [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
-    (k : String) (ss : List (Stmt P (Cmd P)))
-    (exitConts : List (Option String × String))
-    (accum : List (Cmd P))
-    (gen gen' : StringGenState)
-    (entry : String) (blocks : DetBlocks String (Cmd P) P)
-    (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen')) :
-    StringGenState.GenStep gen gen' := by
-  sorry
-
 /-- `flushCmds` always produces a `GenStep`, regardless of WF. -/
 private theorem flushCmds_genStep {P : PureExpr} [HasBool P]
     (pfx : String) (accum : List (Cmd P))
@@ -1226,6 +1212,281 @@ private theorem flushCmds_genStep {P : PureExpr} [HasBool P]
     have : gen' = (StringGenState.gen pfx gen).2 := (Prod.mk.inj h_gen).2.symm
     rw [this]
     exact StringGenState.GenStep.of_gen pfx gen
+
+/-- A weaker invariant for `stmtsToBlocks`: just the `GenStep` part
+(WF preservation + monotone label list). This holds without any
+disjointness assumption and is used to bootstrap the full invariant. -/
+private theorem stmtsToBlocks_genStep
+    {P : PureExpr} [HasBool P] [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+    (k : String) (ss : List (Stmt P (Cmd P)))
+    (exitConts : List (Option String × String))
+    (accum : List (Cmd P))
+    (gen gen' : StringGenState)
+    (entry : String) (blocks : DetBlocks String (Cmd P) P)
+    (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen')) :
+    StringGenState.GenStep gen gen' := by
+  match h_match : ss with
+  | [] =>
+    unfold stmtsToBlocks at h_gen
+    exact flushCmds_genStep "l$" accum .none k gen gen' entry blocks h_gen
+  | .cmd c :: rest =>
+    unfold stmtsToBlocks at h_gen
+    exact stmtsToBlocks_genStep k rest exitConts (c :: accum) gen gen' entry blocks h_gen
+  | .funcDecl _ _ :: rest =>
+    unfold stmtsToBlocks at h_gen
+    exact stmtsToBlocks_genStep k rest exitConts accum gen gen' entry blocks h_gen
+  | .typeDecl _ _ :: rest =>
+    unfold stmtsToBlocks at h_gen
+    exact stmtsToBlocks_genStep k rest exitConts accum gen gen' entry blocks h_gen
+  | .exit l? md :: _ =>
+    unfold stmtsToBlocks at h_gen
+    exact flushCmds_genStep _ accum _ _ gen gen' entry blocks h_gen
+  | .block l bss md :: rest =>
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind, pure] at h_gen
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp at h_gen
+    generalize h_body_eq : stmtsToBlocks kNext bss
+      ((some l, kNext) :: exitConts) [] gen_r = r_body at h_gen
+    obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+    simp at h_gen
+    generalize h_flush_eq : @flushCmds P (Cmd P) _ "blk$" accum .none bl gen_b = r_flush at h_gen
+    obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+    have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
+      kNext bsNext h_rest_eq
+    have h_step_body := stmtsToBlocks_genStep kNext bss _ [] gen_r gen_b
+      bl bbs h_body_eq
+    have h_step_flush := flushCmds_genStep "blk$" accum .none bl gen_b gen_f
+      accumEntry accumBlocks h_flush_eq
+    have h_gen_eq : gen_f = gen' := by
+      simp only at h_gen
+      by_cases h_eq : l = bl
+      · rw [if_pos h_eq] at h_gen
+        simp only [pure, StateT.pure] at h_gen
+        exact (Prod.mk.inj h_gen).2
+      · rw [if_neg h_eq] at h_gen
+        simp only [pure, StateT.pure] at h_gen
+        exact (Prod.mk.inj h_gen).2
+    rw [← h_gen_eq]
+    exact (h_step_rest.trans h_step_body).trans h_step_flush
+  | .ite c tss fss md :: rest =>
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind, pure] at h_gen
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp only at h_gen
+    generalize h_ite_label : StringGenState.gen "ite" gen_r = r_ite at h_gen
+    obtain ⟨l_ite, gen_ite⟩ := r_ite
+    simp only at h_gen
+    generalize h_then_eq : stmtsToBlocks kNext tss exitConts [] gen_ite = r_then at h_gen
+    obtain ⟨⟨tl, tbs⟩, gen_t⟩ := r_then
+    simp only at h_gen
+    generalize h_else_eq : stmtsToBlocks kNext fss exitConts [] gen_t = r_else at h_gen
+    obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
+    simp only at h_gen
+    have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
+      kNext bsNext h_rest_eq
+    have h_step_ite : StringGenState.GenStep gen_r gen_ite := by
+      rw [show gen_ite = (StringGenState.gen "ite" gen_r).2 from
+            (by rw [h_ite_label])]
+      exact StringGenState.GenStep.of_gen "ite" gen_r
+    have h_step_then := stmtsToBlocks_genStep kNext tss exitConts [] gen_ite gen_t
+      tl tbs h_then_eq
+    have h_step_else := stmtsToBlocks_genStep kNext fss exitConts [] gen_t gen_e
+      fl fbs h_else_eq
+    cases c with
+    | det e =>
+      simp only [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
+      generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$" accum
+        (.some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = r_flush at h_gen
+      obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+      have h_step_flush : StringGenState.GenStep gen_e gen_f :=
+        flushCmds_genStep "ite$" accum _ l_ite gen_e gen_f
+          accumEntry accumBlocks h_flush_eq
+      have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+      rw [← h_gen_eq]
+      exact (((h_step_rest.trans h_step_ite).trans h_step_then).trans h_step_else).trans
+              h_step_flush
+    | nondet =>
+      simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+      generalize h_nondet_gen : StringGenState.gen "$__nondet_ite$" gen_e = r_nd at h_gen
+      obtain ⟨freshName, gen_n⟩ := r_nd
+      simp only at h_gen
+      generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$"
+        (accum ++ [HasInit.init (HasIdent.ident (P := P) freshName) HasBool.boolTy
+            ExprOrNondet.nondet synthesizedMd])
+        (.some (DetTransferCmd.condGoto
+          (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) tl fl md)) l_ite gen_n =
+        r_flush at h_gen
+      obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+      have h_step_nondet : StringGenState.GenStep gen_e gen_n := by
+        rw [show gen_n = (StringGenState.gen "$__nondet_ite$" gen_e).2 from
+              (by rw [h_nondet_gen])]
+        exact StringGenState.GenStep.of_gen "$__nondet_ite$" gen_e
+      have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+        flushCmds_genStep "ite$" _ _ l_ite gen_n gen_f
+          accumEntry accumBlocks h_flush_eq
+      have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+      rw [← h_gen_eq]
+      exact ((((h_step_rest.trans h_step_ite).trans h_step_then).trans h_step_else).trans
+              h_step_nondet).trans h_step_flush
+  | .loop c m is bss md :: rest =>
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind] at h_gen
+    -- Decompose generic prefix: rest and lentry.
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp only at h_gen
+    generalize h_lentry_def : StringGenState.gen "loop_entry$" gen_r = r_le at h_gen
+    obtain ⟨lentry, gen_le⟩ := r_le
+    simp only at h_gen
+    have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
+      kNext bsNext h_rest_eq
+    have h_step_le : StringGenState.GenStep gen_r gen_le := by
+      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+            (by rw [h_lentry_def])]
+      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
+    -- Split on m and c simultaneously to flatten nested matches.
+    cases h_m_cases : m with
+    | none =>
+      rw [h_m_cases] at h_gen
+      simp only [pure, StateT.pure, bind, StateT.bind] at h_gen
+      -- Decompose body, mapM, and the c-cases.
+      generalize h_body_eq :
+        stmtsToBlocks lentry bss ((none, kNext) :: exitConts) [] gen_le = r_body at h_gen
+      obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+      simp only at h_gen
+      generalize h_inv_def :
+        ((is.mapM (fun (srcLabel, i) => do
+            let assertLabel ←
+              if srcLabel.isEmpty then StringGenState.gen "inv$"
+              else pure srcLabel
+            pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
+         : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
+      obtain ⟨invCmds, gen_i⟩ := r_inv
+      have h_step_body := stmtsToBlocks_genStep lentry bss _ [] gen_le gen_b bl bbs h_body_eq
+      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
+        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
+        intro a g g' b h_step
+        obtain ⟨srcLabel, i⟩ := a
+        by_cases h_empty : srcLabel.isEmpty
+        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]
+          exact StringGenState.GenStep.of_gen "inv$" g
+        · simp only [h_empty, bind, pure] at h_step
+          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]
+          exact StringGenState.GenStep.refl g
+      have h_step_prefix : StringGenState.GenStep gen gen_i :=
+        ((h_step_rest.trans h_step_le).trans h_step_body).trans h_step_inv
+      cases c with
+      | det e =>
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_i = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        have h_step_flush : StringGenState.GenStep gen_i gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        rw [← h_gen_eq]
+        exact h_step_prefix.trans h_step_flush
+      | nondet =>
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_nondet_gen : StringGenState.gen "$__nondet_loop$" gen_i = r_nd at h_gen
+        obtain ⟨freshName, gen_n⟩ := r_nd
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_n = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
+          rw [show gen_n = (StringGenState.gen "$__nondet_loop$" gen_i).2 from
+                (by rw [h_nondet_gen])]
+          exact StringGenState.GenStep.of_gen "$__nondet_loop$" gen_i
+        have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_n gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        rw [← h_gen_eq]
+        exact (h_step_prefix.trans h_step_nondet).trans h_step_flush
+    | some mExpr =>
+      rw [h_m_cases] at h_gen
+      simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+      generalize h_ml_def : StringGenState.gen "loop_measure$" gen_le = r_ml at h_gen
+      obtain ⟨mLabel, gen_ml⟩ := r_ml
+      simp only at h_gen
+      generalize h_ldec_def : StringGenState.gen "measure_decrease$" gen_ml = r_ldec at h_gen
+      obtain ⟨ldec, gen_ldec⟩ := r_ldec
+      simp only at h_gen
+      have h_step_ml : StringGenState.GenStep gen_le gen_ml := by
+        rw [show gen_ml = (StringGenState.gen "loop_measure$" gen_le).2 from
+              (by rw [h_ml_def])]
+        exact StringGenState.GenStep.of_gen "loop_measure$" gen_le
+      have h_step_ldec : StringGenState.GenStep gen_ml gen_ldec := by
+        rw [show gen_ldec = (StringGenState.gen "measure_decrease$" gen_ml).2 from
+              (by rw [h_ldec_def])]
+        exact StringGenState.GenStep.of_gen "measure_decrease$" gen_ml
+      generalize h_body_eq :
+        stmtsToBlocks ldec bss ((none, kNext) :: exitConts) [] gen_ldec = r_body at h_gen
+      obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+      simp only at h_gen
+      generalize h_inv_def :
+        ((is.mapM (fun (srcLabel, i) => do
+            let assertLabel ←
+              if srcLabel.isEmpty then StringGenState.gen "inv$"
+              else pure srcLabel
+            pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
+         : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
+      obtain ⟨invCmds, gen_i⟩ := r_inv
+      have h_step_body := stmtsToBlocks_genStep ldec bss _ [] gen_ldec gen_b bl bbs h_body_eq
+      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
+        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
+        intro a g g' b h_step
+        obtain ⟨srcLabel, i⟩ := a
+        by_cases h_empty : srcLabel.isEmpty
+        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]
+          exact StringGenState.GenStep.of_gen "inv$" g
+        · simp only [h_empty, bind, pure] at h_step
+          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]
+          exact StringGenState.GenStep.refl g
+      have h_step_prefix : StringGenState.GenStep gen gen_i :=
+        ((((h_step_rest.trans h_step_le).trans h_step_ml).trans h_step_ldec).trans
+          h_step_body).trans h_step_inv
+      cases c with
+      | det e =>
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_i = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        have h_step_flush : StringGenState.GenStep gen_i gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        rw [← h_gen_eq]
+        exact h_step_prefix.trans h_step_flush
+      | nondet =>
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_nondet_gen : StringGenState.gen "$__nondet_loop$" gen_i = r_nd at h_gen
+        obtain ⟨freshName, gen_n⟩ := r_nd
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_n = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
+          rw [show gen_n = (StringGenState.gen "$__nondet_loop$" gen_i).2 from
+                (by rw [h_nondet_gen])]
+          exact StringGenState.GenStep.of_gen "$__nondet_loop$" gen_i
+        have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_n gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        rw [← h_gen_eq]
+        exact (h_step_prefix.trans h_step_nondet).trans h_step_flush
+termination_by sizeOf ss
+decreasing_by all_goals (subst h_match; simp_wf; omega)
 
 /-- The main invariant for `stmtsToBlocks`.
 We require WF on `gen` and obtain WF on `gen'`, plus freshness/nodup of
