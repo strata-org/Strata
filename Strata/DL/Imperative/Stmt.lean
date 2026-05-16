@@ -361,6 +361,55 @@ mutual
   | s :: rest => Stmt.labels s ++ Block.labels rest
 end
 
+mutual
+/-- Def-use well-formedness check for a statement, parameterized by `outer` —
+    the list of identifiers already in scope at entry.  Returns true iff:
+    (a) every variable read or written by `s` is either in `outer` or declared
+        (via `definedVars`) by a sub-block of `s`;
+    (b) variables newly declared by `s` (its `definedVars`) do not shadow
+        `outer`; and
+    (c) recursively for every sub-block, the appropriate extended `outer` makes
+        the sub-block def-use well-formed.
+
+    From `Stmt.defUseWellFormed outer s = true` we can derive both
+    `Stmt.touchedVars s \ Stmt.definedVars s ⊆ outer` and
+    `Stmt.definedVars s` is disjoint from `outer`. -/
+@[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
+    [HasVarsPure P C] [DecidableEq P.Ident]
+    (outer : List P.Ident) (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd c =>
+    -- All reads/writes of `c` lie in `outer ∪ definedVars c`; new declarations
+    -- of `c` don't shadow `outer`.
+    (HasVarsPure.getVars (P := P) c).all (fun n =>
+      decide (n ∈ outer) || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
+    (HasVarsImp.modifiedVars (P := P) c).all (fun n =>
+      decide (n ∈ outer) || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
+    (HasVarsImp.definedVars (P := P) c).all (fun n => decide (n ∉ outer))
+  | .block _ bss _ => Block.defUseWellFormed outer bss
+  | .ite cond tbss ebss _ =>
+    cond.getVars.all (fun n => decide (n ∈ outer)) &&
+    Block.defUseWellFormed outer tbss && Block.defUseWellFormed outer ebss
+  | .loop guard measure invariants body _ =>
+    guard.getVars.all (fun n => decide (n ∈ outer)) &&
+    ((measure.map HasVarsPure.getVars).getD []).all (fun n => decide (n ∈ outer)) &&
+    (invariants.flatMap fun lp => HasVarsPure.getVars lp.2).all
+      (fun n => decide (n ∈ outer)) &&
+    Block.defUseWellFormed outer body
+  | .exit _ _ => true
+  | .funcDecl _ _ => false
+  | .typeDecl _ _ => true
+
+@[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
+    [HasVarsPure P C] [DecidableEq P.Ident]
+    (outer : List P.Ident) (bss : Block P C) : Bool :=
+  match bss with
+  | [] => true
+  | s :: rest =>
+    Stmt.defUseWellFormed outer s &&
+      Block.defUseWellFormed (outer ++ Stmt.definedVars s) rest
+end
+
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
