@@ -83,8 +83,14 @@ private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr
 
 /-- Replace all occurrences of any target with its corresponding replacement
     in an expression. Computes hashes bottom-up to avoid redundant traversals.
-    The map stores (target, replacement) pairs keyed by hash. -/
-def replaceExprs (replacements : Std.HashMap UInt64 (Expression.Expr × Expression.Expr))
+
+    The map values are lists of (target, replacement) pairs so that distinct
+    expressions sharing the same `LExpr.hashExpr` do not displace each other
+    on insertion (cf. PR #1135 review). On lookup we walk the list with
+    structural `==` to find the matching target. The expected list length is
+    1 for typical inputs; a non-trivial collision only adds the cost of a few
+    extra `==` comparisons. -/
+def replaceExprs (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
     (e : Expression.Expr) : Expression.Expr :=
   (go e).2
 where
@@ -121,11 +127,15 @@ where
       let e' : Expression.Expr := .quant m k name ty tr' body'
       let kh : UInt64 := match k with | .all => 0 | .exist => 1
       check (LExpr.hashQuantExpr kh (hash name) (LExpr.hashOptTy ty) htr hbody) e'
-  /-- Check if the hash matches a replacement target. -/
+  /-- Check if the hash matches a replacement target. Walks the list of
+      pairs at this hash bucket and uses structural `==` to find the target,
+      so collisions never silently drop or misroute a replacement. -/
   check (h : UInt64) (e : Expression.Expr) : UInt64 × Expression.Expr :=
     match replacements[h]? with
-    | some (target, replacement) =>
-      if e == target then (h, replacement) else (h, e)
+    | some pairs =>
+      match pairs.find? (fun (t, _) => e == t) with
+      | some (_, replacement) => (h, replacement)
+      | none => (h, e)
     | none => (h, e)
 
 /-- Collect all subexpression hashes from an expression,
@@ -190,37 +200,67 @@ private def findANFEncoderTargets (exprs : List Expression.Expr) :
 /-- Deduplicate a procedure's body by extracting common subexpressions into
     `var` declarations prepended to the body. Returns the modified body and
     the next available dedup index.
+
     Assumes single-assignment (SSA-like) property of the post-PE Core IR:
     variables are assigned only once, so structurally equal expressions
     always denote the same value within a procedure body.
 
-    Iterates to fixpoint because extracting one level of duplicates exposes
-    further duplicates inside the newly-created var declarations (a large
-    expression may hide subexpression dupes that `removeSubsumed` skipped
-    on the first pass). -/
-partial def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
-  let targets := findANFEncoderTargets ((Statements.collectExprs body).flatMap collectSubexprs)
-  if targets.isEmpty then
-    (body, startIdx)
-  else
-  -- Build all var declarations and the replacement map
-  let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
-    let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
-    let freshTy := dup.typeOf
-    let freshVar : Expression.Expr := .fvar () freshName freshTy
-    let ty : Expression.Ty := match freshTy with
-      | some mty => LTy.forAll [] mty
-      | none => LTy.forAll ["α"] (.ftvar "α")
-    let varDecl := Statement.init freshName ty (.det dup) .empty
-    let h := LExpr.hashExpr dup
-    (varDecl :: decls, repMap.insert h (dup, freshVar), idx + 1)
-  ) ([], ({} : Std.HashMap UInt64 (Expression.Expr × Expression.Expr)), startIdx)
-  -- Single pass: replace all targets at once
-  let body' := Statements.mapExprs (replaceExprs replacements) body
-  let newBody := revDecls.reverse ++ body'
-  -- Iterate: the newly-inserted var declarations may themselves contain
-  -- duplicated subexpressions that `removeSubsumed` dropped in this pass.
-  anfEncodeBody newBody nextIdx
+    Iterates to a fixpoint: a single pass cannot extract everything because
+    `removeSubsumed` deliberately drops duplicate subexpressions that are
+    contained in other (larger) duplicate expressions, to avoid creating
+    redundant `var` declarations. After the larger duplicate is lifted into
+    its own var declaration, those previously-subsumed inner duplicates
+    appear once in the new var-decl init and possibly again elsewhere in the
+    body, at which point the next iteration can extract them.
+
+    Termination. Let `S(body)` be the set of distinct non-leaf, no-bvar
+    subexpressions of `body`. Then:
+      * `findANFEncoderTargets body ⊆ S(body)` and `S(body)` is finite.
+      * Each iteration replaces every occurrence of every target with a
+        fresh `fvar`. Fresh `fvar`s are leaves and are filtered out of all
+        future `S(...)` (via `!e.isLeaf`).
+      * Each new var-decl init is one of the just-extracted targets, which
+        was already in `S(body)`, so `S(newBody) ⊆ S(body)`.
+      * After extraction, every extracted target appears at most once in the
+        new body (in its own var-decl init), so it is no longer in
+        `findANFEncoderTargets newBody`.
+    Hence the iteration count is bounded by `|S(initial body)|`, which is in
+    turn bounded by the total expression size of the body. We pass that
+    bound as `fuel` so the recursion is structurally decreasing. -/
+def anfEncodeBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
+  let fuel := (Statements.collectExprs body).foldl (fun acc e => acc + LExpr.size _ e) 0
+  go fuel body startIdx
+where
+  go (fuel : Nat) (body : Statements) (startIdx : Nat) : Statements × Nat :=
+    match fuel with
+    | 0 => (body, startIdx)
+    | fuel' + 1 =>
+      let targets := findANFEncoderTargets ((Statements.collectExprs body).flatMap collectSubexprs)
+      if targets.isEmpty then
+        (body, startIdx)
+      else
+        -- Build all var declarations and the replacement map. The map value
+        -- is a list of (target, replacement) pairs to be collision-safe under
+        -- `LExpr.hashExpr`; see `replaceExprs` above.
+        let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) dup =>
+          let freshName : CoreIdent := ⟨s!"{anfVarPrefix}{idx}", ()⟩
+          let freshTy := dup.typeOf
+          let freshVar : Expression.Expr := .fvar () freshName freshTy
+          let ty : Expression.Ty := match freshTy with
+            | some mty => LTy.forAll [] mty
+            | none => LTy.forAll ["α"] (.ftvar "α")
+          let varDecl := Statement.init freshName ty (.det dup) .empty
+          let h := LExpr.hashExpr dup
+          let pairs := repMap.getD h []
+          (varDecl :: decls, repMap.insert h ((dup, freshVar) :: pairs), idx + 1)
+        ) ([], ({} : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr))), startIdx)
+        -- Replace all targets at once in the original body.
+        let body' := Statements.mapExprs (replaceExprs replacements) body
+        let newBody := revDecls.reverse ++ body'
+        -- Iterate: the newly-prepended var declarations may themselves
+        -- contain duplicated subexpressions that `removeSubsumed` dropped in
+        -- this pass.
+        go fuel' newBody nextIdx
 
 /-- Deduplicate all procedures in a program. Returns the modified program
     and whether any changes were made. -/
