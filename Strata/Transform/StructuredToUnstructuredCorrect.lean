@@ -681,6 +681,144 @@ private theorem GenInv.empty_step {P : PureExpr}
   · intro l hl; simp at hl
   · simp
 
+/-- The measure block computation in the `loop` case produces a `GenInv`.
+The result list `decreaseBlocks` is either `[]` (when `m = none`) or contains
+exactly one block `(ldec, ...)` where `ldec` is freshly generated. -/
+private theorem measure_invariant {P : PureExpr} [HasInit P (Cmd P)] [HasIdent P]
+    [HasFvar P] [HasIntOrder P] [HasNot P] [HasPassiveCmds P (Cmd P)]
+    (m : Option P.Expr)
+    (lentry : String)
+    (gen_le gen_m : StringGenState)
+    (measureCmds : List (Cmd P)) (bodyK : String)
+    (decreaseBlocks : DetBlocks String (Cmd P) P)
+    (hwf_le : StringGenState.WF gen_le)
+    (h_eq :
+      (match m with
+       | none => (pure ([], lentry, []) : LabelGen.StringGenM
+                    (List (Cmd P) × String × DetBlocks String (Cmd P) P))
+       | some mExpr => do
+         let mLabel ← StringGenState.gen "loop_measure$"
+         let mIdent := HasIdent.ident mLabel
+         let mOldExpr := HasFvar.mkFvar mIdent
+         let initCmd  := HasInit.init mIdent HasIntOrder.intTy ExprOrNondet.nondet synthesizedMd
+         let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
+                            (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
+         let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
+                            (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
+         let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
+                            (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
+         let ldec ← StringGenState.gen "measure_decrease$"
+         let decBlock := (ldec, ({ cmds := [decCmd],
+                                   transfer := DetTransferCmd.goto lentry }
+                                 : DetBlock String (Cmd P) P))
+         pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])) gen_le
+       = ((measureCmds, bodyK, decreaseBlocks), gen_m)) :
+    @GenInv P gen_le gen_m [] decreaseBlocks := by
+  cases h_m_cases : m with
+  | none =>
+    rw [h_m_cases] at h_eq
+    simp only [pure, StateT.pure] at h_eq
+    -- h_eq : (([], lentry, []), gen_le) = ((measureCmds, bodyK, decreaseBlocks), gen_m)
+    -- This reduces to: ([], lentry, []) = (measureCmds, bodyK, decreaseBlocks) ∧ gen_le = gen_m
+    have h_pairs := (Prod.mk.inj h_eq).1
+    -- h_pairs : ([], lentry, []) = (measureCmds, bodyK, decreaseBlocks)
+    -- The 3-tuple: ([], (lentry, [])) = (measureCmds, (bodyK, decreaseBlocks))
+    have h_db : decreaseBlocks = [] := ((Prod.mk.inj h_pairs).2 |> Prod.mk.inj).2.symm
+    have h_gen_m : gen_m = gen_le := ((Prod.mk.inj h_eq).2).symm
+    rw [h_db, h_gen_m]
+    exact GenInv.refl gen_le hwf_le
+  | some mExpr =>
+    rw [h_m_cases] at h_eq
+    simp only [bind, StateT.bind, pure, StateT.pure] at h_eq
+    generalize h_ml : StringGenState.gen "loop_measure$" gen_le = r_ml at h_eq
+    obtain ⟨mLabel, gen_ml⟩ := r_ml
+    simp only at h_eq
+    generalize h_ld : StringGenState.gen "measure_decrease$" gen_ml = r_ld at h_eq
+    obtain ⟨ldec, gen_ld⟩ := r_ld
+    simp only at h_eq
+    have h_pairs := (Prod.mk.inj h_eq).1
+    have h_db_eq : decreaseBlocks =
+        [(ldec, ({ cmds := [HasPassiveCmds.assert (P := P) (CmdT := Cmd P)
+                             s!"measure_decrease_{mLabel}"
+                             (HasIntOrder.lt mExpr (HasFvar.mkFvar (HasIdent.ident mLabel)))
+                             synthesizedMd],
+                   transfer := DetTransferCmd.goto lentry } : DetBlock String (Cmd P) P))] :=
+      ((Prod.mk.inj h_pairs).2 |> Prod.mk.inj).2.symm
+    have h_gen_m_eq : gen_m = gen_ld := ((Prod.mk.inj h_eq).2).symm
+    rw [h_db_eq, h_gen_m_eq]
+    -- Show: GenInv gen_le gen_ld [] [(ldec, ...)]
+    -- gen_le → gen_ml (one gen) → gen_ld (one gen)
+    have h_step_ml : StringGenState.GenStep gen_le gen_ml := by
+      rw [show gen_ml = (StringGenState.gen "loop_measure$" gen_le).2 from
+            (by rw [h_ml])]
+      exact StringGenState.GenStep.of_gen "loop_measure$" gen_le
+    have hwf_ml : StringGenState.WF gen_ml := h_step_ml.wf_mono hwf_le
+    have h_step_ld : StringGenState.GenStep gen_ml gen_ld := by
+      rw [show gen_ld = (StringGenState.gen "measure_decrease$" gen_ml).2 from
+            (by rw [h_ld])]
+      exact StringGenState.GenStep.of_gen "measure_decrease$" gen_ml
+    -- ldec is freshly generated from gen_ml.
+    have h_ldec_in_gen_ld : ldec ∈ StringGenState.stringGens gen_ld := by
+      rw [show ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 from
+            (by rw [h_ld])]
+      rw [show gen_ld = (StringGenState.gen "measure_decrease$" gen_ml).2 from
+            (by rw [h_ld])]
+      rw [StringGenState.stringGens_gen]
+      exact List.mem_cons.mpr (Or.inl rfl)
+    have h_ldec_notin_gen_le : ldec ∉ StringGenState.stringGens gen_le := by
+      intro h_in
+      have h_in_ml : ldec ∈ StringGenState.stringGens gen_ml := h_step_ml.subset h_in
+      have h_ldec_eq : ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 := by
+        rw [h_ld]
+      have h_notin :=
+        StringGenState.stringGens_gen_not_in "measure_decrease$" gen_ml hwf_ml
+      rw [h_ldec_eq] at h_in_ml
+      exact h_notin h_in_ml
+    -- Build GenInv via cons_gen on top of the trivial GenInv at gen_ml.
+    apply GenInv.cons_gen gen_le gen_ml gen_ld [] []
+    · exact hwf_le
+    · exact h_step_ml
+    · exact GenInv.empty_step gen_ml gen_ld hwf_ml h_step_ld
+    · exact h_ldec_in_gen_ld
+    · exact h_ldec_notin_gen_le
+    · simp
+
+/-- A more general `mapM_genStep` for any function in `StringGenM` whose
+single-step behaviour is a `GenStep`. The lemma traces through the entire
+list, building a `GenStep` from the initial state to the final state. -/
+private theorem mapM_genStep {α β : Type}
+    (f : α → LabelGen.StringGenM β)
+    (h_step : ∀ (a : α) (gen gen' : StringGenState) (b : β),
+                f a gen = (b, gen') → StringGenState.GenStep gen gen')
+    (xs : List α)
+    (gen gen' : StringGenState) (ys : List β)
+    (h_eq : xs.mapM f gen = (ys, gen')) :
+    StringGenState.GenStep gen gen' := by
+  -- Use List.mapM_cons / mapM_nil rewrites to reduce.
+  induction xs generalizing gen gen' ys with
+  | nil =>
+    rw [List.mapM_nil] at h_eq
+    -- (pure []) gen = ([], gen) for the StateM monad
+    simp only [pure, StateT.pure] at h_eq
+    have h_gen' : gen = gen' := (Prod.mk.inj h_eq).2
+    rw [← h_gen']
+    exact StringGenState.GenStep.refl gen
+  | cons hd tl ih =>
+    rw [List.mapM_cons] at h_eq
+    simp only [bind, StateT.bind, pure, StateT.pure] at h_eq
+    generalize h_f : f hd gen = r1 at h_eq
+    obtain ⟨y, gen_mid⟩ := r1
+    simp only at h_eq
+    generalize h_tail : tl.mapM f gen_mid = r2 at h_eq
+    obtain ⟨ys', gen_end⟩ := r2
+    simp only at h_eq
+    have h_gen' : gen_end = gen' := (Prod.mk.inj h_eq).2
+    have h1 : StringGenState.GenStep gen gen_mid := h_step hd gen gen_mid y h_f
+    have h2 : StringGenState.GenStep gen_mid gen_end :=
+      ih gen_mid gen_end ys' h_tail
+    rw [← h_gen']
+    exact h1.trans h2
+
 /-- Weakening: if `userLabels` shrinks (a sublist), the invariant still holds
 provided the additional shape/disjointness/Nodup constraints transfer. The
 common usage: a parent list of user labels is provided that includes the
@@ -1775,7 +1913,28 @@ private theorem stmtsToBlocks_invariant
         exact h_disj.2.2 x hx h_in
       · exact h_disj.2.1
   | .loop c m is bss md :: rest =>
-    -- Most complex: nested matches on m and c, mapM over invariants.
+    -- Sub-computations:
+    --   gen → gen_r:    stmtsToBlocks rest
+    --   gen_r → gen_le: gen "loop_entry$"
+    --   gen_le → gen_m: match m (none: id; some: gen "loop_measure$" then gen "measure_decrease$")
+    --   gen_m → gen_b:  stmtsToBlocks bss
+    --   gen_b → gen_i:  is.mapM (mapM over invariants)
+    --   gen_i → gen_n:  match c (det: id; nondet: gen "$__nondet_loop$")
+    --   gen_n → gen_f:  flushCmds "before_loop$"
+    --
+    -- Output blocks: accumBlocks ++ [(lentry, ...)] ++ bbs ++ decreaseBlocks ++ bsNext
+    -- Output user labels: userBlockLabels bss ++ userBlockLabels rest
+    --
+    -- Helpers built and ready: mapM_genStep, measure_invariant,
+    -- Block.userLabels_loop_cross_disj, GenInv.{cons_gen, cons_user, weaken_userLabels,
+    -- empty_step}.
+    --
+    -- The first 5 monadic peels (rest, lentry, measure-match, body, mapM)
+    -- decompose cleanly via `generalize`. The 6th step (`match c`) is the
+    -- sticking point because the inner `let contractMd := match m with ...`
+    -- creates a second `match m` that confounds case analysis of c. Closing
+    -- this requires a wrapper helper that captures the contractMd computation
+    -- separately.
     sorry
 termination_by sizeOf ss
 decreasing_by all_goals (subst h_match; simp_wf; omega)
