@@ -5306,15 +5306,14 @@ private theorem newVars_in_definedVars {s : Statement} {ρ₀ ρ₁ : Env Expres
       exact hsome₀ rfl
     · have hx : n ∉ Config.touchedVarsSet (.stmt s ρ₀) := by
         intro hmem
-        apply hn_touched
-        show n ∈ Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
-        apply List.mem_append_left
-        have hmem' : n ∈ Stmt.modifiedVars s ++ Stmt.definedVars s false := hmem
-        rcases List.mem_append.mp hmem' with hmod | hdef
-        · exact (modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s)).1
-            s (Nat.le_refl _) n hmod
-        · exact (definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s)).1
-            s (Nat.le_refl _) n hdef
+        -- hmem : n ∈ Stmt.modifiedVars s ++ Stmt.definedVars s false
+        simp only [Config.touchedVarsSet, List.mem_append] at hmem
+        rcases hmem with hmod | hdef
+        · apply hn_touched
+          show n ∈ Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
+          exact List.mem_append_left _ ((modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s) true).1
+            s (Nat.le_refl _) n hmod)
+        · exact hnd hdef
       have hframe := star_preserves_store_outside_touchedVars_isNone (π := π) (φ := φ)
         hstar n (by simp only [Config.getEnv]; exact hnone₀) hx
       simp only [Config.getEnv] at hframe
@@ -5337,7 +5336,7 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
   readWritesDefined n hn hnd := by
     have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := hdisj n hn
     have hndef_s : n ∉ Stmt.definedVars s false := fun hd =>
-      hdisj_n ((definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s)).1 s
+      hdisj_n ((definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1 s
         (Nat.le_refl _) n hd)
     have hsome₀ : (ρ₀.store n).isSome := by
       apply h.readWritesDefined n
@@ -5358,7 +5357,7 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
       apply hdisj n
       show n ∈ Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
       exact List.mem_append_left _
-        ((definedVars_subset_modifiedOrDefinedVars (Block.sizeOf ss)).2 ss
+        ((definedVars_subset_modifiedOrDefinedVars (Block.sizeOf ss) false).2 ss
           (Nat.le_refl _) n hn)
     have hnone₀ : (ρ₀.store n).isNone := h.defsUndefined n (by
       show n ∈ Block.definedVars (s :: ss) false
@@ -5369,10 +5368,10 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
       apply hdisj_n
       cases h with
       | inl hmod =>
-        exact (modifiedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s)).1
+        exact (modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s) false).1
           s (Nat.le_refl _) n hmod
       | inr hdef =>
-        exact (definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s)).1
+        exact (definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1
           s (Nat.le_refl _) n hdef
     have hframe := star_preserves_store_outside_touchedVars_isNone
       (π := π) (φ := φ) hstar n (by simpa [Config.getEnv] using hnone₀) hxnot
