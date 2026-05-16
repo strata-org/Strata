@@ -51,6 +51,7 @@ jobs:
         uses: ./.github/actions/restore-lake-cache
         with:
           fail-on-cache-miss: "true"
+          use-restore-keys: "false"
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:

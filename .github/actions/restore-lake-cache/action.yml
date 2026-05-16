@@ -34,17 +34,33 @@ inputs:
       not reuse it as-is.
     required: false
     default: "lake"
+  use-restore-keys:
+    description: >
+      If 'true' (default), include three fallback `restore-keys` so that
+      a near match (same toolchain/manifest/.st files but different SHA)
+      is used when no exact-SHA cache exists.
+
+      Set to 'false' for downstream jobs that depend on a cache saved by
+      an upstream job for the *same* SHA (typically together with
+      `fail-on-cache-miss: 'true'`); see
+      https://github.com/strata-org/Strata/issues/952. With fallback
+      keys present, `fail-on-cache-miss` only triggers when every
+      fallback also misses, which silently allows stale cross-SHA cache
+      matches and defeats the safety net.
+    required: false
+    default: "true"
 
 outputs:
   cache-hit:
     description: Whether a cache entry was restored (see actions/cache/restore@v5).
-    value: ${{ steps.restore.outputs.cache-hit }}
+    value: ${{ steps.restore-with-fallback.outputs.cache-hit || steps.restore-exact.outputs.cache-hit }}
 
 runs:
   using: composite
   steps:
-    - name: Restore lake cache
-      id: restore
+    - name: Restore lake cache (with fallback keys)
+      id: restore-with-fallback
+      if: inputs.use-restore-keys != 'false'
       uses: actions/cache/restore@v5
       with:
         path: ${{ inputs.path }}
@@ -53,4 +69,12 @@ runs:
           ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
           ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
           ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
+    - name: Restore lake cache (exact SHA only)
+      id: restore-exact
+      if: inputs.use-restore-keys == 'false'
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
         fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}

@@ -121,6 +121,7 @@ jobs:
       uses: ./.github/actions/restore-lake-cache
       with:
         fail-on-cache-miss: "true"
+        use-restore-keys: "false"
     - name: Install Lean
       uses: leanprover/lean-action@v1
       with:
@@ -228,6 +229,7 @@ jobs:
       uses: ./.github/actions/restore-lake-cache
       with:
         fail-on-cache-miss: "true"
+        use-restore-keys: "false"
     - name: Install Lean (for lake env)
       uses: leanprover/lean-action@v1
       with:
