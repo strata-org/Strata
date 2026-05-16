@@ -681,108 +681,6 @@ private theorem GenInv.empty_step {P : PureExpr}
   · intro l hl; simp at hl
   · simp
 
-/-- The measure block computation in the `loop` case produces a `GenInv`.
-The result list `decreaseBlocks` is either `[]` (when `m = none`) or contains
-exactly one block `(ldec, ...)` where `ldec` is freshly generated. -/
-private theorem measure_invariant {P : PureExpr} [HasInit P (Cmd P)] [HasIdent P]
-    [HasFvar P] [HasIntOrder P] [HasNot P] [HasPassiveCmds P (Cmd P)]
-    (m : Option P.Expr)
-    (lentry : String)
-    (gen_le gen_m : StringGenState)
-    (measureCmds : List (Cmd P)) (bodyK : String)
-    (decreaseBlocks : DetBlocks String (Cmd P) P)
-    (hwf_le : StringGenState.WF gen_le)
-    (h_eq :
-      (match m with
-       | none => (pure ([], lentry, []) : LabelGen.StringGenM
-                    (List (Cmd P) × String × DetBlocks String (Cmd P) P))
-       | some mExpr => do
-         let mLabel ← StringGenState.gen "loop_measure$"
-         let mIdent := HasIdent.ident mLabel
-         let mOldExpr := HasFvar.mkFvar mIdent
-         let initCmd  := HasInit.init mIdent HasIntOrder.intTy ExprOrNondet.nondet synthesizedMd
-         let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
-                            (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
-         let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
-                            (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
-         let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
-                            (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
-         let ldec ← StringGenState.gen "measure_decrease$"
-         let decBlock := (ldec, ({ cmds := [decCmd],
-                                   transfer := DetTransferCmd.goto lentry }
-                                 : DetBlock String (Cmd P) P))
-         pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])) gen_le
-       = ((measureCmds, bodyK, decreaseBlocks), gen_m)) :
-    @GenInv P gen_le gen_m [] decreaseBlocks := by
-  cases h_m_cases : m with
-  | none =>
-    rw [h_m_cases] at h_eq
-    simp only [pure, StateT.pure] at h_eq
-    -- h_eq : (([], lentry, []), gen_le) = ((measureCmds, bodyK, decreaseBlocks), gen_m)
-    -- This reduces to: ([], lentry, []) = (measureCmds, bodyK, decreaseBlocks) ∧ gen_le = gen_m
-    have h_pairs := (Prod.mk.inj h_eq).1
-    -- h_pairs : ([], lentry, []) = (measureCmds, bodyK, decreaseBlocks)
-    -- The 3-tuple: ([], (lentry, [])) = (measureCmds, (bodyK, decreaseBlocks))
-    have h_db : decreaseBlocks = [] := ((Prod.mk.inj h_pairs).2 |> Prod.mk.inj).2.symm
-    have h_gen_m : gen_m = gen_le := ((Prod.mk.inj h_eq).2).symm
-    rw [h_db, h_gen_m]
-    exact GenInv.refl gen_le hwf_le
-  | some mExpr =>
-    rw [h_m_cases] at h_eq
-    simp only [bind, StateT.bind, pure, StateT.pure] at h_eq
-    generalize h_ml : StringGenState.gen "loop_measure$" gen_le = r_ml at h_eq
-    obtain ⟨mLabel, gen_ml⟩ := r_ml
-    simp only at h_eq
-    generalize h_ld : StringGenState.gen "measure_decrease$" gen_ml = r_ld at h_eq
-    obtain ⟨ldec, gen_ld⟩ := r_ld
-    simp only at h_eq
-    have h_pairs := (Prod.mk.inj h_eq).1
-    have h_db_eq : decreaseBlocks =
-        [(ldec, ({ cmds := [HasPassiveCmds.assert (P := P) (CmdT := Cmd P)
-                             s!"measure_decrease_{mLabel}"
-                             (HasIntOrder.lt mExpr (HasFvar.mkFvar (HasIdent.ident mLabel)))
-                             synthesizedMd],
-                   transfer := DetTransferCmd.goto lentry } : DetBlock String (Cmd P) P))] :=
-      ((Prod.mk.inj h_pairs).2 |> Prod.mk.inj).2.symm
-    have h_gen_m_eq : gen_m = gen_ld := ((Prod.mk.inj h_eq).2).symm
-    rw [h_db_eq, h_gen_m_eq]
-    -- Show: GenInv gen_le gen_ld [] [(ldec, ...)]
-    -- gen_le → gen_ml (one gen) → gen_ld (one gen)
-    have h_step_ml : StringGenState.GenStep gen_le gen_ml := by
-      rw [show gen_ml = (StringGenState.gen "loop_measure$" gen_le).2 from
-            (by rw [h_ml])]
-      exact StringGenState.GenStep.of_gen "loop_measure$" gen_le
-    have hwf_ml : StringGenState.WF gen_ml := h_step_ml.wf_mono hwf_le
-    have h_step_ld : StringGenState.GenStep gen_ml gen_ld := by
-      rw [show gen_ld = (StringGenState.gen "measure_decrease$" gen_ml).2 from
-            (by rw [h_ld])]
-      exact StringGenState.GenStep.of_gen "measure_decrease$" gen_ml
-    -- ldec is freshly generated from gen_ml.
-    have h_ldec_in_gen_ld : ldec ∈ StringGenState.stringGens gen_ld := by
-      rw [show ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 from
-            (by rw [h_ld])]
-      rw [show gen_ld = (StringGenState.gen "measure_decrease$" gen_ml).2 from
-            (by rw [h_ld])]
-      rw [StringGenState.stringGens_gen]
-      exact List.mem_cons.mpr (Or.inl rfl)
-    have h_ldec_notin_gen_le : ldec ∉ StringGenState.stringGens gen_le := by
-      intro h_in
-      have h_in_ml : ldec ∈ StringGenState.stringGens gen_ml := h_step_ml.subset h_in
-      have h_ldec_eq : ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 := by
-        rw [h_ld]
-      have h_notin :=
-        StringGenState.stringGens_gen_not_in "measure_decrease$" gen_ml hwf_ml
-      rw [h_ldec_eq] at h_in_ml
-      exact h_notin h_in_ml
-    -- Build GenInv via cons_gen on top of the trivial GenInv at gen_ml.
-    apply GenInv.cons_gen gen_le gen_ml gen_ld [] []
-    · exact hwf_le
-    · exact h_step_ml
-    · exact GenInv.empty_step gen_ml gen_ld hwf_ml h_step_ld
-    · exact h_ldec_in_gen_ld
-    · exact h_ldec_notin_gen_le
-    · simp
-
 /-- A more general `mapM_genStep` for any function in `StringGenM` whose
 single-step behaviour is a `GenStep`. The lemma traces through the entire
 list, building a `GenStep` from the initial state to the final state. -/
@@ -2174,29 +2072,1076 @@ private theorem stmtsToBlocks_invariant
         exact h_disj.2.2 x hx h_in
       · exact h_disj.2.1
   | .loop c m is bss md :: rest =>
-    -- Sub-computations:
+    -- Chronological pipeline:
     --   gen → gen_r:    stmtsToBlocks rest
     --   gen_r → gen_le: gen "loop_entry$"
     --   gen_le → gen_m: match m (none: id; some: gen "loop_measure$" then gen "measure_decrease$")
     --   gen_m → gen_b:  stmtsToBlocks bss
-    --   gen_b → gen_i:  is.mapM (mapM over invariants)
-    --   gen_i → gen_n:  match c (det: id; nondet: gen "$__nondet_loop$")
-    --   gen_n → gen_f:  flushCmds "before_loop$"
+    --   gen_b → gen_i:  is.mapM
+    --   gen_i → gen_? : match c (det: id; nondet: gen "$__nondet_loop$")
+    --   gen_? → gen_f:  flushCmds "before_loop$"
     --
-    -- Output blocks: accumBlocks ++ [(lentry, ...)] ++ bbs ++ decreaseBlocks ++ bsNext
-    -- Output user labels: userBlockLabels bss ++ userBlockLabels rest
-    --
-    -- Helpers built and ready: mapM_genStep, measure_invariant,
-    -- Block.userLabels_loop_cross_disj, GenInv.{cons_gen, cons_user, weaken_userLabels,
-    -- empty_step}.
-    --
-    -- The first 5 monadic peels (rest, lentry, measure-match, body, mapM)
-    -- decompose cleanly via `generalize`. The 6th step (`match c`) is the
-    -- sticking point because the inner `let contractMd := match m with ...`
-    -- creates a second `match m` that confounds case analysis of c. Closing
-    -- this requires a wrapper helper that captures the contractMd computation
-    -- separately.
-    sorry
+    -- We split on `m` first (this also reduces the contractMd `match m`),
+    -- then on `c`, giving 4 sub-branches (none/some × det/nondet).
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind] at h_gen
+    -- Decompose: rest and lentry.
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp only at h_gen
+    generalize h_lentry_def : StringGenState.gen "loop_entry$" gen_r = r_le at h_gen
+    obtain ⟨lentry, gen_le⟩ := r_le
+    simp only at h_gen
+    -- GenStep helpers (for subset relations and monotonicity).
+    have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
+      kNext bsNext h_rest_eq
+    have h_step_le : StringGenState.GenStep gen_r gen_le := by
+      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+            (by rw [h_lentry_def])]
+      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
+    -- Disjointness for sub-lists w.r.t. gen' (the outer final state).
+    have h_disj_rest_gen' : Block.userLabelsDisjoint rest gen' :=
+      Block.userLabelsDisjoint_tail _ _ _ h_disj
+    have h_disj_bss_gen' : Block.userLabelsDisjoint bss gen' :=
+      Block.userLabelsDisjoint_loop_body c m is bss md rest gen' h_disj
+    have h_user_disj_bss_rest :
+        ∀ x ∈ Block.userBlockLabels bss, x ∉ Block.userBlockLabels rest :=
+      Block.userLabels_loop_cross_disj c m is bss md rest gen' h_disj
+    -- Now branch on m, then on c.
+    cases h_m_cases : m with
+    | none =>
+      rw [h_m_cases] at h_gen
+      simp only [pure, StateT.pure, bind, StateT.bind] at h_gen
+      -- Decompose body, mapM.
+      generalize h_body_eq :
+        stmtsToBlocks lentry bss ((none, kNext) :: exitConts) [] gen_le = r_body at h_gen
+      obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+      simp only at h_gen
+      generalize h_inv_def :
+        ((is.mapM (fun (srcLabel, i) => do
+            let assertLabel ←
+              if srcLabel.isEmpty then StringGenState.gen "inv$"
+              else pure srcLabel
+            pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
+         : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
+      obtain ⟨invCmds, gen_i⟩ := r_inv
+      simp only at h_gen
+      have h_step_body := stmtsToBlocks_genStep lentry bss _ [] gen_le gen_b bl bbs h_body_eq
+      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
+        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
+        intro a g g' b' h_step
+        obtain ⟨srcLabel, i⟩ := a
+        by_cases h_empty : srcLabel.isEmpty
+        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]; exact StringGenState.GenStep.of_gen "inv$" g
+        · simp only [h_empty, bind, pure] at h_step
+          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]; exact StringGenState.GenStep.refl g
+      cases h_c : c with
+      | det e =>
+        rw [h_c] at h_gen
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_i = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        simp only [pure, StateT.pure] at h_gen
+        have h_pair := (Prod.mk.inj h_gen).1
+        have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        subst h_entry_eq
+        -- The lentry block content.
+        let contractMd : MetaData P := is.foldl (fun md (_, inv) =>
+            md.pushElem MetaData.specLoopInvariant (.expr inv)) md
+        let lentryBlk : DetBlock String (Cmd P) P :=
+          { cmds := invCmds ++ [],
+            transfer := DetTransferCmd.condGoto e bl kNext contractMd }
+        have h_blocks_eq :
+            accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [] ++ bsNext = blocks :=
+          (Prod.mk.inj h_pair).2
+        have h_step_flush : StringGenState.GenStep gen_i gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq
+        -- Subset relations w.r.t. gen' = gen_f.
+        have h_step_chain_r_to_f : StringGenState.GenStep gen_r gen_f :=
+          (((h_step_le.trans h_step_body).trans h_step_inv).trans h_step_flush)
+        have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact h_step_chain_r_to_f.subset
+        have h_subset_le_gen' : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact ((h_step_body.trans h_step_inv).trans h_step_flush).subset
+        have h_subset_b_gen' : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact (h_step_inv.trans h_step_flush).subset
+        have h_subset_i_gen' : StringGenState.stringGens gen_i ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact h_step_flush.subset
+        -- Disjointness for sub-IH inputs.
+        have h_disj_rest_gen_r : Block.userLabelsDisjoint rest gen_r :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_rest_gen' h_subset_r_gen'
+        have h_disj_bss_gen_b : Block.userLabelsDisjoint bss gen_b :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_bss_gen' h_subset_b_gen'
+        -- IH on rest.
+        have h_inv_rest :
+            @GenInv P gen gen_r (Block.userBlockLabels rest) bsNext :=
+          stmtsToBlocks_invariant k rest exitConts [] gen gen_r kNext bsNext h_rest_eq hwf
+            h_disj_rest_gen_r
+        have hwf_r := h_inv_rest.wf_out
+        -- gen_r → gen_le via empty_step.
+        have h_inv_le_step : @GenInv P gen_r gen_le [] [] :=
+          GenInv.empty_step gen_r gen_le hwf_r h_step_le
+        have hwf_le : StringGenState.WF gen_le := h_inv_le_step.wf_out
+        -- IH on body (bss).
+        have h_inv_body :
+            @GenInv P gen_le gen_b (Block.userBlockLabels bss) bbs :=
+          stmtsToBlocks_invariant lentry bss _ [] gen_le gen_b bl bbs h_body_eq hwf_le
+            h_disj_bss_gen_b
+        have hwf_b := h_inv_body.wf_out
+        -- gen_b → gen_i via empty_step.
+        have h_inv_inv_step : @GenInv P gen_b gen_i [] [] :=
+          GenInv.empty_step gen_b gen_i hwf_b h_step_inv
+        have hwf_i : StringGenState.WF gen_i := h_inv_inv_step.wf_out
+        -- gen_i → gen_f via flush invariant.
+        have h_inv_flush : @GenInv P gen_i gen_f [] accumBlocks :=
+          flushCmds_invariant "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq hwf_i
+        -- Compose chronologically: gen → gen_r → gen_le → gen_b → gen_i → gen_f.
+        have h_inv_r_le :
+            @GenInv P gen gen_le (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+          GenInv.trans gen gen_r gen_le _ _ _ _ h_inv_rest h_inv_le_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_r_simp :
+            Block.userBlockLabels rest ++ ([] : List String) = Block.userBlockLabels rest := by simp
+        have h_blks_r_simp : bsNext ++ ([] : List (String × DetBlock String (Cmd P) P)) = bsNext := by simp
+        rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_le
+        have h_inv_r_b :
+            @GenInv P gen gen_b
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              (bsNext ++ bbs) :=
+          GenInv.trans gen gen_le gen_b _ _ _ _ h_inv_r_le h_inv_body
+            (by intro x h_x_r h_x_b; exact h_user_disj_bss_rest x h_x_b h_x_r)
+        have h_inv_r_i :
+            @GenInv P gen gen_i
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ bbs) ++ []) :=
+          GenInv.trans gen gen_b gen_i _ _ _ _ h_inv_r_b h_inv_inv_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_simp_i :
+            Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ ([] : List String)
+            = Block.userBlockLabels rest ++ Block.userBlockLabels bss := by simp
+        have h_blks_simp_i :
+            (bsNext ++ bbs) ++ ([] : List (String × DetBlock String (Cmd P) P))
+            = bsNext ++ bbs := by simp
+        rw [h_user_simp_i, h_blks_simp_i] at h_inv_r_i
+        have h_inv_chron :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ bbs) ++ accumBlocks) :=
+          GenInv.trans gen gen_i gen_f _ _ _ _ h_inv_r_i h_inv_flush
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_simp :
+            Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ ([] : List String)
+            = Block.userBlockLabels rest ++ Block.userBlockLabels bss := by simp
+        rw [h_user_simp] at h_inv_chron
+        -- Prepend (lentry, lentryBlk) using cons_gen. lentry is generated from gen_r.
+        have h_lentry_in_gen_le : lentry ∈ StringGenState.stringGens gen_le := by
+          rw [show lentry = (StringGenState.gen "loop_entry$" gen_r).1 from
+                (by rw [h_lentry_def])]
+          rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+                (by rw [h_lentry_def])]
+          rw [StringGenState.stringGens_gen]
+          exact List.mem_cons.mpr (Or.inl rfl)
+        have h_lentry_in_gen_f : lentry ∈ StringGenState.stringGens gen_f :=
+          ((h_step_body.trans h_step_inv).trans h_step_flush).subset h_lentry_in_gen_le
+        have h_lentry_notin_gen_r : lentry ∉ StringGenState.stringGens gen_r := by
+          intro h_in
+          have h_lentry_eq : lentry = (StringGenState.gen "loop_entry$" gen_r).1 := by
+            rw [h_lentry_def]
+          have h_notin :=
+            StringGenState.stringGens_gen_not_in "loop_entry$" gen_r hwf_r
+          rw [h_lentry_eq] at h_in
+          exact h_notin h_in
+        have h_lentry_notin_gen : lentry ∉ StringGenState.stringGens gen := by
+          intro h_in; exact h_lentry_notin_gen_r (h_step_rest.subset h_in)
+        -- lentry not in any of the existing block labels (bsNext, bbs, accumBlocks).
+        have h_lentry_notin_blks : lentry ∉ List.map Prod.fst ((bsNext ++ bbs) ++ accumBlocks) := by
+          intro h_in
+          cases h_inv_chron.fresh lentry h_in with
+          | inl h_g =>
+            -- lentry ∈ gen_f \ gen — but lentry was generated from gen_r, so
+            -- lentry was generated before this whole computation? No, lentry IS
+            -- in gen_le ⊆ gen_f, but we've shown lentry ∉ gen_r. So
+            -- lentry ∉ gen ⇒ contradicts h_g.2. Actually h_g.2 says lentry ∉ gen,
+            -- which is true. So this branch tells us nothing inconsistent;
+            -- we need to show this lentry-as-block-label is impossible.
+            -- Actually the issue: cons_gen requires lentry ∉ existing block labels.
+            -- One of bsNext, bbs, accumBlocks could have lentry as a label.
+            -- But: bsNext came from gen → gen_r (so its labels are in gen_r),
+            --      bbs came from gen_le → gen_b (labels in gen_b),
+            --      accumBlocks came from gen_i → gen_f (labels in gen_f \ gen_i).
+            -- bsNext's labels ⊆ gen_r: but lentry ∉ gen_r. Good.
+            -- bbs's labels: each is in gen_b \ gen_le or in user labels of bss.
+            --   (a) gen_b \ gen_le: lentry ∈ gen_le, so excludes lentry.
+            --   (b) user labels of bss: would mean lentry has user shape, but
+            --       lentry was just generated, so it has gen-shape from gen_le.
+            --       More precisely, by user_disj of h_disj on bss, user-labels
+            --       are not in gen' = gen_f. But lentry ∈ gen_f, so lentry is
+            --       NOT a user label.
+            -- accumBlocks's labels ⊆ gen_f \ gen_i. lentry ∈ gen_le ⊆ gen_i, so
+            --   lentry is in gen_i. Contradicts the freshness condition.
+            -- We have h_g.2 : lentry ∉ stringGens gen. That's just true, not contradictory.
+            -- We need the deeper fact: lentry is not in any of these block-label sets.
+            -- The cleanest route: show separately for each of the three block lists.
+            rw [List.map_append, List.map_append, List.mem_append, List.mem_append] at h_in
+            rcases h_in with (h_bs | h_bb) | h_ac
+            · -- bsNext: from h_inv_rest.fresh
+              cases h_inv_rest.fresh lentry h_bs with
+              | inl h_gr => exact h_lentry_notin_gen_r h_gr.1
+              | inr h_user =>
+                have h_shape := h_inv_rest.user_shape lentry h_user
+                have h_shape_lentry :
+                    String.HasUnderscoreDigitSuffix lentry := by
+                  have := StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                            (h_inv_le_step.wf_out) h_lentry_in_gen_le
+                  exact this
+                exact h_shape h_shape_lentry
+            · -- bbs: from h_inv_body.fresh
+              cases h_inv_body.fresh lentry h_bb with
+              | inl h_gb =>
+                -- lentry ∉ stringGens gen_le (= h_gb.2): but h_lentry_in_gen_le says lentry ∈ gen_le.
+                exact h_gb.2 h_lentry_in_gen_le
+              | inr h_user =>
+                -- lentry would be a user label of bss
+                have h_shape := h_inv_body.user_shape lentry h_user
+                have h_shape_lentry :
+                    String.HasUnderscoreDigitSuffix lentry :=
+                  StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                    (h_inv_le_step.wf_out) h_lentry_in_gen_le
+                exact h_shape h_shape_lentry
+            · -- accumBlocks: from h_inv_flush.fresh
+              cases h_inv_flush.fresh lentry h_ac with
+              | inl h_gf => exact h_gf.2 ((h_step_body.trans h_step_inv).subset h_lentry_in_gen_le)
+              | inr h_user => simp at h_user
+          | inr h_user =>
+            -- lentry would be in (rest ++ bss) user labels: shape contradiction.
+            have h_shape : ¬ String.HasUnderscoreDigitSuffix lentry := by
+              rw [List.mem_append] at h_user
+              cases h_user with
+              | inl h_r => exact h_inv_rest.user_shape lentry h_r
+              | inr h_b => exact h_inv_body.user_shape lentry h_b
+            have h_shape_lentry :
+                String.HasUnderscoreDigitSuffix lentry :=
+              StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                (h_inv_le_step.wf_out) h_lentry_in_gen_le
+            exact h_shape h_shape_lentry
+        -- Now apply cons_gen.
+        have h_inv_with_lentry :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)) :=
+          GenInv.cons_gen gen gen gen_f _ _ lentry lentryBlk hwf
+            (StringGenState.GenStep.refl gen) h_inv_chron h_lentry_in_gen_f
+            h_lentry_notin_gen h_lentry_notin_blks
+        -- Permute to align with output ordering: accumBlocks ++ [(lentry,_)] ++ bbs ++ [] ++ bsNext
+        --   ~ (lentry,_) :: (bsNext ++ bbs ++ accumBlocks).
+        have h_perm :
+            ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)).Perm
+              (accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [] ++ bsNext) := by
+          have h_target :
+              accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ ([] : List (String × DetBlock String (Cmd P) P)) ++ bsNext
+              = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ bsNext)) := by
+            simp [List.append_assoc, List.singleton_append]
+          rw [h_target]
+          have h1 : ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)).Perm
+                    ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ bbs))) :=
+            List.Perm.cons _ List.perm_append_comm
+          have h2 : ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ bbs))).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ bbs)) :=
+            (List.perm_middle (a := (lentry, lentryBlk))
+              (l₁ := accumBlocks) (l₂ := bsNext ++ bbs)).symm
+          have h3 : (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ bbs)).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bbs ++ bsNext)) :=
+            List.Perm.append_left accumBlocks
+              (List.Perm.cons _ List.perm_append_comm)
+          exact (h1.trans h2).trans h3
+        have h_inv_perm := GenInv.perm gen gen_f _ _ _ h_inv_with_lentry h_perm
+        rw [← h_blocks_eq, ← h_gen_eq]
+        -- Goal userLabels: userBlockLabels (.loop ...) = bss-labels ++ rest-labels
+        rw [Block.userBlockLabels_loop_cons]
+        apply GenInv.weaken_userLabels gen gen_f _ _ _ h_inv_perm
+        · intro x hx
+          rw [List.mem_append] at hx
+          rw [List.mem_append]
+          cases hx with
+          | inl h_r => exact Or.inr h_r
+          | inr h_b => exact Or.inl h_b
+        · intro x hx; exact h_disj.1 x hx
+        · intro x hx h_in
+          rw [h_gen_eq] at h_in
+          exact h_disj.2.2 x hx h_in
+        · exact h_disj.2.1
+      | nondet =>
+        rw [h_c] at h_gen
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_nondet_gen : StringGenState.gen "$__nondet_loop$" gen_i = r_nd at h_gen
+        obtain ⟨freshName, gen_n⟩ := r_nd
+        simp only at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_n = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        simp only [pure, StateT.pure] at h_gen
+        have h_pair := (Prod.mk.inj h_gen).1
+        have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        subst h_entry_eq
+        let contractMd : MetaData P := is.foldl (fun md (_, inv) =>
+            md.pushElem MetaData.specLoopInvariant (.expr inv)) md
+        let lentryBlk : DetBlock String (Cmd P) P :=
+          { cmds := [HasInit.init (HasIdent.ident (P := P) freshName)
+                       HasBool.boolTy ExprOrNondet.nondet synthesizedMd] ++ invCmds ++ [],
+            transfer := DetTransferCmd.condGoto
+                          (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) bl kNext contractMd }
+        have h_blocks_eq :
+            accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [] ++ bsNext = blocks :=
+          (Prod.mk.inj h_pair).2
+        have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
+          rw [show gen_n = (StringGenState.gen "$__nondet_loop$" gen_i).2 from
+                (by rw [h_nondet_gen])]
+          exact StringGenState.GenStep.of_gen "$__nondet_loop$" gen_i
+        have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_n gen_f
+            accumEntry accumBlocks h_flush_eq
+        -- Subset relations.
+        have h_step_chain_r_to_f : StringGenState.GenStep gen_r gen_f :=
+          ((((h_step_le.trans h_step_body).trans h_step_inv).trans h_step_nondet).trans
+            h_step_flush)
+        have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact h_step_chain_r_to_f.subset
+        have h_subset_b_gen' : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]
+          exact ((h_step_inv.trans h_step_nondet).trans h_step_flush).subset
+        -- Disjointness for sub-IH.
+        have h_disj_rest_gen_r : Block.userLabelsDisjoint rest gen_r :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_rest_gen' h_subset_r_gen'
+        have h_disj_bss_gen_b : Block.userLabelsDisjoint bss gen_b :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_bss_gen' h_subset_b_gen'
+        have h_inv_rest :
+            @GenInv P gen gen_r (Block.userBlockLabels rest) bsNext :=
+          stmtsToBlocks_invariant k rest exitConts [] gen gen_r kNext bsNext h_rest_eq hwf
+            h_disj_rest_gen_r
+        have hwf_r := h_inv_rest.wf_out
+        have h_inv_le_step : @GenInv P gen_r gen_le [] [] :=
+          GenInv.empty_step gen_r gen_le hwf_r h_step_le
+        have hwf_le : StringGenState.WF gen_le := h_inv_le_step.wf_out
+        have h_inv_body :
+            @GenInv P gen_le gen_b (Block.userBlockLabels bss) bbs :=
+          stmtsToBlocks_invariant lentry bss _ [] gen_le gen_b bl bbs h_body_eq hwf_le
+            h_disj_bss_gen_b
+        have hwf_b := h_inv_body.wf_out
+        have h_inv_inv_step : @GenInv P gen_b gen_i [] [] :=
+          GenInv.empty_step gen_b gen_i hwf_b h_step_inv
+        have hwf_i : StringGenState.WF gen_i := h_inv_inv_step.wf_out
+        have h_inv_nondet_step : @GenInv P gen_i gen_n [] [] :=
+          GenInv.empty_step gen_i gen_n hwf_i h_step_nondet
+        have hwf_n : StringGenState.WF gen_n := h_inv_nondet_step.wf_out
+        have h_inv_flush : @GenInv P gen_n gen_f [] accumBlocks :=
+          flushCmds_invariant "before_loop$" accum _ lentry gen_n gen_f
+            accumEntry accumBlocks h_flush_eq hwf_n
+        -- Compose chronologically.
+        have h_inv_r_le :
+            @GenInv P gen gen_le (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+          GenInv.trans gen gen_r gen_le _ _ _ _ h_inv_rest h_inv_le_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_r_simp :
+            Block.userBlockLabels rest ++ ([] : List String) = Block.userBlockLabels rest := by simp
+        have h_blks_r_simp : bsNext ++ ([] : List (String × DetBlock String (Cmd P) P)) = bsNext := by simp
+        rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_le
+        have h_inv_r_b :
+            @GenInv P gen gen_b
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              (bsNext ++ bbs) :=
+          GenInv.trans gen gen_le gen_b _ _ _ _ h_inv_r_le h_inv_body
+            (by intro x h_x_r h_x_b; exact h_user_disj_bss_rest x h_x_b h_x_r)
+        have h_inv_r_i :
+            @GenInv P gen gen_i
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ bbs) ++ []) :=
+          GenInv.trans gen gen_b gen_i _ _ _ _ h_inv_r_b h_inv_inv_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_simp_i :
+            Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ ([] : List String)
+            = Block.userBlockLabels rest ++ Block.userBlockLabels bss := by simp
+        have h_blks_simp_i :
+            (bsNext ++ bbs) ++ ([] : List (String × DetBlock String (Cmd P) P))
+            = bsNext ++ bbs := by simp
+        rw [h_user_simp_i, h_blks_simp_i] at h_inv_r_i
+        have h_inv_r_n :
+            @GenInv P gen gen_n
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ bbs) ++ []) :=
+          GenInv.trans gen gen_i gen_n _ _ _ _ h_inv_r_i h_inv_nondet_step
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_simp_i, h_blks_simp_i] at h_inv_r_n
+        have h_inv_chron :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ bbs) ++ accumBlocks) :=
+          GenInv.trans gen gen_n gen_f _ _ _ _ h_inv_r_n h_inv_flush
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_simp_i] at h_inv_chron
+        -- Prepend lentry block via cons_gen.
+        have h_lentry_in_gen_le : lentry ∈ StringGenState.stringGens gen_le := by
+          rw [show lentry = (StringGenState.gen "loop_entry$" gen_r).1 from
+                (by rw [h_lentry_def])]
+          rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+                (by rw [h_lentry_def])]
+          rw [StringGenState.stringGens_gen]
+          exact List.mem_cons.mpr (Or.inl rfl)
+        have h_lentry_in_gen_f : lentry ∈ StringGenState.stringGens gen_f :=
+          (((h_step_body.trans h_step_inv).trans h_step_nondet).trans h_step_flush).subset
+            h_lentry_in_gen_le
+        have h_lentry_notin_gen_r : lentry ∉ StringGenState.stringGens gen_r := by
+          intro h_in
+          have h_lentry_eq : lentry = (StringGenState.gen "loop_entry$" gen_r).1 := by
+            rw [h_lentry_def]
+          have h_notin :=
+            StringGenState.stringGens_gen_not_in "loop_entry$" gen_r hwf_r
+          rw [h_lentry_eq] at h_in
+          exact h_notin h_in
+        have h_lentry_notin_gen : lentry ∉ StringGenState.stringGens gen := by
+          intro h_in; exact h_lentry_notin_gen_r (h_step_rest.subset h_in)
+        have h_lentry_notin_blks : lentry ∉ List.map Prod.fst ((bsNext ++ bbs) ++ accumBlocks) := by
+          intro h_in
+          rw [List.map_append, List.map_append, List.mem_append, List.mem_append] at h_in
+          rcases h_in with (h_bs | h_bb) | h_ac
+          · cases h_inv_rest.fresh lentry h_bs with
+            | inl h_gr => exact h_lentry_notin_gen_r h_gr.1
+            | inr h_user =>
+              have h_shape := h_inv_rest.user_shape lentry h_user
+              exact h_shape (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                                (h_inv_le_step.wf_out) h_lentry_in_gen_le)
+          · cases h_inv_body.fresh lentry h_bb with
+            | inl h_gb => exact h_gb.2 h_lentry_in_gen_le
+            | inr h_user =>
+              have h_shape := h_inv_body.user_shape lentry h_user
+              exact h_shape (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                                (h_inv_le_step.wf_out) h_lentry_in_gen_le)
+          · cases h_inv_flush.fresh lentry h_ac with
+            | inl h_gf =>
+              -- lentry ∈ gen_le ⊆ gen_n: contradicts h_gf.2 (lentry ∉ gen_n).
+              exact h_gf.2 (((h_step_body.trans h_step_inv).trans h_step_nondet).subset
+                              h_lentry_in_gen_le)
+            | inr h_user => simp at h_user
+        have h_inv_with_lentry :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)) :=
+          GenInv.cons_gen gen gen gen_f _ _ lentry lentryBlk hwf
+            (StringGenState.GenStep.refl gen) h_inv_chron h_lentry_in_gen_f
+            h_lentry_notin_gen h_lentry_notin_blks
+        have h_perm :
+            ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)).Perm
+              (accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [] ++ bsNext) := by
+          have h_target :
+              accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ ([] : List (String × DetBlock String (Cmd P) P)) ++ bsNext
+              = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ bsNext)) := by
+            simp [List.append_assoc, List.singleton_append]
+          rw [h_target]
+          have h1 : ((lentry, lentryBlk) :: ((bsNext ++ bbs) ++ accumBlocks)).Perm
+                    ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ bbs))) :=
+            List.Perm.cons _ List.perm_append_comm
+          have h2 : ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ bbs))).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ bbs)) :=
+            (List.perm_middle (a := (lentry, lentryBlk))
+              (l₁ := accumBlocks) (l₂ := bsNext ++ bbs)).symm
+          have h3 : (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ bbs)).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bbs ++ bsNext)) :=
+            List.Perm.append_left accumBlocks
+              (List.Perm.cons _ List.perm_append_comm)
+          exact (h1.trans h2).trans h3
+        have h_inv_perm := GenInv.perm gen gen_f _ _ _ h_inv_with_lentry h_perm
+        rw [← h_blocks_eq, ← h_gen_eq]
+        rw [Block.userBlockLabels_loop_cons]
+        apply GenInv.weaken_userLabels gen gen_f _ _ _ h_inv_perm
+        · intro x hx
+          rw [List.mem_append] at hx
+          rw [List.mem_append]
+          cases hx with
+          | inl h_r => exact Or.inr h_r
+          | inr h_b => exact Or.inl h_b
+        · intro x hx; exact h_disj.1 x hx
+        · intro x hx h_in
+          rw [h_gen_eq] at h_in
+          exact h_disj.2.2 x hx h_in
+        · exact h_disj.2.1
+    | some mExpr =>
+      rw [h_m_cases] at h_gen
+      simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+      generalize h_ml_def : StringGenState.gen "loop_measure$" gen_le = r_ml at h_gen
+      obtain ⟨mLabel, gen_ml⟩ := r_ml
+      simp only at h_gen
+      generalize h_ldec_def : StringGenState.gen "measure_decrease$" gen_ml = r_ldec at h_gen
+      obtain ⟨ldec, gen_ldec⟩ := r_ldec
+      simp only at h_gen
+      have h_step_ml : StringGenState.GenStep gen_le gen_ml := by
+        rw [show gen_ml = (StringGenState.gen "loop_measure$" gen_le).2 from
+              (by rw [h_ml_def])]
+        exact StringGenState.GenStep.of_gen "loop_measure$" gen_le
+      have h_step_ldec : StringGenState.GenStep gen_ml gen_ldec := by
+        rw [show gen_ldec = (StringGenState.gen "measure_decrease$" gen_ml).2 from
+              (by rw [h_ldec_def])]
+        exact StringGenState.GenStep.of_gen "measure_decrease$" gen_ml
+      generalize h_body_eq :
+        stmtsToBlocks ldec bss ((none, kNext) :: exitConts) [] gen_ldec = r_body at h_gen
+      obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
+      simp only at h_gen
+      generalize h_inv_def :
+        ((is.mapM (fun (srcLabel, i) => do
+            let assertLabel ←
+              if srcLabel.isEmpty then StringGenState.gen "inv$"
+              else pure srcLabel
+            pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
+         : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
+      obtain ⟨invCmds, gen_i⟩ := r_inv
+      simp only at h_gen
+      have h_step_body := stmtsToBlocks_genStep ldec bss _ [] gen_ldec gen_b bl bbs h_body_eq
+      have h_step_inv : StringGenState.GenStep gen_b gen_i := by
+        apply mapM_genStep _ _ is gen_b gen_i invCmds h_inv_def
+        intro a g g' b' h_step
+        obtain ⟨srcLabel, i⟩ := a
+        by_cases h_empty : srcLabel.isEmpty
+        · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+          have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]; exact StringGenState.GenStep.of_gen "inv$" g
+        · simp only [h_empty, bind, pure] at h_step
+          have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
+          rw [h_g_eq]; exact StringGenState.GenStep.refl g
+      cases h_c : c with
+      | det e =>
+        rw [h_c] at h_gen
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_i = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        simp only [pure, StateT.pure] at h_gen
+        have h_pair := (Prod.mk.inj h_gen).1
+        have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        subst h_entry_eq
+        let mIdent := HasIdent.ident (P := P) mLabel
+        let mOldExpr := HasFvar.mkFvar (P := P) mIdent
+        let initCmd : Cmd P :=
+          HasInit.init mIdent HasIntOrder.intTy ExprOrNondet.nondet synthesizedMd
+        let assumeCmd : Cmd P :=
+          HasPassiveCmds.assume s!"assume_{mLabel}"
+            (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
+        let lbCmd : Cmd P :=
+          HasPassiveCmds.assert s!"measure_lb_{mLabel}"
+            (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
+        let decCmd : Cmd P :=
+          HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
+            (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
+        let measureCmds : List (Cmd P) := [initCmd, assumeCmd, lbCmd]
+        let decBlock : String × DetBlock String (Cmd P) P :=
+          (ldec, { cmds := [decCmd], transfer := DetTransferCmd.goto lentry })
+        let contractMd : MetaData P :=
+          (is.foldl (fun md (_, inv) =>
+            md.pushElem MetaData.specLoopInvariant (.expr inv)) md).pushElem
+            MetaData.specDecreases (.expr mExpr)
+        let lentryBlk : DetBlock String (Cmd P) P :=
+          { cmds := invCmds ++ measureCmds,
+            transfer := DetTransferCmd.condGoto e bl kNext contractMd }
+        have h_blocks_eq :
+            accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext = blocks :=
+          (Prod.mk.inj h_pair).2
+        have h_step_flush : StringGenState.GenStep gen_i gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
+          ((h_step_ml.trans h_step_ldec).trans h_step_body)
+        have h_step_chain_r_to_f : StringGenState.GenStep gen_r gen_f :=
+          ((((h_step_le.trans h_step_le_to_b).trans h_step_inv)).trans h_step_flush)
+        have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact h_step_chain_r_to_f.subset
+        have h_subset_b_gen' : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact (h_step_inv.trans h_step_flush).subset
+        have h_disj_rest_gen_r : Block.userLabelsDisjoint rest gen_r :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_rest_gen' h_subset_r_gen'
+        have h_disj_bss_gen_b : Block.userLabelsDisjoint bss gen_b :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_bss_gen' h_subset_b_gen'
+        have h_inv_rest :
+            @GenInv P gen gen_r (Block.userBlockLabels rest) bsNext :=
+          stmtsToBlocks_invariant k rest exitConts [] gen gen_r kNext bsNext h_rest_eq hwf
+            h_disj_rest_gen_r
+        have hwf_r := h_inv_rest.wf_out
+        have h_inv_le_step : @GenInv P gen_r gen_le [] [] :=
+          GenInv.empty_step gen_r gen_le hwf_r h_step_le
+        have hwf_le : StringGenState.WF gen_le := h_inv_le_step.wf_out
+        -- After cases on m has simplified, the match-result here is
+        -- (measureCmds, ldec, [decBlock]) at gen_ldec. Build it directly via cons_gen.
+        have hwf_ml : StringGenState.WF gen_ml := h_step_ml.wf_mono hwf_le
+        have h_inv_ml_step : @GenInv P gen_le gen_ml [] [] :=
+          GenInv.empty_step gen_le gen_ml hwf_le h_step_ml
+        have h_inv_ldec_step : @GenInv P gen_ml gen_ldec [] [] :=
+          GenInv.empty_step gen_ml gen_ldec hwf_ml h_step_ldec
+        have hwf_ldec : StringGenState.WF gen_ldec := h_inv_ldec_step.wf_out
+        -- ldec freshly generated from gen_ml.
+        have h_ldec_in_gen_ldec : ldec ∈ StringGenState.stringGens gen_ldec := by
+          rw [show ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 from
+                (by rw [h_ldec_def])]
+          rw [show gen_ldec = (StringGenState.gen "measure_decrease$" gen_ml).2 from
+                (by rw [h_ldec_def])]
+          rw [StringGenState.stringGens_gen]
+          exact List.mem_cons.mpr (Or.inl rfl)
+        have h_ldec_notin_gen_ml : ldec ∉ StringGenState.stringGens gen_ml := by
+          intro h_in
+          have h_ldec_eq : ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 := by
+            rw [h_ldec_def]
+          have h_notin :=
+            StringGenState.stringGens_gen_not_in "measure_decrease$" gen_ml hwf_ml
+          rw [h_ldec_eq] at h_in
+          exact h_notin h_in
+        -- IH on body.
+        have h_inv_body :
+            @GenInv P gen_ldec gen_b (Block.userBlockLabels bss) bbs :=
+          stmtsToBlocks_invariant ldec bss _ [] gen_ldec gen_b bl bbs h_body_eq hwf_ldec
+            h_disj_bss_gen_b
+        have hwf_b := h_inv_body.wf_out
+        have h_inv_inv_step : @GenInv P gen_b gen_i [] [] :=
+          GenInv.empty_step gen_b gen_i hwf_b h_step_inv
+        have hwf_i : StringGenState.WF gen_i := h_inv_inv_step.wf_out
+        have h_inv_flush : @GenInv P gen_i gen_f [] accumBlocks :=
+          flushCmds_invariant "before_loop$" accum _ lentry gen_i gen_f
+            accumEntry accumBlocks h_flush_eq hwf_i
+        -- Compose chain.
+        have h_inv_r_le :
+            @GenInv P gen gen_le (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+          GenInv.trans gen gen_r gen_le _ _ _ _ h_inv_rest h_inv_le_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_r_simp :
+            Block.userBlockLabels rest ++ ([] : List String) = Block.userBlockLabels rest := by simp
+        have h_blks_r_simp : bsNext ++ ([] : List (String × DetBlock String (Cmd P) P)) = bsNext := by simp
+        rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_le
+        have h_inv_r_ml :
+            @GenInv P gen gen_ml (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+          GenInv.trans gen gen_le gen_ml _ _ _ _ h_inv_r_le h_inv_ml_step
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_ml
+        -- Build GenInv at gen_ldec including the decrease block.
+        -- decrease block lives in gen_ldec only (ldec freshly generated).
+        have h_inv_ldec_only : @GenInv P gen_ml gen_ldec [] [decBlock] := by
+          apply GenInv.cons_gen gen_ml gen_ml gen_ldec [] [] ldec _
+            hwf_ml (StringGenState.GenStep.refl gen_ml) h_inv_ldec_step
+            h_ldec_in_gen_ldec h_ldec_notin_gen_ml
+          simp
+        have h_inv_r_ldec :
+            @GenInv P gen gen_ldec
+              (Block.userBlockLabels rest ++ [])
+              (bsNext ++ [decBlock]) :=
+          GenInv.trans gen gen_ml gen_ldec _ _ _ _ h_inv_r_ml h_inv_ldec_only
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_r_simp] at h_inv_r_ldec
+        -- gen_ldec → gen_b via IH on body.
+        have h_inv_r_b :
+            @GenInv P gen gen_b
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              ((bsNext ++ [decBlock]) ++ bbs) := by
+          apply GenInv.trans gen gen_ldec gen_b _ _ _ _ h_inv_r_ldec h_inv_body
+          intro x h_x_r h_x_b; exact h_user_disj_bss_rest x h_x_b h_x_r
+        have h_inv_r_i :
+            @GenInv P gen gen_i
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              (((bsNext ++ [decBlock]) ++ bbs) ++ []) :=
+          GenInv.trans gen gen_b gen_i _ _ _ _ h_inv_r_b h_inv_inv_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_simp_i :
+            Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ ([] : List String)
+            = Block.userBlockLabels rest ++ Block.userBlockLabels bss := by simp
+        rw [h_user_simp_i] at h_inv_r_i
+        have h_blks_simp :
+            ((bsNext ++ [decBlock]) ++ bbs) ++ ([] : List (String × DetBlock String (Cmd P) P))
+            = bsNext ++ [decBlock] ++ bbs := by simp
+        rw [h_blks_simp] at h_inv_r_i
+        have h_inv_chron :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks) :=
+          GenInv.trans gen gen_i gen_f _ _ _ _ h_inv_r_i h_inv_flush
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_simp_i] at h_inv_chron
+        -- Now prepend (lentry, lentryBlk) via cons_gen.
+        have h_lentry_in_gen_le : lentry ∈ StringGenState.stringGens gen_le := by
+          rw [show lentry = (StringGenState.gen "loop_entry$" gen_r).1 from
+                (by rw [h_lentry_def])]
+          rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+                (by rw [h_lentry_def])]
+          rw [StringGenState.stringGens_gen]
+          exact List.mem_cons.mpr (Or.inl rfl)
+        have h_lentry_in_gen_f : lentry ∈ StringGenState.stringGens gen_f :=
+          ((h_step_le_to_b.trans h_step_inv).trans h_step_flush).subset h_lentry_in_gen_le
+        have h_lentry_notin_gen_r : lentry ∉ StringGenState.stringGens gen_r := by
+          intro h_in
+          have h_lentry_eq : lentry = (StringGenState.gen "loop_entry$" gen_r).1 := by
+            rw [h_lentry_def]
+          have h_notin :=
+            StringGenState.stringGens_gen_not_in "loop_entry$" gen_r hwf_r
+          rw [h_lentry_eq] at h_in
+          exact h_notin h_in
+        have h_lentry_notin_gen : lentry ∉ StringGenState.stringGens gen := by
+          intro h_in; exact h_lentry_notin_gen_r (h_step_rest.subset h_in)
+        have h_lentry_notin_blks :
+            lentry ∉ List.map Prod.fst ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks) := by
+          intro h_in
+          rw [List.map_append, List.map_append, List.map_append, List.mem_append, List.mem_append,
+              List.mem_append] at h_in
+          rcases h_in with ((h_bs | h_dec) | h_bb) | h_ac
+          · cases h_inv_rest.fresh lentry h_bs with
+            | inl h_gr => exact h_lentry_notin_gen_r h_gr.1
+            | inr h_user =>
+              have h_shape := h_inv_rest.user_shape lentry h_user
+              exact h_shape (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                                (h_inv_le_step.wf_out) h_lentry_in_gen_le)
+          · -- decBlock: lentry = ldec? ldec was generated from gen_ml, lentry from gen_r
+            -- We need: lentry ≠ ldec.
+            simp only [List.map_cons, List.map_nil, List.mem_singleton] at h_dec
+            -- h_dec : lentry = ldec.fst = ldec; this means lentry = ldec (= decBlock.1)
+            -- ldec ∈ gen_ldec, lentry ∈ gen_le ⊆ gen_ml. ldec ∉ gen_ml.
+            -- So if lentry = ldec then ldec ∈ gen_ml — contradicting h_ldec_notin_gen_ml.
+            rw [h_dec] at h_lentry_in_gen_le
+            -- h_lentry_in_gen_le : ldec ∈ gen_le
+            exact h_ldec_notin_gen_ml (h_step_ml.subset h_lentry_in_gen_le)
+          · cases h_inv_body.fresh lentry h_bb with
+            | inl h_gb =>
+              -- lentry ∈ gen_le ⊆ gen_ldec, but h_gb.2 says lentry ∉ gen_ldec.
+              exact h_gb.2 ((h_step_ml.trans h_step_ldec).subset h_lentry_in_gen_le)
+            | inr h_user =>
+              have h_shape := h_inv_body.user_shape lentry h_user
+              exact h_shape (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                                (h_inv_le_step.wf_out) h_lentry_in_gen_le)
+          · cases h_inv_flush.fresh lentry h_ac with
+            | inl h_gf =>
+              exact h_gf.2 ((h_step_le_to_b.trans h_step_inv).subset h_lentry_in_gen_le)
+            | inr h_user => simp at h_user
+        have h_inv_with_lentry :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)) :=
+          GenInv.cons_gen gen gen gen_f _ _ lentry lentryBlk hwf
+            (StringGenState.GenStep.refl gen) h_inv_chron h_lentry_in_gen_f
+            h_lentry_notin_gen h_lentry_notin_blks
+        -- Permute to align with output ordering.
+        -- accumBlocks ++ [(lentry, _)] ++ bbs ++ [decBlock] ++ bsNext
+        have h_perm :
+            ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)).Perm
+              (accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext) := by
+          have h_target :
+              accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext
+              = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ [decBlock] ++ bsNext)) := by
+            simp [List.append_assoc, List.singleton_append]
+          rw [h_target]
+          have h1 : ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)).Perm
+                    ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ [decBlock] ++ bbs))) :=
+            List.Perm.cons _ List.perm_append_comm
+          have h2 : ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ [decBlock] ++ bbs))).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ [decBlock] ++ bbs)) :=
+            (List.perm_middle (a := (lentry, lentryBlk))
+              (l₁ := accumBlocks) (l₂ := bsNext ++ [decBlock] ++ bbs)).symm
+          have h3 : (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ [decBlock] ++ bbs)).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bbs ++ [decBlock] ++ bsNext)) :=
+            List.Perm.append_left accumBlocks
+              (List.Perm.cons _ (by
+                -- bsNext ++ [decBlock] ++ bbs ~ bbs ++ [decBlock] ++ bsNext
+                have hh1 : (bsNext ++ [decBlock] ++ bbs).Perm
+                            (bbs ++ (bsNext ++ [decBlock])) :=
+                  List.perm_append_comm
+                have hh2 : (bbs ++ (bsNext ++ [decBlock])).Perm
+                            (bbs ++ ([decBlock] ++ bsNext)) :=
+                  List.Perm.append_left bbs List.perm_append_comm
+                have hh3 : (bbs ++ ([decBlock] ++ bsNext)) = (bbs ++ [decBlock] ++ bsNext) := by
+                  rw [List.append_assoc]
+                exact (hh1.trans hh2).trans (hh3 ▸ List.Perm.refl _)))
+          exact (h1.trans h2).trans h3
+        have h_inv_perm := GenInv.perm gen gen_f _ _ _ h_inv_with_lentry h_perm
+        rw [← h_blocks_eq, ← h_gen_eq]
+        rw [Block.userBlockLabels_loop_cons]
+        apply GenInv.weaken_userLabels gen gen_f _ _ _ h_inv_perm
+        · intro x hx
+          rw [List.mem_append] at hx
+          rw [List.mem_append]
+          cases hx with
+          | inl h_r => exact Or.inr h_r
+          | inr h_b => exact Or.inl h_b
+        · intro x hx; exact h_disj.1 x hx
+        · intro x hx h_in
+          rw [h_gen_eq] at h_in
+          exact h_disj.2.2 x hx h_in
+        · exact h_disj.2.1
+      | nondet =>
+        rw [h_c] at h_gen
+        simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+        generalize h_nondet_gen : StringGenState.gen "$__nondet_loop$" gen_i = r_nd at h_gen
+        obtain ⟨freshName, gen_n⟩ := r_nd
+        simp only at h_gen
+        generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
+          Option.none lentry gen_n = r_flush at h_gen
+        obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+        simp only [pure, StateT.pure] at h_gen
+        have h_pair := (Prod.mk.inj h_gen).1
+        have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+        have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+        subst h_entry_eq
+        let mIdent := HasIdent.ident (P := P) mLabel
+        let mOldExpr := HasFvar.mkFvar (P := P) mIdent
+        let initCmd : Cmd P :=
+          HasInit.init mIdent HasIntOrder.intTy ExprOrNondet.nondet synthesizedMd
+        let assumeCmd : Cmd P :=
+          HasPassiveCmds.assume s!"assume_{mLabel}"
+            (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
+        let lbCmd : Cmd P :=
+          HasPassiveCmds.assert s!"measure_lb_{mLabel}"
+            (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
+        let decCmd : Cmd P :=
+          HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
+            (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
+        let measureCmds : List (Cmd P) := [initCmd, assumeCmd, lbCmd]
+        let decBlock : String × DetBlock String (Cmd P) P :=
+          (ldec, { cmds := [decCmd], transfer := DetTransferCmd.goto lentry })
+        let contractMd : MetaData P :=
+          (is.foldl (fun md (_, inv) =>
+            md.pushElem MetaData.specLoopInvariant (.expr inv)) md).pushElem
+            MetaData.specDecreases (.expr mExpr)
+        let lentryBlk : DetBlock String (Cmd P) P :=
+          { cmds := [HasInit.init (HasIdent.ident (P := P) freshName)
+                       HasBool.boolTy ExprOrNondet.nondet synthesizedMd] ++ invCmds ++ measureCmds,
+            transfer := DetTransferCmd.condGoto
+                          (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) bl kNext contractMd }
+        have h_blocks_eq :
+            accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext = blocks :=
+          (Prod.mk.inj h_pair).2
+        have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
+          rw [show gen_n = (StringGenState.gen "$__nondet_loop$" gen_i).2 from
+                (by rw [h_nondet_gen])]
+          exact StringGenState.GenStep.of_gen "$__nondet_loop$" gen_i
+        have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+          flushCmds_genStep "before_loop$" accum _ lentry gen_n gen_f
+            accumEntry accumBlocks h_flush_eq
+        have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
+          ((h_step_ml.trans h_step_ldec).trans h_step_body)
+        have h_step_chain_r_to_f : StringGenState.GenStep gen_r gen_f :=
+          (((((h_step_le.trans h_step_le_to_b).trans h_step_inv)).trans h_step_nondet).trans
+            h_step_flush)
+        have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]; exact h_step_chain_r_to_f.subset
+        have h_subset_b_gen' : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens gen' := by
+          rw [← h_gen_eq]
+          exact ((h_step_inv.trans h_step_nondet).trans h_step_flush).subset
+        have h_disj_rest_gen_r : Block.userLabelsDisjoint rest gen_r :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_rest_gen' h_subset_r_gen'
+        have h_disj_bss_gen_b : Block.userLabelsDisjoint bss gen_b :=
+          Block.userLabelsDisjoint_mono _ _ _ h_disj_bss_gen' h_subset_b_gen'
+        have h_inv_rest :
+            @GenInv P gen gen_r (Block.userBlockLabels rest) bsNext :=
+          stmtsToBlocks_invariant k rest exitConts [] gen gen_r kNext bsNext h_rest_eq hwf
+            h_disj_rest_gen_r
+        have hwf_r := h_inv_rest.wf_out
+        have h_inv_le_step : @GenInv P gen_r gen_le [] [] :=
+          GenInv.empty_step gen_r gen_le hwf_r h_step_le
+        have hwf_le : StringGenState.WF gen_le := h_inv_le_step.wf_out
+        have hwf_ml : StringGenState.WF gen_ml := h_step_ml.wf_mono hwf_le
+        have h_inv_ml_step : @GenInv P gen_le gen_ml [] [] :=
+          GenInv.empty_step gen_le gen_ml hwf_le h_step_ml
+        have h_inv_ldec_step : @GenInv P gen_ml gen_ldec [] [] :=
+          GenInv.empty_step gen_ml gen_ldec hwf_ml h_step_ldec
+        have hwf_ldec : StringGenState.WF gen_ldec := h_inv_ldec_step.wf_out
+        have h_ldec_in_gen_ldec : ldec ∈ StringGenState.stringGens gen_ldec := by
+          rw [show ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 from
+                (by rw [h_ldec_def])]
+          rw [show gen_ldec = (StringGenState.gen "measure_decrease$" gen_ml).2 from
+                (by rw [h_ldec_def])]
+          rw [StringGenState.stringGens_gen]
+          exact List.mem_cons.mpr (Or.inl rfl)
+        have h_ldec_notin_gen_ml : ldec ∉ StringGenState.stringGens gen_ml := by
+          intro h_in
+          have h_ldec_eq : ldec = (StringGenState.gen "measure_decrease$" gen_ml).1 := by
+            rw [h_ldec_def]
+          have h_notin :=
+            StringGenState.stringGens_gen_not_in "measure_decrease$" gen_ml hwf_ml
+          rw [h_ldec_eq] at h_in
+          exact h_notin h_in
+        have h_inv_body :
+            @GenInv P gen_ldec gen_b (Block.userBlockLabels bss) bbs :=
+          stmtsToBlocks_invariant ldec bss _ [] gen_ldec gen_b bl bbs h_body_eq hwf_ldec
+            h_disj_bss_gen_b
+        have hwf_b := h_inv_body.wf_out
+        have h_inv_inv_step : @GenInv P gen_b gen_i [] [] :=
+          GenInv.empty_step gen_b gen_i hwf_b h_step_inv
+        have hwf_i : StringGenState.WF gen_i := h_inv_inv_step.wf_out
+        have h_inv_nondet_step : @GenInv P gen_i gen_n [] [] :=
+          GenInv.empty_step gen_i gen_n hwf_i h_step_nondet
+        have hwf_n : StringGenState.WF gen_n := h_inv_nondet_step.wf_out
+        have h_inv_flush : @GenInv P gen_n gen_f [] accumBlocks :=
+          flushCmds_invariant "before_loop$" accum _ lentry gen_n gen_f
+            accumEntry accumBlocks h_flush_eq hwf_n
+        -- Compose chain: gen → gen_r → gen_le → gen_ml → gen_ldec → gen_b → gen_i → gen_n → gen_f
+        have h_inv_r_le :
+            @GenInv P gen gen_le (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+          GenInv.trans gen gen_r gen_le _ _ _ _ h_inv_rest h_inv_le_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_r_simp :
+            Block.userBlockLabels rest ++ ([] : List String) = Block.userBlockLabels rest := by simp
+        have h_blks_r_simp : bsNext ++ ([] : List (String × DetBlock String (Cmd P) P)) = bsNext := by simp
+        rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_le
+        have h_inv_r_ml :
+            @GenInv P gen gen_ml (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+          GenInv.trans gen gen_le gen_ml _ _ _ _ h_inv_r_le h_inv_ml_step
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_ml
+        have h_inv_ldec_only : @GenInv P gen_ml gen_ldec [] [decBlock] := by
+          apply GenInv.cons_gen gen_ml gen_ml gen_ldec [] [] ldec _
+            hwf_ml (StringGenState.GenStep.refl gen_ml) h_inv_ldec_step
+            h_ldec_in_gen_ldec h_ldec_notin_gen_ml
+          simp
+        have h_inv_r_ldec :
+            @GenInv P gen gen_ldec
+              (Block.userBlockLabels rest ++ [])
+              (bsNext ++ [decBlock]) :=
+          GenInv.trans gen gen_ml gen_ldec _ _ _ _ h_inv_r_ml h_inv_ldec_only
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_r_simp] at h_inv_r_ldec
+        have h_inv_r_b :
+            @GenInv P gen gen_b
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              ((bsNext ++ [decBlock]) ++ bbs) := by
+          apply GenInv.trans gen gen_ldec gen_b _ _ _ _ h_inv_r_ldec h_inv_body
+          intro x h_x_r h_x_b; exact h_user_disj_bss_rest x h_x_b h_x_r
+        have h_inv_r_i :
+            @GenInv P gen gen_i
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              (((bsNext ++ [decBlock]) ++ bbs) ++ []) :=
+          GenInv.trans gen gen_b gen_i _ _ _ _ h_inv_r_b h_inv_inv_step
+            (by intros _ _ h_in; simp at h_in)
+        have h_user_simp_i :
+            Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ ([] : List String)
+            = Block.userBlockLabels rest ++ Block.userBlockLabels bss := by simp
+        rw [h_user_simp_i] at h_inv_r_i
+        have h_blks_simp :
+            ((bsNext ++ [decBlock]) ++ bbs) ++ ([] : List (String × DetBlock String (Cmd P) P))
+            = bsNext ++ [decBlock] ++ bbs := by simp
+        rw [h_blks_simp] at h_inv_r_i
+        have h_inv_r_n :
+            @GenInv P gen gen_n
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ [decBlock] ++ bbs) ++ []) :=
+          GenInv.trans gen gen_i gen_n _ _ _ _ h_inv_r_i h_inv_nondet_step
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_simp_i] at h_inv_r_n
+        have h_blks_simp_n :
+            bsNext ++ [decBlock] ++ bbs ++ ([] : List (String × DetBlock String (Cmd P) P))
+            = bsNext ++ [decBlock] ++ bbs := by simp
+        rw [h_blks_simp_n] at h_inv_r_n
+        have h_inv_chron :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss ++ [])
+              ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks) :=
+          GenInv.trans gen gen_n gen_f _ _ _ _ h_inv_r_n h_inv_flush
+            (by intros _ _ h_in; simp at h_in)
+        rw [h_user_simp_i] at h_inv_chron
+        -- Prepend lentry block.
+        have h_lentry_in_gen_le : lentry ∈ StringGenState.stringGens gen_le := by
+          rw [show lentry = (StringGenState.gen "loop_entry$" gen_r).1 from
+                (by rw [h_lentry_def])]
+          rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
+                (by rw [h_lentry_def])]
+          rw [StringGenState.stringGens_gen]
+          exact List.mem_cons.mpr (Or.inl rfl)
+        have h_lentry_in_gen_f : lentry ∈ StringGenState.stringGens gen_f :=
+          (((h_step_le_to_b.trans h_step_inv).trans h_step_nondet).trans h_step_flush).subset
+            h_lentry_in_gen_le
+        have h_lentry_notin_gen_r : lentry ∉ StringGenState.stringGens gen_r := by
+          intro h_in
+          have h_lentry_eq : lentry = (StringGenState.gen "loop_entry$" gen_r).1 := by
+            rw [h_lentry_def]
+          have h_notin :=
+            StringGenState.stringGens_gen_not_in "loop_entry$" gen_r hwf_r
+          rw [h_lentry_eq] at h_in
+          exact h_notin h_in
+        have h_lentry_notin_gen : lentry ∉ StringGenState.stringGens gen := by
+          intro h_in; exact h_lentry_notin_gen_r (h_step_rest.subset h_in)
+        have h_lentry_notin_blks :
+            lentry ∉ List.map Prod.fst ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks) := by
+          intro h_in
+          rw [List.map_append, List.map_append, List.map_append, List.mem_append, List.mem_append,
+              List.mem_append] at h_in
+          rcases h_in with ((h_bs | h_dec) | h_bb) | h_ac
+          · cases h_inv_rest.fresh lentry h_bs with
+            | inl h_gr => exact h_lentry_notin_gen_r h_gr.1
+            | inr h_user =>
+              have h_shape := h_inv_rest.user_shape lentry h_user
+              exact h_shape (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                                (h_inv_le_step.wf_out) h_lentry_in_gen_le)
+          · simp only [List.map_cons, List.map_nil, List.mem_singleton] at h_dec
+            rw [h_dec] at h_lentry_in_gen_le
+            exact h_ldec_notin_gen_ml (h_step_ml.subset h_lentry_in_gen_le)
+          · cases h_inv_body.fresh lentry h_bb with
+            | inl h_gb =>
+              exact h_gb.2 ((h_step_ml.trans h_step_ldec).subset h_lentry_in_gen_le)
+            | inr h_user =>
+              have h_shape := h_inv_body.user_shape lentry h_user
+              exact h_shape (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
+                                (h_inv_le_step.wf_out) h_lentry_in_gen_le)
+          · cases h_inv_flush.fresh lentry h_ac with
+            | inl h_gf =>
+              exact h_gf.2 (((h_step_le_to_b.trans h_step_inv).trans h_step_nondet).subset
+                              h_lentry_in_gen_le)
+            | inr h_user => simp at h_user
+        have h_inv_with_lentry :
+            @GenInv P gen gen_f
+              (Block.userBlockLabels rest ++ Block.userBlockLabels bss)
+              ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)) :=
+          GenInv.cons_gen gen gen gen_f _ _ lentry lentryBlk hwf
+            (StringGenState.GenStep.refl gen) h_inv_chron h_lentry_in_gen_f
+            h_lentry_notin_gen h_lentry_notin_blks
+        have h_perm :
+            ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)).Perm
+              (accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext) := by
+          have h_target :
+              accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext
+              = accumBlocks ++ ((lentry, lentryBlk) :: (bbs ++ [decBlock] ++ bsNext)) := by
+            simp [List.append_assoc, List.singleton_append]
+          rw [h_target]
+          have h1 : ((lentry, lentryBlk) :: ((bsNext ++ [decBlock] ++ bbs) ++ accumBlocks)).Perm
+                    ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ [decBlock] ++ bbs))) :=
+            List.Perm.cons _ List.perm_append_comm
+          have h2 : ((lentry, lentryBlk) :: (accumBlocks ++ (bsNext ++ [decBlock] ++ bbs))).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ [decBlock] ++ bbs)) :=
+            (List.perm_middle (a := (lentry, lentryBlk))
+              (l₁ := accumBlocks) (l₂ := bsNext ++ [decBlock] ++ bbs)).symm
+          have h3 : (accumBlocks ++ (lentry, lentryBlk) :: (bsNext ++ [decBlock] ++ bbs)).Perm
+                    (accumBlocks ++ (lentry, lentryBlk) :: (bbs ++ [decBlock] ++ bsNext)) :=
+            List.Perm.append_left accumBlocks
+              (List.Perm.cons _ (by
+                have hh1 : (bsNext ++ [decBlock] ++ bbs).Perm
+                            (bbs ++ (bsNext ++ [decBlock])) :=
+                  List.perm_append_comm
+                have hh2 : (bbs ++ (bsNext ++ [decBlock])).Perm
+                            (bbs ++ ([decBlock] ++ bsNext)) :=
+                  List.Perm.append_left bbs List.perm_append_comm
+                have hh3 : (bbs ++ ([decBlock] ++ bsNext)) = (bbs ++ [decBlock] ++ bsNext) := by
+                  rw [List.append_assoc]
+                exact (hh1.trans hh2).trans (hh3 ▸ List.Perm.refl _)))
+          exact (h1.trans h2).trans h3
+        have h_inv_perm := GenInv.perm gen gen_f _ _ _ h_inv_with_lentry h_perm
+        rw [← h_blocks_eq, ← h_gen_eq]
+        rw [Block.userBlockLabels_loop_cons]
+        apply GenInv.weaken_userLabels gen gen_f _ _ _ h_inv_perm
+        · intro x hx
+          rw [List.mem_append] at hx
+          rw [List.mem_append]
+          cases hx with
+          | inl h_r => exact Or.inr h_r
+          | inr h_b => exact Or.inl h_b
+        · intro x hx; exact h_disj.1 x hx
+        · intro x hx h_in
+          rw [h_gen_eq] at h_in
+          exact h_disj.2.2 x hx h_in
+        · exact h_disj.2.1
 termination_by sizeOf ss
 decreasing_by all_goals (subst h_match; simp_wf; omega)
 
