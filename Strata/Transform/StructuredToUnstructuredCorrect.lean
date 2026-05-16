@@ -666,6 +666,21 @@ private theorem GenInv.cons_gen {P : PureExpr}
   · rw [List.map_cons, List.nodup_cons]
     exact ⟨h_l_notin_blocks, h_blocks.nodup⟩
 
+/-- An empty-block invariant: a pure `GenStep gen gen'` (without emitting any
+blocks or user labels) yields a trivial `GenInv`. Useful for absorbing
+intermediate `gen` calls between sub-computations. -/
+private theorem GenInv.empty_step {P : PureExpr}
+    (gen gen' : StringGenState)
+    (hwf : StringGenState.WF gen)
+    (h_step : StringGenState.GenStep gen gen') :
+    @GenInv P gen gen' [] [] := by
+  refine ⟨h_step, hwf, ?_, ?_, ?_, ?_, ?_⟩
+  · intro l hl; simp at hl
+  · intro l hl; simp at hl
+  · simp
+  · intro l hl; simp at hl
+  · simp
+
 /-- Weakening: if `userLabels` shrinks (a sublist), the invariant still holds
 provided the additional shape/disjointness/Nodup constraints transfer. The
 common usage: a parent list of user labels is provided that includes the
@@ -928,6 +943,47 @@ private theorem Block.userLabelsDisjoint_loop_body {P : PureExpr}
   · intro x hx; apply h_disj
     unfold Block.userBlockLabels Block.userBlockLabels.stmtUserBlockLabels
     exact List.mem_append.mpr (Or.inl hx)
+
+/-- Cross-disjointness for `ite`: `tss`'s and `ess`'s user labels are
+disjoint (lifted from the outer `Nodup`). -/
+private theorem Block.userLabels_ite_cross_disj {P : PureExpr}
+    (c : Imperative.ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P))) (gen' : StringGenState)
+    (h : Block.userLabelsDisjoint (Stmt.ite c tss ess md :: rest) gen') :
+    (∀ x ∈ Block.userBlockLabels tss, x ∉ Block.userBlockLabels ess) ∧
+    (∀ x ∈ Block.userBlockLabels tss, x ∉ Block.userBlockLabels rest) ∧
+    (∀ x ∈ Block.userBlockLabels ess, x ∉ Block.userBlockLabels rest) := by
+  obtain ⟨_, h_nodup, _⟩ := h
+  rw [Block.userBlockLabels_ite_cons] at h_nodup
+  -- h_nodup : ((tss-lbls ++ ess-lbls) ++ rest-lbls).Nodup
+  have h_outer := List.nodup_append.mp h_nodup
+  -- left = tss-lbls ++ ess-lbls; right = rest-lbls
+  have h_te_nodup := h_outer.1
+  have h_te_inner := List.nodup_append.mp h_te_nodup
+  refine ⟨?_, ?_, ?_⟩
+  · -- tss vs ess
+    intro x h_t h_e
+    exact h_te_inner.2.2 x h_t x h_e rfl
+  · -- tss vs rest: x ∈ tss-lbls ⊆ left, x ∈ rest-lbls = right
+    intro x h_t h_r
+    exact h_outer.2.2 x (List.mem_append.mpr (Or.inl h_t)) x h_r rfl
+  · -- ess vs rest
+    intro x h_e h_r
+    exact h_outer.2.2 x (List.mem_append.mpr (Or.inr h_e)) x h_r rfl
+
+/-- Cross-disjointness for `loop`: `bss`'s user labels are disjoint from
+`rest`'s user labels. -/
+private theorem Block.userLabels_loop_cross_disj {P : PureExpr}
+    (c : Imperative.ExprOrNondet P) (m : Option P.Expr) (is : List (String × P.Expr))
+    (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P))) (gen' : StringGenState)
+    (h : Block.userLabelsDisjoint (Stmt.loop c m is bss md :: rest) gen') :
+    ∀ x ∈ Block.userBlockLabels bss, x ∉ Block.userBlockLabels rest := by
+  obtain ⟨_, h_nodup, _⟩ := h
+  rw [Block.userBlockLabels_loop_cons] at h_nodup
+  have h_outer := List.nodup_append.mp h_nodup
+  intro x h_b h_r
+  exact h_outer.2.2 x h_b x h_r rfl
 
 /-- The label `l` of a `Stmt.block l bss md` is in the user-label list, so we
 can lift the shape-free, Nodup, and disjointness facts to it. -/
@@ -1322,9 +1378,402 @@ private theorem stmtsToBlocks_invariant
         exact h_disj.2.2 x hx h_in
       · exact h_disj.2.1
   | .ite c tss fss md :: rest =>
-    -- Five sub-computations (gen for ite label, rest, then, else, optional gen
-    -- for nondet, flushCmds with condGoto). Same permutation issue as block.
-    sorry
+    -- Sub-computations: rest, gen "ite", tss, fss, optional gen "$__nondet_ite$",
+    -- flushCmds (with condGoto transfer). The output is
+    -- accumBlocks ++ tbs ++ fbs ++ bsNext.
+    unfold stmtsToBlocks at h_gen
+    simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+    -- Decompose monadic chain
+    generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
+    obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
+    simp only at h_gen
+    generalize h_ite_label : StringGenState.gen "ite" gen_r = r_ite at h_gen
+    obtain ⟨l_ite, gen_ite⟩ := r_ite
+    simp only at h_gen
+    generalize h_then_eq : stmtsToBlocks kNext tss exitConts [] gen_ite = r_then at h_gen
+    obtain ⟨⟨tl, tbs⟩, gen_t⟩ := r_then
+    simp only at h_gen
+    generalize h_else_eq : stmtsToBlocks kNext fss exitConts [] gen_t = r_else at h_gen
+    obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
+    simp only at h_gen
+    -- Branch on c (det vs nondet) — this affects extraCmds and possibly an extra gen call.
+    cases h_c : c with
+    | det e =>
+      rw [h_c] at h_gen
+      -- After matching c, the structure is:
+      -- (do let (e_, ec) ← pure (e, []); flushCmds ...) gen_e = ((entry, blocks), gen')
+      -- Unfold pure-bind: this becomes flushCmds "ite$" (accum ++ []) ... gen_e = ...
+      -- Then List.append_nil simplifies (accum ++ []) to accum.
+      simp only [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
+      generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$" accum
+        (.some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = r_flush at h_gen
+      obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+      simp only [pure, StateT.pure] at h_gen
+      have h_pair := (Prod.mk.inj h_gen).1
+      have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+      have h_blocks_eq : accumBlocks ++ tbs ++ fbs ++ bsNext = blocks :=
+        (Prod.mk.inj h_pair).2
+      have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+      subst h_entry_eq
+      -- GenStep chain: gen → gen_r → gen_ite → gen_t → gen_e → gen_f
+      have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
+        kNext bsNext h_rest_eq
+      have h_step_ite : StringGenState.GenStep gen_r gen_ite := by
+        rw [show gen_ite = (StringGenState.gen "ite" gen_r).2 from
+              (by rw [h_ite_label])]
+        exact StringGenState.GenStep.of_gen "ite" gen_r
+      have h_step_then := stmtsToBlocks_genStep kNext tss exitConts [] gen_ite gen_t
+        tl tbs h_then_eq
+      have h_step_else := stmtsToBlocks_genStep kNext fss exitConts [] gen_t gen_e
+        fl fbs h_else_eq
+      have h_step_flush : StringGenState.GenStep gen_e gen_f :=
+        flushCmds_genStep "ite$" accum _ l_ite gen_e gen_f
+          accumEntry accumBlocks h_flush_eq
+      -- Build subset relations w.r.t. gen' (= gen_f) for monotonicity of disjointness.
+      have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact ((((h_step_ite.trans h_step_then).trans h_step_else)).trans h_step_flush).subset
+      have h_subset_ite_gen' : StringGenState.stringGens gen_ite ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact (((h_step_then.trans h_step_else)).trans h_step_flush).subset
+      have h_subset_t_gen' : StringGenState.stringGens gen_t ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact (h_step_else.trans h_step_flush).subset
+      have h_subset_e_gen' : StringGenState.stringGens gen_e ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact h_step_flush.subset
+      -- Disjointness of sub-statements w.r.t. their respective gen states.
+      have h_disj_rest_gen' : Block.userLabelsDisjoint rest gen' :=
+        Block.userLabelsDisjoint_tail _ _ _ h_disj
+      have h_disj_tss_gen' : Block.userLabelsDisjoint tss gen' :=
+        Block.userLabelsDisjoint_ite_then c tss fss md rest gen' h_disj
+      have h_disj_fss_gen' : Block.userLabelsDisjoint fss gen' :=
+        Block.userLabelsDisjoint_ite_else c tss fss md rest gen' h_disj
+      have h_disj_rest_gen_r : Block.userLabelsDisjoint rest gen_r :=
+        Block.userLabelsDisjoint_mono _ _ _ h_disj_rest_gen' h_subset_r_gen'
+      -- For sub-IH inputs we need disjointness w.r.t. each call's OUTPUT state
+      -- (since stmtsToBlocks_invariant takes h_disj : disj ss gen').
+      have h_disj_tss_gen_t : Block.userLabelsDisjoint tss gen_t :=
+        Block.userLabelsDisjoint_mono _ _ _ h_disj_tss_gen' h_subset_t_gen'
+      have h_disj_fss_gen_e : Block.userLabelsDisjoint fss gen_e :=
+        Block.userLabelsDisjoint_mono _ _ _ h_disj_fss_gen' h_subset_e_gen'
+      -- Apply IH to each sub-list.
+      have h_inv_rest :
+          @GenInv P gen gen_r (Block.userBlockLabels rest) bsNext :=
+        stmtsToBlocks_invariant k rest exitConts [] gen gen_r kNext bsNext h_rest_eq hwf
+          h_disj_rest_gen_r
+      have hwf_r := h_inv_rest.wf_out
+      -- Step gen_r → gen_ite has no blocks emitted: build empty GenInv.
+      have h_inv_ite_step : @GenInv P gen_r gen_ite [] [] :=
+        GenInv.empty_step gen_r gen_ite hwf_r h_step_ite
+      have hwf_ite : StringGenState.WF gen_ite := h_inv_ite_step.wf_out
+      have h_inv_then :
+          @GenInv P gen_ite gen_t (Block.userBlockLabels tss) tbs :=
+        stmtsToBlocks_invariant kNext tss exitConts [] gen_ite gen_t tl tbs h_then_eq
+          hwf_ite h_disj_tss_gen_t
+      have hwf_t := h_inv_then.wf_out
+      have h_inv_else :
+          @GenInv P gen_t gen_e (Block.userBlockLabels fss) fbs :=
+        stmtsToBlocks_invariant kNext fss exitConts [] gen_t gen_e fl fbs h_else_eq
+          hwf_t h_disj_fss_gen_e
+      have hwf_e := h_inv_else.wf_out
+      have h_inv_flush : @GenInv P gen_e gen_f [] accumBlocks :=
+        flushCmds_invariant "ite$" accum _ l_ite gen_e gen_f accumEntry accumBlocks
+          h_flush_eq hwf_e
+      -- Cross-disjointness premises for trans: extract from outer Nodup.
+      have ⟨h_te, h_tr, h_er⟩ :=
+        Block.userLabels_ite_cross_disj c tss fss md rest gen' h_disj
+      -- Compose chronologically: gen → gen_r → gen_ite → gen_t → gen_e → gen_f
+      -- Step 1: gen → gen_ite, blocks = bsNext, user = userBlockLabels rest.
+      have h_inv_r_ite :
+          @GenInv P gen gen_ite (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+        GenInv.trans gen gen_r gen_ite _ _ _ _ h_inv_rest h_inv_ite_step
+          (by intros _ _ h_in; simp at h_in)
+      have h_user_r_simp :
+          Block.userBlockLabels rest ++ ([] : List String) = Block.userBlockLabels rest := by simp
+      have h_blks_r_simp : bsNext ++ ([] : List (String × DetBlock String (Cmd P) P)) = bsNext := by simp
+      rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_ite
+      -- Step 2: gen → gen_t, blocks = bsNext ++ tbs, user = userBlockLabels rest ++ userBlockLabels tss
+      have h_inv_r_t :
+          @GenInv P gen gen_t
+            (Block.userBlockLabels rest ++ Block.userBlockLabels tss)
+            (bsNext ++ tbs) :=
+        GenInv.trans gen gen_ite gen_t _ _ _ _ h_inv_r_ite h_inv_then
+          (by intro x h_x_r h_x_t; exact h_tr x h_x_t h_x_r)
+      -- Step 3: gen → gen_e, blocks = bsNext ++ tbs ++ fbs, user = ... ++ userBlockLabels fss
+      have h_inv_r_e :
+          @GenInv P gen gen_e
+            (Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+              Block.userBlockLabels fss)
+            ((bsNext ++ tbs) ++ fbs) := by
+        apply GenInv.trans gen gen_t gen_e _ _ _ _ h_inv_r_t h_inv_else
+        intro x h_x_in h_x_f
+        rw [List.mem_append] at h_x_in
+        cases h_x_in with
+        | inl h_x_r => exact h_er x h_x_f h_x_r
+        | inr h_x_t => exact h_te x h_x_t h_x_f
+      -- Step 4: gen → gen_f, blocks = ... ++ accumBlocks, user unchanged (flush has [])
+      have h_inv_chron :
+          @GenInv P gen gen_f
+            ((Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+              Block.userBlockLabels fss) ++ [])
+            (((bsNext ++ tbs) ++ fbs) ++ accumBlocks) :=
+        GenInv.trans gen gen_e gen_f _ _ _ _ h_inv_r_e h_inv_flush
+          (by intros _ _ h_in; simp at h_in)
+      have h_user_simp :
+          Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+            Block.userBlockLabels fss ++ ([] : List String)
+          = Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+            Block.userBlockLabels fss := by simp
+      rw [h_user_simp] at h_inv_chron
+      -- Permute blocks: bsNext ++ tbs ++ fbs ++ accumBlocks ~ accumBlocks ++ tbs ++ fbs ++ bsNext
+      have h_perm_blocks :
+          (((bsNext ++ tbs) ++ fbs) ++ accumBlocks).Perm
+            (accumBlocks ++ tbs ++ fbs ++ bsNext) := by
+        -- Reassociate: ((bsNext ++ tbs) ++ fbs) ++ accumBlocks = bsNext ++ (tbs ++ fbs ++ accumBlocks)
+        -- And we want: accumBlocks ++ tbs ++ fbs ++ bsNext = (accumBlocks ++ tbs ++ fbs) ++ bsNext
+        -- These are perm via "rotate bsNext to the end".
+        have h1 : (((bsNext ++ tbs) ++ fbs) ++ accumBlocks).Perm
+                  (accumBlocks ++ ((bsNext ++ tbs) ++ fbs)) := List.perm_append_comm
+        have h2 : (accumBlocks ++ ((bsNext ++ tbs) ++ fbs)).Perm
+                  (accumBlocks ++ ((tbs ++ fbs) ++ bsNext)) :=
+          List.Perm.append_left accumBlocks (by
+            -- (bsNext ++ tbs) ++ fbs ~ (tbs ++ fbs) ++ bsNext
+            have hh1 : ((bsNext ++ tbs) ++ fbs).Perm (fbs ++ (bsNext ++ tbs)) :=
+              List.perm_append_comm
+            have hh2 : (fbs ++ (bsNext ++ tbs)).Perm (fbs ++ (tbs ++ bsNext)) :=
+              List.Perm.append_left fbs List.perm_append_comm
+            -- (tbs ++ fbs) ++ bsNext = tbs ++ fbs ++ bsNext = tbs ++ (fbs ++ bsNext)
+            -- Need to massage to fbs ++ tbs ++ bsNext. They differ.
+            -- Instead, just compute: ((bsNext ++ tbs) ++ fbs) ~ (tbs ++ fbs) ++ bsNext
+            have hh3 : (fbs ++ (tbs ++ bsNext)).Perm ((tbs ++ fbs) ++ bsNext) := by
+              -- fbs ++ tbs ++ bsNext ~ tbs ++ fbs ++ bsNext via swap of fbs/tbs
+              have a : (fbs ++ (tbs ++ bsNext)) = (fbs ++ tbs) ++ bsNext := by
+                rw [List.append_assoc]
+              have b : ((tbs ++ fbs) ++ bsNext) = (tbs ++ fbs) ++ bsNext := rfl
+              rw [a]
+              exact List.Perm.append_right bsNext List.perm_append_comm
+            exact (hh1.trans hh2).trans hh3)
+        have h3 : accumBlocks ++ ((tbs ++ fbs) ++ bsNext) = accumBlocks ++ tbs ++ fbs ++ bsNext := by
+          rw [← List.append_assoc, ← List.append_assoc]
+        exact (h1.trans h2).trans (h3 ▸ List.Perm.refl _)
+      -- The blocks in `blocks` are: accumBlocks ++ tbs ++ fbs ++ bsNext (from h_blocks_eq).
+      have h_blks : blocks = accumBlocks ++ tbs ++ fbs ++ bsNext := h_blocks_eq.symm
+      rw [h_blks, ← h_gen_eq]
+      have h_inv_perm :=
+        GenInv.perm gen gen_f _ _ _ h_inv_chron h_perm_blocks
+      -- Convert userLabels: (rest ++ tss ++ fss) ⊆ goal's userLabels = (tss ++ fss ++ rest)
+      apply GenInv.weaken_userLabels gen gen_f _ _ _ h_inv_perm
+      · -- subset
+        intro x hx
+        rw [Block.userBlockLabels_ite_cons]
+        rw [List.mem_append, List.mem_append] at hx
+        rcases hx with (h_r | h_t) | h_f
+        · exact List.mem_append.mpr (Or.inr h_r)
+        · exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h_t)))
+        · exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h_f)))
+      · -- shape on goal's userLabels (the outer ones from h_disj)
+        intro x hx
+        exact h_disj.1 x hx
+      · -- disj on goal's userLabels w.r.t. gen_f = gen'
+        intro x hx h_in
+        rw [h_gen_eq] at h_in
+        exact h_disj.2.2 x hx h_in
+      · exact h_disj.2.1
+    | nondet =>
+      -- Nondet adds an extra `gen "$__nondet_ite$"` call before flushCmds, plus an init
+      -- command in extraCmds. The structure is otherwise identical.
+      rw [h_c] at h_gen
+      simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+      generalize h_nondet_gen : StringGenState.gen "$__nondet_ite$" gen_e = r_nd at h_gen
+      obtain ⟨freshName, gen_n⟩ := r_nd
+      simp only at h_gen
+      generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$"
+        (accum ++ [HasInit.init (HasIdent.ident (P := P) freshName) HasBool.boolTy
+            ExprOrNondet.nondet synthesizedMd])
+        (.some (DetTransferCmd.condGoto
+          (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) tl fl md)) l_ite gen_n =
+        r_flush at h_gen
+      obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
+      simp only [pure, StateT.pure] at h_gen
+      have h_pair := (Prod.mk.inj h_gen).1
+      have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
+      have h_blocks_eq : accumBlocks ++ tbs ++ fbs ++ bsNext = blocks :=
+        (Prod.mk.inj h_pair).2
+      have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
+      subst h_entry_eq
+      -- GenStep chain: gen → gen_r → gen_ite → gen_t → gen_e → gen_n → gen_f
+      have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
+        kNext bsNext h_rest_eq
+      have h_step_ite : StringGenState.GenStep gen_r gen_ite := by
+        rw [show gen_ite = (StringGenState.gen "ite" gen_r).2 from
+              (by rw [h_ite_label])]
+        exact StringGenState.GenStep.of_gen "ite" gen_r
+      have h_step_then := stmtsToBlocks_genStep kNext tss exitConts [] gen_ite gen_t
+        tl tbs h_then_eq
+      have h_step_else := stmtsToBlocks_genStep kNext fss exitConts [] gen_t gen_e
+        fl fbs h_else_eq
+      have h_step_nondet : StringGenState.GenStep gen_e gen_n := by
+        rw [show gen_n = (StringGenState.gen "$__nondet_ite$" gen_e).2 from
+              (by rw [h_nondet_gen])]
+        exact StringGenState.GenStep.of_gen "$__nondet_ite$" gen_e
+      have h_step_flush : StringGenState.GenStep gen_n gen_f :=
+        flushCmds_genStep "ite$" _ _ l_ite gen_n gen_f
+          accumEntry accumBlocks h_flush_eq
+      -- Subset relations w.r.t. gen' (= gen_f)
+      have h_step_r_to_f : StringGenState.GenStep gen_r gen_f :=
+        (((h_step_ite.trans h_step_then).trans h_step_else).trans h_step_nondet).trans
+          h_step_flush
+      have h_subset_r_gen' : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact h_step_r_to_f.subset
+      have h_subset_ite_gen' : StringGenState.stringGens gen_ite ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact (((h_step_then.trans h_step_else).trans h_step_nondet).trans h_step_flush).subset
+      have h_subset_t_gen' : StringGenState.stringGens gen_t ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact ((h_step_else.trans h_step_nondet).trans h_step_flush).subset
+      have h_subset_e_gen' : StringGenState.stringGens gen_e ⊆ StringGenState.stringGens gen' := by
+        rw [← h_gen_eq]
+        exact (h_step_nondet.trans h_step_flush).subset
+      -- Disjointness of sub-statements (extracted from outer ite).
+      have h_disj_rest_gen' : Block.userLabelsDisjoint rest gen' :=
+        Block.userLabelsDisjoint_tail _ _ _ h_disj
+      have h_disj_tss_gen' : Block.userLabelsDisjoint tss gen' :=
+        Block.userLabelsDisjoint_ite_then c tss fss md rest gen' h_disj
+      have h_disj_fss_gen' : Block.userLabelsDisjoint fss gen' :=
+        Block.userLabelsDisjoint_ite_else c tss fss md rest gen' h_disj
+      have h_disj_rest_gen_r : Block.userLabelsDisjoint rest gen_r :=
+        Block.userLabelsDisjoint_mono _ _ _ h_disj_rest_gen' h_subset_r_gen'
+      have h_disj_tss_gen_t : Block.userLabelsDisjoint tss gen_t :=
+        Block.userLabelsDisjoint_mono _ _ _ h_disj_tss_gen' h_subset_t_gen'
+      have h_disj_fss_gen_e : Block.userLabelsDisjoint fss gen_e :=
+        Block.userLabelsDisjoint_mono _ _ _ h_disj_fss_gen' h_subset_e_gen'
+      -- Apply IH to each sub-list.
+      have h_inv_rest :
+          @GenInv P gen gen_r (Block.userBlockLabels rest) bsNext :=
+        stmtsToBlocks_invariant k rest exitConts [] gen gen_r kNext bsNext h_rest_eq hwf
+          h_disj_rest_gen_r
+      have hwf_r := h_inv_rest.wf_out
+      have h_inv_ite_step : @GenInv P gen_r gen_ite [] [] :=
+        GenInv.empty_step gen_r gen_ite hwf_r h_step_ite
+      have hwf_ite : StringGenState.WF gen_ite := h_inv_ite_step.wf_out
+      have h_inv_then :
+          @GenInv P gen_ite gen_t (Block.userBlockLabels tss) tbs :=
+        stmtsToBlocks_invariant kNext tss exitConts [] gen_ite gen_t tl tbs h_then_eq
+          hwf_ite h_disj_tss_gen_t
+      have hwf_t := h_inv_then.wf_out
+      have h_inv_else :
+          @GenInv P gen_t gen_e (Block.userBlockLabels fss) fbs :=
+        stmtsToBlocks_invariant kNext fss exitConts [] gen_t gen_e fl fbs h_else_eq
+          hwf_t h_disj_fss_gen_e
+      have hwf_e := h_inv_else.wf_out
+      have h_inv_nondet_step : @GenInv P gen_e gen_n [] [] :=
+        GenInv.empty_step gen_e gen_n hwf_e h_step_nondet
+      have hwf_n : StringGenState.WF gen_n := h_inv_nondet_step.wf_out
+      have h_inv_flush : @GenInv P gen_n gen_f [] accumBlocks :=
+        flushCmds_invariant "ite$" _ _ l_ite gen_n gen_f accumEntry accumBlocks
+          h_flush_eq hwf_n
+      -- Cross-disjointness premises for trans: extract from outer Nodup.
+      have ⟨h_te, h_tr, h_er⟩ :=
+        Block.userLabels_ite_cross_disj c tss fss md rest gen' h_disj
+      -- Compose chronologically
+      have h_inv_r_ite :
+          @GenInv P gen gen_ite (Block.userBlockLabels rest ++ []) (bsNext ++ []) :=
+        GenInv.trans gen gen_r gen_ite _ _ _ _ h_inv_rest h_inv_ite_step
+          (by intros _ _ h_in; simp at h_in)
+      have h_user_r_simp :
+          Block.userBlockLabels rest ++ ([] : List String) = Block.userBlockLabels rest := by simp
+      have h_blks_r_simp : bsNext ++ ([] : List (String × DetBlock String (Cmd P) P)) = bsNext := by simp
+      rw [h_user_r_simp, h_blks_r_simp] at h_inv_r_ite
+      have h_inv_r_t :
+          @GenInv P gen gen_t
+            (Block.userBlockLabels rest ++ Block.userBlockLabels tss)
+            (bsNext ++ tbs) :=
+        GenInv.trans gen gen_ite gen_t _ _ _ _ h_inv_r_ite h_inv_then
+          (by intro x h_x_r h_x_t; exact h_tr x h_x_t h_x_r)
+      have h_inv_r_e :
+          @GenInv P gen gen_e
+            (Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+              Block.userBlockLabels fss)
+            ((bsNext ++ tbs) ++ fbs) := by
+        apply GenInv.trans gen gen_t gen_e _ _ _ _ h_inv_r_t h_inv_else
+        intro x h_x_in h_x_f
+        rw [List.mem_append] at h_x_in
+        cases h_x_in with
+        | inl h_x_r => exact h_er x h_x_f h_x_r
+        | inr h_x_t => exact h_te x h_x_t h_x_f
+      -- Step 4: gen → gen_n via empty step
+      have h_inv_r_n :
+          @GenInv P gen gen_n
+            ((Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+              Block.userBlockLabels fss) ++ [])
+            (((bsNext ++ tbs) ++ fbs) ++ []) :=
+        GenInv.trans gen gen_e gen_n _ _ _ _ h_inv_r_e h_inv_nondet_step
+          (by intros _ _ h_in; simp at h_in)
+      have h_user_simp_n :
+          Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+            Block.userBlockLabels fss ++ ([] : List String)
+          = Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+            Block.userBlockLabels fss := by simp
+      have h_blks_simp_n :
+          (bsNext ++ tbs) ++ fbs ++ ([] : List (String × DetBlock String (Cmd P) P))
+          = (bsNext ++ tbs) ++ fbs := by simp
+      rw [h_user_simp_n, h_blks_simp_n] at h_inv_r_n
+      -- Step 5: gen → gen_f via flush
+      have h_inv_chron :
+          @GenInv P gen gen_f
+            ((Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+              Block.userBlockLabels fss) ++ [])
+            (((bsNext ++ tbs) ++ fbs) ++ accumBlocks) :=
+        GenInv.trans gen gen_n gen_f _ _ _ _ h_inv_r_n h_inv_flush
+          (by intros _ _ h_in; simp at h_in)
+      have h_user_simp :
+          Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+            Block.userBlockLabels fss ++ ([] : List String)
+          = Block.userBlockLabels rest ++ Block.userBlockLabels tss ++
+            Block.userBlockLabels fss := by simp
+      rw [h_user_simp] at h_inv_chron
+      -- Permute blocks: identical to det case
+      have h_perm_blocks :
+          (((bsNext ++ tbs) ++ fbs) ++ accumBlocks).Perm
+            (accumBlocks ++ tbs ++ fbs ++ bsNext) := by
+        have h1 : (((bsNext ++ tbs) ++ fbs) ++ accumBlocks).Perm
+                  (accumBlocks ++ ((bsNext ++ tbs) ++ fbs)) := List.perm_append_comm
+        have h2 : (accumBlocks ++ ((bsNext ++ tbs) ++ fbs)).Perm
+                  (accumBlocks ++ ((tbs ++ fbs) ++ bsNext)) :=
+          List.Perm.append_left accumBlocks (by
+            have hh1 : ((bsNext ++ tbs) ++ fbs).Perm (fbs ++ (bsNext ++ tbs)) :=
+              List.perm_append_comm
+            have hh2 : (fbs ++ (bsNext ++ tbs)).Perm (fbs ++ (tbs ++ bsNext)) :=
+              List.Perm.append_left fbs List.perm_append_comm
+            have hh3 : (fbs ++ (tbs ++ bsNext)).Perm ((tbs ++ fbs) ++ bsNext) := by
+              have a : (fbs ++ (tbs ++ bsNext)) = (fbs ++ tbs) ++ bsNext := by
+                rw [List.append_assoc]
+              rw [a]
+              exact List.Perm.append_right bsNext List.perm_append_comm
+            exact (hh1.trans hh2).trans hh3)
+        have h3 : accumBlocks ++ ((tbs ++ fbs) ++ bsNext) = accumBlocks ++ tbs ++ fbs ++ bsNext := by
+          rw [← List.append_assoc, ← List.append_assoc]
+        exact (h1.trans h2).trans (h3 ▸ List.Perm.refl _)
+      have h_blks : blocks = accumBlocks ++ tbs ++ fbs ++ bsNext := h_blocks_eq.symm
+      rw [h_blks, ← h_gen_eq]
+      have h_inv_perm :=
+        GenInv.perm gen gen_f _ _ _ h_inv_chron h_perm_blocks
+      apply GenInv.weaken_userLabels gen gen_f _ _ _ h_inv_perm
+      · intro x hx
+        rw [Block.userBlockLabels_ite_cons]
+        rw [List.mem_append, List.mem_append] at hx
+        rcases hx with (h_r | h_t) | h_f
+        · exact List.mem_append.mpr (Or.inr h_r)
+        · exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h_t)))
+        · exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h_f)))
+      · intro x hx
+        exact h_disj.1 x hx
+      · intro x hx h_in
+        rw [h_gen_eq] at h_in
+        exact h_disj.2.2 x hx h_in
+      · exact h_disj.2.1
   | .loop c m is bss md :: rest =>
     -- Most complex: nested matches on m and c, mapM over invariants.
     sorry
