@@ -3625,8 +3625,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
   | .exit label md :: rest =>
     sorry
   | .funcDecl decl md :: rest =>
-    -- funcDecl changes the evaluator — requires additional reasoning
-    sorry
+    -- Precluded by h_nofd : Block.noFuncDecl ss = true
+    simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd
   | .typeDecl tc md :: rest =>
     unfold stmtsToBlocks at h_gen
     -- typeDecl is a no-op; structured semantics steps to terminal with unchanged env
