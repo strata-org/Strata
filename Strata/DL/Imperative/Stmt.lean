@@ -376,25 +376,23 @@ mutual
     `Stmt.definedVars s` is disjoint from `outer`. -/
 @[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
     [HasVarsPure P C] [DecidableEq P.Ident]
-    (outer : List P.Ident) (s : Stmt P C) : Bool :=
+    (outer : P.Ident → Bool) (s : Stmt P C) : Bool :=
   match s with
   | .cmd c =>
-    -- All reads/writes of `c` lie in `outer ∪ definedVars c`; new declarations
-    -- of `c` don't shadow `outer`.
     (HasVarsPure.getVars (P := P) c).all (fun n =>
-      decide (n ∈ outer) || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
+      outer n || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
     (HasVarsImp.modifiedVars (P := P) c).all (fun n =>
-      decide (n ∈ outer) || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
-    (HasVarsImp.definedVars (P := P) c).all (fun n => decide (n ∉ outer))
+      outer n || decide (n ∈ HasVarsImp.definedVars (P := P) c)) &&
+    (HasVarsImp.definedVars (P := P) c).all (fun n => !outer n)
   | .block _ bss _ => Block.defUseWellFormed outer bss
   | .ite cond tbss ebss _ =>
-    cond.getVars.all (fun n => decide (n ∈ outer)) &&
+    cond.getVars.all (fun n => outer n) &&
     Block.defUseWellFormed outer tbss && Block.defUseWellFormed outer ebss
   | .loop guard measure invariants body _ =>
-    guard.getVars.all (fun n => decide (n ∈ outer)) &&
-    ((measure.map HasVarsPure.getVars).getD []).all (fun n => decide (n ∈ outer)) &&
+    guard.getVars.all (fun n => outer n) &&
+    ((measure.map HasVarsPure.getVars).getD []).all (fun n => outer n) &&
     (invariants.flatMap fun lp => HasVarsPure.getVars lp.2).all
-      (fun n => decide (n ∈ outer)) &&
+      (fun n => outer n) &&
     Block.defUseWellFormed outer body
   | .exit _ _ => true
   | .funcDecl _ _ => false
@@ -402,12 +400,12 @@ mutual
 
 @[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
     [HasVarsPure P C] [DecidableEq P.Ident]
-    (outer : List P.Ident) (bss : Block P C) : Bool :=
+    (outer : P.Ident → Bool) (bss : Block P C) : Bool :=
   match bss with
   | [] => true
   | s :: rest =>
     Stmt.defUseWellFormed outer s &&
-      Block.defUseWellFormed (outer ++ Stmt.definedVars s) rest
+      Block.defUseWellFormed (fun n => outer n || decide (n ∈ Stmt.definedVars s)) rest
 end
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
@@ -419,7 +417,6 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
-  -- order matters for Havoc, so needs to override the default
   modifiedOrDefinedVars := Block.modifiedOrDefinedVars
 
 ---------------------------------------------------------------------

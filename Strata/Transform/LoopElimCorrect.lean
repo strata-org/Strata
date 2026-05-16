@@ -3055,24 +3055,18 @@ private theorem loop_invariant_dichotomy_det
             · simp at hxsome'
           exact hswf₀.reservedFresh x hρ₀_some p hp
         · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
-          obtain ⟨outer, hiff, hwf⟩ := hswf₀.defUseOk
-          refine ⟨outer, fun itm => ?_, hwf⟩
-          constructor
-          · intro hmem
-            have hsome₀ := (hiff itm).mp hmem
-            rw [hρ₁_eq']
-            show (projectStore ρ₀.store ρ_inner.store itm).isSome
-            simp only [projectStore, if_pos hsome₀]
-            have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-            simpa [Config.getEnv] using this
-          · intro hsome₁
-            rw [hρ₁_eq'] at hsome₁
-            show itm ∈ outer
-            have hsome₁' : (projectStore ρ₀.store ρ_inner.store itm).isSome := hsome₁
-            simp only [projectStore] at hsome₁'
-            split at hsome₁'
-            · exact (hiff itm).mpr ‹_›
-            · simp at hsome₁'
+          have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
+            funext itm
+            simp only [hρ₁_eq', projectStore]
+            split
+            · next hsome₀ =>
+              have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
+              simp [Config.getEnv] at this
+              simp [this, hsome₀]
+            · next hns =>
+              simp [Bool.eq_false_iff.mpr hns]
+          rw [heq_pred]
+          exact hswf₀.defUseOk
       -- Length bound for h_loop relative to n.
       have hrest_len : hrest.len ≤ n := by
         have hh : 1 + hrest.len ≤ n + 1 := hlen
@@ -3327,23 +3321,19 @@ private theorem loop_invariant_dichotomy_nondet
           · assumption
           · simp at hxsome'
         exact hswf₀.reservedFresh x hρ₀_some p hp
-      · obtain ⟨outer, hiff, hwf⟩ := hswf₀.defUseOk
-        refine ⟨outer, fun itm => ?_, hwf⟩
-        constructor
-        · intro hmem
-          have hsome₀ := (hiff itm).mp hmem
-          rw [hρ₁_eq']
-          show (projectStore ρ₀.store ρ_inner.store itm).isSome
-          simp only [projectStore, if_pos hsome₀]
-          have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-          simpa [Config.getEnv] using this
-        · intro hsome₁
-          rw [hρ₁_eq'] at hsome₁
-          have hsome₁' : (projectStore ρ₀.store ρ_inner.store itm).isSome := hsome₁
-          simp only [projectStore] at hsome₁'
-          split at hsome₁'
-          · exact (hiff itm).mpr ‹_›
-          · simp at hsome₁'
+      · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
+        have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
+          funext itm
+          simp only [hρ₁_eq', projectStore]
+          split
+          · next hsome₀ =>
+            have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
+            simp [Config.getEnv] at this
+            simp [this, hsome₀]
+          · next hns =>
+            simp [Bool.eq_false_iff.mpr hns]
+        rw [heq_pred]
+        exact hswf₀.defUseOk
     -- Build a length bound for h_loop relative to n.
     have hloop_len : h_loop.len ≤ n := by
       have h1 : h_loop_raw.len ≤ h_tail.len := by
@@ -3592,23 +3582,19 @@ private theorem loop_det_exiting_body_exit
                 · assumption
                 · simp at hxsome'
               exact hswf₀.reservedFresh x hρ₀_some p hp
-            · obtain ⟨outer, hiff, hwf⟩ := hswf₀.defUseOk
-              refine ⟨outer, fun itm => ?_, hwf⟩
-              constructor
-              · intro hmem
-                have hsome₀ := (hiff itm).mp hmem
-                rw [hρ₁_eq']
-                show (projectStore ρ₀.store ρ_inner.store itm).isSome
-                simp only [projectStore, if_pos hsome₀]
-                have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-                simpa [Config.getEnv] using this
-              · intro hsome₁
-                rw [hρ₁_eq'] at hsome₁
-                have hsome₁' : (projectStore ρ₀.store ρ_inner.store itm).isSome := hsome₁
-                simp only [projectStore] at hsome₁'
-                split at hsome₁'
-                · exact (hiff itm).mpr ‹_›
-                · simp at hsome₁'
+            · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
+              have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
+                funext itm
+                simp only [hρ₁_eq', projectStore]
+                split
+                · next hsome₀ =>
+                  have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
+                  simp [Config.getEnv] at this
+                  simp [this, hsome₀]
+                · next hns =>
+                  simp [Bool.eq_false_iff.mpr hns]
+              rw [heq_pred]
+              exact hswf₀.defUseOk
           -- Length bound for h_loop ≤ n.
           have hloop_len : h_loop.len ≤ n := by
             have h1 : h_loop.len ≤ h_tail.len := by
@@ -3795,23 +3781,19 @@ private theorem loop_nondet_exiting_body_exit
               · assumption
               · simp at hxsome'
             exact hswf₀.reservedFresh x hρ₀_some p hp
-          · obtain ⟨outer, hiff, hwf⟩ := hswf₀.defUseOk
-            refine ⟨outer, fun itm => ?_, hwf⟩
-            constructor
-            · intro hmem
-              have hsome₀ := (hiff itm).mp hmem
-              rw [hρ₁_eq']
-              show (projectStore ρ₀.store ρ_inner.store itm).isSome
-              simp only [projectStore, if_pos hsome₀]
-              have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-              simpa [Config.getEnv] using this
-            · intro hsome₁
-              rw [hρ₁_eq'] at hsome₁
-              have hsome₁' : (projectStore ρ₀.store ρ_inner.store itm).isSome := hsome₁
-              simp only [projectStore] at hsome₁'
-              split at hsome₁'
-              · exact (hiff itm).mpr ‹_›
-              · simp at hsome₁'
+          · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
+            have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
+              funext itm
+              simp only [hρ₁_eq', projectStore]
+              split
+              · next hsome₀ =>
+                have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
+                simp [Config.getEnv] at this
+                simp [this, hsome₀]
+              · next hns =>
+                simp [Bool.eq_false_iff.mpr hns]
+            rw [heq_pred]
+            exact hswf₀.defUseOk
         -- Length bound.
         have hloop_len : h_loop.len ≤ n := by
           have h1 : h_loop.len ≤ h_tail.len := by
@@ -5069,14 +5051,23 @@ Helpers to extract `BlockInitEnvWF`/`InitEnvWF` of sub-pieces from a parent
 
 /-! ### `defUseWellFormed` projection helpers -/
 
+/-- Extensional congruence for blocks. -/
+private theorem defUseWellFormed_block_congr {outer₁ outer₂ : Expression.Ident → Bool}
+    (heq : ∀ n, outer₁ n = outer₂ n) (bss : Statements) :
+    Block.defUseWellFormed outer₁ bss = Block.defUseWellFormed outer₂ bss := by
+  have hf : outer₁ = outer₂ := funext heq
+  rw [hf]
+
+
+
 /-- Project `Stmt.defUseWellFormed outer (.block l bss md) = Block.defUseWellFormed outer bss`. -/
-private theorem defUseWellFormed_block (outer : List Expression.Ident) (l : String)
+private theorem defUseWellFormed_block (outer : Expression.Ident → Bool) (l : String)
     (bss : Statements) (md : MetaData Expression) :
     Stmt.defUseWellFormed outer (.block l bss md) = Block.defUseWellFormed outer bss := by
   unfold Stmt.defUseWellFormed; rfl
 
 /-- From a true `defUseWellFormed` for an `.ite`, project both branches. -/
-private theorem defUseWellFormed_ite_branches {outer : List Expression.Ident}
+private theorem defUseWellFormed_ite_branches {outer : Expression.Ident → Bool}
     {c : ExprOrNondet Expression} {tss ess : Statements} {md : MetaData Expression}
     (h : Stmt.defUseWellFormed outer (.ite c tss ess md) = Bool.true) :
     Block.defUseWellFormed outer tss = Bool.true ∧
@@ -5087,11 +5078,11 @@ private theorem defUseWellFormed_ite_branches {outer : List Expression.Ident}
 
 /-- From a true `defUseWellFormed` on `s :: ss`, project the head and tail
     (with the tail seen against an extended outer scope). -/
-private theorem defUseWellFormed_cons {outer : List Expression.Ident}
+private theorem defUseWellFormed_cons {outer : Expression.Ident → Bool}
     {s : Statement} {ss : Statements}
     (h : Block.defUseWellFormed outer (s :: ss) = Bool.true) :
     Stmt.defUseWellFormed outer s = Bool.true ∧
-    Block.defUseWellFormed (outer ++ Stmt.definedVars s) ss = Bool.true := by
+    Block.defUseWellFormed (fun n => outer n || decide (n ∈ Stmt.definedVars s)) ss = Bool.true := by
   unfold Block.defUseWellFormed at h
   simp only [Bool.and_eq_true] at h
   exact h
@@ -5099,10 +5090,10 @@ private theorem defUseWellFormed_cons {outer : List Expression.Ident}
 mutual
 /-- `Stmt.defUseWellFormed outer s = true` implies `definedVars s` is disjoint from `outer`. -/
 private theorem defUseWellFormed_definedVars_disjoint_outer
-    {outer : List Expression.Ident} {s : Statement}
+    {outer : Expression.Ident → Bool} {s : Statement}
     (h : Stmt.defUseWellFormed outer s = Bool.true) :
-    ∀ m ∈ Stmt.definedVars s, m ∉ outer := by
-  intro m hm hno
+    ∀ m ∈ Stmt.definedVars s, outer m = Bool.false := by
+  intro m hm
   match s with
   | .cmd c =>
     unfold Stmt.defUseWellFormed at h
@@ -5110,25 +5101,25 @@ private theorem defUseWellFormed_definedVars_disjoint_outer
     have h3 := h.2
     have hm' : m ∈ HasVarsImp.definedVars (P := Expression) c := hm
     have := h3 m hm'
-    simp at this
-    exact absurd hno this
+    simp [Bool.not_eq_true] at this
+    exact this
   | .block l bss md =>
     have hb : Block.defUseWellFormed outer bss = Bool.true := by
       rw [defUseWellFormed_block] at h; exact h
     have hm' : m ∈ Block.definedVars bss := hm
-    exact defUseWellFormed_block_definedVars_disjoint_outer hb m hm' hno
+    exact defUseWellFormed_block_definedVars_disjoint_outer hb m hm'
   | .ite c tss ess md =>
     have ⟨ht, he⟩ := defUseWellFormed_ite_branches h
     have hm' : m ∈ Block.definedVars tss ++ Block.definedVars ess := hm
     rcases List.mem_append.mp hm' with hin | hin
-    · exact defUseWellFormed_block_definedVars_disjoint_outer ht m hin hno
-    · exact defUseWellFormed_block_definedVars_disjoint_outer he m hin hno
+    · exact defUseWellFormed_block_definedVars_disjoint_outer ht m hin
+    · exact defUseWellFormed_block_definedVars_disjoint_outer he m hin
   | .loop g me inv body md =>
     unfold Stmt.defUseWellFormed at h
     simp only [Bool.and_eq_true] at h
     have hb : Block.defUseWellFormed outer body = Bool.true := h.2
     have hm' : m ∈ Block.definedVars body := hm
-    exact defUseWellFormed_block_definedVars_disjoint_outer hb m hm' hno
+    exact defUseWellFormed_block_definedVars_disjoint_outer hb m hm'
   | .exit l md => exact (List.not_mem_nil hm).elim
   | .funcDecl d md =>
     exact absurd h (by simp [Stmt.defUseWellFormed])
@@ -5136,41 +5127,44 @@ private theorem defUseWellFormed_definedVars_disjoint_outer
 
 /-- `Block.defUseWellFormed outer bss = true` implies `definedVars bss` is disjoint from `outer`. -/
 private theorem defUseWellFormed_block_definedVars_disjoint_outer
-    {outer : List Expression.Ident} {bss : Statements}
+    {outer : Expression.Ident → Bool} {bss : Statements}
     (h : Block.defUseWellFormed outer bss = Bool.true) :
-    ∀ m ∈ Block.definedVars bss, m ∉ outer := by
-  intro m hm hno
+    ∀ m ∈ Block.definedVars bss, outer m = Bool.false := by
+  intro m hm
   match bss with
   | [] => exact (List.not_mem_nil hm).elim
   | s :: rest =>
     have ⟨hhd, htl⟩ := defUseWellFormed_cons h
     have hm' : m ∈ Stmt.definedVars s ++ Block.definedVars rest := hm
     rcases List.mem_append.mp hm' with hin | hin
-    · exact defUseWellFormed_definedVars_disjoint_outer hhd m hin hno
+    · exact defUseWellFormed_definedVars_disjoint_outer hhd m hin
     · -- recurse with extended outer
-      have h_ext_no := defUseWellFormed_block_definedVars_disjoint_outer htl m hin
-      exact h_ext_no (List.mem_append_left _ hno)
+      have h_ext := defUseWellFormed_block_definedVars_disjoint_outer htl m hin
+      simp only [Bool.or_eq_false_iff] at h_ext
+      exact h_ext.1
 end
 
 /-- A defUse-WF block of statements never declares the same variable twice
     across the head/tail boundary. -/
-private theorem defUseWellFormed_cons_disjoint {outer : List Expression.Ident}
+private theorem defUseWellFormed_cons_disjoint {outer : Expression.Ident → Bool}
     {s : Statement} {ss : Statements}
     (h : Block.defUseWellFormed outer (s :: ss) = Bool.true)
     (n : Expression.Ident)
     (hs : n ∈ Stmt.definedVars s)
     (hss : n ∈ Block.definedVars ss) : False := by
   have ⟨_, htail⟩ := defUseWellFormed_cons h
-  exact defUseWellFormed_block_definedVars_disjoint_outer htail n hss
-    (List.mem_append_right _ hs)
+  have h_ext := defUseWellFormed_block_definedVars_disjoint_outer htail n hss
+  simp only [Bool.or_eq_false_iff] at h_ext
+  have h2 : decide (n ∈ Stmt.definedVars s) = Bool.false := h_ext.2
+  exact absurd hs (of_decide_eq_false h2)
 
 mutual
 /-- `Stmt.defUseWellFormed outer s = true` implies that any variable touched
-    by `s` outside its `definedVars` is in `outer`. -/
+    by `s` outside its `definedVars` has `outer n = true`. -/
 private theorem defUseWellFormed_touchedVars_subset
-    {outer : List Expression.Ident} {s : Statement}
+    {outer : Expression.Ident → Bool} {s : Statement}
     (h : Stmt.defUseWellFormed outer s = Bool.true) :
-    ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s → n ∈ outer := by
+    ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s → outer n = Bool.true := by
   intro n hn hnd
   match s with
   | .cmd c =>
@@ -5229,8 +5223,7 @@ private theorem defUseWellFormed_touchedVars_subset
     · -- n ∈ c.getVars ++ Block.getVars tss ++ Block.getVars ess
       rcases List.mem_append.mp hgv' with hgvc_or_t | hgve
       · rcases List.mem_append.mp hgvc_or_t with hgvc | hgvt
-        · have := hgv n hgvc
-          exact of_decide_eq_true this
+        · exact hgv n hgvc
         · have hnt : n ∈ Block.touchedVars tss := List.mem_append_right _ hgvt
           exact defUseWellFormed_block_touchedVars_subset ht_wf n hnt hnd_t
       · have hne : n ∈ Block.touchedVars ess := List.mem_append_right _ hgve
@@ -5263,9 +5256,9 @@ private theorem defUseWellFormed_touchedVars_subset
       rcases List.mem_append.mp hgv' with hg_m_inv | hbg
       · rcases List.mem_append.mp hg_m_inv with hg_m | hi
         · rcases List.mem_append.mp hg_m with hgg' | hgm'
-          · exact of_decide_eq_true (hgg n hgg')
-          · exact of_decide_eq_true (hgm n hgm')
-        · exact of_decide_eq_true (hgi n hi)
+          · exact hgg n hgg'
+          · exact hgm n hgm'
+        · exact hgi n hi
       · have hnb : n ∈ Block.touchedVars body := List.mem_append_right _ hbg
         exact defUseWellFormed_block_touchedVars_subset hb_wf n hnb hnd_b
   | .exit l md =>
@@ -5279,11 +5272,11 @@ private theorem defUseWellFormed_touchedVars_subset
     exact (List.not_mem_nil hn).elim
 
 /-- `Block.defUseWellFormed outer bss = true` implies that any variable touched
-    by `bss` outside its `definedVars` is in `outer`. -/
+    by `bss` outside its `definedVars` has `outer n = true`. -/
 private theorem defUseWellFormed_block_touchedVars_subset
-    {outer : List Expression.Ident} {bss : Statements}
+    {outer : Expression.Ident → Bool} {bss : Statements}
     (h : Block.defUseWellFormed outer bss = Bool.true) :
-    ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss → n ∈ outer := by
+    ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss → outer n = Bool.true := by
   intro n hn hnd
   match bss with
   | [] => exact (List.not_mem_nil hn).elim
@@ -5307,10 +5300,10 @@ private theorem defUseWellFormed_block_touchedVars_subset
       · -- n ∈ modifiedOrDefinedVars rest
         have hnr : n ∈ Block.touchedVars rest := List.mem_append_left _ hmr
         have h_ext := defUseWellFormed_block_touchedVars_subset htl n hnr hnd_r
-        -- h_ext : n ∈ outer ++ Stmt.definedVars s.  We want n ∈ outer.
-        rcases List.mem_append.mp h_ext with hin | hds
+        simp only [Bool.or_eq_true] at h_ext
+        rcases h_ext with hin | hds
         · exact hin
-        · exact (hnd_s hds).elim
+        · exact (hnd_s (of_decide_eq_true hds)).elim
     · rcases List.mem_append.mp hgv with hgs | hgr
       · -- n ∈ getVars s
         have hns : n ∈ Stmt.touchedVars s := List.mem_append_right _ hgs
@@ -5318,9 +5311,10 @@ private theorem defUseWellFormed_block_touchedVars_subset
       · -- n ∈ getVars rest
         have hnr : n ∈ Block.touchedVars rest := List.mem_append_right _ hgr
         have h_ext := defUseWellFormed_block_touchedVars_subset htl n hnr hnd_r
-        rcases List.mem_append.mp h_ext with hin | hds
+        simp only [Bool.or_eq_true] at h_ext
+        rcases h_ext with hin | hds
         · exact hin
-        · exact (hnd_s hds).elim
+        · exact (hnd_s (of_decide_eq_true hds)).elim
 end
 
 /-- `BlockInitEnvWF bss` follows from `InitEnvWF (.block l bss md)`: the block
@@ -5361,9 +5355,9 @@ private theorem InitEnvWF.toBlock_block {reserved : List String} {l : String}
   evalCong := h.evalCong
   exprCongr := h.exprCongr
   defUseOk := by
-    obtain ⟨outer, hiff, hwf⟩ := h.defUseOk
+    have hwf := h.defUseOk
     rw [defUseWellFormed_block] at hwf
-    exact ⟨outer, hiff, hwf⟩
+    exact hwf
 
 /-- For ite: `BlockInitEnvWF tss` follows from `InitEnvWF (.ite c tss ess md)`,
     when `Block.definedVars ess` is disjoint from `Block.touchedVars tss \ Block.definedVars tss`.
@@ -5401,9 +5395,7 @@ private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
   wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
-  defUseOk := by
-    obtain ⟨outer, hiff, hwf⟩ := h.defUseOk
-    exact ⟨outer, hiff, (defUseWellFormed_ite_branches hwf).1⟩
+  defUseOk := (defUseWellFormed_ite_branches h.defUseOk).1
 
 private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
     {c : ExprOrNondet Expression}
@@ -5437,9 +5429,7 @@ private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
   wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
-  defUseOk := by
-    obtain ⟨outer, hiff, hwf⟩ := h.defUseOk
-    exact ⟨outer, hiff, (defUseWellFormed_ite_branches hwf).2⟩
+  defUseOk := (defUseWellFormed_ite_branches h.defUseOk).2
 
 /-- `InitEnvWF s` follows from `BlockInitEnvWF (s :: ss)`, when
     `Block.definedVars ss` is disjoint from `Stmt.touchedVars s \ Stmt.definedVars s`.  -/
@@ -5473,9 +5463,40 @@ private theorem BlockInitEnvWF.toStmt_head {reserved : List String} {s : Stateme
   wfVar  := h.wfVar
   evalCong := h.evalCong
   exprCongr := h.exprCongr
-  defUseOk := by
-    obtain ⟨outer, hiff, hwf⟩ := h.defUseOk
-    exact ⟨outer, hiff, (defUseWellFormed_cons hwf).1⟩
+  defUseOk := (defUseWellFormed_cons h.defUseOk).1
+
+/-- Any variable that becomes `isSome` after executing `s` (from `isNone` before)
+    must be in `Stmt.definedVars s`. -/
+private theorem newVars_in_definedVars {s : Statement} {ρ₀ ρ₁ : Env Expression}
+    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
+    (hrwd : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s → (ρ₀.store n).isSome) :
+    ∀ n, (ρ₁.store n).isSome → (ρ₀.store n).isNone → n ∈ Stmt.definedVars s := by
+  intro n hsome₁ hnone₀
+  by_cases hnd : n ∈ Stmt.definedVars s
+  · exact hnd
+  · exfalso
+    by_cases hn_touched : n ∈ Stmt.touchedVars s
+    · have hsome₀ := hrwd n hn_touched hnd
+      simp only [Option.isNone_iff_eq_none] at hnone₀
+      simp only [Option.isSome_iff_ne_none, hnone₀] at hsome₀
+      exact hsome₀ rfl
+    · have hx : n ∉ Config.touchedVarsSet (.stmt s ρ₀) := by
+        intro hmem
+        apply hn_touched
+        show n ∈ Stmt.modifiedOrDefinedVars s ++ Stmt.getVars s
+        apply List.mem_append_left
+        have hmem' : n ∈ Stmt.modifiedVars s ++ Stmt.definedVars s := hmem
+        rcases List.mem_append.mp hmem' with hmod | hdef
+        · exact (modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s)).1
+            s (Nat.le_refl _) n hmod
+        · exact (definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s)).1
+            s (Nat.le_refl _) n hdef
+      have hframe := star_preserves_store_outside_touchedVars_isNone (π := π) (φ := φ)
+        hstar n (by simp only [Config.getEnv]; exact hnone₀) hx
+      simp only [Config.getEnv] at hframe
+      rw [hframe] at hsome₁
+      simp only [Option.isNone_iff_eq_none] at hnone₀
+      simp [hnone₀] at hsome₁
 
 /-- `BlockInitEnvWF ss ρ₁` follows from `BlockInitEnvWF (s :: ss) ρ₀` after `s`
     ran from `ρ₀` to `ρ₁`.  This version takes all needed assumptions as
@@ -5571,41 +5592,31 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
         s ρ₀ ρ₁ hnofd_s hstar
     rw [heval]; exact h.exprCongr
   defUseOk := by
-    obtain ⟨outer, hiff, hwf⟩ := h.defUseOk
-    have ⟨_, htail⟩ := defUseWellFormed_cons hwf
-    refine ⟨outer ++ Stmt.definedVars s, fun itm => ?_, htail⟩
-    constructor
-    · intro hmem
-      rcases List.mem_append.mp hmem with hin_outer | hin_def
-      · have hsome₀ := (hiff itm).mp hin_outer
-        have := stmt_star_preserves_isSome (π := π) (φ := φ) s ρ₀ _ hstar itm hsome₀
-        simpa [Config.getEnv] using this
-      · sorry -- itm ∈ definedVars s → (ρ₁.store itm).isSome (s introduced it)
-    · intro hsome₁
-      by_cases hsome₀ : (ρ₀.store itm).isSome
-      · exact List.mem_append_left _ ((hiff itm).mpr hsome₀)
-      · have hnone : (ρ₀.store itm).isNone := by
-          simp [Option.isNone_iff_eq_none, Option.not_isSome_iff_eq_none] at hsome₀ ⊢
-          exact hsome₀
-        exact List.mem_append_right _ (hnewVars_in_def itm hsome₁ hnone)
+    have ⟨_, htail⟩ := defUseWellFormed_cons h.defUseOk
+    rw [defUseWellFormed_block_congr (fun n => ?_) ss] at htail
+    · exact htail
+    · -- show (ρ₁.store n).isSome = ((ρ₀.store n).isSome || decide (n ∈ Stmt.definedVars s))
+      -- Requires: n ∈ definedVars s → (ρ₁.store n).isSome (terminating execution
+      -- initializes all declared vars). Not yet proven generically.
+      sorry
 
 /-! ### Bridges from `defUseOk` to disjointness preconditions -/
 
 /-- From `BlockInitEnvWF` on `s :: ss`, derive the disjointness precondition
-    needed by `BlockInitEnvWF.toStmt_head`.  The argument is to instantiate
-    `defUseOk` with `outer := { n | (ρ.store n).isSome }`, then chain through
-    the cons / touchedVars-subset projections. -/
+    needed by `BlockInitEnvWF.toStmt_head`.  The argument uses `defUseOk` then
+    chains through the cons / touchedVars-subset projections. -/
 private theorem BlockInitEnvWF.cons_head_disjoint {reserved : List String}
     {s : Statement} {ss : Statements} {ρ : Env Expression}
     (h : BlockInitEnvWF reserved (s :: ss) ρ) :
     ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s →
       n ∉ Block.definedVars ss := by
   intro n hn hnd hin_ss
-  obtain ⟨outer, _hiff, hdef⟩ := h.defUseOk
-  have ⟨hhead, htail⟩ := defUseWellFormed_cons hdef
+  have ⟨hhead, htail⟩ := defUseWellFormed_cons h.defUseOk
   have hin_outer := defUseWellFormed_touchedVars_subset hhead n hn hnd
-  have := defUseWellFormed_block_definedVars_disjoint_outer htail n hin_ss
-  exact this (List.mem_append_left _ hin_outer)
+  have hfalse := defUseWellFormed_block_definedVars_disjoint_outer htail n hin_ss
+  simp only [Bool.or_eq_false_iff] at hfalse
+  rw [hfalse.1] at hin_outer
+  exact Bool.noConfusion hin_outer
 
 /-- From `InitEnvWF` on `.ite c tss ess md`, derive the disjointness
     precondition needed by `InitEnvWF.toBlock_ite_left`. -/
@@ -5616,10 +5627,11 @@ private theorem InitEnvWF.ite_left_disjoint {reserved : List String}
     ∀ n ∈ Block.touchedVars tss, n ∉ Block.definedVars tss →
       n ∉ Block.definedVars ess := by
   intro n hn hnd hin_ess
-  obtain ⟨outer, _hiff, hdef⟩ := h.defUseOk
-  have ⟨ht_wf, he_wf⟩ := defUseWellFormed_ite_branches hdef
+  have ⟨ht_wf, he_wf⟩ := defUseWellFormed_ite_branches h.defUseOk
   have hin_outer := defUseWellFormed_block_touchedVars_subset ht_wf n hn hnd
-  exact (defUseWellFormed_block_definedVars_disjoint_outer he_wf n hin_ess) hin_outer
+  have hfalse := defUseWellFormed_block_definedVars_disjoint_outer he_wf n hin_ess
+  rw [hfalse] at hin_outer
+  exact Bool.noConfusion hin_outer
 
 /-- From `InitEnvWF` on `.ite c tss ess md`, derive the disjointness
     precondition needed by `InitEnvWF.toBlock_ite_right`. -/
@@ -5630,10 +5642,11 @@ private theorem InitEnvWF.ite_right_disjoint {reserved : List String}
     ∀ n ∈ Block.touchedVars ess, n ∉ Block.definedVars ess →
       n ∉ Block.definedVars tss := by
   intro n hn hnd hin_tss
-  obtain ⟨outer, _hiff, hdef⟩ := h.defUseOk
-  have ⟨ht_wf, he_wf⟩ := defUseWellFormed_ite_branches hdef
+  have ⟨ht_wf, he_wf⟩ := defUseWellFormed_ite_branches h.defUseOk
   have hin_outer := defUseWellFormed_block_touchedVars_subset he_wf n hn hnd
-  exact (defUseWellFormed_block_definedVars_disjoint_outer ht_wf n hin_tss) hin_outer
+  have hfalse := defUseWellFormed_block_definedVars_disjoint_outer ht_wf n hin_tss
+  rw [hfalse] at hin_outer
+  exact Bool.noConfusion hin_outer
 
 /-! ## Simulation -/
 

@@ -74,15 +74,8 @@ structure InitEnvWF (reserved : List String) (s : Statement) (ρ : Env Expressio
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   evalCong : WellFormedCoreEvalCong ρ.eval
   exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
-  /-- The statement is def-use well-formed against the list of identifiers
-      that exactly enumerates `ρ.store`'s `isSome` domain.  In particular this
-      asserts that `ρ.store` has a finite isSome-domain, and that every
-      read/write of `s` either references an in-scope identifier or one
-      declared (via `init`) inside `s`, with no shadowing.  The list witness
-      is exposed so callers can use it directly (`obtain`). -/
-  defUseOk : ∃ outer : List Expression.Ident,
-    (∀ itm, itm ∈ outer ↔ (ρ.store itm).isSome) ∧
-    Stmt.defUseWellFormed outer s = Bool.true
+  /-- The statement is def-use well-formed against `ρ.store`'s `isSome` predicate. -/
+  defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) s = Bool.true
 
 /-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
     statements `bss` from env `ρ`. -/
@@ -102,9 +95,7 @@ structure BlockInitEnvWF (reserved : List String) (bss : Statements)
   exprCongr : WellFormedSemanticEvalExprCongr ρ.eval
   /-- Block-level def-use well-formedness against the in-store domain of
       `ρ.store`; see `InitEnvWF.defUseOk`. -/
-  defUseOk : ∃ outer : List Expression.Ident,
-    (∀ itm, itm ∈ outer ↔ (ρ.store itm).isSome) ∧
-    Block.defUseWellFormed outer bss = Bool.true
+  defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) bss = Bool.true
 
 /-- The `Lang Expression` bundle for Core small-step semantics. The
     `initEnvWF` field takes a list of reserved name prefixes; transforms
