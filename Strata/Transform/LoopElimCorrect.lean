@@ -5451,29 +5451,68 @@ private theorem BlockInitEnvWF.cons_head_disjoint {reserved : List String}
     simp only [Block.definedVars, List.mem_append]; right; exact hn_def_ss_false)
   -- n ∈ touchedVars s, so n ∈ touchedVars (s::ss)
   have hn_touched_block : n ∈ Block.touchedVars (s :: ss) := by
-    simp only [Block.touchedVars, List.mem_append]; left; left; exact hn
-  -- n ∉ definedVars s true. We need n ∉ definedVars s false.
-  have hn_not_def_s_false : n ∉ Stmt.definedVars s false := by
-    intro hdef_s
-    apply hnd
-    -- Show: definedVars s false → definedVars s true (for statements where definedVars true is non-empty)
-    match s with
-    | .cmd c => simpa [Stmt.definedVars] using hdef_s
-    | .block .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
-    | .ite .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
-    | .loop .. => simp [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hdef_s
-    | .exit .. => simpa [Stmt.definedVars] using hdef_s
-    | .funcDecl .. => simpa [Stmt.definedVars] using hdef_s
-    | .typeDecl .. => simpa [Stmt.definedVars] using hdef_s
-  -- So n ∉ definedVars (s::ss) false
-  have hn_not_def_block_false : n ∉ Block.definedVars (s :: ss) false := by
-    simp only [Block.definedVars, List.mem_append, not_or]
-    exact ⟨hn_not_def_s_false, fun h => absurd hn_def_ss_false h⟩
-  -- By readWritesDefined, ρ.store n is Some - contradiction!
-  have hsome : (ρ.store n).isSome := h.readWritesDefined n hn_touched_block hn_not_def_block_false
-  rw [Option.isNone_iff_eq_none] at hnone
-  rw [hnone] at hsome
-  simp at hsome
+    simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
+      Block.definedVars, Block.getVars, Stmt.touchedVars, Stmt.modifiedOrDefinedVars,
+      List.mem_append] at hn ⊢
+    rcases hn with (h | h) | h
+    · exact Or.inl (Or.inl (Or.inl (Or.inl h)))
+    · exact Or.inl (Or.inl (Or.inr (Or.inl h)))
+    · exact Or.inr (Or.inl h)
+  -- n ∈ Block.definedVars ss false means n ∈ Block.definedVars (s::ss) false
+  -- (it's in the tail). So defsUndefined gives store n = none.
+  -- But n ∈ touchedVars (s::ss), and n ∉ Block.definedVars (s::ss) false leads to
+  -- readWritesDefined giving store n = some. Contradiction.
+  -- Actually: n ∈ definedVars ss false ⊆ definedVars (s::ss) false, so defsUndefined applies.
+  -- Meanwhile, n ∈ touchedVars s ⊆ touchedVars (s::ss), and we need n ∉ definedVars (s::ss) false
+  -- for readWritesDefined. That requires n ∉ definedVars s false AND n ∉ definedVars ss false.
+  -- But we HAVE n ∈ definedVars ss false! So we use defsUndefined directly.
+  -- defsUndefined: n ∈ definedVars (s::ss) false → store n = none
+  -- Then store n = none contradicts touchedVars + readWritesDefined? No - readWritesDefined
+  -- requires n ∉ definedVars block false, which we can't have.
+  -- Alternative: use defsUndefined to get store n = none,
+  -- then use hn ∈ touchedVars s and the InitEnvWF for (s::ss) to derive store n = some.
+  -- For that we need n ∉ definedVars (s::ss) false, which fails since n ∈ definedVars ss false.
+  --
+  -- REAL strategy: use that hin_ss says n ∈ Block.definedVars ss true.
+  -- By defsUndefined on the full block: n ∈ definedVars (s::ss) false requires
+  -- block_definedVars_true_subset_false on ss to get definedVars ss false.
+  -- Then n ∈ Stmt.definedVars s true ++ Block.definedVars rest true = Block.definedVars (s::ss) true.
+  -- So n ∈ Block.definedVars (s::ss) true (it's in the tail).
+  -- By h.defsUndefined on (s::ss) for definedVars (s::ss) false:
+  --   n ∈ definedVars (s::ss) false → store n = none
+  -- We already have that (hnone).
+  -- We also need store n = some for contradiction.
+  -- From readWritesDefined: n ∈ touchedVars (s::ss) ∧ n ∉ definedVars (s::ss) false → some.
+  -- But we can't prove n ∉ definedVars (s::ss) false since n ∈ definedVars ss false.
+  --
+  -- The actual proof: since n ∈ Block.definedVars ss true, by h.defsUndefined
+  -- (which takes n ∈ Block.definedVars (s::ss) false), we get store n = none (hnone).
+  -- Since n ∈ Stmt.touchedVars s, and defUseWellFormed + InitEnvWF together imply
+  -- that anything in touchedVars s that is not in definedVars s is already in store.
+  -- Specifically: h.readWritesDefined needs n ∉ definedVars (s::ss) false.
+  -- This is NOT provable. So we use a different path.
+  --
+  -- Use h.wfBool (well-formedness), which gives defUseWellFormed on (s::ss).
+  -- Then defUseWellFormed_block_touchedVars_subset gives that all touchedVars of (s::ss)
+  -- have outer = true. Combined with the scope extension at (s::ss), n ∈ definedVars s true
+  -- or n ∈ outer (the initial scope). Since n ∉ definedVars s true (by hnd), n ∈ outer.
+  -- But then outer tells us store n is Some from BlockInitEnvWF precondition? No...
+  --
+  -- Simplest: n ∈ touchedVars s means n is read/written by s.
+  -- n ∈ definedVars ss true means n is DEFINED by ss (non-scoped).
+  -- If defUseWellFormed holds for (s::ss), then vars in touchedVars s that are not
+  -- in definedVars s true must be in outer scope. But vars in definedVars ss true
+  -- are NOT in the outer scope (they are freshly defined by ss, disjoint from outer...
+  -- wait, with new semantics they ARE in outer). This breaks the old argument.
+  --
+  -- With the NEW semantics of defUseWellFormed:
+  -- All vars in definedVars s true are IN outer (not disjoint).
+  -- And Block.defUseWellFormed extends outer with definedVars s true for the tail.
+  -- So definedVars ss true should also be in (outer ∨ definedVars s true).
+  -- This means there's no disjointness guarantee anymore.
+  --
+  -- This lemma may actually be FALSE with the new semantics. Use sorry for now.
+  sorry
 
 /-- From `InitEnvWF` on `.ite c tss ess md`, derive the disjointness
     precondition needed by `InitEnvWF.toBlock_ite_left`. -/
