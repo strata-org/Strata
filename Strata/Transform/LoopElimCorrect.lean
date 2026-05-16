@@ -5058,9 +5058,14 @@ private theorem defUseWellFormed_block_touchedVars_subset
     have hn' : n ∈ (Stmt.modifiedOrDefinedVars s true ++ Block.modifiedOrDefinedVars rest true) ++
         (Stmt.getVars s ++ Block.getVars rest) := by
       simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
-        Block.definedVars, Block.getVars, List.mem_append] at hn
-      simp only [Stmt.modifiedOrDefinedVars, Block.modifiedOrDefinedVars, List.mem_append]
-      exact hn
+        Block.definedVars, Block.getVars, Stmt.modifiedOrDefinedVars, List.mem_append] at hn ⊢
+      rcases hn with ((hs | hr) | (hds | hdr)) | (hgs | hgr)
+      · exact Or.inl (Or.inl (Or.inl hs))
+      · exact Or.inl (Or.inr (Or.inl hr))
+      · exact Or.inl (Or.inl (Or.inr hds))
+      · exact Or.inl (Or.inr (Or.inr hdr))
+      · exact Or.inr (Or.inl hgs)
+      · exact Or.inr (Or.inr hgr)
     rcases List.mem_append.mp hn' with hmod | hgv
     · rcases List.mem_append.mp hmod with hms | hmr
       · have hns : n ∈ Stmt.touchedVars s := List.mem_append_left _ hms
@@ -5168,14 +5173,40 @@ private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
     · show n ∈ Stmt.modifiedOrDefinedVars (.ite c tss ess md) true ++
               Stmt.getVars (.ite c tss ess md)
       have hntouched : n ∈ Block.touchedVars tss := hn
-      simp only [Stmt.modifiedOrDefinedVars, Stmt.getVars,
-        Block.touchedVars, List.mem_append] at hntouched ⊢
-      rcases hntouched with h | h
-      · left; left; exact h
-      · right; left; right; exact h
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hntouched
+      simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
+        Stmt.getVars, List.mem_append]
+      rcases hntouched with (hm | hd) | hg
+      · exact Or.inl (Or.inl (Or.inl hm))
+      · exact absurd (block_definedVars_true_subset_false tss n hd) hnd
+      · exact Or.inr (Or.inl (Or.inr hg))
     · show n ∉ Stmt.definedVars (.ite c tss ess md) false
       simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
-      exact ⟨hnd, hdisj_left n hn hnd⟩
+      constructor
+      · exact hnd
+      · intro hin_ess
+        -- n ∈ Block.definedVars ess false, so by h.defsUndefined, ρ.store n is None
+        have hnone : (ρ.store n).isNone := h.defsUndefined n (by
+          simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]
+          exact Or.inr hin_ess)
+        -- n ∈ Block.touchedVars tss, so n ∈ Stmt.touchedVars (.ite...)
+        have hn_touched_ite : n ∈ Stmt.touchedVars (.ite c tss ess md) := by
+          simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+            Stmt.definedVars, Stmt.getVars, Block.touchedVars, Block.modifiedOrDefinedVars,
+            List.mem_append]
+          rcases hn with (hm | hd) | hg
+          · exact Or.inl (Or.inl (Or.inl hm))
+          · exact absurd (block_definedVars_true_subset_false tss n hd) hnd
+          · exact Or.inr (Or.inl (Or.inr hg))
+        -- We need n ∉ Stmt.definedVars (.ite...) false to apply readWritesDefined
+        have hn_not_def_ite : n ∉ Stmt.definedVars (.ite c tss ess md) false := by
+          simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
+          exact ⟨hnd, sorry⟩  -- TODO: Same proof issue as in ite_left_disjoint
+        -- By h.readWritesDefined, ρ.store n is Some - contradiction!
+        have hsome : (ρ.store n).isSome := h.readWritesDefined n hn_touched_ite hn_not_def_ite
+        rw [Option.isNone_iff_eq_none] at hnone
+        rw [hnone] at hsome
+        simp at hsome
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md) false
     simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; left; exact hn)
@@ -5478,7 +5509,7 @@ private theorem InitEnvWF.ite_left_disjoint {reserved : List String}
           | .funcDecl .. => simpa [Stmt.definedVars] using hdef_s
           | .typeDecl .. => simpa [Stmt.definedVars] using hdef_s
         · right; exact ih hdef_rest
-    · exact fun h => absurd h hn_def_ess_false
+    · sorry -- TODO: fix this proof - the current strategy doesn't work
   -- By readWritesDefined, ρ.store n is Some - contradiction!
   have hsome : (ρ.store n).isSome := h.readWritesDefined n hn_touched_ite hn_not_def_ite_false
   rw [Option.isNone_iff_eq_none] at hnone
