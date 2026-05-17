@@ -197,5 +197,70 @@ procedure seqDestructiveUpdate()
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "SeqNegatives" seqNegativeProgram 14 processLaurelFile
 
+-- Out-of-bounds: verification fails when an index cannot be shown to be in
+-- range. Pins the end-to-end wiring of the bounds preconditions on
+-- `Sequence.select` (Lt bound) and `Sequence.take` (Le bound).
+-- Error ranges are wider than the offending expression because Core does
+-- not yet propagate expression-level source locations through PrecondElim
+-- (same caveat as `DivisionByZeroCheckTest.lean`).
+
+def seqOobReadProgram := r"
+procedure outOfBoundsRead()
+  opaque
+{
+  var s: Seq<int> := [10, 20];
+  var x: int := s[5]
+//^^^^^^^^^^^^^^^^^^ error: could not be proved
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "SeqOobRead" seqOobReadProgram 14 processLaurelFile
+
+def seqOobTakeProgram := r"
+procedure outOfBoundsTake()
+  opaque
+{
+  var s: Seq<int> := [10, 20];
+  var t: Seq<int> := Sequence.take(s, 3)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: could not be proved
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "SeqOobTake" seqOobTakeProgram 14 processLaurelFile
+
+-- Negative-test grid: ensure the validator's stmt-position dispatch arms
+-- for IfThenElse and While bodies fire correctly. The expression-position
+-- diagnostics are covered by the existing tests above; these exercise the
+-- separate `_htsub` / `_hbsub` arms in `validateStmtExpr`.
+
+def seqDestructiveInIfProgram := r"
+procedure seqDestructiveInIf(c: bool)
+  opaque
+{
+  var s: Seq<int> := [1, 2, 3];
+  if c then s[0] := 42
+//          ^^^^^^^^^^ error: immutable
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "SeqDestructiveInIf" seqDestructiveInIfProgram 14 processLaurelFile
+
+def seqDestructiveInWhileProgram := r"
+procedure seqDestructiveInWhile()
+  opaque
+{
+  var s: Seq<int> := [1, 2, 3];
+  var i: int := 0;
+  while (i < 3) s[i] := 0
+//              ^^^^^^^^^ error: immutable
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "SeqDestructiveInWhile" seqDestructiveInWhileProgram 14 processLaurelFile
+
 end Laurel
 end Strata

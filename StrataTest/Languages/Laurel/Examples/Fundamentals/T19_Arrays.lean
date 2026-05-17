@@ -192,5 +192,70 @@ procedure fromArrayWrongArg()
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "FromArrayWrongArg" fromArrayWrongArgProgram 14 processLaurelFile
 
+-- Diagnostic 4 in *parameter* position. The variable-declaration form is
+-- already covered by `arrayNonIntElementProgram`; this exercises the
+-- separate `validateProcedure → validateHighType` entry on `proc.inputs`.
+
+def arrayNonIntParameterProgram := r"
+procedure arrayNonIntParameter(a: Array<bool>)
+//                                ^^^^^^^^^^^ error: currently only supported
+  opaque
+{
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArrayNonIntParameter" arrayNonIntParameterProgram 14 processLaurelFile
+
+-- Arity diagnostics: `Array.length` and `Sequence.fromArray` each take
+-- exactly one argument. Calls with a different arity get a dedicated
+-- diagnostic before the user sees a Core type-checker unification error.
+
+def arrayLengthWrongArityProgram := r"
+procedure arrayLengthWrongArity()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  assert Array.length(a, a) == 3
+//       ^^^^^^^^^^^^^^^^^^ error: takes exactly one argument
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArrayLengthWrongArity" arrayLengthWrongArityProgram 14 processLaurelFile
+
+def fromArrayWrongArityProgram := r"
+procedure fromArrayWrongArity()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(a, a)
+//                   ^^^^^^^^^^^^^^^^^^^^^^^^ error: takes exactly one argument
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "FromArrayWrongArity" fromArrayWrongArityProgram 14 processLaurelFile
+
+-- A `while` whose body is a single `a[i] := v` (no braces) takes the
+-- `_hbsub` dispatch arm in `SubscriptElim.elimExpr.While`. With braces
+-- the body is a `.Block` and goes through the `.Block` arm instead.
+-- Pinning this case ensures the bare-stmt path stays correct.
+
+def arraySingleStmtWhileProgram := r"
+procedure arraySingleStmtWhile()
+  opaque
+  modifies *
+{
+  var a: Array<int> := [1, 2, 3];
+  var i: int := 0;
+  while (i < 3) invariant 0 <= i && i <= 3 invariant Array.length(a) == 3 a[i] := 0;
+  assert a[0] == 0
+};
+"
+
+#guard_msgs(drop info, error) in
+#eval testInputWithOffset "ArraySingleStmtWhile" arraySingleStmtWhileProgram 14 processLaurelFile
+
 end Laurel
 end Strata
