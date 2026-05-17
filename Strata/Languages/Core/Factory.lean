@@ -521,15 +521,19 @@ private def SeqBoundKind.upperOpExpr : SeqBoundKind → LExpr CoreLParams.mono
   | .Lt => (intLtFunc (T := CoreLParams)).opExpr
   | .Le => (intLeFunc (T := CoreLParams)).opExpr
 
-/-- Precondition `0 <= varName && varName `k.upperOpExpr` Sequence.length(s)`.
+/-- Precondition `0 <= varName && varName `k.upperOpExpr` Sequence.length(seqName)`.
 
-    Assumes the enclosing function names its `Sequence a` input `"s"`.
-    Mismatches are caught at elaboration by `polyUneval`'s `h_precond`
-    free-vars check. -/
+    `seqName` defaults to `"s"` since all four current call sites
+    (`Sequence.select`/`update`/`take`/`drop`) name their `Sequence a` input
+    that way. The parameter exists so a future partial Sequence op with a
+    different input name need only pass it explicitly rather than rely on a
+    hidden string literal. Either way, mismatches between the function's
+    declared inputs and the names used here are caught at elaboration by
+    `polyUneval`'s `h_precond` free-vars check. -/
 private def mkSeqBoundsPrecond
-    (varName : String) (k : SeqBoundKind) :
+    (varName : String) (k : SeqBoundKind) (seqName : String := "s") :
     Strata.DL.Util.FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata :=
-  let sVar  : LExpr CoreLParams.mono := .fvar default "s" (some (seqTy mty[%a]))
+  let sVar  : LExpr CoreLParams.mono := .fvar default seqName (some (seqTy mty[%a]))
   let xVar  : LExpr CoreLParams.mono := .fvar default varName (some mty[int])
   let zero  : LExpr CoreLParams.mono := .intConst default 0
   let lenS  : LExpr CoreLParams.mono := .app default seqLengthFunc.opExpr sVar
