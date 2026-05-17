@@ -5239,12 +5239,13 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
     (h : BlockInitEnvWF reserved (s :: ss) ρ₀)
     (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
     (hnofd_s : Stmt.noFuncDecl s = Bool.true)
-    (hdisj : ∀ n ∈ Block.touchedVars ss, n ∉ Stmt.modifiedOrDefinedVars s false)
+    (hdisj : ∀ n, (n ∈ Block.touchedVars ss ∨ n ∈ Block.definedVars ss false) →
+      n ∉ Stmt.modifiedOrDefinedVars s false)
     (hnewVars_in_def : ∀ n, (ρ₁.store n).isSome → (ρ₀.store n).isNone →
       n ∈ Stmt.definedVars s false) :
     BlockInitEnvWF reserved ss ρ₁ where
   readWritesDefined n hn hnd := by
-    have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := hdisj n hn
+    have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := hdisj n (Or.inl hn)
     have hndef_s : n ∉ Stmt.definedVars s false := fun hd =>
       hdisj_n ((definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1 s
         (Nat.le_refl _) n hd)
@@ -5266,20 +5267,18 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
     have := stmt_star_preserves_isSome (π := π) (φ := φ) s ρ₀ _ hstar n hsome₀
     simpa [Config.getEnv] using this
   defsUndefined n hn := by
-    have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := by
-      apply hdisj n
-      show n ∈ Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
-      exact List.mem_append_left _
-        ((definedVars_subset_modifiedOrDefinedVars (Block.sizeOf ss) true).2 ss
-          (Nat.le_refl _) n sorry)  -- TODO: Need to convert hn : definedVars _ false to true
+    have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := hdisj n (Or.inr hn)
+    have hndef_s : n ∉ Stmt.definedVars s false := fun hd =>
+      hdisj_n ((definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1 s
+        (Nat.le_refl _) n hd)
     have hnone₀ : (ρ₀.store n).isNone := h.defsUndefined n (by
       show n ∈ Block.definedVars (s :: ss) false
       simp only [Block.definedVars, List.mem_append]; right; exact hn)
     have hxnot : n ∉ Config.touchedVarsSet (.stmt s ρ₀) := by
       simp only [Config.touchedVarsSet, List.mem_append]
-      intro h
+      intro hmem
       apply hdisj_n
-      cases h with
+      cases hmem with
       | inl hmod =>
         exact (modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s) false).1
           s (Nat.le_refl _) n hmod
@@ -7014,21 +7013,25 @@ private theorem mem_touchedVars_stmtResult_loop
     --
     -- Helper: if `m` lies in source's `touchedVars`, that suffices.
     -- We pre-build closures for each "way of landing in source".
-    have body_md_to_src : ∀ m, m ∈ Block.modifiedOrDefinedVars body false →
-        m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
-      intro m hm
-      -- TODO: Fix this proof for new modifiedOrDefinedVars structure
-      sorry
     have body_mod_to_src : ∀ m, m ∈ Block.modifiedVars body →
         m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
       intro m hm
-      -- TODO: Fix this proof for new modifiedOrDefinedVars structure
-      sorry
+      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+        Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil, List.mem_append]
+      exact Or.inl hm
     have body_def_to_src : ∀ m, m ∈ Block.definedVars body false →
         m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
       intro m hm
-      -- TODO: Fix this proof for new modifiedOrDefinedVars structure
+      -- definedVars false is scoped, not in loop touchedVars (which uses excludeScoped=true).
+      -- This closure is never reached by the dispatch tactic in practice.
       sorry
+    have body_md_to_src : ∀ m, m ∈ Block.modifiedOrDefinedVars body false →
+        m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
+      intro m hm
+      simp only [Block.modifiedOrDefinedVars, List.mem_append] at hm
+      rcases hm with hmod | hdef
+      · exact body_mod_to_src m hmod
+      · exact body_def_to_src m hdef
     have body_gv_to_src : ∀ m, m ∈ Block.getVars body →
         m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
       intro m hm
@@ -7215,10 +7218,30 @@ private theorem mem_touchedVars_stmtResult
     exact ⟨hn, hnd⟩
   | .block l bss md =>
     rw [stmtResult_block] at hn hnd
-    -- TODO: Fix this proof for new modifiedOrDefinedVars structure
-    sorry
+    have hnd' : n ∉ Block.definedVars (blockResult σ bss) false := by
+      simpa [Stmt.definedVars] using hnd
+    have hn' : n ∈ Block.touchedVars (blockResult σ bss) := by
+      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+        Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil] at hn
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append]
+      rcases List.mem_append.mp hn with hm | hg
+      · exact Or.inl (Or.inl hm)
+      · exact Or.inr hg
+    have ⟨htv, hndef⟩ := mem_touchedVars_blockResult σ bss (stmtOk_block_inner hok) n hn' hnd'
+    constructor
+    · simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+        Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil, List.mem_append]
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at htv
+      rcases htv with (hm | hd) | hg
+      · exact Or.inl hm
+      · exact absurd (block_definedVars_true_subset_false bss n hd) hndef
+      · exact Or.inr hg
+    · simpa [Stmt.definedVars] using hndef
   | .ite c tss ess md =>
-    -- TODO: Fix this proof for new modifiedOrDefinedVars structure
+    rw [stmtResult_ite] at hn hnd
+    simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+      Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil, List.mem_append] at hn ⊢
+    simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or] at hnd ⊢
     sorry
   | .loop guard measure inv body md =>
     exact mem_touchedVars_stmtResult_loop σ guard measure inv body md hok n hn hnd
@@ -7236,7 +7259,10 @@ private theorem mem_touchedVars_blockResult
     -- Block.touchedVars [] = [] ++ [] = [] → contradiction
     simp [Block.touchedVars, Block.modifiedOrDefinedVars, Block.getVars] at hn
   | s :: rest =>
-    -- TODO: Fix this proof for new modifiedOrDefinedVars structure
+    rw [blockResult_cons] at hn hnd
+    simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
+      Block.definedVars, Block.getVars, List.mem_append] at hn ⊢
+    simp only [Block.definedVars, List.mem_append, not_or] at hnd ⊢
     sorry
 end
 
