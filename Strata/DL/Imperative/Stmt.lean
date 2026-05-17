@@ -358,8 +358,9 @@ mutual
 end
 
 mutual
-/-- Def-use well-formedness check for a statement. Any use of a variable must be
-    followed by the definition of the var. -/
+/-- Def-use well-formedness check for a statement. Any read/write of a variable
+    must be followed by the definition of the var, and fresh var definition must
+    not collide with previously defined vars. -/
 @[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasVarsPure P P.Expr]
     [HasVarsPure P C] [DecidableEq P.Ident]
     (definedVars : P.Ident → Bool) (s : Stmt P C) : Bool :=
@@ -367,7 +368,10 @@ mutual
   | .cmd c =>
     (HasVarsPure.getVars (P := P) c).all (fun n => definedVars n) &&
     (HasVarsImp.modifiedVars (P := P) c).all (fun n => definedVars n) &&
-    (HasVarsImp.definedVars (P := P) c true).all (fun n => definedVars n)
+    -- All fresh variable names that are being initialized in command c must not
+    -- have existed in the already defined vars 'definedVars'. Otherwise, var
+    -- initialization in c will stuck due to duplicated name.
+    (HasVarsImp.definedVars (P := P) c false).all (fun n => ¬definedVars n)
   | .block _ bss _ => Block.defUseWellFormed definedVars bss
   | .ite cond tbss ebss _ =>
     cond.getVars.all (fun n => definedVars n) &&
