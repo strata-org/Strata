@@ -4883,6 +4883,159 @@ private theorem defUseWellFormed_cons {outer : Expression.Ident → Bool}
   exact h
 
 
+/-- `Stmt.definedVars s true ⊆ Stmt.definedVars s false` for any statement. -/
+private theorem stmt_definedVars_true_subset_false (s : Statement) (n : Expression.Ident)
+    (h : n ∈ Stmt.definedVars s true) : n ∈ Stmt.definedVars s false := by
+  match s with
+  | .cmd c => simp [Stmt.definedVars] at h ⊢; exact h
+  | .block .. => simp [Stmt.definedVars] at h
+  | .ite .. => simp [Stmt.definedVars] at h
+  | .loop .. => simp [Stmt.definedVars] at h
+  | .exit .. => simp [Stmt.definedVars] at h
+  | .funcDecl .. => simp [Stmt.definedVars] at h ⊢; exact h
+  | .typeDecl .. => simp [Stmt.definedVars] at h
+
+/-- Combined mutual induction: if `defUseWellFormed outer` holds and `n` is
+    read or modified but not defined, then `outer n = true`. -/
+private theorem defUseWellFormed_touched_notDef_aux (sz : Nat) :
+    (∀ (outer : Expression.Ident → Bool) (s : Statement),
+      Stmt.sizeOf s ≤ sz →
+      Stmt.defUseWellFormed outer s = Bool.true →
+      ∀ (n : Expression.Ident),
+        (n ∈ Stmt.modifiedVars s ∨ n ∈ Stmt.getVars s) →
+        n ∉ Stmt.definedVars s false →
+        outer n = Bool.true) ∧
+    (∀ (outer : Expression.Ident → Bool) (bss : Statements),
+      Block.sizeOf bss ≤ sz →
+      Block.defUseWellFormed outer bss = Bool.true →
+      ∀ (n : Expression.Ident),
+        (n ∈ Block.modifiedVars bss ∨ n ∈ Block.getVars bss) →
+        n ∉ Block.definedVars bss false →
+        outer n = Bool.true) := by
+  induction sz with
+  | zero =>
+    refine ⟨?_, ?_⟩
+    · intro outer s hsz; cases s <;> simp [Stmt.sizeOf] at hsz
+    · intro outer bss hsz hwf n hn hnd
+      match bss with
+      | [] => simp [Block.modifiedVars, Block.getVars] at hn
+      | s :: rest => simp [Block.sizeOf] at hsz
+  | succ k ih =>
+    obtain ⟨ih_stmt, ih_block⟩ := ih
+    refine ⟨?_, ?_⟩
+    · -- Stmt case
+      intro outer s hsz hwf n hn hnd
+      match s with
+      | .cmd c =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨⟨hgv, hmv⟩, _⟩ := hwf
+        rw [List.all_eq_true] at hgv hmv
+        simp only [Stmt.modifiedVars, Stmt.getVars] at hn
+        rcases hn with hmod | hget
+        · exact hmv n hmod
+        · exact hgv n hget
+      | .block l bss md =>
+        simp only [Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+          Bool.false_eq_true, ↓reduceIte] at hn hnd
+        unfold Stmt.defUseWellFormed at hwf
+        have hsz_bss : Block.sizeOf bss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        exact ih_block outer bss hsz_bss hwf n hn hnd
+      | .ite cond tbss ebss md =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨⟨hcond_all, htbss⟩, hebss⟩ := hwf
+        rw [List.all_eq_true] at hcond_all
+        simp only [Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+          Bool.false_eq_true, ↓reduceIte, List.mem_append] at hn hnd
+        have hnd_t : n ∉ Block.definedVars tbss false := fun h => hnd (Or.inl h)
+        have hnd_e : n ∉ Block.definedVars ebss false := fun h => hnd (Or.inr h)
+        have hsz_t : Block.sizeOf tbss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hsz_e : Block.sizeOf ebss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        rcases hn with (ht | he) | (hc | hgt) | hge
+        · exact ih_block outer tbss hsz_t htbss n (Or.inl ht) hnd_t
+        · exact ih_block outer ebss hsz_e hebss n (Or.inl he) hnd_e
+        · exact hcond_all n hc
+        · exact ih_block outer tbss hsz_t htbss n (Or.inr hgt) hnd_t
+        · exact ih_block outer ebss hsz_e hebss n (Or.inr hge) hnd_e
+      | .loop guard measure inv body md =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨⟨⟨hguard_all, hmeas_all⟩, hinv_all⟩, hbody⟩ := hwf
+        rw [List.all_eq_true] at hguard_all hmeas_all hinv_all
+        simp only [Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+          Bool.false_eq_true, ↓reduceIte, List.mem_append] at hn hnd
+        have hsz_body : Block.sizeOf body ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        rcases hn with hmod | ((hg | hm) | hi) | hb
+        · exact ih_block outer body hsz_body hbody n (Or.inl hmod) hnd
+        · exact hguard_all n hg
+        · exact hmeas_all n hm
+        · exact hinv_all n hi
+        · exact ih_block outer body hsz_body hbody n (Or.inr hb) hnd
+      | .exit l md =>
+        simp [Stmt.modifiedVars, Stmt.getVars] at hn
+      | .funcDecl decl md =>
+        unfold Stmt.defUseWellFormed at hwf; simp at hwf
+      | .typeDecl tc md =>
+        simp [Stmt.modifiedVars, Stmt.getVars] at hn
+    · -- Block case
+      intro outer bss hsz hwf n hn hnd
+      match bss with
+      | [] =>
+        simp [Block.modifiedVars, Block.getVars] at hn
+      | s :: rest =>
+        unfold Block.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨hwf_s, hwf_rest⟩ := hwf
+        simp only [Block.modifiedVars, Block.getVars, Block.definedVars,
+          List.mem_append] at hn hnd
+        have hnd_s : n ∉ Stmt.definedVars s false := fun h => hnd (Or.inl h)
+        have hnd_rest : n ∉ Block.definedVars rest false := fun h => hnd (Or.inr h)
+        have hsz_s : Stmt.sizeOf s ≤ k := by simp [Block.sizeOf] at hsz; omega
+        have hsz_rest : Block.sizeOf rest ≤ k := by
+          simp [Block.sizeOf] at hsz; omega
+        have hnd_s_true : n ∉ Stmt.definedVars s true :=
+          fun h => hnd_s (stmt_definedVars_true_subset_false s n h)
+        rcases hn with (hs | hr) | (hs | hr)
+        · exact ih_stmt outer s hsz_s hwf_s n (Or.inl hs) hnd_s
+        · have h_rest_result := ih_block
+            (fun m => outer m || decide (m ∈ Stmt.definedVars s true))
+            rest hsz_rest hwf_rest n (Or.inl hr) hnd_rest
+          rw [Bool.or_eq_true] at h_rest_result
+          rcases h_rest_result with h | h
+          · exact h
+          · rw [decide_eq_true_eq] at h; exact absurd h hnd_s_true
+        · exact ih_stmt outer s hsz_s hwf_s n (Or.inr hs) hnd_s
+        · have h_rest_result := ih_block
+            (fun m => outer m || decide (m ∈ Stmt.definedVars s true))
+            rest hsz_rest hwf_rest n (Or.inr hr) hnd_rest
+          rw [Bool.or_eq_true] at h_rest_result
+          rcases h_rest_result with h | h
+          · exact h
+          · rw [decide_eq_true_eq] at h; exact absurd h hnd_s_true
+
+/-- If `Stmt.defUseWellFormed outer s = true` and `n` is read or modified in `s`
+    but never defined in `s`, then `outer n = true`.  This is the fundamental
+    link between def-use well-formedness and `readWritesDefined`. -/
+private theorem defUseWellFormed_modGetVars_implies_outer
+    {outer : Expression.Ident → Bool} {bss : Statements}
+    (hwf : Block.defUseWellFormed outer bss = Bool.true)
+    {n : Expression.Ident}
+    (hn : n ∈ Block.modifiedVars bss ∨ n ∈ Block.getVars bss)
+    (hnd : n ∉ Block.definedVars bss false) : outer n = Bool.true :=
+  (defUseWellFormed_touched_notDef_aux (Block.sizeOf bss)).2
+    outer bss (Nat.le_refl _) hwf n hn hnd
+
+/-- Stmt-level: touched but not defined implies `outer n`. -/
+private theorem defUseWellFormed_touched_notDef_implies_outer
+    {outer : Expression.Ident → Bool} {s : Statement}
+    (hwf : Stmt.defUseWellFormed outer s = Bool.true)
+    {n : Expression.Ident}
+    (hn : n ∈ Stmt.modifiedVars s ∨ n ∈ Stmt.getVars s)
+    (hnd : n ∉ Stmt.definedVars s false) : outer n = Bool.true :=
+  (defUseWellFormed_touched_notDef_aux (Stmt.sizeOf s)).1
+    outer s (Nat.le_refl _) hwf n hn hnd
+
 /-- `Block.definedVars bss true ⊆ Block.definedVars bss false`. -/
 private theorem block_definedVars_true_subset_false (bss : Statements) (n : Expression.Ident)
     (h : n ∈ Block.definedVars bss true) : n ∈ Block.definedVars bss false := by
@@ -4953,58 +5106,24 @@ private theorem InitEnvWF.toBlock_block {reserved : List String} {l : String}
     rw [defUseWellFormed_block] at hwf
     exact hwf
 
-/-- For ite: `BlockInitEnvWF tss` follows from `InitEnvWF (.ite c tss ess md)`,
-    when `Block.definedVars ess` is disjoint from `Block.touchedVars tss \ Block.definedVars tss`.
-    The disjointness condition rules out malformed programs where one branch reads/sets
-    a var only initialized by the other branch. -/
+/-- For ite: `BlockInitEnvWF tss` follows from `InitEnvWF (.ite c tss ess md)`.
+    Uses `defUseOk` to derive `readWritesDefined` without disjointness hypotheses. -/
 private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
     {c : ExprOrNondet Expression}
     {tss ess : Statements} {md : MetaData Expression} {ρ : Env Expression}
-    (h : InitEnvWF reserved (.ite c tss ess md) ρ)
-    (hdisj_left : ∀ n ∈ Block.touchedVars tss, n ∉ Block.definedVars tss true →
-      n ∉ Block.definedVars ess true) :
+    (h : InitEnvWF reserved (.ite c tss ess md) ρ) :
     BlockInitEnvWF reserved tss ρ where
   readWritesDefined n hn hnd := by
-    apply h.readWritesDefined n
-    · show n ∈ Stmt.modifiedOrDefinedVars (.ite c tss ess md) true ++
-              Stmt.getVars (.ite c tss ess md)
+    have hwf_tss : Block.defUseWellFormed (fun n => (ρ.store n).isSome) tss = Bool.true :=
+      (defUseWellFormed_ite_branches h.defUseOk).1
+    have hn_mg : n ∈ Block.modifiedVars tss ∨ n ∈ Block.getVars tss := by
       have hntouched : n ∈ Block.touchedVars tss := hn
       simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hntouched
-      simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-        Stmt.getVars, List.mem_append]
       rcases hntouched with (hm | hd) | hg
-      · exact Or.inl (Or.inl (Or.inl hm))
+      · exact Or.inl hm
       · exact absurd (block_definedVars_true_subset_false tss n hd) hnd
-      · exact Or.inr (Or.inl (Or.inr hg))
-    · show n ∉ Stmt.definedVars (.ite c tss ess md) false
-      simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
-      constructor
-      · exact hnd
-      · intro hin_ess
-        -- n ∈ Block.definedVars ess false, so by h.defsUndefined, ρ.store n is None
-        have hnone : (ρ.store n).isNone := h.defsUndefined n (by
-          simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]
-          exact Or.inr hin_ess)
-        -- n ∈ Block.touchedVars tss, so n ∈ Stmt.touchedVars (.ite...)
-        have hn_touched_ite : n ∈ Stmt.touchedVars (.ite c tss ess md) := by
-          have hntouched' : n ∈ Block.touchedVars tss := hn
-          simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hntouched'
-          simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
-            Stmt.definedVars, Stmt.getVars, Block.touchedVars, Block.modifiedOrDefinedVars,
-            List.mem_append]
-          rcases hntouched' with (hm | hd) | hg
-          · exact Or.inl (Or.inl (Or.inl hm))
-          · exact absurd (block_definedVars_true_subset_false tss n hd) hnd
-          · exact Or.inr (Or.inl (Or.inr hg))
-        -- We need n ∉ Stmt.definedVars (.ite...) false to apply readWritesDefined
-        have hn_not_def_ite : n ∉ Stmt.definedVars (.ite c tss ess md) false := by
-          simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
-          exact ⟨hnd, sorry⟩  -- TODO: Same proof issue as in ite_left_disjoint
-        -- By h.readWritesDefined, ρ.store n is Some - contradiction!
-        have hsome : (ρ.store n).isSome := h.readWritesDefined n hn_touched_ite hn_not_def_ite
-        rw [Option.isNone_iff_eq_none] at hnone
-        rw [hnone] at hsome
-        simp at hsome
+      · exact Or.inr hg
+    exact defUseWellFormed_modGetVars_implies_outer hwf_tss hn_mg hnd
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md) false
     simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; left; exact hn)
@@ -5022,25 +5141,19 @@ private theorem InitEnvWF.toBlock_ite_left {reserved : List String}
 private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
     {c : ExprOrNondet Expression}
     {tss ess : Statements} {md : MetaData Expression} {ρ : Env Expression}
-    (h : InitEnvWF reserved (.ite c tss ess md) ρ)
-    (hdisj_right : ∀ n ∈ Block.touchedVars ess, n ∉ Block.definedVars ess true →
-      n ∉ Block.definedVars tss true) :
+    (h : InitEnvWF reserved (.ite c tss ess md) ρ) :
     BlockInitEnvWF reserved ess ρ where
   readWritesDefined n hn hnd := by
-    apply h.readWritesDefined n
-    · show n ∈ Stmt.modifiedOrDefinedVars (.ite c tss ess md) true ++
-              Stmt.getVars (.ite c tss ess md)
+    have hwf_ess : Block.defUseWellFormed (fun n => (ρ.store n).isSome) ess = Bool.true :=
+      (defUseWellFormed_ite_branches h.defUseOk).2
+    have hn_mg : n ∈ Block.modifiedVars ess ∨ n ∈ Block.getVars ess := by
       have hntouched : n ∈ Block.touchedVars ess := hn
       simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hntouched
-      simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-        Stmt.getVars, List.mem_append, ite_true, List.append_nil]
       rcases hntouched with (hm | hd) | hg
-      · left; right; exact hm
+      · exact Or.inl hm
       · exact absurd (block_definedVars_true_subset_false ess n hd) hnd
-      · right; right; exact hg
-    · show n ∉ Stmt.definedVars (.ite c tss ess md) false
-      simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
-      exact ⟨sorry, sorry⟩  -- TODO: Need to prove n ∉ definedVars _ false from n ∉ definedVars _ true
+      · exact Or.inr hg
+    exact defUseWellFormed_modGetVars_implies_outer hwf_ess hn_mg hnd
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Stmt.definedVars (.ite c tss ess md) false
     simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; right; exact hn)
@@ -5055,36 +5168,23 @@ private theorem InitEnvWF.toBlock_ite_right {reserved : List String}
   exprCongr := h.exprCongr
   defUseOk := (defUseWellFormed_ite_branches h.defUseOk).2
 
-/-- `InitEnvWF s` follows from `BlockInitEnvWF (s :: ss)`, when
-    `Block.definedVars ss` is disjoint from `Stmt.touchedVars s \ Stmt.definedVars s`.  -/
+/-- `InitEnvWF s` follows from `BlockInitEnvWF (s :: ss)`.
+    Uses `defUseOk` to derive `readWritesDefined` without disjointness hypotheses. -/
 private theorem BlockInitEnvWF.toStmt_head {reserved : List String} {s : Statement}
     {ss : Statements} {ρ : Env Expression}
-    (h : BlockInitEnvWF reserved (s :: ss) ρ)
-    (hdisj : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s true →
-      n ∉ Block.definedVars ss true) :
+    (h : BlockInitEnvWF reserved (s :: ss) ρ) :
     InitEnvWF reserved s ρ where
   readWritesDefined n hn hnd := by
-    apply h.readWritesDefined n
-    · show n ∈ Block.modifiedOrDefinedVars (s :: ss) true ++ Block.getVars (s :: ss)
+    have hwf_s : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) s = Bool.true :=
+      (defUseWellFormed_cons h.defUseOk).1
+    have hn_mg : n ∈ Stmt.modifiedVars s ∨ n ∈ Stmt.getVars s := by
       have hntouched : n ∈ Stmt.touchedVars s := hn
-      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.getVars, List.mem_append] at hntouched
-      simp only [Block.modifiedOrDefinedVars, Block.getVars, Block.modifiedVars, Block.definedVars,
-        Stmt.modifiedOrDefinedVars, Stmt.getVars, List.mem_append]
+      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, List.mem_append] at hntouched
       rcases hntouched with (hm | hd) | hg
-      · exact Or.inl (Or.inl (Or.inl hm))
-      · exact Or.inl (Or.inr (Or.inl hd))
-      · exact Or.inr (Or.inl hg)
-    · show n ∉ Block.definedVars (s :: ss) false
-      simp only [Block.definedVars, List.mem_append, not_or]
-      constructor
-      · exact hnd
-      · intro hmem
-        have hnd_true : n ∉ Stmt.definedVars s true := fun h => hnd (by
-          have := block_definedVars_true_subset_false [s] n (by simp [Block.definedVars]; exact h)
-          simp [Block.definedVars] at this
-          exact this)
-        have hmem_true : n ∈ Block.definedVars ss true := sorry  -- TODO: Can't convert from false to true
-        exact hdisj n hn hnd_true hmem_true
+      · exact Or.inl hm
+      · exact absurd (block_definedVars_true_subset_false [s] n (by simp [Block.definedVars]; exact hd)) (by simp [Block.definedVars]; exact hnd)
+      · exact Or.inr hg
+    exact defUseWellFormed_touched_notDef_implies_outer hwf_s hn_mg hnd
   defsUndefined n hn := h.defsUndefined n (by
     show n ∈ Block.definedVars (s :: ss) false
     simp only [Block.definedVars, List.mem_append]; left; exact hn)
@@ -5150,8 +5250,16 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
         (Nat.le_refl _) n hd)
     have hsome₀ : (ρ₀.store n).isSome := by
       apply h.readWritesDefined n
-      · show n ∈ Block.modifiedOrDefinedVars (s :: ss) true ++ Block.getVars (s :: ss)
-        sorry  -- TODO: Need to show n ∈ Block.touchedVars ss → n ∈ Block.touchedVars (s :: ss)
+      · show n ∈ Block.touchedVars (s :: ss)
+        simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
+          Block.definedVars, Block.getVars, List.mem_append]
+        have hmem : n ∈ Block.touchedVars ss := hn
+        simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
+          Block.definedVars, Block.getVars, List.mem_append] at hmem
+        rcases hmem with ((hm | hd) | hg)
+        · exact Or.inl (Or.inl (Or.inr hm))
+        · exact Or.inl (Or.inr (Or.inr hd))
+        · exact Or.inr (Or.inr hg)
       · show n ∉ Block.definedVars (s :: ss) false
         simp only [Block.definedVars, List.mem_append, not_or]
         exact ⟨hndef_s, hnd⟩
@@ -5228,63 +5336,11 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
       -- initializes all declared vars). Not yet proven generically.
       sorry
 
-/-! ### Bridges from `defUseOk` to disjointness preconditions -/
-
-/-- From `BlockInitEnvWF` on `s :: ss`, derive the disjointness precondition
-    needed by `BlockInitEnvWF.toStmt_head`.  The disjointness comes from
-    defsUndefined and readWritesDefined, not from defUseWellFormed. -/
-private theorem BlockInitEnvWF.cons_head_disjoint {reserved : List String}
-    {s : Statement} {ss : Statements} {ρ : Env Expression}
-    (h : BlockInitEnvWF reserved (s :: ss) ρ) :
-    ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s true →
-      n ∉ Block.definedVars ss true := by
-  intro n hn hnd hin_ss
-  -- Strategy: use definedVars true ⊆ definedVars false, then defsUndefined vs readWritesDefined
-  have hn_def_ss_false : n ∈ Block.definedVars ss false :=
-    block_definedVars_true_subset_false ss n hin_ss
-  -- n ∈ definedVars ss false, so by defsUndefined, ρ.store n is None
-  have hnone : (ρ.store n).isNone := h.defsUndefined n (by
-    simp only [Block.definedVars, List.mem_append]; right; exact hn_def_ss_false)
-  -- TODO: This proof needs fundamental redesign for the new defUseWellFormed semantics.
-  -- The old argument relied on disjointness between definedVars in head vs tail,
-  -- but new semantics include all definedVars in the outer scope, breaking disjointness.
-  sorry
-
-/-- From `InitEnvWF` on `.ite c tss ess md`, derive the disjointness
-    precondition needed by `InitEnvWF.toBlock_ite_left`. -/
-private theorem InitEnvWF.ite_left_disjoint {reserved : List String}
-    {c : ExprOrNondet Expression} {tss ess : Statements}
-    {md : MetaData Expression} {ρ : Env Expression}
-    (h : InitEnvWF reserved (.ite c tss ess md) ρ) :
-    ∀ n ∈ Block.touchedVars tss, n ∉ Block.definedVars tss true →
-      n ∉ Block.definedVars ess true := by
-  intro n hn hnd hin_ess
-  -- Use definedVars true ⊆ definedVars false
-  have hn_def_ess_false : n ∈ Block.definedVars ess false :=
-    block_definedVars_true_subset_false ess n hin_ess
-  -- n ∈ definedVars ess false, so by defsUndefined, ρ.store n is None
-  have hnone : (ρ.store n).isNone := h.defsUndefined n (by
-    simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; right; exact hn_def_ess_false)
-  -- TODO: This proof needs fundamental redesign for the new defUseWellFormed semantics.
-  sorry
-
-/-- From `InitEnvWF` on `.ite c tss ess md`, derive the disjointness
-    precondition needed by `InitEnvWF.toBlock_ite_right`. -/
-private theorem InitEnvWF.ite_right_disjoint {reserved : List String}
-    {c : ExprOrNondet Expression} {tss ess : Statements}
-    {md : MetaData Expression} {ρ : Env Expression}
-    (h : InitEnvWF reserved (.ite c tss ess md) ρ) :
-    ∀ n ∈ Block.touchedVars ess, n ∉ Block.definedVars ess true →
-      n ∉ Block.definedVars tss true := by
-  intro n hn hnd hin_tss
-  -- Use definedVars true ⊆ definedVars false
-  have hn_def_tss_false : n ∈ Block.definedVars tss false :=
-    block_definedVars_true_subset_false tss n hin_tss
-  -- n ∈ definedVars tss false, so by defsUndefined, ρ.store n is None
-  have hnone : (ρ.store n).isNone := h.defsUndefined n (by
-    simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]; left; exact hn_def_tss_false)
-  -- TODO: This proof needs fundamental redesign for the new defUseWellFormed semantics.
-  sorry
+/-! ### Note: The old `_disjoint` bridges (cons_head_disjoint, ite_left_disjoint,
+    ite_right_disjoint) have been removed. The `toBlock_ite_left/right` and
+    `toStmt_head` lemmas now use `defUseOk` directly via
+    `defUseWellFormed_modGetVars_implies_outer`, eliminating the need for
+    disjointness hypotheses entirely. -/
 
 /-! ## Simulation -/
 
@@ -5469,7 +5525,7 @@ private theorem simulation
           | step _ _ _ h1 r1 =>
             cases h1 with
             | step_ite_true hcond hwfb' =>
-              have hswf_tss := InitEnvWF.toBlock_ite_left hswf (InitEnvWF.ite_left_disjoint hswf)
+              have hswf_tss := InitEnvWF.toBlock_ite_left hswf
               have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀ hswf_tss
               match hsim_tss.1 ρ' r1 with
               | .inl hcf =>
@@ -5480,7 +5536,7 @@ private theorem simulation
                 refine .inr (fun hnf => ?_)
                 exact .step _ _ _ (.step_ite_true hcond hwfb') (hok_tss hnf)
             | step_ite_false hcond hwfb' =>
-              have hswf_ess := InitEnvWF.toBlock_ite_right hswf (InitEnvWF.ite_right_disjoint hswf)
+              have hswf_ess := InitEnvWF.toBlock_ite_right hswf
               have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
                 (stmtOk_ite_right hok) ρ₀ hswf_ess
               match hsim_ess.1 ρ' r1 with
@@ -5492,7 +5548,7 @@ private theorem simulation
                 refine .inr (fun hnf => ?_)
                 exact .step _ _ _ (.step_ite_false hcond hwfb') (hok_ess hnf)
             | step_ite_nondet_true =>
-              have hswf_tss := InitEnvWF.toBlock_ite_left hswf (InitEnvWF.ite_left_disjoint hswf)
+              have hswf_tss := InitEnvWF.toBlock_ite_left hswf
               have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
                 hswf_tss
               match hsim_tss.1 ρ' r1 with
@@ -5504,7 +5560,7 @@ private theorem simulation
                 refine .inr (fun hnf => ?_)
                 exact .step _ _ _ .step_ite_nondet_true (hok_tss hnf)
             | step_ite_nondet_false =>
-              have hswf_ess := InitEnvWF.toBlock_ite_right hswf (InitEnvWF.ite_right_disjoint hswf)
+              have hswf_ess := InitEnvWF.toBlock_ite_right hswf
               have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
                 (stmtOk_ite_right hok) ρ₀ hswf_ess
               match hsim_ess.1 ρ' r1 with
@@ -5857,7 +5913,7 @@ private theorem simulation
             cases h1 with
             | step_ite_true hcond hwfb' =>
               have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
-                (InitEnvWF.toBlock_ite_left hswf (InitEnvWF.ite_left_disjoint hswf))
+                (InitEnvWF.toBlock_ite_left hswf)
               match hsim_tss.2 lbl ρ' r1 with
               | .inl hcf =>
                 obtain ⟨cfg', hf', hr'⟩ := hcf
@@ -5868,7 +5924,7 @@ private theorem simulation
                 exact .step _ _ _ (.step_ite_true hcond hwfb') (hok_tss hnf)
             | step_ite_false hcond hwfb' =>
               have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
-                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf (InitEnvWF.ite_right_disjoint hswf))
+                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
               match hsim_ess.2 lbl ρ' r1 with
               | .inl hcf =>
                 obtain ⟨cfg', hf', hr'⟩ := hcf
@@ -5879,7 +5935,7 @@ private theorem simulation
                 exact .step _ _ _ (.step_ite_false hcond hwfb') (hok_ess hnf)
             | step_ite_nondet_true =>
               have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
-                (InitEnvWF.toBlock_ite_left hswf (InitEnvWF.ite_left_disjoint hswf))
+                (InitEnvWF.toBlock_ite_left hswf)
               match hsim_tss.2 lbl ρ' r1 with
               | .inl hcf =>
                 obtain ⟨cfg', hf', hr'⟩ := hcf
@@ -5890,7 +5946,7 @@ private theorem simulation
                 exact .step _ _ _ .step_ite_nondet_true (hok_tss hnf)
             | step_ite_nondet_false =>
               have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
-                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf (InitEnvWF.ite_right_disjoint hswf))
+                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
               match hsim_ess.2 lbl ρ' r1 with
               | .inl hcf =>
                 obtain ⟨cfg', hf', hr'⟩ := hcf
@@ -5929,7 +5985,7 @@ private theorem simulation
               obtain ⟨ρ₁, hterm_s, hreach_ss⟩ := seq_reaches_terminal (P := Expression)
                 (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1
               have hswf_s : InitEnvWF reserved s ρ₀ :=
-                BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf)
+                BlockInitEnvWF.toStmt_head hswf
               have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
               match hsim_s.1 ρ₁ hterm_s with
               | .inl hcf_s =>
@@ -5995,7 +6051,7 @@ private theorem simulation
               | .inl hexit_s =>
                 -- head exits at lbl
                 have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀
-                  (BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf))
+                  (BlockInitEnvWF.toStmt_head hswf)
                 match hsim_s.2 lbl ρ' hexit_s with
                 | .inl hcf_s =>
                   exact .inl (canFail_head_to_block π φ _ _ ρ₀ hcf_s)
@@ -6004,7 +6060,7 @@ private theorem simulation
                   exact stmts_cons_exiting π φ _ _ lbl ρ₀ ρ' (hok_s hnf)
               | .inr ⟨ρ₁, hterm_s, hexit_ss⟩ =>
                 -- head terminates at ρ₁, tail exits
-                have hswf_s := BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf)
+                have hswf_s := BlockInitEnvWF.toStmt_head hswf
                 have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀ hswf_s
                 match hsim_s.1 ρ₁ hterm_s with
                 | .inl hcf_s =>
@@ -6014,7 +6070,7 @@ private theorem simulation
                   · refine .inl ?_
                     have hcf_src_s : Transform.CanFail (LangCore π φ) s ρ₀ :=
                       ⟨.terminal ρ₁, by show ρ₁.hasFailure = Bool.true; exact hnf₁, hterm_s⟩
-                    have hswf_s := BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf)
+                    have hswf_s := BlockInitEnvWF.toStmt_head hswf
                     have hcf_tgt_s := ih.2.2.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀
                       hswf_s hcf_src_s
                     exact canFail_head_to_block π φ _ _ ρ₀ hcf_tgt_s
@@ -6078,22 +6134,22 @@ private theorem simulation
         | step _ _ _ h1 r1 => cases h1 with
           | step_ite_true hcond hwfb' =>
             have ⟨cfg', hfail', hreach'⟩ := ih.2.2.2 σ tss hsz_tss hnofd_tss
-              (stmtOk_ite_left hok) ρ₀ (InitEnvWF.toBlock_ite_left hswf (InitEnvWF.ite_left_disjoint hswf))
+              (stmtOk_ite_left hok) ρ₀ (InitEnvWF.toBlock_ite_left hswf)
               ⟨cfg, hfail, r1⟩
             exact ⟨cfg', hfail', .step _ _ _ (.step_ite_true hcond hwfb') hreach'⟩
           | step_ite_false hcond hwfb' =>
             have ⟨cfg', hfail', hreach'⟩ := ih.2.2.2 (blockPostState σ tss) ess hsz_ess hnofd_ess
-              (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf (InitEnvWF.ite_right_disjoint hswf))
+              (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
               ⟨cfg, hfail, r1⟩
             exact ⟨cfg', hfail', .step _ _ _ (.step_ite_false hcond hwfb') hreach'⟩
           | step_ite_nondet_true =>
             have ⟨cfg', hfail', hreach'⟩ := ih.2.2.2 σ tss hsz_tss hnofd_tss
-              (stmtOk_ite_left hok) ρ₀ (InitEnvWF.toBlock_ite_left hswf (InitEnvWF.ite_left_disjoint hswf))
+              (stmtOk_ite_left hok) ρ₀ (InitEnvWF.toBlock_ite_left hswf)
               ⟨cfg, hfail, r1⟩
             exact ⟨cfg', hfail', .step _ _ _ .step_ite_nondet_true hreach'⟩
           | step_ite_nondet_false =>
             have ⟨cfg', hfail', hreach'⟩ := ih.2.2.2 (blockPostState σ tss) ess hsz_ess hnofd_ess
-              (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf (InitEnvWF.ite_right_disjoint hswf))
+              (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
               ⟨cfg, hfail, r1⟩
             exact ⟨cfg', hfail', .step _ _ _ .step_ite_nondet_false hreach'⟩
       | .loop guardE measure inv body md =>
@@ -6195,13 +6251,13 @@ private theorem simulation
             match seq_canfail_prop r1 hfail with
             | .inl ⟨cfg', hf', hstar'⟩ =>
               have ⟨kcfg, hkf, hkstar⟩ := ih.2.2.1 σ s hsz_s hnofd_s
-                (blockOk_cons_left hok) ρ₀ (BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf))
+                (blockOk_cons_left hok) ρ₀ (BlockInitEnvWF.toStmt_head hswf)
                 ⟨cfg', hf', hstar'⟩
               exact canFail_head_to_block π φ (stmtResult σ s)
                 (blockResult (stmtPostState σ s) ss) ρ₀ ⟨kcfg, hkf, hkstar⟩
             | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
               have hsim_s := ih.1 σ s hsz_s hnofd_s (blockOk_cons_left hok) ρ₀
-                (BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf))
+                (BlockInitEnvWF.toStmt_head hswf)
               match hsim_s.1 ρ₁ hterm_s with
               | .inl hcf_s =>
                 exact canFail_head_to_block π φ (stmtResult σ s)
@@ -6211,7 +6267,7 @@ private theorem simulation
                 · have hcf_src_s : Transform.CanFail (LangCore π φ) s ρ₀ :=
                     ⟨.terminal ρ₁, by show ρ₁.hasFailure = Bool.true; exact hnf₁, hterm_s⟩
                   have hcf_tgt_s := ih.2.2.1 σ s hsz_s hnofd_s
-                    (blockOk_cons_left hok) ρ₀ (BlockInitEnvWF.toStmt_head hswf (BlockInitEnvWF.cons_head_disjoint hswf)) hcf_src_s
+                    (blockOk_cons_left hok) ρ₀ (BlockInitEnvWF.toStmt_head hswf) hcf_src_s
                   exact canFail_head_to_block π φ (stmtResult σ s)
                     (blockResult (stmtPostState σ s) ss) ρ₀ hcf_tgt_s
                 · have hnf₁' : ρ₁.hasFailure = Bool.false := by
@@ -6326,11 +6382,28 @@ private theorem block_getVars_append (ss₁ ss₂ : Statements) :
   | nil => simp [Block.getVars]
   | cons s rest ih => simp [Block.getVars, ih, List.append_assoc]
 
+private theorem block_modifiedOrDefinedVars_append_mem (ss₁ ss₂ : Statements) (n : Expression.Ident) :
+    n ∈ Block.modifiedOrDefinedVars (ss₁ ++ ss₂) false ↔
+      n ∈ Block.modifiedOrDefinedVars ss₁ false ∨ n ∈ Block.modifiedOrDefinedVars ss₂ false := by
+  simp only [Block.modifiedOrDefinedVars, List.mem_append,
+    block_modifiedVars_append, block_definedVars_append]
+  constructor
+  · rintro ((h | h) | h | h)
+    · exact Or.inl (Or.inl h)
+    · exact Or.inr (Or.inl h)
+    · exact Or.inl (Or.inr h)
+    · exact Or.inr (Or.inr h)
+  · rintro ((h | h) | h | h)
+    · exact Or.inl (Or.inl h)
+    · exact Or.inr (Or.inl h)
+    · exact Or.inl (Or.inr h)
+    · exact Or.inr (Or.inr h)
+
 private theorem block_modifiedOrDefinedVars_append (ss₁ ss₂ : Statements) :
     Block.modifiedOrDefinedVars (ss₁ ++ ss₂) false =
-      Block.modifiedOrDefinedVars ss₁ false ++ Block.modifiedOrDefinedVars ss₂ false := by
-  -- TODO: This may not hold with new semantics - needs investigation
-  sorry
+      (Block.modifiedVars ss₁ ++ Block.modifiedVars ss₂) ++
+      (Block.definedVars ss₁ false ++ Block.definedVars ss₂ false) := by
+  simp only [Block.modifiedOrDefinedVars, block_modifiedVars_append, block_definedVars_append]
 
 /-- Havoc-only command lists have empty `Block.getVars` (havoc reads nothing). -/
 private theorem getVars_havoc_map (xs : List Expression.Ident)
@@ -6350,47 +6423,78 @@ private theorem getVars_havoc_map (xs : List Expression.Ident)
 
 /-- Havoc-only command lists have `Block.modifiedOrDefinedVars` equal to the
     havoc'd variables (havoc modifies but does not define). -/
+private theorem modifiedVars_havoc_map (xs : List Expression.Ident)
+    (md : MetaData Expression) :
+    @Block.modifiedVars Expression Command _
+        (xs.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) = xs := by
+  induction xs with
+  | nil => simp [Block.modifiedVars]
+  | cons x rest ih =>
+    simp only [List.map_cons, Block.modifiedVars]
+    rw [ih]
+    show @Stmt.modifiedVars Expression Command _ (Stmt.cmd (HasHavoc.havoc x md : Command)) ++ rest = x :: rest
+    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, HasHavoc.havoc, Command.modifiedVars, Cmd.modifiedVars]
+
 private theorem modifiedOrDefinedVars_havoc_map (xs : List Expression.Ident)
     (md : MetaData Expression) :
     @Block.modifiedOrDefinedVars Expression Command _
         (xs.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) false = xs := by
-  induction xs with
-  | nil => simp [Block.modifiedOrDefinedVars]
-  | cons x rest ih =>
-    show Block.modifiedOrDefinedVars
-           (Stmt.cmd (HasHavoc.havoc x md) :: rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md)))
-           false = x :: rest
-    simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars]
-    -- ih: Block.modifiedOrDefinedVars (rest.map ...) false = rest
-    -- which is: Block.modifiedVars (rest.map ...) ++ Block.definedVars (rest.map ...) false = rest
-    -- TODO: Need to align with new modifiedOrDefinedVars structure
-    sorry
+  show Block.modifiedVars _ ++ Block.definedVars _ false = xs
+  rw [modifiedVars_havoc_map xs md, definedVars_havoc_map xs md, List.append_nil]
 
 /-- A `mapIdx` of asserts has empty `Block.modifiedOrDefinedVars`. -/
+private theorem modifiedVars_mapIdx_assert
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.modifiedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (HasPassiveCmds.assert (label i le) le.2 md)) = [] := by
+  induction inv generalizing label with
+  | nil => simp [List.mapIdx_nil, Block.modifiedVars]
+  | cons x rest ih =>
+    rw [List.mapIdx_cons]
+    simp only [Block.modifiedVars]
+    rw [ih]
+    show @Stmt.modifiedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) ++ [] = []
+    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assert,
+      Command.modifiedVars, Cmd.modifiedVars]
+
 private theorem modifiedOrDefinedVars_mapIdx_assert
     (inv : List (String × Expression.Expr)) (md : MetaData Expression)
     (label : Nat → (String × Expression.Expr) → String) :
     @Block.modifiedOrDefinedVars Expression Command _
       (inv.mapIdx fun i le =>
         Stmt.cmd (HasPassiveCmds.assert (label i le) le.2 md)) false = [] := by
-  induction inv generalizing label with
-  | nil => simp [List.mapIdx_nil, Block.modifiedOrDefinedVars]
-  | cons x rest ih =>
-    -- TODO: Need to align with new modifiedOrDefinedVars structure
-    sorry
+  show Block.modifiedVars _ ++ Block.definedVars _ false = []
+  rw [modifiedVars_mapIdx_assert inv md label, definedVars_mapIdx_assert inv md label]
+  rfl
 
 /-- A `mapIdx` of assumes has empty `Block.modifiedOrDefinedVars`. -/
+private theorem modifiedVars_mapIdx_assume
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.modifiedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (HasPassiveCmds.assume (label i le) le.2 md)) = [] := by
+  induction inv generalizing label with
+  | nil => simp [List.mapIdx_nil, Block.modifiedVars]
+  | cons x rest ih =>
+    rw [List.mapIdx_cons]
+    simp only [Block.modifiedVars]
+    rw [ih]
+    show @Stmt.modifiedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md : Command)) ++ [] = []
+    simp [Stmt.modifiedVars, HasVarsImp.modifiedVars, HasPassiveCmds.assume,
+      Command.modifiedVars, Cmd.modifiedVars]
+
 private theorem modifiedOrDefinedVars_mapIdx_assume
     (inv : List (String × Expression.Expr)) (md : MetaData Expression)
     (label : Nat → (String × Expression.Expr) → String) :
     @Block.modifiedOrDefinedVars Expression Command _
       (inv.mapIdx fun i le =>
         Stmt.cmd (HasPassiveCmds.assume (label i le) le.2 md)) false = [] := by
-  induction inv generalizing label with
-  | nil => simp [List.mapIdx_nil, Block.modifiedOrDefinedVars]
-  | cons x rest ih =>
-    -- TODO: Need to align with new modifiedOrDefinedVars structure
-    sorry
+  show Block.modifiedVars _ ++ Block.definedVars _ false = []
+  rw [modifiedVars_mapIdx_assume inv md label, definedVars_mapIdx_assume inv md label]
+  rfl
 
 /-- The `getVars` of a `mapIdx` of asserts equals the `flatMap` of `getVars`
     over the underlying expressions (the labels do not contribute reads). -/
