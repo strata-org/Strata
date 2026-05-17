@@ -6550,7 +6550,21 @@ private theorem getVars_mapIdx_assume
          rest.flatMap (fun lp => HasVarsPure.getVars lp.2)
     simp [HasVarsPure.getVars, HasPassiveCmds.assume, Command.getVars, Cmd.getVars]
 
-/-- The loop case of `mem_definedVars_stmtResult`. -/
+/-- The loop case of `mem_definedVars_stmtResult`.
+
+    Strategy: we reduce to an existential over the concrete transformed statement,
+    then use the `dsimp`+`split`+`cases` scaffold (mirroring `stmtResult_loop_struct`)
+    to close each branch.  Each happy path (after the monadic plumbing is fully
+    resolved) requires showing that every name in `definedVars` of the result is
+    either from the loop body or is the measure variable (which has the reserved
+    prefix).  Error paths (freshness/label conflicts) are contradictions with `hok`.
+
+    The case splits correspond to:
+    1. `guard` = `.det g` vs `.nondet`
+    2. (if `.det g`) `measure` = `none` vs `some m`
+    3. (if `some m`) `m_old_ident ∈ Block.touchedVars body` → error (contradiction)
+    4. Label-conflict check → error (contradiction)
+-/
 private theorem mem_definedVars_stmtResult_loop
     (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
@@ -6562,10 +6576,8 @@ private theorem mem_definedVars_stmtResult_loop
     (hn : n ∈ Stmt.definedVars (stmtResult σ (.loop guard measure inv body md)) false) :
     n ∈ Block.definedVars body false ∨
     loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
-  -- Mirror the existing `stmtResult_loop_struct` proof structure.  The KEY trick:
-  -- the goal is wrapped in an existential whose witnesses are inferred by the
-  -- closing `cases h; exact ⟨_, ..., rfl⟩` pattern.  We re-state the goal as
-  -- such an existential (over the loop_num).
+  -- Wrap the conclusion in an existential over the loop_num, so that `cases h`
+  -- can unify and `rfl` can close the equation in each branch.
   suffices h_suff :
     ∃ (loop_num : String) (s' : Statement),
       stmtResult σ (.loop guard measure inv body md) = s' ∧
@@ -6578,7 +6590,7 @@ private theorem mem_definedVars_stmtResult_loop
     · exact .inl h_body
     · subst h_meas
       exact .inr (loopElimReservedPrefix_isPrefixOf_measure _)
-  -- Now mirror `stmtResult_loop_struct`'s proof.
+  -- Unfold stmtResult for the loop case to expose the monadic match.
   change ∃ (loop_num : String) (s' : Statement),
     (match (stmtRun σ (.loop guard measure inv body md)).fst with
       | .ok (_, s'') => s'' | .error _ => default) = s' ∧
@@ -6591,80 +6603,89 @@ private theorem mem_definedVars_stmtResult_loop
   | .error e => simp [h, Except.isOk, Except.toBool] at hok'
   | .ok (b, s') =>
     simp only [h]
-    -- Use dsimp (definitional simp) to fully reduce the monadic plumbing.
+    -- Reduce the monadic computation to expose case splits on guard/measure.
     dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM,
       bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
       ExceptT.lift, StateT.bind, StateT.pure,
       Functor.map, liftM, monadLift, MonadLift.monadLift,
       modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
       genLoopNum, bumpStat] at h
-    -- Closing tactic: `cases h; exact ⟨loop_num, _, rfl, fun m hm => ...⟩` as a
-    -- SINGLE TERM, mirroring the unification trick from `stmtResult_loop_struct`.
+    -- Dispatch each branch:
+    -- - Happy paths: `cases h` unifies the pair, then we analyze definedVars.
+    -- - Error paths: `contradiction` (since hok' rules out .error results).
     repeat (first
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
-            -- Stage 1: structural unfolding.
             simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
               block_definedVars_append false, List.append_nil] at hm
-            -- Stage 2: rewrite havoc/mapIdx-empty pieces via rw.
             repeat rw [definedVars_havoc_map] at hm
             repeat rw [definedVars_mapIdx_assert] at hm
             repeat rw [definedVars_mapIdx_assume] at hm
-            -- Stage 3: rewrite individual cmd HasVarsImp.definedVars; the
-            -- crucial step is that `HasInit.init` produces `[m_old_ident]`.
             simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
               HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
               Command.definedVars, Cmd.definedVars,
               List.append_nil, List.nil_append, List.mem_append,
               List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
-            -- After all reductions, hm is a (possibly-empty) nested disjunction
-            -- of the form `m = m_old ∨ m ∈ Block.definedVars body` (in some order).
-            -- Use a single `aesop`-style heuristic: match left or right of every disj.
             first
-              | exact .inl hm                          -- (just body)
-              | exact .inr hm                          -- (just m_old equality)
-              | (rcases hm with h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)
-              | (rcases hm with h1 | h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)
-              | (rcases hm with h1 | h1 | h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)
-              | (rcases hm with h1 | h1 | h1 | h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)⟩)
-      | sorry -- TODO: fix contradiction with new definedVars semantics
+              | exact .inl hm
+              | exact .inr hm
+              | (rcases hm with h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+              | (rcases hm with h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+              | (rcases hm with h1 | h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+              | (rcases hm with h1 | h1 | h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)⟩)
+      | contradiction
       | (split at h; skip))
-    all_goals (first
-      | (cases h; exact
-          ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
-            -- Stage 1: structural unfolding.
-            simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
-              block_definedVars_append false, List.append_nil] at hm
-            -- Stage 2: rewrite havoc/mapIdx-empty pieces via rw.
-            repeat rw [definedVars_havoc_map] at hm
-            repeat rw [definedVars_mapIdx_assert] at hm
-            repeat rw [definedVars_mapIdx_assume] at hm
-            -- Stage 3: rewrite individual cmd HasVarsImp.definedVars; the
-            -- crucial step is that `HasInit.init` produces `[m_old_ident]`.
-            simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
-              HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
-              Command.definedVars, Cmd.definedVars,
-              List.append_nil, List.nil_append, List.mem_append,
-              List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
-            -- After all reductions, hm is a (possibly-empty) nested disjunction
-            -- of the form `m = m_old ∨ m ∈ Block.definedVars body` (in some order).
-            -- Use a single `aesop`-style heuristic: match left or right of every disj.
-            first
-              | exact .inl hm                          -- (just body)
-              | exact .inr hm                          -- (just m_old equality)
-              | (rcases hm with h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)
-              | (rcases hm with h1 | h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)
-              | (rcases hm with h1 | h1 | h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)
-              | (rcases hm with h1 | h1 | h1 | h1 | h1 <;> first
-                  | exact .inl h1 | exact .inr h1)⟩)
-      | sorry) -- TODO: fix contradiction with new definedVars semantics
+    -- Close residual goal: the `.det g, some m` case where `h` still has
+    -- `StateT.pure ... .bind ...` wrapping the freshness check.
+    -- We use `unfold` + the same split/cases/contradiction cycle.
+    all_goals (first | contradiction | (
+      unfold StateT.pure at h
+      dsimp only [StateT.bind, StateT.map, ExceptT.bindCont, ExceptT.bind,
+        ExceptT.pure, ExceptT.mk, ExceptT.lift, bind, pure,
+        Functor.map, MonadState.modifyGet, StateT.modifyGet,
+        MonadStateOf.modifyGet, bumpStat, modify, genLoopNum] at h
+      repeat (first
+        | (cases h; exact
+            ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
+              simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+                block_definedVars_append false, List.append_nil] at hm
+              repeat rw [definedVars_havoc_map] at hm
+              repeat rw [definedVars_mapIdx_assert] at hm
+              repeat rw [definedVars_mapIdx_assume] at hm
+              simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
+                HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
+                Command.definedVars, Cmd.definedVars,
+                List.append_nil, List.nil_append, List.mem_append,
+                List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
+              first
+                | exact .inl hm
+                | exact .inr hm
+                | (rcases hm with h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+                | (rcases hm with h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+                | (rcases hm with h1 | h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+                | (rcases hm with h1 | h1 | h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)⟩)
+        | contradiction
+        | (split at h; skip))
+      all_goals (first | contradiction | (
+        obtain ⟨_, rfl⟩ := h
+        exact ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
+          simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+            block_definedVars_append (ex := Bool.false), List.append_nil] at hm
+          repeat rw [definedVars_havoc_map] at hm
+          repeat rw [definedVars_mapIdx_assert] at hm
+          repeat rw [definedVars_mapIdx_assume] at hm
+          simp only [HasVarsImp.definedVars, HasPassiveCmds.assert,
+            HasPassiveCmds.assume, HasInit.init, HasIdent.ident,
+            Command.definedVars, Cmd.definedVars,
+            List.append_nil, List.nil_append, List.mem_append,
+            List.not_mem_nil, false_or, or_false, List.mem_singleton] at hm
+          first
+            | exact .inl hm
+            | exact .inr hm
+            | (rcases hm with h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+            | (rcases hm with h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+            | (rcases hm with h1 | h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)
+            | (rcases hm with h1 | h1 | h1 | h1 | h1 <;> first | exact .inl h1 | exact .inr h1)⟩))))
 
 /-! Every name newly defined by the transform either was already a defined var
     of the source statement, or starts with the reserved `loopElimReservedPrefix`. -/
