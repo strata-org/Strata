@@ -36,15 +36,13 @@ def makeMetadata (file : String) (_line _col : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
   -- Create a 1D range (byte offsets). For testing, we use simple offsets.
   let range : Strata.SourceRange := { start := ⟨0⟩, stop := ⟨10⟩ }
-  let fr : Strata.FileRange := { file := uri, range := range }
-  #[{ fld := Imperative.MetaData.fileRange, value := .fileRange fr }]
+  Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange uri range)
 
 /-- Create metadata with a specific byte offset for the file range start. -/
 def makeMetadataAt (file : String) (startByte : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
   let range : Strata.SourceRange := { start := ⟨startByte⟩, stop := ⟨startByte + 10⟩ }
-  let fr : Strata.FileRange := { file := uri, range := range }
-  #[{ fld := Imperative.MetaData.fileRange, value := .fileRange fr }]
+  Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange uri range)
 
 /-- Create a simple FileMap for testing -/
 def makeFileMap : Lean.FileMap :=
@@ -122,7 +120,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 -- Test location extraction from metadata with wrong value type
 #guard
   let md : MetaData Expression := #[
-    { fld := Imperative.MetaData.fileRange, value := .msg "not a fileRange" }
+    { fld := Imperative.MetaData.provenanceField, value := .msg "not a provenance" }
   ]
   let files := makeFilesMap "/test/file.st"
   (extractLocation files md == none)

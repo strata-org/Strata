@@ -151,11 +151,8 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
-  | .exit lbl1 _, .exit lbl2 _ =>
-    match lbl1, lbl2 with
-    | some l1, some l2 => IdMap.updateLabel map l1 l2
-    | none, none => .ok map
-    | _, _ => mk_err "exit label mismatch"
+  | .exit l1 _, .exit l2 _ =>
+    IdMap.updateLabel map l1 l2
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
