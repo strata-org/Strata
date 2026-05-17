@@ -6974,18 +6974,176 @@ private theorem mem_touchedVars_stmtResult_loop_aux
     (hm : m ∈ Stmt.touchedVars s') :
     m ∈ Stmt.definedVars s' false ∨
     m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
-  -- TODO: complete the body.  The macro `cases h; ...` from
-  -- `mem_definedVars_stmtResult_loop` (which works for definedVars) doesn't
-  -- directly carry over to touchedVars because:
-  -- (a) The helper lemmas' LHS uses `le.2` and a higher-order `label` arg,
-  --     which Lean's `rw`/`simp only` can't unify against the actual
-  --     `if-then-else`-containing labels in `Stmt.removeLoopsM`'s output.
-  -- (b) Even after `repeat (split at h)` + `cases h`, only 2 of 3
-  --     (guard, measure) leaves get concretized; the `det+some` leaf has
-  --     a buried inner `if` that `split at h` can't see.
-  -- A workable approach (not pursued here): write per-leaf manual proofs
-  -- for each `(guard, measure)` triple.
+  -- The proof mirrors `definedVars_subset_stmtResult_loop` but for touchedVars.
+  -- The simp-based dispatch has a matching issue: `modifiedVars_mapIdx_assert`'s
+  -- LHS uses `HasPassiveCmds.assert` which simp unfolds in sub-terms before trying
+  -- the rewrite, preventing pattern matching. A fix would be to either:
+  -- (1) Use `erw` or `conv` to manually apply the mapIdx lemmas, or
+  -- (2) Create unfolded versions of the *_mapIdx_* lemmas.
   sorry
+
+/- The scaffold below works for all cases except the modifiedVars_mapIdx_* matching:
+  dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM,
+    bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
+    ExceptT.lift, StateT.bind, StateT.pure,
+    Functor.map, liftM, monadLift, MonadLift.monadLift,
+    modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
+    genLoopNum, bumpStat] at h
+  repeat (first
+    | (cases h
+       simp only [Stmt.touchedVars, Block.touchedVars,
+         Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+         Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
+         block_modifiedOrDefinedVars_append, block_getVars_append, block_definedVars_append,
+         Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
+         List.append_nil, List.nil_append,
+         List.mem_append, List.not_mem_nil, List.mem_singleton,
+         false_or, or_false] at hm ⊢
+       try simp only [modifiedOrDefinedVars_havoc_map, modifiedVars_havoc_map, getVars_havoc_map,
+         definedVars_havoc_map,
+         modifiedOrDefinedVars_mapIdx_assert, modifiedVars_mapIdx_assert, getVars_mapIdx_assert,
+         definedVars_mapIdx_assert,
+         modifiedOrDefinedVars_mapIdx_assume, modifiedVars_mapIdx_assume, getVars_mapIdx_assume,
+         definedVars_mapIdx_assume] at hm ⊢
+       simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
+         HasVarsPure.getVars,
+         HasPassiveCmds.assert, HasPassiveCmds.assume,
+         HasInit.init, HasIdent.ident, HasHavoc.havoc,
+         Command.definedVars, Command.modifiedVars, Command.getVars,
+         Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
+         ExprOrNondet.getVars,
+         List.append_nil, List.nil_append,
+         List.mem_append, List.not_mem_nil, List.mem_singleton,
+         false_or, or_false] at hm ⊢
+       try simp only [List.mem_filter, decide_eq_true_eq] at hm
+       repeat first
+         | exact .inr (Or.inl hm)
+         | exact .inr (Or.inr hm)
+         | exact .inr (Or.inl (Or.inl hm))
+         | exact .inr (Or.inl (Or.inr hm))
+         | exact .inr (Or.inr (Or.inl hm))
+         | exact .inr (Or.inr (Or.inr hm))
+         | exact .inl hm
+         | exact .inl (Or.inl hm)
+         | exact .inl (Or.inr hm)
+         | exact .inl (Or.inl (Or.inl hm))
+         | exact .inl (Or.inr (Or.inl hm))
+         | exact .inl (Or.inr (Or.inr hm))
+         | (rcases hm with hm | hm)
+         | (subst hm; exact .inl (by simp [Stmt.definedVars, Block.definedVars,
+             block_definedVars_append, definedVars_havoc_map,
+             definedVars_mapIdx_assert, definedVars_mapIdx_assume,
+             HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
+             Command.definedVars, Cmd.definedVars]))
+         | exact absurd hm (List.not_mem_nil _)
+       done)
+    | contradiction
+    | (split at h; skip))
+  -- Close residual goal: the `.det g, some m` case.
+  all_goals (first | contradiction | (
+    unfold StateT.pure at h
+    dsimp only [StateT.bind, StateT.map, ExceptT.bindCont, ExceptT.bind,
+      ExceptT.pure, ExceptT.mk, ExceptT.lift, bind, pure,
+      Functor.map, MonadState.modifyGet, StateT.modifyGet,
+      MonadStateOf.modifyGet, bumpStat, modify, genLoopNum] at h
+    repeat (first
+      | (cases h
+         simp only [Stmt.touchedVars, Block.touchedVars,
+           Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+           Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
+           block_modifiedOrDefinedVars_append, block_getVars_append, block_definedVars_append,
+           Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
+           List.append_nil, List.nil_append,
+           List.mem_append, List.not_mem_nil, List.mem_singleton,
+           false_or, or_false] at hm ⊢
+         simp only [modifiedOrDefinedVars_havoc_map, modifiedVars_havoc_map, getVars_havoc_map,
+           definedVars_havoc_map,
+           modifiedOrDefinedVars_mapIdx_assert, modifiedVars_mapIdx_assert, getVars_mapIdx_assert,
+           definedVars_mapIdx_assert,
+           modifiedOrDefinedVars_mapIdx_assume, modifiedVars_mapIdx_assume, getVars_mapIdx_assume,
+           definedVars_mapIdx_assume] at hm ⊢
+         simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
+           HasVarsPure.getVars,
+           HasPassiveCmds.assert, HasPassiveCmds.assume,
+           HasInit.init, HasIdent.ident, HasHavoc.havoc,
+           Command.definedVars, Command.modifiedVars, Command.getVars,
+           Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
+           ExprOrNondet.getVars,
+           List.append_nil, List.nil_append,
+           List.mem_append, List.not_mem_nil, List.mem_singleton,
+           false_or, or_false] at hm ⊢
+         try simp only [List.mem_filter, decide_eq_true_eq] at hm
+         repeat first
+           | exact .inr (Or.inl hm)
+           | exact .inr (Or.inr hm)
+           | exact .inr (Or.inl (Or.inl hm))
+           | exact .inr (Or.inl (Or.inr hm))
+           | exact .inr (Or.inr (Or.inl hm))
+           | exact .inr (Or.inr (Or.inr hm))
+           | exact .inl hm
+           | exact .inl (Or.inl hm)
+           | exact .inl (Or.inr hm)
+           | exact .inl (Or.inl (Or.inl hm))
+           | exact .inl (Or.inr (Or.inl hm))
+           | exact .inl (Or.inr (Or.inr hm))
+           | (rcases hm with hm | hm)
+           | (subst hm; exact .inl (by simp [Stmt.definedVars, Block.definedVars,
+               block_definedVars_append, definedVars_havoc_map,
+               definedVars_mapIdx_assert, definedVars_mapIdx_assume,
+               HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
+               Command.definedVars, Cmd.definedVars]))
+           | exact absurd hm (List.not_mem_nil _)
+         done)
+      | contradiction
+      | (split at h; skip))
+    all_goals (first | contradiction | (
+      obtain ⟨_, rfl⟩ := h
+      simp only [Stmt.touchedVars, Block.touchedVars,
+        Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+        Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
+        block_modifiedOrDefinedVars_append, block_getVars_append, block_definedVars_append,
+        Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
+        List.append_nil, List.nil_append,
+        List.mem_append, List.not_mem_nil, List.mem_singleton,
+        false_or, or_false] at hm ⊢
+      try simp only [modifiedOrDefinedVars_havoc_map, modifiedVars_havoc_map, getVars_havoc_map,
+        definedVars_havoc_map,
+        modifiedOrDefinedVars_mapIdx_assert, modifiedVars_mapIdx_assert, getVars_mapIdx_assert,
+        definedVars_mapIdx_assert,
+        modifiedOrDefinedVars_mapIdx_assume, modifiedVars_mapIdx_assume, getVars_mapIdx_assume,
+        definedVars_mapIdx_assume] at hm ⊢
+      simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
+        HasVarsPure.getVars,
+        HasPassiveCmds.assert, HasPassiveCmds.assume,
+        HasInit.init, HasIdent.ident, HasHavoc.havoc,
+        Command.definedVars, Command.modifiedVars, Command.getVars,
+        Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
+        ExprOrNondet.getVars,
+        List.append_nil, List.nil_append,
+        List.mem_append, List.not_mem_nil, List.mem_singleton,
+        false_or, or_false] at hm ⊢
+      try simp only [List.mem_filter, decide_eq_true_eq] at hm
+      repeat first
+        | exact .inr (Or.inl hm)
+        | exact .inr (Or.inr hm)
+        | exact .inr (Or.inl (Or.inl hm))
+        | exact .inr (Or.inl (Or.inr hm))
+        | exact .inr (Or.inr (Or.inl hm))
+        | exact .inr (Or.inr (Or.inr hm))
+        | exact .inl hm
+        | exact .inl (Or.inl hm)
+        | exact .inl (Or.inr hm)
+        | exact .inl (Or.inl (Or.inl hm))
+        | exact .inl (Or.inr (Or.inl hm))
+        | exact .inl (Or.inr (Or.inr hm))
+        | (rcases hm with hm | hm)
+        | (subst hm; exact .inl (by simp [Stmt.definedVars, Block.definedVars,
+            block_definedVars_append (ex := Bool.false), definedVars_havoc_map,
+            definedVars_mapIdx_assert, definedVars_mapIdx_assume,
+            HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
+            Command.definedVars, Cmd.definedVars]))
+        | exact absurd hm (List.not_mem_nil _)))))
+-/
 
 /-- The loop case of `mem_touchedVars_stmtResult`.
 
@@ -7079,24 +7237,10 @@ private theorem mem_touchedVars_stmtResult_loop
       simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
         Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil, List.mem_append]
       exact Or.inl hm
-    have body_def_to_src : ∀ m, m ∈ Block.definedVars body false →
-        m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
-      intro m hm
-      -- Block.definedVars body false contains scoped definitions that are NOT
-      -- in Stmt.touchedVars (.loop ..) (which uses excludeScoped=true).
-      -- This closure is used in a `first` dispatch that also tries `.inl` routing;
-      -- if this path is reached, it means the variable is defined in the body
-      -- but also appears in the transform's touchedVars expansion (via
-      -- block_modifiedOrDefinedVars_append on the `false` variant).
-      -- The lemma as stated is not provable in general.
-      sorry
-    have body_md_to_src : ∀ m, m ∈ Block.modifiedOrDefinedVars body false →
-        m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
-      intro m hm
-      simp only [Block.modifiedOrDefinedVars, List.mem_append] at hm
-      rcases hm with hmod | hdef
-      · exact body_mod_to_src m hmod
-      · exact body_def_to_src m hdef
+    -- Note: `Block.definedVars body false` is NOT in `Stmt.touchedVars (.loop ..)`
+    -- because touchedVars uses `excludeScoped=true`. Variables in
+    -- `Block.definedVars body false` are routed to `.inl` (transform's definedVars)
+    -- in the dispatch below, not to `.inr` (source touchedVars).
     have body_gv_to_src : ∀ m, m ∈ Block.getVars body →
         m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
       intro m hm
@@ -7164,9 +7308,10 @@ private theorem mem_touchedVars_stmtResult_loop
     repeat (first
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
+            have hm_orig := hm
             simp only [Stmt.touchedVars, Block.touchedVars,
-              Stmt.modifiedOrDefinedVars, Stmt.getVars, Stmt.definedVars,
-              Block.modifiedOrDefinedVars, Block.getVars, Block.definedVars,
+              Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+              Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
               block_modifiedOrDefinedVars_append, block_getVars_append,
               block_definedVars_append,
               modifiedOrDefinedVars_havoc_map, getVars_havoc_map,
@@ -7182,16 +7327,15 @@ private theorem mem_touchedVars_stmtResult_loop
               Command.definedVars, Command.modifiedVars, Command.getVars,
               Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
               ExprOrNondet.getVars,
+              Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
               List.append_nil, List.nil_append,
               List.mem_append, List.not_mem_nil, List.mem_singleton,
               false_or, or_false] at hm
             try simp only [List.mem_filter, decide_eq_true_eq] at hm
             -- Dispatch each disjunct of `hm` to the appropriate side.
             (repeat first
-              | exact .inr (body_md_to_src _ hm)
               | exact .inr (body_mod_to_src _ hm.1)
               | exact .inr (body_mod_to_src _ hm)
-              | exact .inr (body_def_to_src _ hm)
               | exact .inr (body_gv_to_src _ hm)
               | exact .inr (guard_to_src _ hm)
               | exact .inr (measure_to_src _ hm)
@@ -7204,21 +7348,37 @@ private theorem mem_touchedVars_stmtResult_loop
                    definedVars_mapIdx_assume,
                    HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
                    Command.definedVars, Cmd.definedVars])
-              | exact absurd hm List.not_mem_nil)
+              | (exact .inl (by
+                   simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
+                     Block.definedVars, block_definedVars_append,
+                     definedVars_havoc_map, definedVars_mapIdx_assert,
+                     definedVars_mapIdx_assume,
+                     HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
+                     Command.definedVars, Cmd.definedVars,
+                     List.append_nil, List.nil_append, List.mem_append,
+                     List.not_mem_nil, false_or, or_false]
+                   first
+                     | exact hm | exact .inl hm | exact .inr hm
+                     | exact .inl (.inl hm) | exact .inl (.inr hm)
+                     | exact .inr (.inl hm) | exact .inr (.inr hm)
+                     | exact .inl (.inl (.inl hm)) | exact .inl (.inl (.inr hm))
+                     | exact .inl (.inr (.inl hm)) | exact .inl (.inr (.inr hm))
+                     | exact .inr (.inl (.inl hm)) | exact .inr (.inl (.inr hm))
+                     | exact .inr (.inr (.inl hm)) | exact .inr (.inr (.inr hm))))
+              | exact absurd hm (List.not_mem_nil _))
             -- Residual goal (abstract-`s'` branch).  Discharge via the
-            -- factored aux lemma `mem_touchedVars_stmtResult_loop_aux`, which
-            -- takes the un-dsimp'd `h_orig` to derive `s'`'s structural form.
-            all_goals (
-              -- TODO: Fix this proof for new modifiedOrDefinedVars structure
-              sorry)⟩)
+            -- factored aux lemma.
+            all_goals
+              exact mem_touchedVars_stmtResult_loop_aux σ guard measure inv body md
+                hok b s' h_orig m hm_orig⟩)
       | contradiction
       | (split at h; skip))
     all_goals (first
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
             simp only [Stmt.touchedVars, Block.touchedVars,
-              Stmt.modifiedOrDefinedVars, Stmt.getVars, Stmt.definedVars,
-              Block.modifiedOrDefinedVars, Block.getVars, Block.definedVars,
+              Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+              Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
               block_modifiedOrDefinedVars_append, block_getVars_append,
               block_definedVars_append,
               modifiedOrDefinedVars_havoc_map, getVars_havoc_map,
@@ -7234,15 +7394,14 @@ private theorem mem_touchedVars_stmtResult_loop
               Command.definedVars, Command.modifiedVars, Command.getVars,
               Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
               ExprOrNondet.getVars,
+              Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
               List.append_nil, List.nil_append,
               List.mem_append, List.not_mem_nil, List.mem_singleton,
               false_or, or_false] at hm
             try simp only [List.mem_filter, decide_eq_true_eq] at hm
             (repeat first
-              | exact .inr (body_md_to_src _ hm)
               | exact .inr (body_mod_to_src _ hm.1)
               | exact .inr (body_mod_to_src _ hm)
-              | exact .inr (body_def_to_src _ hm)
               | exact .inr (body_gv_to_src _ hm)
               | exact .inr (guard_to_src _ hm)
               | exact .inr (measure_to_src _ hm)
@@ -7255,7 +7414,24 @@ private theorem mem_touchedVars_stmtResult_loop
                    definedVars_mapIdx_assume,
                    HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
                    Command.definedVars, Cmd.definedVars])
-              | exact absurd hm List.not_mem_nil)
+              | (exact .inl (by
+                   simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
+                     Block.definedVars, block_definedVars_append,
+                     definedVars_havoc_map, definedVars_mapIdx_assert,
+                     definedVars_mapIdx_assume,
+                     HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
+                     Command.definedVars, Cmd.definedVars,
+                     List.append_nil, List.nil_append, List.mem_append,
+                     List.not_mem_nil, false_or, or_false]
+                   first
+                     | exact hm | exact .inl hm | exact .inr hm
+                     | exact .inl (.inl hm) | exact .inl (.inr hm)
+                     | exact .inr (.inl hm) | exact .inr (.inr hm)
+                     | exact .inl (.inl (.inl hm)) | exact .inl (.inl (.inr hm))
+                     | exact .inl (.inr (.inl hm)) | exact .inl (.inr (.inr hm))
+                     | exact .inr (.inl (.inl hm)) | exact .inr (.inl (.inr hm))
+                     | exact .inr (.inr (.inl hm)) | exact .inr (.inr (.inr hm))))
+              | exact absurd hm (List.not_mem_nil _))
             done⟩)
       | contradiction)
 
