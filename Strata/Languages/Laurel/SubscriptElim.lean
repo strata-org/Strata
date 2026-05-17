@@ -243,19 +243,71 @@ private def mkArrayInitSplit (param : Parameter) (dsrc : Option FileRange)
    ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), src⟩ arrayDataField src]
       initExpr', src⟩]
 
+/-- Collapse a list of statements into a single `StmtExprMd`, wrapping
+    multi-statement results in `.Block`. Singleton results pass through
+    unchanged. Used at non-Block container sites (If/While branches)
+    where the surrounding AST expects exactly one `StmtExprMd`. -/
+private def collapseStmts (stmts : List StmtExprMd) (src : Option FileRange) : StmtExprMd :=
+  match stmts with
+  | [s] => s
+  | _ => ⟨.Block stmts none, src⟩
+
 /-! ## Main rewrite
 
 Top-down recursive rewrite. Done top-down (not via `mapStmtExprM`) so that
 `.Block` statements can expand 1→N (splitting `var a: Array<T> := <seq>`
 initialisations) and `.Assign [.Subscript a i none] v` can be recognised
 before the inner `.Subscript` is rewritten into a `Sequence.select` call.
+
+Statement-position handling for `.Subscript t i (some v)` (destructive
+update) and `.Assign [.Declare _] init` (1→N split for Array
+initialisation) is centralised in `elimStmtAt`. The four statement-position
+container arms (`.Block`, `.IfThenElse` then/else, `.While` body) all
+delegate to it, eliminating the duplication of the dispatch logic.
 -/
 
+mutual
+
+/-- Per-statement dispatch shared by the four statement-position container
+    arms. Returns a list because `.Subscript` and `.Assign-Declare` may
+    expand 1→N (the Array-init split) — `.Block` consumes this directly via
+    `flatMap`; `.IfThenElse`/`.While` wrap multi-element results in
+    `.Block`. The fallback recurses on `elimExpr`, which decreases the
+    lexicographic measure `(sizeOf s, kind)` because `elimExpr` is
+    `kind=0` and this helper is `kind=1`. -/
+def elimStmtAt (model : SemanticModel) (s : StmtExprMd) : List StmtExprMd :=
+  match _hsub : s.val with
+  | .Subscript target index (some value) =>
+    if isArrayType model target then
+      [mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
+                         (elimExpr model value) s.source]
+    else
+      -- Seq<T>: user error. COUPLING: `ValidateSubscriptUsage` MUST
+      -- have reported a `msgSeqDestructiveUpdate` diagnostic first.
+      [⟨.Block [] none, s.source⟩]
+  | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
+    let initExpr' := elimExpr model initExpr
+    if isArrayHighType param.type.val && !isArrayType model initExpr then
+      mkArrayInitSplit param dsrc initExpr' s.source
+    else
+      [⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', s.source⟩]
+  | _ => [elimExpr model s]
+termination_by (sizeOf s, 1)
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt s)
+  -- target/index/value of the Subscript-at-stmt-position arm
+  all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _hsub; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _hsub; omega))
+  all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _hsub; omega))
+  -- initExpr of the Assign-Declare arm
+  all_goals (try (have := StmtExpr.sizeOf_assign_value_lt_of_eq _hsub; omega))
+  -- Fallback to elimExpr on the same s: lex measure (sizeOf s, 1) > (sizeOf s, 0)
+  all_goals omega
+
 /-- Recursively eliminate Subscript nodes and desugar `Array.length`.
-    Statement-position handling (for `.Subscript t i (some v)` and
-    `.Assign [.Declare _] init` shapes that need 1→N expansion or Array-
-    specific rewriting) is inlined at the `.Block`, `.IfThenElse`, and
-    `.While` arms. -/
+    Statement-position handling for `.Subscript t i (some v)` and
+    `.Assign [.Declare _] init` is delegated to `elimStmtAt`. -/
 def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   let src := expr.source
   match _h : expr.val with
@@ -269,7 +321,7 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   | .Subscript target index (some value) =>
     -- Expression-position update: `s := s[i := v]`. Desugars to Sequence.update.
     -- Statement-position `a[i] := v` (same AST shape) is intercepted earlier
-    -- by `elimStmt` — at every statement-position container — so it never
+    -- by `elimStmtAt` — at every statement-position container — so it never
     -- reaches this arm.
     let target' := elimExpr model target
     let index' := elimExpr model index
@@ -283,28 +335,7 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     else
       mkCall SeqOp.update [target', index', value'] src
   | .Block stmts label =>
-    -- Statement-position handling inlined for termination. Each `s ∈ stmts`:
-    --   * `.Subscript t i (some v)`: destructive update. Array → field-update
-    --     statement; Seq → empty block (validator has already reported).
-    --   * `.Assign [⟨.Declare p, _⟩] init` with Array p and non-Array init:
-    --     split into `var a: Array := new $Array; a.$data := init`.
-    --   * otherwise: walk via elimExpr.
-    ⟨.Block (stmts.attach.flatMap fun ⟨s, _⟩ => match _hsub : s.val with
-      | .Subscript target index (some value) =>
-        if isArrayType model target then
-          [mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
-                             (elimExpr model value) s.source]
-        else
-          -- Seq<T>: user error. COUPLING: `ValidateSubscriptUsage` MUST
-          -- have reported a `msgSeqDestructiveUpdate` diagnostic first.
-          [⟨.Block [] none, s.source⟩]
-      | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
-        let initExpr' := elimExpr model initExpr
-        if isArrayHighType param.type.val && !isArrayType model initExpr then
-          mkArrayInitSplit param dsrc initExpr' s.source
-        else
-          [⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', s.source⟩]
-      | _ => [elimExpr model s]) label, src⟩
+    ⟨.Block (stmts.attach.flatMap fun ⟨s, _⟩ => elimStmtAt model s) label, src⟩
   | .Assign targets value =>
     -- Assign targets are VariableMd; we only need to recurse into .Field sub-expressions.
     let targets' := targets.attach.map fun ⟨t, _⟩ => match _htv : t.val with
@@ -343,53 +374,11 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     else
       ⟨.StaticCall callee args', src⟩
   | .IfThenElse c t e =>
-    -- Statement-position branches: handle `.Subscript t i (some v)` and
-    -- `.Assign [.Declare _] init` shapes inline, same pattern as the
-    -- `.Block` arm but as a single StmtExprMd (wrapping multi-stmt in Block).
-    let t' : StmtExprMd := match _hsub : t.val with
-      | .Subscript target index (some value) =>
-        if isArrayType model target then
-          mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
-                            (elimExpr model value) t.source
-        else
-          ⟨.Block [] none, t.source⟩
-      | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
-        let initExpr' := elimExpr model initExpr
-        if isArrayHighType param.type.val && !isArrayType model initExpr then
-          ⟨.Block (mkArrayInitSplit param dsrc initExpr' t.source) none, t.source⟩
-        else
-          ⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', t.source⟩
-      | _ => elimExpr model t
-    let e' : Option StmtExprMd := e.attach.map fun ⟨y, _⟩ => match _hsub : y.val with
-      | .Subscript target index (some value) =>
-        if isArrayType model target then
-          mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
-                            (elimExpr model value) y.source
-        else
-          ⟨.Block [] none, y.source⟩
-      | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
-        let initExpr' := elimExpr model initExpr
-        if isArrayHighType param.type.val && !isArrayType model initExpr then
-          ⟨.Block (mkArrayInitSplit param dsrc initExpr' y.source) none, y.source⟩
-        else
-          ⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', y.source⟩
-      | _ => elimExpr model y
+    let t' := collapseStmts (elimStmtAt model t) t.source
+    let e' := e.attach.map fun ⟨y, _⟩ => collapseStmts (elimStmtAt model y) y.source
     ⟨.IfThenElse (elimExpr model c) t' e', src⟩
   | .While c invs dec body =>
-    let body' : StmtExprMd := match _hsub : body.val with
-      | .Subscript target index (some value) =>
-        if isArrayType model target then
-          mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
-                            (elimExpr model value) body.source
-        else
-          ⟨.Block [] none, body.source⟩
-      | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
-        let initExpr' := elimExpr model initExpr
-        if isArrayHighType param.type.val && !isArrayType model initExpr then
-          ⟨.Block (mkArrayInitSplit param dsrc initExpr' body.source) none, body.source⟩
-        else
-          ⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', body.source⟩
-      | _ => elimExpr model body
+    let body' := collapseStmts (elimStmtAt model body) body.source
     ⟨.While (elimExpr model c) (invs.attach.map fun ⟨i, _⟩ => elimExpr model i)
       (dec.attach.map fun ⟨d, _⟩ => elimExpr model d) body', src⟩
   | .Return v => ⟨.Return (v.attach.map fun ⟨x, _⟩ => elimExpr model x), src⟩
@@ -417,7 +406,7 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => expr
-termination_by sizeOf expr
+termination_by (sizeOf expr, 0)
 decreasing_by
   all_goals simp_wf
   all_goals (try have := AstNode.sizeOf_val_lt expr)
@@ -434,41 +423,12 @@ decreasing_by
   all_goals (try (have := StmtExpr.sizeOf_subscript_target_lt_of_eq _h; omega))
   all_goals (try (have := StmtExpr.sizeOf_subscript_index_lt_of_eq _h; omega))
   all_goals (try (have := StmtExpr.sizeOf_subscript_value_lt_of_eq _h; omega))
-  -- For target/index/value inside .Subscript at statement position (inside
-  -- a Block/If/While stmt) — uses the inner match hypothesis _hsub.
-  -- Two sub-cases:
-  --   Block: `s ∈ stmts` needs List.sizeOf_lt_of_mem.
-  --   If/While branch: direct field, no list membership.
-  -- We try both formulations.
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := StmtExpr.sizeOf_subscript_target_lt_of_eq _hsub
-    simp_all; omega))
-  all_goals (try (
-    have := StmtExpr.sizeOf_subscript_target_lt_of_eq _hsub
-    simp_all; omega))
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := StmtExpr.sizeOf_subscript_index_lt_of_eq _hsub
-    simp_all; omega))
-  all_goals (try (
-    have := StmtExpr.sizeOf_subscript_index_lt_of_eq _hsub
-    simp_all; omega))
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := StmtExpr.sizeOf_subscript_value_lt_of_eq _hsub
-    simp_all; omega))
-  all_goals (try (
-    have := StmtExpr.sizeOf_subscript_value_lt_of_eq _hsub
-    simp_all; omega))
-  -- For initExpr inside .Assign [.Declare _] initExpr in Block / branch.
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := StmtExpr.sizeOf_assign_value_lt_of_eq _hsub
-    simp_all; omega))
-  all_goals (try (
-    have := StmtExpr.sizeOf_assign_value_lt_of_eq _hsub
-    simp_all; omega))
+  -- For elimStmtAt model t/y/body calls in IfThenElse / While arms:
+  -- the helper is at lex level 1, elimExpr (us) is at level 0.
+  -- (sizeOf t, 1) < (sizeOf expr, 0) when sizeOf t < sizeOf expr.
+  all_goals (try term_by_mem)
+
+end -- mutual
 
 private def elimBody (model : SemanticModel) (body : Body) : Body :=
   match body with
