@@ -7022,8 +7022,13 @@ private theorem mem_touchedVars_stmtResult_loop
     have body_def_to_src : ∀ m, m ∈ Block.definedVars body false →
         m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
       intro m hm
-      -- definedVars false is scoped, not in loop touchedVars (which uses excludeScoped=true).
-      -- This closure is never reached by the dispatch tactic in practice.
+      -- Block.definedVars body false contains scoped definitions that are NOT
+      -- in Stmt.touchedVars (.loop ..) (which uses excludeScoped=true).
+      -- This closure is used in a `first` dispatch that also tries `.inl` routing;
+      -- if this path is reached, it means the variable is defined in the body
+      -- but also appears in the transform's touchedVars expansion (via
+      -- block_modifiedOrDefinedVars_append on the `false` variant).
+      -- The lemma as stated is not provable in general.
       sorry
     have body_md_to_src : ∀ m, m ∈ Block.modifiedOrDefinedVars body false →
         m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
@@ -7239,10 +7244,92 @@ private theorem mem_touchedVars_stmtResult
     · simpa [Stmt.definedVars] using hndef
   | .ite c tss ess md =>
     rw [stmtResult_ite] at hn hnd
+    have hnd' : n ∉ Block.definedVars (blockResult σ tss) false ∧
+                n ∉ Block.definedVars (blockResult (blockPostState σ tss) ess) false := by
+      simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or] at hnd
+      exact hnd
+    have hnd_tss : n ∉ Block.definedVars tss false := fun h =>
+      hnd'.1 (definedVars_subset_blockResult σ tss (stmtOk_ite_left hok) n h)
+    have hnd_ess : n ∉ Block.definedVars ess false := fun h =>
+      hnd'.2 (definedVars_subset_blockResult (blockPostState σ tss) ess (stmtOk_ite_right hok) n h)
+    have hn' : n ∈ Stmt.touchedVars
+        (.ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md) := hn
     simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
-      Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil, List.mem_append] at hn ⊢
-    simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or] at hnd ⊢
-    sorry
+      Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil] at hn'
+    -- hn' : n ∈ (Block.modifiedVars ... ++ Block.modifiedVars ...) ++ (c.getVars ++ ...)
+    rcases List.mem_append.mp hn' with h_mod | h_gv
+    · -- n in modifiedVars of one branch
+      rcases List.mem_append.mp h_mod with h_t | h_e
+      · -- n ∈ Block.modifiedVars (blockResult σ tss)
+        have h_in : n ∈ Block.touchedVars (blockResult σ tss) :=
+          List.mem_append_left _ (List.mem_append_left _ h_t)
+        have ⟨hsrc, hndef_src⟩ :=
+          mem_touchedVars_blockResult σ tss (stmtOk_ite_left hok) n h_in hnd'.1
+        constructor
+        · simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+            Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil]
+          simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hsrc
+          rcases hsrc with (hm | hd) | hg
+          · exact List.mem_append_left _ (List.mem_append_left _ hm)
+          · exact absurd (block_definedVars_true_subset_false tss n hd) hndef_src
+          · exact List.mem_append_right _ (List.mem_append_left _ (List.mem_append_right _ hg))
+        · simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
+          exact ⟨hndef_src, hnd_ess⟩
+      · -- n ∈ Block.modifiedVars (blockResult (blockPostState σ tss) ess)
+        have h_in : n ∈ Block.touchedVars (blockResult (blockPostState σ tss) ess) :=
+          List.mem_append_left _ (List.mem_append_left _ h_e)
+        have ⟨hsrc, hndef_src⟩ :=
+          mem_touchedVars_blockResult (blockPostState σ tss) ess (stmtOk_ite_right hok) n h_in hnd'.2
+        constructor
+        · simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+            Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil]
+          simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hsrc
+          rcases hsrc with (hm | hd) | hg
+          · exact List.mem_append_left _ (List.mem_append_right _ hm)
+          · exact absurd (block_definedVars_true_subset_false ess n hd) hndef_src
+          · exact List.mem_append_right _ (List.mem_append_right _ hg)
+        · simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
+          exact ⟨hnd_tss, hndef_src⟩
+    · -- n in getVars (c.getVars ++ Block.getVars tss' ++ Block.getVars ess')
+      rcases List.mem_append.mp h_gv with h_cgt | h_ge
+      · rcases List.mem_append.mp h_cgt with h_c | h_gt
+        · -- n ∈ ExprOrNondet.getVars c (condition is unchanged)
+          constructor
+          · simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+              Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil]
+            exact List.mem_append_right _ (List.mem_append_left _ (List.mem_append_left _ h_c))
+          · simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
+            exact ⟨hnd_tss, hnd_ess⟩
+        · -- n ∈ Block.getVars (blockResult σ tss)
+          have h_in : n ∈ Block.touchedVars (blockResult σ tss) :=
+            List.mem_append_right _ h_gt
+          have ⟨hsrc, hndef_src⟩ :=
+            mem_touchedVars_blockResult σ tss (stmtOk_ite_left hok) n h_in hnd'.1
+          constructor
+          · simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+              Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil]
+            simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hsrc
+            rcases hsrc with (hm | hd) | hg
+            · exact List.mem_append_left _ (List.mem_append_left _ hm)
+            · exact absurd (block_definedVars_true_subset_false tss n hd) hndef_src
+            · exact List.mem_append_right _ (List.mem_append_left _ (List.mem_append_right _ hg))
+          · simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
+            exact ⟨hndef_src, hnd_ess⟩
+      · -- n ∈ Block.getVars (blockResult (blockPostState σ tss) ess)
+        have h_in : n ∈ Block.touchedVars (blockResult (blockPostState σ tss) ess) :=
+          List.mem_append_right _ h_ge
+        have ⟨hsrc, hndef_src⟩ :=
+          mem_touchedVars_blockResult (blockPostState σ tss) ess (stmtOk_ite_right hok) n h_in hnd'.2
+        constructor
+        · simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, Stmt.modifiedVars,
+            Stmt.definedVars, Stmt.getVars, ite_true, List.append_nil]
+          simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hsrc
+          rcases hsrc with (hm | hd) | hg
+          · exact List.mem_append_left _ (List.mem_append_right _ hm)
+          · exact absurd (block_definedVars_true_subset_false ess n hd) hndef_src
+          · exact List.mem_append_right _ (List.mem_append_right _ hg)
+        · simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append, not_or]
+          exact ⟨hnd_tss, hndef_src⟩
   | .loop guard measure inv body md =>
     exact mem_touchedVars_stmtResult_loop σ guard measure inv body md hok n hn hnd
 
@@ -7263,7 +7350,62 @@ private theorem mem_touchedVars_blockResult
     simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
       Block.definedVars, Block.getVars, List.mem_append] at hn ⊢
     simp only [Block.definedVars, List.mem_append, not_or] at hnd ⊢
-    sorry
+    obtain ⟨hnd_s, hnd_r⟩ := hnd
+    have hnd_s_src : n ∉ Stmt.definedVars s false := fun h =>
+      hnd_s (definedVars_subset_stmtResult σ s (blockOk_cons_left hok) n h)
+    have hnd_r_src : n ∉ Block.definedVars rest false := fun h =>
+      hnd_r (definedVars_subset_blockResult (stmtPostState σ s) rest (blockOk_cons_right hok) n h)
+    rcases hn with ((hms | hmr) | (hds | hdr)) | (hgs | hgr)
+    · -- n ∈ Stmt.modifiedVars (stmtResult σ s)
+      have h_in : n ∈ Stmt.touchedVars (stmtResult σ s) := by
+        simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, List.mem_append]
+        exact Or.inl (Or.inl hms)
+      have ⟨hsrc, hndef_s⟩ := mem_touchedVars_stmtResult σ s (blockOk_cons_left hok) n h_in hnd_s
+      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, List.mem_append] at hsrc
+      refine ⟨?_, hndef_s, hnd_r_src⟩
+      rcases hsrc with (hm | hd) | hg
+      · exact Or.inl (Or.inl (Or.inl hm))
+      · exact Or.inl (Or.inr (Or.inl hd))
+      · exact Or.inr (Or.inl hg)
+    · -- n ∈ Block.modifiedVars (blockResult (stmtPostState σ s) rest)
+      have h_in : n ∈ Block.touchedVars (blockResult (stmtPostState σ s) rest) := by
+        simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append]
+        exact Or.inl (Or.inl hmr)
+      have ⟨hsrc, hndef_r⟩ :=
+        mem_touchedVars_blockResult (stmtPostState σ s) rest (blockOk_cons_right hok) n h_in hnd_r
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hsrc
+      refine ⟨?_, hnd_s_src, hndef_r⟩
+      rcases hsrc with (hm | hd) | hg
+      · exact Or.inl (Or.inl (Or.inr hm))
+      · exact Or.inl (Or.inr (Or.inr hd))
+      · exact Or.inr (Or.inr hg)
+    · -- n ∈ Stmt.definedVars (stmtResult σ s) true → contradiction
+      exact absurd (stmt_definedVars_true_subset_false (stmtResult σ s) n hds) hnd_s
+    · -- n ∈ Block.definedVars (blockResult ...) true → contradiction
+      exact absurd (block_definedVars_true_subset_false (blockResult (stmtPostState σ s) rest) n hdr) hnd_r
+    · -- n ∈ Stmt.getVars (stmtResult σ s)
+      have h_in : n ∈ Stmt.touchedVars (stmtResult σ s) := by
+        simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, List.mem_append]
+        exact Or.inr hgs
+      have ⟨hsrc, hndef_s⟩ := mem_touchedVars_stmtResult σ s (blockOk_cons_left hok) n h_in hnd_s
+      simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars, List.mem_append] at hsrc
+      refine ⟨?_, hndef_s, hnd_r_src⟩
+      rcases hsrc with (hm | hd) | hg
+      · exact Or.inl (Or.inl (Or.inl hm))
+      · exact Or.inl (Or.inr (Or.inl hd))
+      · exact Or.inr (Or.inl hg)
+    · -- n ∈ Block.getVars (blockResult (stmtPostState σ s) rest)
+      have h_in : n ∈ Block.touchedVars (blockResult (stmtPostState σ s) rest) := by
+        simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append]
+        exact Or.inr hgr
+      have ⟨hsrc, hndef_r⟩ :=
+        mem_touchedVars_blockResult (stmtPostState σ s) rest (blockOk_cons_right hok) n h_in hnd_r
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hsrc
+      refine ⟨?_, hnd_s_src, hndef_r⟩
+      rcases hsrc with (hm | hd) | hg
+      · exact Or.inl (Or.inl (Or.inr hm))
+      · exact Or.inl (Or.inr (Or.inr hd))
+      · exact Or.inr (Or.inr hg)
 end
 
 theorem loopElim_overapproximatesAggressive
