@@ -21,7 +21,7 @@ class HasVarsPure (P : PureExpr) (α : Type) where
 class HasVarsImp (P : PureExpr) (α : Type) where
   definedVars : α → List P.Ident
   modifiedVars : α → List P.Ident
-  touchedVars : α → List P.Ident
+  modifiedOrDefinedVars : α → List P.Ident
           := λ e ↦ definedVars e ++ modifiedVars e
 
 ---------------------------------------------------------------------
@@ -42,7 +42,7 @@ class HasVarsTrans
   definedVarsTrans : (String → Option PT) → α → List P.Ident
   modifiedVarsTrans : (String → Option PT) → α → List P.Ident
   getVarsTrans : (String → Option PT) → α → List P.Ident
-  touchedVarsTrans : (String → Option PT) → α → List P.Ident
+  modifiedOrDefinedVarsTrans : (String → Option PT) → α → List P.Ident
   allVarsTrans : (String → Option PT) → α → List P.Ident
   := λ π a ↦ modifiedVarsTrans π a ++ getVarsTrans π a
 
