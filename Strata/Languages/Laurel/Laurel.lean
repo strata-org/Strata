@@ -333,7 +333,24 @@ inductive StmtExpr : Type where
         not allowed in functions.
       - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
-  /-- Subscript access or update, e.g. `s[i]` or `s[i := v]`. Eliminated by `SubscriptElim`. -/
+  /-- Subscript access or update, e.g. `s[i]` or `s[i := v]`. Eliminated by `SubscriptElim`.
+
+      **Position-encoded interpretation.** The same shape `.Subscript t i (some v)`
+      represents two different operations depending on syntactic position:
+
+      - At *expression position* (e.g. `let s' := s[i := v]`), it is a pure
+        functional update that produces a new sequence.
+      - At *statement position* (e.g. `a[i] := v` as a top-level statement),
+        it is a destructive update on a mutable array.
+
+      Statement-position interpretation requires the `.Subscript` to appear as
+      a direct child of a `.Block` / `.IfThenElse` / `.While` container —
+      `SubscriptElim` and `ValidateSubscriptUsage` recognise the shape there
+      and dispatch on it before the expression-position arms run. A bare
+      `.Subscript ... (some _)` reachable outside such a container would be
+      treated as a value and lose its destructive semantics; today the
+      grammar always wraps procedure bodies in `.Block`, so this case does
+      not arise. -/
   | Subscript (target : AstNode StmtExpr) (index : AstNode StmtExpr) (update : Option (AstNode StmtExpr))
 
 inductive ContractType where

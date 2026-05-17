@@ -259,6 +259,29 @@ Arrays are represented internally by a synthetic `$Array` composite with a singl
 compiler-internal names to avoid collisions with user-declared types. The
 `$Array` composite is only injected into programs that actually use `Array<T>`.
 
+## Datatypes carrying arrays
+
+`Array<T>` is *not allowed* as a datatype constructor argument. The
+validator emits a dedicated diagnostic when this is attempted:
+
+```
+datatype Wrapped {
+  Wrap(arr: Array<int>)
+  //   ~~~~~~~~~~~~~~~
+  // error: `Array<T>` is not supported as a datatype constructor argument.
+}
+```
+
+The reason is a semantic mismatch: datatypes carry value semantics whereas
+`Array<T>` is a heap reference. The combination does not typecheck end-to-end
+in the current Core translation. Workarounds:
+
+- Use a `composite` type instead — composites have reference semantics and
+  natively work with `Array<T>` fields.
+- Wrap a `Seq<T>` snapshot if value-semantic storage is what you need:
+  the constructor argument becomes `items: Seq<T>` and is populated by
+  `Sequence.fromArray(arr)` at construction sites.
+
 # Expressions and Statements
 
 Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like

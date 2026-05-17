@@ -44,7 +44,15 @@ public section
 
 /-! ## Detecting whether `Array<T>` is used anywhere -/
 
-/-- Return `true` if `ty` contains a `TArray` anywhere. -/
+/-- Return `true` if `ty` contains a `TArray` anywhere.
+
+    Each `HighType` constructor gets its own arm so that adding a new
+    constructor produces a missing-cases error rather than silently
+    falling through. `Unknown` and `MultiValuedExpr` are explicitly
+    `false`: the former is an unresolved-type marker that aborts
+    compilation before we'd care whether it contains a TArray, and the
+    latter is an internal-only computeExprType output that never carries
+    user-declared types. -/
 def containsTArray (ty : HighType) : Bool := match _hht : ty with
   | .TArray _ => true
   | .TSet et => containsTArray et.val
@@ -54,7 +62,9 @@ def containsTArray (ty : HighType) : Bool := match _hht : ty with
   | .Applied base args => containsTArray base.val || args.attach.any (fun ⟨x, _⟩ => containsTArray x.val)
   | .Pure base => containsTArray base.val
   | .Intersection types => types.attach.any (fun ⟨x, _⟩ => containsTArray x.val)
-  | _ => false
+  | .Unknown | .MultiValuedExpr _ => false
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString | .THeap
+  | .TBv _ | .UserDefined _ | .TCore _ => false
 termination_by sizeOf ty
 decreasing_by
   all_goals simp_wf
@@ -208,6 +218,31 @@ private def isArrayHighType (ty : HighType) : Bool :=
   | .TArray _ => true
   | _ => false
 
+/-- Build the destructive-update statement for `a[i] := v` on an `Array<T>`:
+    `a#$data := Sequence.update(a#$data, i, v)`.
+
+    The arguments are *already-rewritten* children so this helper does not
+    recurse — it simply constructs the result shape used by the four
+    statement-position dispatch sites in `elimExpr`. -/
+private def mkArrayUpdateStmt (target' index' value' : StmtExprMd)
+    (src : Option FileRange) : StmtExprMd :=
+  let data := mkFieldExpr target' arrayDataField src
+  ⟨.Assign [mkFieldVariable target' arrayDataField src]
+      (mkCall SeqOp.update [data, index', value'] src), src⟩
+
+/-- Build the two-statement split for `var a: Array<T> := <init>` where
+    `init` is a non-Array (i.e. needs the synthetic `$Array` allocation):
+    `var a: Array<T> := new $Array; a#$data := <init>`.
+
+    The arguments are *already-rewritten* (`initExpr'` is the rewritten
+    initialiser); this helper does not recurse. Used by the four
+    statement-position dispatch sites in `elimExpr`. -/
+private def mkArrayInitSplit (param : Parameter) (dsrc : Option FileRange)
+    (initExpr' : StmtExprMd) (src : Option FileRange) : List StmtExprMd :=
+  [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), src⟩, src⟩,
+   ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), src⟩ arrayDataField src]
+      initExpr', src⟩]
+
 /-! ## Main rewrite
 
 Top-down recursive rewrite. Done top-down (not via `mapStmtExprM`) so that
@@ -257,12 +292,8 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     ⟨.Block (stmts.attach.flatMap fun ⟨s, _⟩ => match _hsub : s.val with
       | .Subscript target index (some value) =>
         if isArrayType model target then
-          let target' := elimExpr model target
-          let index' := elimExpr model index
-          let value' := elimExpr model value
-          let data := mkFieldExpr target' arrayDataField s.source
-          [⟨.Assign [mkFieldVariable target' arrayDataField s.source]
-              (mkCall SeqOp.update [data, index', value'] s.source), s.source⟩]
+          [mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
+                             (elimExpr model value) s.source]
         else
           -- Seq<T>: user error. COUPLING: `ValidateSubscriptUsage` MUST
           -- have reported a `msgSeqDestructiveUpdate` diagnostic first.
@@ -270,9 +301,7 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
       | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
         let initExpr' := elimExpr model initExpr
         if isArrayHighType param.type.val && !isArrayType model initExpr then
-          [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), s.source⟩, s.source⟩,
-           ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), s.source⟩ arrayDataField s.source]
-              initExpr', s.source⟩]
+          mkArrayInitSplit param dsrc initExpr' s.source
         else
           [⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', s.source⟩]
       | _ => [elimExpr model s]) label, src⟩
@@ -320,42 +349,28 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     let t' : StmtExprMd := match _hsub : t.val with
       | .Subscript target index (some value) =>
         if isArrayType model target then
-          let target' := elimExpr model target
-          let index' := elimExpr model index
-          let value' := elimExpr model value
-          let data := mkFieldExpr target' arrayDataField t.source
-          ⟨.Assign [mkFieldVariable target' arrayDataField t.source]
-              (mkCall SeqOp.update [data, index', value'] t.source), t.source⟩
+          mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
+                            (elimExpr model value) t.source
         else
           ⟨.Block [] none, t.source⟩
       | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
         let initExpr' := elimExpr model initExpr
         if isArrayHighType param.type.val && !isArrayType model initExpr then
-          ⟨.Block
-            [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), t.source⟩, t.source⟩,
-             ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), t.source⟩ arrayDataField t.source]
-                initExpr', t.source⟩] none, t.source⟩
+          ⟨.Block (mkArrayInitSplit param dsrc initExpr' t.source) none, t.source⟩
         else
           ⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', t.source⟩
       | _ => elimExpr model t
     let e' : Option StmtExprMd := e.attach.map fun ⟨y, _⟩ => match _hsub : y.val with
       | .Subscript target index (some value) =>
         if isArrayType model target then
-          let target' := elimExpr model target
-          let index' := elimExpr model index
-          let value' := elimExpr model value
-          let data := mkFieldExpr target' arrayDataField y.source
-          ⟨.Assign [mkFieldVariable target' arrayDataField y.source]
-              (mkCall SeqOp.update [data, index', value'] y.source), y.source⟩
+          mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
+                            (elimExpr model value) y.source
         else
           ⟨.Block [] none, y.source⟩
       | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
         let initExpr' := elimExpr model initExpr
         if isArrayHighType param.type.val && !isArrayType model initExpr then
-          ⟨.Block
-            [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), y.source⟩, y.source⟩,
-             ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), y.source⟩ arrayDataField y.source]
-                initExpr', y.source⟩] none, y.source⟩
+          ⟨.Block (mkArrayInitSplit param dsrc initExpr' y.source) none, y.source⟩
         else
           ⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', y.source⟩
       | _ => elimExpr model y
@@ -364,21 +379,14 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     let body' : StmtExprMd := match _hsub : body.val with
       | .Subscript target index (some value) =>
         if isArrayType model target then
-          let target' := elimExpr model target
-          let index' := elimExpr model index
-          let value' := elimExpr model value
-          let data := mkFieldExpr target' arrayDataField body.source
-          ⟨.Assign [mkFieldVariable target' arrayDataField body.source]
-              (mkCall SeqOp.update [data, index', value'] body.source), body.source⟩
+          mkArrayUpdateStmt (elimExpr model target) (elimExpr model index)
+                            (elimExpr model value) body.source
         else
           ⟨.Block [] none, body.source⟩
       | .Assign [⟨.Declare param, dsrc⟩] initExpr =>
         let initExpr' := elimExpr model initExpr
         if isArrayHighType param.type.val && !isArrayType model initExpr then
-          ⟨.Block
-            [⟨.Assign [⟨.Declare param, dsrc⟩] ⟨.New (mkId arrayCompositeName), body.source⟩, body.source⟩,
-             ⟨.Assign [mkFieldVariable ⟨.Var (.Local param.name), body.source⟩ arrayDataField body.source]
-                initExpr', body.source⟩] none, body.source⟩
+          ⟨.Block (mkArrayInitSplit param dsrc initExpr' body.source) none, body.source⟩
         else
           ⟨.Assign [⟨.Declare param, dsrc⟩] initExpr', body.source⟩
       | _ => elimExpr model body

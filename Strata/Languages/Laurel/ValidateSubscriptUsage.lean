@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.SubscriptElim
 import Strata.Util.Tactics
 
 /-!
@@ -66,9 +67,27 @@ private def msgArrayElementNotInt (actual : String) : String :=
   s!"`Array<T>` is currently only supported for `T = int`. " ++
   s!"Support for other element types is not yet implemented. Found: `Array<{actual}>`."
 
+private def msgArrayLengthArity (got : Nat) : String :=
+  s!"`Array.length` takes exactly one argument of type `Array<T>`, got {got}."
+
+private def msgSequenceFromArrayArity (got : Nat) : String :=
+  s!"`Sequence.fromArray` takes exactly one argument of type `Array<T>`, got {got}."
+
+private def msgArrayInDatatypeArg : String :=
+  "`Array<T>` is not supported as a datatype constructor argument. " ++
+  "Datatypes carry value semantics whereas `Array<T>` is a heap reference; " ++
+  "the combination does not typecheck. Use a `composite` instead, or wrap " ++
+  "the array's contents as `Seq<T>` (which has value semantics)."
+
+
 /-! ## Type-position walk (Array element type diagnostic) -/
 
-/-- Collect diagnostics for any `Array<T>` whose element type is not `int`. -/
+/-- Collect diagnostics for any `Array<T>` whose element type is not `int`.
+
+    Like `containsTArray`, each constructor has its own arm so adding a new
+    `HighType` variant produces a missing-cases error. `Unknown` and
+    `MultiValuedExpr` are explicit no-op arms (they cannot carry
+    user-declared types that need validating). -/
 def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
   match _hht : ty.val with
   | .TArray et =>
@@ -88,7 +107,9 @@ def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
     validateHighType base ++ args.flatMap validateHighType
   | .Pure base => validateHighType base
   | .Intersection tys => tys.flatMap validateHighType
-  | _ => []
+  | .Unknown | .MultiValuedExpr _ => []
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString | .THeap
+  | .TBv _ | .UserDefined _ | .TCore _ => []
 termination_by sizeOf ty
 decreasing_by
   all_goals simp_wf
@@ -142,7 +163,7 @@ def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List Diagnost
           let actualTy := (computeExprType model a).val
           if isArrayTy actualTy then []
           else [diagnosticFromSource expr.source (msgArrayLengthArg (fmtType actualTy))]
-        | _ => []
+        | _ => [diagnosticFromSource expr.source (msgArrayLengthArity args.length)]
       else []
     let fromArrayDiag : List DiagnosticModel :=
       if callee.text == sequenceFromArrayName then
@@ -151,7 +172,7 @@ def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List Diagnost
           let actualTy := (computeExprType model a).val
           if isArrayTy actualTy then []
           else [diagnosticFromSource expr.source (msgSequenceFromArrayArg (fmtType actualTy))]
-        | _ => []
+        | _ => [diagnosticFromSource expr.source (msgSequenceFromArrayArity args.length)]
       else []
     lengthDiag ++ fromArrayDiag ++
       args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateStmtExpr model a) []
@@ -329,7 +350,13 @@ private def validateTypeDefinition (model : SemanticModel)
     validateHighType ct.base ++ validateStmtExpr model ct.constraint ++
     validateStmtExpr model ct.witness
   | .Datatype dt =>
-    dt.constructors.flatMap fun c => c.args.flatMap (fun p => validateHighType p.type)
+    dt.constructors.flatMap fun c =>
+      c.args.flatMap fun p =>
+        let arrayDiag : List DiagnosticModel :=
+          if containsTArray p.type.val then
+            [diagnosticFromSource p.type.source msgArrayInDatatypeArg]
+          else []
+        arrayDiag ++ validateHighType p.type
   | .Alias ta => validateHighType ta.target
 
 private def validateConstant (model : SemanticModel) (c : Constant) : List DiagnosticModel :=
