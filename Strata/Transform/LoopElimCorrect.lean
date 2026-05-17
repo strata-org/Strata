@@ -6827,39 +6827,78 @@ private theorem definedVars_subset_stmtResult_loop
               | exact .inr (.inl (.inr hm))
               | exact .inr (.inr (.inl hm))
               | exact .inr (.inr (.inr hm))⟩)
-      | sorry -- TODO: fix contradiction with new definedVars semantics
+      | contradiction
       | (split at h; skip))
-    all_goals (first
-      | (cases h; exact
-          ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
-            simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
-              block_definedVars_append false, List.append_nil]
-            repeat rw [definedVars_havoc_map]
-            repeat rw [definedVars_mapIdx_assert]
-            repeat rw [definedVars_mapIdx_assume]
-            simp only [HasVarsImp.definedVars,
-              HasPassiveCmds.assert, HasPassiveCmds.assume,
-              HasInit.init, HasIdent.ident,
-              Command.definedVars, Cmd.definedVars,
-              List.append_nil, List.nil_append, List.mem_append,
-              List.not_mem_nil, List.mem_singleton, false_or, or_false]
-            first
-              | exact hm
-              | exact .inl hm
-              | exact .inr hm
-              | exact .inl (.inl hm)
-              | exact .inl (.inr hm)
-              | exact .inr (.inl hm)
-              | exact .inr (.inr hm)
-              | exact .inl (.inl (.inl hm))
-              | exact .inl (.inl (.inr hm))
-              | exact .inl (.inr (.inl hm))
-              | exact .inl (.inr (.inr hm))
-              | exact .inr (.inl (.inl hm))
-              | exact .inr (.inl (.inr hm))
-              | exact .inr (.inr (.inl hm))
-              | exact .inr (.inr (.inr hm))⟩)
-      | sorry) -- TODO: fix contradiction with new definedVars semantics
+    -- Close residual goal: the `.det g, some m` case where `h` still has
+    -- `StateT.pure ... .bind ...` wrapping the freshness check.
+    all_goals (first | contradiction | (
+      unfold StateT.pure at h
+      dsimp only [StateT.bind, StateT.map, ExceptT.bindCont, ExceptT.bind,
+        ExceptT.pure, ExceptT.mk, ExceptT.lift, bind, pure,
+        Functor.map, MonadState.modifyGet, StateT.modifyGet,
+        MonadStateOf.modifyGet, bumpStat, modify, genLoopNum] at h
+      repeat (first
+        | (cases h; exact
+            ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
+              simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+                block_definedVars_append false, List.append_nil]
+              repeat rw [definedVars_havoc_map]
+              repeat rw [definedVars_mapIdx_assert]
+              repeat rw [definedVars_mapIdx_assume]
+              simp only [HasVarsImp.definedVars,
+                HasPassiveCmds.assert, HasPassiveCmds.assume,
+                HasInit.init, HasIdent.ident,
+                Command.definedVars, Cmd.definedVars,
+                List.append_nil, List.nil_append, List.mem_append,
+                List.not_mem_nil, List.mem_singleton, false_or, or_false]
+              first
+                | exact hm
+                | exact .inl hm
+                | exact .inr hm
+                | exact .inl (.inl hm)
+                | exact .inl (.inr hm)
+                | exact .inr (.inl hm)
+                | exact .inr (.inr hm)
+                | exact .inl (.inl (.inl hm))
+                | exact .inl (.inl (.inr hm))
+                | exact .inl (.inr (.inl hm))
+                | exact .inl (.inr (.inr hm))
+                | exact .inr (.inl (.inl hm))
+                | exact .inr (.inl (.inr hm))
+                | exact .inr (.inr (.inl hm))
+                | exact .inr (.inr (.inr hm))⟩)
+        | contradiction
+        | (split at h; skip))
+      all_goals (first | contradiction | (
+        obtain ⟨_, rfl⟩ := h
+        exact ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by
+          simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, Block.definedVars,
+            block_definedVars_append (ex := Bool.false), List.append_nil]
+          repeat rw [definedVars_havoc_map]
+          repeat rw [definedVars_mapIdx_assert]
+          repeat rw [definedVars_mapIdx_assume]
+          simp only [HasVarsImp.definedVars,
+            HasPassiveCmds.assert, HasPassiveCmds.assume,
+            HasInit.init, HasIdent.ident,
+            Command.definedVars, Cmd.definedVars,
+            List.append_nil, List.nil_append, List.mem_append,
+            List.not_mem_nil, List.mem_singleton, false_or, or_false]
+          first
+            | exact hm
+            | exact .inl hm
+            | exact .inr hm
+            | exact .inl (.inl hm)
+            | exact .inl (.inr hm)
+            | exact .inr (.inl hm)
+            | exact .inr (.inr hm)
+            | exact .inl (.inl (.inl hm))
+            | exact .inl (.inl (.inr hm))
+            | exact .inl (.inr (.inl hm))
+            | exact .inl (.inr (.inr hm))
+            | exact .inr (.inl (.inl hm))
+            | exact .inr (.inl (.inr hm))
+            | exact .inr (.inr (.inl hm))
+            | exact .inr (.inr (.inr hm))⟩))))
 
 -- The transform preserves `definedVars` (the source's defined vars are a
 -- subset of the transform's defined vars), assuming the transform succeeds.
