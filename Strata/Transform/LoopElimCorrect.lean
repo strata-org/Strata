@@ -6953,14 +6953,209 @@ private theorem definedVars_subset_blockResult
           (blockOk_cons_right hok) n hr)
 end
 
+/-! ### Focused lemmas about each loop-elim builder.
+
+These lemmas characterize the modified/defined/get vars of each builder,
+making it possible to prove memberships about the loop-elim output by
+composing piece-wise facts rather than running through a giant `dsimp`
++ `cases h` chain. -/
+
+/-- `Block.modifiedVars` of the entry-invariants list (asserts) is empty. -/
+private theorem modifiedVars_buildEntryInvariants
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.modifiedVars (Imperative.LoopElim.buildEntryInvariants (P := Expression) (C := Command)
+      loop_num invariants md) = [] := by
+  unfold Imperative.LoopElim.buildEntryInvariants
+  exact modifiedVars_mapIdx_assert _ _ _
+
+/-- `Block.definedVars` of the entry-invariants list (asserts) is empty. -/
+private theorem definedVars_buildEntryInvariants
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.definedVars (Imperative.LoopElim.buildEntryInvariants (P := Expression) (C := Command)
+      loop_num invariants md) false = [] := by
+  unfold Imperative.LoopElim.buildEntryInvariants
+  exact definedVars_mapIdx_assert _ _ _
+
+/-- `Block.getVars` of the entry-invariants list (asserts) is the flatMap of
+    invariant-expression vars. -/
+private theorem getVars_buildEntryInvariants
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.getVars (Imperative.LoopElim.buildEntryInvariants (P := Expression) (C := Command)
+      loop_num invariants md) =
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  unfold Imperative.LoopElim.buildEntryInvariants
+  exact getVars_mapIdx_assert _ _ _
+
+/-- `Block.modifiedVars` of the entry-invariant-assumes list is empty. -/
+private theorem modifiedVars_buildEntryInvariantAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.modifiedVars (Imperative.LoopElim.buildEntryInvariantAssumes (P := Expression) (C := Command)
+      loop_num invariants md) = [] := by
+  unfold Imperative.LoopElim.buildEntryInvariantAssumes
+  exact modifiedVars_mapIdx_assume _ _ _
+
+private theorem definedVars_buildEntryInvariantAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.definedVars (Imperative.LoopElim.buildEntryInvariantAssumes (P := Expression) (C := Command)
+      loop_num invariants md) false = [] := by
+  unfold Imperative.LoopElim.buildEntryInvariantAssumes
+  exact definedVars_mapIdx_assume _ _ _
+
+private theorem getVars_buildEntryInvariantAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.getVars (Imperative.LoopElim.buildEntryInvariantAssumes (P := Expression) (C := Command)
+      loop_num invariants md) =
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  unfold Imperative.LoopElim.buildEntryInvariantAssumes
+  exact getVars_mapIdx_assume _ _ _
+
+/-- `Block.modifiedVars` of inv-assumes is empty. -/
+private theorem modifiedVars_buildInvAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.modifiedVars (Imperative.LoopElim.buildInvAssumes (P := Expression) (C := Command)
+      loop_num invariants md) = [] := by
+  unfold Imperative.LoopElim.buildInvAssumes
+  exact modifiedVars_mapIdx_assume _ _ _
+
+private theorem definedVars_buildInvAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.definedVars (Imperative.LoopElim.buildInvAssumes (P := Expression) (C := Command)
+      loop_num invariants md) false = [] := by
+  unfold Imperative.LoopElim.buildInvAssumes
+  exact definedVars_mapIdx_assume _ _ _
+
+private theorem getVars_buildInvAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.getVars (Imperative.LoopElim.buildInvAssumes (P := Expression) (C := Command)
+      loop_num invariants md) =
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  unfold Imperative.LoopElim.buildInvAssumes
+  exact getVars_mapIdx_assume _ _ _
+
+/-- `Block.modifiedVars` of maintain-invariants is empty. -/
+private theorem modifiedVars_buildMaintainInvariants
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.modifiedVars (Imperative.LoopElim.buildMaintainInvariants (P := Expression) (C := Command)
+      loop_num invariants md) = [] := by
+  unfold Imperative.LoopElim.buildMaintainInvariants
+  exact modifiedVars_mapIdx_assert _ _ _
+
+private theorem definedVars_buildMaintainInvariants
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.definedVars (Imperative.LoopElim.buildMaintainInvariants (P := Expression) (C := Command)
+      loop_num invariants md) false = [] := by
+  unfold Imperative.LoopElim.buildMaintainInvariants
+  exact definedVars_mapIdx_assert _ _ _
+
+private theorem getVars_buildMaintainInvariants
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.getVars (Imperative.LoopElim.buildMaintainInvariants (P := Expression) (C := Command)
+      loop_num invariants md) =
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  unfold Imperative.LoopElim.buildMaintainInvariants
+  exact getVars_mapIdx_assert _ _ _
+
+/-- `Block.modifiedVars` of exit-invariant-assumes is empty. -/
+private theorem modifiedVars_buildExitInvariantAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.modifiedVars (Imperative.LoopElim.buildExitInvariantAssumes (P := Expression) (C := Command)
+      loop_num invariants md) = [] := by
+  unfold Imperative.LoopElim.buildExitInvariantAssumes
+  exact modifiedVars_mapIdx_assume _ _ _
+
+private theorem definedVars_buildExitInvariantAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.definedVars (Imperative.LoopElim.buildExitInvariantAssumes (P := Expression) (C := Command)
+      loop_num invariants md) false = [] := by
+  unfold Imperative.LoopElim.buildExitInvariantAssumes
+  exact definedVars_mapIdx_assume _ _ _
+
+private theorem getVars_buildExitInvariantAssumes
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Block.getVars (Imperative.LoopElim.buildExitInvariantAssumes (P := Expression) (C := Command)
+      loop_num invariants md) =
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  unfold Imperative.LoopElim.buildExitInvariantAssumes
+  exact getVars_mapIdx_assume _ _ _
+
+/-- `Stmt.modifiedVars` of the havoc-block: it's the filtered modifiedVars
+    of the body (those not declared inside the body). -/
+private theorem modifiedVars_buildHavocBlock
+    (loop_num : String) (bss : Statements) (md : MetaData Expression) :
+    Stmt.modifiedVars (Imperative.LoopElim.buildHavocBlock (P := Expression) (C := Command)
+      loop_num bss md) =
+    (Block.modifiedVars bss).filter (fun v => v ∉ Block.definedVars bss false) := by
+  simp only [Imperative.LoopElim.buildHavocBlock, Stmt.modifiedVars]
+  exact modifiedVars_havoc_map _ _
+
+private theorem definedVars_buildHavocBlock
+    (loop_num : String) (bss : Statements) (md : MetaData Expression) :
+    Stmt.definedVars (Imperative.LoopElim.buildHavocBlock (P := Expression) (C := Command)
+      loop_num bss md) false = [] := by
+  simp only [Imperative.LoopElim.buildHavocBlock, Stmt.definedVars,
+    Bool.false_eq_true, ↓reduceIte]
+  exact definedVars_havoc_map _ _
+
+private theorem getVars_buildHavocBlock
+    (loop_num : String) (bss : Statements) (md : MetaData Expression) :
+    Stmt.getVars (Imperative.LoopElim.buildHavocBlock (P := Expression) (C := Command)
+      loop_num bss md) = [] := by
+  simp only [Imperative.LoopElim.buildHavocBlock, Stmt.getVars]
+  exact getVars_havoc_map _ _
+
+/-- The first-iter-facts block has empty modifiedVars (only asserts/assumes). -/
+private theorem modifiedVars_buildFirstIterFacts
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Stmt.modifiedVars (Imperative.LoopElim.buildFirstIterFacts (P := Expression) (C := Command)
+      loop_num invariants md) = [] := by
+  simp only [Imperative.LoopElim.buildFirstIterFacts, Stmt.modifiedVars]
+  rw [block_modifiedVars_append, modifiedVars_buildEntryInvariants,
+      modifiedVars_buildEntryInvariantAssumes]
+  rfl
+
+private theorem definedVars_buildFirstIterFacts
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Stmt.definedVars (Imperative.LoopElim.buildFirstIterFacts (P := Expression) (C := Command)
+      loop_num invariants md) false = [] := by
+  simp only [Imperative.LoopElim.buildFirstIterFacts, Stmt.definedVars,
+    Bool.false_eq_true, ↓reduceIte]
+  rw [block_definedVars_append, definedVars_buildEntryInvariants,
+      definedVars_buildEntryInvariantAssumes]
+  rfl
+
+private theorem getVars_buildFirstIterFacts
+    (loop_num : String) (invariants : List (String × Expression.Expr))
+    (md : MetaData Expression) :
+    Stmt.getVars (Imperative.LoopElim.buildFirstIterFacts (P := Expression) (C := Command)
+      loop_num invariants md) =
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) ++
+    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  simp only [Imperative.LoopElim.buildFirstIterFacts, Stmt.getVars]
+  rw [block_getVars_append, getVars_buildEntryInvariants,
+      getVars_buildEntryInvariantAssumes]
+
 /-- Helper for `mem_touchedVars_stmtResult_loop`'s residual abstract-`s'`
     branch.  Given the un-dsimp'd `h : (stmtRun σ ...).fst = .ok (b, s')`,
     we can derive `s' = .block ll [.block fil fib {}, .ite guard tb [] {}] {}`
     via `stmtResult_loop_struct` and then dispatch `m ∈ Stmt.touchedVars s'`
-    to one of the source-touched pieces or the output-defined `m_old` name.
-
-    Currently the body is sorried; completing it would close the
-    leaf-dispatch sorry in `mem_touchedVars_stmtResult_loop`. -/
+    to one of the source-touched pieces or the output-defined `m_old` name. -/
 private theorem mem_touchedVars_stmtResult_loop_aux
     (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
