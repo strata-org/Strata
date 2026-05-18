@@ -318,7 +318,7 @@ procedure SeqEmpty()
 {
   var s : Sequence int;
 
-  // Create an empty sequence using the new syntax
+  // Create an empty sequence using Sequence.empty syntax
   s := Sequence.empty<int>();
   assert [empty_length]: Sequence.length(s) == 0;
 
