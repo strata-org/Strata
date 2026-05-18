@@ -146,26 +146,26 @@ seeds live in
 
 **Shared by all five benchmarks:**
 
-| Gap | FR# | Status | Notes |
-|-----|-----|--------|-------|
-| Struct/record field access | #13 | ○ open | Boole has no record types with named field access; see [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) |
-| Native `nat` support | #10 | ○ open | `nat` must be declared abstract with manual coercion axioms; see [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) |
-| Recursive spec functions over sequences | #11 | → pr open (#1167) | `decreases <int expr>` implemented in `upstream/main2`; pending merge into `upstream/main`. Int-recursive functions are pure UFs in SMT — manual axioms still needed for `u8_64_as_group_canonical` (B2, B5), `seq_as_nat_52` (B1), `field_element_from_bytes` (B3, B4). `reconstruct` in [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) commented until then. |
+| Gap | Status | Notes |
+|-----|--------|-------|
+| #13 Struct/record field access | ○ open | Boole has no record types with named field access; see [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) |
+| #10 Native `nat` support | ○ open | `nat` must be declared abstract with manual coercion axioms; see [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) |
+| #11 Recursive spec functions over sequences | → pr open (#1167) | `decreases <int expr>` implemented in `upstream/main2`; pending merge into `upstream/main`. Int-recursive functions are pure UFs in SMT — manual axioms still needed for `u8_64_as_group_canonical` (B2, B5), `seq_as_nat_52` (B1), `field_element_from_bytes` (B3, B4). `reconstruct` in [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) commented until then. |
 
 **Additional gaps per benchmark:**
 
-| # | Gap | FR# | Status | Notes |
-|---|-----|-----|--------|-------|
-| 1 | `u128` intermediate products | — | ○ open | 25 u64×u64 cross-limb products are u128 in Rust; in Boole, model as `int` — no separate feature needed, resolves with Gap #13 |
-| 1 | `FieldElement51.limbs: [u64; 5]` | #13 | ○ open | Sub-case of Gap #13: `limbs` is a struct field whose type is itself a fixed-size array. Planned encoding: flatten into five named `int` fields (`limb0`…`limb4`) rather than `Map int bv64` — same gap, not a separate one |
-| 2 | `[u8; 64]` byte arrays | #25 | ○ open | `input: &[u8; 64]` as `Map int bv8`; SMT backend resolved by PR #795; remaining gap is Boole syntax (initializer, write-back) |
-| 5 | `[u8; 32]` byte arrays | #25 | ○ open | Same as B2; SMT backend resolved by PR #795 |
-| 2 | `reduce()` spec function | — | ✓ done | Axiom pattern verified in [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean); `u8_64_as_group_canonical` recursive form needs `Sequence bv8` (Gap #25); manual axioms unchanged |
-| 2 | `is_uniform_scalar` axiom | — | ○ open | Probabilistic postcondition needs abstract `is_uniform_bytes`/`is_uniform_scalar` predicates as Boole axioms |
-| 3 | `Option<EdwardsPoint>` return | — | ○ open | Boole has no native `Option<T>` type and no `matches` destructuring in spec clauses; see [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) |
-| 3 | `field_square` / `sqrt_ratio_i` axioms | — | ○ open | Needed for the full decompress body |
-| 4 | Pair return type | — | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support in Boole |
-| 4 | Field op axioms | — | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
-| 5 | Inline `let`-block postcondition | — | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) |
-| 5 | Montgomery ladder invariant | — | ○ open | Needs Montgomery curve differential addition axioms (Costello-Smith 2017, eq. 4); loop structure demonstrated in [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) |
+| B | Gap | Status | Notes |
+|---|-----|--------|-------|
+| 1 | `u128` intermediate products | ○ open | 25 u64×u64 cross-limb products are u128 in Rust; in Boole, model as `int` — no separate feature needed, resolves with #13 |
+| 1 | #13 `FieldElement51.limbs: [u64; 5]` | ○ open | Sub-case of #13: `limbs` is a struct field whose type is itself a fixed-size array. Planned encoding: flatten into five named `int` fields (`limb0`…`limb4`) rather than `Map int bv64` — same gap, not a separate one |
+| 2 | #15 `[u8; 64]` byte arrays | ○ open | `input: &[u8; 64]` as `Map int bv8`; SMT backend resolved by PR #795; remaining gap is Boole syntax (initializer, write-back) |
+| 5 | #15 `[u8; 32]` byte arrays | ○ open | Same as B2; SMT backend resolved by PR #795 |
+| 2 | `reduce()` spec function | ✓ done | Axiom pattern verified in [`scalar_reduce.lean`](../StrataTest/Languages/Boole/FeatureRequests/scalar_reduce.lean); `u8_64_as_group_canonical` recursive form pending #1167; manual axioms unchanged |
+| 2 | `is_uniform_scalar` axiom | ○ open | Probabilistic postcondition needs abstract `is_uniform_bytes`/`is_uniform_scalar` predicates as Boole axioms |
+| 3 | #14 `Option<EdwardsPoint>` return | ○ open | Boole has no native `Option<T>` type and no `matches` destructuring in spec clauses; see [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) |
+| 3 | `field_square` / `sqrt_ratio_i` axioms | ○ open | Needed for the full decompress body |
+| 4 | Pair return type | ○ open | `invsqrt()` returns `(bool, FieldElement51)`; needs tuple/pair type support in Boole |
+| 4 | Field op axioms | ○ open | `add`, `sub`, `square`, `invsqrt`, `conditional_negate`, `as_bytes` — each needs a Boole axiom |
+| 5 | Inline `let`-block postcondition | ✓ done | Implemented; see [`embedded_postcondition.lean`](../StrataTest/Languages/Boole/embedded_postcondition.lean) |
+| 5 | Montgomery ladder invariant | ○ open | Needs Montgomery curve differential addition axioms (Costello-Smith 2017, eq. 4); loop structure demonstrated in [`montgomery_loop_invariant.lean`](../StrataTest/Languages/Boole/FeatureRequests/montgomery_loop_invariant.lean) |
 

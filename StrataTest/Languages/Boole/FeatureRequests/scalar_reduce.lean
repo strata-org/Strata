@@ -25,6 +25,9 @@ Implemented:
 
 Remaining gap:
 - Spelling out `u8_64_as_group_canonical` recursively requires Gap #11 (→ #1167).
+  `bytes_seq_as_nat` takes `Sequence bv8`, which Boole
+  already supports. Once #1167 is in `upstream/main`, change `ByteArray64` to
+  `Sequence bv8` and uncomment the recursive definition below.
 - `Scalar { bytes }` struct construction requires Gap #13.
 -/
 
@@ -79,11 +82,11 @@ spec {
 #end
 
 /-- info:
-Obligation: from_bytes_mod_order_wide_ensures_2_2504
+Obligation: from_bytes_mod_order_wide_ensures_2_2700
 Property: assert
 Result: ✅ pass
 
-Obligation: from_bytes_mod_order_wide_ensures_3_2578
+Obligation: from_bytes_mod_order_wide_ensures_3_2774
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
