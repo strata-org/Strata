@@ -17,6 +17,7 @@ import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
 /- Utilities -/
+import Strata.Util.IonDeserializer
 import Strata.Util.NameProofs
 import Strata.Util.Sarif
 

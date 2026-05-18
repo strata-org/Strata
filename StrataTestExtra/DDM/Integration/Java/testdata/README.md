@@ -1,27 +1,19 @@
 # Java Roundtrip Test Data
 
-`comprehensive.ion` is a Java-generated Ion file that tests all DDM types.
+The Java code generator uses the `getIonSerializer%` elaborator to generate
+Java source files from Lean types. The generated Java code produces Ion data
+in the same format that `getIonDeserializer%` expects.
 
-## To regenerate
+## Test approach
 
-From this directory:
+The roundtrip test in `TestGen.lean`:
+1. Generates Java source files for Lean types using `getIonSerializer%`
+2. Compiles the Java code with `javac`
+3. Runs the Java code to produce Ion binary data
+4. Deserializes the Ion data back into Lean values using `getIonDeserializer%`
+5. Verifies the round-tripped values match the originals
 
-```bash
-./regenerate-testdata.sh
-```
+## Requirements
 
-This will:
-1. Generate Java classes from `Simple.dialect.st`
-2. Build and run `GenerateTestData.java` to produce `comprehensive.ion`
-3. Clean up generated classes
-4. Verify the output with Lean
-
-## What's tested
-
-The test file covers all DDM types in a single AST:
-- Num, Str, Ident
-- Bool (true and false)
-- Decimal, ByteArray
-- Option (some and none)
-- Seq (with items and empty)
-- Nested operations (3 levels deep)
+- `javac` (Java 17+)
+- `ion-java-1.11.11.jar` in this directory (downloaded automatically by tests)
