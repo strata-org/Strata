@@ -203,14 +203,15 @@ single GOTO steps. Mirrors the definition of `StepCFGStar`. -/
 /-! ## Well-formedness of the boolean GOTO evaluator
 
 Mirrors `Imperative.WellFormedSemanticEvalBool`: the GOTO boolean evaluator
-must agree with itself under negation. This is needed by the simulation
-proof when relating `condGoto p lt lf` (which uses `δ σ p`) to the emitted
-`GOTO [¬p]` instruction (which uses `δ_goto_bool σ (Expr.not p_translated)`).
--/
+must agree with itself under negation, and the constant `Expr.true` must
+evaluate to `true`. The latter is needed by the simulation proof when an
+unconditional GOTO instruction (whose guard is literally `Expr.true`) must
+be taken in the `condGoto` translation pattern. -/
 def WellFormedSemanticEvalGotoBool {P : PureExpr} [HasBool P] [HasNot P]
     (δ_goto_bool : SemanticEvalGotoBool P) : Prop :=
-  ∀ σ (e : Expr),
+  (∀ σ (e : Expr),
     (δ_goto_bool σ e = some true ↔ δ_goto_bool σ e.not = some false) ∧
-    (δ_goto_bool σ e = some false ↔ δ_goto_bool σ e.not = some true)
+    (δ_goto_bool σ e = some false ↔ δ_goto_bool σ e.not = some true)) ∧
+  (∀ σ, δ_goto_bool σ Expr.true = some true)
 
 end CProverGOTO
