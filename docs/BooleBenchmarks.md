@@ -150,7 +150,7 @@ seeds live in
 |-----|--------|-------|
 | #13 Struct/record field access | ○ open | Boole has no record types with named field access; see [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) |
 | #10 Native `nat` support | ○ open | `nat` must be declared abstract with manual coercion axioms; see [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) |
-| #11 Recursive spec functions over sequences | ✓ done (#1167) | `decreases <int expr>` merged into `upstream/main`. Int-recursive functions are pure UFs in SMT — manual axioms still needed for `u8_64_as_group_canonical` (B2, B5), `seq_as_nat_52` (B1), `field_element_from_bytes` (B3, B4). `reconstruct` in [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) now active. |
+| #11 Recursive spec functions over sequences | ✓ done (#1167) | `decreases <int expr>` implemented. Int-recursive functions are pure UFs in SMT — manual axioms still needed for `u8_64_as_group_canonical` (B2, B5), `seq_as_nat_52` (B1), `field_element_from_bytes` (B3, B4). `reconstruct` in [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) now active. |
 
 **Additional gaps per benchmark:**
 

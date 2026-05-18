@@ -49,13 +49,13 @@ This document tracks the selected Boole feature-request seeds kept under
 - **`decreases` annotation on functions, procedures, and `for` loops**
   - Parsing/forwarding implemented (#1075): accepted in function preconds, `spec {}` blocks, procedure headers, and `for v := init to/downto limit` loops; the `for`-loop measure is forwarded to the Core while-loop measure field and actively verified.
   - `decreases` on functions (structural): termination verification implemented (#1092).
-  - `decreases <int expr>` on `rec function`: merged into `upstream/main` (#1167). Non-negativity and strict-decrease obligations generated at each call site. Int-recursive functions are pure UFs in SMT — no definitional axioms; manual axioms still needed for functional properties.
+  - `decreases <int expr>` on `rec function`: implemented (#1167). Non-negativity and strict-decrease obligations generated at each call site. Int-recursive functions are pure UFs in SMT — no definitional axioms; manual axioms still needed for functional properties.
   - `decreases` on procedures: `decr : Option Measure` parameter on `boole_procedure`, reusing Core's existing `Measure` category; currently parsed and silently dropped.
   - Benchmark: [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean).
 - **`Sequence T` type and slicing ops**
   - All 8 Core inherited ops wired up; wrappers added for `Sequence.skip`, `Sequence.dropFirst`, `Sequence.subrange`.
   - Typed empty-sequence constants: `Sequence.empty_bv8/bv16/bv32/bv64/int`. Each needs a distinct token — 0-ary polymorphic `Sequence.empty` has no arguments to infer the type from.
-  - Recursive spec functions over sequences: `decreases Sequence.length(s)` supported (#1167 merged into `upstream/main`); `reconstruct` seed now active.
+  - Recursive spec functions over sequences: `decreases Sequence.length(s)` supported (#1167); `reconstruct` seed now active.
   - Benchmark: [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean).
 - **Inline `let`-block postconditions**
   - `ensures ({ let x = e; ... })` now lowers correctly; enables dalek-lite's `mul_clamped` postcondition style.
@@ -80,7 +80,7 @@ This document tracks the selected Boole feature-request seeds kept under
 8. **Native `nat` support**: Stop modeling `nat` as a purely abstract type with uninterpreted coercions.
 9. **Missing model types**: Add or standardize support for model types such as `Cell`, `Atomic`, `Thread`, `Rwlock`, `Unit`, and `Arithmetic_overflow`.
 10. **On-demand stdlib/pervasive stubs**: Some pervasive stubs may be droppable after pruning translation output.
-11. **Sequence slicing**: Implemented. Int-based termination for recursive seq functions: implemented (#1167 merged into `upstream/main`).
+11. **Sequence slicing**: Implemented. Int-based termination for recursive seq functions: implemented (#1167).
 12. **Generic/category typing cleanup**: Reduce `nat`/`int`/bitvector width mismatches and generic type-shape mismatches in the type-checker.
 13. **Struct/record types with named field access**: `type T := { f1: A, f2: B }` declarations, `.field` accessor expressions, struct literal construction, and quantification over fixed-size field arrays (e.g. `∀ i < 5 . fe.limbs[i] < 2^51`). Used in every dalek spec function.
 14. **`Option<T>` in spec functions**: Native `Option<T>` return type so fallible spec functions can be represented faithfully; currently encoded as `is_some` flag plus component functions. Every Vest parser returns `Option<(int, T)>`.

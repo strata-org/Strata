@@ -19,8 +19,7 @@ structural recursion. Procedure-level `decreases` is parsed (as `Option Measure`
 on `boole_procedure`, reusing Core's `Measure` category) and emits a `dbg_trace`
 warning when present; termination is not yet verified.
 
-Int-based termination (#1167) is now merged into `upstream/main`; the `fib`
-seed below is active.
+Int-based termination (#1167) is implemented; the `fib` seed below is active.
 -/
 
 private def decreasesMetadataSeed : Strata.Program :=
@@ -69,7 +68,7 @@ Obligation: measure_decrease_0
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_measure_seed_ensures_1_885
+Obligation: loop_measure_seed_ensures_1_865
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -103,7 +102,7 @@ spec {
 #end
 
 /-- info:
-Obligation: decreases_proc_seed_ensures_1_2163
+Obligation: decreases_proc_seed_ensures_1_2143
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -191,7 +190,7 @@ Obligation: measure_decrease_0
 Property: assert
 Result: ✅ pass
 
-Obligation: for_decreases_seed_ensures_1_3221
+Obligation: for_decreases_seed_ensures_1_3201
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
