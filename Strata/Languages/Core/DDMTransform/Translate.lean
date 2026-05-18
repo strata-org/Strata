@@ -509,6 +509,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv1, q`Core.bvslt    => return Core.bv1SLtOp
   | .some .bv1, q`Core.bvsge    => return Core.bv1SGeOp
   | .some .bv1, q`Core.bvsgt    => return Core.bv1SGtOp
+  | .some .bv1, q`Core.bvule    => return Core.bv1ULeOp
+  | .some .bv1, q`Core.bvult    => return Core.bv1ULtOp
+  | .some .bv1, q`Core.bvuge    => return Core.bv1UGeOp
+  | .some .bv1, q`Core.bvugt    => return Core.bv1UGtOp
   | .some .bv1, q`Core.neg_expr => return Core.bv1NegOp
   | .some .bv1, q`Core.add_expr => return Core.bv1AddOp
   | .some .bv1, q`Core.sub_expr => return Core.bv1SubOp
@@ -539,6 +543,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv8, q`Core.bvslt    => return Core.bv8SLtOp
   | .some .bv8, q`Core.bvsge    => return Core.bv8SGeOp
   | .some .bv8, q`Core.bvsgt    => return Core.bv8SGtOp
+  | .some .bv8, q`Core.bvule    => return Core.bv8ULeOp
+  | .some .bv8, q`Core.bvult    => return Core.bv8ULtOp
+  | .some .bv8, q`Core.bvuge    => return Core.bv8UGeOp
+  | .some .bv8, q`Core.bvugt    => return Core.bv8UGtOp
   | .some .bv8, q`Core.neg_expr => return Core.bv8NegOp
   | .some .bv8, q`Core.add_expr => return Core.bv8AddOp
   | .some .bv8, q`Core.sub_expr => return Core.bv8SubOp
@@ -569,6 +577,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv16, q`Core.bvslt    => return Core.bv16SLtOp
   | .some .bv16, q`Core.bvsge    => return Core.bv16SGeOp
   | .some .bv16, q`Core.bvsgt    => return Core.bv16SGtOp
+  | .some .bv16, q`Core.bvule    => return Core.bv16ULeOp
+  | .some .bv16, q`Core.bvult    => return Core.bv16ULtOp
+  | .some .bv16, q`Core.bvuge    => return Core.bv16UGeOp
+  | .some .bv16, q`Core.bvugt    => return Core.bv16UGtOp
   | .some .bv16, q`Core.neg_expr => return Core.bv16NegOp
   | .some .bv16, q`Core.add_expr => return Core.bv16AddOp
   | .some .bv16, q`Core.sub_expr => return Core.bv16SubOp
@@ -599,6 +611,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv32, q`Core.bvslt    => return Core.bv32SLtOp
   | .some .bv32, q`Core.bvsge    => return Core.bv32SGeOp
   | .some .bv32, q`Core.bvsgt    => return Core.bv32SGtOp
+  | .some .bv32, q`Core.bvule    => return Core.bv32ULeOp
+  | .some .bv32, q`Core.bvult    => return Core.bv32ULtOp
+  | .some .bv32, q`Core.bvuge    => return Core.bv32UGeOp
+  | .some .bv32, q`Core.bvugt    => return Core.bv32UGtOp
   | .some .bv32, q`Core.neg_expr => return Core.bv32NegOp
   | .some .bv32, q`Core.add_expr => return Core.bv32AddOp
   | .some .bv32, q`Core.sub_expr => return Core.bv32SubOp
@@ -629,6 +645,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv64, q`Core.bvslt    => return Core.bv64SLtOp
   | .some .bv64, q`Core.bvsge    => return Core.bv64SGeOp
   | .some .bv64, q`Core.bvsgt    => return Core.bv64SGtOp
+  | .some .bv64, q`Core.bvule    => return Core.bv64ULeOp
+  | .some .bv64, q`Core.bvult    => return Core.bv64ULtOp
+  | .some .bv64, q`Core.bvuge    => return Core.bv64UGeOp
+  | .some .bv64, q`Core.bvugt    => return Core.bv64UGtOp
   | .some .bv64, q`Core.neg_expr => return Core.bv64NegOp
   | .some .bv64, q`Core.add_expr => return Core.bv64AddOp
   | .some .bv64, q`Core.sub_expr => return Core.bv64SubOp
@@ -1042,7 +1062,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.bvsle
     | q`Core.bvslt
     | q`Core.bvsgt
-    | q`Core.bvsge =>
+    | q`Core.bvsge
+    | q`Core.bvule
+    | q`Core.bvult
+    | q`Core.bvugt
+    | q`Core.bvuge =>
       let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
       if ¬ isArithTy ty then
         TransM.error s!"translateExpr unexpected type for {repr fni}: {repr args}"

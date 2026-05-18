@@ -942,6 +942,33 @@ def evalBindingSpec
     | .error e =>
       logError loc e
       pure <| .empty gctx
+  | .record b =>
+    let nameInfo := args[b.nameIndex.toLevel].info
+    let (_, ident) ←
+        match nameInfo with
+        | .ofIdentInfo i =>
+          pure (i.loc, i.val)
+        | _ =>
+          logInternalError nameInfo.loc s!"Expected ident"
+          return tctx
+    assert! tctx.bindings.size = 0
+    let gctx := tctx.globalContext
+    let gctx := gctx.ensureDefined ident (.type [] none)
+    let dialects := (← read).dialects
+    let fieldsArg := args[b.fieldsIndex.toLevel]
+    match extractFieldsFromBindings dialects fieldsArg.arg with
+    | .ok fields =>
+      let recordIndex := gctx.findIndex? ident |>.getD (gctx.vars.size - 1)
+      let recordType := mkDatatypeTypeRef loc recordIndex #[]
+      let ctorInfo : Array ConstructorInfo := #[{ name := ident ++ "_mk", fields }]
+      let (gctx, errors) := gctx.expandFunctionTemplates
+        dialectName loc ident recordType ctorInfo
+        b.functionTemplates
+      errors.forM (logError loc)
+      pure <| .empty gctx
+    | .error e =>
+      logError loc e
+      pure <| .empty gctx
   | .tvar b =>
     let ident := evalBindingNameIndex args b.nameIndex
     pure <| tctx.push { ident, kind := .tvar loc ident }
@@ -1666,7 +1693,29 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let einfo : ElabInfo := { loc := loc, inputCtx := tctx }
     let name := elabIdent stx[0]
     let some binding := tctx.lookupVar name
-      | logError loc s!"Unknown expr identifier {name}"
+      | -- Desugar dot notation: "base.field" → T..field(base)
+        -- A single dot (not "..") separates the variable from the field name.
+        let dotParts := name.splitOn ".."
+        let parts := name.splitOn "."
+        if parts.length == 2 && dotParts.length == 1 then
+          let baseName := parts[0]!
+          let fieldName := parts[1]!
+          if let some baseBinding := tctx.lookupVar baseName then
+            let typeExprOpt : Option TypeExpr := match baseBinding with
+              | .bvar _ (.expr tp) => some tp
+              | .fvar _ (.expr tp) => some tp
+              | _ => none
+            if let some (.fvar _ typeIdx _) := typeExprOpt then
+              if let some typeName := tctx.globalContext.nameOf? typeIdx then
+                let selectorName := typeName ++ ".." ++ fieldName
+                if let some selectorIdx := tctx.globalContext.findIndex? selectorName then
+                  let baseExpr : Expr := match baseBinding with
+                    | .bvar idx _ => .bvar loc idx
+                    | .fvar idx _ => .fvar loc idx
+                  let appExpr : Expr := .app loc (.fvar loc selectorIdx) (.expr baseExpr)
+                  let info : ExprInfo := { toElabInfo := einfo, expr := appExpr }
+                  return .node (.ofExprInfo info) #[]
+        logError loc s!"Unknown expr identifier {name}"
         return default
     match binding with
     | .bvar idx k => do

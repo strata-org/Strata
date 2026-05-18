@@ -231,18 +231,6 @@ private def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Cor
   match b with
   | .mono_bind_mk _ ⟨_, n⟩ ty => return (mkIdent n, ← toCoreMonoType ty)
 
-def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
-  let .int _ := ty
-    | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
-  return .app () iop a
-
-def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
-  let .int _ := ty
-    | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
-  return mkCoreApp iop [a, b]
-
 private def bvWidth (m : SourceRange) (ty : Boole.Type) : TranslateM Nat :=
   match ty with
   | .bv1 _  => return 1
@@ -259,6 +247,20 @@ private def toCoreBvUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Co
 private def toCoreBvBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let n ← bvWidth m ty
   return mkCoreApp (.op () ⟨s!"Bv{n}.{op}", ()⟩ none) [a, b]
+
+def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+  match ty with
+  | .int _ =>
+    let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+    return .app () iop a
+  | _ => toCoreBvUn m ty op a
+
+def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+  match ty with
+  | .int _ =>
+    let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+    return mkCoreApp iop [a, b]
+  | _ => toCoreBvBin m ty op a b
 
 private def toCoreExtensionalEq
     (m : SourceRange)
@@ -371,9 +373,21 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .bvand  m ty a b => toCoreBvBin m ty "And"  (← toCoreExpr a) (← toCoreExpr b)
   | .bvor   m ty a b => toCoreBvBin m ty "Or"   (← toCoreExpr a) (← toCoreExpr b)
   | .bvxor  m ty a b => toCoreBvBin m ty "Xor"  (← toCoreExpr a) (← toCoreExpr b)
-  | .bvshl  m ty a b => toCoreBvBin m ty "Shl"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvshl  m ty a b =>
+      match ty with
+      | .int _ => do
+          -- Integer << n encoded as multiplication by 2^n; n must be a literal.
+          let n ← match b with
+            | .natToInt _ ⟨_, n⟩ => pure n
+            | _ => throwAt m "Integer << requires a constant (literal) shift amount"
+          toCoreTypedBin m ty "Mul" (← toCoreExpr a) (.intConst () (Int.ofNat (1 <<< n)))
+      | _ => toCoreBvBin m ty "Shl" (← toCoreExpr a) (← toCoreExpr b)
   | .bvushr m ty a b => toCoreBvBin m ty "UShr" (← toCoreExpr a) (← toCoreExpr b)
   | .bvsshr m ty a b => toCoreBvBin m ty "SShr" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvult  m ty a b => toCoreBvBin m ty "ULt"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvule  m ty a b => toCoreBvBin m ty "ULe"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvugt  m ty a b => toCoreBvBin m ty "UGt"  (← toCoreExpr a) (← toCoreExpr b)
+  | .bvuge  m ty a b => toCoreBvBin m ty "UGe"  (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
       return oldifyExpr (← get).currentInoutNames (← toCoreExpr a)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
@@ -743,6 +757,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .boole_procedure _ _ _ _ _ _ _ | .command_procedure _ _ _ _ _ _ => []
   | .command_datatypes _ ⟨_, decls⟩ => decls.toList.map (fun _ => false)
+  | .struct_decl _ _ _ => [false]
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
   | .command_distinct _ _ _ => []
@@ -882,6 +897,20 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     } .empty]
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
+  | .struct_decl m ⟨_, tname⟩ ⟨_, fields⟩ =>
+    -- Desugar `type T := { f1: A, f2: B }` to a single-constructor datatype.
+    -- DDM registration (type + selectors) is handled by @[declareRecord].
+    let args ← fields.toList.mapM toCoreBinding
+    let ctorName := tname ++ "_mk"
+    let constr : Lambda.LConstr Unit := {
+      name := mkIdent ctorName
+      args := args
+      testerName := s!"{tname}..is{ctorName}"
+    }
+    return [.type (.data [{ name := tname
+                            typeArgs := []
+                            constrs := [constr]
+                            constrs_ne := by simp }]) .empty]
 
 /-- Render a `Boole.Program` to a format object using the provided `GlobalContext` and
 `DialectMap`. These should come from the originating `Strata.Program` (i.e. `env.globalContext`

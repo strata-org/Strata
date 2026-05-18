@@ -399,6 +399,17 @@ protected def toExpr {argDecls} (b : DatatypeBindingSpec argDecls) (argDeclsExpr
 
 end DatatypeBindingSpec
 
+namespace RecordBindingSpec
+
+protected def toExpr {argDecls} (b : RecordBindingSpec argDecls) (argDeclsExpr : Lean.Expr) : Lean.Expr :=
+  astExpr! mk
+    argDeclsExpr
+    (toExpr b.nameIndex)
+    (toExpr b.fieldsIndex)
+    (toExpr b.functionTemplates)
+
+end RecordBindingSpec
+
 namespace TvarBindingSpec
 
 protected def toExpr {argDecls} (b : TvarBindingSpec argDecls) (argDeclsExpr : Lean.Expr) : Lean.Expr :=
@@ -423,6 +434,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
   | .scopedType b => astExpr! scopedType argDeclsExpr (b.toExpr argDeclsExpr)
   | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
+  | .record b => astExpr! record argDeclsExpr (b.toExpr argDeclsExpr)
   | .tvar b => astExpr! tvar argDeclsExpr (b.toExpr argDeclsExpr)
 
 end BindingSpec

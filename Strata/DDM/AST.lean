@@ -938,6 +938,21 @@ structure DatatypeBindingSpec (argDecls : ArgDecls) where
   deriving Repr
 
 /--
+Specification for single-constructor record type declarations.
+Like `DatatypeBindingSpec` but the fields are given directly as `CommaSepBy Binding`
+rather than through a `ConstructorList`; a single constructor named `T_mk` is
+synthesized automatically.
+-/
+structure RecordBindingSpec (argDecls : ArgDecls) where
+  /-- deBrujin index of the record type name -/
+  nameIndex : DebruijnIndex argDecls.size
+  /-- deBrujin index of the field list (`CommaSepBy Binding`) -/
+  fieldsIndex : DebruijnIndex argDecls.size
+  /-- Optional list of function templates (selectors, etc.) to expand -/
+  functionTemplates : Array FunctionTemplate := #[]
+  deriving Repr
+
+/--
 Specification for declaring a single type variable.
 Creates a .tvar binding in the result context.
 -/
@@ -954,6 +969,7 @@ inductive BindingSpec (argDecls : ArgDecls) where
 | type (_ : TypeBindingSpec argDecls)
 | scopedType (_ : TypeBindingSpec argDecls)  -- Type added to global context
 | datatype (_ : DatatypeBindingSpec argDecls)
+| record (_ : RecordBindingSpec argDecls)
 | tvar (_ : TvarBindingSpec argDecls)
 deriving Repr
 
@@ -964,6 +980,7 @@ def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .type v => v.nameIndex
 | .scopedType v => v.nameIndex
 | .datatype v => v.nameIndex
+| .record v => v.nameIndex
 | .tvar v => v.nameIndex
 
 end BindingSpec
@@ -1125,6 +1142,25 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             nameIndex := ⟨nameIndex, nameP⟩,
             typeParamsIndex := ⟨typeParamsIndex, typeParamsP⟩,
             constructorsIndex := ⟨constructorsIndex, constructorsP⟩,
+            functionTemplates
+          }
+        | { dialect := _, name := "declareRecord" } => do
+          let args := attr.args
+          if args.size < 2 then
+            newBindingErr "declareRecord expects at least 2 arguments (name, fields)."
+            return none
+          let .catbvar nameIndex := args[0]!
+            | newBindingErr "declareRecord: invalid name index"; return none
+          let .catbvar fieldsIndex := args[1]!
+            | newBindingErr "declareRecord: invalid fields index"; return none
+          let .isTrue nameP := decideProp (nameIndex < argDecls.size)
+            | return panic! "Invalid name index"
+          let .isTrue fieldsP := decideProp (fieldsIndex < argDecls.size)
+            | return panic! "Invalid fields index"
+          let functionTemplates ← parseFunctionTemplates (args.extract 2 args.size)
+          some <$> .record <$> pure {
+            nameIndex := ⟨nameIndex, nameP⟩,
+            fieldsIndex := ⟨fieldsIndex, fieldsP⟩,
             functionTemplates
           }
         | q`StrataDDL.declareTVar => do
@@ -1758,6 +1794,9 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
             | a => panic! s!"Expected ident for type param {repr a}"
         foldOverArgAtLevel m addBinding #[] argDecls args b.typeParamsIndex.toLevel
     some <| .type params.toList none
+  | .record _ =>
+    -- Records have no type params; constructor/selectors are handled in addRecordBindings.
+    some <| .type [] none
   | .tvar _ =>
     -- tvar bindings are local only, not added to GlobalContext
     none
@@ -1805,7 +1844,7 @@ private def getConstructorListPushAnnotation (opDecl : OpDecl) : Option (Nat × 
 The accumulator is `Except String ...` because `foldOverArgBindingSpecs` fixes the
 fold's accumulator type; wrapping in `Except` lets us propagate errors through
 the fold without changing its generic signature. -/
-private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg)
+def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg)
     : Except String (Array (String × TypeExpr)) :=
   -- We thread `Except` through the accumulator rather than changing
   -- `foldOverArgBindingSpecs`, which is used broadly with plain accumulators.
@@ -2139,6 +2178,35 @@ FreeVarIndex values are consistent with this order.
 this adds entries for: `Option` (type), `None` (constructor), `Some` (constructor),
 `Option..isNone` (tester), `Option..isSome` (tester).
 -/
+private def addRecordBindings
+    (dialects : DialectMap)
+    (gctx : GlobalContext)
+    (src : SourceRange)
+    (dialectName : DialectName)
+    (preRegistered : Bool)
+    {argDecls : ArgDecls}
+    (b : RecordBindingSpec argDecls)
+    (args : Vector Arg argDecls.size)
+    : Except String GlobalContext := do
+  let recordName :=
+    match args[b.nameIndex.toLevel] with
+    | .ident _ e => e
+    | a => panic! s!"Expected ident for record name {repr a}"
+  -- Step 1: Register the record type (no type parameters).
+  let k := GlobalKind.type [] none
+  let gctx ← gctx.defineChecked recordName k preRegistered
+  let recordIndex := gctx.findIndex? recordName |>.getD (gctx.vars.size - 1)
+  let recordType := mkDatatypeTypeRef src recordIndex #[]
+  -- Step 2: Extract fields from the CommaSepBy Binding argument and
+  -- synthesize a single constructor named `recordName ++ "_mk"`.
+  let fieldsArg := args[b.fieldsIndex.toLevel]
+  let fields ← extractFieldsFromBindings dialects fieldsArg
+  let ctorInfo : Array ConstructorInfo := #[{ name := recordName ++ "_mk", fields }]
+  -- Step 3: Expand function templates (field selectors etc.).
+  let (gctx, _) := expandFunctionTemplates dialectName src
+    recordName recordType ctorInfo b.functionTemplates gctx
+  return gctx
+
 private def addDatatypeBindings
     (dialects : DialectMap)
     (gctx : GlobalContext)
@@ -2190,7 +2258,7 @@ private def preRegisterType (dialects : DialectMap) (acc : Except String GlobalC
     {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Except String GlobalContext := do
   let gctx ← acc
   match b with
-  | .datatype _ | .type _ =>
+  | .datatype _ | .record _ | .type _ =>
     let name :=
           match args[b.nameIndex.toLevel] with
           | .ident _ e => e
@@ -2212,6 +2280,8 @@ private def addBinding (dialects : DialectMap) (dialectName : DialectName) (preR
   match b with
   | .datatype datatypeSpec =>
     addDatatypeBindings dialects gctx l dialectName preRegistered datatypeSpec args
+  | .record recordSpec =>
+    addRecordBindings dialects gctx l dialectName preRegistered recordSpec args
   | _ =>
     let name : Var :=
           match args[b.nameIndex.toLevel] with

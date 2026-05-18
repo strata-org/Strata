@@ -89,6 +89,15 @@ op for_down_to_by_statement (v : MonoBind, init : Expr, limit : Expr,
   @[scope(v)] body : Block) : Statement =>
   "for " v " := " init " downto " limit step invs body;
 
+// Record/struct type declaration: `type T := { f1: A, f2: B };`
+// Desugars to a single-constructor datatype `T_mk(f1: A, f2: B)` with
+// field selectors `T..f1(val)`, `T..f2(val)` etc.
+@[declareRecord(name, fields,
+    perField([.datatype, .literal "..", .field], [.datatype], .fieldType),
+    perField([.datatype, .literal "..", .field, .literal "!"], [.datatype], .fieldType))]
+op struct_decl (name : Ident, fields : CommaSepBy Binding) : Command =>
+  "type " name " := " "{" fields "}" ";\n";
+
 category Program;
 op prog (commands : SpacePrefixSepBy Command) : Program =>
   commands;

@@ -39,6 +39,12 @@ constructors : Ident, testerTemplate : FunctionTemplate,
 accessorTemplate : FunctionTemplate,
 unsafeAccessorTemplate : FunctionTemplate);
 
+// Declare metadata for single-constructor record types (field list variant).
+// Unlike declareDatatype, the constructor is synthesized as `name ++ "_mk"`.
+metadata declareRecord (name : Ident, fields : Ident,
+accessorTemplate : FunctionTemplate,
+unsafeAccessorTemplate : FunctionTemplate);
+
 type bool;
 type int;
 type string;
@@ -187,6 +193,10 @@ fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
 fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
+fn bvult (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <u " b;
+fn bvule (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=u " b;
+fn bvugt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >u " b;
+fn bvuge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=u " b;
 
 fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
 fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";

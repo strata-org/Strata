@@ -30,10 +30,26 @@ This document tracks the selected Boole feature-request seeds kept under
   - `&`, `|`, `^`, `>>` (UShr), `>>s` (SShr), `<<`, `~` lower to `Bv{N}.And/Or/Xor/UShr/SShr/Shl/Not` Core ops.
   - `bvWidth` helper extracts the bit-width from the Boole type and dispatches to the right-sized op.
   - Benchmark: [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) (X25519 scalar clamping with `bv8` `&` and `|`).
+- **Unsigned bitvector comparisons on `bvN` types** (`<u`, `<=u`, `>u`, `>=u`)
+  - `<u`, `<=u`, `>u`, `>=u` lower to `Bv{N}.ULt/ULe/UGt/UGe` Core ops via `toCoreBvBin`.
+  - Added `bvult/bvule/bvugt/bvuge` to Core DDM Grammar and Translate tables (all widths).
+  - Distinguishes unsigned comparison (matching Rust/Verus `u64 < x` semantics) from signed comparison `<s`.
+- **Integer left-shift with constant amount** (`int << literal`)
+  - `x << n` where `n` is an integer literal is encoded as `x * 2^n` (linear integer arithmetic).
+  - Core has no native integer shift; the encoding avoids SMT non-linearity by requiring a constant shift amount.
+  - Bitvector `<<` on `bvN` types continues to use the native `Bv{N}.Shl` Core op.
+  - Benchmark: [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) (`intShlSeed`, `x < (1 << 51)`).
 - **Mutual recursion over datatypes** (#599)
   - `rec function ... ;` blocks work end-to-end; two `Verify.lean` fixes: `lowerPureFuncDef` propagates `@[cases]` to `FuncAttr.inlineIfConstr`, and `toCoreDecls` injects preceding sibling op-exprs as De Bruijn bvars so cross-sibling calls resolve.
   - Remaining gap: mutual recursion over `int` still needs function-level `decreases` (not yet implemented).
   - Benchmark: [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) (`even`/`odd` over `MyNat`).
+- **Struct/record types with named field access** (FR#13)
+  - `type T := { f1: A, f2: B }` desugars via the `@[declareRecord]` DDM annotation to a single-constructor datatype `T_mk(f1: A, f2: B)` with field selectors `T..f1(val)` and `T..f2(val)` auto-generated.
+  - New `RecordBindingSpec` variant in `BindingSpec`; `evalBindingSpec` and `toExpr` updated; `extractFieldsFromBindings` made public for use across DDM.
+  - Dot notation `val.field` works for both `var`-declared record locals and function/procedure parameters: desugared at the DDM elaboration level in `elabExpr` (`Elab/Core.lean`) by splitting single-dot identifiers and resolving to `T..field(val)`.
+  - Struct fields can be any supported type including `bvN`; `<u` unsigned comparison now used for `bv64` field bounds, matching Rust/Verus `u64 < threshold` semantics.
+  - Remaining gap: fixed-size array fields (`[u64; 5]`).
+  - Benchmark: [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean).
 
 ## Semantic preservation requests
 
@@ -52,7 +68,7 @@ This document tracks the selected Boole feature-request seeds kept under
 10. **On-demand stdlib/pervasive stubs**: Core has `Sequence` support but Boole does not yet lower `Sequence` types end to end; older `Seq_len`/`Seq_get` stubs are less compelling. Some pervasive stubs may also be droppable after pruning translation output.
 11. **Sequence slicing**: Extend `Sequence T` with `subrange(lo, hi)`, `skip(n)`, `take(n)`, `drop_first()`. Confirmed in dalek (`bytes_seq_as_nat`, `seq_as_nat_52` use `.skip(1)`, `.subrange`) and Vest (`s.drop_first()`, `s.skip(m)`).
 12. **Generic/category typing cleanup**: Reduce `nat`/`int`/bitvector width mismatches and generic type-shape mismatches in the type-checker.
-13. **Struct/record types with named field access**: `type T := { f1: A, f2: B }` declarations, `.field` accessor expressions, struct literal construction, and quantification over fixed-size field arrays (e.g. `∀ i < 5 . fe.limbs[i] < 2^51`). Used in every dalek spec function.
+13. **Struct/record types with named field access**: Shorthand `type T := { f1: A, f2: B }` declarations, dot notation `val.field` for both `var`-declared locals and function/procedure parameters, and `bv64` field types with `<u` unsigned comparison now implemented. Remaining open items: fixed-size array fields and quantification over fixed-size field arrays.
 14. **`Option<T>` in spec functions**: Native `Option<T>` return type so fallible spec functions can be represented faithfully; currently encoded as `is_some` flag plus component functions. Every Vest parser returns `Option<(int, T)>`.
 
 ## Expressiveness requests
@@ -98,6 +114,6 @@ These are the curated one-gap Boole seeds.
 | [`bitvector_ops.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_ops.lean) | Bitwise operators on `bvN` types | dalek-lite `scalar_specs.rs` | Implemented |
 | [`bitvector_proof_mode.lean`](../StrataTest/Languages/Boole/FeatureRequests/bitvector_proof_mode.lean) | `by (bit_vector)` proof mode | VeruSAGE-Bench Vest `leb128` | Active |
 | [`seq_slicing.lean`](../StrataTest/Languages/Boole/FeatureRequests/seq_slicing.lean) | Sequence slicing (`subrange`, `skip`, `take`, `drop_first`) | dalek-lite `scalar_specs.rs`, `core_specs.rs`; Vest `leb128`, `repetition` | Active |
-| [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) | Struct/record types with named field access | dalek-lite `field_specs.rs`, `edwards_specs.rs` | Active |
+| [`struct_field_access.lean`](../StrataTest/Languages/Boole/FeatureRequests/struct_field_access.lean) | Struct/record types with named field access | dalek-lite `field_specs.rs`, `edwards_specs.rs` | Implemented (shorthand syntax + dot notation on var-locals and parameters + `bv64` fields + `<u`); fixed-size array fields still open |
 | [`trait_spec_methods.lean`](../StrataTest/Languages/Boole/FeatureRequests/trait_spec_methods.lean) | Trait / interface with spec and proof methods; `matches` in `ensures` | VeruSAGE-Bench Vest `SecureSpecCombinator` | Active |
 | [`option_matches.lean`](../StrataTest/Languages/Boole/FeatureRequests/option_matches.lean) | `Option<T>` in spec functions; `matches` in `ensures`/`exists` | VeruSAGE-Bench Vest `SecureSpecCombinator`, `leb128` | Active |
