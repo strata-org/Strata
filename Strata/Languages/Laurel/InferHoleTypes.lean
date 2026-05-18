@@ -51,6 +51,8 @@ inductive InferHoleTypesStats where
 
 structure InferHoleState where
   model : SemanticModel
+  /-- Type-relation tables used by the consistency check on pre-annotated holes. -/
+  typeContext : TypeContext
   currentOutputType : HighTypeMd
   statistics : Statistics := {}
   diagnostics : List DiagnosticModel := []
@@ -100,7 +102,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         -- types disagree under consistency (gradual ~).
         match existingTy with
         | some prior =>
-          unless isConsistent prior expectedType do
+          let ctx := (← get).typeContext
+          unless isConsistent ctx prior expectedType do
             modify fun s => { s with
               diagnostics := s.diagnostics ++ [diagnosticFromSource source
                 s!"hole annotated with '{formatHighTypeVal prior.val}' but context expects '{formatHighTypeVal expectedType.val}'"]
@@ -183,7 +186,10 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 Annotate every `.Hole` in the program with a type inferred from context.
 -/
 def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel × Statistics :=
-  let initState : InferHoleState := { model := model, currentOutputType := { val := .Unknown, source := none }}
+  let initState : InferHoleState := {
+    model := model,
+    typeContext := TypeContext.ofTypes program.types,
+    currentOutputType := { val := .Unknown, source := none } }
   let (procs, finalState) := (program.staticProcedures.mapM inferProcedure).run initState
   ({ program with staticProcedures := procs }, finalState.diagnostics, finalState.statistics)
 
