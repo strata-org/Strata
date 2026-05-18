@@ -64,6 +64,10 @@ case yields `0` so we can state predicates uniformly; the simulation
 theorem rules out calls via a separate hypothesis (`isPlainCmd`). -/
 def Core.CmdExt.gotoInstrCount : Core.Command → Nat
   | .cmd c => Imperative.Cmd.gotoInstrCount c
+  -- `.call` is excluded by `isPlainCmd` in the call-free fragment we are
+  -- proving correct. The actual translator emits 1 FUNCTION_CALL
+  -- instruction for a call; updating to `1` is a follow-up when calls are
+  -- admitted into the proof.
   | .call _ _ _ => 0
 
 /-- Discriminator: is this a non-call command? -/
@@ -80,6 +84,13 @@ the leading `LOCATION` or trailing transfer instructions. -/
 @[expose] def DetBlockBodyInstrCount
     (blk : Imperative.DetBlock String Core.Command Core.Expression) : Nat :=
   blk.cmds.foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0
+
+/-- Number of GOTO instructions emitted for the first `k` commands of a
+block body. Used by `layout_block_body` to address the position of the
+`k`-th command's translation in `pgm.instructions`. -/
+@[expose] def cmdsPrefixInstrCount
+    (cmds : List Core.Command) (k : Nat) : Nat :=
+  (cmds.take k).foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0
 
 /-- Number of trailing transfer instructions emitted for a block:
 
