@@ -264,7 +264,6 @@ private partial def unionElts (x y : Array SpecAtomType) : Array SpecAtomType :=
   else
     y
 
-
 /-- Union two SpecTypes with a specified location for the result -/
 def union (loc : SourceRange) (x y : SpecType) : SpecType :=
   { loc := loc, atoms := unionElts x.atoms y.atoms }

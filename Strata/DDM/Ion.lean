@@ -1496,9 +1496,14 @@ private instance : CachedToIon Dialect where
 def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String Dialect := do
   let ctx : FromIonContext := ⟨f.symbols⟩
   let tbl := f.symbols
-  let typeId := tbl.symbolId! "type"
-  let nameId := tbl.symbolId! "name"
-  let valueId := tbl.symbolId! "value"
+  let typeId := tbl.symbolId "type"
+  let nameId := tbl.symbolId "name"
+  let valueId := tbl.symbolId "value"
+  if f.values.size > 0 then
+    if typeId = .zero then
+      throw s!"Missing type symbol"
+    if nameId = .zero then
+      throw s!"Missing name symbol"
   let (imports, decls, typecheck) ← f.values.foldlM
       (init := (#[], #[], true)) (start := f.offset)
       fun (imports, decls, typecheck) v => do
@@ -1512,6 +1517,8 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
       let i ← FromIonM.asString "Import name" val ctx
       pure (imports.push i, decls, typecheck)
     | "option" =>
+      if valueId = .zero then
+        throw "Could not find option value"
       let some (_, nameVal) := fields.find? (·.fst == nameId)
         | throw "Could not find option name"
       let optName ← FromIonM.asString "Option name" nameVal ctx
@@ -1617,8 +1624,12 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
   let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
 
   let tbl := symbols
-  let filePathId := tbl.symbolId! "filePath"
-  let programId := tbl.symbolId! "program"
+  let filePathId := tbl.symbolId "filePath"
+  let programId := tbl.symbolId "program"
+  if filePathId = .zero then
+    throw "Missing filePath"
+  if programId = .zero then
+    throw "Missing program"
 
   filesList.toList.mapM fun fileEntry => do
     let fields ← FromIonM.asStruct0 fileEntry ionCtx

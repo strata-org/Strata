@@ -7,7 +7,6 @@ module
 
 public import Strata.DDM.Integration.Lean
 public import Strata.Languages.Python.Specs.Decls
-
 import Strata.DDM.BuiltinDialects.Init
 public import Strata.DDM.Integration.Lean.OfAstM
 import Strata.DDM.Ion
@@ -15,7 +14,7 @@ import Strata.DDM.Ion
 namespace Strata.Python
 
 /-- Converts a Python identifier to an annotated string for DDM serialization. -/
-private def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
+def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
   ⟨.none, toString d⟩
 
 namespace Specs
@@ -192,7 +191,7 @@ def DDM.Int.ofDDM {α} : DDM.Int α → _root_.Int
 
 mutual
 
-private def SpecAtomType.toDDM (d : SpecAtomType)
+def SpecAtomType.toDDM (d : SpecAtomType)
     (loc : SourceRange := .none) : DDM.SpecType SourceRange :=
   match d with
   | .ident nm args =>
@@ -210,7 +209,7 @@ private def SpecAtomType.toDDM (d : SpecAtomType)
     .typeTypedDict loc ⟨.none, a⟩
 termination_by sizeOf d
 
-private def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
+def SpecType.toDDM (d : SpecType) : DDM.SpecType SourceRange :=
   assert! d.atoms.size > 0
   if p : d.atoms.size = 1 then
     d.atoms[0].toDDM (loc := d.loc)
@@ -225,10 +224,10 @@ decreasing_by
 
 end
 
-private def SpecDefault.toDDM : Specs.SpecDefault → DDM.SpecDefault SourceRange
+def SpecDefault.toDDM : Specs.SpecDefault → DDM.SpecDefault SourceRange
   | .none => .noneDefault .none
 
-private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
+def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
   .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.default.map (·.toDDM)⟩
 
 protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
@@ -265,18 +264,25 @@ def specExprFormatContext : FormatContext :=
 def specExprFormatState : FormatState where
   openDialects := DDM.PythonSpecs_map.toList.foldl (init := {}) fun s d => s.insert d.name
 
-instance : ToString SpecExpr where
-  toString e := (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
+namespace SpecExpr
 
-private def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
+public def toString (e : SpecExpr) : String :=
+  (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
+
+public instance : ToString SpecExpr where
+  toString := SpecExpr.toString
+
+end SpecExpr
+
+def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
   match p with
   | .str s => .strMessagePart .none ⟨.none, s⟩
   | .expr e => .exprMessagePart .none e.toDDM
 
-private def Assertion.toDDM (a : Assertion) : DDM.Assertion SourceRange :=
+def Assertion.toDDM (a : Assertion) : DDM.Assertion SourceRange :=
   .mkAssertion .none a.formula.toDDM ⟨.none, a.message.map (·.toDDM)⟩
 
-private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
+def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
   .mkFunDecl
     d.loc
     (name := .mk d.nameLoc d.name)
@@ -293,10 +299,10 @@ private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
       d.postconditions.map fun e =>
         .mkPostconditionEntry .none e.toDDM⟩)
 
-private def ClassVariable.toDDM (cv : ClassVariable) : DDM.ClassVarDecl SourceRange :=
+def ClassVariable.toDDM (cv : ClassVariable) : DDM.ClassVarDecl SourceRange :=
   .mkClassVarDecl .none ⟨.none, cv.name⟩ ⟨.none, cv.value⟩
 
-private partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRange :=
+partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRange :=
   .mkClassDecl d.loc (.mk .none d.name)
     ⟨.none, d.bases.map (·.toDDM)⟩
     ⟨.none, d.fields.map fun f =>
@@ -307,7 +313,7 @@ private partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRang
     ⟨.none, d.methods.map (·.toDDM)⟩
     ⟨.none, d.exhaustive⟩
 
-private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
+def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   match sig with
   | .externTypeDecl name source =>
     .externTypeDecl .none ⟨.none, name⟩ source.toDDM
@@ -318,7 +324,7 @@ private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   | .typeDef d =>
     .typeDef d.loc (.mk d.nameLoc d.name) d.definition.toDDM
 
-private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
+def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : Specs.SpecType :=
   match d with
   | .typeClassNoArgs loc ⟨_, cl⟩ =>
     .ident loc { pythonModule := "", name := cl } #[]
@@ -360,10 +366,10 @@ decreasing_by
   · decreasing_tactic
   · decreasing_tactic
 
-private def DDM.SpecDefault.fromDDM : DDM.SpecDefault SourceRange → Specs.SpecDefault
+def DDM.SpecDefault.fromDDM : DDM.SpecDefault SourceRange → Specs.SpecDefault
   | .noneDefault _ => .none
 
-private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
+def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
   let .mkArgDecl _ ⟨_, name⟩ type ⟨_, default⟩ := d
   {
     name := name
@@ -371,7 +377,7 @@ private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
     default := default.map (·.fromDDM)
   }
 
-private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
+def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
   | .placeholderExpr loc => .placeholder loc
   | .varExpr loc ⟨_, name⟩ => .var name loc
@@ -394,16 +400,16 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .forallDictExpr loc dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
     .forallDict dict.fromDDM keyVar valVar body.fromDDM loc
 
-private def DDM.MessagePart.fromDDM (d : DDM.MessagePart SourceRange) : Specs.MessagePart :=
+def DDM.MessagePart.fromDDM (d : DDM.MessagePart SourceRange) : Specs.MessagePart :=
   match d with
   | .strMessagePart _ ⟨_, s⟩ => .str s
   | .exprMessagePart _ e => .expr e.fromDDM
 
-private def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assertion :=
+def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assertion :=
   let .mkAssertion _ formula ⟨_, message⟩ := d
   { message := message.map (·.fromDDM), formula := formula.fromDDM }
 
-private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
+def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
                  ⟨_, kwargs⟩ returnType ⟨_, isOverload⟩
                  ⟨_, preconditions⟩ ⟨_, postconditions⟩ := d
@@ -427,7 +433,7 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
       | .mkPostconditionEntry _ e => e.fromDDM
   }
 
-private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
+def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
   let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩
     ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ ⟨_, exhaustive⟩ := d
   {
@@ -446,7 +452,7 @@ private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassD
     exhaustive := exhaustive
   }
 
-private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
+def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
   match cmd with
   | .externTypeDecl _ ⟨_, name⟩ ⟨_, ddmDefinition⟩ =>
     if let some definition := PythonIdent.ofString ddmDefinition then
@@ -466,7 +472,7 @@ private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signatur
     .typeDef d
 
 /-- Reads Python spec signatures from a DDM Ion file. -/
-def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
+public def readDDM (path : System.FilePath) : EIO String (Array Signature) := do
   let contents ←
         match ← IO.FS.readBinFile path |>.toBaseIO with
         | .ok r => pure r
@@ -487,7 +493,7 @@ def toDDMProgram (sigs : Array Signature) : Strata.Program :=
   .create DDM.PythonSpecs_map DDM.PythonSpecs.name (sigs.map fun s => s.toDDM.toAst)
 
 /-- Writes Python spec signatures to a DDM Ion file. -/
-def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
+public def writeDDM (path : System.FilePath) (sigs : Array Signature) : IO Unit := do
   let pgm := toDDMProgram sigs
   IO.FS.writeBinFile path <| pgm.toIon
 
