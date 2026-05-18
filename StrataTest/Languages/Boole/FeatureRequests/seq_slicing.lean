@@ -29,7 +29,8 @@ Implemented:
 
 Remaining gap:
 - Recursive spec functions over sequences require int-based termination
-  proofs; the `reconstruct` example remains commented out until that closes.
+  proofs; the `reconstruct` example remains commented out until #1167 is
+  in `upstream/main`.
 -/
 
 private def seqSlicingSeed : Strata.Program :=
@@ -65,13 +66,6 @@ spec {
   s := Sequence.build(Sequence.empty_bv64, bv{64}(0));
 };
 
-// Recursive reconstruct — uncomment once PR #1167 ("Add int-valued recursion
-// with termination checking") merges.  The `decreases Sequence.length(naf)`
-// measure is now accepted; termination is checked (non-negativity + strict
-// decrease).  Note: int-recursive functions are pure UFs in SMT — no
-// definitional axioms are generated, so functional properties (e.g. that
-// reconstruct([1, 0, -1]) == -3) still require manual axioms.
-//
 // rec function reconstruct(naf: Sequence int) : int
 //   decreases Sequence.length(naf)
 // {
@@ -80,34 +74,35 @@ spec {
 //   else
 //     Sequence.select(naf, 0) + 2 * reconstruct(Sequence.skip(naf, 1))
 // }
+// ;
 #end
 
 /-- info:
-Obligation: seq_slicing_seed_ensures_2_1634
+Obligation: seq_slicing_seed_ensures_2_1652
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_3_1675
+Obligation: seq_slicing_seed_ensures_3_1693
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_4_1734
+Obligation: seq_slicing_seed_ensures_4_1752
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_5_1771
+Obligation: seq_slicing_seed_ensures_5_1789
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_slicing_seed_ensures_6_1831
+Obligation: seq_slicing_seed_ensures_6_1849
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_ensures_7_2067
+Obligation: seq_empty_bv64_seed_ensures_7_2085
 Property: assert
 Result: ✅ pass
 
-Obligation: seq_empty_bv64_seed_ensures_8_2102
+Obligation: seq_empty_bv64_seed_ensures_8_2120
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -134,7 +129,7 @@ spec {
 #end
 
 /-- info:
-Obligation: seq_oob_seed_ensures_0_3968
+Obligation: seq_oob_seed_ensures_0_3546
 Property: assert
 Result: ❓ unknown-/
 #guard_msgs in

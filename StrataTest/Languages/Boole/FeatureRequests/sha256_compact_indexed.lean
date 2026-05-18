@@ -117,7 +117,6 @@ spec {
     if (i < 16) {
       tmp36 := Sequence.select(block_local, i);
     } else {
-      assert bv{64}(16) != bv{64}(0);
       w15 := Sequence.select(block_local, (i - 15) mod 16);
       call tmp15 := rotate_right(w15, bv{32}(7));
 
@@ -125,7 +124,6 @@ spec {
 
       assert 0 <= 3 && 3 < 32;
       s0 := tmp15 ^ tmp16 ^ (w15 >> bv{32}(3));
-      assert bv{64}(16) != bv{64}(0);
       w2 := Sequence.select(block_local, (i - 2) mod 16);
       call tmp22 := rotate_right(w2, bv{32}(17));
 
@@ -133,10 +131,7 @@ spec {
 
       assert 0 <= 10 && 10 < 32;
       s1 := tmp22 ^ tmp23 ^ (w2 >> bv{32}(10));
-      assert bv{64}(16) != bv{64}(0);
-      assert bv{64}(16) != bv{64}(0);
       new_w := Sequence.select(block_local, (i - 16) mod 16) + s0 + Sequence.select(block_local, (i - 7) mod 16) + s1;
-      assert bv{64}(16) != bv{64}(0);
       block_local := Sequence.update(block_local, i mod 16, new_w);
       tmp36 := new_w;
     }
@@ -220,10 +215,6 @@ Obligation: assert_5_3658
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_5169
-Property: assert
-Result: ✅ pass
-
 Obligation: callElimAssert_rotate_right_requires_0_2970_39
 Property: assert
 Result: ✅ pass
@@ -232,11 +223,7 @@ Obligation: callElimAssert_rotate_right_requires_0_2970_35
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_5370
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_9_5449
+Obligation: assert_7_5332
 Property: assert
 Result: ✅ pass
 
@@ -248,19 +235,7 @@ Obligation: callElimAssert_rotate_right_requires_0_2970_27
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_10_5647
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_11_5728
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_12_5766
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_13_5923
+Obligation: assert_8_5571
 Property: assert
 Result: ✅ pass
 

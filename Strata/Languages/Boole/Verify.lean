@@ -799,7 +799,8 @@ private def lowerPureFuncDef
     (ret : Boole.Type)
     (pres : Array (BooleDDM.SpecElt SourceRange))
     (body : Boole.Expr)
-    (inline : Bool) : TranslateM Core.Function := do
+    (inline : Bool)
+    (measure? : Option Boole.Expr := none) : TranslateM Core.Function := do
   withTypeBVars tys do
     let bsList := bindingsToList bs
     let inputs ← bsList.mapM toCoreBinding
@@ -812,6 +813,7 @@ private def lowerPureFuncDef
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
     let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
     let body ← withBVars inputNames (toCoreExpr body)
+    let measure ← withBVars inputNames (measure?.mapM toCoreExpr)
     let attr :=
       if inline then #[.inline]
       else match casesIdx with
@@ -827,6 +829,7 @@ private def lowerPureFuncDef
       attr := attr
       axioms := []
       preconditions := pres
+      measure := measure
     }
 
 /--
@@ -961,12 +964,15 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let funcList := funcs.toList
     let (fsRev, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
       match func with
-      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ _decreases body => do
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ ⟨_, decr?⟩ body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+        let measureExpr? := match decr? with
+          | some (.measure_mk _ e) => some e
+          | _ => none
         let siblingBvars := prevNames.map fun sn =>
           (.op () (mkIdent sn) none : Core.Expression.Expr)
         let f ← withBVarExprs siblingBvars.toArray
-          (lowerPureFuncDef m n tys bs ret pres body false)
+          (lowerPureFuncDef m n tys bs ret pres body false measureExpr?)
         return ({ f with isRecursive := true } :: acc, prevNames ++ [n])
     return [.recFuncBlock fsRev.reverse .empty]
   | .command_var _m _b =>

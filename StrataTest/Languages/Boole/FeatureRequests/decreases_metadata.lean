@@ -21,6 +21,8 @@ warning when present; termination is not yet verified.
 
 Remaining gap: recursive functions over `int` need int-based termination
 proofs — structural recursion on `@[cases]` is the only supported form now.
+Unblocked by #1167; the `fib` seed below will be activated once #1167 is in
+`upstream/main`.
 -/
 
 private def decreasesMetadataSeed : Strata.Program :=
@@ -69,7 +71,7 @@ Obligation: measure_decrease_0
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_measure_seed_ensures_1_938
+Obligation: loop_measure_seed_ensures_1_1031
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -103,7 +105,7 @@ spec {
 #end
 
 /-- info:
-Obligation: decreases_proc_seed_ensures_1_2216
+Obligation: decreases_proc_seed_ensures_1_2310
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -113,11 +115,7 @@ example : Strata.smtVCsCorrect decreasesFunctionSeed := by
   gen_smt_vcs
   all_goals (try grind)
 
--- Recursive spec function over int — uncomment once PR #1167 ("Add
--- int-valued recursion with termination checking") merges.
--- `decreases n` is accepted; termination obligations check non-negativity and
--- strict decrease at each recursive call.  Pure UF in SMT (no definitional
--- axioms); functional properties need manual axioms.
+-- Recursive spec function over int — uncomment once #1167 is in upstream/main.
 --
 -- private def fibSeed : Strata.Program :=
 -- #strata
@@ -128,8 +126,17 @@ example : Strata.smtVCsCorrect decreasesFunctionSeed := by
 -- {
 --   if n <= 1 then n else fib(n - 1) + fib(n - 2)
 -- }
---
+-- ;
 -- #end
+--
+-- /-- info:
+-- Obligation: fib_terminates_0
+-- Obligation: fib_terminates_1
+-- Obligation: fib_terminates_2
+-- Obligation: fib_terminates_3
+-- -/
+-- #guard_msgs in
+-- #eval Strata.Boole.verify "cvc5" fibSeed (options := .quiet)
 
 -- `decreases` clause in a `for v := init to limit` loop.
 private def decreasesForLoopSeed : Strata.Program :=
@@ -178,7 +185,7 @@ Obligation: measure_decrease_0
 Property: assert
 Result: ✅ pass
 
-Obligation: for_decreases_seed_ensures_1_3302
+Obligation: for_decreases_seed_ensures_1_3373
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
