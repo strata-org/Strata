@@ -647,9 +647,10 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
               let (term, ctx) ← toSMTTerm E bvs body ctx useArrayTheory
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
-          -- For recursive functions, generate per-constructor axioms
-          -- Recursive axioms are synthesized for SMT encoding
-          let recAxioms ← if func.isRecursive && isNew then
+          -- For recursive functions with @[cases], generate per-constructor axioms.
+          -- Int-recursive functions (no @[cases]) are pure UFs with no axioms.
+          let recAxioms ← if func.isRecursive && isNew &&
+              (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome then
               Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval (ExprSourceLoc.synthesized "smt-encoding")
             else .ok []
           let allAxioms := func.axioms ++ recAxioms
