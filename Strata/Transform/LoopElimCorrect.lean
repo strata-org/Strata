@@ -5250,17 +5250,54 @@ private theorem cmd_definedVars_true_isSome_after
     (n : Expression.Ident)
     (hn : n ∈ Stmt.definedVars (.cmd cmd) true) :
     (ρ₁.store n).isSome := by
-  sorry
+  -- The trace is one step: step_cmd heval then refl.
+  -- For n ∈ definedVars (.cmd cmd) true, cmd must be .cmd (.init n ...).
+  -- After eval_init/eval_init_unconstrained, InitState gives σ' n = .some v.
+  match hstar with
+  | .step _ _ _ (.step_cmd heval) hrest =>
+    cases hrest with
+    | refl =>
+      simp only [Config.getEnv]
+      cases heval with
+      | cmd_sem hcmd =>
+        simp [Stmt.definedVars, HasVarsImp.definedVars, Command.definedVars] at hn
+        cases hcmd with
+        | eval_init _ hinit _ =>
+          cases hinit with
+          | init _ hsome _ =>
+            simp [Cmd.definedVars, List.mem_singleton] at hn
+            subst hn; simp [hsome]
+        | eval_init_unconstrained hinit _ =>
+          cases hinit with
+          | init _ hsome _ =>
+            simp [Cmd.definedVars, List.mem_singleton] at hn
+            subst hn; simp [hsome]
+        | eval_set _ _ _ => simp [Cmd.definedVars] at hn
+        | eval_set_nondet _ _ => simp [Cmd.definedVars] at hn
+        | eval_assert_pass _ _ => simp [Cmd.definedVars] at hn
+        | eval_assert_fail _ _ => simp [Cmd.definedVars] at hn
+        | eval_assume _ _ => simp [Cmd.definedVars] at hn
+        | eval_cover _ => simp [Cmd.definedVars] at hn
+      | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp [Stmt.definedVars, HasVarsImp.definedVars, Command.definedVars] at hn
+    | step _ _ _ hstep _ => exact nomatch hstep
 
 private theorem stmt_definedVars_true_isSome_after
     {s : Statement} {ρ₀ ρ₁ : Env Expression}
-    (_hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
+    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
     (_hnofd : Stmt.noFuncDecl s = Bool.true)
     (_hdefsNone : ∀ n ∈ Stmt.definedVars s true, (ρ₀.store n).isNone)
-    (_n : Expression.Ident)
-    (_hn : _n ∈ Stmt.definedVars s true) :
-    (ρ₁.store _n).isSome := by
-  sorry
+    (n : Expression.Ident)
+    (hn : n ∈ Stmt.definedVars s true) :
+    (ρ₁.store n).isSome := by
+  match s, hstar, hn with
+  | .cmd _, hstar', hn' => exact cmd_definedVars_true_isSome_after (π := π) (φ := φ) hstar' n hn'
+  | .block .., _, hn' => simp [Stmt.definedVars] at hn'
+  | .ite .., _, hn' => simp [Stmt.definedVars] at hn'
+  | .loop .., _, hn' => simp [Stmt.definedVars] at hn'
+  | .exit .., _, hn' => simp [Stmt.definedVars] at hn'
+  | .funcDecl .., _, _ => exact absurd _hnofd (by simp [Stmt.noFuncDecl])
+  | .typeDecl .., _, hn' => simp [Stmt.definedVars] at hn'
 
 /-- `BlockInitEnvWF ss ρ₁` follows from `BlockInitEnvWF (s :: ss) ρ₀` after `s`
     ran from `ρ₀` to `ρ₁`.  This version takes all needed assumptions as
@@ -5363,12 +5400,31 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
     rw [defUseWellFormed_block_congr (fun n => ?_) ss] at htail
     · exact htail
     · -- Show: (ρ₁.store n).isSome = ((ρ₀.store n).isSome || decide (n ∈ Stmt.definedVars s true))
-      -- (→): If (ρ₁.store n).isSome and (ρ₀.store n).isNone, then hnewVars_in_def
-      --       gives n ∈ definedVars s true.
-      -- (←): If (ρ₀.store n).isSome, by stmt_star_preserves_isSome.
-      --       If n ∈ definedVars s true, by cmd_definedVars_true_isSome_after.
-      -- Both directions hold under the scoped-ite semantics.
-      sorry
+      have hdefsNone : ∀ m ∈ Stmt.definedVars s true, (ρ₀.store m).isNone := fun m hm =>
+        h.defsUndefined m (by
+          simp only [Block.definedVars, List.mem_append]; left
+          exact stmt_definedVars_true_subset_false s m hm)
+      cases h₀ : (ρ₀.store n).isSome
+      case true =>
+        simp only [Bool.true_or]
+        have := stmt_star_preserves_isSome (π := π) (φ := φ) s ρ₀ _ hstar n h₀
+        simpa [Config.getEnv] using this
+      case false =>
+        simp only [Bool.false_or]
+        have hnone₀ : (ρ₀.store n).isNone := by
+          cases hx : ρ₀.store n <;> simp_all
+        cases hd : decide (n ∈ Stmt.definedVars s true)
+        case true =>
+          have hmem : n ∈ Stmt.definedVars s true := by
+            simp [decide_eq_true_eq] at hd; exact hd
+          exact (stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hnofd_s hdefsNone n hmem).symm
+        case false =>
+          have hnotmem : n ∉ Stmt.definedVars s true := by
+            simp [decide_eq_true_eq] at hd; exact hd
+          apply Eq.symm
+          cases h_eq : (ρ₁.store n).isSome with
+          | true => exact absurd (hnewVars_in_def n h_eq hnone₀) hnotmem
+          | false => rfl
 
 /-! ### Note: The old `_disjoint` bridges (cons_head_disjoint, ite_left_disjoint,
     ite_right_disjoint) have been removed. The `toBlock_ite_left/right` and
