@@ -360,9 +360,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   close := emitln "(exit)"
 
-/-- Lift the incremental solver to `IO` by storing state in an `IORef`.
-    This allows using `AbstractSolver Term TermType IO` in contexts that
-    don't want to thread `IncrementalSolverM` explicitly. -/
+/-- Lift the incremental solver to `IO` by storing state in an `IORef`. -/
 def mkIncrementalSolverIO (solver : SMTLibSolver) : IO (AbstractSolver Term TermType IO) := do
   let ref ← IO.mkRef ({ solver } : IncrementalSolverState)
   let run {α} (action : IncrementalSolverM α) : IO α := do
