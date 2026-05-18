@@ -97,28 +97,39 @@ swap                     |     OK |     OK |     OK |      PARTIAL |      PARTIA
 
 ## Known blockers
 
-- **CBMC: structured-body assumption.** `coreToGotoFiles` dispatches every
-  procedure through `procedureToGotoCtx`, which assumes a structured body
-  and errors on CFG procedures with "expected structured body, got CFG".
-  Fix path: dispatch CFG bodies through `procedureToGotoCtxViaCFG`. Affects
-  all 12 programs at the cbmc stage.
+- **CBMC: structured-body assumption.** `coreToGotoFiles` (in
+  `Strata/Backends/CBMC/GOTO/CoreToGOTOPipeline.lean:490`) dispatches
+  every procedure through `procedureToGotoCtx`, which assumes a
+  structured body and errors on CFG procedures with "expected
+  structured body, got CFG". A `procedureToGotoCtxViaCFG` already
+  exists at `Strata/Backends/CBMC/GOTO/CoreCFGToGOTOPipeline.lean:188`
+  but is only wired into a test E2E. Fix path: dispatch CFG bodies
+  through that. Visible on 5 of the 12 programs (`abs_func`,
+  `array_sum`, `loop_sum`, `max_func`, `nondet_branch`); the other 7
+  hit the inout blocker first.
 - **CoreToGoto: inout-parameter double-collection.** Inout parameters
-  (e.g., `_exn`) are assigned in the body, so `definedVars` collects them
-  as locals and they get renamed with `mkLocalSymbol` (`main::1::_exn`)
-  while the type env only knows the formal name (`main::_exn`). Surfaces
-  as `LExpr.fvar` with `ty=none`. Affects 7 programs.
+  (e.g., `_exn`) are assigned in the body, so `definedVars` collects
+  them as locals and they get renamed with `mkLocalSymbol`
+  (`main::1::_exn`) while the type env only knows the formal name
+  (`main::_exn`). Surfaces as `[toGotoExprCtx] Not yet implemented:
+  LExpr.fvar`. Source location: `CoreToGOTOPipeline.lean:286-292`.
+  Affects 7 programs.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
   translated; not a pipeline bug.
-- **CI build failure in `FormatCore.lean`.** The CFG procedure grammar
-  gained a `locals : Block` argument on this branch, but
-  `Strata/Languages/Core/DDMTransform/FormatCore.lean:991` still calls
-  `Command.command_cfg_procedure` with the old 5-arg signature. The
-  build errors with `Application type mismatch: cfgBody has type
-  CFGBody M but is expected to have type CoreDDM.Block M`, followed by
-  a downstream `noncomputable` failure on `Core.formatProcedure`.
-  Address after the cleanup is merged.
+- **`Strata.Transform.ProcBodyVerifyCorrect` proof file (fixed on
+  this branch tip).** Surfaced during this reproduction on the prior
+  tip: the merge from `main` left three call sites in
+  `Strata/Transform/ProcBodyVerifyCorrect.lean:856,859,862` passing
+  `proc.body` (now `Procedure.Body`) where a `List Statement` was
+  expected. Symptom: `Application type mismatch ... Config.stmts
+  proc.body`. The file has no importers in the runtime graph, so the
+  three executables (`strata`, `StrataCoreToGoto`, `StrataToCBMC`)
+  build despite the failure — but `lake build` exits non-zero. Fixed
+  by substituting the destructured `ss` (already in scope from
+  `procToVerifyStmt_is_structured`) for `proc.body` at the three
+  sites; build now passes 585/585.
 
 See [`Tools/BoogieToStrata/Docs/STATUS.md`](../../Tools/BoogieToStrata/Docs/STATUS.md)
 for translator-level status.
