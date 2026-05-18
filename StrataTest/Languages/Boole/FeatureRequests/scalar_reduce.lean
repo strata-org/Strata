@@ -19,15 +19,15 @@ Implemented:
 - `ByteArray64` and `Scalar` kept abstract — no byte-array indexing or
   struct-field access needed for this seed.
 - `u8_64_as_group_canonical` stays abstract; its recursive byte-accumulation
-  definition requires int-based termination over sequences (→ #1167).
+  definition can now be written (Gap #11 / #1167 merged), but requires
+  changing `ByteArray64` to `Sequence bv8` — see comment below.
 - Two axioms capture what `reduce` guarantees; the procedure body verifies
   by axiom instantiation alone.
 
 Remaining gap:
-- Spelling out `u8_64_as_group_canonical` recursively requires Gap #11 (→ #1167).
-  `bytes_seq_as_nat` takes `Sequence bv8`, which Boole
-  already supports. Once #1167 is in `upstream/main`, change `ByteArray64` to
-  `Sequence bv8` and uncomment the recursive definition below.
+- `u8_64_as_group_canonical` recursive definition: `ByteArray64` must be
+  changed to `Sequence bv8` to use the recursive form — see commented
+  definition below. Blocked by Gap #13 (`Scalar { bytes }` struct construction).
 - `Scalar { bytes }` struct construction requires Gap #13.
 -/
 
@@ -43,7 +43,7 @@ function scalar_as_canonical(s: Scalar) : int;
 function u8_64_as_group_canonical(b: ByteArray64) : int;
 function is_canonical_scalar(s: Scalar) : bool;
 
-// Once Gap #11 closes (PR #1167), u8_64_as_group_canonical can be given a
+// Gap #11 (PR #1167) is now merged; u8_64_as_group_canonical can be given a
 // real recursive definition using Sequence bv8.  The recursive
 // byte-accumulation (little-endian) follows dalek-lite's bytes_seq_as_nat
 // (curve25519-dalek/src/specs/core_specs.rs):
@@ -82,11 +82,11 @@ spec {
 #end
 
 /-- info:
-Obligation: from_bytes_mod_order_wide_ensures_2_2700
+Obligation: from_bytes_mod_order_wide_ensures_2_2713
 Property: assert
 Result: ✅ pass
 
-Obligation: from_bytes_mod_order_wide_ensures_3_2774
+Obligation: from_bytes_mod_order_wide_ensures_3_2787
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
