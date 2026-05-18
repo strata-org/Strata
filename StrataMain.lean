@@ -26,6 +26,7 @@ import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
+import Strata.Util.DiagnosticClassifier
 import Strata.Util.IO
 
 import Strata.SimpleAPI
@@ -506,6 +507,56 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
   printPyAnalyzeResult "Known limitation" message
   IO.Process.exit ExitCode.knownLimitation
 
+/-- Render diagnostics through `DiagnosticModel.format` so locations resolve
+    against the user's source. -/
+private def formatDiagnostics (diags : List DiagnosticModel)
+    (fileMap : Option Lean.FileMap) : String :=
+  match fileMap with
+  | none => toString diags
+  | some _ =>
+    String.intercalate "; " (diags.map (fun d => toString (d.format fileMap)))
+
+/-- Render a user-code diagnostic as "`msg` at line N, col M". -/
+private def formatUserErrorMessage (d : DiagnosticModel) (fileMap : Option Lean.FileMap) : String :=
+  let location := if d.fileRange.range.isNone then "" else
+    match fileMap with
+    | some fm =>
+      let pos := fm.toPosition d.fileRange.range.start
+      s!" at line {pos.line}, col {pos.column}"
+    | none => ""
+  s!"{d.message}{location}"
+
+/-- Classify `diags` and exit with the matching `pyAnalyzeLaurel` category.
+    `prefixMsg` is prepended only to internal-error details. -/
+private def classifyDiagnosticsAndExit {α} (prefixMsg : String)
+    (diags : List DiagnosticModel) (fileMap : Option Lean.FileMap) : IO α := do
+  let firstOf (t : DiagnosticType) (fmt : DiagnosticModel → String) : String :=
+    match (diags.filter (·.type == t)).head? with
+    | some d => fmt d
+    | none => formatDiagnostics diags fileMap
+  match classifyDiagnostics diags with
+  | .internalError   =>
+    exitPyAnalyzeInternalError s!"{prefixMsg}: {formatDiagnostics diags fileMap}"
+  | .userError       =>
+    exitPyAnalyzeUserError (firstOf .UserError (formatUserErrorMessage · fileMap))
+  | .knownLimitation =>
+    exitPyAnalyzeKnownLimitation (firstOf .NotYetImplemented (·.message))
+
+/-- Emit SMT `set-info` lines and write `user_errors.txt` for the first
+    user-code diagnostic in the batch. -/
+private def emitUserErrorsFile (diags : List DiagnosticModel) : IO Unit := do
+  let some d := (diags.filter (·.type == DiagnosticType.UserError)).head? | pure ()
+  let .file filePath := d.fileRange.file
+  let range := d.fileRange.range
+  let mut lines := #[s!"(set-info :file {Strata.escapeSMTStringLit filePath})"]
+  unless range.isNone do
+    lines := lines.push s!"(set-info :start {range.start})"
+    lines := lines.push s!"(set-info :stop {range.stop})"
+  lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit d.message})"
+  for line in lines do
+    IO.println line
+  IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
+
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
     exit helpers above, which are called on early pipeline failure).
@@ -618,29 +669,10 @@ def pyAnalyzeLaurelCommand : Command where
                 (quiet := quiet)
                 (warningSummaryFile := warningSummaryFile) |>.toBaseIO with
       | .ok r => pure r
-      | .error (.userCode range msg) =>
-        let location := if range.isNone then "" else
-          match mfm with
-          | some (_, fm) =>
-            let pos := fm.toPosition range.start
-            s!" at line {pos.line}, col {pos.column}"
-          | none => ""
-        let filePath' := sourcePath.getD filePath
-        let mut lines := #[
-          s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
-        ]
-        unless range.isNone do
-          lines := lines.push s!"(set-info :start {range.start})"
-          lines := lines.push s!"(set-info :stop {range.stop})"
-        lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
-        for line in lines do
-          IO.println line
-        IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
-        exitPyAnalyzeUserError s!"{msg}{location}"
-      | .error (.knownLimitation msg) =>
-        exitPyAnalyzeKnownLimitation msg
-      | .error (.internal msg) =>
-        exitPyAnalyzeInternalError msg
+      | .error diags =>
+        emitUserErrorsFile diags
+        let fileMap := mfm.map (·.2)
+        classifyDiagnosticsAndExit "Python to Laurel translation failed" diags fileMap
 
     if verbose then
       IO.println "\n==== Laurel Program ===="
@@ -659,7 +691,10 @@ def pyAnalyzeLaurelCommand : Command where
     let coreProgram ←
       match coreProgramOption with
       | none =>
-        exitPyAnalyzeInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
+        emitUserErrorsFile laurelTranslateErrors
+        let fileMap := mfm.map (·.2)
+        classifyDiagnosticsAndExit "Laurel to Core translation failed"
+          laurelTranslateErrors fileMap
       | some core => pure core
 
     if verbose then

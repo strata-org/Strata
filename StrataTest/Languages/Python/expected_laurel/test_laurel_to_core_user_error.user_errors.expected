@@ -1,0 +1,4 @@
+(set-info :file "StrataTest/Languages/Python/tests/test_laurel_to_core_user_error.py")
+(set-info :start 69)
+(set-info :stop 77)
+(set-info :error-message "calls to procedures are not supported in functions or contracts")
