@@ -3336,6 +3336,113 @@ private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P]
   rw [h_uf] at h_step
   exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
 
+/-! ## Block.uniqueInits projection helpers
+
+`Block.uniqueInits ss` is a Nodup property of the cumulative `Block.initVars ss`
+list. These mechanical helpers project Nodup down to sub-lists that recursive
+simulation calls produce. -/
+
+private theorem Block.uniqueInits.tail {P : PureExpr}
+    {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
+    (h : Block.uniqueInits (s :: ss)) : Block.uniqueInits ss := by
+  unfold Block.uniqueInits at h ⊢
+  rw [Block.initVars] at h
+  exact (List.nodup_append.mp h).2.1
+
+private theorem Block.uniqueInits.head_stmt {P : PureExpr}
+    {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
+    (h : Block.uniqueInits (s :: ss)) : (Stmt.initVars s).Nodup := by
+  unfold Block.uniqueInits at h
+  rw [Block.initVars] at h
+  exact (List.nodup_append.mp h).1
+
+private theorem Block.uniqueInits.block_body {P : PureExpr}
+    {label : String} {bss : List (Stmt P (Cmd P))} {md : MetaData P}
+    {rest : List (Stmt P (Cmd P))}
+    (h : Block.uniqueInits (.block label bss md :: rest)) :
+    Block.uniqueInits bss := by
+  have h_head := Block.uniqueInits.head_stmt h
+  -- Stmt.initVars (.block ...) = Block.initVars bss; so Nodup carries over.
+  unfold Stmt.initVars at h_head
+  exact h_head
+
+private theorem Block.uniqueInits.ite_then {P : PureExpr}
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
+    {rest : List (Stmt P (Cmd P))}
+    (h : Block.uniqueInits (.ite g tss ess md :: rest)) :
+    Block.uniqueInits tss := by
+  have h_head := Block.uniqueInits.head_stmt h
+  -- Stmt.initVars (.ite _ tss ess _) = Block.initVars tss ++ Block.initVars ess
+  unfold Stmt.initVars at h_head
+  exact (List.nodup_append.mp h_head).1
+
+private theorem Block.uniqueInits.ite_else {P : PureExpr}
+    {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
+    {rest : List (Stmt P (Cmd P))}
+    (h : Block.uniqueInits (.ite g tss ess md :: rest)) :
+    Block.uniqueInits ess := by
+  have h_head := Block.uniqueInits.head_stmt h
+  unfold Stmt.initVars at h_head
+  exact (List.nodup_append.mp h_head).2.1
+
+private theorem Block.uniqueInits.loop_body {P : PureExpr}
+    {guard : ExprOrNondet P} {measure : Option P.Expr}
+    {invariants : List (String × P.Expr)}
+    {bss : List (Stmt P (Cmd P))} {md : MetaData P}
+    {rest : List (Stmt P (Cmd P))}
+    (h : Block.uniqueInits (.loop guard measure invariants bss md :: rest)) :
+    Block.uniqueInits bss := by
+  have h_head := Block.uniqueInits.head_stmt h
+  unfold Stmt.initVars at h_head
+  exact h_head
+
+/-! ## Block.noBlocks projection helpers
+
+`Block.noBlocks ss` is a boolean predicate identifying statement lists
+containing no `.block` constructor. These helpers project it down to
+sub-lists used by the recursive simulation calls. -/
+
+private theorem Block.noBlocks.tail {P : PureExpr} {C : Type}
+    {s : Stmt P C} {ss : List (Stmt P C)}
+    (h : Block.noBlocks (s :: ss) = true) : Block.noBlocks ss = true := by
+  rw [Block.noBlocks] at h
+  exact (Bool.and_eq_true _ _).mp h |>.2
+
+private theorem Block.noBlocks.head_stmt {P : PureExpr} {C : Type}
+    {s : Stmt P C} {ss : List (Stmt P C)}
+    (h : Block.noBlocks (s :: ss) = true) : Stmt.noBlocks s = true := by
+  rw [Block.noBlocks] at h
+  exact (Bool.and_eq_true _ _).mp h |>.1
+
+private theorem Block.noBlocks.ite_then {P : PureExpr} {C : Type}
+    {g : ExprOrNondet P} {tss ess : List (Stmt P C)} {md : MetaData P}
+    {rest : List (Stmt P C)}
+    (h : Block.noBlocks (.ite g tss ess md :: rest) = true) :
+    Block.noBlocks tss = true := by
+  have h_head := Block.noBlocks.head_stmt h
+  rw [Stmt.noBlocks] at h_head
+  exact (Bool.and_eq_true _ _).mp h_head |>.1
+
+private theorem Block.noBlocks.ite_else {P : PureExpr} {C : Type}
+    {g : ExprOrNondet P} {tss ess : List (Stmt P C)} {md : MetaData P}
+    {rest : List (Stmt P C)}
+    (h : Block.noBlocks (.ite g tss ess md :: rest) = true) :
+    Block.noBlocks ess = true := by
+  have h_head := Block.noBlocks.head_stmt h
+  rw [Stmt.noBlocks] at h_head
+  exact (Bool.and_eq_true _ _).mp h_head |>.2
+
+private theorem Block.noBlocks.loop_body {P : PureExpr} {C : Type}
+    {guard : ExprOrNondet P} {measure : Option P.Expr}
+    {invariants : List (String × P.Expr)}
+    {bss : List (Stmt P C)} {md : MetaData P}
+    {rest : List (Stmt P C)}
+    (h : Block.noBlocks (.loop guard measure invariants bss md :: rest) = true) :
+    Block.noBlocks bss = true := by
+  have h_head := Block.noBlocks.head_stmt h
+  rw [Stmt.noBlocks] at h_head
+  exact h_head
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
@@ -3363,10 +3470,9 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
     (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
-    ∃ σ_cfg, StepDetCFGStar extendEval cfg
+    StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
-      (.cont k σ_cfg ρ₀.hasFailure)
-      ∧ StoreAgreement ρ₀.store σ_cfg := by
+      (.cont k ρ₀.store ρ₀.hasFailure) := by
   unfold flushCmds at h_gen
   simp only at h_gen  -- reduce the `match tr? with | none => ...` to just the none branch
   split at h_gen
@@ -3380,7 +3486,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     subst h_store; subst h_fail
     simp [Bool.or_false] at h_hf
     rw [h_hf]
-    exact ⟨ρ₀.store, ReflTrans.refl _, StoreAgreement.refl _⟩
+    exact ReflTrans.refl _
   case isFalse h_nonempty =>
     -- accum is non-empty: flushCmds generates a fresh label `entry` and a single block
     -- (entry, { cmds := accum.reverse, transfer := .goto k })
@@ -3417,7 +3523,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         CFGConfig.cont k ρ₀.store ρ₀.hasFailure := by
       simp [updateFailure, h_hf, Bool.or_comm]
     rw [h_uf] at h_step
-    exact ⟨ρ₀.store, ReflTrans.step _ _ _ h_step (ReflTrans.refl _), StoreAgreement.refl _⟩
+    exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
 
 private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
@@ -3429,6 +3535,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl ss = true)
+    (h_unique : Block.uniqueInits ss)
     (σ_base : SemanticStore P)
     (hf_base : Bool)
     (hf_accum : Bool)
@@ -3445,15 +3552,18 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     ∃ σ_cfg, StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
       (.cont k σ_cfg ρ'.hasFailure)
-      ∧ StoreAgreement ρ'.store σ_cfg := by
+      ∧ StoreAgreement ρ'.store σ_cfg
+      ∧ (Block.noBlocks ss = true → σ_cfg = ρ'.store) := by
   match h_match : ss with
   | [] =>
     -- stmtsToBlocks k [] exitConts accum = flushCmds "l$" accum .none k
     unfold stmtsToBlocks at h_gen
     have h_ρ : ρ₀ = ρ' := stmts_nil_terminal (EvalCmd P) extendEval _ _ h_term
     subst h_ρ
-    exact flushCmds_simulation extendEval "l$" k accum gen gen' entry blocks h_gen
-      σ_base hf_base hf_accum ρ₀ hwfb hwfv h_accum h_hf cfg h_cfg_blocks h_cfg_nodup
+    have h_step :=
+      flushCmds_simulation extendEval "l$" k accum gen gen' entry blocks h_gen
+        σ_base hf_base hf_accum ρ₀ hwfb hwfv h_accum h_hf cfg h_cfg_blocks h_cfg_nodup
+    exact ⟨ρ₀.store, h_step, StoreAgreement.refl _, fun _ => rfl⟩
   | .cmd c :: rest =>
     unfold stmtsToBlocks at h_gen
     -- Structured semantics: execute c then rest
@@ -3474,9 +3584,19 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have hwfv' : WellFormedSemanticEvalVal ρ₁.eval := by rw [heval_eq_c]; exact hwfv
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
-    exact stmtsToBlocks_simulation extendEval k rest exitConts (c :: accum) gen gen'
-      entry blocks h_gen h_nofd_rest σ_base hf_base (hf_accum || failed_c) ρ₁ ρ' hwfb' hwfv'
-      h_rest_star h_accum' h_hf' cfg h_cfg_blocks h_cfg_nodup
+    have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
+    have ⟨σ_cfg, h_step, h_agree, h_cond⟩ :=
+      stmtsToBlocks_simulation extendEval k rest exitConts (c :: accum) gen gen'
+        entry blocks h_gen h_nofd_rest h_unique_rest σ_base hf_base (hf_accum || failed_c)
+        ρ₁ ρ' hwfb' hwfv' h_rest_star h_accum' h_hf' cfg h_cfg_blocks h_cfg_nodup
+    refine ⟨σ_cfg, h_step, h_agree, ?_⟩
+    intro h_noBlocks
+    apply h_cond
+    -- noBlocks (.cmd c :: rest) = noBlocks rest, so rest is also noBlocks.
+    rw [Block.noBlocks] at h_noBlocks
+    rw [Stmt.noBlocks] at h_noBlocks
+    simp at h_noBlocks
+    exact h_noBlocks
   | .ite (.det e) thenBranch elseBranch md :: rest =>
     unfold stmtsToBlocks at h_gen
     simp [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
@@ -3556,16 +3676,94 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       cases h_ite_inv with
       | inl h => exact StepStmtStar_wfv_preserved extendEval thenBranch ρ₀ ρ₁ h.1 h_nofd_then hwfv
       | inr h => exact StepStmtStar_wfv_preserved extendEval elseBranch ρ₀ ρ₁ h.1 h_nofd_else hwfv
-    -- TODO(Task E): assemble the chain entry → branch → kNext → rest → k.
-    -- Under the C+D existential refactor, the recursive calls on thenBranch/
-    -- elseBranch return ∃ σ_branch, ... ∧ StoreAgreement ρ₁.store σ_branch, but
-    -- rest's recursion (with empty accum) requires its CFG start-state to equal
-    -- ρ₁.store, forcing σ_branch = ρ₁.store. This equality is not derivable from
-    -- agreement alone. Re-closing this case requires Task E's `h_accum`
-    -- precondition rewrite (using StoreAgreement) so rest can start at σ_branch.
-    -- The pre-refactor proof (closed for both inl/inr) is preserved in git
-    -- history; see commits prior to the C+D bundle.
-    sorry
+    -- The recursive call on `rest` (with empty accum) requires its CFG
+    -- entry-store to equal `ρ₁.store`, but `thenBranch`/`elseBranch`'s
+    -- recursion only provides `StoreAgreement ρ₁.store σ_branch`.
+    --
+    -- We close the `noBlocks=true` sub-case by exploiting the conditional
+    -- conjunct in the simulation conclusion: when the outer ss is `noBlocks`,
+    -- the branch/rest recursions' conditionals fire and yield exact store
+    -- equalities, sidestepping the need for an agreement-lift helper.
+    --
+    -- The `noBlocks=false` sub-case (when some sub-component contains `.block`)
+    -- requires either an `EvalCmds_under_agreement` helper or a relaxed
+    -- signature for `flushCmds_simulation`.  We leave it as `sorry`.
+    have h_unique_then : Block.uniqueInits thenBranch :=
+      Block.uniqueInits.ite_then h_unique
+    have h_unique_else : Block.uniqueInits elseBranch :=
+      Block.uniqueInits.ite_else h_unique
+    have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
+    by_cases h_outer_noBlocks : Block.noBlocks (.ite (.det e) thenBranch elseBranch md :: rest) = true
+    · -- noBlocks holds: derive exact store equalities through both recursions.
+      have h_noBlocks_then : Block.noBlocks thenBranch = true :=
+        Block.noBlocks.ite_then h_outer_noBlocks
+      have h_noBlocks_else : Block.noBlocks elseBranch = true :=
+        Block.noBlocks.ite_else h_outer_noBlocks
+      have h_noBlocks_rest : Block.noBlocks rest = true := by
+        have h_head := Block.noBlocks.head_stmt h_outer_noBlocks
+        rw [Block.noBlocks] at h_outer_noBlocks
+        simp at h_outer_noBlocks
+        exact h_outer_noBlocks.2
+      have h_accum_nil : EvalCmds P (EvalCmd P) ρ₁.eval ρ₁.store
+          [].reverse ρ₁.store false := EvalCmds.eval_cmds_none
+      have h_hf_rest : ρ₁.hasFailure = (ρ₁.hasFailure || false) := by simp
+      have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_cond_rest⟩ :=
+        stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
+          h_rest_eq h_nofd_rest h_unique_rest ρ₁.store ρ₁.hasFailure false ρ₁ ρ' hwfb₁ hwfv₁
+          h_rest_star h_accum_nil h_hf_rest cfg h_cfg_rest h_cfg_nodup
+      have h_cfg_eq : σ_cfg = ρ'.store := h_cond_rest h_noBlocks_rest
+      cases h_ite_inv with
+      | inl h_true =>
+        obtain ⟨h_then_term, h_cond_tt⟩ := h_true
+        have h_flush_sim : StepDetCFGStar extendEval cfg
+            (.cont accumEntry σ_base hf_base)
+            (.cont tl ρ₀.store ρ₀.hasFailure) := by
+          have h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+              cfg.blocks.lookup lbl = some blk :=
+            fun lbl blk h_mem => List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup lbl blk h_mem
+          exact flushCmds_condGoto_true extendEval accum e tl fl md l_ite gen_e gen_f
+            accumEntry accumBlocks h_flush_eq σ_base hf_base hf_accum ρ₀
+            hwfb h_accum h_hf h_cond_tt cfg h_cfg_accum h_lookup
+        have h_accum_nil_t : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
+            [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
+        have h_hf_t : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
+        have ⟨σ_branch, h_then_step, h_agree_then, h_cond_then⟩ :=
+          stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
+            gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
+            ρ₀.store ρ₀.hasFailure false
+            ρ₀ ρ₁ hwfb hwfv h_then_term h_accum_nil_t h_hf_t cfg h_cfg_tbs h_cfg_nodup
+        have h_branch_eq : σ_branch = ρ₁.store := h_cond_then h_noBlocks_then
+        rw [h_branch_eq] at h_then_step
+        refine ⟨σ_cfg, ?_, h_agree_rest, fun _ => h_cfg_eq⟩
+        exact StepDetCFGStar_trans
+          (StepDetCFGStar_trans h_flush_sim h_then_step) h_rest_sim
+      | inr h_false =>
+        obtain ⟨h_else_term, h_cond_ff⟩ := h_false
+        have h_flush_sim : StepDetCFGStar extendEval cfg
+            (.cont accumEntry σ_base hf_base)
+            (.cont fl ρ₀.store ρ₀.hasFailure) := by
+          have h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+              cfg.blocks.lookup lbl = some blk :=
+            fun lbl blk h_mem => List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup lbl blk h_mem
+          exact flushCmds_condGoto_false extendEval accum e tl fl md l_ite gen_e gen_f
+            accumEntry accumBlocks h_flush_eq σ_base hf_base hf_accum ρ₀
+            hwfb h_accum h_hf h_cond_ff cfg h_cfg_accum h_lookup
+        have h_accum_nil_f : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
+            [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
+        have h_hf_f : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
+        have ⟨σ_branch, h_else_step, h_agree_else, h_cond_else⟩ :=
+          stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
+            gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
+            ρ₀.store ρ₀.hasFailure false
+            ρ₀ ρ₁ hwfb hwfv h_else_term h_accum_nil_f h_hf_f cfg h_cfg_fbs h_cfg_nodup
+        have h_branch_eq : σ_branch = ρ₁.store := h_cond_else h_noBlocks_else
+        rw [h_branch_eq] at h_else_step
+        refine ⟨σ_cfg, ?_, h_agree_rest, fun _ => h_cfg_eq⟩
+        exact StepDetCFGStar_trans
+          (StepDetCFGStar_trans h_flush_sim h_else_step) h_rest_sim
+    · -- noBlocks=false: requires `EvalCmds_under_agreement` helper to lift the
+      -- agreement-gap.  Left as `sorry` pending future infrastructure.
+      sorry
   | .ite .nondet thenBranch elseBranch md :: rest =>
     sorry
   | .loop guard measure invariants body md :: rest =>
@@ -3616,9 +3814,18 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     rw [h_ρ₁] at h_rest_star
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
-    exact stmtsToBlocks_simulation extendEval k rest exitConts accum gen gen'
-      entry blocks h_gen h_nofd_rest σ_base hf_base hf_accum ρ₀ ρ' hwfb hwfv h_rest_star
-      h_accum h_hf cfg h_cfg_blocks h_cfg_nodup
+    have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
+    have ⟨σ_cfg, h_step, h_agree, h_cond⟩ :=
+      stmtsToBlocks_simulation extendEval k rest exitConts accum gen gen'
+        entry blocks h_gen h_nofd_rest h_unique_rest σ_base hf_base hf_accum ρ₀ ρ' hwfb hwfv
+        h_rest_star h_accum h_hf cfg h_cfg_blocks h_cfg_nodup
+    refine ⟨σ_cfg, h_step, h_agree, ?_⟩
+    intro h_noBlocks
+    apply h_cond
+    rw [Block.noBlocks] at h_noBlocks
+    rw [Stmt.noBlocks] at h_noBlocks
+    simp at h_noBlocks
+    exact h_noBlocks
 termination_by sizeOf ss
 decreasing_by
   all_goals (subst h_match; simp_wf; omega)
@@ -3769,6 +3976,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
+    (h_unique : Block.uniqueInits ss)
     (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ')) :
@@ -3785,9 +3993,10 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     EvalCmds.eval_cmds_none
   have h_hf : ρ₀.hasFailure = (false || false) := by simp [hf₀]
   have h_nodup := stmtsToCFG_nodup_keys ss h_disj
-  have ⟨σ_cfg, h_sim, h_agree⟩ :=
+  have ⟨σ_cfg, h_sim, h_agree, _h_cond⟩ :=
     stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
-      h_gen h_nofd ρ₀.store false false ρ₀ ρ' hwfb hwfv h_term h_accum h_hf cfg h_blocks h_nodup
+      h_gen h_nofd h_unique ρ₀.store false false ρ₀ ρ' hwfb hwfv h_term h_accum h_hf
+      cfg h_blocks h_nodup
   have h_end := end_block_terminal extendEval cfg lend σ_cfg ρ'.eval ρ'.hasFailure h_lend
   exact ⟨σ_cfg, StepDetCFGStar_trans h_sim h_end, h_agree⟩
 
@@ -3837,6 +4046,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
+    (h_unique : Block.uniqueInits ss)
     (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ')) :
@@ -3845,7 +4055,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
       (.cont cfg.entry ρ₀.store false)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
-  stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hf₀ h_nofd h_disj h_term
+  stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hf₀ h_nofd h_unique h_disj h_term
 
 /-- Converse: any terminal store reachable from the CFG execution is also
     reachable from the structured execution. Together with soundness, this

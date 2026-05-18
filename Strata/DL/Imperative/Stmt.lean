@@ -201,6 +201,37 @@ pattern the CFG cannot replicate. -/
 
 ---------------------------------------------------------------------
 
+/-! ### NoBlocks
+
+A boolean predicate asserting that a statement (or block) contains no
+`.block` constructor anywhere in its tree. Used by the structured-to-CFG
+correctness proof to identify subprograms whose CFG end-store is exactly
+the structured end-store (no projection occurs).
+-/
+
+mutual
+/-- Returns true if the statement contains no `.block` constructor. -/
+@[expose] def Stmt.noBlocks (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ _ _ => false
+  | .ite _ tss ess _ => Block.noBlocks tss && Block.noBlocks ess
+  | .loop _ _ _ bss _ => Block.noBlocks bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no `.block` constructor. -/
+@[expose] def Block.noBlocks (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noBlocks s && Block.noBlocks srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### MapExpr
 
 Apply a function to all expressions in a statement's structural positions
