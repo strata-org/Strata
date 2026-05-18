@@ -118,6 +118,19 @@ swap                     |     OK |     OK |     OK |      PARTIAL |      PARTIA
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
   translated; not a pipeline bug.
+- **`aws_array_eq` emits 0 VCs (deductive=WARN, bugFinding=WARN).**
+  When `main` asserts directly on the return value of a user procedure
+  (`assert(aws_array_eq(...) == true)`) and that procedure is included
+  in the default verification set, the call-elimination / inlining pass
+  consumes the `assert__i32` calls without emitting their synthetic-
+  `requires` VCs. The asserts disappear before they reach the solver,
+  so the verifier reports `All 0 goals passed`. Workaround:
+  `strata verify --procedures main aws_array_eq.core.st` produces the
+  expected 3 VCs (all FAIL on this benchmark, since SMACK provides no
+  preconditions on `main`). Affects `aws_array_eq` only on the current
+  benchmark; the other programs that call user procedures from `main`
+  (`abs_func`, `max_func`, `swap`, etc.) assert on a local variable
+  populated from the call result, so the assert survives elimination.
 - **`Strata.Transform.ProcBodyVerifyCorrect` proof file (fixed on
   this branch tip).** Surfaced during this reproduction on the prior
   tip: the merge from `main` left three call sites in
