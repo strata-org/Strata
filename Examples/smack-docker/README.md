@@ -107,13 +107,35 @@ swap                     |     OK |     OK |     OK |      PARTIAL |      PARTIA
   through that. Visible on 5 of the 12 programs (`abs_func`,
   `array_sum`, `loop_sum`, `max_func`, `nondet_branch`); the other 7
   hit the inout blocker first.
-- **CoreToGoto: inout-parameter double-collection.** Inout parameters
-  (e.g., `_exn`) are assigned in the body, so `definedVars` collects
-  them as locals and they get renamed with `mkLocalSymbol`
-  (`main::1::_exn`) while the type env only knows the formal name
-  (`main::_exn`). Surfaces as `[toGotoExprCtx] Not yet implemented:
-  LExpr.fvar`. Source location: `CoreToGOTOPipeline.lean:286-292`.
-  Affects 7 programs.
+- **CoreToGoto: inout-parameter rename collision.** By Strata Core
+  convention, every `inout` parameter appears in BOTH
+  `Procedure.Header.inputs` AND `Procedure.Header.outputs` with the
+  same identifier (see `Strata/Languages/Core/StatementType.lean:25-30`
+  and the DDM translator at
+  `Strata/Languages/Core/DDMTransform/Translate.lean:1582-1585`).
+  `procedureToGotoCtx` does not account for this: it builds
+  `new_formals` via `mkFormalSymbol` (`main::_exn`) and `new_outputs`
+  via `mkLocalSymbol` (`main::1::_exn`), then folds both into the
+  rename map with `HashMap.insert`. Outputs come second, so any inout
+  name ends up bound to the local symbol — mismatching the symbol
+  table and parameter list. Source location:
+  `CoreToGOTOPipeline.lean:286-298` (and the parallel
+  `CoreCFGToGOTOPipeline.lean:204-213`). Surfaces as `[toGotoExprCtx]
+  Not yet implemented: LExpr.fvar () { name := "main::1::_exn" } none`.
+  Reproducible with a 12-line input that has just `inout g` and a
+  call. Affects 7 programs (the ones with `inout` globals inferred by
+  BoogieToStrata's `InferModifies`, namely `_exn` and `_CurrAddr`).
+- **CoreToGoto: typeless fvar from `CallArg.getInputExprs` (latent).**
+  `Strata/Languages/Core/Statement.lean:105-109` synthesizes
+  `LExpr.fvar () id none` for every `inoutArg` at call sites.
+  `LExpr.toGotoExprCtx` only matches fvars annotated with `(some ty)`;
+  typeless ones fall through to the catch-all error. With the rename
+  collision above fixed, the same `LExpr.fvar … none` error class
+  would still fire — just with the formal symbol name instead of the
+  local one. The type is recoverable from the procedure's input
+  signature, so the cleanest fix is to look up the type in the
+  rename/typing context at call-translation time rather than rely on
+  the synthesized fvar carrying it.
 - **bugFinding partials.** Symbolic execution finds potential
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
