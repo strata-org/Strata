@@ -5612,7 +5612,113 @@ private theorem simulation
           have hnofd_ess : Block.noFuncDecl ess = Bool.true := by
             simp [Stmt.noFuncDecl, Bool.and_eq_true] at hnofd; exact hnofd.2
           -- Ite simulation: branches now scoped via .block .none; needs unwrapping.
-          sorry
+          cases hreach with
+          | step _ _ _ h1 r1 =>
+            cases h1 with
+            | step_ite_true hcond hwfb' =>
+              have r1T := reflTrans_to_T r1
+              have ⟨ρ_inner, ⟨hterm_T, _⟩, heq⟩ :=
+                blockT_none_reaches_terminal (π := π) (φ := φ) r1T
+              have hterm := reflTransT_to_prop hterm_T
+              have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+                (InitEnvWF.toBlock_ite_left hswf)
+              match hsim_tss.1 ρ_inner hterm with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ (.step_ite_true hcond hwfb')
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_tss =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_tss hnf_inner
+                subst heq
+                exact .step _ _ _ (.step_ite_true hcond hwfb')
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ .step_block_done (.refl _)))
+            | step_ite_false hcond hwfb' =>
+              have r1T := reflTrans_to_T r1
+              have ⟨ρ_inner, ⟨hterm_T, _⟩, heq⟩ :=
+                blockT_none_reaches_terminal (π := π) (φ := φ) r1T
+              have hterm := reflTransT_to_prop hterm_T
+              have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
+                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
+              match hsim_ess.1 ρ_inner hterm with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ (.step_ite_false hcond hwfb')
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_ess =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_ess hnf_inner
+                subst heq
+                exact .step _ _ _ (.step_ite_false hcond hwfb')
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ .step_block_done (.refl _)))
+            | step_ite_nondet_true =>
+              have r1T := reflTrans_to_T r1
+              have ⟨ρ_inner, ⟨hterm_T, _⟩, heq⟩ :=
+                blockT_none_reaches_terminal (π := π) (φ := φ) r1T
+              have hterm := reflTransT_to_prop hterm_T
+              have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+                (InitEnvWF.toBlock_ite_left hswf)
+              match hsim_tss.1 ρ_inner hterm with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ .step_ite_nondet_true
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_tss =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_tss hnf_inner
+                subst heq
+                exact .step _ _ _ .step_ite_nondet_true
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ .step_block_done (.refl _)))
+            | step_ite_nondet_false =>
+              have r1T := reflTrans_to_T r1
+              have ⟨ρ_inner, ⟨hterm_T, _⟩, heq⟩ :=
+                blockT_none_reaches_terminal (π := π) (φ := φ) r1T
+              have hterm := reflTransT_to_prop hterm_T
+              have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
+                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
+              match hsim_ess.1 ρ_inner hterm with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ .step_ite_nondet_false
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_ess =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_ess hnf_inner
+                subst heq
+                exact .step _ _ _ .step_ite_nondet_false
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ .step_block_done (.refl _)))
         | .loop guardE measure inv body md =>
           -- LOOP TERMINAL case.
           by_cases hnf' : ρ'.hasFailure = Bool.true
@@ -5934,14 +6040,101 @@ private theorem simulation
           | step _ _ _ h1 r1 =>
             cases h1 with
             | step_ite_true hcond hwfb' =>
-              -- r1 now starts at .block .none (scoped ite); sorry pending wrapper lemma
-              sorry
+              have ⟨ρ_inner, hexit_inner, heq⟩ :=
+                block_none_reaches_exiting_some (π := π) (φ := φ) r1
+              have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+                (InitEnvWF.toBlock_ite_left hswf)
+              match hsim_tss.2 lbl ρ_inner hexit_inner with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ (.step_ite_true hcond hwfb')
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_tss =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_tss hnf_inner
+                subst heq
+                exact .step _ _ _ (.step_ite_true hcond hwfb')
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ (.step_block_exit_mismatch (fun h => nomatch h)) (.refl _)))
             | step_ite_false hcond hwfb' =>
-              sorry
+              have ⟨ρ_inner, hexit_inner, heq⟩ :=
+                block_none_reaches_exiting_some (π := π) (φ := φ) r1
+              have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
+                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
+              match hsim_ess.2 lbl ρ_inner hexit_inner with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ (.step_ite_false hcond hwfb')
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_ess =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_ess hnf_inner
+                subst heq
+                exact .step _ _ _ (.step_ite_false hcond hwfb')
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ (.step_block_exit_mismatch (fun h => nomatch h)) (.refl _)))
             | step_ite_nondet_true =>
-              sorry
+              have ⟨ρ_inner, hexit_inner, heq⟩ :=
+                block_none_reaches_exiting_some (π := π) (φ := φ) r1
+              have hsim_tss := ih.2.1 σ tss hsz_tss hnofd_tss (stmtOk_ite_left hok) ρ₀
+                (InitEnvWF.toBlock_ite_left hswf)
+              match hsim_tss.2 lbl ρ_inner hexit_inner with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ .step_ite_nondet_true
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_tss =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_tss hnf_inner
+                subst heq
+                exact .step _ _ _ .step_ite_nondet_true
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ (.step_block_exit_mismatch (fun h => nomatch h)) (.refl _)))
             | step_ite_nondet_false =>
-              sorry
+              have ⟨ρ_inner, hexit_inner, heq⟩ :=
+                block_none_reaches_exiting_some (π := π) (φ := φ) r1
+              have hsim_ess := ih.2.1 (blockPostState σ tss) ess hsz_ess hnofd_ess
+                (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
+              match hsim_ess.2 lbl ρ_inner hexit_inner with
+              | .inl hcf =>
+                obtain ⟨cfg, hfail, hreach_cf⟩ := hcf
+                exact .inl ⟨.block .none ρ₀.store cfg,
+                  by show cfg.getEnv.hasFailure = Bool.true; exact hfail,
+                  .step _ _ _ .step_ite_nondet_false
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_cf)⟩
+              | .inr hok_ess =>
+                refine .inr (fun hnf => ?_)
+                have hnf_inner : ρ_inner.hasFailure = Bool.false := by
+                  subst heq; simp at hnf; exact hnf
+                have hreach_target := hok_ess hnf_inner
+                subst heq
+                exact .step _ _ _ .step_ite_nondet_false
+                  (ReflTrans_Transitive _ _ _ _
+                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                      _ _ .none ρ₀.store hreach_target)
+                    (.step _ _ _ (.step_block_exit_mismatch (fun h => nomatch h)) (.refl _)))
         | .loop guard measure inv body md =>
           -- LOOP exiting case: see strategy in agent context
           sorry
@@ -6120,14 +6313,45 @@ private theorem simulation
         | refl => exact ⟨.stmt (.ite c (blockResult σ tss) (blockResult (blockPostState σ tss) ess) md) ρ₀, hfail, .refl _⟩
         | step _ _ _ h1 r1 => cases h1 with
           | step_ite_true hcond hwfb' =>
-            -- r1 now starts at .block .none (scoped ite); sorry pending wrapper lemma
-            sorry
+            have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
+            have ⟨cfg', hfail'', hreach'⟩ := ih.2.2.2 σ tss hsz_tss hnofd_tss
+              (stmtOk_ite_left hok) ρ₀ (InitEnvWF.toBlock_ite_left hswf)
+              ⟨inner_cfg, hfail', hinner⟩
+            exact ⟨.block .none ρ₀.store cfg',
+              by show cfg'.getEnv.hasFailure = Bool.true; exact hfail'',
+              .step _ _ _ (.step_ite_true hcond hwfb')
+                (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  _ _ .none ρ₀.store hreach')⟩
           | step_ite_false hcond hwfb' =>
-            sorry
+            have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
+            have ⟨cfg', hfail'', hreach'⟩ := ih.2.2.2 (blockPostState σ tss) ess hsz_ess
+              hnofd_ess (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
+              ⟨inner_cfg, hfail', hinner⟩
+            exact ⟨.block .none ρ₀.store cfg',
+              by show cfg'.getEnv.hasFailure = Bool.true; exact hfail'',
+              .step _ _ _ (.step_ite_false hcond hwfb')
+                (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  _ _ .none ρ₀.store hreach')⟩
           | step_ite_nondet_true =>
-            sorry
+            have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
+            have ⟨cfg', hfail'', hreach'⟩ := ih.2.2.2 σ tss hsz_tss hnofd_tss
+              (stmtOk_ite_left hok) ρ₀ (InitEnvWF.toBlock_ite_left hswf)
+              ⟨inner_cfg, hfail', hinner⟩
+            exact ⟨.block .none ρ₀.store cfg',
+              by show cfg'.getEnv.hasFailure = Bool.true; exact hfail'',
+              .step _ _ _ .step_ite_nondet_true
+                (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  _ _ .none ρ₀.store hreach')⟩
           | step_ite_nondet_false =>
-            sorry
+            have ⟨inner_cfg, hfail', hinner⟩ := block_canfail_to_inner r1 hfail
+            have ⟨cfg', hfail'', hreach'⟩ := ih.2.2.2 (blockPostState σ tss) ess hsz_ess
+              hnofd_ess (stmtOk_ite_right hok) ρ₀ (InitEnvWF.toBlock_ite_right hswf)
+              ⟨inner_cfg, hfail', hinner⟩
+            exact ⟨.block .none ρ₀.store cfg',
+              by show cfg'.getEnv.hasFailure = Bool.true; exact hfail'',
+              .step _ _ _ .step_ite_nondet_false
+                (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  _ _ .none ρ₀.store hreach')⟩
       | .loop guardE measure inv body md =>
         -- Statement CanFail for loop.  Strategy:
         --   * If ρ₀ already has failure, the transformed loop is CanFail at refl.
