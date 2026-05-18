@@ -291,6 +291,10 @@ structure ResolveState where
       declaration order). `none` means no enclosing procedure. Used by `Return`
       to type-check the optional return value and to flag arity/shape mismatches. -/
   expectedReturnTypes : Option (List HighTypeMd) := none
+  /-- Type-relation tables (alias/constrained unfolding + composite extending
+      chains) used by the subtyping/consistency checks. Built once from
+      `program.types` at the start of `resolve`. -/
+  typeContext : TypeContext := {}
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -464,13 +468,16 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
     actual type is already in hand (assignment, call args, body vs declared
     output) — equivalent to `checkStmtExpr e expected` but without re-synthesizing. -/
 private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
-  unless isConsistentSubtype actual expected do
+  let ctx := (← get).typeContext
+  unless isConsistentSubtype ctx actual expected do
     typeMismatch source none s!"expected '{formatType expected}'" actual
 
 /-- Test whether a type is in the set of numeric primitives. `Unknown` and
-    `TCore` are accepted as gradual escape hatches. Used by Op-Cmp / Op-Arith. -/
-private def isNumeric (ty : HighTypeMd) : Bool :=
-  match ty.val with
+    `TCore` are accepted as gradual escape hatches. Aliases and constrained
+    types are unfolded first so e.g. `nat` (constrained over `int`) counts as
+    numeric. Used by Op-Cmp / Op-Arith. -/
+private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
+  match (ctx.unfold ty).val with
   | .TInt | .TReal | .TFloat64 | .Unknown => true
   | .TCore _ => true
   | _ => false
@@ -478,8 +485,8 @@ private def isNumeric (ty : HighTypeMd) : Bool :=
 /-- Test whether a type is a user-defined reference type. `Unknown` and `TCore`
     are accepted as gradual escape hatches. Used by Fresh and ReferenceEquals,
     which only make sense on composite/datatype references. -/
-private def isReference (ty : HighTypeMd) : Bool :=
-  match ty.val with
+private def isReference (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
+  match (ctx.unfold ty).val with
   | .UserDefined _ | .Unknown => true
   | .TCore _ => true
   | _ => false
@@ -672,13 +679,15 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
       for (a, aTy) in args'.zip argTypes do
         checkSubtype a.source { val := .TBool, source := a.source } aTy
     | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT | .Lt | .Leq | .Gt | .Geq =>
+      let ctx := (← get).typeContext
       for (a, aTy) in args'.zip argTypes do
-        unless isNumeric aTy do
+        unless isNumeric ctx aTy do
           typeMismatch a.source (some expr) "expected a numeric type" aTy
     | .Eq | .Neq =>
       match argTypes with
       | [lhsTy, rhsTy] =>
-        unless isConsistent lhsTy rhsTy do
+        let ctx := (← get).typeContext
+        unless isConsistent ctx lhsTy rhsTy do
           let diag := diagnosticFromSource source
             s!"Operands of '{op}' have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
           modify fun s => { s with errors := s.errors.push diag }
@@ -715,9 +724,10 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
   | .ReferenceEquals lhs rhs =>
     let (lhs', lhsTy) ← synthStmtExpr lhs
     let (rhs', rhsTy) ← synthStmtExpr rhs
-    unless isReference lhsTy do
+    let ctx := (← get).typeContext
+    unless isReference ctx lhsTy do
       typeMismatch lhs'.source (some expr) "expected a reference type" lhsTy
-    unless isReference rhsTy do
+    unless isReference ctx rhsTy do
       typeMismatch rhs'.source (some expr) "expected a reference type" rhsTy
     pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   | .AsType target ty =>
@@ -757,7 +767,7 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     pure (.Old val', valTy)
   | .Fresh val =>
     let (val', valTy) ← synthStmtExpr val
-    unless isReference valTy do
+    unless isReference (← get).typeContext valTy do
       typeMismatch val'.source (some expr) "expected a reference type" valTy
     pure (.Fresh val', { val := .TBool, source := source })
   | .Assert ⟨condExpr, summary⟩ =>
@@ -1246,7 +1256,8 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let (program', finalState) := phase1.run { nextId := nextId }
+  let typeContext := TypeContext.ofTypes program.types
+  let (program', finalState) := phase1.run { nextId := nextId, typeContext }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
   { program := program',

@@ -488,24 +488,76 @@ instance : BEq HighTypeMd where
 
 deriving instance BEq for HighType
 
-/-- Subtyping. Stub: structural equality via `highEq`.
-    TODO: walk `extending` chains for composites, unfold aliases, unwrap
-    constrained types to their base. -/
-def isSubtype (sub sup : HighTypeMd) : Bool := highEq sub sup
+/-- Lookup tables threaded through subtyping/consistency checks. Built from
+    the program's `TypeDefinition`s by the resolution pass:
+    - `unfoldMap` maps an alias or constrained type's name to the type it
+      unwraps to (alias target / constrained base). Followed transitively to
+      reach a non-alias, non-constrained type.
+    - `extendingMap` maps a composite type's name to the *direct* parents in
+      its `extending` list. Walked transitively for the subtype check. -/
+structure TypeContext where
+  unfoldMap : Std.HashMap String HighTypeMd := {}
+  extendingMap : Std.HashMap String (List String) := {}
+  deriving Inhabited
+
+/-- Unfold aliases and constrained types to their underlying type.
+    Composites and primitives are returned unchanged. A `visited` set guards
+    against cycles in the alias/constrained graph (already cycle-checked
+    elsewhere, but keeps `unfold` safe to call independently). -/
+partial def TypeContext.unfold (ctx : TypeContext) (ty : HighTypeMd)
+    (visited : Std.HashSet String := {}) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if visited.contains name.text then ty
+    else match ctx.unfoldMap.get? name.text with
+      | some target => ctx.unfold target (visited.insert name.text)
+      | none => ty
+  | _ => ty
+
+/-- All ancestors of a composite type (including itself), reachable via
+    repeated `extending` lookups. The `fuel` cap is the number of distinct
+    type names ever registered, bounding the BFS even with malformed input. -/
+partial def TypeContext.ancestors (ctx : TypeContext) (name : String) : Std.HashSet String :=
+  let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
+    match frontier with
+    | [] => acc
+    | n :: rest =>
+      if acc.contains n then go acc rest
+      else
+        let acc' := acc.insert n
+        let parents := (ctx.extendingMap.get? n).getD []
+        go acc' (parents ++ rest)
+  go {} [name]
+
+/-- Subtyping. Walks `extending` chains for composites, unfolds aliases, and
+    unwraps constrained types to their base before falling back to structural
+    equality via `highEq`. -/
+def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
+  let sub' := ctx.unfold sub
+  let sup' := ctx.unfold sup
+  match sub'.val, sup'.val with
+  | .UserDefined subName, .UserDefined supName =>
+    -- After unfolding, both sides are composites (or unresolved). A composite
+    -- is a subtype of any type in its extending chain.
+    (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
+  | _, _ => highEq sub' sup'
 
 /-- Consistency (Siek–Taha): the symmetric gradual relation. `Unknown` is the
     dynamic type and is consistent with everything; otherwise structural
-    equality. `TCore` is a temporary migration escape hatch. -/
-def isConsistent (a b : HighTypeMd) : Bool :=
-  match a.val, b.val with
+    equality after unfolding aliases / constrained types. `TCore` is a
+    temporary migration escape hatch. -/
+def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
+  let a' := ctx.unfold a
+  let b' := ctx.unfold b
+  match a'.val, b'.val with
   | .Unknown, _ | _, .Unknown => true
   | .TCore _, _ | _, .TCore _ => true
-  | _, _ => highEq a b
+  | _, _ => highEq a' b'
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
     this collapses to `sub ~ sup ∨ sub <: sup`. -/
-def isConsistentSubtype (sub sup : HighTypeMd) : Bool :=
-  isConsistent sub sup || isSubtype sub sup
+def isConsistentSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
+  isConsistent ctx sub sup || isSubtype ctx sub sup
 
 def HighType.isBool : HighType → Bool
   | TBool => true
@@ -643,6 +695,19 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Constrained ty => ty.name
   | .Datatype ty => ty.name
   | .Alias ty => ty.name
+
+/-- Build a `TypeContext` from a list of `TypeDefinition`s.
+    Aliases populate `unfoldMap` with their target; constrained types populate
+    it with their base; composites populate `extendingMap` with their direct
+    parents. Datatypes contribute nothing — they're nominal and irreducible. -/
+def TypeContext.ofTypes (types : List TypeDefinition) : TypeContext :=
+  types.foldl (init := {}) fun ctx td =>
+    match td with
+    | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
+    | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ct.base }
+    | .Composite c =>
+      { ctx with extendingMap := ctx.extendingMap.insert c.name.text (c.extending.map (·.text)) }
+    | .Datatype _ => ctx
 
 structure Constant where
   name : Identifier
