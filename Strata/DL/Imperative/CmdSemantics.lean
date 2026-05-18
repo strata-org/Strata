@@ -44,7 +44,7 @@ when the command signals a failure.
 
 /-- ### Well-Formedness of `SemanticStore`s -/
 
-def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
+@[expose] def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → (σ v).isSome = true
 
 def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
@@ -239,7 +239,7 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
 
-def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
+@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
     : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
 
 /--

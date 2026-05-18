@@ -126,8 +126,11 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
   match (computeExprType model target).val with
   | .UserDefined typeName =>
     if isDiamondInheritedField model typeName fieldName then
-      let fileRange := source.getD FileRange.unknown
-      [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
+      match source with
+      | some fileRange =>
+        [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
+      | none =>
+        [DiagnosticModel.fromMessage s!"fields that are inherited multiple times can not be accessed."]
     else []
   | _ => []
 
