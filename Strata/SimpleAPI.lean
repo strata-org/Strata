@@ -13,6 +13,7 @@ import Strata.Transform.LoopElim
 public import Strata.Transform.ProcedureInlining
 import Strata.Transform.FilterProcedures
 import Strata.Transform.IrrelevantAxioms
+import Strata.Transform.SSA
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
@@ -246,6 +247,7 @@ inductive Core.TransformPass where
   | inlineProcedures (opts : Core.InlineTransformOptions := {})
   | loopElim
   | callElim
+  | ssa
   | filterProcedures (procs : List String)
   | removeIrrelevantAxioms (funcs : List String)
 
@@ -260,6 +262,9 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     pure (Core.loopElim program).fst
   | .callElim =>
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
+    return prog
+  | .ssa =>
+    let (_, prog) ← Core.SSA.ssaTransform program
     return prog
   | .filterProcedures procs =>
     Core.FilterProcedures.run program procs
