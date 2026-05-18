@@ -247,7 +247,10 @@ the translator emits for that block. -/
 
 /-- The structural relationship between a `Core.DetCFG` and a `Program`. -/
 structure WellFormedTranslation
-    (cfg : Core.DetCFG) (pgm : Program) where
+    (cfg : Core.DetCFG) (pgm : Program)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression) where
   /-- Lookup from CFG label to `pc` in `pgm.instructions`. -/
   labelMap : LabelMap
   /-- Every CFG block label has a `pc` in `labelMap`. -/
@@ -263,9 +266,7 @@ structure WellFormedTranslation
       (l, blk) ∈ cfg.blocks → labelMap l = some pc →
       ∃ instr, pgm.instrAt pc = some instr ∧ instr.type = .LOCATION
   /-- For each `condGoto` transfer in block `(l, blk)`, two `GOTO`
-  instructions appear at the end of the block's instruction range:
-  the first is conditional (guard = `¬cond`) and targets `lf`; the
-  second is unconditional (guard = `Expr.true`) and targets `lt`. -/
+  instructions appear at the end of the block's instruction range. -/
   layout_cond_goto :
     ∀ l blk pc cond lt lf md, (l, blk) ∈ cfg.blocks →
       labelMap l = some pc →
@@ -281,6 +282,19 @@ structure WellFormedTranslation
         instr_uncond.type = .GOTO ∧
         instr_uncond.target = some pc_lt ∧
         labelMap lt = some pc_lt
+  /-- The two transfer GOTOs for a `condGoto` block carry specific guards:
+  the first is `e_goto.not` (where `e_goto` is the GOTO translation of
+  `cond`) and the second is the GOTO constant `Expr.true`. -/
+  layout_cond_goto_guards :
+    ∀ l blk pc cond lt lf md, (l, blk) ∈ cfg.blocks →
+      labelMap l = some pc →
+      blk.transfer = .condGoto cond lt lf md →
+      ∃ instr_neg instr_uncond e_goto,
+        pgm.instrAt (pc + 1 + DetBlockBodyInstrCount blk) = some instr_neg ∧
+        pgm.instrAt (pc + 1 + DetBlockBodyInstrCount blk + 1) = some instr_uncond ∧
+        instr_neg.guard = e_goto.not ∧
+        ExprTranslated δ δ_goto δ_goto_bool cond e_goto ∧
+        instr_uncond.guard = CProverGOTO.Expr.true
   /-- A `finish` block has no transfer instructions; the next instruction
   beyond the block body must be `END_FUNCTION`. -/
   layout_finish :
@@ -291,6 +305,16 @@ structure WellFormedTranslation
         pc_end = pc + 1 + DetBlockBodyInstrCount blk ∧
         pgm.instrAt pc_end = some instr_end ∧
         instr_end.type = .END_FUNCTION
+  /-- For each block, every plain (`CmdExt.cmd`) command in the body has
+  the right `CmdEmittedAt` layout at the corresponding `pc` offset. -/
+  layout_block_body :
+    ∀ l blk pc, (l, blk) ∈ cfg.blocks → labelMap l = some pc →
+    ∀ k inner,
+      (h : k < blk.cmds.length) →
+      blk.cmds[k]'h = .cmd inner →
+      CmdEmittedAt δ δ_goto δ_goto_bool pgm
+        (pc + 1 + cmdsPrefixInstrCount blk.cmds k)
+        inner
   /-- The CFG's entry label is in the label map. -/
   entry_in_map :
     ∃ pc, labelMap cfg.entry = some pc

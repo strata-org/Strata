@@ -123,14 +123,45 @@ private theorem trivial_entry_in_map :
     ∃ pc, trivialLabelMap trivialCfg.entry = some pc :=
   ⟨0, by simp [trivialLabelMap, trivialCfg]⟩
 
+/-! ## Dummy evaluators
+
+Two arbitrary evaluators (we don't need their concrete shape — the
+lemma's conclusion does not depend on expression evaluation when the
+block is empty). -/
+
+def dummyEval : Imperative.SemanticEval Core.Expression :=
+  fun _ _ => none
+
+def dummyEvalGoto : SemanticEvalGoto Core.Expression :=
+  fun _ _ => none
+
+def dummyEvalGotoBool : SemanticEvalGotoBool Core.Expression :=
+  fun _ _ => none
+
 /-- A hand-built `WellFormedTranslation` witness for the trivial pair. -/
-def trivialWF : WellFormedTranslation trivialCfg trivialPgm where
+def trivialWF :
+    WellFormedTranslation trivialCfg trivialPgm
+      dummyEval dummyEvalGoto dummyEvalGotoBool where
   labelMap := trivialLabelMap
   labelMap_total := trivial_labelMap_total
   labelMap_inj := trivial_labelMap_inj
   layout_location := trivial_layout_location
   layout_cond_goto := trivial_layout_cond_goto
+  layout_cond_goto_guards := by
+    intro l blk pc cond lt lf md h_blk h_pc h_xfer
+    -- The trivial block uses `.finish`, not `.condGoto` — contradiction.
+    simp [trivialCfg] at h_blk
+    obtain ⟨_, h_blk_eq⟩ := h_blk
+    subst h_blk_eq
+    simp [trivialBlock] at h_xfer
   layout_finish := trivial_layout_finish
+  layout_block_body := by
+    intro l blk pc h_blk h_pc k inner h_k h_cmd
+    -- The trivial block has no commands; `k < 0` is impossible.
+    simp [trivialCfg] at h_blk
+    obtain ⟨_, h_blk_eq⟩ := h_blk
+    subst h_blk_eq
+    simp [trivialBlock] at h_k
   entry_in_map := trivial_entry_in_map
 
 /-! ## Test: `block_simulation_empty_finish` instantiates correctly
@@ -139,21 +170,13 @@ Use the proven lemma to obtain a concrete `StepGotoStar` for the trivial
 program. This confirms the lemma actually fires on a real input and that
 the `Sim` relation composes correctly with `WellFormedTranslation`. -/
 
-/-- Two arbitrary evaluators (we don't need their concrete shape — the
-lemma's conclusion does not depend on expression evaluation when the
-block is empty). -/
-def dummyEvalGoto : SemanticEvalGoto Core.Expression :=
-  fun _ _ => none
-
-def dummyEvalGotoBool : SemanticEvalGotoBool Core.Expression :=
-  fun _ _ => none
-
 /-- The lemma instantiates: from `(running 0 σ failed)`, two GOTO steps
 reach `(terminal σ failed)` for any store `σ` and failure flag. -/
 example (σ : Imperative.SemanticStore Core.Expression) (failed : Bool) :
     StepGotoStar Core.Expression dummyEvalGoto dummyEvalGotoBool trivialPgm
       (.running 0 σ failed) (.terminal σ failed) :=
   block_simulation_empty_finish
+    (δ := dummyEval)
     (δ_goto := dummyEvalGoto)
     (δ_goto_bool := dummyEvalGotoBool)
     (cfg := trivialCfg) (pgm := trivialPgm) (wf := trivialWF)

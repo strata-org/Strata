@@ -114,7 +114,10 @@ Relates DetCFG configurations to GOTO configurations under a
 * A `terminal σ failed` configuration corresponds to a GOTO `terminal`
   configuration with the same store and failure flag. -/
 inductive Sim (cfg : Core.DetCFG) (pgm : Program)
-    (wf : WellFormedTranslation cfg pgm) :
+    {δ : Imperative.SemanticEval Core.Expression}
+    {δ_goto : SemanticEvalGoto Core.Expression}
+    {δ_goto_bool : SemanticEvalGotoBool Core.Expression}
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool) :
     CFGConfig String Core.Expression → GotoConfig Core.Expression → Prop where
   | sim_cont :
     wf.labelMap l = some pc →
@@ -147,10 +150,11 @@ where `pc` points at the block's `LOCATION` instruction, two GOTO steps
 (`LOCATION` then `END_FUNCTION`, with `DetBlockBodyInstrCount blk = 0`)
 reach the corresponding GOTO terminal config. -/
 theorem block_simulation_empty_finish
+    (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (cfg : Core.DetCFG) (pgm : Program)
-    (wf : WellFormedTranslation cfg pgm)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
     (l : String) (md : MetaData Core.Expression)
     (blk : Imperative.DetBlock String Core.Command Core.Expression)
     (h_blk_cmds : blk.cmds = [])
@@ -206,7 +210,7 @@ theorem block_simulation
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
-    (wf : WellFormedTranslation cfg pgm)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
     (l : String) (blk : Imperative.DetBlock String Core.Command Core.Expression)
     (h_block : (l, blk) ∈ cfg.blocks)
     (h_call_free : ∀ c ∈ blk.cmds, c.isPlainCmd = true)
@@ -265,7 +269,7 @@ theorem coreCFGToGoto_forward_simulation
     (π : String → Option Core.Procedure)
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
-    (wf : WellFormedTranslation cfg pgm)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
     (h_call_free :
       ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isPlainCmd = true)
     (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
