@@ -690,6 +690,38 @@ private theorem agreement_helper_unchanged_at_x {P : PureExpr}
   | eval_assume _ _ => exact h_σ_x
   | eval_cover _ => exact h_σ_x
 
+/-- Multi-command extension of `agreement_helper_unchanged_at_x`: if `EvalCmds`
+takes σ to σ' over a list `cmds`, and `x` is not in `cmds.definedVars`, and
+`σ x = none`, then `σ' x = none`. By induction on `EvalCmds`. -/
+private theorem agreement_helper_unchanged_at_x_multi {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    {δ : SemanticEval P} {σ σ' : SemanticStore P} {cmds : List (Cmd P)} {failed : Bool}
+    {x : P.Ident}
+    (h_eval : EvalCmds P (@EvalCmd P _ _ _) δ σ cmds σ' failed)
+    (h_x_not_def : x ∉ Cmds.definedVars cmds)
+    (h_σ_x : σ x = none) :
+    σ' x = none := by
+  induction h_eval with
+  | eval_cmds_none => exact h_σ_x
+  | eval_cmds_some hcmd hrest ih =>
+    rename_i σ_a c σ_b _ cs σ_c _
+    -- σ_a x = none, want σ_c x = none
+    -- step 1: σ_b x = none from single-cmd helper
+    have h_x_not_in_head : x ∉ Cmd.definedVars c := by
+      intro h_x_in_head
+      apply h_x_not_def
+      rw [Cmds.definedVars_cons]
+      exact List.mem_append_left _ h_x_in_head
+    have h_σ_b_x : σ_b x = none :=
+      agreement_helper_unchanged_at_x hcmd h_x_not_in_head h_σ_x
+    -- step 2: σ_c x = none from inductive hypothesis on rest
+    have h_x_not_in_tail : x ∉ Cmds.definedVars cs := by
+      intro h_x_in_tail
+      apply h_x_not_def
+      rw [Cmds.definedVars_cons]
+      exact List.mem_append_right _ h_x_in_tail
+    exact ih h_x_not_in_tail h_σ_b_x
+
 /-- Multi-command agreement-preservation, by induction on `cs`. -/
 private theorem EvalCmds_under_agreement {P : PureExpr}
     [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
