@@ -140,19 +140,49 @@ swap                     |     OK |     OK |     OK |      PARTIAL |      PARTIA
   counterexamples for assertions on programs whose preconditions are
   insufficient. Expected behaviour for SMACK programs as currently
   translated; not a pipeline bug.
-- **`aws_array_eq` emits 0 VCs (deductive=WARN, bugFinding=WARN).**
-  When `main` asserts directly on the return value of a user procedure
-  (`assert(aws_array_eq(...) == true)`) and that procedure is included
-  in the default verification set, the call-elimination / inlining pass
-  consumes the `assert__i32` calls without emitting their synthetic-
-  `requires` VCs. The asserts disappear before they reach the solver,
-  so the verifier reports `All 0 goals passed`. Workaround:
-  `strata verify --procedures main aws_array_eq.core.st` produces the
-  expected 3 VCs (all FAIL on this benchmark, since SMACK provides no
-  preconditions on `main`). Affects `aws_array_eq` only on the current
-  benchmark; the other programs that call user procedures from `main`
-  (`abs_func`, `max_func`, `swap`, etc.) assert on a local variable
-  populated from the call result, so the assert survives elimination.
+- **Cross-procedure PE error contamination (`aws_array_eq` → 0 VCs).**
+  `Strata/Languages/Core/ProgramEval.lean` threads a single `Env`
+  through every procedure in declaration order: each `.proc` decl runs
+  `Procedure.eval declsE proc`, and the resulting env is passed as
+  `declsE` to the next procedure. If any procedure's evaluation sets
+  `Env.error`, `Procedure.fixupError`
+  (`Strata/Languages/Core/ProcedureEval.lean:23-27`) leaves the error
+  in place rather than clearing it. Subsequent procedures' bodies then
+  short-circuit on every command — `Statement.Command.eval` and
+  `evalAuxGo` both early-return when `env.error.isSome`
+  (`Strata/Languages/Core/StatementEval.lean:64-65, 618-619`) — so
+  their `deferred` obligations are never produced and
+  `extractObligations` walks empty bodies.
+
+  On `aws_array_eq`, the upstream procedure that errors is
+  `aws_array_eq` itself: its CFG body has a back-edge
+  (`_bb5 → _bb4` in the SMACK output, encoding the C `for` loop) and
+  `Procedure.eval`'s CFG branch
+  (`ProcedureEval.lean:204-211`) unrolls it with bounded fuel,
+  producing an `Env.error` on at least one path. That error rides
+  through to `main`'s evaluation, killing the three
+  `callElimAssert_assert__i32_requires_*` obligations.
+
+  Empirical confirmation:
+  - `strata verify --procedures main aws_array_eq.core.st` → 3 VCs
+    (skips `aws_array_eq` evaluation entirely, so no error to
+    propagate).
+  - Reordering the `.core.st` so `main` precedes `aws_array_eq` → 12
+    VCs (previously-suppressed obligations from `main`,
+    `__SMACK_static_init`, `_initialize`, etc. all reappear).
+  - Replacing `aws_array_eq`'s body with a linear CFG (no back-edge)
+    → 3 VCs.
+
+  The visible `WARN` is on `aws_array_eq` because SMACK's translation
+  emits `aws_array_eq` (a CFG procedure with a loop) ahead of `main`
+  in the program. The same mechanism would suppress VCs in any
+  benchmark where a procedure with a looping CFG body is declared
+  before any procedure that contains assert calls.
+
+  Fix path: clear `Env.error` (and reset the affected per-procedure
+  state) at the boundary between procedures in `Program.eval` (or in
+  `Procedure.eval`'s return), so per-procedure evaluation failures
+  don't bleed into the rest of the program.
 - **`Strata.Transform.ProcBodyVerifyCorrect` proof file (fixed on
   this branch tip).** Surfaced during this reproduction on the prior
   tip: the merge from `main` left three call sites in
