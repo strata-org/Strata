@@ -461,8 +461,11 @@ op datatype_decl (name : Ident,
 
 // Unified datatype command: one or more datatype declarations separated by
 // newlines, ending with a semicolon.
+//
+// `@[nonempty]` is load-bearing: see
+// https://github.com/strata-org/Strata/issues/1146.
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
 
 #end
