@@ -221,36 +221,38 @@ inductive StepStmt
       (.block (.some label) ρ.store (.stmts ss ρ))
 
   /-- If the condition of an `ite` statement evaluates to true, step to the
-      then branch. -/
+      then branch.  The branch is wrapped in a block so that variables
+      `init`'d inside are projected away on exit (matching `definedVars`
+      with `excludeScoped = true`). -/
   | step_ite_true :
     ρ.eval ρ.store c = .some HasBool.tt →
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.stmts tss ρ)
+      (.block .none ρ.store (.stmts tss ρ))
 
   /-- If the condition of an `ite` statement evaluates to false, step to the
-      else branch. -/
+      else branch (scoped via block wrapper). -/
   | step_ite_false :
     ρ.eval ρ.store c = .some HasBool.ff →
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.stmts ess ρ)
+      (.block .none ρ.store (.stmts ess ρ))
 
-  /-- Non-deterministic ite: step to the then branch. -/
+  /-- Non-deterministic ite: step to the then branch (scoped). -/
   | step_ite_nondet_true :
     StepStmt EvalCmd extendEval
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.stmts tss ρ)
+      (.block .none ρ.store (.stmts tss ρ))
 
-  /-- Non-deterministic ite: step to the else branch. -/
+  /-- Non-deterministic ite: step to the else branch (scoped). -/
   | step_ite_nondet_false :
     StepStmt EvalCmd extendEval
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.stmts ess ρ)
+      (.block .none ρ.store (.stmts ess ρ))
 
   /-- If a loop guard is true, execute the body (followed by the loop again).
       Each invariant expression must evaluate to a boolean (`tt` or `ff`);

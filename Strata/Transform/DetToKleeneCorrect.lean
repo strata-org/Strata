@@ -68,8 +68,8 @@ private theorem ite_transform_some_det
     (ht : StmtToKleeneStmt (.ite (.det cond) tss ess md) = some ns) :
     ∃ t e, BlockToKleeneStmt tss = some t ∧ BlockToKleeneStmt ess = some e ∧
       ns = .choice
-        (.seq (.cmd (.assume "true_cond" cond md)) t)
-        (.seq (.cmd (.assume "false_cond" (HasNot.not cond) md)) e) := by
+        (.block (.seq (.cmd (.assume "true_cond" cond md)) t))
+        (.block (.seq (.cmd (.assume "false_cond" (HasNot.not cond) md)) e)) := by
   simp [StmtToKleeneStmt] at ht
   match h1 : BlockToKleeneStmt tss, h2 : BlockToKleeneStmt ess with
   | some t, some e =>
@@ -84,7 +84,7 @@ private theorem ite_transform_some_nondet
     (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt (.ite .nondet tss ess md) = some ns) :
     ∃ t e, BlockToKleeneStmt tss = some t ∧ BlockToKleeneStmt ess = some e ∧
-      ns = .choice t e := by
+      ns = .choice (.block t) (.block e) := by
   simp [StmtToKleeneStmt] at ht
   match h1 : BlockToKleeneStmt tss, h2 : BlockToKleeneStmt ess with
   | some t, some e =>
@@ -631,37 +631,70 @@ private theorem simulation
         | .det c =>
           have ⟨t, e, ht_tss, ht_ess, hns⟩ := ite_transform_some_det c tss ess md ns ht
           subst hns
+          have hcov_tss := stmtToKleene_some_exitsCovered.blockHelper [] tss t ht_tss
+          have hcov_ess := stmtToKleene_some_exitsCovered.blockHelper [] ess e ht_ess
           cases hstar with
           | step _ _ _ h1 r1 => cases h1 with
             | step_ite_true hcond hwfb =>
-              have : Block.sizeOf tss ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              have hnd := ih.2 tss t this ht_tss ρ₀ ρ' hwfb hwfv r1
-              have h_assume := kleene_assume_terminal (label := "true_cond") (md := md) hcond hwfb
-              exact .step _ _ _ .step_choice_left
-                (kleene_seq_terminal _ t ρ₀ ρ₀ ρ' h_assume hnd)
+              have hsz_tss : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              match block_reaches_terminal P (EvalCmd P) extendEval r1 with
+              | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
+                subst heq_ρ'
+                have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hterm
+                have h_assume := kleene_assume_terminal (label := "true_cond") (md := md) hcond hwfb
+                exact .step _ _ _ .step_choice_left
+                  (.step _ _ _ .step_block
+                    (kleene_block_terminal ρ₀.store _ ρ_inner
+                      (kleene_seq_terminal _ t ρ₀ ρ₀ ρ_inner h_assume hnd)))
+              | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
+                exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval tss
+                  hcov_tss ρ₀ lbl ρ_inner)
             | step_ite_false hcond hwfb =>
-              have : Block.sizeOf ess ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              have hnd := ih.2 ess e this ht_ess ρ₀ ρ' hwfb hwfv r1
-              have h_assume := kleene_assume_terminal (label := "false_cond") (md := md) ((hwfb ρ₀.store c).2.mp hcond) hwfb
-              exact .step _ _ _ .step_choice_right
-                (kleene_seq_terminal _ e ρ₀ ρ₀ ρ' h_assume hnd)
+              have hsz_ess : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
+              match block_reaches_terminal P (EvalCmd P) extendEval r1 with
+              | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
+                subst heq_ρ'
+                have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hterm
+                have h_assume := kleene_assume_terminal (label := "false_cond") (md := md)
+                  ((hwfb ρ₀.store c).2.mp hcond) hwfb
+                exact .step _ _ _ .step_choice_right
+                  (.step _ _ _ .step_block
+                    (kleene_block_terminal ρ₀.store _ ρ_inner
+                      (kleene_seq_terminal _ e ρ₀ ρ₀ ρ_inner h_assume hnd)))
+              | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
+                exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ess
+                  hcov_ess ρ₀ lbl ρ_inner)
         | .nondet =>
           have ⟨t, e, ht_tss, ht_ess, hns⟩ := ite_transform_some_nondet tss ess md ns ht
           subst hns
+          have hcov_tss := stmtToKleene_some_exitsCovered.blockHelper [] tss t ht_tss
+          have hcov_ess := stmtToKleene_some_exitsCovered.blockHelper [] ess e ht_ess
           cases hstar with
           | step _ _ _ h1 r1 => cases h1 with
             | step_ite_nondet_true =>
-              have : Block.sizeOf tss ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              exact .step _ _ _ .step_choice_left
-                (ih.2 tss t this ht_tss ρ₀ ρ' hwfb hwfv r1)
+              have hsz_tss : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              match block_reaches_terminal P (EvalCmd P) extendEval r1 with
+              | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
+                subst heq_ρ'
+                have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hterm
+                exact .step _ _ _ .step_choice_left
+                  (.step _ _ _ .step_block
+                    (kleene_block_terminal ρ₀.store _ ρ_inner hnd))
+              | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
+                exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval tss
+                  hcov_tss ρ₀ lbl ρ_inner)
             | step_ite_nondet_false =>
-              have : Block.sizeOf ess ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
-              exact .step _ _ _ .step_choice_right
-                (ih.2 ess e this ht_ess ρ₀ ρ' hwfb hwfv r1)
+              have hsz_ess : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
+              match block_reaches_terminal P (EvalCmd P) extendEval r1 with
+              | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
+                subst heq_ρ'
+                have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hterm
+                exact .step _ _ _ .step_choice_right
+                  (.step _ _ _ .step_block
+                    (kleene_block_terminal ρ₀.store _ ρ_inner hnd))
+              | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
+                exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ess
+                  hcov_ess ρ₀ lbl ρ_inner)
 
       | .loop guard m' inv body md =>
         match guard with
@@ -1088,26 +1121,30 @@ private theorem canfail_simulation
           | refl => exact ⟨.stmt _ ρ₀, hfcfg, .refl _⟩
           | step _ _ _ h1 r1 => cases h1 with
             | step_ite_true hcond hwfb_ite =>
-              have : Block.sizeOf tss ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
+              have : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
               have ⟨kcfg, hkf, hkstar⟩ := ih.2 tss t this ht_tss ρ₀ hwfb hwfv
-                ⟨_, hfcfg, r1⟩
-              exact ⟨kcfg, hkf,
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
                 .step _ _ _ .step_choice_left
-                  (ReflTrans_Transitive _ _ _ _
-                    (kleene_assume_then (kleene_assume_terminal hcond hwfb_ite))
-                    hkstar)⟩
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _
+                      (ReflTrans_Transitive _ _ _ _
+                        (kleene_assume_then (kleene_assume_terminal hcond hwfb_ite))
+                        hkstar)))⟩
             | step_ite_false hcond hwfb_ite =>
-              have : Block.sizeOf ess ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
+              have : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
               have ⟨kcfg, hkf, hkstar⟩ := ih.2 ess e this ht_ess ρ₀ hwfb hwfv
-                ⟨_, hfcfg, r1⟩
-              exact ⟨kcfg, hkf,
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
                 .step _ _ _ .step_choice_right
-                  (ReflTrans_Transitive _ _ _ _
-                    (kleene_assume_then (kleene_assume_terminal
-                      ((hwfb ρ₀.store c).2.mp hcond) hwfb_ite))
-                    hkstar)⟩
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _
+                      (ReflTrans_Transitive _ _ _ _
+                        (kleene_assume_then (kleene_assume_terminal
+                          ((hwfb ρ₀.store c).2.mp hcond) hwfb_ite))
+                        hkstar)))⟩
         | .nondet =>
           have ⟨t, e, ht_tss, ht_ess, hns⟩ :=
             ite_transform_some_nondet tss ess md ns ht
@@ -1116,17 +1153,23 @@ private theorem canfail_simulation
           | refl => exact ⟨.stmt _ ρ₀, hfcfg, .refl _⟩
           | step _ _ _ h1 r1 => cases h1 with
             | step_ite_nondet_true =>
-              have : Block.sizeOf tss ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
+              have : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
               have ⟨kcfg, hkf, hkstar⟩ := ih.2 tss t this ht_tss ρ₀ hwfb hwfv
-                ⟨_, hfcfg, r1⟩
-              exact ⟨kcfg, hkf, .step _ _ _ .step_choice_left hkstar⟩
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
+                .step _ _ _ .step_choice_left
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _ hkstar))⟩
             | step_ite_nondet_false =>
-              have : Block.sizeOf ess ≤ n := by
-                simp_all [Stmt.sizeOf]; omega
+              have : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
+              have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
               have ⟨kcfg, hkf, hkstar⟩ := ih.2 ess e this ht_ess ρ₀ hwfb hwfv
-                ⟨_, hfcfg, r1⟩
-              exact ⟨kcfg, hkf, .step _ _ _ .step_choice_right hkstar⟩
+                ⟨_, hf', hstar'⟩
+              exact ⟨.block ρ₀.store kcfg, hkf,
+                .step _ _ _ .step_choice_right
+                  (.step _ _ _ .step_block
+                    (kleene_block_inner_star ρ₀.store _ _ hkstar))⟩
 
       | .loop guard m' inv body md =>
         match guard with

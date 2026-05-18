@@ -371,13 +371,28 @@ omit [HasVal P] in
 theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (ht : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.tt) tss Post)
-    (he : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post) :
+    (he : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post)
+    (hpost_proj : PostWF Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.ite (.det c) tss ess md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
-    | step_ite_true hc _ => exact ht ρ₀ ρ' ⟨hpre, hc⟩ hwfb hf₀ (.inl r1)
-    | step_ite_false hc _ => exact he ρ₀ ρ' ⟨hpre, hc⟩ hwfb hf₀ (.inl r1)
+    | step_ite_true hc _ =>
+      match block_reaches_terminal P evalCmd extendEval r1 with
+      | .inl ⟨ρ_inner, hterm, heq⟩ =>
+        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
+        subst heq; exact hpost_proj ρ_inner _ hpost hf
+      | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
+        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        subst heq; exact hpost_proj ρ_inner _ hpost hf
+    | step_ite_false hc _ =>
+      match block_reaches_terminal P evalCmd extendEval r1 with
+      | .inl ⟨ρ_inner, hterm, heq⟩ =>
+        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
+        subst heq; exact hpost_proj ρ_inner _ hpost hf
+      | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
+        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        subst heq; exact hpost_proj ρ_inner _ hpost hf
 
 /- TODO: the WHILE rule -/
 

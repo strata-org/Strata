@@ -34,10 +34,10 @@ def StmtToKleeneStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
     match cond with
     | .det c =>
       return .choice
-        (.seq (.assume "true_cond" c md) t)
-        (.seq (.assume "false_cond" (Imperative.HasNot.not c) md) e)
+        (.block (.seq (.assume "true_cond" c md) t))
+        (.block (.seq (.assume "false_cond" (Imperative.HasNot.not c) md) e))
     | .nondet =>
-      return .choice t e
+      return .choice (.block t) (.block e)
   | .loop guard _measure inv bss md => do
     -- With invariant checking in `StepStmt`, the deterministic semantics
     -- can signal `hasFailure` when a loop invariant evaluates to `ff`,
