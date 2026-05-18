@@ -1860,13 +1860,16 @@ public class StrataGenerator : ReadOnlyVisitor {
                 node.Requires.Add(syntheticReq);
             }
 
-            WriteProcedureHeader(node);
-            WriteLine(";");
-            WriteLine();
-
-            // Remove the synthetic requires to avoid mutating the shared AST.
-            if (syntheticReq != null) {
-                node.Requires.Remove(syntheticReq);
+            try {
+                WriteProcedureHeader(node);
+                WriteLine(";");
+                WriteLine();
+            } finally {
+                // Remove the synthetic requires to avoid mutating the shared
+                // AST, even if WriteProcedureHeader threw.
+                if (syntheticReq != null) {
+                    node.Requires.Remove(syntheticReq);
+                }
             }
         }
 
