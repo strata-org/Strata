@@ -318,7 +318,7 @@ structure PipelineContext where
   private mk ::
   outputMode : OutputMode
   private pipelineStartTime : Nat
-  private skipTiming : Bool := false
+  private profilePipeline : Bool := true
   private messagesRef : IO.Ref (Array PipelineMessage)
   private toolErrorsRef : IO.Ref (Array PipelineMessage)
   private userCodeErrorsRef : IO.Ref (Array PipelineMessage)
@@ -335,7 +335,7 @@ namespace PipelineContext
 
 /-- Create a fresh PipelineContext with new state refs. -/
 def create (outputMode : OutputMode := .default)
-    (skipTiming : Bool := false)
+    (profilePipeline : Bool := true)
     (metricsHandle : Option IO.FS.Handle := none) : BaseIO PipelineContext := do
   let startTime ← IO.monoNanosNow
   let messagesRef ← IO.mkRef (α := Array PipelineMessage) #[]
@@ -346,7 +346,7 @@ def create (outputMode : OutputMode := .default)
   let insideRepeatedRef ← IO.mkRef false
   let messageCountAtPhaseStartRef ← IO.mkRef 0
   let repeatedPhasesRef ← IO.mkRef (α := Array (String × RepeatedPhaseData)) #[]
-  return { outputMode, pipelineStartTime := startTime, skipTiming,
+  return { outputMode, pipelineStartTime := startTime, profilePipeline,
            messagesRef, toolErrorsRef, userCodeErrorsRef, timingRef,
            currentPhaseRef, insideRepeatedRef, messageCountAtPhaseStartRef,
            repeatedPhasesRef, metricsHandle }
@@ -403,7 +403,7 @@ private def startPhase (ctx : PipelineContext) (name : String) : BaseIO PhaseSav
     ctx.timingRef.modify (·.push { phase, start_ns := now })
     if ctx.outputMode == .profile || ctx.outputMode == .verbose then
       let indent := String.replicate ((phase.depth - 1) * 2) ' '
-      let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
+      let timeSuffix := if ctx.profilePipeline then s!" (time: {nsToMs now}ms)" else ""
       printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
   return { inRepeated, parent, savedRepeated, startNs }
 
@@ -421,8 +421,11 @@ private partial def flushRepeatedEntries (ctx : PipelineContext)
                                     end_ns := some data.totalNs, count := data.count })
     if ctx.outputMode == .profile || ctx.outputMode == .verbose then
       let avg := if data.count > 0 then nsToMs (data.totalNs / data.count) else 0
-      let timeSuffix := if ctx.skipTiming then ""
-        else s!" (×{data.count}, total: {nsToMs data.totalNs}ms, avg: {avg}ms)"
+      let timeSuffix :=
+        if ctx.profilePipeline then
+          s!" (×{data.count}, total: {nsToMs data.totalNs}ms, avg: {avg}ms)"
+        else
+          ""
       printlnFlush s!"{childIndent}[profile] {name}{timeSuffix}"
     ctx.emitMetric (Lean.Json.mkObj [
       ("type", .str "timing"), ("phase", .str subphase.display),
@@ -453,7 +456,7 @@ private def endPhaseNormal (ctx : PipelineContext) : BaseIO Unit := do
     let msgStart ← ctx.messageCountAtPhaseStartRef.get
     let newMsgs := messages.extract msgStart messages.size
     let indent := String.replicate ((currentPhase.depth - 1) * 2) ' '
-    let timeSuffix := if ctx.skipTiming then "" else s!" (time: {nsToMs now}ms)"
+    let timeSuffix := if ctx.profilePipeline then s!" (time: {nsToMs now}ms)" else ""
     printlnFlush s!"{indent}[end] {currentPhase.leaf}{timeSuffix}"
     if ctx.outputMode == .profile && newMsgs.size > 0 then
       let counts : Std.HashMap String Nat := newMsgs.foldl (init := {})

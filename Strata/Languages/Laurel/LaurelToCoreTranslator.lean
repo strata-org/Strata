@@ -625,7 +625,6 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
-  profile : Bool := false
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

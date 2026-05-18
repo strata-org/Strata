@@ -375,16 +375,12 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool)
   (skipSolver : Bool := false)
-  (pctx : Option Strata.Pipeline.PipelineContext := none) :
+  (pctx : Strata.Pipeline.PipelineContext) :
   IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
-  let phase {α} (name : String) (action : IO α) : IO α :=
-    match pctx with
-    | some ctx => ctx.withPhase name action
-    | none => action
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
-  let ((_ids, estate), _solverState) ← phase "encodeSMT" do
+  let ((_ids, estate), _solverState) ← pctx.withPhase "encodeSMT" do
     encodeSMT.run solver
 
   if printFilename then IO.println s!"Wrote problem to {filename}."
@@ -392,7 +388,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   if skipSolver then
     return .ok (.unknown, .unknown, estate)
 
-  let solver_output ← phase "runSolver" do
+  let solver_output ← pctx.withPhase "runSolver" do
     runSolver smtsolver (#[filename] ++ solver_options)
   match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
   | .error e => return .error e

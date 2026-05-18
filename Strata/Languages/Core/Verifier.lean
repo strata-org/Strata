@@ -350,12 +350,10 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
     (varDeclarations : List Core.VarDeclaration := [])
-    (pctx : Option PipelineContext := none) :
+    (pctx : PipelineContext) :
     SolverM (List String × EncoderState) := do
   let phase {α} (name : String) (action : SolverM α) : SolverM α :=
-    match pctx with
-    | some ctx => ctx.withRepeatedPhase name action
-    | none => action
+    pctx.withRepeatedPhase name action
   Solver.setLogic "ALL"
   phase "prelude" do
     prelude
@@ -509,7 +507,7 @@ def dischargeObligation
   (label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
-  (pctx : Option PipelineContext := none)
+  (pctx : PipelineContext)
   : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -1308,7 +1306,7 @@ abbrev CoreSMTSolver :=
 abbrev MkDischargeFn :=
   VerifyOptions → IO.Ref Nat → System.FilePath →
   List Expression.TypedIdent → Imperative.MetaData Expression → String →
-  Option PipelineContext → DischargeFn
+  PipelineContext → DischargeFn
 
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
     (abstract solver) backend or the batch (SMT-LIB file) backend based on
@@ -1318,7 +1316,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
     (label : String)
-    (pctx : Option PipelineContext) =>
+    (pctx : PipelineContext) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
     if options.incremental && !options.alwaysGenerateSMT then
@@ -1490,7 +1488,7 @@ def verifySingleEnv (oblProgram : Program)
           | .some ty => return (v,LTy.forAll [] ty)
           | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
       let discharge := mkDischarge options counter tempDir
-        typedVarsInObligation obligation.metadata obligation.label (some pctx)
+        typedVarsInObligation obligation.metadata obligation.label pctx
       let result ← pctx.withRepeatedPhase "solver" do
         getObligationResult assumptionTerms obligationTerm ctx obligation p options
                     discharge needSatCheck needValCheck (externalPhases ++ corePhases)

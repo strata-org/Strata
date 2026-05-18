@@ -30,14 +30,13 @@ public structure PyAnalyzeConfig where
   dispatchModules : Array String := #[]
   pyspecModules : Array String := #[]
   sourcePath : Option String := none
-  profile : Bool := false
   keepAllFilesPrefix : Option String := none
   verifyOptions : Core.VerifyOptions
   entryPoint : Core.EntryPoint := Core.EntryPoint.roots
   isBugFinding : Bool := true
   outputMode : OutputMode := .default
   skipVerification : Bool := false
-  skipTiming : Bool := false
+  profilePipeline : Bool := true
   metricsHandle : Option IO.FS.Handle := none
 
 private def runPipeline (config : PyAnalyzeConfig)
@@ -54,7 +53,6 @@ private def runPipeline (config : PyAnalyzeConfig)
     let laurelResult ←
       Strata.translateCombinedLaurelWithLowered combinedLaurel
         (keepAllFilesPrefix := config.keepAllFilesPrefix)
-        (profile := config.profile)
         (pipelineCtx := some ctx) |>.toBaseIO
     match laurelResult with
     | .ok (coreOpt, diags, _, stats) =>
@@ -119,7 +117,7 @@ public def runPyAnalyzePipeline (config : PyAnalyzeConfig)
     : IO (PyAnalyzeOutcome × Statistics × PipelineContext) := do
   let ctx ← PipelineContext.create
     (outputMode := config.outputMode)
-    (skipTiming := config.skipTiming)
+    (profilePipeline := config.profilePipeline)
     (metricsHandle := config.metricsHandle)
   let result ← runPipeline config |>.run ctx |>.toBaseIO
   match result with

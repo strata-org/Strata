@@ -296,8 +296,7 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
   let translateOptions : LaurelTranslateOptions :=
     { base.translateOptions with
       keepAllFilesPrefix
-      overflowChecks := verifyOptions.overflowChecks
-      profile := verifyOptions.profile }
+      overflowChecks := verifyOptions.overflowChecks }
   return { translateOptions, verifyOptions }
 
 /-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
@@ -682,7 +681,6 @@ def pyAnalyzeLaurelCommand : Command where
     let (outcome, laurelPassStats, pctx) ← Strata.Pipeline.runPyAnalyzePipeline {
       filePath, specDir
       dispatchModules, pyspecModules, sourcePath
-      profile
       keepAllFilesPrefix := keepPrefix
       verifyOptions := options
       entryPoint, isBugFinding

@@ -19,7 +19,7 @@ Exercises nesting of `withPhase` and `withRepeatedPhase` to validate that:
 open Strata.Pipeline
 
 meta def mkCtx : BaseIO PipelineContext :=
-  PipelineContext.create (outputMode := .quiet) (skipTiming := true)
+  PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
 
 meta def check (cond : Bool) (msg : String) : IO Unit :=
   unless cond do throw <| IO.userError msg
