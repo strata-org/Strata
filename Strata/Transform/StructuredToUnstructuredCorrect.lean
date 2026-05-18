@@ -3850,6 +3850,126 @@ private theorem flushCmds_condGoto_false {P : PureExpr} [HasFvar P] [HasNot P]
   rw [h_uf] at h_step
   exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
 
+/-! ## Agreement-based variants of flushCmds_condGoto_*
+
+These variants take the CFG-side accumulated trace pre-lifted via
+`EvalCmds_under_agreement`, allowing the agreement gap (between structured and
+CFG entry stores) to be threaded through the simulation. -/
+
+/-- Variant of `flushCmds_condGoto_true` that operates under StoreAgreement:
+the input accum trace is on the CFG side (lifted via `EvalCmds_under_agreement`)
+and reaches `σ_cfg_after`, which agrees with `ρ₀.store`. -/
+private theorem flushCmds_condGoto_true_agree {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (accum : List (Cmd P))
+    (e : P.Expr) (tl fl : String) (md : MetaData P)
+    (l_ite : String) (gen_e gen_f : StringGenState)
+    (accumEntry : String) (accumBlocks : DetBlocks String (Cmd P) P)
+    (h_flush_eq : flushCmds "ite$" accum
+      (some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = ((accumEntry, accumBlocks), gen_f))
+    (σ_base σ_cfg_after : SemanticStore P) (hf_base hf_accum : Bool)
+    (ρ₀ : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (h_accum_cfg : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse σ_cfg_after hf_accum)
+    (h_agree_after : StoreAgreement ρ₀.store σ_cfg_after)
+    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
+    (h_cond : ρ₀.eval ρ₀.store e = .some HasBool.tt)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks)
+    (h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+      cfg.blocks.lookup lbl = some blk) :
+    StepDetCFGStar extendEval cfg
+      (.cont accumEntry σ_base hf_base)
+      (.cont tl σ_cfg_after ρ₀.hasFailure) := by
+  unfold flushCmds at h_flush_eq
+  simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_flush_eq
+  injection h_flush_eq with h_pair h_gen_eq
+  injection h_pair with h_entry_eq h_blks_eq
+  subst h_entry_eq; subst h_blks_eq
+  have h_def_e : isDefined ρ₀.store (HasVarsPure.getVars e) :=
+    h_wf_def e HasBool.tt ρ₀.store h_cond
+  have h_pointwise :
+      ∀ y ∈ HasVarsPure.getVars e, ρ₀.store y = σ_cfg_after y :=
+    store_agreement_pointwise_on_expr_vars ρ₀.store σ_cfg_after e h_agree_after h_def_e
+  have h_cond_cfg : ρ₀.eval σ_cfg_after e = .some HasBool.tt := by
+    rw [← h_cond]
+    exact (h_congr e ρ₀.store σ_cfg_after h_pointwise).symm
+  have h_mem := h_cfg_accum _ (List.Mem.head _)
+  have h_lkp := h_lookup _ _ h_mem
+  have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
+      σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
+      (.cont tl σ_cfg_after hf_accum) :=
+    EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_cfg hwfb
+  have h_step : @StepCFG _ _ (Cmd P) _ P
+      (EvalDetBlock P (EvalCmd P) extendEval) cfg
+      (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
+      (updateFailure (.cont tl σ_cfg_after hf_accum) hf_base) :=
+    StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+  have h_uf : @updateFailure String P (.cont tl σ_cfg_after hf_accum) hf_base =
+      CFGConfig.cont tl σ_cfg_after ρ₀.hasFailure := by
+    simp [updateFailure, h_hf, Bool.or_comm]
+  rw [h_uf] at h_step
+  exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+
+/-- Variant of `flushCmds_condGoto_false` that operates under StoreAgreement. -/
+private theorem flushCmds_condGoto_false_agree {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (accum : List (Cmd P))
+    (e : P.Expr) (tl fl : String) (md : MetaData P)
+    (l_ite : String) (gen_e gen_f : StringGenState)
+    (accumEntry : String) (accumBlocks : DetBlocks String (Cmd P) P)
+    (h_flush_eq : flushCmds "ite$" accum
+      (some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = ((accumEntry, accumBlocks), gen_f))
+    (σ_base σ_cfg_after : SemanticStore P) (hf_base hf_accum : Bool)
+    (ρ₀ : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (h_accum_cfg : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse σ_cfg_after hf_accum)
+    (h_agree_after : StoreAgreement ρ₀.store σ_cfg_after)
+    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
+    (h_cond : ρ₀.eval ρ₀.store e = .some HasBool.ff)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks)
+    (h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+      cfg.blocks.lookup lbl = some blk) :
+    StepDetCFGStar extendEval cfg
+      (.cont accumEntry σ_base hf_base)
+      (.cont fl σ_cfg_after ρ₀.hasFailure) := by
+  unfold flushCmds at h_flush_eq
+  simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_flush_eq
+  injection h_flush_eq with h_pair h_gen_eq
+  injection h_pair with h_entry_eq h_blks_eq
+  subst h_entry_eq; subst h_blks_eq
+  have h_def_e : isDefined ρ₀.store (HasVarsPure.getVars e) :=
+    h_wf_def e HasBool.ff ρ₀.store h_cond
+  have h_pointwise :
+      ∀ y ∈ HasVarsPure.getVars e, ρ₀.store y = σ_cfg_after y :=
+    store_agreement_pointwise_on_expr_vars ρ₀.store σ_cfg_after e h_agree_after h_def_e
+  have h_cond_cfg : ρ₀.eval σ_cfg_after e = .some HasBool.ff := by
+    rw [← h_cond]
+    exact (h_congr e ρ₀.store σ_cfg_after h_pointwise).symm
+  have h_mem := h_cfg_accum _ (List.Mem.head _)
+  have h_lkp := h_lookup _ _ h_mem
+  have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
+      σ_base ⟨accum.reverse, .condGoto e tl fl md⟩
+      (.cont fl σ_cfg_after hf_accum) :=
+    EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_accum_cfg h_cond_cfg hwfb
+  have h_step : @StepCFG _ _ (Cmd P) _ P
+      (EvalDetBlock P (EvalCmd P) extendEval) cfg
+      (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
+      (updateFailure (.cont fl σ_cfg_after hf_accum) hf_base) :=
+    StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+  have h_uf : @updateFailure String P (.cont fl σ_cfg_after hf_accum) hf_base =
+      CFGConfig.cont fl σ_cfg_after ρ₀.hasFailure := by
+    simp [updateFailure, h_hf, Bool.or_comm]
+  rw [h_uf] at h_step
+  exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+
 /-! ## Block.uniqueInits projection helpers
 
 `Block.uniqueInits ss` is a Nodup property of the cumulative `Block.initVars ss`
@@ -4038,6 +4158,89 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       simp [updateFailure, h_hf, Bool.or_comm]
     rw [h_uf] at h_step
     exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+
+/-- Variant of `flushCmds_simulation` that operates under StoreAgreement: the
+input accum trace runs from `σ_struct_base` (struct side) to `ρ₀.store`
+(struct side), and `StoreAgreement σ_struct_base σ_base` holds at the entry. -/
+private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    (extendEval : ExtendEval P)
+    (pfx : String)
+    (k : String)
+    (accum : List (Cmd P))
+    (gen gen' : StringGenState)
+    (entry : String) (blocks : DetBlocks String (Cmd P) P)
+    (h_gen : (flushCmds pfx accum .none k gen) = ((entry, blocks), gen'))
+    (σ_struct_base σ_base : SemanticStore P)
+    (hf_base hf_accum : Bool)
+    (ρ₀ : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
+    (h_agree_entry : StoreAgreement σ_struct_base σ_base)
+    (h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none)
+    (h_unique_accum : (Cmds.definedVars accum.reverse).Nodup)
+    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
+    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
+      (.cont entry σ_base hf_base)
+      (.cont k σ_cfg ρ₀.hasFailure)
+      ∧ StoreAgreement ρ₀.store σ_cfg := by
+  unfold flushCmds at h_gen
+  simp only at h_gen
+  split at h_gen
+  case isTrue h_empty =>
+    have ⟨h_entry, h_blocks⟩ := Prod.mk.inj (Prod.mk.inj h_gen).1
+    subst h_entry; subst h_blocks
+    have h_nil : accum.reverse = [] := by
+      simp [List.isEmpty_iff] at h_empty; simp [h_empty]
+    have ⟨h_store, h_fail⟩ := EvalCmds_inv ρ₀.eval σ_struct_base ρ₀.store hf_accum
+      (h_nil ▸ h_accum)
+    subst h_store; subst h_fail
+    simp [Bool.or_false] at h_hf
+    rw [h_hf]
+    exact ⟨σ_base, ReflTrans.refl _, h_agree_entry⟩
+  case isFalse h_nonempty =>
+    simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
+    injection h_gen with h_pair h_gen_eq
+    injection h_pair with h_entry_eq h_blks_eq
+    subst h_entry_eq; subst h_blks_eq
+    have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
+      EvalCmds_under_agreement ρ₀.eval accum.reverse h_wf_def h_congr
+        σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
+        h_unique_accum
+    have h_mem :
+        ((StringGenState.gen pfx gen).fst,
+          ({ cmds := accum.reverse, transfer := DetTransferCmd.goto k }
+            : DetBlock String (Cmd P) P)) ∈ cfg.blocks :=
+      h_cfg_blocks _ (List.Mem.head _)
+    have h_cond_tt : ρ₀.eval σ_cfg_after HasBool.tt = .some HasBool.tt :=
+      eval_tt_is_tt ρ₀.eval σ_cfg_after hwfv
+    have h_goto_eq :
+        (DetTransferCmd.goto k : DetTransferCmd String P) =
+          DetTransferCmd.condGoto HasBool.tt k k .empty := rfl
+    have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
+        σ_base ⟨accum.reverse, DetTransferCmd.goto k⟩
+        (.cont k σ_cfg_after hf_accum) := by
+      rw [h_goto_eq]
+      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb
+    have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
+        some { cmds := accum.reverse, transfer := DetTransferCmd.goto k } :=
+      List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
+    have h_step : @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont (StringGenState.gen pfx gen).fst σ_base hf_base)
+        (updateFailure (.cont k σ_cfg_after hf_accum) hf_base) :=
+      StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+    have h_uf : @updateFailure String P (.cont k σ_cfg_after hf_accum) hf_base =
+        CFGConfig.cont k σ_cfg_after ρ₀.hasFailure := by
+      simp [updateFailure, h_hf, Bool.or_comm]
+    rw [h_uf] at h_step
+    exact ⟨σ_cfg_after, ReflTrans.step _ _ _ h_step (ReflTrans.refl _), h_agree_after⟩
 
 private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
