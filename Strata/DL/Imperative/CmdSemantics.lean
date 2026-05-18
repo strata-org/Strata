@@ -272,6 +272,11 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
     : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
 
+/-- A successful evaluation implies all the read-vars are defined. -/
+@[expose] def WellFormedSemanticEvalDef {P : PureExpr} [HasVarsPure P P.Expr]
+    (δ : SemanticEval P) : Prop :=
+  ∀ e v σ, δ σ e = some v → isDefined σ (HasVarsPure.getVars e)
+
 /--
 Abstract variable update.
 

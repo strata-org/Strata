@@ -359,8 +359,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
     (c : Cmd P) (σ_struct₁ : SemanticStore P) (failed : Bool)
     (h_agree : StoreAgreement σ_struct₀ σ_cfg₀)
     (h_eval : @EvalCmd P _ _ _ δ σ_struct₀ c σ_struct₁ failed)
+    (h_wf_def : WellFormedSemanticEvalDef δ)
     (h_congr : WellFormedSemanticEvalExprCongr δ)
-    (h_def : isDefined σ_struct₀ (HasVarsPure.getVars c))
     (h_fresh : ∀ x ∈ Cmd.definedVars c, σ_cfg₀ x = none) :
     ∃ σ_cfg₁, @EvalCmd P _ _ _ δ σ_cfg₀ c σ_cfg₁ failed
             ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
@@ -370,9 +370,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
     -- rename_i introduces in order: ty, md, x, v, e
     rename_i ty md x v e
     -- Need δ σ_cfg₀ e = some v. Use congr + agreement on e's vars.
-    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) := by
-      rw [Cmd.getVars_init] at h_def
-      exact h_def
+    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
+      h_wf_def e v σ_struct₀ heval
     have h_pointwise :
         ∀ y ∈ HasVarsPure.getVars e, σ_struct₀ y = σ_cfg₀ y :=
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
@@ -456,9 +455,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
         exact h_agree y h_def_y'
   | eval_set heval hupdate hwfvar =>
     rename_i md x v e
-    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) := by
-      rw [Cmd.getVars_set] at h_def
-      exact h_def
+    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
+      h_wf_def e v σ_struct₀ heval
     have h_pointwise :
         ∀ y ∈ HasVarsPure.getVars e, σ_struct₀ y = σ_cfg₀ y :=
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
@@ -546,9 +544,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
         exact h_agree y h_def_y'
   | eval_assert_pass hcond hwfb =>
     rename_i l md e
-    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) := by
-      rw [Cmd.getVars_assert] at h_def
-      exact h_def
+    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
+      h_wf_def e HasBool.tt σ_struct₀ hcond
     have h_pointwise :
         ∀ y ∈ HasVarsPure.getVars e, σ_struct₀ y = σ_cfg₀ y :=
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
@@ -557,9 +554,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
     exact ⟨σ_cfg₀, EvalCmd.eval_assert_pass h_eval_cfg hwfb, h_agree⟩
   | eval_assert_fail hcond hwfb =>
     rename_i l md e
-    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) := by
-      rw [Cmd.getVars_assert] at h_def
-      exact h_def
+    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
+      h_wf_def e HasBool.ff σ_struct₀ hcond
     have h_pointwise :
         ∀ y ∈ HasVarsPure.getVars e, σ_struct₀ y = σ_cfg₀ y :=
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
@@ -568,9 +564,8 @@ private theorem EvalCmd_under_agreement {P : PureExpr}
     exact ⟨σ_cfg₀, EvalCmd.eval_assert_fail h_eval_cfg hwfb, h_agree⟩
   | eval_assume hcond hwfb =>
     rename_i l md e
-    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) := by
-      rw [Cmd.getVars_assume] at h_def
-      exact h_def
+    have h_def_e : isDefined σ_struct₀ (HasVarsPure.getVars e) :=
+      h_wf_def e HasBool.tt σ_struct₀ hcond
     have h_pointwise :
         ∀ y ∈ HasVarsPure.getVars e, σ_struct₀ y = σ_cfg₀ y :=
       store_agreement_pointwise_on_expr_vars σ_struct₀ σ_cfg₀ e h_agree h_def_e
@@ -700,37 +695,25 @@ private theorem EvalCmds_under_agreement {P : PureExpr}
     [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     (δ : SemanticEval P)
     (cs : List (Cmd P))
+    (h_wf_def : WellFormedSemanticEvalDef δ)
     (h_congr : WellFormedSemanticEvalExprCongr δ) :
     ∀ (σ_struct₀ σ_cfg₀ σ_struct₁ : SemanticStore P) (failed : Bool),
       StoreAgreement σ_struct₀ σ_cfg₀ →
       EvalCmds P (@EvalCmd P _ _ _) δ σ_struct₀ cs σ_struct₁ failed →
-      isDefined σ_struct₀ (HasVarsPure.getVars cs) →
       (∀ x ∈ Cmds.definedVars cs, σ_cfg₀ x = none) →
       (Cmds.definedVars cs).Nodup →
       ∃ σ_cfg₁, EvalCmds P (@EvalCmd P _ _ _) δ σ_cfg₀ cs σ_cfg₁ failed
               ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
   induction cs with
   | nil =>
-    intro σ_struct₀ σ_cfg₀ σ_struct₁ failed h_agree h_eval _ _ _
+    intro σ_struct₀ σ_cfg₀ σ_struct₁ failed h_agree h_eval _ _
     cases h_eval
     exact ⟨σ_cfg₀, EvalCmds.eval_cmds_none, h_agree⟩
   | cons c cs ih =>
-    intro σ_struct₀ σ_cfg₀ σ_struct₁ failed h_agree h_eval h_def h_fresh h_unique
+    intro σ_struct₀ σ_cfg₀ σ_struct₁ failed h_agree h_eval h_fresh h_unique
     cases h_eval with
     | eval_cmds_some hcmd hrest =>
       rename_i σ_mid f f'
-      have h_def_head : isDefined σ_struct₀ (HasVarsPure.getVars c) := by
-        intro x hx
-        have hx' : x ∈ (HasVarsPure.getVars (c :: cs) : List P.Ident) := by
-          rw [Cmds.getVars_cons]
-          exact List.mem_append_left _ hx
-        exact h_def x hx'
-      have h_def_tail : isDefined σ_struct₀ (HasVarsPure.getVars cs) := by
-        intro x hx
-        have hx' : x ∈ (HasVarsPure.getVars (c :: cs) : List P.Ident) := by
-          rw [Cmds.getVars_cons]
-          exact List.mem_append_right _ hx
-        exact h_def x hx'
       have h_fresh_head : ∀ x ∈ Cmd.definedVars c, σ_cfg₀ x = none := by
         intro x hx
         have hx' : x ∈ Cmds.definedVars (c :: cs) := by
@@ -745,8 +728,8 @@ private theorem EvalCmds_under_agreement {P : PureExpr}
         exact h_fresh x hx'
       -- Apply EvalCmd_under_agreement to head cmd c.
       have ⟨σ_cfg_mid, h_cmd_cfg, h_agree_mid⟩ :=
-        EvalCmd_under_agreement δ σ_struct₀ σ_cfg₀ c σ_mid f h_agree hcmd h_congr
-          h_def_head h_fresh_head
+        EvalCmd_under_agreement δ σ_struct₀ σ_cfg₀ c σ_mid f h_agree hcmd h_wf_def h_congr
+          h_fresh_head
       -- Now we need σ_cfg_mid to satisfy the freshness for the tail cs.
       have h_fresh_tail : ∀ x ∈ Cmds.definedVars cs, σ_cfg_mid x = none := by
         intro x hx
@@ -759,19 +742,13 @@ private theorem EvalCmds_under_agreement {P : PureExpr}
             exact (List.nodup_append.mp h_unique').2.2
           exact h_nodup_split x h_x_in_head x hx rfl
         have h_cfg₀_x : σ_cfg₀ x = none := h_fresh_tail_init x hx
-        -- Reuse `isDefined_of_EvalCmd_complement` reasoning: any var not in c.definedVars
-        -- and not modified by `c` (hence not in c.modifiedVars either) keeps the same value.
-        -- For our case, x ∉ c.definedVars; x may be in c.modifiedVars only if c is set.
-        -- If c is set on x, then σ_cfg₀ x must be defined, contradicting h_cfg₀_x.
         exact agreement_helper_unchanged_at_x h_cmd_cfg h_x_not_in_head h_cfg₀_x
-      have h_def_tail_mid : isDefined σ_mid (HasVarsPure.getVars cs) :=
-        isDefined_of_EvalCmd hcmd h_def_tail
       have h_unique_tail : (Cmds.definedVars cs).Nodup := by
         have : (Cmds.definedVars (c :: cs)).Nodup := h_unique
         rw [Cmds.definedVars_cons] at this
         exact (List.nodup_append.mp this).2.1
       have ⟨σ_cfg_end, h_rest_cfg, h_agree_end⟩ :=
-        ih σ_mid σ_cfg_mid σ_struct₁ f' h_agree_mid hrest h_def_tail_mid h_fresh_tail
+        ih σ_mid σ_cfg_mid σ_struct₁ f' h_agree_mid hrest h_fresh_tail
           h_unique_tail
       exact ⟨σ_cfg_end, EvalCmds.eval_cmds_some h_cmd_cfg h_rest_cfg, h_agree_end⟩
 
