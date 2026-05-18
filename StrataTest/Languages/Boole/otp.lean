@@ -157,6 +157,10 @@ spec
 
 /--
 info:
+Obligation: SameLen_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: EncryptSpec_body_calls_List..head_0
 Property: assert
 Result: ✅ pass
@@ -165,11 +169,19 @@ Obligation: EncryptSpec_body_calls_List..tail_1
 Property: assert
 Result: ✅ pass
 
+Obligation: EncryptSpec_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: DecryptSpec_body_calls_List..head_0
 Property: assert
 Result: ✅ pass
 
 Obligation: DecryptSpec_body_calls_List..tail_1
+Property: assert
+Result: ✅ pass
+
+Obligation: DecryptSpec_terminates_0
 Property: assert
 Result: ✅ pass
 
