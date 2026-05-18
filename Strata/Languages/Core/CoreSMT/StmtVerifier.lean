@@ -55,14 +55,10 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
     let runVal := opts.checkLevel == .full ||
                   opts.checkMode == .deductive
     let satDecision ← if runSat then
-                        match ← state.solver.checkSatAssuming [term] with
-                        | .ok d => pure d
-                        | .error _ => pure .unknown
+                        state.solver.checkSatAssuming [term]
                       else pure .unknown
     let valDecision ← if runVal then
-                        match ← state.solver.checkSatAssuming [Factory.not term] with
-                        | .ok d => pure d
-                        | .error _ => pure .unknown
+                        state.solver.checkSatAssuming [Factory.not term]
                       else pure .unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property, assumptions := [], obligation := expr, metadata := md

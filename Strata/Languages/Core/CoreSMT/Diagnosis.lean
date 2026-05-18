@@ -75,20 +75,17 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
     | Except.ok (term, _) =>
       if isReachCheck then
         -- Reach: check if expr is refuted (always false)
-        let decision ← match ← state.solver.checkSatAssuming [term] with
-          | .ok d => pure d | .error _ => pure .unknown
+        let decision ← state.solver.checkSatAssuming [term]
         if decision == .unsat then
           let report : DiagnosisReport := { result := .error .refuted, context := { pathCondition } }
           return { diagnosedFailures := [{ expression := expr, isRefuted := true, report }] }
         else
           return { diagnosedFailures := [] }
       else
-        let provedDecision ← match ← state.solver.checkSatAssuming [Factory.not term] with
-          | .ok d => pure d | .error _ => pure .unknown
+        let provedDecision ← state.solver.checkSatAssuming [Factory.not term]
         if provedDecision == .unsat then
           return { diagnosedFailures := [] }
-        let refutedDecision ← match ← state.solver.checkSatAssuming [term] with
-          | .ok d => pure d | .error _ => pure .unknown
+        let refutedDecision ← state.solver.checkSatAssuming [term]
         let isRefuted := refutedDecision == .unsat
         let resultType := if isRefuted then DiagnosisResultType.refuted else DiagnosisResultType.unknown
         let report : DiagnosisReport := { result := .error resultType, context := { pathCondition } }
