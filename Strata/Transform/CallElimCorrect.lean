@@ -3464,7 +3464,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                   simp [Imperative.isDefinedOver,
                         Imperative.HasVarsTrans.allVarsTrans,
                         Statement.allVarsTrans,
-                        Statement.touchedVarsTrans,
+                        Statement.modifiedOrDefinedVarsTrans,
                         Command.definedVarsTrans,
                         Command.definedVars,
                         Command.modifiedVarsTrans,

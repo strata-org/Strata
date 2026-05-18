@@ -67,7 +67,7 @@ def Statement.replaceLabels
     | .some s' => s'
   match s with
   | .block lbl b m => .block (app lbl) (Block.replaceLabels b map) m
-  | .exit lbl m => .exit (lbl.map app) m
+  | .exit lbl m => .exit (app lbl) m
   | .ite cond thenb elseb m =>
     .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map) m
   | .loop g measure inv body m =>

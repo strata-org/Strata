@@ -23,7 +23,7 @@ inductive RunConfig (P : PureExpr) (CmdT : Type) (S : Type) where
   | stmt   : Stmt P CmdT → S → RunConfig P CmdT S
   | stmts  : List (Stmt P CmdT) → S → RunConfig P CmdT S
   | terminal : S → RunConfig P CmdT S
-  | exiting  : Option String → S → RunConfig P CmdT S
+  | exiting  : String → S → RunConfig P CmdT S
   | block  : String → RunConfig P CmdT S → RunConfig P CmdT S
   | seq    : RunConfig P CmdT S → List (Stmt P CmdT) → RunConfig P CmdT S
 
@@ -96,10 +96,9 @@ def runStep [BEq P.Expr] [HasBool P]
   | .block label inner =>
     match inner with
     | .terminal ρ' => .terminal (ops.popScope ρ')
-    | .exiting .none ρ' => .terminal (ops.popScope ρ')
-    | .exiting (.some l) ρ' =>
+    | .exiting l ρ' =>
       if l == label then .terminal (ops.popScope ρ')
-      else .exiting (.some l) (ops.popScope ρ')
+      else .exiting l (ops.popScope ρ')
     | _ => .block label (runStep ops inner)
 
 def runStmt [BEq P.Expr] [HasBool P]

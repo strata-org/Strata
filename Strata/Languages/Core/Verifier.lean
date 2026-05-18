@@ -270,7 +270,7 @@ private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : Abst
   for c in d.constrs.reverse do
     let mut fields := []
     for (name, fieldTy) in c.args.reverse do
-      let s ← AbstractEncoder.termTypeToSort solver (Core.lMonoTyToTermType fieldTy)
+      let s ← AbstractEncoder.termTypeToSort solver (Core.lMonoTyToTermType (ty := fieldTy))
       fields := (d.name ++ ".." ++ name.name, s) :: fields
     result := (c.name.name, fields) :: result
   return result
@@ -365,6 +365,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
+    (useArrayTheory : Bool := false)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
@@ -373,7 +374,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
-  ctx.emitDatatypes
+  ctx.emitDatatypes useArrayTheory
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -532,7 +533,7 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+      assumptionTerms obligationTerm md options.useArrayTheory satisfiabilityCheck validityCheck
       (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
     (typedVarToSMTFn ctx)
     vars
