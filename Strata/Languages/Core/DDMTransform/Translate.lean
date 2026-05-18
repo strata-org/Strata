@@ -355,14 +355,6 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
 
 ---------------------------------------------------------------------
 
-def translateLhs (arg : Arg) : TransM Core.CoreIdent := do
-  let .op op := arg
-    | TransM.error s!"translateLhs expected op {repr arg}"
-  match op.name, op.args with
-  | q`Core.lhsIdent, #[id] => translateIdent Core.CoreIdent id
-  -- (TODO) Implement lhsArray.
-  | _, _ => TransM.error s!"translateLhs: unimplemented for {repr arg}"
-
 def translateBindMk (bindings : TransBindings) (arg : Arg) :
    TransM (Core.CoreIdent × List TyIdentifier × LMonoTy) := do
   let .op op := arg
@@ -664,6 +656,52 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
   | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
+  | .some .bv1, q`Core.bv_neg_overflow   => return Core.bv1SNegOverflowOp
+  | .some .bv1, q`Core.bv_uneg_overflow  => return Core.bv1UNegOverflowOp
+  | .some .bv1, q`Core.bv_sadd_overflow  => return Core.bv1SAddOverflowOp
+  | .some .bv1, q`Core.bv_ssub_overflow  => return Core.bv1SSubOverflowOp
+  | .some .bv1, q`Core.bv_smul_overflow  => return Core.bv1SMulOverflowOp
+  | .some .bv1, q`Core.bv_sdiv_overflow  => return Core.bv1SDivOverflowOp
+  | .some .bv1, q`Core.bv_uadd_overflow  => return Core.bv1UAddOverflowOp
+  | .some .bv1, q`Core.bv_usub_overflow  => return Core.bv1USubOverflowOp
+  | .some .bv1, q`Core.bv_umul_overflow  => return Core.bv1UMulOverflowOp
+  | .some .bv8, q`Core.bv_neg_overflow   => return Core.bv8SNegOverflowOp
+  | .some .bv8, q`Core.bv_uneg_overflow  => return Core.bv8UNegOverflowOp
+  | .some .bv8, q`Core.bv_sadd_overflow  => return Core.bv8SAddOverflowOp
+  | .some .bv8, q`Core.bv_ssub_overflow  => return Core.bv8SSubOverflowOp
+  | .some .bv8, q`Core.bv_smul_overflow  => return Core.bv8SMulOverflowOp
+  | .some .bv8, q`Core.bv_sdiv_overflow  => return Core.bv8SDivOverflowOp
+  | .some .bv8, q`Core.bv_uadd_overflow  => return Core.bv8UAddOverflowOp
+  | .some .bv8, q`Core.bv_usub_overflow  => return Core.bv8USubOverflowOp
+  | .some .bv8, q`Core.bv_umul_overflow  => return Core.bv8UMulOverflowOp
+  | .some .bv16, q`Core.bv_neg_overflow  => return Core.bv16SNegOverflowOp
+  | .some .bv16, q`Core.bv_uneg_overflow => return Core.bv16UNegOverflowOp
+  | .some .bv16, q`Core.bv_sadd_overflow => return Core.bv16SAddOverflowOp
+  | .some .bv16, q`Core.bv_ssub_overflow => return Core.bv16SSubOverflowOp
+  | .some .bv16, q`Core.bv_smul_overflow => return Core.bv16SMulOverflowOp
+  | .some .bv16, q`Core.bv_sdiv_overflow => return Core.bv16SDivOverflowOp
+  | .some .bv16, q`Core.bv_uadd_overflow => return Core.bv16UAddOverflowOp
+  | .some .bv16, q`Core.bv_usub_overflow => return Core.bv16USubOverflowOp
+  | .some .bv16, q`Core.bv_umul_overflow => return Core.bv16UMulOverflowOp
+  | .some .bv32, q`Core.bv_neg_overflow  => return Core.bv32SNegOverflowOp
+  | .some .bv32, q`Core.bv_uneg_overflow => return Core.bv32UNegOverflowOp
+  | .some .bv32, q`Core.bv_sadd_overflow => return Core.bv32SAddOverflowOp
+  | .some .bv32, q`Core.bv_ssub_overflow => return Core.bv32SSubOverflowOp
+  | .some .bv32, q`Core.bv_smul_overflow => return Core.bv32SMulOverflowOp
+  | .some .bv32, q`Core.bv_sdiv_overflow => return Core.bv32SDivOverflowOp
+  | .some .bv32, q`Core.bv_uadd_overflow => return Core.bv32UAddOverflowOp
+  | .some .bv32, q`Core.bv_usub_overflow => return Core.bv32USubOverflowOp
+  | .some .bv32, q`Core.bv_umul_overflow => return Core.bv32UMulOverflowOp
+  | .some .bv64, q`Core.bv_neg_overflow  => return Core.bv64SNegOverflowOp
+  | .some .bv64, q`Core.bv_uneg_overflow => return Core.bv64UNegOverflowOp
+  | .some .bv64, q`Core.bv_sadd_overflow => return Core.bv64SAddOverflowOp
+  | .some .bv64, q`Core.bv_ssub_overflow => return Core.bv64SSubOverflowOp
+  | .some .bv64, q`Core.bv_smul_overflow => return Core.bv64SMulOverflowOp
+  | .some .bv64, q`Core.bv_sdiv_overflow => return Core.bv64SDivOverflowOp
+  | .some .bv64, q`Core.bv_uadd_overflow => return Core.bv64UAddOverflowOp
+  | .some .bv64, q`Core.bv_usub_overflow => return Core.bv64USubOverflowOp
+  | .some .bv64, q`Core.bv_umul_overflow => return Core.bv64UMulOverflowOp
+
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
   | _, q`Core.str_substr   => return Core.strSubstrOp
@@ -856,6 +894,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.re_all, [] =>
     let fn ← translateFn .none q`Core.re_all
     return fn
+  -- Sequence.empty (1 type arg, 0 value args)
+  | .fn _ q`Core.seq_empty, [_atp] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.seq .Empty)
+         (.some (Core.seqTy ety))
+     return fn
   -- Unary function applications
   | .fn m fni, [xa] =>
     match fni with
@@ -886,6 +931,16 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn m q`Core.safeneg_expr, [tpa, xa] =>
     let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let fn ← translateFn ty q`Core.safeneg_expr
+    let x ← translateExpr p bindings xa
+    return .mkApp (loc m) fn [x]
+  | .fn m q`Core.bv_neg_overflow, [tpa, xa] =>
+    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let fn ← translateFn ty q`Core.bv_neg_overflow
+    let x ← translateExpr p bindings xa
+    return .mkApp (loc m) fn [x]
+  | .fn m q`Core.bv_uneg_overflow, [tpa, xa] =>
+    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let fn ← translateFn ty q`Core.bv_uneg_overflow
     let x ← translateExpr p bindings xa
     return .mkApp (loc m) fn [x]
   -- Strings
@@ -1053,7 +1108,14 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.bvsle
     | q`Core.bvslt
     | q`Core.bvsgt
-    | q`Core.bvsge =>
+    | q`Core.bvsge
+    | q`Core.bv_sadd_overflow
+    | q`Core.bv_ssub_overflow
+    | q`Core.bv_smul_overflow
+    | q`Core.bv_sdiv_overflow
+    | q`Core.bv_uadd_overflow
+    | q`Core.bv_usub_overflow
+    | q`Core.bv_umul_overflow =>
       let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
       if ¬ isArithTy ty then
         TransM.error s!"translateExpr unexpected type for {repr fni}: {repr args}"
@@ -1236,6 +1298,36 @@ private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg)
   | q`Core.condDet, #[ca] => pure (.det (← translateExpr p bindings ca))
   | _, _ => TransM.error s!"translateCondBool: unexpected {repr op.name}"
 
+/-- Build a nested map-update expression: `nestMapUpdate base [i1, i2] v` produces
+    `map_update(base, i1, map_update(map_select(base, i1), i2, v))`. -/
+private def nestMapUpdate (m : Core.ExpressionMetadata) (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr)
+    (rhs : Core.Expression.Expr) : Core.Expression.Expr :=
+  let selectOp := Core.coreOpExpr (.map .Select)
+  let updateOp := Core.coreOpExpr (.map .Update)
+  match idxs with
+  | [] => rhs
+  | [i] => .mkApp m updateOp [base, i, rhs]
+  | i :: rest =>
+    let inner := .mkApp m selectOp [base, i]
+    let updatedInner := nestMapUpdate m inner rest rhs
+    .mkApp m updateOp [base, i, updatedInner]
+
+/-- Decompose an LHS into a base identifier and a (reversed) list of index
+    expressions. For `m[k1][k2]`, returns `(m, [k2, k1])`. -/
+partial def translateLhsParts (p : Program) (bindings : TransBindings) (arg : Arg) :
+    TransM (Core.CoreIdent × List Core.Expression.Expr) := do
+  let .op op := arg
+    | TransM.error s!"translateLhsParts expected op {repr arg}"
+  match op.name, op.args with
+  | q`Core.lhsIdent, #[id] =>
+    let ident ← translateIdent Core.CoreIdent id
+    return (ident, [])
+  | q`Core.lhsArray, #[_tpa, lhsa, idxa] =>
+    let (ident, idxsRev) ← translateLhsParts p bindings lhsa
+    let idx ← translateExpr p bindings idxa
+    return (ident, idx :: idxsRev)
+  | _, _ => TransM.error s!"translateLhsParts: unimplemented for {repr arg}"
+
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
@@ -1266,10 +1358,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.initStatement, args =>
     translateInitStatement p bindings args (← getOpMetaData op) op.ann
   | q`Core.assign, #[_tpa, lhsa, ea] =>
-    let lhs ← translateLhs lhsa
+    let (lhs, idxsRev) ← translateLhsParts p bindings lhsa
     let val ← translateExpr p bindings ea
     let md ← getOpMetaData op
-    return ([.set lhs val md], bindings)
+    let rhs := match idxsRev.reverse with
+      | [] => val
+      | idxs => nestMapUpdate op.ann (.fvar op.ann lhs none) idxs val
+    return ([.set lhs rhs md], bindings)
   | q`Core.havoc_statement, #[ida] =>
     let id ← translateIdent Core.CoreIdent ida
     let md ← getOpMetaData op

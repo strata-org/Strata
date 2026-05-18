@@ -395,7 +395,7 @@ info: #[{ ann := { start := { byteIdx := 296 }, stop := { byteIdx := 303 } },
 #eval examplePgm.commands
 
 /--
-info: forall __q0 : (Map k v) :: forall __q1 : (k) :: forall __q2 : (v) :: (__q0[__q1:=__q2])[__q1] == __q2, forall __q0 : (Map k v) :: forall __q1 : (k) :: forall __q2 : (k) :: forall __q3 : (v) :: (__q0[__q2:=__q3])[__q1] == __q0[__q1]
+info: forall m : (Map k v) :: forall kk : (k) :: forall vv : (v) :: (m[kk:=vv])[kk] == vv, forall m : (Map k v) :: forall okk : (k) :: forall kk : (k) :: forall vv : (v) :: (m[kk:=vv])[okk] == m[okk]
 -/
 #guard_msgs in
 #eval do
