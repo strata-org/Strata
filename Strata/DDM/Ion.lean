@@ -1485,6 +1485,10 @@ private instance : CachedToIon Dialect where
     for i in d.imports do
       a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "import"),
                                (ionSymbol! "name", .string i)]
+    if !d.typecheck then
+      a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "option"),
+                               (ionSymbol! "name", .string "typecheck"),
+                               (ionSymbol! "value", .string "off")]
     for decl in d.declarations do
       a := a.push <| (← ionRef! decl)
     return .list a
@@ -1494,7 +1498,10 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
   let tbl := f.symbols
   let typeId := tbl.symbolId! "type"
   let nameId := tbl.symbolId! "name"
-  let (imports, decls) ← f.values.foldlM (init := (#[], #[])) (start := f.offset) fun (imports, decls) v => do
+  let valueId := tbl.symbolId! "value"
+  let (imports, decls, typecheck) ← f.values.foldlM
+      (init := (#[], #[], true)) (start := f.offset)
+      fun (imports, decls, typecheck) v => do
     let fields ← FromIonM.asStruct0 v ⟨f.symbols⟩
     let some (_, val) := fields.find? (·.fst == typeId)
       | throw s!"Could not find type in {repr fields}"
@@ -1503,14 +1510,26 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
       let some (_, val) := fields.find? (·.fst == nameId)
         | throw "Could not find import"
       let i ← FromIonM.asString "Import name" val ctx
-      pure (imports.push i, decls)
+      pure (imports.push i, decls, typecheck)
+    | "option" =>
+      let some (_, nameVal) := fields.find? (·.fst == nameId)
+        | throw "Could not find option name"
+      let optName ← FromIonM.asString "Option name" nameVal ctx
+      let some (_, valueVal) := fields.find? (·.fst == valueId)
+        | throw "Could not find option value"
+      let optValue ← FromIonM.asString "Option value" valueVal ctx
+      match optName, optValue with
+      | "typecheck", "off" => pure (imports, decls, false)
+      | "typecheck", "on" => pure (imports, decls, true)
+      | _, _ => throw s!"Unknown option '{optName}' = '{optValue}'"
     | name =>
       let decl ← Decl.fromIonFields name fields ctx
-      pure (imports, decls.push decl)
+      pure (imports, decls.push decl, typecheck)
   return {
     name := dialect
     imports := imports
-    declarations :=  decls
+    declarations := decls
+    typecheck := typecheck
   }
 
 private instance : FromIon Dialect where
