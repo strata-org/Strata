@@ -7,6 +7,7 @@ module
 
 public import Strata.Backends.CBMC.GOTO.Semantics
 public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.StatementSemantics
 public import Strata.DL.Imperative.BasicBlock
 public import Strata.DL.Imperative.Cmd
 
@@ -91,6 +92,130 @@ block body. Used by `layout_block_body` to address the position of the
 @[expose] def cmdsPrefixInstrCount
     (cmds : List Core.Command) (k : Nat) : Nat :=
   (cmds.take k).foldl (fun acc c => acc + Core.CmdExt.gotoInstrCount c) 0
+
+/-! ## Expression-translation predicate
+
+This predicate is used both here (by `CmdEmittedAt`) and by
+`CoreCFGToGOTOCorrect.lean` (by `ExprTranslationPreservesEval`). It lives
+here because `CmdEmittedAt` references it and `Correct.lean` already
+imports `Invariants.lean`. -/
+
+/-- Predicate stating that a Core expression and a GOTO expression are
+"translation-equivalent" under the given evaluators: bidirectionally agree
+on values, and bidirectionally agree on boolean truth. -/
+structure ExprTranslated
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (e_core : Core.Expression.Expr) (e_goto : Expr) : Prop where
+  /-- The evaluators agree on values bidirectionally. -/
+  value_agree : ∀ σ v, δ σ e_core = some v ↔ δ_goto σ e_goto = some v
+  /-- The boolean evaluators agree on `true` bidirectionally. -/
+  bool_tt_agree : ∀ σ,
+    δ σ e_core = some (HasBool.tt (P := Core.Expression)) ↔
+    δ_goto_bool σ e_goto = some true
+  /-- The boolean evaluators agree on `false` bidirectionally. -/
+  bool_ff_agree : ∀ σ,
+    δ σ e_core = some (HasBool.ff (P := Core.Expression)) ↔
+    δ_goto_bool σ e_goto = some false
+
+/-! ## Per-command layout predicate
+
+`CmdEmittedAt pgm pc c` witnesses that the GOTO program `pgm` contains, at
+instruction-array index `pc`, the GOTO instruction(s) that
+`Cmd.toGotoInstructions` emits for the Core command `c`. There is one
+constructor per `Imperative.Cmd` shape, mirroring the cases of
+`Cmd.toGotoInstructions` in `Strata/DL/Imperative/ToCProverGOTO.lean`.
+
+Each constructor that translates a Core expression carries an
+`ExprTranslated` witness for its translation, decoupling layout from the
+specific `tx` function used by the global hypothesis. -/
+inductive CmdEmittedAt
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (pgm : Program) :
+    Nat → Imperative.Cmd Core.Expression → Prop where
+  /-- `.init v ty (.det e_core) md` → DECL at `pc`, ASSIGN at `pc + 1`. -/
+  | init_det
+    (pc : Nat)
+    (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
+    (e_core : Core.Expression.Expr) (md : Imperative.MetaData Core.Expression)
+    (i_decl i_assn : Instruction)
+    (h_decl_at : pgm.instrAt pc = some i_decl)
+    (h_decl_ty : i_decl.type = .DECL)
+    (h_assn_at : pgm.instrAt (pc + 1) = some i_assn)
+    (h_assn_ty : i_assn.type = .ASSIGN)
+    (e_goto : Expr) (v_expr : Expr)
+    (h_assn_code : i_assn.code = Code.assign v_expr e_goto)
+    (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty (.det e_core) md)
+  /-- `.init v ty .nondet md` → DECL at `pc` only. -/
+  | init_nondet
+    (pc : Nat)
+    (v : Core.Expression.Ident) (ty : Core.Expression.Ty)
+    (md : Imperative.MetaData Core.Expression)
+    (i_decl : Instruction)
+    (h_decl_at : pgm.instrAt pc = some i_decl)
+    (h_decl_ty : i_decl.type = .DECL) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty .nondet md)
+  /-- `.set v (.det e_core) md` → ASSIGN at `pc` with translated rhs. -/
+  | set_det
+    (pc : Nat)
+    (v : Core.Expression.Ident) (e_core : Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
+    (i_assn : Instruction)
+    (h_assn_at : pgm.instrAt pc = some i_assn)
+    (h_assn_ty : i_assn.type = .ASSIGN)
+    (e_goto : Expr) (v_expr : Expr)
+    (h_assn_code : i_assn.code = Code.assign v_expr e_goto)
+    (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v (.det e_core) md)
+  /-- `.set v .nondet md` → ASSIGN at `pc` with side-effect Nondet rhs. -/
+  | set_nondet
+    (pc : Nat)
+    (v : Core.Expression.Ident)
+    (md : Imperative.MetaData Core.Expression)
+    (i_assn : Instruction)
+    (h_assn_at : pgm.instrAt pc = some i_assn)
+    (h_assn_ty : i_assn.type = .ASSIGN) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v .nondet md)
+  /-- `.assert label e_core md` → ASSERT at `pc` with translated guard. -/
+  | assert_emit
+    (pc : Nat)
+    (label : String) (e_core : Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
+    (i : Instruction)
+    (h_at : pgm.instrAt pc = some i)
+    (h_ty : i.type = .ASSERT)
+    (e_goto : Expr)
+    (h_guard : i.guard = e_goto)
+    (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.assert label e_core md)
+  /-- `.assume label e_core md` → ASSUME at `pc` with translated guard. -/
+  | assume_emit
+    (pc : Nat)
+    (label : String) (e_core : Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
+    (i : Instruction)
+    (h_at : pgm.instrAt pc = some i)
+    (h_ty : i.type = .ASSUME)
+    (e_goto : Expr)
+    (h_guard : i.guard = e_goto)
+    (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.assume label e_core md)
+  /-- `.cover label e_core md` → ASSERT (dual of assume) at `pc`. -/
+  | cover_emit
+    (pc : Nat)
+    (label : String) (e_core : Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
+    (i : Instruction)
+    (h_at : pgm.instrAt pc = some i)
+    (h_ty : i.type = .ASSERT)
+    (e_goto : Expr)
+    (h_guard : i.guard = e_goto)
+    (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
+    CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.cover label e_core md)
 
 /-- Number of trailing transfer instructions emitted for a block:
 

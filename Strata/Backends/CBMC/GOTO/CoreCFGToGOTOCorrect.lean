@@ -71,25 +71,6 @@ states that explicitly without the proof. Discharging it is a separate
 project — its proof involves a mutual induction over the expression
 language tying GOTO operator semantics to Core's. -/
 
-/-- Predicate stating that a Core expression and a GOTO expression are
-"translation-equivalent" under the given evaluators: bidirectionally agree
-on values, and bidirectionally agree on boolean truth. -/
-structure ExprTranslated
-    (δ : SemanticEval Core.Expression)
-    (δ_goto : SemanticEvalGoto Core.Expression)
-    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
-    (e_core : Core.Expression.Expr) (e_goto : Expr) : Prop where
-  /-- The evaluators agree on values bidirectionally. -/
-  value_agree : ∀ σ v, δ σ e_core = some v ↔ δ_goto σ e_goto = some v
-  /-- The boolean evaluators agree on `true` bidirectionally. -/
-  bool_tt_agree : ∀ σ,
-    δ σ e_core = some (HasBool.tt (P := Core.Expression)) ↔
-    δ_goto_bool σ e_goto = some true
-  /-- The boolean evaluators agree on `false` bidirectionally. -/
-  bool_ff_agree : ∀ σ,
-    δ σ e_core = some (HasBool.ff (P := Core.Expression)) ↔
-    δ_goto_bool σ e_goto = some false
-
 /-- Expression-translation correctness as a global property: there is a
 *function* `tx` (the expression translator, e.g. `Lambda.LExpr.toGotoExprCtx`
 specialized to the success path) such that every Core expression and its
