@@ -72,22 +72,22 @@ project — its proof involves a mutual induction over the expression
 language tying GOTO operator semantics to Core's. -/
 
 /-- Predicate stating that a Core expression and a GOTO expression are
-"translation-equivalent" under the given evaluators: they agree on values
-in every store, and they agree on boolean truth. -/
+"translation-equivalent" under the given evaluators: bidirectionally agree
+on values, and bidirectionally agree on boolean truth. -/
 structure ExprTranslated
     (δ : SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (e_core : Core.Expression.Expr) (e_goto : Expr) : Prop where
-  /-- The evaluators produce equal values when both are defined. -/
-  value_agree : ∀ σ v, δ σ e_core = some v → δ_goto σ e_goto = some v
-  /-- The boolean evaluators agree on `true`. -/
+  /-- The evaluators agree on values bidirectionally. -/
+  value_agree : ∀ σ v, δ σ e_core = some v ↔ δ_goto σ e_goto = some v
+  /-- The boolean evaluators agree on `true` bidirectionally. -/
   bool_tt_agree : ∀ σ,
-    δ σ e_core = some (HasBool.tt (P := Core.Expression)) →
+    δ σ e_core = some (HasBool.tt (P := Core.Expression)) ↔
     δ_goto_bool σ e_goto = some true
-  /-- The boolean evaluators agree on `false`. -/
+  /-- The boolean evaluators agree on `false` bidirectionally. -/
   bool_ff_agree : ∀ σ,
-    δ σ e_core = some (HasBool.ff (P := Core.Expression)) →
+    δ σ e_core = some (HasBool.ff (P := Core.Expression)) ↔
     δ_goto_bool σ e_goto = some false
 
 /-- Expression-translation correctness as a global property: there is a
