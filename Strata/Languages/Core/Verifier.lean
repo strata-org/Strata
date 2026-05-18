@@ -1292,7 +1292,9 @@ abbrev CoreSMTSolver :=
 /-- Factory for discharge functions. Called once per obligation with the
     obligation's typed variables, metadata, and label. Returns a `DischargeFn`
     that produces `Except SolverError` results. A custom implementation can
-    replace the default (batch/incremental SMT-LIB) backend. -/
+    replace the default (batch/incremental SMT-LIB) backend.
+    The `IO.Ref Nat` parameter is a shared counter for generating unique
+    SMT-LIB filenames in the batch path (unused in incremental mode). -/
 abbrev MkDischargeFn :=
   VerifyOptions → IO.Ref Nat → System.FilePath →
   List Expression.TypedIdent → Imperative.MetaData Expression → String → DischargeFn
