@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
+defaultTargets = ["Strata", "StrataMainLib", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
@@ -11,6 +11,9 @@ rev = "bump_to_v4.29.0-rc8"
 
 [[lean_lib]]
 name = "Strata"
+
+[[lean_lib]]
+name = "StrataMainLib"
 
 [[lean_exe]]
 name = "strata"
