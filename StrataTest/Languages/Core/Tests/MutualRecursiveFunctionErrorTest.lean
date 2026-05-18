@@ -71,8 +71,7 @@ decreases n
 #end
 
 /--
-error: ❌ Symbolic evaluation error.
-Recursive function 'isEven' requires a @[cases] parameter
+error: recursive function 'isEven': structural recursion requires @[cases]
 -/
 #guard_msgs in
 #eval verify noCasesMutualPgm (options := .quiet)
