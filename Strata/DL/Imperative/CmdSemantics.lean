@@ -50,6 +50,36 @@ when the command signals a failure.
 def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → σ v = none
 
+/-- The store `σ_cfg` contains everything `σ_struct` contains, with matching
+values. `σ_cfg` may have additional entries that `σ_struct` does not.
+
+Equivalently: for every variable defined in `σ_struct` (in the sense of
+`isDefined`), `σ_cfg` assigns the same value at that variable. -/
+@[expose] def StoreAgreement {P : PureExpr}
+    (σ_struct σ_cfg : SemanticStore P) : Prop :=
+  ∀ x, isDefined σ_struct [x] → σ_struct x = σ_cfg x
+
+theorem StoreAgreement.refl {P : PureExpr} (σ : SemanticStore P) :
+    StoreAgreement σ σ :=
+  fun _ _ => rfl
+
+theorem StoreAgreement.trans {P : PureExpr} {σ₁ σ₂ σ₃ : SemanticStore P}
+    (h₁ : StoreAgreement σ₁ σ₂) (h₂ : StoreAgreement σ₂ σ₃) :
+    StoreAgreement σ₁ σ₃ := by
+  intro x h_def₁
+  -- σ₁ x = σ₂ x from h₁; need σ₂ x = σ₃ x from h₂, which needs isDefined σ₂ [x].
+  have h12 : σ₁ x = σ₂ x := h₁ x h_def₁
+  have h_def₂ : isDefined σ₂ [x] := by
+    intro v hv
+    rw [List.mem_singleton] at hv
+    -- hv : v = x; rewrite goal to be about x
+    rw [hv]
+    have h := h_def₁ x (List.mem_singleton.mpr rfl)
+    -- h : (σ₁ x).isSome = true; rewrite via h12
+    rw [← h12]; exact h
+  have h23 : σ₂ x = σ₃ x := h₂ x h_def₂
+  exact h12.trans h23
+
 -- Can make this more generic by supplying a predicate function
 -- (SemanticStore P) → P.Ident → Bool
 -- determining whether each variable in the store is valid
