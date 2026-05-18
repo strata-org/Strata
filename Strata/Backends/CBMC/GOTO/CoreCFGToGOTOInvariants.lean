@@ -146,8 +146,8 @@ inductive CmdEmittedAt
     (h_decl_ty : i_decl.type = .DECL)
     (h_assn_at : pgm.instrAt (pc + 1) = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (e_goto : Expr) (v_expr : Expr)
-    (h_assn_code : i_assn.code = Code.assign v_expr e_goto)
+    (e_goto : Expr)
+    (h_assn_code : ∃ lhs, i_assn.code = Code.assign lhs e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.init v ty (.det e_core) md)
   /-- `.init v ty .nondet md` → DECL at `pc` only. -/
@@ -167,8 +167,8 @@ inductive CmdEmittedAt
     (i_assn : Instruction)
     (h_assn_at : pgm.instrAt pc = some i_assn)
     (h_assn_ty : i_assn.type = .ASSIGN)
-    (e_goto : Expr) (v_expr : Expr)
-    (h_assn_code : i_assn.code = Code.assign v_expr e_goto)
+    (e_goto : Expr)
+    (h_assn_code : ∃ lhs, i_assn.code = Code.assign lhs e_goto)
     (h_translated : ExprTranslated δ δ_goto δ_goto_bool e_core e_goto) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v (.det e_core) md)
   /-- `.set v .nondet md` → ASSIGN at `pc` with side-effect Nondet rhs. -/
@@ -178,7 +178,8 @@ inductive CmdEmittedAt
     (md : Imperative.MetaData Core.Expression)
     (i_assn : Instruction)
     (h_assn_at : pgm.instrAt pc = some i_assn)
-    (h_assn_ty : i_assn.type = .ASSIGN) :
+    (h_assn_ty : i_assn.type = .ASSIGN)
+    (h_assn_code : ∃ lhs e_nondet, i_assn.code = Code.assign lhs e_nondet) :
     CmdEmittedAt δ δ_goto δ_goto_bool pgm pc (.set v .nondet md)
   /-- `.assert label e_core md` → ASSERT at `pc` with translated guard. -/
   | assert_emit
