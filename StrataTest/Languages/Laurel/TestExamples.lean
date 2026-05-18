@@ -42,6 +42,9 @@ def buildDir : IO String := do
   let cwd ← IO.currentDir
   return s!"{cwd}/IntermediatePrograms/"
 
+/-- Debug helper: run the Laurel pipeline keeping intermediate pass outputs in `./IntermediatePrograms/`.
+    Not used by any test in this repo; invoke manually via `#eval processLaurelFileKeepIntermediates (stringInputContext …)`
+    when diagnosing pass-internal issues. -/
 def processLaurelFileKeepIntermediates (input : InputContext) : IO (Array Diagnostic) := do
   let dir ← buildDir
   processLaurelFileWithOptions { translateOptions := { keepAllFilesPrefix := dir}} input
