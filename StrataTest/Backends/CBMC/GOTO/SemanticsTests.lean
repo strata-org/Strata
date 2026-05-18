@@ -148,7 +148,8 @@ def trivialWF :
   layout_location := trivial_layout_location
   layout_cond_goto := trivial_layout_cond_goto
   layout_cond_goto_guards := by
-    intro l blk pc cond lt lf md h_blk h_pc h_xfer
+    intro l blk pc cond lt lf md instr_neg instr_uncond h_blk h_pc h_xfer
+      h_neg_at h_uncond_at
     -- The trivial block uses `.finish`, not `.condGoto` — contradiction.
     simp [trivialCfg] at h_blk
     obtain ⟨_, h_blk_eq⟩ := h_blk

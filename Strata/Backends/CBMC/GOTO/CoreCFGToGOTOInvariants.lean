@@ -284,14 +284,17 @@ structure WellFormedTranslation
         labelMap lt = some pc_lt
   /-- The two transfer GOTOs for a `condGoto` block carry specific guards:
   the first is `e_goto.not` (where `e_goto` is the GOTO translation of
-  `cond`) and the second is the GOTO constant `Expr.true`. -/
+  `cond`) and the second is the GOTO constant `Expr.true`. The instruction
+  witnesses come from `layout_cond_goto`; this field constrains only the
+  guard contents. -/
   layout_cond_goto_guards :
-    ∀ l blk pc cond lt lf md, (l, blk) ∈ cfg.blocks →
+    ∀ l blk pc cond lt lf md instr_neg instr_uncond,
+      (l, blk) ∈ cfg.blocks →
       labelMap l = some pc →
       blk.transfer = .condGoto cond lt lf md →
-      ∃ instr_neg instr_uncond e_goto,
-        pgm.instrAt (pc + 1 + DetBlockBodyInstrCount blk) = some instr_neg ∧
-        pgm.instrAt (pc + 1 + DetBlockBodyInstrCount blk + 1) = some instr_uncond ∧
+      pgm.instrAt (pc + 1 + DetBlockBodyInstrCount blk) = some instr_neg →
+      pgm.instrAt (pc + 1 + DetBlockBodyInstrCount blk + 1) = some instr_uncond →
+      ∃ e_goto,
         instr_neg.guard = e_goto.not ∧
         ExprTranslated δ δ_goto δ_goto_bool cond e_goto ∧
         instr_uncond.guard = CProverGOTO.Expr.true
