@@ -51,7 +51,7 @@ Reading `Cmd.toGotoInstructions` in
 
 The call-free fragment we are proving correct admits only `CmdExt.cmd`,
 not `CmdExt.call`. -/
-def Imperative.Cmd.gotoInstrCount {P : Imperative.PureExpr} :
+@[expose] def Imperative.Cmd.gotoInstrCount {P : Imperative.PureExpr} :
     Imperative.Cmd P → Nat
   | .init _ _ (.det _) _   => 2
   | .init _ _ .nondet _    => 1

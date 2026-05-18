@@ -146,6 +146,91 @@ theorem evalCommand_cmd_iff_evalCmd
   · intro h
     exact .cmd_sem h
 
+/-! ## Per-command simulation -/
+
+/-- A single `EvalCmd` step on a plain command corresponds to a
+`StepGotoStar` trace of length `c.gotoInstrCount` over the GOTO
+instructions emitted for `c`.
+
+This is proved by `cases` on both the evaluation step and the
+`CmdEmittedAt` layout, producing one or two `StepGoto` constructor
+applications per case. Three sub-cases (`init_det`, `set_nondet`,
+`cover_emit`) are flagged `sorry` because they require GOTO-semantics
+extensions (DECL/ASSIGN combination, side-effect Nondet RHS, and
+cover-as-ASSERT respectively). -/
+theorem single_cmd_simulation
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_wf_bool_goto : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (pgm : Program) (c : Imperative.Cmd Core.Expression)
+    (σ σ' : Imperative.SemanticStore Core.Expression)
+    (failed cmd_failed : Bool)
+    (h_eval : Imperative.EvalCmd (P := Core.Expression) δ σ c σ' cmd_failed)
+    (pc : Nat)
+    (h_layout : CmdEmittedAt δ δ_goto δ_goto_bool pgm pc c)
+    : StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
+        (.running pc σ failed)
+        (.running (pc + Imperative.Cmd.gotoInstrCount c) σ' (failed || cmd_failed)) := by
+  unfold StepGotoStar
+  cases h_eval with
+  | eval_init h_eval h_init _ =>
+    -- `.init v ty (.det e) md` — DECL then ASSIGN. Hard case (sorry).
+    sorry
+  | eval_init_unconstrained h_init _ =>
+    -- `.init v ty .nondet md` — single DECL.
+    show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
+    rw [Bool.or_false]
+    cases h_layout with
+    | init_nondet _ _ _ _ h_decl_at h_decl_ty =>
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_decl h_decl_at h_decl_ty h_init
+  | eval_set h_eval h_upd _ =>
+    -- `.set v (.det e) md` — single ASSIGN.
+    show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
+    rw [Bool.or_false]
+    cases h_layout with
+    | set_det _ _ _ _ h_assn_at h_assn_ty _ h_assn_code h_translated =>
+      have h_goto_eval := (h_translated.value_agree _ _).mp h_eval
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_assign h_assn_at h_assn_ty h_goto_eval h_upd
+  | eval_set_nondet h_upd _ =>
+    -- `.set v .nondet md` — single ASSIGN with nondet RHS.
+    -- Hard case: GOTO semantics has no `step_assign_nondet` constructor (sorry).
+    sorry
+  | eval_assert_pass h_eval _ =>
+    show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
+    rw [Bool.or_false]
+    cases h_layout with
+    | assert_emit _ _ _ _ h_at h_ty _ h_guard h_translated =>
+      have h_goto_eval := (h_translated.bool_tt_agree _).mp h_eval
+      rw [← h_guard] at h_goto_eval
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_assert_pass h_at h_ty h_goto_eval
+  | eval_assert_fail h_eval _ =>
+    show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || true))
+    rw [Bool.or_true]
+    cases h_layout with
+    | assert_emit _ _ _ _ h_at h_ty _ h_guard h_translated =>
+      have h_goto_eval := (h_translated.bool_ff_agree _).mp h_eval
+      rw [← h_guard] at h_goto_eval
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_assert_fail h_at h_ty h_goto_eval
+  | eval_assume h_eval _ =>
+    show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
+    rw [Bool.or_false]
+    cases h_layout with
+    | assume_emit _ _ _ _ h_at h_ty _ h_guard h_translated =>
+      have h_goto_eval := (h_translated.bool_tt_agree _).mp h_eval
+      rw [← h_guard] at h_goto_eval
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_assume_pass h_at h_ty h_goto_eval
+  | eval_cover _ =>
+    -- `.cover label e md` — translator emits ASSERT but Cover always succeeds.
+    -- Hard case: GOTO semantics doesn't yet have step_cover or a way to
+    -- discharge the ASSERT premise without an extra hypothesis (sorry).
+    sorry
+
 /-! ## Block simulation lemma
 
 The crux: a single `EvalDetBlock` derivation corresponds to a sequence of
