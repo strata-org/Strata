@@ -209,7 +209,10 @@ def verifyOptionsFlags : List Flag := [
     help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
-    takesArg := .arg "N|none" }
+    takesArg := .arg "N|none" },
+  { name := "parallel",
+    help := "Number of parallel solver workers (default: 1, sequential).",
+    takesArg := .arg "N" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -250,6 +253,12 @@ def parseVerifyOptions (pflags : ParsedFlags)
                    else pure (.some n)
       | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
+  let parallelWorkers ← match pflags.getString "parallel" with
+    | .none => pure base.parallelWorkers
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--parallel must be at least 1."
+                   else pure n
+      | .none => exitFailure s!"Invalid parallel workers: '{s}'. Must be a positive number."
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
     exitFailure "--no-solve requires --vc-directory to specify where SMT files are stored."
@@ -271,7 +280,8 @@ def parseVerifyOptions (pflags : ParsedFlags)
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
     vcDirectory,
-    pathCap
+    pathCap,
+    parallelWorkers
   }
 
 /-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already
@@ -565,7 +575,7 @@ private def deriveBaseName (file : String) : String :=
   | none     => name
 
 
-def pyAnalyzeLaurelCommand : Command where
+def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -737,6 +747,7 @@ def pyAnalyzeLaurelCommand : Command where
                 (externalPhases := [Strata.frontEndPhase])
                 (prefixPhases := inlinePhases)
                 (keepAllFilesPrefix := keepPrefix)
+                (mkDischarge := mkDischarge)
                 |>.toBaseIO with
       | .ok r => pure r.mergeByAssertion
       | .error msg => exitPyAnalyzeInternalError msg
@@ -1258,7 +1269,7 @@ def transformCommand : Command where
       | .ok program => IO.print (Core.formatProgram program)
       | .error e => exitFailure s!"Transform failed: {e}"
 
-def verifyCommand : Command where
+def verifyCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "verify"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -1327,7 +1338,7 @@ def verifyCommand : Command where
         else if pgm.dialect == "Boole" then
           Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
         else
-          verify pgm inputCtx proceduresToVerify opts
+          verify pgm inputCtx proceduresToVerify opts (mkDischarge := mkDischarge)
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
