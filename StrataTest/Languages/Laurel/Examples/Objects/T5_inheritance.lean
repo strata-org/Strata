@@ -98,5 +98,5 @@ procedure diamondInheritance()
 //}
 "
 
-#guard_msgs (drop info) in
+#guard_msgs in
 #eval testInputWithOffset "Inheritance" program 14 processLaurelFile
