@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataMainLib", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
+defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
