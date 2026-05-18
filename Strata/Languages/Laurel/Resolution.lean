@@ -272,6 +272,12 @@ structure ResolveState where
   nextId : Nat := 1
   /-- Current lexical scope (name → definition ID). -/
   scope : Scope := {}
+  /-- Map from definition uniqueId to its ResolvedNode. Populated alongside
+      `scope` whenever a definition is registered. Unlike `scope`, this map is
+      *not* saved/restored by `withScope` — uniqueIds are global. Used by
+      `getVarType` to look up types for references whose `text` doesn't match
+      a scope key (notably fields, which are scoped under qualified keys). -/
+  idToNode : Std.HashMap Nat ResolvedNode := {}
   /-- Names defined at the current scope level (for duplicate detection). -/
   currentScopeNames : Std.HashSet String := {}
   /-- Per-composite-type field scopes (type name → field name → scope entry). -/
@@ -315,8 +321,10 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
         let id ← freshId
         pure ({ iden with uniqueId := some (id) }, id)
 
-    modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node),
-                             currentScopeNames := s.currentScopeNames.insert resolutionName }
+    modify fun s => { s with
+      scope := s.scope.insert resolutionName (uniqueId, node),
+      idToNode := s.idToNode.insert uniqueId node,
+      currentScopeNames := s.currentScopeNames.insert resolutionName }
     return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
@@ -476,12 +484,18 @@ private def isReference (ty : HighTypeMd) : Bool :=
   | .TCore _ => true
   | _ => false
 
-/-- Get the type of a resolved variable reference from scope. -/
+/-- Get the type of a resolved reference. Tries the lexical scope by name
+    first; if that misses (notably for fields, which are scoped under
+    qualified keys like "Container.intValue"), falls back to a uniqueId
+    lookup populated as definitions are registered. -/
 private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
   let s ← get
   match s.scope.get? ref.text with
   | some (_, node) => pure node.getType
-  | none => pure { val := .Unknown, source := ref.source }
+  | none =>
+    match ref.uniqueId.bind s.idToNode.get? with
+    | some node => pure node.getType
+    | none => pure { val := .Unknown, source := ref.source }
 
 /-- Get the call return type and parameter types for a callee from scope. -/
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
@@ -602,17 +616,10 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     -- Compute the target's declared type, regardless of whether it's a Local,
     -- a Field, or a fresh Declare.
     let targetType (t : VariableMd) : ResolveM HighTypeMd := do
-      let s ← get
       match t.val with
-      | .Local ref =>
-        match s.scope.get? ref.text with
-        | some (_, node) => pure node.getType
-        | none => pure { val := .Unknown, source := ref.source }
+      | .Local ref => getVarType ref
       | .Declare param => pure param.type
-      | .Field _ fieldName =>
-        match s.scope.get? fieldName.text with
-        | some (_, node) => pure node.getType
-        | none => pure { val := .Unknown, source := fieldName.source }
+      | .Field _ fieldName => getVarType fieldName
     -- Skip all checks when the RHS is a statement (TVoid) — no value to assign.
     if valueTy.val != HighType.TVoid then
       let targetTys ← targets'.mapM targetType
@@ -630,7 +637,7 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
   | .Var (.Field target fieldName) =>
     let (target', _) ← synthStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
-    let ty ← getVarType fieldName
+    let ty ← getVarType fieldName'
     pure (.Var (.Field target' fieldName'), ty)
   | .PureFieldUpdate target fieldName newVal =>
     let (target', targetTy) ← synthStmtExpr target
