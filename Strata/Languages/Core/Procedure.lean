@@ -444,7 +444,7 @@ instance : HasVarsProcTrans Expression Procedure where
   modifiedVarsTrans := Procedure.modifiedVarsTrans
   getVarsTrans := Procedure.getVarsTrans
   definedVarsTrans := λ _ _ ↦ [] -- procedures cannot define global variables
-  touchedVarsTrans := Procedure.modifiedVarsTrans
+  modifiedOrDefinedVarsTrans := Procedure.modifiedVarsTrans
   allVarsTrans :=
     λ π p ↦ Procedure.getVarsTrans π p ++ Procedure.modifiedVarsTrans π p
 
@@ -453,14 +453,14 @@ instance : HasVarsTrans Expression Statement Procedure where
   modifiedVarsTrans := Statement.modifiedVarsTrans
   getVarsTrans := Statement.getVarsTrans
   definedVarsTrans := Statement.definedVarsTrans
-  touchedVarsTrans := Statement.touchedVarsTrans
+  modifiedOrDefinedVarsTrans := Statement.modifiedOrDefinedVarsTrans
   allVarsTrans := Statement.allVarsTrans
 
 instance : HasVarsTrans Expression (List Statement) Procedure where
   modifiedVarsTrans := Statements.modifiedVarsTrans
   getVarsTrans := Statements.getVarsTrans
   definedVarsTrans := Statements.definedVarsTrans
-  touchedVarsTrans := Statements.touchedVarsTrans
+  modifiedOrDefinedVarsTrans := Statements.modifiedOrDefinedVarsTrans
   allVarsTrans := Statements.allVarsTrans
 
 end

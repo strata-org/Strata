@@ -101,6 +101,8 @@ def coreCFGIsAtAssert (cfg : DetCFG) : CoreCFGSpecConfig → AssertId Expression
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
+  wfCong : WellFormedCoreEvalCong ρ.eval
+  wfExprCongr : WellFormedSemanticEvalExprCongr ρ.eval
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
   -- When a procedure is called, the value of "old g" must be equal to "g"
   -- for in-out parameters.

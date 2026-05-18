@@ -52,6 +52,7 @@ when needed for the validity check (line 64 for check-sat-assuming, line 77 for 
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
+    (useArrayTheory : Bool := false)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
@@ -60,7 +61,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
-  ctx.emitDatatypes
+  ctx.emitDatatypes useArrayTheory
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -219,7 +220,7 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+      assumptionTerms obligationTerm md options.useArrayTheory satisfiabilityCheck validityCheck
       (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations))
     (typedVarToSMTFn ctx)
     vars

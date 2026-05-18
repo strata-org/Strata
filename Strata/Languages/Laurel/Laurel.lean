@@ -377,8 +377,9 @@ def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Cond
 
 /-- Build Core metadata from an optional source location. -/
 def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
-  let fr := source.getD FileRange.unknown
-  Imperative.MetaData.empty.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+  match source with
+  | some fr => Imperative.MetaData.ofSourceRange fr.file fr.range
+  | none => Imperative.MetaData.ofProvenance (.synthesized .laurel)
 
 /-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=

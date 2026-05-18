@@ -41,6 +41,11 @@ inductive KleeneStmt (P : PureExpr) (Cmd : Type) : Type where
   | choice   (s1 s2 : KleeneStmt P Cmd)
   /-- Execute `s` an arbitrary number of times (possibly zero). -/
   | loop     (s : KleeneStmt P Cmd)
+  /-- Execute `s` in a scoped block: variables initialized inside are
+      projected away on exit (matching the deterministic `.block` semantics).
+      There is no label unlike Imperative.Stmt.block because KleeneStmt doesn't
+      have .exit. -/
+  | block    (s : KleeneStmt P Cmd)
   deriving Inhabited
 
 abbrev KleeneStmt.init {P : PureExpr} (name : P.Ident) (ty : P.Ty) (expr : P.Expr) (md : MetaData P) :=
@@ -62,6 +67,7 @@ def KleeneStmt.definedVars [HasVarsImp P C] (s : KleeneStmt P C) : List P.Ident 
   | .seq s1 s2 => KleeneStmt.definedVars s1 ++ KleeneStmt.definedVars s2
   | .choice s1 s2 => KleeneStmt.definedVars s1 ++ KleeneStmt.definedVars s2
   | .loop s => KleeneStmt.definedVars s
+  | .block s => KleeneStmt.definedVars s
 
 def KleeneStmts.definedVars [HasVarsImp P C] (ss : List (KleeneStmt P C)) : List P.Ident :=
   match ss with
@@ -77,6 +83,7 @@ def KleeneStmt.modifiedVars [HasVarsImp P C] (s : KleeneStmt P C) : List P.Ident
   | .seq s1 s2 => KleeneStmt.modifiedVars s1 ++ KleeneStmt.modifiedVars s2
   | .choice s1 s2 => KleeneStmt.modifiedVars s1 ++ KleeneStmt.modifiedVars s2
   | .loop s => KleeneStmt.modifiedVars s
+  | .block s => KleeneStmt.modifiedVars s
 
 def KleeneStmts.modifiedVars [HasVarsImp P C] (ss : List (KleeneStmt P C)) : List P.Ident :=
   match ss with
@@ -101,6 +108,7 @@ def formatKleeneStmt (P : PureExpr) (s : KleeneStmt P C)
   | .seq s1 s2 => f!"({formatKleeneStmt P s1}) ; ({formatKleeneStmt P s2})"
   | .choice s1 s2 => f!"({formatKleeneStmt P s1}) | ({formatKleeneStmt P s2})"
   | .loop s => f!"({formatKleeneStmt P s})*"
+  | .block s => f!"block({formatKleeneStmt P s})"
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
         : ToFormat (KleeneStmt P C) where

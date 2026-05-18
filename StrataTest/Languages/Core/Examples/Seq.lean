@@ -305,3 +305,169 @@ Result: ✅ pass
 #eval verify seqOpsPgm
 
 ---------------------------------------------------------------------
+
+----------------------------------------------------------------------
+-- Tests for Sequence.empty<T>() syntax (issue #1027)
+----------------------------------------------------------------------
+
+private def seqEmptyPgm :=
+#strata
+program Core;
+
+procedure SeqEmpty()
+{
+  var s : Sequence int;
+
+  // Create an empty sequence using Sequence.empty syntax
+  s := Sequence.empty<int>();
+  assert [empty_length]: Sequence.length(s) == 0;
+
+  // Build on top of an empty sequence
+  s := Sequence.build(Sequence.empty<int>(), 42);
+  assert [build_on_empty_length]: Sequence.length(s) == 1;
+  assert [build_on_empty_elem]: Sequence.select(s, 0) == 42;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run Inhabited.default (translateProgram seqEmptyPgm) |>.snd |>.isEmpty
+
+/--
+info: program Core;
+
+procedure SeqEmpty ()
+{
+  var s : (Sequence int);
+  s := Sequence.empty<int>();
+  assert [empty_length]: Sequence.length(s) == 0;
+  s := Sequence.build(Sequence.empty<int>(), 42);
+  assert [build_on_empty_length]: Sequence.length(s) == 1;
+  assert [build_on_empty_elem]: Sequence.select(s, 0) == 42;
+};
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram seqEmptyPgm) |>.fst
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: empty_length
+Property: assert
+Obligation:
+Sequence.length(Sequence.empty<int>()) == 0
+
+Label: build_on_empty_length
+Property: assert
+Obligation:
+Sequence.length(Sequence.build(Sequence.empty<int>(), 42)) == 1
+
+Label: build_on_empty_elem
+Property: assert
+Obligation:
+Sequence.select(Sequence.build(Sequence.empty<int>(), 42), 0) == 42
+
+---
+info:
+Obligation: empty_length
+Property: assert
+Result: ✅ pass
+
+Obligation: build_on_empty_length
+Property: assert
+Result: ✅ pass
+
+Obligation: build_on_empty_elem
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify seqEmptyPgm
+
+----------------------------------------------------------------------
+
+-- Exercise various element types for Sequence.empty<T>().
+private def seqEmptyTypesPgm :=
+#strata
+program Core;
+
+procedure SeqEmptyTypes()
+{
+  var sb : Sequence bool;
+  var ssi : Sequence (Sequence int);
+  var smi : Sequence (Map int bool);
+
+  sb := Sequence.empty<bool>();
+  ssi := Sequence.empty<Sequence int>();
+  smi := Sequence.empty<Map int bool>();
+
+  assert [bool_len]: Sequence.length(sb) == 0;
+  assert [seq_seq_len]: Sequence.length(ssi) == 0;
+  assert [seq_map_len]: Sequence.length(smi) == 0;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram seqEmptyTypesPgm) |>.snd |>.isEmpty
+
+/--
+info: program Core;
+
+procedure SeqEmptyTypes ()
+{
+  var sb : (Sequence bool);
+  var ssi : (Sequence (Sequence int));
+  var smi : (Sequence (Map int bool));
+  sb := Sequence.empty<bool>();
+  ssi := Sequence.empty<Sequence int>();
+  smi := Sequence.empty<Map int bool>();
+  assert [bool_len]: Sequence.length(sb) == 0;
+  assert [seq_seq_len]: Sequence.length(ssi) == 0;
+  assert [seq_map_len]: Sequence.length(smi) == 0;
+};
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram seqEmptyTypesPgm) |>.fst
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: bool_len
+Property: assert
+Obligation:
+Sequence.length(Sequence.empty<bool>()) == 0
+
+Label: seq_seq_len
+Property: assert
+Obligation:
+Sequence.length(Sequence.empty<Sequence int>()) == 0
+
+Label: seq_map_len
+Property: assert
+Obligation:
+Sequence.length(Sequence.empty<Map int bool>()) == 0
+
+---
+info:
+Obligation: bool_len
+Property: assert
+Result: ✅ pass
+
+Obligation: seq_seq_len
+Property: assert
+Result: ✅ pass
+
+Obligation: seq_map_len
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify seqEmptyTypesPgm
+
+----------------------------------------------------------------------
