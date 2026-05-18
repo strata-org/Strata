@@ -12,8 +12,8 @@ public import Strata.DL.SMT.Solver
 
 Defines `AbstractSolver τ σ m`, a generic solver interface parameterized by an
 opaque term type `τ`, an opaque sort type `σ`, and a monad `m`. All operations
-that can fail return `Except String`. The monad `m` captures any state or
-effects the backend needs.
+that can fail throw `IO.Error` via `MonadExceptOf`. The monad `m` captures any
+state or effects the backend needs.
 
 For the incremental SMT-LIB backend, `τ = SMT.Term`, `σ = SMT.TermType`,
 `m = StateT IncrementalSolverState IO`.
@@ -54,7 +54,7 @@ and monad `m`.
 
 All term constructors are fallible. Solvers might not accept certain constructs
 (e.g., wrong sorts, unsupported combinations) and we need to surface the issue
-precisely via `Except String`. -/
+precisely via `MonadExceptOf IO.Error`. -/
 structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [MonadExceptOf IO.Error m] where
   -- Configuration (for solvers that support them; ignored otherwise)
   setLogic : String → m Unit
@@ -68,7 +68,7 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   stringSort : m σ
   regexSort : m σ
   bitvecSort : Nat → m σ
-  arraySort : σ → σ → m (Except String σ)
+  arraySort : σ → σ → m σ
 
   /-- Construct a sort for a named type (datatype or user-defined sort)
       with the given type arguments. -/
@@ -82,39 +82,39 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   /-- Fallback for operations not covered by specific mk* methods
       (e.g. bitvectors, strings, regex). The backend receives the raw `Op`,
       the already-encoded arguments, and the result sort. -/
-  mkAppOp : Op → List τ → σ → m (Except String τ)
+  mkAppOp : Op → List τ → σ → m τ
 
   -- Boolean operations
-  mkAnd : List τ → m (Except String τ)
-  mkOr : List τ → m (Except String τ)
-  mkNot : τ → m (Except String τ)
-  mkImplies : τ → τ → m (Except String τ)
+  mkAnd : List τ → m τ
+  mkOr : List τ → m τ
+  mkNot : τ → m τ
+  mkImplies : τ → τ → m τ
 
   -- Arithmetic operations
-  mkAdd : List τ → m (Except String τ)
-  mkSub : List τ → m (Except String τ)
-  mkMul : List τ → m (Except String τ)
-  mkDiv : τ → τ → m (Except String τ)
-  mkMod : τ → τ → m (Except String τ)
-  mkNeg : τ → m (Except String τ)
-  mkAbs : τ → m (Except String τ)
+  mkAdd : List τ → m τ
+  mkSub : List τ → m τ
+  mkMul : List τ → m τ
+  mkDiv : τ → τ → m τ
+  mkMod : τ → τ → m τ
+  mkNeg : τ → m τ
+  mkAbs : τ → m τ
 
   -- Comparison operations
-  mkEq : List τ → m (Except String τ)
-  mkLt : List τ → m (Except String τ)
-  mkLe : List τ → m (Except String τ)
-  mkGt : List τ → m (Except String τ)
-  mkGe : List τ → m (Except String τ)
+  mkEq : List τ → m τ
+  mkLt : List τ → m τ
+  mkLe : List τ → m τ
+  mkGt : List τ → m τ
+  mkGe : List τ → m τ
 
   -- Conditional
-  mkIte : τ → τ → τ → m (Except String τ)
+  mkIte : τ → τ → τ → m τ
 
   -- Array operations
-  mkSelect : τ → τ → m (Except String τ)
-  mkStore : τ → τ → τ → m (Except String τ)
+  mkSelect : τ → τ → m τ
+  mkStore : τ → τ → τ → m τ
 
   -- Function application (for uninterpreted functions)
-  mkApp : τ → List τ → m (Except String τ)
+  mkApp : τ → List τ → m τ
 
   -- Quantifiers
   /-- Construct a universally quantified term.
@@ -122,10 +122,10 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
       receives the bound variable terms and returns the body and trigger groups.
       The callback is monadic so callers can encode sub-terms using the
       bound variable handles. Bound variables cannot escape the quantifier scope. -/
-  mkForall : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
+  mkForall : List (String × σ) → (List τ → m (τ × List (List τ))) → m τ
 
   /-- Construct an existentially quantified term. Same callback pattern as `mkForall`. -/
-  mkExists : List (String × σ) → (List τ → m (Except String (τ × List (List τ)))) → m (Except String τ)
+  mkExists : List (String × σ) → (List τ → m (τ × List (List τ))) → m τ
 
   /-- Declare a new variable. Shadowing is allowed: declaring the same name
       twice creates two distinct variables. The backend handles disambiguation
@@ -133,13 +133,13 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   declareNew : String → σ → m τ
 
   /-- Declare an uninterpreted function. -/
-  declareFun : String → List σ → σ → m (Except String τ)
+  declareFun : String → List σ → σ → m τ
 
   /-- Define an interpreted function with a body term. -/
-  defineFun : String → List (String × σ) → σ → τ → m (Except String Unit)
+  defineFun : String → List (String × σ) → σ → τ → m Unit
 
   /-- Declare a new sort with the given arity. Returns the declared sort. -/
-  declareSort : String → Nat → m (Except String σ)
+  declareSort : String → Nat → m σ
 
   /-- Declare an algebraic datatype.
       Takes the datatype name, type parameter names, and a callback that
@@ -150,7 +150,7 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
       need to reference it. -/
   declareDatatype : String → List String →
     (σ → List σ → Except String (List (String × List (String × σ)))) →
-    m (Except String (DatatypeInfo τ σ))
+    m (DatatypeInfo τ σ)
 
   /-- Declare mutually recursive algebraic datatypes.
       Takes a list of `(name, typeParams)` and a callback that receives
@@ -158,7 +158,7 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
       Returns the declared sorts and constructor/tester/selector handles. -/
   declareDatatypes : List (String × List String) →
     (List σ → List (List σ) → Except String (List (List (String × List (String × σ))))) →
-    m (Except String (List (DatatypeInfo τ σ)))
+    m (List (DatatypeInfo τ σ))
 
   -- Session operations
 
@@ -168,28 +168,28 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   pop : m Unit
 
   /-- Assert a term (must be Bool-typed). -/
-  assert : τ → m (Except String Unit)
+  assert : τ → m Unit
 
   /-- Check satisfiability of the current assertions. -/
-  checkSat : m (Except String Decision)
+  checkSat : m Decision
 
   /-- Check satisfiability under additional assumptions. -/
-  checkSatAssuming : List τ → m (Except String Decision)
+  checkSatAssuming : List τ → m Decision
 
   /-- After an `unsat` result from `checkSatAssuming`, retrieve the subset of
       assumptions that contributed to unsatisfiability. -/
-  getUnsatAssumptions : m (Except String (List τ))
+  getUnsatAssumptions : m (List τ)
 
   /-- Retrieve the model after a `sat` result.
       Keys are `(name, shadow_depth)` where 0 = most recently declared. -/
-  getModel : m (Except String (List ((String × Nat) × τ)))
+  getModel : m (List ((String × Nat) × τ))
 
   /-- Get values of specific terms in the current model. -/
-  getValue : List τ → m (Except String (List (τ × τ)))
+  getValue : List τ → m (List (τ × τ))
 
   /-- Convert a term to its SMT-LIB string representation, making model values inspectable.
       The returned string must be valid SMT-LIB syntax. -/
-  termToSMTLibString : τ → m (Except String String)
+  termToSMTLibString : τ → m String
 
   /-- Reset the solver session to its initial state. -/
   reset : m Unit

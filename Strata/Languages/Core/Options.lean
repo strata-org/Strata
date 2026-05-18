@@ -198,7 +198,7 @@ structure VerifyOptions where
   /-- Print elapsed time for each verification sub-step. -/
   profile : Bool
   /-- Use the incremental solver backend (stdin/stdout) instead of the
-      batch pipeline (write file, run solver). Enabled by default;
+      batch pipeline (write file, run solver). Opt-in via `--incremental`;
       disabled automatically with `--no-solve`. -/
   incremental : Bool
 
