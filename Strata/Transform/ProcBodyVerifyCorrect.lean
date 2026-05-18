@@ -843,11 +843,9 @@ theorem procBodyVerify_procedureCorrect
                     (.step _ _ _ .step_block_done (.refl _)))
                   (.step _ _ _ .step_seq_done (.refl _)))))))
 
-    have h_proj_store_agree : ∀ x, (ρ₀.store x).isSome →
-        ρ_proj.store x = ρ'.store x := by
-      intro x hx
-      simp only [ρ_proj, projectStore]
-      simp [hx]
+    have h_proj_store_agree : StoreAgreement ρ_proj.store ρ'.store := by
+      show StoreAgreement (projectStore ρ₀.store ρ'.store) ρ'.store
+      exact StoreAgreement.of_projectStore _ _
 
     have h_proj_eval : ρ_proj.eval = ρ'.eval := rfl
     have h_proj_hasFailure : ρ_proj.hasFailure = ρ'.hasFailure := rfl
