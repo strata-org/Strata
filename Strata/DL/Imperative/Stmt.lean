@@ -159,6 +159,48 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### UniqueInits
+
+Collect the names of every variable initialized by an `init` command anywhere
+in a statement (across all nesting levels). The companion predicate
+`Block.uniqueInits` asserts that the resulting list is `Nodup`, ruling out
+the edge case where a name is projected away by `step_block_done` and then
+reinitialized — a pattern the unstructured CFG cannot replicate because its
+flat namespace has no projection.
+-/
+
+mutual
+/-- Collect every variable initialized by an `init` command in a statement. -/
+@[expose] def Stmt.initVars (s : Stmt P (Cmd P)) : List P.Ident :=
+  match s with
+  | .cmd (.init x _ _ _) => [x]
+  | .cmd _ => []
+  | .block _ bss _ => Block.initVars bss
+  | .ite _ tss ess _ => Block.initVars tss ++ Block.initVars ess
+  | .loop _ _ _ bss _ => Block.initVars bss
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+  termination_by (Stmt.sizeOf s)
+
+/-- Collect every variable initialized by an `init` command in a block. -/
+@[expose] def Block.initVars (ss : List (Stmt P (Cmd P))) : List P.Ident :=
+  match ss with
+  | [] => []
+  | s :: rest => Stmt.initVars s ++ Block.initVars rest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- Every `init` in the program (across all nesting levels) names a unique
+variable. The flat-namespace CFG can simulate the structured semantics only
+when this holds — without uniqueness, structured `step_block_done` can
+project a name away that the structured semantics later reinitializes, a
+pattern the CFG cannot replicate. -/
+@[expose] def Block.uniqueInits (ss : List (Stmt P (Cmd P))) : Prop :=
+  (Block.initVars ss).Nodup
+
+---------------------------------------------------------------------
+
 /-! ### MapExpr
 
 Apply a function to all expressions in a statement's structural positions
