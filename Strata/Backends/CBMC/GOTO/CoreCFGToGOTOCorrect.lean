@@ -125,6 +125,27 @@ inductive Sim (cfg : Core.DetCFG) (pgm : Program)
   | sim_terminal :
     Sim cfg pgm wf (.terminal σ failed) (.terminal σ failed)
 
+/-! ## Inversion lemma: `EvalCommand` on a `.cmd` collapses to `EvalCmd` -/
+
+/-- The Core command-step relation `EvalCommand`, applied to a `.cmd c`
+constructor, is exactly the imperative `EvalCmd` relation on the inner
+command. The `.call` constructor is unreachable here because the LHS
+pattern matches `.cmd c`. -/
+theorem evalCommand_cmd_iff_evalCmd
+    (π : String → Option Core.Procedure)
+    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
+    (δ : Imperative.SemanticEval Core.Expression)
+    (σ σ' : Imperative.SemanticStore Core.Expression)
+    (c : Imperative.Cmd Core.Expression) (failed : Bool) :
+    Core.EvalCommand π φ δ σ (.cmd c) σ' failed ↔
+      Imperative.EvalCmd (P := Core.Expression) δ σ c σ' failed := by
+  constructor
+  · intro h
+    cases h with
+    | cmd_sem h => exact h
+  · intro h
+    exact .cmd_sem h
+
 /-! ## Block simulation lemma
 
 The crux: a single `EvalDetBlock` derivation corresponds to a sequence of
