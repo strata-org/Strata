@@ -3363,9 +3363,10 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
     (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
-    StepDetCFGStar extendEval cfg
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
-      (.cont k ρ₀.store ρ₀.hasFailure) := by
+      (.cont k σ_cfg ρ₀.hasFailure)
+      ∧ StoreAgreement ρ₀.store σ_cfg := by
   unfold flushCmds at h_gen
   simp only at h_gen  -- reduce the `match tr? with | none => ...` to just the none branch
   split at h_gen
@@ -3379,7 +3380,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     subst h_store; subst h_fail
     simp [Bool.or_false] at h_hf
     rw [h_hf]
-    exact ReflTrans.refl _
+    exact ⟨ρ₀.store, ReflTrans.refl _, StoreAgreement.refl _⟩
   case isFalse h_nonempty =>
     -- accum is non-empty: flushCmds generates a fresh label `entry` and a single block
     -- (entry, { cmds := accum.reverse, transfer := .goto k })
@@ -3416,7 +3417,7 @@ private theorem flushCmds_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         CFGConfig.cont k ρ₀.store ρ₀.hasFailure := by
       simp [updateFailure, h_hf, Bool.or_comm]
     rw [h_uf] at h_step
-    exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+    exact ⟨ρ₀.store, ReflTrans.step _ _ _ h_step (ReflTrans.refl _), StoreAgreement.refl _⟩
 
 private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
@@ -3441,9 +3442,10 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
     (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
-    StepDetCFGStar extendEval cfg
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
       (.cont entry σ_base hf_base)
-      (.cont k ρ'.store ρ'.hasFailure) := by
+      (.cont k σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg := by
   match h_match : ss with
   | [] =>
     -- stmtsToBlocks k [] exitConts accum = flushCmds "l$" accum .none k
@@ -3554,68 +3556,16 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       cases h_ite_inv with
       | inl h => exact StepStmtStar_wfv_preserved extendEval thenBranch ρ₀ ρ₁ h.1 h_nofd_then hwfv
       | inr h => exact StepStmtStar_wfv_preserved extendEval elseBranch ρ₀ ρ₁ h.1 h_nofd_else hwfv
-    -- Rest simulation via recursive call (rest is structurally smaller)
-    have h_accum_nil : EvalCmds P (EvalCmd P) ρ₁.eval ρ₁.store
-        [].reverse ρ₁.store false := EvalCmds.eval_cmds_none
-    have h_hf_rest : ρ₁.hasFailure = (ρ₁.hasFailure || false) := by simp
-    have h_rest_sim : StepDetCFGStar extendEval cfg
-        (.cont kNext ρ₁.store ρ₁.hasFailure)
-        (.cont k ρ'.store ρ'.hasFailure) :=
-      stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
-        h_rest_eq h_nofd_rest ρ₁.store ρ₁.hasFailure false ρ₁ ρ' hwfb₁ hwfv₁
-        h_rest_star h_accum_nil h_hf_rest cfg h_cfg_rest h_cfg_nodup
-    -- Case split on which branch was taken
-    cases h_ite_inv with
-    | inl h_true =>
-      obtain ⟨h_then_term, h_cond_tt⟩ := h_true
-      -- CFG steps: entry →[accum+condGoto(true)]→ tl
-      have h_flush_sim : StepDetCFGStar extendEval cfg
-          (.cont accumEntry σ_base hf_base)
-          (.cont tl ρ₀.store ρ₀.hasFailure) := by
-        have h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
-            cfg.blocks.lookup lbl = some blk :=
-          fun lbl blk h_mem => List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup lbl blk h_mem
-        exact flushCmds_condGoto_true extendEval accum e tl fl md l_ite gen_e gen_f
-          accumEntry accumBlocks h_flush_eq σ_base hf_base hf_accum ρ₀
-          hwfb h_accum h_hf h_cond_tt cfg h_cfg_accum h_lookup
-      -- CFG steps: tl →[then-branch blocks]→ kNext
-      -- Recursive call: thenBranch is structurally smaller than ss
-      have h_then_sim : StepDetCFGStar extendEval cfg
-          (.cont tl ρ₀.store ρ₀.hasFailure)
-          (.cont kNext ρ₁.store ρ₁.hasFailure) := by
-        have h_accum_nil_t : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
-            [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
-        have h_hf_t : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
-        exact stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
-          gen_ite gen_t tl tbs h_then_eq h_nofd_then ρ₀.store ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv h_then_term h_accum_nil_t h_hf_t cfg h_cfg_tbs h_cfg_nodup
-      exact StepDetCFGStar_trans
-        (StepDetCFGStar_trans h_flush_sim h_then_sim) h_rest_sim
-    | inr h_false =>
-      obtain ⟨h_else_term, h_cond_ff⟩ := h_false
-      -- CFG steps: entry →[accum+condGoto(false)]→ fl
-      have h_flush_sim : StepDetCFGStar extendEval cfg
-          (.cont accumEntry σ_base hf_base)
-          (.cont fl ρ₀.store ρ₀.hasFailure) := by
-        have h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
-            cfg.blocks.lookup lbl = some blk :=
-          fun lbl blk h_mem => List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup lbl blk h_mem
-        exact flushCmds_condGoto_false extendEval accum e tl fl md l_ite gen_e gen_f
-          accumEntry accumBlocks h_flush_eq σ_base hf_base hf_accum ρ₀
-          hwfb h_accum h_hf h_cond_ff cfg h_cfg_accum h_lookup
-      -- CFG steps: fl →[else-branch blocks]→ kNext
-      -- Recursive call: elseBranch is structurally smaller than ss
-      have h_else_sim : StepDetCFGStar extendEval cfg
-          (.cont fl ρ₀.store ρ₀.hasFailure)
-          (.cont kNext ρ₁.store ρ₁.hasFailure) := by
-        have h_accum_nil_f : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
-            [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
-        have h_hf_f : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
-        exact stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
-          gen_t gen_e fl fbs h_else_eq h_nofd_else ρ₀.store ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv h_else_term h_accum_nil_f h_hf_f cfg h_cfg_fbs h_cfg_nodup
-      exact StepDetCFGStar_trans
-        (StepDetCFGStar_trans h_flush_sim h_else_sim) h_rest_sim
+    -- TODO(Task E): assemble the chain entry → branch → kNext → rest → k.
+    -- Under the C+D existential refactor, the recursive calls on thenBranch/
+    -- elseBranch return ∃ σ_branch, ... ∧ StoreAgreement ρ₁.store σ_branch, but
+    -- rest's recursion (with empty accum) requires its CFG start-state to equal
+    -- ρ₁.store, forcing σ_branch = ρ₁.store. This equality is not derivable from
+    -- agreement alone. Re-closing this case requires Task E's `h_accum`
+    -- precondition rewrite (using StoreAgreement) so rest can start at σ_branch.
+    -- The pre-refactor proof (closed for both inl/inr) is preserved in git
+    -- history; see commits prior to the C+D bundle.
+    sorry
   | .ite .nondet thenBranch elseBranch md :: rest =>
     sorry
   | .loop guard measure invariants body md :: rest =>
@@ -3804,8 +3754,12 @@ private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNo
     exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
 
 /-- If the structured program reaches a terminal state, the CFG also reaches
-    the corresponding terminal state. Requires that the initial failure flag is
-    false, since the CFG always starts with failure = false. -/
+    a corresponding terminal state. Requires that the initial failure flag is
+    false, since the CFG always starts with failure = false.
+
+    The CFG end-store agrees with the structured end-store on every defined
+    variable (`StoreAgreement`); they may differ only on variables introduced
+    by inner scopes (e.g. `.block`'s local frames). -/
 theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     (extendEval : ExtendEval P)
@@ -3819,9 +3773,10 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
-    StepDetCFGStar extendEval cfg
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
       (.cont cfg.entry ρ₀.store false)
-      (.terminal ρ'.store ρ'.hasFailure) := by
+      (.terminal σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg := by
   intro cfg
   have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, h_lend⟩ :=
     stmtsToCFG_stmtsToBlocks_spec ss h_disj
@@ -3830,10 +3785,11 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     EvalCmds.eval_cmds_none
   have h_hf : ρ₀.hasFailure = (false || false) := by simp [hf₀]
   have h_nodup := stmtsToCFG_nodup_keys ss h_disj
-  have h_sim := stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
+  have ⟨σ_cfg, h_sim, h_agree⟩ :=
+    stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
       h_gen h_nofd ρ₀.store false false ρ₀ ρ' hwfb hwfv h_term h_accum h_hf cfg h_blocks h_nodup
-  have h_end := end_block_terminal extendEval cfg lend ρ'.store ρ'.eval ρ'.hasFailure h_lend
-  exact StepDetCFGStar_trans h_sim h_end
+  have h_end := end_block_terminal extendEval cfg lend σ_cfg ρ'.eval ρ'.hasFailure h_lend
+  exact ⟨σ_cfg, StepDetCFGStar_trans h_sim h_end, h_agree⟩
 
 /-- If the structured program reaches an exiting state, the CFG also reaches
     a corresponding terminal state (since `stmtsToCFG` resolves exits to jumps). -/
@@ -3866,9 +3822,9 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 
 /-! ## Main theorems -/
 
-/-- `stmtsToCFG` is sound: any terminal store reachable from the structured
-    execution is also reachable from the CFG execution, provided the evaluator
-    is well-formed and the initial failure flag is false.
+/-- `stmtsToCFG` is sound: any terminal state reachable from the structured
+    execution is reachable from the CFG execution at a store that agrees with
+    the structured store on every defined variable.
 
     Since CFGs have no "exiting" configs (exits are compiled to jumps), the
     exiting case is ruled out by the `h_exits` precondition. -/
@@ -3885,9 +3841,10 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
-    StepDetCFGStar extendEval cfg
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
       (.cont cfg.entry ρ₀.store false)
-      (.terminal ρ'.store ρ'.hasFailure) :=
+      (.terminal σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg :=
   stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hf₀ h_nofd h_disj h_term
 
 /-- Converse: any terminal store reachable from the CFG execution is also
