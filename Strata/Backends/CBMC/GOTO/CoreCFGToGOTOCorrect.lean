@@ -231,6 +231,163 @@ theorem single_cmd_simulation
     -- discharge the ASSERT premise without an extra hypothesis (sorry).
     sorry
 
+/-! ## Block-body simulation (post-LOCATION) -/
+
+/-- One block's `EvalDetBlock` derivation translates to a
+`StepGotoStar` covering the block's GOTO instruction range, *starting
+after* the leading `LOCATION` (i.e., at `pc + 1`). The wrapper
+`block_simulation` prepends one `step_location`.
+
+Three of four cases are proved (`goto_true`, `goto_false`, `terminal`);
+the inductive `cmd` case is sorry, requiring a separate induction
+generalization deferred to a follow-up. -/
+theorem block_body_simulation
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_wf_bool_goto : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (π : String → Option Core.Procedure)
+    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
+    (cfg : Core.DetCFG) (pgm : Program)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
+    -- The transfer-condition evaluator used inside an `EvalDetBlock`
+    -- derivation (existentially bound by `goto_true`/`goto_false`)
+    -- must agree with the outer `δ` on the boolean values relevant to
+    -- transfers. This is a compatibility hypothesis we discharge at the
+    -- callsite by uniformly using `δ` in CFG executions.
+    (h_eval_compat :
+      ∀ {δ' : Imperative.SemanticEval Core.Expression}
+        (σ' : Imperative.SemanticStore Core.Expression)
+        (e' : Core.Expression.Expr) (b' : Core.Expression.Expr),
+        δ' σ' e' = some b' → δ σ' e' = some b')
+    (l : String) (blk : Imperative.DetBlock String Core.Command Core.Expression)
+    (h_block : (l, blk) ∈ cfg.blocks)
+    (h_call_free : ∀ c ∈ blk.cmds, Core.CmdExt.isPlainCmd c = true)
+    (σ : Imperative.SemanticStore Core.Expression) (failed : Bool)
+    (c_after : Imperative.CFGConfig String Core.Expression)
+    (h_step :
+      Imperative.EvalDetBlock Core.Expression
+        (Core.EvalCommand π φ) (Core.EvalPureFunc φ) σ blk c_after)
+    (pc : Nat) (h_pc : wf.labelMap l = some pc)
+    : ∃ c_after_goto,
+        StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
+          (.running (pc + 1) σ failed) c_after_goto ∧
+        Sim cfg pgm wf
+          (Imperative.updateFailure c_after failed) c_after_goto := by
+  cases h_step with
+  | cmd h_eval h_rest =>
+    -- Inductive case: head command is `c`, tail is `cs`. Use
+    -- `single_cmd_simulation` for the head, then IH for the tail.
+    -- Generalizing the recursion over the block parameter requires care;
+    -- deferred as a follow-up.
+    sorry
+  | goto_true h_cond h_wf_bool_core =>
+    -- Empty body, condGoto cond t e md, output is .cont t σ false.
+    -- After `cases`, blk is unified with ⟨[], .condGoto cond t e md⟩.
+    -- Auto-bound binders order: md, δ_local, cond, t, e.
+    rename_i md δ_local cond t e
+    obtain ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
+            h_pc_neg_eq, h_pc_uncond_eq, h_neg_at, h_neg_ty, h_neg_tgt, h_lf_map,
+            h_uncond_at, h_uncond_ty, h_uncond_tgt, h_lt_map⟩ :=
+      wf.layout_cond_goto l _ pc cond t e md h_block h_pc rfl
+    -- For the empty-cmds case, blk = ⟨[], .condGoto cond t e md⟩, so
+    -- DetBlockBodyInstrCount blk = 0.
+    have h_body_zero :
+        DetBlockBodyInstrCount
+          (⟨[], (DetTransferCmd.condGoto cond t e md :
+              DetTransferCmd String Core.Expression)⟩ :
+            Imperative.DetBlock String Core.Command Core.Expression) = 0 := by
+      unfold DetBlockBodyInstrCount; rfl
+    have h_pc_neg : pc_neg = pc + 1 := by rw [h_pc_neg_eq, h_body_zero]
+    have h_pc_uncond : pc_uncond = pc + 1 + 1 := by
+      rw [h_pc_uncond_eq, h_pc_neg]
+    -- Pull layout_cond_goto_guards using the witnesses we already have.
+    obtain ⟨e_goto, h_neg_guard, h_translated, h_uncond_guard⟩ :=
+      wf.layout_cond_goto_guards l _ pc cond t e md instr_neg instr_uncond
+        h_block h_pc rfl
+        (by rw [h_body_zero]; exact h_pc_neg ▸ h_neg_at)
+        (by rw [h_body_zero]; exact h_pc_uncond ▸ h_uncond_at)
+    -- Build the bool reasoning: δ σ cond = some HasBool.tt
+    -- ⇒ δ_goto_bool σ e_goto = some true (via h_translated.bool_tt_agree)
+    -- ⇒ δ_goto_bool σ e_goto.not = some false (via h_wf_bool_goto.1).
+    have h_cond' : δ σ cond = some HasBool.tt := h_eval_compat σ cond _ h_cond
+    have h_g1 : δ_goto_bool σ e_goto = some true :=
+      (h_translated.bool_tt_agree σ).mp h_cond'
+    have h_wf_bool_neg := h_wf_bool_goto.left
+    have h_wf_bool_const := h_wf_bool_goto.right
+    have h_g2 : δ_goto_bool σ e_goto.not = some false :=
+      (h_wf_bool_neg σ e_goto).left.mp h_g1
+    -- Build the 2-step trace.
+    -- We have pc_neg = pc + 1 and pc_uncond = pc + 1 + 1.
+    rw [h_pc_neg] at h_neg_at
+    rw [h_pc_uncond] at h_uncond_at
+    refine ⟨GotoConfig.running pc_lt σ failed, ?_, .sim_cont h_lt_map⟩
+    unfold StepGotoStar
+    refine ReflTrans.step
+      (GotoConfig.running (pc + 1) σ failed)
+      (GotoConfig.running (pc + 1 + 1) σ failed)
+      (GotoConfig.running pc_lt σ failed) ?_ ?_
+    · refine StepGoto.step_goto_fallthrough h_neg_at h_neg_ty ?_
+      rw [h_neg_guard]; exact h_g2
+    · refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      refine StepGoto.step_goto_taken h_uncond_at h_uncond_ty h_uncond_tgt ?_
+      rw [h_uncond_guard]
+      exact h_wf_bool_const σ
+  | goto_false h_cond h_wf_bool_core =>
+    -- Empty body, condGoto cond t e md, output is .cont e σ false.
+    -- One-step trace: take the negated GOTO (because cond=ff means ¬cond=tt).
+    -- Auto-bound binders order: md, δ_local, cond, t, e.
+    rename_i md δ_local cond t e
+    obtain ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
+            h_pc_neg_eq, h_pc_uncond_eq, h_neg_at, h_neg_ty, h_neg_tgt, h_lf_map,
+            h_uncond_at, h_uncond_ty, h_uncond_tgt, h_lt_map⟩ :=
+      wf.layout_cond_goto l _ pc cond t e md h_block h_pc rfl
+    have h_body_zero :
+        DetBlockBodyInstrCount
+          (⟨[], (DetTransferCmd.condGoto cond t e md :
+              DetTransferCmd String Core.Expression)⟩ :
+            Imperative.DetBlock String Core.Command Core.Expression) = 0 := by
+      unfold DetBlockBodyInstrCount; rfl
+    have h_pc_neg : pc_neg = pc + 1 := by rw [h_pc_neg_eq, h_body_zero]
+    have h_pc_uncond : pc_uncond = pc + 1 + 1 := by
+      rw [h_pc_uncond_eq, h_pc_neg]
+    obtain ⟨e_goto, h_neg_guard, h_translated, _⟩ :=
+      wf.layout_cond_goto_guards l _ pc cond t e md instr_neg instr_uncond
+        h_block h_pc rfl
+        (by rw [h_body_zero]; exact h_pc_neg ▸ h_neg_at)
+        (by rw [h_body_zero]; exact h_pc_uncond ▸ h_uncond_at)
+    -- δ σ cond = some HasBool.ff ⇒ δ_goto_bool σ e_goto = some false
+    -- ⇒ δ_goto_bool σ e_goto.not = some true.
+    have h_cond' : δ σ cond = some HasBool.ff := h_eval_compat σ cond _ h_cond
+    have h_g1 : δ_goto_bool σ e_goto = some false :=
+      (h_translated.bool_ff_agree σ).mp h_cond'
+    have h_wf_bool_neg := h_wf_bool_goto.left
+    have h_g2 : δ_goto_bool σ e_goto.not = some true :=
+      (h_wf_bool_neg σ e_goto).right.mp h_g1
+    rw [h_pc_neg] at h_neg_at
+    refine ⟨GotoConfig.running pc_lf σ failed, ?_, .sim_cont h_lf_map⟩
+    unfold StepGotoStar
+    refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+    refine StepGoto.step_goto_taken h_neg_at h_neg_ty h_neg_tgt ?_
+    rw [h_neg_guard]; exact h_g2
+  | terminal =>
+    -- Empty body, finish md, output is .terminal σ false.
+    rename_i md
+    obtain ⟨pc_end, instr_end, h_pc_end_eq, h_end_at, h_end_ty⟩ :=
+      wf.layout_finish l _ pc md h_block h_pc rfl
+    have h_body_zero :
+        DetBlockBodyInstrCount
+          (⟨[], (DetTransferCmd.finish md :
+              DetTransferCmd String Core.Expression)⟩ :
+            Imperative.DetBlock String Core.Command Core.Expression) = 0 := by
+      unfold DetBlockBodyInstrCount; rfl
+    have h_pc_end : pc_end = pc + 1 := by rw [h_pc_end_eq, h_body_zero]
+    refine ⟨GotoConfig.terminal σ failed, ?_, .sim_terminal⟩
+    unfold StepGotoStar
+    refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+    rw [h_pc_end] at h_end_at
+    exact StepGoto.step_end_function h_end_at h_end_ty
+
 /-! ## Block simulation lemma
 
 The crux: a single `EvalDetBlock` derivation corresponds to a sequence of

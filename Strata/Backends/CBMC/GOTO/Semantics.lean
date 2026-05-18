@@ -207,7 +207,7 @@ must agree with itself under negation, and the constant `Expr.true` must
 evaluate to `true`. The latter is needed by the simulation proof when an
 unconditional GOTO instruction (whose guard is literally `Expr.true`) must
 be taken in the `condGoto` translation pattern. -/
-def WellFormedSemanticEvalGotoBool {P : PureExpr} [HasBool P] [HasNot P]
+@[expose] def WellFormedSemanticEvalGotoBool {P : PureExpr} [HasBool P] [HasNot P]
     (δ_goto_bool : SemanticEvalGotoBool P) : Prop :=
   (∀ σ (e : Expr),
     (δ_goto_bool σ e = some true ↔ δ_goto_bool σ e.not = some false) ∧

@@ -39,7 +39,7 @@ inductive CFGConfig (l : Type) (P : PureExpr): Type where
 
 /-- Monotonically update the `failure` flag in a `CFGConfig`. It will be set to
 `true` if the provided Boolean is `true`. -/
-def updateFailure : CFGConfig l P → Bool → CFGConfig l P
+@[expose] def updateFailure : CFGConfig l P → Bool → CFGConfig l P
 | .cont t σ failed, failed' => .cont t σ (failed || failed')
 | .terminal σ failed, failed' => .terminal σ (failed || failed')
 
