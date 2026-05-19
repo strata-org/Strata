@@ -11,6 +11,7 @@ public import Strata.DL.Imperative.KleeneSemanticsProps
 public import Strata.Transform.StructuredToUnstructured
 public import Strata.Transform.Specification
 public import Strata.DL.Util.StringGen
+public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.BasicBlock
 import all Strata.DL.Imperative.Cmd
 
@@ -1364,6 +1365,185 @@ theorem Block.userBlockLabels_exit_cons {P : PureExpr}
       Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
+
+/-! ### User init-variables (specialized to `Core.Expression`)
+
+NOTE on specialization: the helper below (and the simulation lemmas it
+supports) is specialized to `Core.Expression` because we use that
+instantiation's `Identifier Unit` constructor `⟨s, ()⟩`'s definitional
+injectivity to bridge between `String`-valued gen state and
+`P.Ident`-valued defined-vars lists.
+
+To generalize over `P : PureExpr`, would need a typeclass:
+```
+class HasIdentInj (P : PureExpr) extends HasIdent P where
+  ident_injective : Function.Injective (HasIdent.ident (P := P))
+```
+plus instances for each concrete `P` (Core.Expression, etc.), and threading
+`[HasIdentInj P]` through all simulation-lemma signatures and recursive
+calls. The cost is ~30 sites × typeclass-propagation lines. Specialization
+is preferred while no external consumer needs the generic form. -/
+
+/-- Per-stmt user init-variable names, recursing into block/ite/loop children.
+
+Specialized to `Core.Expression` so that `.cmd (.init x ty e md)`'s `x`
+field has type `Identifier Unit`, from which we can extract the underlying
+`String` via `.name`. -/
+@[expose] def Block.userInitVars :
+    List (Stmt Core.Expression (Cmd Core.Expression)) → List String
+  | [] => []
+  | s :: rest => stmtUserInitVars s ++ Block.userInitVars rest
+where
+  stmtUserInitVars : Stmt Core.Expression (Cmd Core.Expression) → List String
+    | .cmd (.init x _ _ _) => [x.name]
+    | .block _ ss _ => Block.userInitVars ss
+    | .ite _ tss ess _ => Block.userInitVars tss ++ Block.userInitVars ess
+    | .loop _ _ _ ss _ => Block.userInitVars ss
+    | _ => []
+
+/-! Equational lemmas for `userInitVars` (proved via `unfold`). -/
+
+theorem Block.userInitVars_block_cons
+    (l : String) (bss : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.block l bss md :: rest) =
+      Block.userInitVars bss ++ Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+theorem Block.userInitVars_ite_cons
+    (c : Imperative.ExprOrNondet Core.Expression)
+    (tss ess : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.ite c tss ess md :: rest) =
+      (Block.userInitVars tss ++ Block.userInitVars ess)
+        ++ Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+theorem Block.userInitVars_loop_cons
+    (c : Imperative.ExprOrNondet Core.Expression)
+    (m : Option Core.Expression.Expr)
+    (is : List (String × Core.Expression.Expr))
+    (bss : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.loop c m is bss md :: rest) =
+      Block.userInitVars bss ++ Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+theorem Block.userInitVars_init_cmd_cons
+    (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
+    (e : Imperative.ExprOrNondet Core.Expression)
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.cmd (.init x ty e md) :: rest) =
+      x.name :: Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+theorem Block.userInitVars_funcDecl_cons
+    (decl : Imperative.PureFunc Core.Expression)
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.funcDecl decl md :: rest) =
+      Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+theorem Block.userInitVars_typeDecl_cons
+    (tc : TypeConstructor) (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.typeDecl tc md :: rest) =
+      Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+theorem Block.userInitVars_exit_cons
+    (l : String) (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression))) :
+    Block.userInitVars (.exit l md :: rest) =
+      Block.userInitVars rest := by
+  show Block.userInitVars.stmtUserInitVars _ ++ _ = _
+  rfl
+
+/-- A predicate stating that user-provided init-variable names are shape-free
+(do not have the `_<digits>` generator suffix), so they cannot collide with
+fresh identifiers produced by the translator's `StringGenState.gen`. This is
+the variable-side analog of `userLabelsDisjoint`'s shape-free clause; see
+that definition for the labels analog. -/
+@[expose] def Block.userVarsDisjoint
+    (ss : List (Stmt Core.Expression (Cmd Core.Expression))) : Prop :=
+  ∀ v ∈ Block.userInitVars ss, ¬ String.HasUnderscoreDigitSuffix v
+
+/-- `userVarsDisjoint` distributes over `cons`: if a longer list is disjoint,
+so is the tail. -/
+private theorem Block.userVarsDisjoint_tail
+    (s : Stmt Core.Expression (Cmd Core.Expression))
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (h : Block.userVarsDisjoint (s :: rest)) :
+    Block.userVarsDisjoint rest := by
+  intro v hv
+  apply h
+  unfold Block.userInitVars
+  exact List.mem_append.mpr (Or.inr hv)
+
+/-- `userVarsDisjoint` for the body of a `Stmt.block`: if the outer
+`Stmt.block l bss md :: rest` is disjoint, so are `bss`'s user init vars. -/
+private theorem Block.userVarsDisjoint_block_body
+    (l : String) (bss : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (h : Block.userVarsDisjoint (Stmt.block l bss md :: rest)) :
+    Block.userVarsDisjoint bss := by
+  intro v hv
+  apply h
+  rw [Block.userInitVars_block_cons]
+  exact List.mem_append.mpr (Or.inl hv)
+
+/-- `userVarsDisjoint` for the then-branch of a `Stmt.ite`. -/
+private theorem Block.userVarsDisjoint_ite_then
+    (c : Imperative.ExprOrNondet Core.Expression)
+    (tss ess : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (h : Block.userVarsDisjoint (Stmt.ite c tss ess md :: rest)) :
+    Block.userVarsDisjoint tss := by
+  intro v hv
+  apply h
+  rw [Block.userInitVars_ite_cons]
+  exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl hv)))
+
+/-- `userVarsDisjoint` for the else-branch of a `Stmt.ite`. -/
+private theorem Block.userVarsDisjoint_ite_else
+    (c : Imperative.ExprOrNondet Core.Expression)
+    (tss ess : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (h : Block.userVarsDisjoint (Stmt.ite c tss ess md :: rest)) :
+    Block.userVarsDisjoint ess := by
+  intro v hv
+  apply h
+  rw [Block.userInitVars_ite_cons]
+  exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr hv)))
+
+/-- `userVarsDisjoint` for the body of a `Stmt.loop`. -/
+private theorem Block.userVarsDisjoint_loop_body
+    (c : Imperative.ExprOrNondet Core.Expression)
+    (m : Option Core.Expression.Expr)
+    (is : List (String × Core.Expression.Expr))
+    (bss : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (md : MetaData Core.Expression)
+    (rest : List (Stmt Core.Expression (Cmd Core.Expression)))
+    (h : Block.userVarsDisjoint (Stmt.loop c m is bss md :: rest)) :
+    Block.userVarsDisjoint bss := by
+  intro v hv
+  apply h
+  rw [Block.userInitVars_loop_cons]
+  exact List.mem_append.mpr (Or.inl hv)
 
 
 /-- A predicate stating that user-provided block labels:
