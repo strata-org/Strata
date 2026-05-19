@@ -1152,6 +1152,10 @@ def synthRefEq (exprMd : StmtExprMd) (expr : StmtExpr)
     typeMismatch lhs'.source (some expr) "expected a reference type" lhsTy
   unless isReference ctx rhsTy do
     typeMismatch rhs'.source (some expr) "expected a reference type" rhsTy
+  unless isConsistent ctx lhsTy rhsTy do
+    let diag := diagnosticFromSource source
+      s!"'{expr.constrName}' operands have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
+    modify fun s => { s with errors := s.errors.push diag }
   pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
   termination_by (exprMd, 1)
   decreasing_by
