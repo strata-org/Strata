@@ -65,15 +65,21 @@ public class StrataGenerator : ReadOnlyVisitor {
     //   3. Constants, Functions, Globals — registered last; in a
     //      proc-vs-const collision the constant is always renamed.
     private readonly Dictionary<Declaration, string> _renames = new();
+    // True when the input is SMACK-generated Boogie. Gates SMACK-specific
+    // accommodations (synthetic `requires (p != 0)` on assert_.<type> procedures).
+    // The companion `InferModifies = true` knob is set on the Boogie options
+    // by the BoogieToStrata.Main entrypoint, also gated on this flag.
+    private readonly bool _smack;
 
-    private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
+    private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program, bool smack) {
         _options = options;
         _writer = writer;
         _program = program;
+        _smack = smack;
     }
 
-    public static void EmitProgramAsStrata(VCGenOptions options, Program p, TokenTextWriter writer) {
-        var generator = new StrataGenerator(options, writer, p);
+    public static void EmitProgramAsStrata(VCGenOptions options, Program p, TokenTextWriter writer, bool smack) {
+        var generator = new StrataGenerator(options, writer, p, smack);
 
         var fieldTypeCollector = new FieldTypeCollector();
         fieldTypeCollector.Visit(p);
