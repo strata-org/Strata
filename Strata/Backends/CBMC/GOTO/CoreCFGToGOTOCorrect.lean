@@ -478,17 +478,18 @@ theorem block_simulation
           (.running pc σ failed) c_after_goto ∧
         Sim cfg pgm wf
           (Imperative.updateFailure c_after failed) c_after_goto := by
-  -- This is the principal proof obligation. It requires:
-  --   (a) Induction on the `EvalDetBlock` derivation,
-  --   (b) Per-command lemmas matching each `Imperative.Cmd` constructor
-  --       to its `StepGoto` counterpart, using `h_expr` to bridge
-  --       expression evaluation between Core and GOTO,
-  --   (c) Transfer-case lemmas using `wf.layout_cond_goto` /
-  --       `wf.layout_finish` to step through the trailing
-  --       GOTO/END_FUNCTION instructions,
-  --   (d) `h_call_free` ensures every command in the block is `CmdExt.cmd`
-  --       (not `CmdExt.call`), so `EvalCommand` reduces to `EvalCmd`.
-  sorry
+  -- Step 1: take the LOCATION step.
+  obtain ⟨i_loc, h_loc_at, h_loc_ty⟩ :=
+    wf.layout_location l blk pc h_block h_pc
+  -- Step 2: delegate to block_body_simulation.
+  obtain ⟨c_after_goto, h_body_steps, h_sim⟩ :=
+    block_body_simulation δ δ_goto δ_goto_bool h_wf_bool π φ
+      cfg pgm wf l blk h_block h_call_free σ failed c_after h_step pc h_pc
+  -- Step 3: prepend the LOCATION step to the body trace.
+  refine ⟨c_after_goto, ?_, h_sim⟩
+  unfold StepGotoStar at h_body_steps ⊢
+  exact ReflTrans.step _ _ _
+    (StepGoto.step_location h_loc_at h_loc_ty) h_body_steps
 
 /-! ## Main forward-simulation theorem
 
