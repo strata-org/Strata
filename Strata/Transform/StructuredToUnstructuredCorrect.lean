@@ -4249,6 +4249,80 @@ private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
     intro x h_σ_base_x h_x_not_def
     exact agreement_helper_unchanged_at_x_multi h_accum_cfg h_x_not_def h_σ_base_x
 
+/-- Helper: variant of `flushCmds_simulation_agree` for the `flushCmds` shape
+where the transfer is provided as `.some (.goto bk md)` (used in the `.exit`
+constructor of `stmtsToBlocks`).  The block always materializes a single
+fresh block (regardless of whether `accum` is empty), since the transfer is
+explicit. -/
+private theorem flushCmds_goto_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    (extendEval : ExtendEval P)
+    (pfx : String) (accum : List (Cmd P)) (md : MetaData P) (bk : String)
+    (gen gen' : StringGenState)
+    (entry : String) (blocks : DetBlocks String (Cmd P) P)
+    (h_gen : flushCmds pfx accum (.some (.goto bk md)) bk gen
+      = ((entry, blocks), gen'))
+    (σ_struct_base σ_base : SemanticStore P)
+    (hf_base hf_accum : Bool)
+    (ρ₀ : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
+    (h_agree_entry : StoreAgreement σ_struct_base σ_base)
+    (h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none)
+    (h_unique_accum : (Cmds.definedVars accum.reverse).Nodup)
+    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
+    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
+      (.cont entry σ_base hf_base)
+      (.cont bk σ_cfg ρ₀.hasFailure)
+      ∧ StoreAgreement ρ₀.store σ_cfg
+      ∧ (∀ x, σ_base x = none → x ∉ Cmds.definedVars accum.reverse → σ_cfg x = none) := by
+  unfold flushCmds at h_gen
+  simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
+  injection h_gen with h_pair h_gen_eq
+  injection h_pair with h_entry_eq h_blks_eq
+  subst h_entry_eq; subst h_blks_eq
+  have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
+    EvalCmds_under_agreement ρ₀.eval accum.reverse h_wf_def h_congr
+      σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
+      h_unique_accum
+  have h_mem :
+      ((StringGenState.gen pfx gen).fst,
+        ({ cmds := accum.reverse, transfer := DetTransferCmd.goto bk md }
+          : DetBlock String (Cmd P) P)) ∈ cfg.blocks :=
+    h_cfg_blocks _ (List.Mem.head _)
+  have h_cond_tt : ρ₀.eval σ_cfg_after HasBool.tt = .some HasBool.tt :=
+    eval_tt_is_tt ρ₀.eval σ_cfg_after hwfv
+  have h_goto_eq :
+      (DetTransferCmd.goto bk md : DetTransferCmd String P) =
+        DetTransferCmd.condGoto HasBool.tt bk bk md := rfl
+  have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
+      σ_base ⟨accum.reverse, DetTransferCmd.goto bk md⟩
+      (.cont bk σ_cfg_after hf_accum) := by
+    rw [h_goto_eq]
+    exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb
+  have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
+      some { cmds := accum.reverse, transfer := DetTransferCmd.goto bk md } :=
+    List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
+  have h_step : @StepCFG _ _ (Cmd P) _ P
+      (EvalDetBlock P (EvalCmd P) extendEval) cfg
+      (.cont (StringGenState.gen pfx gen).fst σ_base hf_base)
+      (updateFailure (.cont bk σ_cfg_after hf_accum) hf_base) :=
+    StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+  have h_uf : @updateFailure String P (.cont bk σ_cfg_after hf_accum) hf_base =
+      CFGConfig.cont bk σ_cfg_after ρ₀.hasFailure := by
+    simp [updateFailure, h_hf, Bool.or_comm]
+  rw [h_uf] at h_step
+  refine ⟨σ_cfg_after, ReflTrans.step _ _ _ h_step (ReflTrans.refl _), h_agree_after, ?_⟩
+  intro x h_σ_base_x h_x_not_def
+  exact agreement_helper_unchanged_at_x_multi h_accum_cfg h_x_not_def h_σ_base_x
+
+mutual
 /-- The central simulation lemma, written in a StoreAgreement-based shape.
 
 The structured execution runs `accum.reverse` from `σ_struct_base` to `ρ₀.store`,
@@ -4804,12 +4878,14 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     -- Step 3: body executes in the block context.
     -- Step 4: step_block_done OR step_block_exit_match terminates the block,
     --         producing { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }.
+    -- Use the stronger inversion `block_some_reaches_terminal` for our explicitly-labelled
+    -- block; this constrains the exit-match label to equal `label`.
     have h_block_inv :
         (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendEval
           (.stmts body ρ₀) (.terminal ρ_inner) ∧
           ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) ∨
-        (∃ lbl ρ_inner, StepStmtStar P (EvalCmd P) extendEval
-          (.stmts body ρ₀) (.exiting lbl ρ_inner) ∧
+        (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendEval
+          (.stmts body ρ₀) (.exiting label ρ_inner) ∧
           ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }) := by
       cases h_block_star with
       | step _ _ _ hstep1 hrest1 =>
@@ -4823,21 +4899,21 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           | step _ _ _ hstep2 hrest2 =>
             cases hstep2 with
             | step_block =>
-              exact block_reaches_terminal P (EvalCmd P) extendEval hrest2
+              exact block_some_reaches_terminal P (EvalCmd P) extendEval hrest2
     -- Extract ρ_inner. In both cases (terminal/exit-match), the projection eq holds.
     obtain ⟨ρ_inner, h_body_term_or_exit, h_ρ_blk_eq⟩ : ∃ ρ_inner,
         (StepStmtStar P (EvalCmd P) extendEval
           (.stmts body ρ₀) (.terminal ρ_inner) ∨
-         ∃ lbl, StepStmtStar P (EvalCmd P) extendEval
-          (.stmts body ρ₀) (.exiting lbl ρ_inner)) ∧
+         StepStmtStar P (EvalCmd P) extendEval
+          (.stmts body ρ₀) (.exiting label ρ_inner)) ∧
         ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := by
       cases h_block_inv with
       | inl h =>
         obtain ⟨ρ_i, hterm, heq⟩ := h
         exact ⟨ρ_i, Or.inl hterm, heq⟩
       | inr h =>
-        obtain ⟨lbl, ρ_i, hexit, heq⟩ := h
-        exact ⟨ρ_i, Or.inr ⟨lbl, hexit⟩, heq⟩
+        obtain ⟨ρ_i, hexit, heq⟩ := h
+        exact ⟨ρ_i, Or.inr hexit, heq⟩
     -- noFuncDecl projections.
     have h_nofd_body : Block.noFuncDecl body = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
@@ -5031,20 +5107,149 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           have h_σ_body_x : σ_cfg_body x = none :=
             h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
           exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
-      | inr h_body_exit =>
-        -- Body exits with matching label.  The block consumes the exit and
-        -- produces ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }
-        -- — same shape as the body-terminates case.  CFG-side, body's exitCont
-        -- `(some label, kNext) :: exitConts` resolves the `.exit label` inside body
-        -- to a `.goto kNext`, so body's CFG reaches kNext.
-        --
-        -- A general body-exit-to-cont helper (a sibling of stmtsToBlocks_simulation
-        -- that handles structured exits caught by exitConts) is needed here.  The
-        -- existing `stmtsToBlocks_simulation_exiting` only handles outer-exit
-        -- (where the OUTER program's CFG reaches `.terminal`), not body-exit
-        -- caught by a labeled block's exit-cont.  Adding such a helper is out of
-        -- scope for Phase 3; deferring to a follow-up phase.
-        sorry
+      | inr h_body_exit_star =>
+        -- Body exits with matching label.  Same final-store shape as inl:
+        -- ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }.
+        -- CFG-side: body's exitCont (some label, kNext) resolves `.exit label`
+        -- inside body to a goto-kNext, so body's CFG reaches kNext.  Use
+        -- `stmtsToBlocks_simulation_to_cont` for the body recursion.
+        -- exitConts for body = (some label, kNext) :: exitConts.
+        have h_label_lookup :
+            ((some label, kNext) :: exitConts).lookup (some label) = some kNext := by
+          simp [List.lookup]
+        -- Freshness for body recursion.
+        have h_fresh_body_inits_after : ∀ x ∈ Block.initVars body, σ_cfg_after x = none := by
+          intro x hx
+          have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
+            intro h_in_accum
+            have h_disj_lr := List.nodup_append.mp h_unique_combined
+            rw [h_initvars_eq] at h_disj_lr
+            have h_disj := h_disj_lr.2.2
+            exact h_disj x h_in_accum x (List.mem_append_left _ hx) rfl
+          have h_σ_base_x : σ_base x = none := by
+            apply h_fresh_combined
+            apply List.mem_append_right
+            rw [h_initvars_eq]
+            exact List.mem_append_left _ hx
+          exact h_preserve_flush x h_σ_base_x h_x_not_accum
+        have h_combined_body :
+            ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars body,
+            σ_cfg_after x = none := by
+          intro x hx
+          simp [Cmds.definedVars] at hx
+          exact h_fresh_body_inits_after x hx
+        have h_unique_combined_body :
+            (Cmds.definedVars [].reverse ++ Block.initVars body).Nodup := by
+          simp [Cmds.definedVars]
+          unfold Block.uniqueInits at h_unique_body
+          exact h_unique_body
+        have h_accum_nil : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store
+            [].reverse ρ₀.store false := EvalCmds.eval_cmds_none
+        have h_hf_body : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
+        -- Recurse on body with _to_cont.
+        have ⟨σ_cfg_body, h_step_body, h_agree_body, h_preserve_body⟩ :=
+          stmtsToBlocks_simulation_to_cont extendEval kNext body
+            ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
+            h_nofd_body h_unique_body
+            ρ₀.store σ_cfg_after ρ₀.hasFailure false
+            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr
+            h_body_exit_star h_accum_nil h_agree_after
+            h_combined_body h_unique_combined_body h_hf_body cfg h_cfg_bbs h_cfg_nodup
+        -- Bridge structured-side projection to CFG.
+        have h_agree_proj : StoreAgreement (projectStore ρ₀.store ρ_inner.store) ρ_inner.store :=
+          StoreAgreement.of_projectStore _ _
+        have h_agree_block_body : StoreAgreement ρ_blk.store σ_cfg_body := by
+          rw [h_ρ_blk_eq]
+          exact StoreAgreement.trans h_agree_proj h_agree_body
+        -- Eval well-formedness preservation through body (to .exiting).
+        have h_eval_eq : ρ_inner.eval = ρ₀.eval :=
+          smallStep_noFuncDecl_preserves_eval_block_exiting P (EvalCmd P) extendEval
+            body ρ₀ ρ_inner label h_nofd_body h_body_exit_star
+        have hwfb₁ : WellFormedSemanticEvalBool ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalBool ρ_inner.eval
+          rw [h_eval_eq]; exact hwfb
+        have hwfv₁ : WellFormedSemanticEvalVal ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVal ρ_inner.eval
+          rw [h_eval_eq]; exact hwfv
+        have hwf_def₁ : WellFormedSemanticEvalDef ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalDef ρ_inner.eval
+          rw [h_eval_eq]; exact hwf_def
+        have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
+          rw [h_eval_eq]; exact hwf_congr
+        -- Freshness for rest's inits at σ_cfg_body.
+        have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
+          intro x hx
+          have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
+            intro h_in_accum
+            have h_disj_lr := List.nodup_append.mp h_unique_combined
+            rw [h_initvars_eq] at h_disj_lr
+            have h_disj := h_disj_lr.2.2
+            exact h_disj x h_in_accum x
+              (List.mem_append_right _ hx) rfl
+          have h_σ_base_x : σ_base x = none := by
+            apply h_fresh_combined
+            apply List.mem_append_right
+            rw [h_initvars_eq]
+            exact List.mem_append_right _ hx
+          exact h_preserve_flush x h_σ_base_x h_x_not_accum
+        have h_fresh_rest_inits_body : ∀ x ∈ Block.initVars rest, σ_cfg_body x = none := by
+          intro x hx
+          have h_x_not_body : x ∉ Block.initVars body := by
+            intro h_in_body
+            unfold Block.uniqueInits at h_unique
+            rw [h_initvars_eq] at h_unique
+            have h_disj_lr := (List.nodup_append.mp h_unique).2.2
+            exact h_disj_lr x h_in_body x hx rfl
+          have h_σ_after_x : σ_cfg_after x = none := h_fresh_rest_inits_after x hx
+          have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          exact h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+        have h_combined_rest :
+            ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
+            σ_cfg_body x = none := by
+          intro x hx
+          simp [Cmds.definedVars] at hx
+          exact h_fresh_rest_inits_body x hx
+        have h_unique_combined_rest :
+            (Cmds.definedVars [].reverse ++ Block.initVars rest).Nodup := by
+          simp [Cmds.definedVars]
+          unfold Block.uniqueInits at h_unique_rest
+          exact h_unique_rest
+        have h_accum_nil_r : EvalCmds P (EvalCmd P) ρ_blk.eval ρ_blk.store
+            [].reverse ρ_blk.store false := EvalCmds.eval_cmds_none
+        have h_hf_r : ρ_blk.hasFailure = (ρ_blk.hasFailure || false) := by simp
+        have h_hasFail_blk : ρ_blk.hasFailure = ρ_inner.hasFailure := by
+          rw [h_ρ_blk_eq]
+        -- Recurse on rest with _simulation.
+        have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
+          stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
+            h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            h_rest_star h_accum_nil_r h_agree_block_body
+            h_combined_rest h_unique_combined_rest h_hf_r cfg h_cfg_rest h_cfg_nodup
+        refine ⟨σ_cfg_rest, ?_, h_agree_rest, ?_⟩
+        · have h_step_body' : StepDetCFGStar extendEval cfg
+              (.cont bl σ_cfg_after ρ₀.hasFailure)
+              (.cont kNext σ_cfg_body ρ_blk.hasFailure) := by
+            rw [h_hasFail_blk]; exact h_step_body
+          exact StepDetCFGStar_trans
+            (StepDetCFGStar_trans h_step_flush h_step_body') h_step_rest
+        · intro x h_σ_x h_x_not_accum h_x_not_inits
+          have h_x_not_body : x ∉ Block.initVars body := by
+            intro hx
+            apply h_x_not_inits
+            rw [h_initvars_eq]
+            exact List.mem_append_left _ hx
+          have h_x_not_rest : x ∉ Block.initVars rest := by
+            intro hx
+            apply h_x_not_inits
+            rw [h_initvars_eq]
+            exact List.mem_append_right _ hx
+          have h_σ_after_x : σ_cfg_after x = none := h_preserve_flush x h_σ_x h_x_not_accum
+          have h_nil_not : x ∉ Cmds.definedVars [].reverse := by simp [Cmds.definedVars]
+          have h_σ_body_x : σ_cfg_body x = none :=
+            h_preserve_body x h_σ_after_x h_nil_not h_x_not_body
+          exact h_preserve_rest x h_σ_body_x h_nil_not h_x_not_rest
     · -- Case l ≠ bl: blocks = accumBlocks ++ [(label, goto bl)] ++ bbs ++ bsNext, entry = label.
       -- The CFG entry `label` has a trampoline `(label, {cmds:=[], goto bl})` that
       -- routes directly to body's CFG entry `bl`, bypassing accumBlocks.  When
@@ -5131,79 +5336,6 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
 termination_by sizeOf ss
 decreasing_by
   all_goals (subst h_match; simp_wf; omega)
-
-/-- Helper: variant of `flushCmds_simulation_agree` for the `flushCmds` shape
-where the transfer is provided as `.some (.goto bk md)` (used in the `.exit`
-constructor of `stmtsToBlocks`).  The block always materializes a single
-fresh block (regardless of whether `accum` is empty), since the transfer is
-explicit. -/
-private theorem flushCmds_goto_simulation_agree {P : PureExpr} [HasFvar P] [HasNot P]
-    [HasVal P] [HasBoolVal P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
-    (extendEval : ExtendEval P)
-    (pfx : String) (accum : List (Cmd P)) (md : MetaData P) (bk : String)
-    (gen gen' : StringGenState)
-    (entry : String) (blocks : DetBlocks String (Cmd P) P)
-    (h_gen : flushCmds pfx accum (.some (.goto bk md)) bk gen
-      = ((entry, blocks), gen'))
-    (σ_struct_base σ_base : SemanticStore P)
-    (hf_base hf_accum : Bool)
-    (ρ₀ : Env P)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
-    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
-    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
-    (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
-    (h_agree_entry : StoreAgreement σ_struct_base σ_base)
-    (h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none)
-    (h_unique_accum : (Cmds.definedVars accum.reverse).Nodup)
-    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
-    (cfg : CFG String (DetBlock String (Cmd P) P))
-    (h_cfg_blocks : ∀ b ∈ blocks, b ∈ cfg.blocks)
-    (h_cfg_nodup : (cfg.blocks.map Prod.fst).Nodup) :
-    ∃ σ_cfg, StepDetCFGStar extendEval cfg
-      (.cont entry σ_base hf_base)
-      (.cont bk σ_cfg ρ₀.hasFailure)
-      ∧ StoreAgreement ρ₀.store σ_cfg
-      ∧ (∀ x, σ_base x = none → x ∉ Cmds.definedVars accum.reverse → σ_cfg x = none) := by
-  unfold flushCmds at h_gen
-  simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
-  injection h_gen with h_pair h_gen_eq
-  injection h_pair with h_entry_eq h_blks_eq
-  subst h_entry_eq; subst h_blks_eq
-  have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
-    EvalCmds_under_agreement ρ₀.eval accum.reverse h_wf_def h_congr
-      σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
-      h_unique_accum
-  have h_mem :
-      ((StringGenState.gen pfx gen).fst,
-        ({ cmds := accum.reverse, transfer := DetTransferCmd.goto bk md }
-          : DetBlock String (Cmd P) P)) ∈ cfg.blocks :=
-    h_cfg_blocks _ (List.Mem.head _)
-  have h_cond_tt : ρ₀.eval σ_cfg_after HasBool.tt = .some HasBool.tt :=
-    eval_tt_is_tt ρ₀.eval σ_cfg_after hwfv
-  have h_goto_eq :
-      (DetTransferCmd.goto bk md : DetTransferCmd String P) =
-        DetTransferCmd.condGoto HasBool.tt bk bk md := rfl
-  have h_eval_block : EvalDetBlock P (EvalCmd P) extendEval
-      σ_base ⟨accum.reverse, DetTransferCmd.goto bk md⟩
-      (.cont bk σ_cfg_after hf_accum) := by
-    rw [h_goto_eq]
-    exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_accum_cfg h_cond_tt hwfb
-  have h_lkp : cfg.blocks.lookup (StringGenState.gen pfx gen).fst =
-      some { cmds := accum.reverse, transfer := DetTransferCmd.goto bk md } :=
-    List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ h_mem
-  have h_step : @StepCFG _ _ (Cmd P) _ P
-      (EvalDetBlock P (EvalCmd P) extendEval) cfg
-      (.cont (StringGenState.gen pfx gen).fst σ_base hf_base)
-      (updateFailure (.cont bk σ_cfg_after hf_accum) hf_base) :=
-    StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
-  have h_uf : @updateFailure String P (.cont bk σ_cfg_after hf_accum) hf_base =
-      CFGConfig.cont bk σ_cfg_after ρ₀.hasFailure := by
-    simp [updateFailure, h_hf, Bool.or_comm]
-  rw [h_uf] at h_step
-  refine ⟨σ_cfg_after, ReflTrans.step _ _ _ h_step (ReflTrans.refl _), h_agree_after, ?_⟩
-  intro x h_σ_base_x h_x_not_def
-  exact agreement_helper_unchanged_at_x_multi h_accum_cfg h_x_not_def h_σ_base_x
 
 /-- Sibling lemma to `stmtsToBlocks_simulation`: handles the case where the
 structured execution `.exiting label` is caught by an entry in `exitConts`.
@@ -5497,6 +5629,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
 termination_by sizeOf ss
 decreasing_by
   all_goals (subst h_match; simp_wf; omega)
+end
 
 /-- Variant of `stmtsToBlocks_simulation` for when the structured execution
 exits rather than terminates. The CFG still reaches some terminal state. -/

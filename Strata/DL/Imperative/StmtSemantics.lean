@@ -626,6 +626,55 @@ theorem block_reaches_terminal
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
+/-- Stronger inversion of `.block (.some label) σ_parent inner → .terminal`:
+    when the block has an explicit label, the second disjunct (exit-match)
+    constrains the inner exit-label to equal the block's label.  This is
+    needed for downstream simulation lemmas that look up the exit's
+    continuation in `exitConts` keyed by the matching label. -/
+theorem block_some_reaches_terminal
+    {inner : Config P CmdT} {label : String} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval
+      (.block (.some label) σ_parent inner) (.terminal ρ')) :
+    (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+    (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting label ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) := by
+  -- Same structure as block_reaches_terminal, but specialized to .some label.
+  -- At step_block_exit_match, the rule's `l` is unified with `label` (because
+  -- the rule premise `.some label = .some l` forces this).
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner ρ', src = .block (.some label) σ_parent inner → tgt = .terminal ρ' →
+      (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) ∨
+      (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting label ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store }) from
+    this _ _ hstar _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      match ih _ _ rfl htgt with
+      | .inl ⟨ρ_inner, hterm, heq⟩ => exact .inl ⟨ρ_inner, .step _ _ _ h hterm, heq⟩
+      | .inr ⟨ρ_inner, hexit, heq⟩ => exact .inr ⟨ρ_inner, .step _ _ _ h hexit, heq⟩
+    | step_block_done =>
+      subst htgt; cases hrest with
+      | refl => exact .inl ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match heq =>
+      -- heq : .some label = .some l (where l is implicit and must equal label)
+      -- The constructor's premise unifies l with label via injection on heq.
+      -- After unification, the inner config is .exiting label _.
+      injection heq with h_eq
+      subst h_eq
+      subst htgt; cases hrest with
+      | refl => exact .inr ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block.  The env is projected. -/
 theorem block_reaches_exiting
@@ -1019,7 +1068,7 @@ theorem block_star_extract_inner
 
 /-- A single step preserves eval when noFuncDecl holds.
     The only step that changes eval is step_funcDecl, which is excluded. -/
-private theorem step_preserves_eval_noFuncDecl
+theorem step_preserves_eval_noFuncDecl
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
     (hnofd : Config.noFuncDecl c₁) :
@@ -1114,6 +1163,25 @@ theorem smallStep_noFuncDecl_preserves_eval_block
     (bss : List (Stmt P CmdT)) (ρ ρ' : Env P)
     (hnofd : Block.noFuncDecl bss = true)
     (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.eval = ρ.eval := by
+  suffices ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.getEnv.eval = c₁.getEnv.eval by
+    exact this _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
+    rw [ih hnofd_mid, heq]
+
+/-- When a block has no function declarations, small-step execution
+    preserves the evaluator (variant for `.exiting` target). -/
+theorem smallStep_noFuncDecl_preserves_eval_block_exiting
+    (bss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (hnofd : Block.noFuncDecl bss = true)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.exiting lbl ρ')) :
     ρ'.eval = ρ.eval := by
   suffices ∀ c₁ c₂,
       Config.noFuncDecl c₁ →
