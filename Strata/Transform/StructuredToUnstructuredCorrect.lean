@@ -4652,6 +4652,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ'))
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
@@ -4723,6 +4724,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have hwf_def' : WellFormedSemanticEvalDef ρ₁.eval := by rw [heval_eq_c]; exact hwf_def
     have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.eval := by
       rw [heval_eq_c]; exact hwf_congr
+    have hwf_var' : WellFormedSemanticEvalVar ρ₁.eval := by rw [heval_eq_c]; exact hwf_var
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
@@ -4762,7 +4764,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       stmtsToBlocks_simulation extendEval k rest exitConts (c :: accum) gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest
         σ_struct_base σ_base hf_base (hf_accum || failed_c)
-        ρ₁ ρ' hwfb' hwfv' hwf_def' hwf_congr' h_rest_star h_accum'
+        ρ₁ ρ' hwfb' hwfv' hwf_def' hwf_congr' hwf_var' h_rest_star h_accum'
         h_agree_entry h_fresh_combined' h_unique_combined' h_hf'
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix'
         cfg h_cfg_blocks h_cfg_nodup
@@ -4884,6 +4886,8 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       rw [h_eval_eq]; exact hwf_def
     have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ₁.eval := by
       rw [h_eval_eq]; exact hwf_congr
+    have hwf_var₁ : WellFormedSemanticEvalVar ρ₁.eval := by
+      rw [h_eval_eq]; exact hwf_var
     have h_unique_then : Block.uniqueInits thenBranch :=
       Block.uniqueInits.ite_then h_unique
     have h_unique_else : Block.uniqueInits elseBranch :=
@@ -5076,7 +5080,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
           gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
           ρ₀.store σ_cfg_after ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr h_then_term h_accum_nil_t h_agree_after
+          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var h_then_term h_accum_nil_t h_agree_after
           h_combined_then h_unique_combined_then h_hf_t
           h_wf_ite h_store_no_gens_after_ite h_then_no_gen_suffix
           cfg h_cfg_tbs h_cfg_nodup
@@ -5124,7 +5128,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
         stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
           h_rest_eq h_nofd_rest h_unique_rest ρ₁.store σ_branch ρ₁.hasFailure false
-          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ h_rest_star h_accum_nil_r h_agree_then
+          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_rest_star h_accum_nil_r h_agree_then
           h_combined_rest h_unique_combined_rest h_hf_r
           h_wf_gen h_store_no_gens_branch_t h_rest_no_gen_suffix
           cfg h_cfg_rest h_cfg_nodup
@@ -5176,7 +5180,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
           gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
           ρ₀.store σ_cfg_after ρ₀.hasFailure false
-          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr h_else_term h_accum_nil_f h_agree_after
+          ρ₀ ρ₁ hwfb hwfv hwf_def hwf_congr hwf_var h_else_term h_accum_nil_f h_agree_after
           h_combined_else h_unique_combined_else h_hf_f
           h_wf_t h_store_no_gens_after_t h_else_no_gen_suffix
           cfg h_cfg_fbs h_cfg_nodup
@@ -5224,7 +5228,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       have ⟨σ_cfg, h_rest_sim, h_agree_rest, h_preserve_rest⟩ :=
         stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
           h_rest_eq h_nofd_rest h_unique_rest ρ₁.store σ_branch ρ₁.hasFailure false
-          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ h_rest_star h_accum_nil_r h_agree_else
+          ρ₁ ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁ h_rest_star h_accum_nil_r h_agree_else
           h_combined_rest h_unique_combined_rest h_hf_r
           h_wf_gen h_store_no_gens_branch_e h_rest_no_gen_suffix
           cfg h_cfg_rest h_cfg_nodup
@@ -5454,7 +5458,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr h_body_term h_accum_nil h_agree_after
+            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_body_term h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
             cfg h_cfg_bbs h_cfg_nodup
@@ -5481,6 +5485,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
           rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
           rw [h_eval_eq]; exact hwf_congr
+        have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+          rw [h_eval_eq]; exact hwf_var
         -- Freshness for rest's inits at σ_cfg_body.
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
           intro x hx
@@ -5537,7 +5544,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
             h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -5630,7 +5637,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr
+            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
             h_body_exit_star h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
@@ -5657,6 +5664,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
           rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
           rw [h_eval_eq]; exact hwf_congr
+        have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+          rw [h_eval_eq]; exact hwf_var
         -- Freshness for rest's inits at σ_cfg_body.
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
           intro x hx
@@ -5712,7 +5722,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
             h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -5829,7 +5839,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr h_body_term h_accum_nil h_agree_after
+            ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_body_term h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
             cfg h_cfg_bbs h_cfg_nodup
@@ -5853,6 +5863,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
           rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
           rw [h_eval_eq]; exact hwf_congr
+        have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+          rw [h_eval_eq]; exact hwf_var
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
           intro x hx
           have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
@@ -5906,7 +5919,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
             h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -5972,7 +5985,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
             ((some label, kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr
+            ρ₀ ρ_inner label kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
             h_body_exit_star h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
@@ -5997,6 +6010,9 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
           rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
           rw [h_eval_eq]; exact hwf_congr
+        have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+          rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+          rw [h_eval_eq]; exact hwf_var
         have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
           intro x hx
           have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
@@ -6050,7 +6066,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         have ⟨σ_cfg_rest, h_step_rest, h_agree_rest, h_preserve_rest⟩ :=
           stmtsToBlocks_simulation extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
-            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            ρ_blk.hasFailure false ρ_blk ρ' hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
             h_rest_star h_accum_nil_r h_agree_block_body
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -6148,7 +6164,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have ⟨σ_cfg, h_step, h_agree, h_preserve⟩ :=
       stmtsToBlocks_simulation extendEval k rest exitConts accum gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest σ_struct_base σ_base hf_base hf_accum
-        ρ₀ ρ' hwfb hwfv hwf_def hwf_congr h_rest_star h_accum h_agree_entry
+        ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var h_rest_star h_accum h_agree_entry
         h_fresh_combined' h_unique_combined' h_hf
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix'
         cfg h_cfg_blocks h_cfg_nodup
@@ -6196,6 +6212,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
     (h_exit : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.exiting label ρ'))
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.eval σ_struct_base accum.reverse ρ₀.store hf_accum)
@@ -6280,6 +6297,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have hwf_def' : WellFormedSemanticEvalDef ρ₁.eval := by rw [heval_eq_c]; exact hwf_def
     have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.eval := by
       rw [heval_eq_c]; exact hwf_congr
+    have hwf_var' : WellFormedSemanticEvalVar ρ₁.eval := by rw [heval_eq_c]; exact hwf_var
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
@@ -6317,7 +6335,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       stmtsToBlocks_simulation_to_cont extendEval k rest exitConts (c :: accum) gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest
         σ_struct_base σ_base hf_base (hf_accum || failed_c)
-        ρ₁ ρ' label bk_target h_label hwfb' hwfv' hwf_def' hwf_congr' h_rest_exit h_accum'
+        ρ₁ ρ' label bk_target h_label hwfb' hwfv' hwf_def' hwf_congr' hwf_var' h_rest_exit h_accum'
         h_agree_entry h_fresh_combined' h_unique_combined' h_hf'
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix'
         cfg h_cfg_blocks h_cfg_nodup
@@ -6402,7 +6420,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have ⟨σ_cfg, h_step, h_agree, h_preserve⟩ :=
       stmtsToBlocks_simulation_to_cont extendEval k rest exitConts accum gen gen'
         entry blocks h_gen h_nofd_rest h_unique_rest σ_struct_base σ_base hf_base hf_accum
-        ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr h_rest_exit h_accum h_agree_entry
+        ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var h_rest_exit h_accum h_agree_entry
         h_fresh_combined' h_unique_combined' h_hf
         h_wf_gen h_store_no_gens h_combined_no_gen_suffix'
         cfg h_cfg_blocks h_cfg_nodup
@@ -6667,7 +6685,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr
+            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
             h_body_exit h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
@@ -6743,7 +6761,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr h_body_term h_accum_nil h_agree_after
+              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_body_term h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
               cfg h_cfg_bbs h_cfg_nodup
@@ -6767,6 +6785,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
             rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
             rw [h_eval_eq]; exact hwf_congr
+          have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+            rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+            rw [h_eval_eq]; exact hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
             intro x hx
             have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
@@ -6821,7 +6842,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
               h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -6856,7 +6877,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr
+              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
               h_body_match h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
@@ -6881,6 +6902,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
             rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
             rw [h_eval_eq]; exact hwf_congr
+          have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+            rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+            rw [h_eval_eq]; exact hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
             intro x hx
             have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
@@ -6935,7 +6959,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
               h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -7055,7 +7079,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
             h_nofd_body h_unique_body
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr
+            ρ₀ ρ_inner label bk_target h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
             h_body_exit h_accum_nil h_agree_after
             h_combined_body h_unique_combined_body h_hf_body
             h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
@@ -7123,7 +7147,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr h_body_term h_accum_nil h_agree_after
+              ρ₀ ρ_inner hwfb hwfv hwf_def hwf_congr hwf_var h_body_term h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
               cfg h_cfg_bbs h_cfg_nodup
@@ -7147,6 +7171,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
             rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
             rw [h_eval_eq]; exact hwf_congr
+          have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+            rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+            rw [h_eval_eq]; exact hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
             intro x hx
             have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
@@ -7201,7 +7228,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
               h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -7236,7 +7263,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
               ((some label', kNext) :: exitConts) [] gen_r gen_b bl bbs h_body_eq
               h_nofd_body h_unique_body
               ρ₀.store σ_cfg_after ρ₀.hasFailure false
-              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr
+              ρ₀ ρ_inner label' kNext h_label_lookup hwfb hwfv hwf_def hwf_congr hwf_var
               h_body_match h_accum_nil h_agree_after
               h_combined_body h_unique_combined_body h_hf_body
               h_wf_r h_store_no_gens_after_r h_body_no_gen_suffix
@@ -7261,6 +7288,9 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_blk.eval := by
             rw [h_ρ_blk_eq]; show WellFormedSemanticEvalExprCongr ρ_inner.eval
             rw [h_eval_eq]; exact hwf_congr
+          have hwf_var₁ : WellFormedSemanticEvalVar ρ_blk.eval := by
+            rw [h_ρ_blk_eq]; show WellFormedSemanticEvalVar ρ_inner.eval
+            rw [h_eval_eq]; exact hwf_var
           have h_fresh_rest_inits_after : ∀ x ∈ Block.initVars rest, σ_cfg_after x = none := by
             intro x hx
             have h_x_not_accum : x ∉ Cmds.definedVars accum.reverse := by
@@ -7315,7 +7345,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
             stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
               h_rest_eq h_nofd_rest h_unique_rest ρ_blk.store σ_cfg_body
               ρ_blk.hasFailure false ρ_blk ρ' label bk_target h_label
-              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+              hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
               h_rest_exit h_accum_nil_r h_agree_block_body
               h_combined_rest h_unique_combined_rest h_hf_r
               h_wf_gen h_store_no_gens_body h_rest_no_gen_suffix
@@ -7622,7 +7652,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval kNext thenBranch exitConts []
             gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr
+            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var
             h_then_exit h_accum_nil_t h_agree_after
             h_combined_then h_unique_combined_then h_hf_t
             h_wf_ite h_store_no_gens_after_ite h_then_no_gen_suffix
@@ -7659,7 +7689,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval kNext elseBranch exitConts []
             gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr
+            ρ₀ ρ' label bk_target h_label hwfb hwfv hwf_def hwf_congr hwf_var
             h_else_exit h_accum_nil_f h_agree_after
             h_combined_else h_unique_combined_else h_hf_f
             h_wf_t h_store_no_gens_after_t h_else_no_gen_suffix
@@ -7698,6 +7728,8 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         rw [h_eval_eq]; exact hwf_def
       have hwf_congr₁ : WellFormedSemanticEvalExprCongr ρ_mid.eval := by
         rw [h_eval_eq]; exact hwf_congr
+      have hwf_var₁ : WellFormedSemanticEvalVar ρ_mid.eval := by
+        rw [h_eval_eq]; exact hwf_var
       cases h_branch_term_or with
       | inl h_true =>
         obtain ⟨h_then_term, h_cond_tt⟩ := h_true
@@ -7721,7 +7753,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation extendEval kNext thenBranch exitConts []
             gen_ite gen_t tl tbs h_then_eq h_nofd_then h_unique_then
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr h_then_term h_accum_nil_t h_agree_after
+            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr hwf_var h_then_term h_accum_nil_t h_agree_after
             h_combined_then h_unique_combined_then h_hf_t
             h_wf_ite h_store_no_gens_after_ite h_then_no_gen_suffix
             cfg h_cfg_tbs h_cfg_nodup
@@ -7768,7 +7800,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_mid.store σ_branch ρ_mid.hasFailure false
             ρ_mid ρ' label bk_target h_label
-            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
             h_rest_exit h_accum_nil_r h_agree_then
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_branch_t h_rest_no_gen_suffix
@@ -7812,7 +7844,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation extendEval kNext elseBranch exitConts []
             gen_t gen_e fl fbs h_else_eq h_nofd_else h_unique_else
             ρ₀.store σ_cfg_after ρ₀.hasFailure false
-            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr h_else_term h_accum_nil_f h_agree_after
+            ρ₀ ρ_mid hwfb hwfv hwf_def hwf_congr hwf_var h_else_term h_accum_nil_f h_agree_after
             h_combined_else h_unique_combined_else h_hf_f
             h_wf_t h_store_no_gens_after_t h_else_no_gen_suffix
             cfg h_cfg_fbs h_cfg_nodup
@@ -7858,7 +7890,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           stmtsToBlocks_simulation_to_cont extendEval k rest exitConts [] gen gen_r kNext bsNext
             h_rest_eq h_nofd_rest h_unique_rest ρ_mid.store σ_branch ρ_mid.hasFailure false
             ρ_mid ρ' label bk_target h_label
-            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁
+            hwfb₁ hwfv₁ hwf_def₁ hwf_congr₁ hwf_var₁
             h_rest_exit h_accum_nil_r h_agree_else
             h_combined_rest h_unique_combined_rest h_hf_r
             h_wf_gen h_store_no_gens_branch_e h_rest_no_gen_suffix
@@ -8040,6 +8072,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
     (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -8084,7 +8117,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
         ρ₀.store (HasIdent.ident (P := P) x) = none := fun x _ _ => h_store_clean _
   have ⟨σ_cfg, h_sim, h_agree, _h_preserve⟩ :=
     stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
-      h_gen h_nofd h_unique ρ₀.store ρ₀.store false false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr
+      h_gen h_nofd h_unique ρ₀.store ρ₀.store false false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
       h_term h_accum (StoreAgreement.refl _) h_fresh_combined h_unique_combined h_hf
       h_wf_gen h_store_no_gens h_combined_no_gen_suffix
       cfg h_blocks h_nodup
@@ -8138,6 +8171,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
     (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -8153,7 +8187,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
       (.cont cfg.entry ρ₀.store false)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
-  stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hf₀
+  stmtsToCFG_terminal extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var hf₀
     h_nofd h_unique h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix h_term
 
 /-- Converse: any terminal store reachable from the CFG execution is also
