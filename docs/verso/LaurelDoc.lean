@@ -203,11 +203,13 @@ internal interface used by other rules.
 
 The relation `<:` (used in Sub) is built from three Lean functions:
 
-- `isSubtype` — pure subtyping. The stub is structural equality via
-  {name Strata.Laurel.highEq}`highEq`. The eventual real version walks the `extending`
-  chain for {name Strata.Laurel.CompositeType}`CompositeType`, unfolds
+- `isSubtype` — pure subtyping. Walks the `extending` chain for
+  {name Strata.Laurel.CompositeType}`CompositeType` (via
+  {name Strata.Laurel.TypeContext.ancestors}`TypeContext.ancestors`), unfolds
   {name Strata.Laurel.TypeAlias}`TypeAlias` to its target, and unwraps
-  {name Strata.Laurel.ConstrainedType}`ConstrainedType` to its base.
+  {name Strata.Laurel.ConstrainedType}`ConstrainedType` to its base (both via
+  {name Strata.Laurel.TypeContext.unfold}`TypeContext.unfold`), then falls back to
+  structural equality via {name Strata.Laurel.highEq}`highEq`.
 - `isConsistent` — the symmetric gradual relation `~` (Siek–Taha):
   {name Strata.Laurel.HighType.Unknown}`Unknown` is the dynamic type and is consistent with
   everything; otherwise structural equality.
@@ -233,9 +235,8 @@ A previous iteration was synth-only with three *bivariantly-compatible* wildcard
 {name Strata.Laurel.HighType.UserDefined}`UserDefined` carve-out was load-bearing: no
 assignment, call argument, or comparison involving a user type was ever rejected. The
 bidirectional design retires that carve-out — user-defined types are now a regular
-participant in `<:`, and tightening `isSubtype` (to walk inheritance and unwrap
-constrained types) gradually buys real checking on user-defined code without changing
-callers.
+participant in `<:`, with `isSubtype` walking inheritance chains and unwrapping aliases
+and constrained types to deliver real checking on user-defined code.
 
 Side-effecting constructs synthesize {name Strata.Laurel.HighType.TVoid}`TVoid`. This
 includes {name Strata.Laurel.StmtExpr.Return}`Return`,
