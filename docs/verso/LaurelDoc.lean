@@ -481,7 +481,7 @@ target is a numeric type.
 ### Assignment
 
 ```
-  Γ ⊢ targets_i ⇒ T_i      Γ ⊢ e ⇒ T_e      ExpectedTy <: T_e
+  Γ ⊢ targets_i ⇒ T_i      Γ ⊢ e ⇒ T_e      T_e <: ExpectedTy
 ─────────────────────────────────────────────────────────────────  (Assign, impl)
                 Γ ⊢ Assign targets e ⇒ TVoid
 
