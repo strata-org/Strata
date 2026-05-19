@@ -5807,21 +5807,6 @@ private theorem simulation
                   rw [h]; rfl
                 exact hswf.reservedFresh _ hsome loopElimReservedPrefixSig
                   h_loop_reserved hpref
-            -- Remaining work for the happy path (single sorry below):
-            --   (a) Invert `hreach` to identify zero-iter (g(ρ₀)=ff or
-            --       nondet-exit) vs ≥1-iter cases.
-            --   (b) For ≥1-iter, apply `loop_invariant_dichotomy_det/_nondet`
-            --       to extract `ρ_last` and the body trace.
-            --   (c) Establish freshness at `ρ_last` (via `hagree` outside
-            --       body's vars + `hm_old_fresh` at ρ₀, since m_old can't
-            --       be in body — discharged by `hok`'s freshness check).
-            --   (d) Apply `stmtResult_loop_with_prefix_targeting_det/_nondet`
-            --       to build the prefix trace.
-            --   (e) Apply IH on body for the body trace at the targeted env.
-            --   (f) Construct maintain_invariants and exit_state_stmts traces.
-            --   (g) Wire through ite + outer block via composition lemmas.
-            -- `hm_old_fresh` is now in scope; will be threaded through
-            -- `stmtResult_loop_with_prefix_targeting_det` in the happy path.
             let _ := hm_old_fresh
             -- Obtain the target's structural decomposition.
             obtain ⟨loop_label, first_iter_label, first_iter_body, then_branch,
@@ -5847,8 +5832,6 @@ private theorem simulation
             · refine .inr (fun _hnf_unused => ?_)
               -- Re-derive hnf'' (already in scope) for clarity in the goal.
               have hnf'_eq : ρ'.hasFailure = Bool.false := hnf''
-              -- First, reduce the goal to the targeted ρ' by inverting hreach.
-              -- We use `suffices` to factor the ≥1-iter case into a single sorry.
               suffices h_enter_case : ∀ {hasInvFailure : Bool},
                   hasInvFailure = Bool.false →
                   CoreStar π φ
@@ -6428,8 +6411,7 @@ private theorem simulation
         --       through the outer wrapper blocks.
         --     - All tt: trace must continue past step_loop_*_exit (which would
         --       leave ρ₀ unchanged on hasFailure if hasInvFailure=false) into
-        --       step_loop_*_enter's body trace.  Body's CanFail follows; the
-        --       residual mutual-recursion gap is closed below as a sorry.
+        --       step_loop_*_enter's body trace.
         by_cases hnf₀ : ρ₀.hasFailure = Bool.true
         · exact ⟨.stmt (stmtResult σ (.loop guardE measure inv body md)) ρ₀,
             by show ρ₀.hasFailure = Bool.true; exact hnf₀, .refl _⟩
@@ -6814,6 +6796,105 @@ private theorem getVars_mapIdx_assume
          HasVarsPure.getVars x.2 ++
          rest.flatMap (fun lp => HasVarsPure.getVars lp.2)
     simp [HasVarsPure.getVars, HasPassiveCmds.assume, Command.getVars, Cmd.getVars]
+
+/-! ### Unfolded variants of mapIdx lemmas
+
+The lemmas above use `HasPassiveCmds.assert/assume` in the LHS. When `dsimp`
+normalizes terms to use the underlying `CmdExt.cmd (Cmd.assert/assume ...)`
+form (which can happen via `simp only [HasPassiveCmds.assert]` or transitive
+unfolding), these LHS patterns no longer match. The unfolded variants below
+mirror the originals with `CmdExt.cmd (Cmd.assert/assume ...)` in the LHS, so
+they work regardless of which form the simp normal form chooses. -/
+
+private theorem modifiedVars_mapIdx_assert'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.modifiedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) = [] := by
+  exact modifiedVars_mapIdx_assert inv md label
+
+private theorem modifiedOrDefinedVars_mapIdx_assert'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.modifiedOrDefinedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) false = [] := by
+  exact modifiedOrDefinedVars_mapIdx_assert inv md label
+
+private theorem definedVars_mapIdx_assert'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.definedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) false = [] := by
+  exact definedVars_mapIdx_assert inv md label
+
+private theorem getVars_mapIdx_assert'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.getVars Expression Command _ _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) =
+    inv.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  exact getVars_mapIdx_assert inv md label
+
+private theorem modifiedVars_mapIdx_assume'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.modifiedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) = [] := by
+  exact modifiedVars_mapIdx_assume inv md label
+
+private theorem modifiedOrDefinedVars_mapIdx_assume'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.modifiedOrDefinedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) false = [] := by
+  exact modifiedOrDefinedVars_mapIdx_assume inv md label
+
+private theorem definedVars_mapIdx_assume'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.definedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) false = [] := by
+  exact definedVars_mapIdx_assume inv md label
+
+private theorem getVars_mapIdx_assume'
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.getVars Expression Command _ _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) =
+    inv.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
+  exact getVars_mapIdx_assume inv md label
+
+private theorem modifiedVars_havoc_map'
+    (xs : List Expression.Ident) (md : MetaData Expression) :
+    @Block.modifiedVars Expression Command _
+      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) = xs := by
+  exact modifiedVars_havoc_map xs md
+
+private theorem modifiedOrDefinedVars_havoc_map'
+    (xs : List Expression.Ident) (md : MetaData Expression) :
+    @Block.modifiedOrDefinedVars Expression Command _
+      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) false = xs := by
+  exact modifiedOrDefinedVars_havoc_map xs md
+
+private theorem definedVars_havoc_map'
+    (xs : List Expression.Ident) (md : MetaData Expression) :
+    @Block.definedVars Expression Command _
+      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) false = [] := by
+  exact definedVars_havoc_map xs md
+
+private theorem getVars_havoc_map'
+    (xs : List Expression.Ident) (md : MetaData Expression) :
+    @Block.getVars Expression Command _ _
+      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) = [] := by
+  exact getVars_havoc_map xs md
 
 /-- The loop case of `mem_definedVars_stmtResult`.
 
@@ -7416,6 +7497,111 @@ private theorem getVars_buildFirstIterFacts
   rw [block_getVars_append, getVars_buildEntryInvariants,
       getVars_buildEntryInvariantAssumes]
 
+/-- The `boolNotFunc.opExpr` LExpr has no free variables. -/
+private theorem getVars_boolNotFunc_opExpr_eq_nil :
+    Lambda.LExpr.LExpr.getVars
+      (T := Core.CoreLParams.mono)
+      (@Lambda.boolNotFunc Core.CoreLParams).opExpr = [] := rfl
+
+/-- Membership in `getVars (HasNot.not g)` implies membership in `getVars g`,
+    for the Core.Expression.  This handles every shape of `g` since the
+    `HasNot.not` instance only matches `boolConst true`/`boolConst false`
+    explicitly and falls through to a `boolNotFunc` application otherwise. -/
+private theorem mem_getVars_not_subset
+    {g : Core.Expression.Expr} {m : Core.Expression.Ident}
+    (hm : m ∈ Lambda.LExpr.LExpr.getVars (HasNot.not g)) :
+    m ∈ Lambda.LExpr.LExpr.getVars g := by
+  match g, hm with
+  | .const _ (.boolConst Bool.true), hm =>
+      simp [Lambda.LExpr.LExpr.getVars] at hm
+  | .const _ (.boolConst Bool.false), hm =>
+      simp [Lambda.LExpr.LExpr.getVars] at hm
+  | .const _ (.intConst _), hm =>
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+  | .const _ (.strConst _), hm =>
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+  | .const _ (.realConst _), hm =>
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+  | .const _ (.bitvecConst _ _), hm =>
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+  | .op _ _ _, hm =>
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+  | .bvar _ _, hm =>
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+  | .fvar md₁ name ty, hm =>
+      change m ∈ Lambda.LExpr.LExpr.getVars
+        (Lambda.LExpr.app () (@Lambda.boolNotFunc Core.CoreLParams).opExpr
+          (Lambda.LExpr.fvar md₁ name ty)) at hm
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+      simp [Lambda.LExpr.LExpr.getVars, hm]
+  | .abs md₁ pn ty body, hm =>
+      change m ∈ Lambda.LExpr.LExpr.getVars
+        (Lambda.LExpr.app () (@Lambda.boolNotFunc Core.CoreLParams).opExpr
+          (Lambda.LExpr.abs md₁ pn ty body)) at hm
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+      simp [Lambda.LExpr.LExpr.getVars]; exact hm
+  | .quant md₁ k pn ty tr body, hm =>
+      change m ∈ Lambda.LExpr.LExpr.getVars
+        (Lambda.LExpr.app () (@Lambda.boolNotFunc Core.CoreLParams).opExpr
+          (Lambda.LExpr.quant md₁ k pn ty tr body)) at hm
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+      simp [Lambda.LExpr.LExpr.getVars]; exact hm
+  | .app md₁ f e, hm =>
+      change m ∈ Lambda.LExpr.LExpr.getVars
+        (Lambda.LExpr.app () (@Lambda.boolNotFunc Core.CoreLParams).opExpr
+          (Lambda.LExpr.app md₁ f e)) at hm
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+      simp [Lambda.LExpr.LExpr.getVars]; exact hm
+  | .ite md₁ c t e, hm =>
+      change m ∈ Lambda.LExpr.LExpr.getVars
+        (Lambda.LExpr.app () (@Lambda.boolNotFunc Core.CoreLParams).opExpr
+          (Lambda.LExpr.ite md₁ c t e)) at hm
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+      simp [Lambda.LExpr.LExpr.getVars]; exact hm
+  | .eq md₁ e1 e2, hm =>
+      change m ∈ Lambda.LExpr.LExpr.getVars
+        (Lambda.LExpr.app () (@Lambda.boolNotFunc Core.CoreLParams).opExpr
+          (Lambda.LExpr.eq md₁ e1 e2)) at hm
+      simp [Lambda.LExpr.LExpr.getVars,
+            getVars_boolNotFunc_opExpr_eq_nil] at hm
+      simp [Lambda.LExpr.LExpr.getVars]; exact hm
+
+/-- `getVars (HasIntOrder.lt a b)` decomposes into `getVars a` ∪ `getVars b`
+    (since `HasIntOrder.lt a b = .app () (.app () Core.intLtOp a) b`). -/
+private theorem mem_getVars_lt_split
+    {a b : Core.Expression.Expr} {m : Core.Expression.Ident}
+    (hm : m ∈ Lambda.LExpr.LExpr.getVars
+            (HasIntOrder.lt a b : Core.Expression.Expr)) :
+    m ∈ Lambda.LExpr.LExpr.getVars a ∨ m ∈ Lambda.LExpr.LExpr.getVars b := by
+  simp [Lambda.LExpr.LExpr.getVars, Core.intLtOp,
+        Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr] at hm
+  cases hm with
+  | inl h => left; exact h
+  | inr h => right; exact h
+
+/-- `getVars` of the integer literal `0` is empty. -/
+private theorem getVars_zero_eq_nil :
+    Lambda.LExpr.LExpr.getVars (HasIntOrder.zero : Core.Expression.Expr) = [] := by
+  simp [Lambda.LExpr.LExpr.getVars]
+
+/-- `getVars (HasFvar.mkFvar v) = [v]`. -/
+private theorem getVars_mkFvar_eq
+    (v : Core.Expression.Ident) :
+    Lambda.LExpr.LExpr.getVars
+      (HasFvar.mkFvar v : Core.Expression.Expr) = [v] := by
+  simp [Lambda.LExpr.LExpr.getVars]
+
 /-- Helper for `mem_touchedVars_stmtResult_loop`'s residual abstract-`s'`
     branch.  Given the un-dsimp'd `h : (stmtRun σ ...).fst = .ok (b, s')`,
     we can derive `s' = .block ll [.block fil fib {}, .ite guard tb [] {}] {}`
@@ -7434,16 +7620,12 @@ private theorem mem_touchedVars_stmtResult_loop_aux
     (hm : m ∈ Stmt.touchedVars s') :
     m ∈ Stmt.definedVars s' false ∨
     m ∈ Stmt.touchedVars (.loop guard measure inv body md) := by
-  -- The proof mirrors `definedVars_subset_stmtResult_loop` but for touchedVars.
-  -- The simp-based dispatch has a matching issue: `modifiedVars_mapIdx_assert`'s
-  -- LHS uses `HasPassiveCmds.assert` which simp unfolds in sub-terms before trying
-  -- the rewrite, preventing pattern matching. A fix would be to either:
-  -- (1) Use `erw` or `conv` to manually apply the mapIdx lemmas, or
-  -- (2) Create unfolded versions of the *_mapIdx_* lemmas.
-  sorry
-
-/- The scaffold below works for all cases except the modifiedVars_mapIdx_* matching:
-  dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
+  dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase,
+    buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes,
+    buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants,
+    buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants,
+    buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome,
+    hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
     bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
     ExceptT.lift, StateT.bind, StateT.pure,
     Functor.map, liftM, monadLift, MonadLift.monadLift,
@@ -7454,17 +7636,35 @@ private theorem mem_touchedVars_stmtResult_loop_aux
        simp only [Stmt.touchedVars, Block.touchedVars,
          Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
          Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-         block_modifiedOrDefinedVars_append, block_getVars_append, block_definedVars_append,
+         block_modifiedOrDefinedVars_append, block_modifiedVars_append, block_getVars_append, block_definedVars_append,
          Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
          List.append_nil, List.nil_append,
          List.mem_append, List.not_mem_nil, List.mem_singleton,
          false_or, or_false] at hm ⊢
-       try simp only [modifiedOrDefinedVars_havoc_map, modifiedVars_havoc_map, getVars_havoc_map,
-         definedVars_havoc_map,
-         modifiedOrDefinedVars_mapIdx_assert, modifiedVars_mapIdx_assert, getVars_mapIdx_assert,
-         definedVars_mapIdx_assert,
-         modifiedOrDefinedVars_mapIdx_assume, modifiedVars_mapIdx_assume, getVars_mapIdx_assume,
-         definedVars_mapIdx_assume] at hm ⊢
+       repeat rw [modifiedOrDefinedVars_havoc_map'] at hm
+       repeat rw [modifiedVars_havoc_map'] at hm
+       repeat rw [getVars_havoc_map'] at hm
+       repeat rw [definedVars_havoc_map'] at hm
+       repeat rw [modifiedOrDefinedVars_mapIdx_assert'] at hm
+       repeat rw [modifiedVars_mapIdx_assert'] at hm
+       repeat rw [getVars_mapIdx_assert'] at hm
+       repeat rw [definedVars_mapIdx_assert'] at hm
+       repeat rw [modifiedOrDefinedVars_mapIdx_assume'] at hm
+       repeat rw [modifiedVars_mapIdx_assume'] at hm
+       repeat rw [getVars_mapIdx_assume'] at hm
+       repeat rw [definedVars_mapIdx_assume'] at hm
+       repeat rw [modifiedOrDefinedVars_havoc_map']
+       repeat rw [modifiedVars_havoc_map']
+       repeat rw [getVars_havoc_map']
+       repeat rw [definedVars_havoc_map']
+       repeat rw [modifiedOrDefinedVars_mapIdx_assert']
+       repeat rw [modifiedVars_mapIdx_assert']
+       repeat rw [getVars_mapIdx_assert']
+       repeat rw [definedVars_mapIdx_assert']
+       repeat rw [modifiedOrDefinedVars_mapIdx_assume']
+       repeat rw [modifiedVars_mapIdx_assume']
+       repeat rw [getVars_mapIdx_assume']
+       repeat rw [definedVars_mapIdx_assume']
        simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
          HasVarsPure.getVars,
          HasPassiveCmds.assert, HasPassiveCmds.assume,
@@ -7499,7 +7699,7 @@ private theorem mem_touchedVars_stmtResult_loop_aux
        done)
     | contradiction
     | (split at h; skip))
-  -- Close residual goal: the `.det g, some m` case.
+  -- Close residual goals (cases where h still has StateT.pure wrapping)
   all_goals (first | contradiction | (
     unfold StateT.pure at h
     dsimp only [StateT.bind, StateT.map, ExceptT.bindCont, ExceptT.bind,
@@ -7511,27 +7711,43 @@ private theorem mem_touchedVars_stmtResult_loop_aux
          simp only [Stmt.touchedVars, Block.touchedVars,
            Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
            Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-           block_modifiedOrDefinedVars_append, block_getVars_append, block_definedVars_append,
+           block_modifiedOrDefinedVars_append, block_modifiedVars_append, block_getVars_append, block_definedVars_append,
            Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
            List.append_nil, List.nil_append,
            List.mem_append, List.not_mem_nil, List.mem_singleton,
            false_or, or_false] at hm ⊢
-         simp only [modifiedOrDefinedVars_havoc_map, modifiedVars_havoc_map, getVars_havoc_map,
-           definedVars_havoc_map,
-           modifiedOrDefinedVars_mapIdx_assert, modifiedVars_mapIdx_assert, getVars_mapIdx_assert,
-           definedVars_mapIdx_assert,
-           modifiedOrDefinedVars_mapIdx_assume, modifiedVars_mapIdx_assume, getVars_mapIdx_assume,
-           definedVars_mapIdx_assume] at hm ⊢
-         simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
-           HasVarsPure.getVars,
+         repeat rw [modifiedOrDefinedVars_havoc_map'] at hm
+         repeat rw [modifiedVars_havoc_map'] at hm
+         repeat rw [getVars_havoc_map'] at hm
+         repeat rw [definedVars_havoc_map'] at hm
+         repeat rw [modifiedOrDefinedVars_mapIdx_assert'] at hm
+         repeat rw [modifiedVars_mapIdx_assert'] at hm
+         repeat rw [getVars_mapIdx_assert'] at hm
+         repeat rw [definedVars_mapIdx_assert'] at hm
+         repeat rw [modifiedOrDefinedVars_mapIdx_assume'] at hm
+         repeat rw [modifiedVars_mapIdx_assume'] at hm
+         repeat rw [getVars_mapIdx_assume'] at hm
+         repeat rw [definedVars_mapIdx_assume'] at hm
+         repeat rw [modifiedOrDefinedVars_havoc_map']
+         repeat rw [modifiedVars_havoc_map']
+         repeat rw [getVars_havoc_map']
+         repeat rw [definedVars_havoc_map']
+         repeat rw [modifiedOrDefinedVars_mapIdx_assert']
+         repeat rw [modifiedVars_mapIdx_assert']
+         repeat rw [getVars_mapIdx_assert']
+         repeat rw [definedVars_mapIdx_assert']
+         repeat rw [modifiedOrDefinedVars_mapIdx_assume']
+         repeat rw [modifiedVars_mapIdx_assume']
+         repeat rw [getVars_mapIdx_assume']
+         repeat rw [definedVars_mapIdx_assume']
+         simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasVarsPure.getVars,
            HasPassiveCmds.assert, HasPassiveCmds.assume,
            HasInit.init, HasIdent.ident, HasHavoc.havoc,
            Command.definedVars, Command.modifiedVars, Command.getVars,
            Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
            ExprOrNondet.getVars,
-           List.append_nil, List.nil_append,
-           List.mem_append, List.not_mem_nil, List.mem_singleton,
-           false_or, or_false] at hm ⊢
+           List.append_nil, List.nil_append, List.mem_append, List.not_mem_nil,
+           List.mem_singleton, false_or, or_false] at hm ⊢
          try simp only [List.mem_filter, decide_eq_true_eq] at hm
          repeat first
            | exact .inr (Or.inl hm)
@@ -7555,74 +7771,122 @@ private theorem mem_touchedVars_stmtResult_loop_aux
            | exact absurd hm (List.not_mem_nil _)
          done)
       | contradiction
-      | (split at h; skip))
-    all_goals (first | contradiction | (
-      obtain ⟨_, rfl⟩ := h
-      simp only [Stmt.touchedVars, Block.touchedVars,
-        Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
-        Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
-        block_modifiedOrDefinedVars_append, block_getVars_append, block_definedVars_append,
-        Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
-        List.append_nil, List.nil_append,
-        List.mem_append, List.not_mem_nil, List.mem_singleton,
-        false_or, or_false] at hm ⊢
-      try simp only [modifiedOrDefinedVars_havoc_map, modifiedVars_havoc_map, getVars_havoc_map,
-        definedVars_havoc_map,
-        modifiedOrDefinedVars_mapIdx_assert, modifiedVars_mapIdx_assert, getVars_mapIdx_assert,
-        definedVars_mapIdx_assert,
-        modifiedOrDefinedVars_mapIdx_assume, modifiedVars_mapIdx_assume, getVars_mapIdx_assume,
-        definedVars_mapIdx_assume] at hm ⊢
-      simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars,
-        HasVarsPure.getVars,
-        HasPassiveCmds.assert, HasPassiveCmds.assume,
-        HasInit.init, HasIdent.ident, HasHavoc.havoc,
-        Command.definedVars, Command.modifiedVars, Command.getVars,
-        Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
-        ExprOrNondet.getVars,
-        List.append_nil, List.nil_append,
-        List.mem_append, List.not_mem_nil, List.mem_singleton,
-        false_or, or_false] at hm ⊢
-      try simp only [List.mem_filter, decide_eq_true_eq] at hm
-      repeat first
-        | exact .inr (Or.inl hm)
-        | exact .inr (Or.inr hm)
-        | exact .inr (Or.inl (Or.inl hm))
-        | exact .inr (Or.inl (Or.inr hm))
-        | exact .inr (Or.inr (Or.inl hm))
-        | exact .inr (Or.inr (Or.inr hm))
-        | exact .inl hm
-        | exact .inl (Or.inl hm)
-        | exact .inl (Or.inr hm)
-        | exact .inl (Or.inl (Or.inl hm))
-        | exact .inl (Or.inr (Or.inl hm))
-        | exact .inl (Or.inr (Or.inr hm))
-        | (rcases hm with hm | hm)
-        | (subst hm; exact .inl (by simp [Stmt.definedVars, Block.definedVars,
-            block_definedVars_append (ex := Bool.false), definedVars_havoc_map,
-            definedVars_mapIdx_assert, definedVars_mapIdx_assume,
-            HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
-            Command.definedVars, Cmd.definedVars]))
-        | exact absurd hm (List.not_mem_nil _)))))
--/
+      | (split at h; skip))))
+  -- Third level: handle cases via obtain ⟨_, rfl⟩ := h
+  all_goals (first | contradiction | (
+    obtain ⟨_, rfl⟩ := h
+    simp only [Stmt.touchedVars, Block.touchedVars,
+      Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.getVars, Stmt.definedVars,
+      Block.modifiedOrDefinedVars, Block.modifiedVars, Block.getVars, Block.definedVars,
+      block_modifiedOrDefinedVars_append, block_modifiedVars_append, block_getVars_append, block_definedVars_append,
+      Bool.false_eq_true, ↓reduceIte, ite_true, ite_false,
+      List.append_nil, List.nil_append, List.mem_append, List.not_mem_nil,
+      List.mem_singleton, false_or, or_false] at hm ⊢
+    -- Use unprimed lemmas here (HasPassiveCmds.assert form preserved)
+    repeat rw [modifiedOrDefinedVars_havoc_map] at hm
+    repeat rw [modifiedVars_havoc_map] at hm
+    repeat rw [getVars_havoc_map] at hm
+    repeat rw [definedVars_havoc_map] at hm
+    repeat rw [modifiedOrDefinedVars_mapIdx_assert] at hm
+    repeat rw [modifiedVars_mapIdx_assert] at hm
+    repeat rw [getVars_mapIdx_assert] at hm
+    repeat rw [definedVars_mapIdx_assert] at hm
+    repeat rw [modifiedOrDefinedVars_mapIdx_assume] at hm
+    repeat rw [modifiedVars_mapIdx_assume] at hm
+    repeat rw [getVars_mapIdx_assume] at hm
+    repeat rw [definedVars_mapIdx_assume] at hm
+    repeat rw [modifiedOrDefinedVars_havoc_map]
+    repeat rw [modifiedVars_havoc_map]
+    repeat rw [getVars_havoc_map]
+    repeat rw [definedVars_havoc_map]
+    repeat rw [modifiedOrDefinedVars_mapIdx_assert]
+    repeat rw [modifiedVars_mapIdx_assert]
+    repeat rw [getVars_mapIdx_assert]
+    repeat rw [definedVars_mapIdx_assert]
+    repeat rw [modifiedOrDefinedVars_mapIdx_assume]
+    repeat rw [modifiedVars_mapIdx_assume]
+    repeat rw [getVars_mapIdx_assume]
+    repeat rw [definedVars_mapIdx_assume]
+    simp only [HasVarsImp.definedVars, HasVarsImp.modifiedVars, HasVarsPure.getVars,
+      HasPassiveCmds.assert, HasPassiveCmds.assume,
+      HasInit.init, HasIdent.ident, HasHavoc.havoc,
+      Command.definedVars, Command.modifiedVars, Command.getVars,
+      Cmd.definedVars, Cmd.modifiedVars, Cmd.getVars,
+      ExprOrNondet.getVars,
+      List.append_nil, List.nil_append, List.mem_append, List.not_mem_nil,
+      List.mem_singleton, false_or, or_false] at hm ⊢
+    try simp only [List.mem_filter, decide_eq_true_eq] at hm
+    repeat first
+      | exact .inr (Or.inl hm)
+      | exact .inr (Or.inr hm)
+      | exact .inr (Or.inl (Or.inl hm))
+      | exact .inr (Or.inl (Or.inr hm))
+      | exact .inr (Or.inr (Or.inl hm))
+      | exact .inr (Or.inr (Or.inr hm))
+      | exact .inl hm
+      | exact .inl (Or.inl hm)
+      | exact .inl (Or.inr hm)
+      | exact .inl (Or.inl (Or.inl hm))
+      | exact .inl (Or.inr (Or.inl hm))
+      | exact .inl (Or.inr (Or.inr hm))
+      | exact .inr (Or.inr (Or.inl (Or.inl hm)))
+      | exact .inr (Or.inr (Or.inl (Or.inr hm)))
+      | exact .inr (Or.inr (Or.inr (Or.inl hm)))
+      | exact .inr (Or.inr (Or.inr (Or.inr hm)))
+      | exact .inr (Or.inl (Or.inl (Or.inl hm)))
+      | exact .inr (Or.inl (Or.inl (Or.inr hm)))
+      | exact .inr (Or.inl (Or.inr (Or.inl hm)))
+      | exact .inr (Or.inl (Or.inr (Or.inr hm)))
+      | exact .inr (Or.inr (Or.inl (Or.inl (Or.inl hm))))
+      | exact .inr (Or.inr (Or.inl (Or.inl (Or.inr hm))))
+      | exact .inr (Or.inr (Or.inl (Or.inr (Or.inl hm))))
+      | exact .inr (Or.inr (Or.inl (Or.inr (Or.inr hm))))
+      | exact .inr (Or.inr (Or.inr (Or.inl (Or.inl hm))))
+      | exact .inr (Or.inr (Or.inr (Or.inr (Or.inl hm))))
+      | (rcases hm with hm | hm)
+      | (obtain ⟨hm, _⟩ := hm)
+      | (subst hm; exact .inl (by simp [Stmt.definedVars, Block.definedVars,
+          block_definedVars_append, definedVars_havoc_map,
+          definedVars_mapIdx_assert, definedVars_mapIdx_assume,
+          HasVarsImp.definedVars, HasInit.init, HasIdent.ident,
+          Command.definedVars, Cmd.definedVars]))
+      | exact absurd hm (List.not_mem_nil _)))
+  -- Residual cases: 8 goals where `hm` mentions `HasNot.not`,
+  -- `HasIntOrder.lt … (HasFvar.mkFvar …)`, `HasIntOrder.zero`, the
+  -- `loop_measure_var` head, or `List.flatMap (fun lp => getVars lp.snd) inv`,
+  -- which the previous scaffold's simp set doesn't handle.
+  all_goals (first | contradiction | (
+    -- Reduce `getVars (HasNot.not g)` to `getVars g`.
+    try (replace hm := mem_getVars_not_subset hm)
+    try (rcases hm with hm | hm
+         <;> first
+           | exact .inr (.inr (.inl (.inl (.inl
+               (mem_getVars_not_subset hm)))))
+           | exact .inr (.inr (.inl (.inr hm)))
+           | exact .inr (.inr (.inl (.inl (.inl hm))))
+           | exact .inr (.inr (.inr hm)))
+    -- Now `hm` should match one of the source-touched pieces:
+    --   * `m ∈ getVars g✝`               → into the `getVars` slot
+    --   * `m ∈ flatMap getVars inv`       → into the `inv` slot
+    --   * `m ∈ Block.getVars body`        → into the rightmost slot
+    --   * `m ∈ getVars (HasIntOrder.lt …)`→ split via `mem_getVars_lt_split`
+    -- The measure-variable `head` goal has no `hm` and is closed by
+    -- `Or.inl (Or.inl rfl)` after the substitution.
+    -- The `tail` goal with `getVars zero = []` is contradictory.
+    first
+      | exact .inr (.inr (.inl (.inl (.inl hm))))
+      | exact .inr (.inr (.inl (.inr hm)))
+      | exact .inr (.inr (.inr hm))
+      | (rcases mem_getVars_lt_split hm with h₁ | h₂
+         · refine .inr (.inr (.inl (.inl (.inr ?_))))
+           simp [Option.map_some]
+           exact h₁
+         · simp [getVars_mkFvar_eq] at h₂
+           exact .inl (.inl h₂))
+      | exact .inl (.inl rfl)
+      | (try simp [getVars_zero_eq_nil] at *)))
 
-/-- The loop case of `mem_touchedVars_stmtResult`.
-
-    Strategy: mirror `mem_definedVars_stmtResult_loop`'s `dsimp`+structural
-    pattern.  The closing `cases h` exposes the concrete transform output, then
-    we expand `Stmt.touchedVars` via a series of helper-rewrites and dispatch
-    each disjunct of `hm` to either `m ∈ definedVars (transform)` or
-    `m ∈ touchedVars (source)`.
-
-    NOTE: The body of this proof is below at the leaf-dispatch sorry. The
-    overall structure is in place: the `hnd_src` half is fully proved, and
-    the suffices+dsimp+structural-cases scaffold mirrors
-    `mem_definedVars_stmtResult_loop`.  What remains is the inner per-leaf
-    dispatch: when the closing `cases h` does not fully substitute `s'`
-    (because of unreduced inner `match`/`bind` in `h`), the resulting `hm` is
-    in the form `m ∈ Stmt.modifiedOrDefinedVars s' ∨ m ∈ Stmt.getVars s'`
-    with `s'` still abstract.  This is now factored out to
-    `mem_touchedVars_stmtResult_loop_aux`, which takes the un-dsimp'd `h` so
-    Lean can resolve the substitution cleanly. -/
+/-- The loop case of `mem_touchedVars_stmtResult`. -/
 private theorem mem_touchedVars_stmtResult_loop
     (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
@@ -7751,20 +8015,6 @@ private theorem mem_touchedVars_stmtResult_loop
       rw [heq]
       show m ∈ HasVarsPure.getVars g
       exact hm
-    -- Per-case tactic: dispatch each atomic disjunct of `hm` to the
-    -- appropriate side of the goal.
-    --
-    -- The outer `repeat (first | (cases h; exact …) | contradiction |
-    -- (split at h; skip))` exposes the concrete transform output for each
-    -- (guard × measure) sub-case.  The inner `by` block then expands
-    -- `Stmt.touchedVars (concrete output)` via our helper rewrites
-    -- (`getVars_havoc_map`, `getVars_mapIdx_assert`, …) and dispatches
-    -- each disjunct of `hm` to either `m ∈ Stmt.definedVars (concrete)`
-    -- (handled by `Or.inl + subst + simp`) or `m ∈ Stmt.touchedVars (.loop …)`
-    -- (handled by one of the `body_*_to_src` / `guard_to_src` / `measure_to_src` /
-    -- `inv_to_src` closures).  In one of the branches `cases h` does not
-    -- fully substitute `s'` (it still depends on an inner abstract `y`
-    -- introduced by `bind`); the leaf-dispatch sorry below covers that gap.
     repeat (first
       | (cases h; exact
           ⟨(StringGenState.gen "loop" σ.gen).fst, _, rfl, fun m hm => by

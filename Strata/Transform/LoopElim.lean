@@ -138,7 +138,7 @@ through a giant monadic term. -/
 
 /-- The havoc block: a single `.block` containing havocs of the loop-carried
     (modified-but-not-locally-defined) variables. -/
-@[expose, reducible] def buildHavocBlock [HasVarsImp P C] [HasHavoc P C] [DecidableEq P.Ident]
+@[expose] def buildHavocBlock [HasVarsImp P C] [HasHavoc P C] [DecidableEq P.Ident]
     (loop_num : String) (bss : List (Stmt P C)) (md : MetaData P) : Stmt P C :=
   let local_defs := Block.definedVars bss false
   let assigned_vars := (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
@@ -147,7 +147,7 @@ through a giant monadic term. -/
 
 /-- The list of entry-invariant assertions: `assert(I_i)` for each invariant.
     Used at loop entry to establish VC1. -/
-@[expose, reducible] def buildEntryInvariants [HasPassiveCmds P C]
+@[expose] def buildEntryInvariants [HasPassiveCmds P C]
     (loop_num : String) (invariants : List (String × P.Expr)) (md : MetaData P) :
     List (Stmt P C) :=
   invariants.mapIdx fun i lp =>
@@ -157,7 +157,7 @@ through a giant monadic term. -/
 /-- The list of entry-invariant assumptions: `assume(I_i)` for each invariant.
     Used after the entry asserts to make the invariant available on the
     0-iteration path. -/
-@[expose, reducible] def buildEntryInvariantAssumes [HasPassiveCmds P C]
+@[expose] def buildEntryInvariantAssumes [HasPassiveCmds P C]
     (loop_num : String) (invariants : List (String × P.Expr)) (md : MetaData P) :
     List (Stmt P C) :=
   invariants.mapIdx fun i lp =>
@@ -165,7 +165,7 @@ through a giant monadic term. -/
       s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i lp.1}" lp.2 md)
 
 /-- The first-iteration facts block: entry asserts followed by entry assumes. -/
-@[expose, reducible] def buildFirstIterFacts [HasPassiveCmds P C]
+@[expose] def buildFirstIterFacts [HasPassiveCmds P C]
     (loop_num : String) (invariants : List (String × P.Expr)) (md : MetaData P) :
     Stmt P C :=
   .block s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}"
@@ -175,7 +175,7 @@ through a giant monadic term. -/
 /-- The list of mid-iteration invariant assumptions: `assume(I_i)` after havoc.
     These are used to make the invariant available during one arbitrary
     iteration. -/
-@[expose, reducible] def buildInvAssumes [HasPassiveCmds P C]
+@[expose] def buildInvAssumes [HasPassiveCmds P C]
     (loop_num : String) (invariants : List (String × P.Expr)) (md : MetaData P) :
     List (Stmt P C) :=
   invariants.mapIdx fun i lp =>
@@ -184,7 +184,7 @@ through a giant monadic term. -/
 
 /-- The list of post-body invariant assertions: `assert(I_i)` after the body.
     These are VC2: the invariant must be maintained by an arbitrary iteration. -/
-@[expose, reducible] def buildMaintainInvariants [HasPassiveCmds P C]
+@[expose] def buildMaintainInvariants [HasPassiveCmds P C]
     (loop_num : String) (invariants : List (String × P.Expr)) (md : MetaData P) :
     List (Stmt P C) :=
   invariants.mapIdx fun i lp =>
@@ -194,7 +194,7 @@ through a giant monadic term. -/
 /-- The list of exit-state invariant assumptions: `assume(I_i)` at exit.
     Used after the exit havoc to assume the invariant holds in the exit state
     (justified by induction from VC1+VC2). -/
-@[expose, reducible] def buildExitInvariantAssumes [HasPassiveCmds P C]
+@[expose] def buildExitInvariantAssumes [HasPassiveCmds P C]
     (loop_num : String) (invariants : List (String × P.Expr)) (md : MetaData P) :
     List (Stmt P C) :=
   invariants.mapIdx fun i lp =>
@@ -204,7 +204,7 @@ through a giant monadic term. -/
 /-- Termination stmts when guard is `.det g` and measure is `some m`:
     `init m_old` and `assert(¬(m_old < 0))` go into the prefix; `assert(m < m_old)`
     goes into the suffix. -/
-@[expose, reducible] def buildTerminationStmtsSome
+@[expose] def buildTerminationStmtsSome
     [HasPassiveCmds P C] [HasInit P C] [HasIdent P] [HasFvar P]
     [HasIntOrder P] [HasNot P]
     (loop_num : String) (m : P.Expr) (md : MetaData P) :
