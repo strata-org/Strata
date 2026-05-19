@@ -39,7 +39,7 @@ instance : Inhabited ModuleName where
 
 
 private
-def ofStringAux (mod : String.Slice) (a : Array ModuleComponent) (start cur : mod.Pos) : Option ModuleName :=
+def ofSliceAux (mod : String.Slice) (a : Array ModuleComponent) (start cur : mod.Pos) : Option ModuleName :=
   if h : cur.IsAtEnd then
     let r := mod.extract start cur
     if ne : r = "" then
@@ -57,15 +57,15 @@ def ofStringAux (mod : String.Slice) (a : Array ModuleComponent) (start cur : mo
         .none
       else
         let next := cur.next h
-        ofStringAux mod (a.push ⟨r, ne⟩) next next
+        ofSliceAux mod (a.push ⟨r, ne⟩) next next
     else
       let next := cur.next h
-      ofStringAux mod a start next
+      ofSliceAux mod a start next
   termination_by cur
 
 /-- Parses a dot-separated module name string (e.g., "typing.List"). -/
 def ofSlice? (mod : String.Slice) : Option ModuleName :=
-  ofStringAux mod #[] mod.startPos mod.startPos
+  ofSliceAux mod #[] mod.startPos mod.startPos
 
 /-- Parses a dot-separated module name string (e.g., "typing.List"). -/
 def ofString? (mod : String) : Option ModuleName :=
