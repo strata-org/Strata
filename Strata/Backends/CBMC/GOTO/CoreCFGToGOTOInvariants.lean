@@ -76,6 +76,22 @@ def Core.CmdExt.isPlainCmd : Core.Command → Bool
   | .cmd _ => true
   | .call _ _ _ => false
 
+/-- A `Core.Command` is admitted by the simulation theorem when it is a
+plain `CmdExt.cmd` whose inner `Imperative.Cmd` is *not* a `cover` and
+*not* a non-deterministic initialization. The two excluded shapes
+correspond to known semantic asymmetries:
+- cover is a no-op in source but emits an ASSERT in GOTO (per-trace
+  divergence; documented in
+  `docs/superpowers/2026-05-19-cover-semantics-discussion.md`);
+- nondet `init` binds a value in source but emits a single DECL in
+  GOTO (precision mismatch; tracked at
+  https://github.com/strata-org/Strata/issues/1186). -/
+def Core.CmdExt.isPlainNonCoverCmd : Core.Command → Bool
+  | .cmd (.cover _ _ _)         => false
+  | .cmd (.init _ _ .nondet _)  => false
+  | .cmd _                      => true
+  | .call _ _ _                 => false
+
 namespace CProverGOTO
 
 open Imperative
