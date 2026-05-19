@@ -713,9 +713,13 @@ def synthVarField (exprMd : StmtExprMd)
 /-- Rules **If-NoElse** / **If-Synth**: `cond` is checked against `TBool`.
     With no else branch, the construct is a statement — `thenBr` is checked
     against `TVoid` and the result is `TVoid`, so `if c then 5` is rejected.
-    With an else branch, the then-branch's synthesized type is returned; the
-    two branches are *not* compared against each other, since a statement-
-    position `if` often pairs a value branch with `return`/`exit`/`assert`. -/
+    With an else branch, the result type is the join (LUB) of the two
+    branches' synthesized types, so `if c then new Left else new Right`
+    synthesizes the common ancestor `Top` rather than committing to one
+    branch arbitrarily. When no common supertype exists (e.g. a value branch
+    paired with a `TVoid` `return`/`exit`), `joinTypes` falls back to the
+    then-branch's type and the enclosing context's check surfaces any
+    mismatch downstream. -/
 def synthIfThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) :
@@ -728,8 +732,9 @@ def synthIfThenElse (exprMd : StmtExprMd)
     pure (.IfThenElse cond' thenBr' none, voidTy)
   | some e =>
     let (thenBr', thenTy) ← synthStmtExpr thenBr
-    let (elseBr', _) ← synthStmtExpr e
-    pure (.IfThenElse cond' thenBr' (some elseBr'), thenTy)
+    let (elseBr', elseTy) ← synthStmtExpr e
+    let ctx := (← get).typeContext
+    pure (.IfThenElse cond' thenBr' (some elseBr'), joinTypes ctx thenTy elseTy)
   termination_by (exprMd, 1)
   decreasing_by
     all_goals first

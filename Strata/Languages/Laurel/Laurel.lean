@@ -558,6 +558,43 @@ def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
 def isConsistentSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
   isConsistent ctx sub sup || isSubtype ctx sub sup
 
+/-- BFS through `extendingMap` starting from `name` and stopping at the first
+    type that is also in `targetAncestors`. Used by `joinTypes` to find a
+    common ancestor between two composites; `visited` cuts off cycles. -/
+partial def TypeContext.firstCommonAncestor (ctx : TypeContext)
+    (name : String) (targetAncestors : Std.HashSet String) : Option String :=
+  let rec go (frontier : List String) (visited : Std.HashSet String) : Option String :=
+    match frontier with
+    | [] => none
+    | n :: rest =>
+      if visited.contains n then go rest visited
+      else if targetAncestors.contains n then some n
+      else
+        let parents := (ctx.extendingMap.get? n).getD []
+        go (rest ++ parents) (visited.insert n)
+  go [name] {}
+
+/-- Least upper bound for the if-then-else synthesis rule. When `a` and `b`
+    are subtype-related, returns the larger; for unrelated composites, walks
+    `extending` chains for the first common ancestor. When no common
+    supertype exists (e.g. unrelated primitives, or a value branch paired
+    with a `TVoid` `return`/`exit`), falls back to `a` — the enclosing
+    context's `checkSubtype` then surfaces any mismatch against the
+    then-branch's type, preserving the historical statement-form behavior. -/
+def joinTypes (ctx : TypeContext) (a b : HighTypeMd) : HighTypeMd :=
+  if isConsistentSubtype ctx a b then b
+  else if isConsistentSubtype ctx b a then a
+  else
+    let a' := ctx.unfold a
+    let b' := ctx.unfold b
+    match a'.val, b'.val with
+    | .UserDefined aName, .UserDefined bName =>
+      match ctx.firstCommonAncestor aName.text (ctx.ancestors bName.text) with
+      | some name =>
+        { val := .UserDefined { text := name, source := none }, source := a.source }
+      | none => a
+    | _, _ => a
+
 def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
