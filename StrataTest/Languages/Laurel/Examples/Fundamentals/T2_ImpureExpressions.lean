@@ -69,6 +69,21 @@ procedure assumeWithBlockExpr()
   assert x == 1
 };
 
+// Regression for #1133: an `assert` that itself sits inside an
+// expression-position block and whose condition contains another unlabeled
+// block with a destructive assignment. This pattern only lowers correctly
+// once `transformExpr` itself has cases for `.Assert`/`.Assume` that
+// recursively lift the condition (rather than relying on the surrounding
+// `transformStmt` to do so).
+procedure nestedAssertInBlockExpr()
+  opaque
+{
+  var z: int := 0;
+  var y: int := { assert ({ z := 1; z } > 0); 42 };
+  assert y == 42;
+  assert z == 1
+};
+
 // Regression for #1133: an unlabeled block in the initializer of a
 // declare-with-init that itself sits in expression position. Before the
 // fix, `transformExpr` on `.Assign[.Declare]` early-returned the original

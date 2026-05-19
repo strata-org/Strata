@@ -159,11 +159,13 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
 
 /-- Check if an expression contains any assignments that are NOT inside an
 unlabeled block. Unlabeled blocks in expression position are lowered by the
-`.Block` case of `transformExpr` (prepends side-effects + returns the last
-element as the value), so assignments inside them do not need special
-rejection logic. This is used for assert/assume conditions, which should
-proceed with transformation even when an unlabeled block embeds an
-assignment (e.g. havoc from PR #1019's unmodeled call handling). -/
+`.Block` case of `transformExpr` (prepends side-effects), so assignments
+inside them are safely lifted. This is used by the `.Assert` / `.Assume`
+cases in both `transformStmt` and `transformExpr` to decide whether to
+recursively lift the condition: `false` → lift; `true` → leave unchanged so
+the Laurel-to-Core translator can emit "destructive assignments are not
+supported in functions or contracts" against a top-level assignment that
+the user almost certainly didn't intend. -/
 def containsAssignmentOutsideUnlabeledBlock (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
@@ -189,6 +191,10 @@ def containsAssignmentOutsideUnlabeledBlock (expr : StmtExprMd) : Bool :=
   decreasing_by
     all_goals ((try cases x); simp_all; try term_by_mem)
 
+/-- Check if an expression contains any assignments (recursively).
+
+Used by the ITE case of `transformExpr` to decide whether a branch needs
+its own prepend isolation. -/
 def containsAssignment (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
@@ -429,9 +435,48 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       else
         return expr
 
+  | .Assert cond =>
+      -- Asserts in expression position (typically as a non-last stmt of a
+      -- block in expression position) are lifted out as prepended statements.
+      -- The condition is recursively transformed so any nested assignments,
+      -- holes or unlabeled-block side-effects inside it are themselves lifted.
+      -- Returning a leaf placeholder lets `onlyKeepSideEffectStmtsAndLast`
+      -- drop this slot from the surrounding block.
+      --
+      -- A top-level assignment in the condition (e.g. `assert (x := 2) == 2`)
+      -- is left in place: the Laurel-to-Core translator emits a
+      -- "destructive assignments are not supported" diagnostic for those,
+      -- which is more useful than silently lifting an almost certainly
+      -- unintended assignment.
+      if containsAssignmentOutsideUnlabeledBlock cond.condition then
+        return expr
+      let outerPrepends := (← get).prependedStmts
+      modify fun s => { s with prependedStmts := [] }
+      let seqCond ← transformExpr cond.condition
+      let condPrepends ← takePrepends
+      let liftedAssert : StmtExprMd :=
+        ⟨.Assert { cond with condition := seqCond }, source⟩
+      modify fun s => { s with
+        prependedStmts := outerPrepends ++ condPrepends ++ [liftedAssert] }
+      return ⟨.LiteralBool true, source⟩
+
+  | .Assume cond =>
+      -- Same shape as the `.Assert` case above.
+      if containsAssignmentOutsideUnlabeledBlock cond then
+        return expr
+      let outerPrepends := (← get).prependedStmts
+      modify fun s => { s with prependedStmts := [] }
+      let seqCond ← transformExpr cond
+      let condPrepends ← takePrepends
+      let liftedAssume : StmtExprMd := ⟨.Assume seqCond, source⟩
+      modify fun s => { s with
+        prependedStmts := outerPrepends ++ condPrepends ++ [liftedAssume] }
+      return ⟨.LiteralBool true, source⟩
+
   | _ => return expr
   termination_by (sizeOf expr, 0)
   decreasing_by
+    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
     all_goals (simp_all; try term_by_mem)
 
 /--
@@ -443,26 +488,22 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | AstNode.mk val source =>
   match val with
   | .Assert cond =>
-      -- Reject top-level assignments in assert conditions. Assignments inside
-      -- unlabeled blocks are OK because the Block case of transformExpr lifts
-      -- their side effects out as prepends.
-      if !containsAssignmentOutsideUnlabeledBlock cond.condition then
-        let seqCond ← transformExpr cond.condition
-        let prepends ← takePrepends
-        modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩]
-      else
+      -- See the matching case in `transformExpr` for why we leave a top-level
+      -- destructive assignment in the condition unchanged.
+      if containsAssignmentOutsideUnlabeledBlock cond.condition then
         return [stmt]
+      let seqCond ← transformExpr cond.condition
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩]
 
   | .Assume cond =>
-      -- Same rationale as Assert above.
-      if !containsAssignmentOutsideUnlabeledBlock cond then
-        let seqCond ← transformExpr cond
-        let prepends ← takePrepends
-        modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assume seqCond, source⟩]
-      else
+      if containsAssignmentOutsideUnlabeledBlock cond then
         return [stmt]
+      let seqCond ← transformExpr cond
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.Assume seqCond, source⟩]
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
