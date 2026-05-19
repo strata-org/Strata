@@ -3204,6 +3204,260 @@ private theorem defUseWellFormed_cons {outer : Expression.Ident → Bool}
   simp only [Bool.and_eq_true] at h
   exact h
 
+/-- Build a `Block.defUseWellFormed` from a stmt and a tail well-formedness
+    against an extended outer scope. -/
+private theorem defUseWellFormed_cons_intro {outer : Expression.Ident → Bool}
+    {s : Statement} {ss : Statements}
+    (h_s : Stmt.defUseWellFormed outer s = Bool.true)
+    (h_ss : Block.defUseWellFormed (fun n => outer n || decide (n ∈ Stmt.definedVars s true)) ss = Bool.true) :
+    Block.defUseWellFormed outer (s :: ss) = Bool.true := by
+  unfold Block.defUseWellFormed
+  simp only [Bool.and_eq_true]; exact ⟨h_s, h_ss⟩
+
+/-- Monotonicity-with-freshness for `defUseWellFormed`: extending `outer` by a
+    set of fresh names that don't appear in the statement's `touchedVars` ∪
+    `definedVars` preserves `defUseWellFormed`.
+
+    Concretely: if the statement is well-formed against `outer`, and a predicate
+    `extra` characterizes a set of names disjoint from the statement's vars,
+    then the statement is also well-formed against `(fun n => outer n || extra n)`. -/
+private theorem defUseWellFormed_outer_extend_aux (sz : Nat) :
+    (∀ (outer extra : Expression.Ident → Bool) (s : Statement),
+      Stmt.sizeOf s ≤ sz →
+      Stmt.defUseWellFormed outer s = Bool.true →
+      (∀ n, extra n = Bool.true →
+        n ∉ Stmt.modifiedVars s ∧ n ∉ Stmt.getVars s ∧
+        n ∉ Stmt.definedVars s false) →
+      Stmt.defUseWellFormed (fun n => outer n || extra n) s = Bool.true) ∧
+    (∀ (outer extra : Expression.Ident → Bool) (bss : Statements),
+      Block.sizeOf bss ≤ sz →
+      Block.defUseWellFormed outer bss = Bool.true →
+      (∀ n, extra n = Bool.true →
+        n ∉ Block.modifiedVars bss ∧ n ∉ Block.getVars bss ∧
+        n ∉ Block.definedVars bss false) →
+      Block.defUseWellFormed (fun n => outer n || extra n) bss = Bool.true) := by
+  induction sz with
+  | zero =>
+    refine ⟨?_, ?_⟩
+    · intro outer extra s hsz; cases s <;> simp [Stmt.sizeOf] at hsz
+    · intro outer extra bss hsz hwf hext
+      match bss with
+      | [] => simp [Block.defUseWellFormed]
+      | s :: rest => simp [Block.sizeOf] at hsz
+  | succ k ih =>
+    obtain ⟨ih_stmt, ih_block⟩ := ih
+    refine ⟨?_, ?_⟩
+    · -- Stmt case
+      intro outer extra s hsz hwf hext
+      match s with
+      | .cmd c =>
+        unfold Stmt.defUseWellFormed at hwf ⊢
+        simp only [Bool.and_eq_true] at hwf ⊢
+        obtain ⟨⟨hgv, hmv⟩, hdef⟩ := hwf
+        refine ⟨⟨?_, ?_⟩, ?_⟩
+        · rw [List.all_eq_true] at hgv ⊢
+          intro n hn
+          simp only [Bool.or_eq_true]
+          exact .inl (hgv n hn)
+        · rw [List.all_eq_true] at hmv ⊢
+          intro n hn
+          simp only [Bool.or_eq_true]
+          exact .inl (hmv n hn)
+        · rw [List.all_eq_true] at hdef ⊢
+          intro n hn
+          have hd := hdef n hn
+          simp only [decide_eq_true_eq] at hd ⊢
+          intro hcontra
+          rw [Bool.or_eq_true] at hcontra
+          rcases hcontra with h | h
+          · exact hd h
+          · exact (hext n h).2.2 (by
+              simp only [Stmt.definedVars, HasVarsImp.definedVars] at hn
+              simp only [Stmt.definedVars, HasVarsImp.definedVars]; exact hn)
+      | .block l bss md =>
+        unfold Stmt.defUseWellFormed at hwf ⊢
+        have hsz_bss : Block.sizeOf bss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hext_bss : ∀ n, extra n = Bool.true →
+            n ∉ Block.modifiedVars bss ∧ n ∉ Block.getVars bss ∧
+            n ∉ Block.definedVars bss false := by
+          intro n hn
+          have ⟨hm, hg, hd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_⟩
+          · simpa [Stmt.modifiedVars] using hm
+          · simpa [Stmt.getVars] using hg
+          · simpa [Stmt.definedVars] using hd
+        exact ih_block outer extra bss hsz_bss hwf hext_bss
+      | .ite cond tbss ebss md =>
+        unfold Stmt.defUseWellFormed at hwf ⊢
+        simp only [Bool.and_eq_true] at hwf ⊢
+        obtain ⟨⟨hcond_all, htbss⟩, hebss⟩ := hwf
+        rw [List.all_eq_true] at hcond_all
+        have hsz_t : Block.sizeOf tbss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hsz_e : Block.sizeOf ebss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hext_t : ∀ n, extra n = Bool.true →
+            n ∉ Block.modifiedVars tbss ∧ n ∉ Block.getVars tbss ∧
+            n ∉ Block.definedVars tbss false := by
+          intro n hn
+          have ⟨hm, hg, hd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_⟩
+          · intro hh; exact hm (by
+              simp only [Stmt.modifiedVars, List.mem_append]; exact .inl hh)
+          · intro hh; exact hg (by
+              simp only [Stmt.getVars, List.mem_append]; exact .inl (.inr hh))
+          · intro hh; exact hd (by
+              simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]
+              exact .inl hh)
+        have hext_e : ∀ n, extra n = Bool.true →
+            n ∉ Block.modifiedVars ebss ∧ n ∉ Block.getVars ebss ∧
+            n ∉ Block.definedVars ebss false := by
+          intro n hn
+          have ⟨hm, hg, hd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_⟩
+          · intro hh; exact hm (by
+              simp only [Stmt.modifiedVars, List.mem_append]; exact .inr hh)
+          · intro hh; exact hg (by
+              simp only [Stmt.getVars, List.mem_append]; exact .inr hh)
+          · intro hh; exact hd (by
+              simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append]
+              exact .inr hh)
+        refine ⟨⟨?_, ?_⟩, ?_⟩
+        · rw [List.all_eq_true]
+          intro n hn; simp only [Bool.or_eq_true]; exact .inl (hcond_all n hn)
+        · exact ih_block outer extra tbss hsz_t htbss hext_t
+        · exact ih_block outer extra ebss hsz_e hebss hext_e
+      | .loop guard measure inv body md =>
+        unfold Stmt.defUseWellFormed at hwf ⊢
+        simp only [Bool.and_eq_true] at hwf ⊢
+        obtain ⟨⟨⟨hguard_all, hmeas_all⟩, hinv_all⟩, hbody⟩ := hwf
+        rw [List.all_eq_true] at hguard_all hmeas_all hinv_all
+        have hsz_body : Block.sizeOf body ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hext_body : ∀ n, extra n = Bool.true →
+            n ∉ Block.modifiedVars body ∧ n ∉ Block.getVars body ∧
+            n ∉ Block.definedVars body false := by
+          intro n hn
+          have ⟨hm, hg, hd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_⟩
+          · simpa [Stmt.modifiedVars] using hm
+          · intro hh; exact hg (by
+              simp only [Stmt.getVars, List.mem_append]; exact .inr hh)
+          · simpa [Stmt.definedVars] using hd
+        refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
+        · rw [List.all_eq_true]
+          intro n hn; simp only [Bool.or_eq_true]; exact .inl (hguard_all n hn)
+        · rw [List.all_eq_true]
+          intro n hn; simp only [Bool.or_eq_true]; exact .inl (hmeas_all n hn)
+        · rw [List.all_eq_true]
+          intro n hn; simp only [Bool.or_eq_true]; exact .inl (hinv_all n hn)
+        · exact ih_block outer extra body hsz_body hbody hext_body
+      | .exit l md => simp [Stmt.defUseWellFormed]
+      | .funcDecl decl md =>
+        unfold Stmt.defUseWellFormed at hwf; simp at hwf
+      | .typeDecl tc md => simp [Stmt.defUseWellFormed]
+    · -- Block case
+      intro outer extra bss hsz hwf hext
+      match bss with
+      | [] => simp [Block.defUseWellFormed]
+      | s :: rest =>
+        unfold Block.defUseWellFormed at hwf ⊢
+        simp only [Bool.and_eq_true] at hwf ⊢
+        obtain ⟨hwf_s, hwf_rest⟩ := hwf
+        have hsz_s : Stmt.sizeOf s ≤ k := by simp [Block.sizeOf] at hsz; omega
+        have hsz_rest : Block.sizeOf rest ≤ k := by simp [Block.sizeOf] at hsz; omega
+        have hext_s : ∀ n, extra n = Bool.true →
+            n ∉ Stmt.modifiedVars s ∧ n ∉ Stmt.getVars s ∧
+            n ∉ Stmt.definedVars s false := by
+          intro n hn
+          have ⟨hm, hg, hd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_⟩
+          · intro hh; exact hm (by
+              simp only [Block.modifiedVars, List.mem_append]; exact .inl hh)
+          · intro hh; exact hg (by
+              simp only [Block.getVars, List.mem_append]; exact .inl hh)
+          · intro hh; exact hd (by
+              simp only [Block.definedVars, List.mem_append]; exact .inl hh)
+        have hext_rest : ∀ n, extra n = Bool.true →
+            n ∉ Block.modifiedVars rest ∧ n ∉ Block.getVars rest ∧
+            n ∉ Block.definedVars rest false := by
+          intro n hn
+          have ⟨hm, hg, hd⟩ := hext n hn
+          refine ⟨?_, ?_, ?_⟩
+          · intro hh; exact hm (by
+              simp only [Block.modifiedVars, List.mem_append]; exact .inr hh)
+          · intro hh; exact hg (by
+              simp only [Block.getVars, List.mem_append]; exact .inr hh)
+          · intro hh; exact hd (by
+              simp only [Block.definedVars, List.mem_append]; exact .inr hh)
+        refine ⟨ih_stmt outer extra s hsz_s hwf_s hext_s, ?_⟩
+        -- For tail, the inner outer extends by `decide (n ∈ Stmt.definedVars s true)`.
+        -- Want: Block.defUseWellFormed
+        --   (fun n => (outer n || extra n) || decide (n ∈ Stmt.definedVars s true)) rest
+        -- Have: Block.defUseWellFormed
+        --   (fun n => outer n || decide (n ∈ Stmt.definedVars s true)) rest
+        -- Use ih_block with extra := extra and outer = original tail outer.
+        have h_inner : Block.defUseWellFormed
+            (fun n => (fun m => outer m || decide (m ∈ Stmt.definedVars s true)) n || extra n)
+            rest = Bool.true :=
+          ih_block (fun m => outer m || decide (m ∈ Stmt.definedVars s true)) extra rest
+            hsz_rest hwf_rest hext_rest
+        -- Reorganize the boolean predicate.
+        have heq : (fun n =>
+              (outer n || decide (n ∈ Stmt.definedVars s true)) || extra n) =
+            (fun n => (outer n || extra n) || decide (n ∈ Stmt.definedVars s true)) := by
+          funext n; simp only [Bool.or_assoc, Bool.or_comm (decide _) (extra _)]
+        rw [heq] at h_inner
+        exact h_inner
+
+private theorem defUseWellFormed_outer_extend_stmt
+    {outer extra : Expression.Ident → Bool} {s : Statement}
+    (hwf : Stmt.defUseWellFormed outer s = Bool.true)
+    (hext : ∀ n, extra n = Bool.true →
+        n ∉ Stmt.modifiedVars s ∧ n ∉ Stmt.getVars s ∧
+        n ∉ Stmt.definedVars s false) :
+    Stmt.defUseWellFormed (fun n => outer n || extra n) s = Bool.true :=
+  (defUseWellFormed_outer_extend_aux (Stmt.sizeOf s)).1 outer extra s
+    (Nat.le_refl _) hwf hext
+
+private theorem defUseWellFormed_outer_extend_block
+    {outer extra : Expression.Ident → Bool} {bss : Statements}
+    (hwf : Block.defUseWellFormed outer bss = Bool.true)
+    (hext : ∀ n, extra n = Bool.true →
+        n ∉ Block.modifiedVars bss ∧ n ∉ Block.getVars bss ∧
+        n ∉ Block.definedVars bss false) :
+    Block.defUseWellFormed (fun n => outer n || extra n) bss = Bool.true :=
+  (defUseWellFormed_outer_extend_aux (Block.sizeOf bss)).2 outer extra bss
+    (Nat.le_refl _) hwf hext
+
+/-- Append decomposition for `Block.defUseWellFormed`. -/
+private theorem defUseWellFormed_block_append
+    (outer : Expression.Ident → Bool) (ss₁ ss₂ : Statements) :
+    Block.defUseWellFormed outer (ss₁ ++ ss₂) = Bool.true ↔
+      Block.defUseWellFormed outer ss₁ = Bool.true ∧
+      Block.defUseWellFormed
+        (fun n => outer n || decide (n ∈ Block.definedVars ss₁ true)) ss₂ = Bool.true := by
+  induction ss₁ generalizing outer with
+  | nil => simp [Block.definedVars, Block.defUseWellFormed]
+  | cons s rest ih =>
+    show Block.defUseWellFormed outer (s :: (rest ++ ss₂)) = Bool.true ↔ _
+    constructor
+    · intro h
+      have ⟨h_s, h_rest⟩ := defUseWellFormed_cons h
+      have ⟨h_rest', h_ss₂⟩ :=
+        (ih (fun n => outer n || decide (n ∈ Stmt.definedVars s true))).mp h_rest
+      refine ⟨?_, ?_⟩
+      · unfold Block.defUseWellFormed
+        simp only [Bool.and_eq_true]; exact ⟨h_s, h_rest'⟩
+      · rw [defUseWellFormed_block_congr (fun n => ?_) ss₂]
+        · exact h_ss₂
+        · simp only [Block.definedVars, List.mem_append, Bool.or_assoc, Bool.decide_or]
+    · intro ⟨h_left, h_right⟩
+      have ⟨h_s, h_rest_left⟩ := defUseWellFormed_cons h_left
+      apply defUseWellFormed_cons_intro h_s
+      apply (ih (fun n => outer n || decide (n ∈ Stmt.definedVars s true))).mpr
+      refine ⟨h_rest_left, ?_⟩
+      rw [defUseWellFormed_block_congr (fun n => ?_) ss₂]
+      · exact h_right
+      · simp only [Block.definedVars, List.mem_append, Bool.or_assoc, Bool.decide_or]
+
 
 /-- `Stmt.definedVars s true ⊆ Stmt.definedVars s false` for any statement. -/
 private theorem stmt_definedVars_true_subset_false (s : Statement) (n : Expression.Ident)
@@ -6982,6 +7236,1252 @@ private theorem mem_touchedVars_blockResult
       · exact Or.inr (Or.inr hg)
 end
 
+/-! ## `defUseWellFormed` preservation through `stmtResult` / `blockResult`
+
+The output of the loop-elim transform is also `defUseWellFormed`.  This is
+needed to discharge the `InitEnvWF.defUseOk` field on the output side of
+`loopElim_overapproximatesAggressive`.
+
+The proof is structural over the statement.  The non-loop cases reduce
+trivially via the `stmtResult_*` / `blockResult_*` identity lemmas.  The
+loop case is the only interesting one: we must verify well-formedness for
+the produced wrapper
+
+    block loop_label [first_iter_facts, ite guard (arb_facts :: exit_state) [] {}]
+
+against `outer = (·.store).isSome`, given that the source `loop` body is
+well-formed against the same `outer` and that the reserved `$__loop` prefix
+is fresh in `outer` (via `BlockInitEnvWF.reservedFresh`).  The body itself is
+unchanged by the transform — only the wrapper is fresh — so `outer_extend`
+suffices for the body's well-formedness inside the encoding (extended by
+`m_old`). -/
+
+/-- `Stmt.definedVars (stmtResult σ s) true = Stmt.definedVars s true`.
+
+    For non-loop cases this is straightforward (`stmtResult` is identity for
+    cmd/exit/funcDecl/typeDecl, and `definedVars _ true = []` for compound).
+    The loop case uses `stmtResult_loop_struct`, which says the loop's output
+    is a block, hence `definedVars _ true = []`. -/
+private theorem stmtResult_definedVars_true_eq
+    (σ : LoopElimState) (s : Statement) (hok : stmtOk σ s) :
+    Stmt.definedVars (stmtResult σ s) true = Stmt.definedVars s true := by
+  match s with
+  | .cmd c => rw [stmtResult_cmd]
+  | .exit l md => rw [stmtResult_exit]
+  | .funcDecl d md => rw [stmtResult_funcDecl]
+  | .typeDecl tc md => rw [stmtResult_typeDecl]
+  | .block l bss md =>
+    rw [stmtResult_block]; simp [Stmt.definedVars]
+  | .ite c tss ess md =>
+    rw [stmtResult_ite]; simp [Stmt.definedVars]
+  | .loop guard measure inv body md =>
+    have ⟨_, _, _, _, hs', _⟩ := stmtResult_loop_struct σ guard measure inv body md hok
+    rw [hs']; simp [Stmt.definedVars]
+
+/-! ### Piece-wise `defUseWellFormed` lemmas for loop-elim builders -/
+
+/-- `defUseWellFormed` of a havoc-only command list: requires only that all
+    havoc'd variables are in `outer`. -/
+private theorem defUseWellFormed_havoc_map (outer : Expression.Ident → Bool)
+    (xs : List Expression.Ident) (md : MetaData Expression)
+    (hxs : ∀ n ∈ xs, outer n = Bool.true) :
+    Block.defUseWellFormed (P := Expression) (C := Command)
+      outer (xs.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) = Bool.true := by
+  induction xs with
+  | nil => simp [Block.defUseWellFormed]
+  | cons x rest ih =>
+    show Block.defUseWellFormed outer
+      (Stmt.cmd (HasHavoc.havoc x md) :: rest.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) = Bool.true
+    apply defUseWellFormed_cons_intro
+    · -- head: havoc x is well-formed since x ∈ outer.
+      show Stmt.defUseWellFormed (P := Expression) (C := Command)
+        outer (Stmt.cmd (HasHavoc.havoc x md)) = Bool.true
+      simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+        HasVarsImp.definedVars, HasHavoc.havoc, Command.getVars, Command.modifiedVars,
+        Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
+        ExprOrNondet.getVars, List.all_nil, Bool.and_true, Bool.true_and]
+      simp [List.all_cons, hxs x (.head _)]
+    · -- tail: extending outer by [] (havoc doesn't add to definedVars true) — same as outer.
+      have heq : (fun n => outer n || decide (n ∈
+          Stmt.definedVars (P := Expression) (C := Command)
+            (Stmt.cmd (HasHavoc.havoc x md)) true)) =
+          outer := by
+        funext n
+        simp [Stmt.definedVars, HasVarsImp.definedVars, HasHavoc.havoc,
+          Command.definedVars, Cmd.definedVars]
+      rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => congrFun heq n)]
+      exact ih (fun n hn => hxs n (.tail _ hn))
+
+/-- `defUseWellFormed` of a `mapIdx` of asserts: requires only that all
+    `getVars` of the assert expressions are in `outer`. -/
+private theorem defUseWellFormed_mapIdx_assert (outer : Expression.Ident → Bool)
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String)
+    (hgv : ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2), outer n = Bool.true) :
+    Block.defUseWellFormed (P := Expression) (C := Command) outer
+      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assert (label i le) le.2 md)) = Bool.true := by
+  induction inv generalizing label with
+  | nil => simp [List.mapIdx_nil, Block.defUseWellFormed]
+  | cons x rest ih =>
+    rw [List.mapIdx_cons]
+    apply defUseWellFormed_cons_intro
+    · show Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+            (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md)) = Bool.true
+      simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+        HasVarsImp.definedVars, HasPassiveCmds.assert, Command.getVars, Command.modifiedVars,
+        Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
+        List.all_nil, Bool.and_true, Bool.true_and]
+      rw [List.all_eq_true]
+      intro n hn
+      apply hgv n
+      simp only [List.flatMap_cons, List.mem_append]
+      exact .inl hn
+    · have heq : (fun n => outer n || decide (n ∈ Stmt.definedVars (P := Expression) (C := Command)
+          (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md)) true)) = outer := by
+        funext n
+        simp [Stmt.definedVars, HasVarsImp.definedVars, HasPassiveCmds.assert,
+          Command.definedVars, Cmd.definedVars]
+      rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => congrFun heq n)]
+      exact ih (fun i le => label (i + 1) le) (fun n hn =>
+        hgv n (by simp only [List.flatMap_cons, List.mem_append]; exact .inr hn))
+
+/-- `defUseWellFormed` of a `mapIdx` of assumes: requires only that all
+    `getVars` of the assume expressions are in `outer`. -/
+private theorem defUseWellFormed_mapIdx_assume (outer : Expression.Ident → Bool)
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String)
+    (hgv : ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2), outer n = Bool.true) :
+    Block.defUseWellFormed (P := Expression) (C := Command) outer
+      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume (label i le) le.2 md)) = Bool.true := by
+  induction inv generalizing label with
+  | nil => simp [List.mapIdx_nil, Block.defUseWellFormed]
+  | cons x rest ih =>
+    rw [List.mapIdx_cons]
+    apply defUseWellFormed_cons_intro
+    · show Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+            (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md)) = Bool.true
+      simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+        HasVarsImp.definedVars, HasPassiveCmds.assume, Command.getVars, Command.modifiedVars,
+        Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
+        List.all_nil, Bool.and_true, Bool.true_and]
+      rw [List.all_eq_true]
+      intro n hn
+      apply hgv n
+      simp only [List.flatMap_cons, List.mem_append]
+      exact .inl hn
+    · have heq : (fun n => outer n || decide (n ∈ Stmt.definedVars (P := Expression) (C := Command)
+          (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md)) true)) = outer := by
+        funext n
+        simp [Stmt.definedVars, HasVarsImp.definedVars, HasPassiveCmds.assume,
+          Command.definedVars, Cmd.definedVars]
+      rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => congrFun heq n)]
+      exact ih (fun i le => label (i + 1) le) (fun n hn =>
+        hgv n (by simp only [List.flatMap_cons, List.mem_append]; exact .inr hn))
+
+/-! Auxiliary: `definedVars _ true = []` for the standard pieces. -/
+
+private theorem definedVars_true_havoc_map (xs : List Expression.Ident)
+    (md : MetaData Expression) :
+    @Block.definedVars Expression Command _
+        (xs.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) true = [] := by
+  induction xs with
+  | nil => simp [Block.definedVars]
+  | cons x rest ih =>
+    simp only [List.map_cons, Block.definedVars]
+    rw [ih]
+    show @Stmt.definedVars Expression Command _ (Stmt.cmd (HasHavoc.havoc x md : Command)) true ++ [] = []
+    simp [Stmt.definedVars, HasVarsImp.definedVars, HasHavoc.havoc, Command.definedVars, Cmd.definedVars]
+
+private theorem definedVars_true_mapIdx_assert
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.definedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (HasPassiveCmds.assert (label i le) le.2 md)) true = [] := by
+  induction inv generalizing label with
+  | nil => simp [List.mapIdx_nil, Block.definedVars]
+  | cons x rest ih =>
+    rw [List.mapIdx_cons]
+    simp only [Block.definedVars]
+    rw [ih]
+    show @Stmt.definedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assert (label 0 x) x.2 md : Command)) true ++ [] = []
+    simp [Stmt.definedVars, HasVarsImp.definedVars, HasPassiveCmds.assert,
+      Command.definedVars, Cmd.definedVars]
+
+private theorem definedVars_true_mapIdx_assume
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (label : Nat → (String × Expression.Expr) → String) :
+    @Block.definedVars Expression Command _
+      (inv.mapIdx fun i le =>
+        Stmt.cmd (HasPassiveCmds.assume (label i le) le.2 md)) true = [] := by
+  induction inv generalizing label with
+  | nil => simp [List.mapIdx_nil, Block.definedVars]
+  | cons x rest ih =>
+    rw [List.mapIdx_cons]
+    simp only [Block.definedVars]
+    rw [ih]
+    show @Stmt.definedVars Expression Command _ (Stmt.cmd (HasPassiveCmds.assume (label 0 x) x.2 md : Command)) true ++ [] = []
+    simp [Stmt.definedVars, HasVarsImp.definedVars, HasPassiveCmds.assume,
+      Command.definedVars, Cmd.definedVars]
+
+/-! ### Master helper for `defUseWellFormed` of `buildLoopOutput`.
+
+    The transform produces
+       block "loop_<n>" [first_iter_asserts, ite g (arb_facts :: exit_state) [] {}]
+    where `arb_facts` and `exit_state` are themselves blocks containing the
+    body, havoc, and various assert/assume pieces.
+
+    Rather than write this proof inline four times (once per case of the
+    guard×measure split), we factor it into a reusable helper that is
+    parametric in `assumeGuard`, `pre`, `post`, `exit` (the parts that differ
+    between the four cases).  The helper takes WF hypotheses for each piece
+    and produces WF of the full output. -/
+
+/-- The "havoc filter" subset of `Block.modifiedVars body` that is in `outer`.
+    Given `defUseWellFormed outer body = true`, every var in
+    `(Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body false)`
+    is in `outer`. -/
+private theorem havoc_filter_subset_outer
+    (outer : Expression.Ident → Bool) (body : Statements)
+    (h_body_wf : Block.defUseWellFormed outer body = Bool.true) :
+    ∀ n ∈ ((Block.modifiedVars body).filter
+            (fun v => decide ¬v ∈ Block.definedVars body Bool.false)),
+      outer n = Bool.true := by
+  intro n hn
+  rw [List.mem_filter] at hn
+  obtain ⟨hn_mod, hn_ndef⟩ := hn
+  rw [decide_eq_true_eq] at hn_ndef
+  exact defUseWellFormed_modGetVars_implies_outer h_body_wf (Or.inl hn_mod) hn_ndef
+
+/-- The havoc block constructed from `body`'s modified-but-not-defined vars
+    is `defUseWellFormed` against any `outer` that body is well-formed against. -/
+private theorem defUseWellFormed_havoc_block
+    (outer : Expression.Ident → Bool) (body : Statements)
+    (md : MetaData Expression) (loop_num : String)
+    (h_body_wf : Block.defUseWellFormed outer body = Bool.true) :
+    Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+        (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+          (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+            (Block.modifiedVars body)))
+        ∅) = Bool.true := by
+  rw [defUseWellFormed_block]
+  exact defUseWellFormed_havoc_map outer _ md
+    (havoc_filter_subset_outer outer body h_body_wf)
+
+/-- The havoc block's `Stmt.definedVars _ true = []`. -/
+private theorem definedVars_true_havoc_block
+    (body : Statements) (md : MetaData Expression) (loop_num : String) :
+    @Stmt.definedVars Expression Command _
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+        (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+          (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+            (Block.modifiedVars body)))
+        ∅) true = [] := by
+  simp [Stmt.definedVars]
+
+/-- WF of the `arbitrary_iter_assumes_<n>` block: given `assumeGuard` is WF
+    and the invariants' `getVars` are in `outer`. -/
+private theorem defUseWellFormed_arb_iter_assumes_block
+    (outer : Expression.Ident → Bool) (loop_num : String)
+    (assumeGuard : Statements)
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (h_assumeGuard_wf : Block.defUseWellFormed outer assumeGuard = Bool.true)
+    (h_assumeGuard_def_true_empty :
+        @Block.definedVars Expression Command _ assumeGuard true = [])
+    (h_inv_getVars :
+        ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2),
+          outer n = Bool.true) :
+    Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "arbitrary_iter_assumes_" ++ loop_num)
+        (assumeGuard ++ inv.mapIdx (fun i lp =>
+          Stmt.cmd (HasPassiveCmds.assume
+            (toString loopElimAssumePrefix ++ loop_num ++ toString "_invariant_" ++
+              toString (if lp.fst.isEmpty = Bool.true then toString i
+                        else toString i ++ toString "_" ++ toString lp.fst))
+            lp.2 md)))
+        md) = Bool.true := by
+  rw [defUseWellFormed_block]
+  rw [defUseWellFormed_block_append]
+  refine ⟨h_assumeGuard_wf, ?_⟩
+  -- Tail: outer extended by definedVars true assumeGuard = outer.
+  rw [defUseWellFormed_block_congr (outer₂ := outer)
+        (fun n => by simp [h_assumeGuard_def_true_empty])]
+  exact defUseWellFormed_mapIdx_assume outer inv md _ h_inv_getVars
+
+/-- The arb_iter_assumes block's `Stmt.definedVars _ true = []`. -/
+private theorem definedVars_true_arb_iter_assumes_block
+    (loop_num : String) (assumeGuard : Statements)
+    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
+    (h_assumeGuard_def_true_empty :
+        @Block.definedVars Expression Command _ assumeGuard true = []) :
+    @Stmt.definedVars Expression Command _
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "arbitrary_iter_assumes_" ++ loop_num)
+        (assumeGuard ++ inv.mapIdx (fun i lp =>
+          Stmt.cmd (HasPassiveCmds.assume
+            (toString loopElimAssumePrefix ++ loop_num ++ toString "_invariant_" ++
+              toString (if lp.fst.isEmpty = Bool.true then toString i
+                        else toString i ++ toString "_" ++ toString lp.fst))
+            lp.2 md)))
+        md) true = [] := by
+  simp [Stmt.definedVars]
+
+/-- Master helper: well-formedness of `buildLoopOutput`-shaped statements.
+    Parametric in `assumeGuard`, `pre`, `post`, `exit` (the four pieces that
+    differ between guard×measure cases). -/
+private theorem defUseWellFormed_buildLoopOutput_form
+    (loop_num : String) (g : ExprOrNondet Expression)
+    (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (assumeGuard pre post exit : Statements)
+    (outer : Expression.Ident → Bool)
+    (h_body_wf : Block.defUseWellFormed outer body = Bool.true)
+    (h_inv_getVars :
+        ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2),
+          outer n = Bool.true)
+    (h_g_getVars : ∀ n ∈ g.getVars, outer n = Bool.true)
+    -- `assumeGuard` well-formed and "open" (definedVars true = []).
+    (h_assumeGuard_wf : Block.defUseWellFormed outer assumeGuard = Bool.true)
+    (h_assumeGuard_def_true_empty :
+        @Block.definedVars Expression Command _ assumeGuard true = [])
+    -- `pre` is well-formed against any outer-extension that includes outer
+    -- (i.e., monotone), and we know what its `definedVars true` is via
+    -- `pre_def_true`.  We also need that `pre` isn't reading anything outside
+    -- `outer ∪ pre.definedVars true` and doesn't define anything in
+    -- `Block.definedVars body false`.
+    (pre_def_true : List Expression.Ident)
+    (h_pre_def_true_eq :
+        @Block.definedVars Expression Command _ pre true = pre_def_true)
+    (h_pre_wf : Block.defUseWellFormed outer pre = Bool.true)
+    -- `body`'s touched vars don't intersect `pre_def_true` (so we can
+    -- absorb pre_def_true into outer for body via defUseWellFormed_outer_extend).
+    (h_pre_def_disjoint_body :
+        ∀ n ∈ pre_def_true,
+          n ∉ Block.modifiedVars body ∧ n ∉ Block.getVars body ∧
+          n ∉ Block.definedVars body false)
+    -- And: `pre_def_true` doesn't intersect `outer` (so adding it via
+    -- `outer ⊕ pre_def_true` truly extends outer).
+    -- We don't actually need this directly — but we need that adding
+    -- `pre_def_true` to outer doesn't break inv-getVars / etc.
+    -- Concretely we need that `pre_def_true ∩ inv_getVars = ∅` and
+    -- `pre_def_true ∩ g.getVars = ∅` so the lifted assumes/asserts still hold.
+    -- Simpler: just require that `pre_def_true ⊆ {fresh names not in outer-touched}`,
+    -- which we model as: pre_def_true is disjoint from inv_getVars ∪ g.getVars.
+    (h_pre_def_disjoint_inv :
+        ∀ n ∈ pre_def_true,
+          n ∉ inv.flatMap (fun lp => HasVarsPure.getVars lp.2))
+    (h_pre_def_disjoint_g :
+        ∀ n ∈ pre_def_true, n ∉ g.getVars)
+    -- `post` is well-formed against `outer ⊕ pre_def_true ⊕ body.definedVars true`.
+    (h_post_wf : Block.defUseWellFormed
+        (fun n => outer n || decide (n ∈ pre_def_true) ||
+                  decide (n ∈ Block.definedVars body true)) post = Bool.true)
+    (h_post_def_true_empty :
+        @Block.definedVars Expression Command _ post true = [])
+    -- `exit` is well-formed against `outer`.
+    (h_exit_wf : Block.defUseWellFormed outer exit = Bool.true)
+    (h_exit_def_true_empty :
+        @Block.definedVars Expression Command _ exit true = []) :
+    Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_" ++ loop_num)
+        [Stmt.block
+            (toString loopElimBlockPrefix ++ toString "first_iter_asserts_" ++ loop_num)
+            (inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assert
+                 (toString loopElimAssertPrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)) ++
+             inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assume
+                 (toString loopElimAssumePrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)))
+            ∅,
+          Stmt.ite g
+            (Stmt.block
+                (toString loopElimBlockPrefix ++ toString "arbitrary_iter_facts_" ++ loop_num)
+                ([Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                      (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                        (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                          (Block.modifiedVars body)))
+                      ∅,
+                    Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "arbitrary_iter_assumes_" ++ loop_num)
+                      (assumeGuard ++ inv.mapIdx (fun i lp =>
+                        Stmt.cmd (HasPassiveCmds.assume
+                          (toString loopElimAssumePrefix ++ loop_num ++ toString "_invariant_" ++
+                            toString (if lp.fst.isEmpty = Bool.true then toString i
+                                      else toString i ++ toString "_" ++ toString lp.fst))
+                          lp.2 md)))
+                      md] ++ pre ++ body ++
+                  inv.mapIdx (fun i lp =>
+                    Stmt.cmd (HasPassiveCmds.assert
+                      (toString loopElimAssertPrefix ++ loop_num ++
+                        toString "_arbitrary_iter_maintain_invariant_" ++
+                        toString (if lp.fst.isEmpty = Bool.true then toString i
+                                  else toString i ++ toString "_" ++ toString lp.fst))
+                      lp.snd md)) ++ post)
+                ∅
+              :: ([Stmt.block
+                    (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                    (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                      (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                        (Block.modifiedVars body)))
+                    ∅] ++ exit ++
+                inv.mapIdx (fun i lp =>
+                  Stmt.cmd (HasPassiveCmds.assume
+                    (toString loopElimAssumePrefix ++ loop_num ++ toString "_exit_invariant_" ++
+                      toString (if lp.fst.isEmpty = Bool.true then toString i
+                                else toString i ++ toString "_" ++ toString lp.fst))
+                    lp.snd md))))
+            [] ∅]
+        ∅) = Bool.true := by
+  -- Outermost: a `Stmt.block` reduces to `Block.defUseWellFormed` of the inner list.
+  rw [defUseWellFormed_block]
+  -- The inner list is `[first_iter_asserts; ite g (...) [] {}]`.  Peel the head.
+  apply defUseWellFormed_cons_intro
+  · -- HEAD 1: first_iter_asserts block.
+    -- It's a `Stmt.block (label) (asserts ++ assumes) ∅`.  Reduce to the inner.
+    rw [defUseWellFormed_block]
+    rw [defUseWellFormed_block_append]
+    refine ⟨?_, ?_⟩
+    · -- The asserts mapIdx.
+      exact defUseWellFormed_mapIdx_assert outer inv md _ h_inv_getVars
+    · -- The assumes mapIdx, against `outer ⊕ asserts.definedVars true = outer`.
+      rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+        rw [definedVars_true_mapIdx_assert]; simp)]
+      exact defUseWellFormed_mapIdx_assume outer inv md _ h_inv_getVars
+  · -- TAIL 1: extension by first_iter_asserts.definedVars true is empty (block-wrapped).
+    rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by simp [Stmt.definedVars])]
+    -- The remaining list is `[ite g (arb_facts :: exit_state) [] {}]`.  Peel the head.
+    apply defUseWellFormed_cons_intro
+    · -- HEAD 2: the ite.
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true]
+      refine ⟨⟨?_, ?_⟩, ?_⟩
+      · -- All g.getVars in outer.
+        rw [List.all_eq_true]; exact h_g_getVars
+      · -- THEN-branch: the arb_facts block plus exit_state list.
+        -- The block is wrapped in a single-element list.
+        show Block.defUseWellFormed outer
+          (Stmt.block _ ([_, _] ++ pre ++ body ++ _ ++ post) ∅
+            :: ([_] ++ exit ++ _)) = Bool.true
+        apply defUseWellFormed_cons_intro
+        · -- arb_facts block.
+          rw [defUseWellFormed_block]
+          -- Inner: `[havoc; arb_iter_assumes] ++ pre ++ body ++ maintain_inv ++ post`.
+          rw [defUseWellFormed_block_append]
+          refine ⟨?_, ?_⟩
+          · -- LHS: `[havoc; arb_iter_assumes] ++ pre ++ body ++ maintain_inv`.
+            rw [defUseWellFormed_block_append]
+            refine ⟨?_, ?_⟩
+            · rw [defUseWellFormed_block_append]
+              refine ⟨?_, ?_⟩
+              · rw [defUseWellFormed_block_append]
+                refine ⟨?_, ?_⟩
+                · -- `[havoc; arb_iter_assumes]`
+                  apply defUseWellFormed_cons_intro
+                  · exact defUseWellFormed_havoc_block outer body md loop_num h_body_wf
+                  · -- After havoc, outer extension by [] = outer.
+                    rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+                      simp [definedVars_true_havoc_block])]
+                    apply defUseWellFormed_cons_intro
+                    · exact defUseWellFormed_arb_iter_assumes_block outer loop_num
+                        assumeGuard inv md h_assumeGuard_wf h_assumeGuard_def_true_empty
+                        h_inv_getVars
+                    · -- Trailing nil after the assumes block.
+                      rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+                        simp [definedVars_true_arb_iter_assumes_block])]
+                      simp [Block.defUseWellFormed]
+                · -- After `[havoc; arb_iter_assumes]`, the running outer extension is
+                  -- `outer + ([] ++ [])` (both are blocks → definedVars true = []).
+                  -- So pre is WF against (outer + ∅) = outer.
+                  rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+                    simp [Block.definedVars, definedVars_true_havoc_block,
+                          definedVars_true_arb_iter_assumes_block, Stmt.definedVars])]
+                  exact h_pre_wf
+              · -- After `[havoc; arb_iter_assumes] ++ pre`, the running outer is
+                -- `outer + (... + pre.definedVars true) = outer + pre_def_true`.
+                rw [defUseWellFormed_block_congr
+                      (outer₂ := fun n => outer n || decide (n ∈ pre_def_true)) (fun n => by
+                  simp [Block.definedVars, definedVars_true_havoc_block,
+                        definedVars_true_arb_iter_assumes_block, Stmt.definedVars,
+                        h_pre_def_true_eq])]
+                -- Body is WF against outer.  Extend by pre_def_true (disjoint from body).
+                exact defUseWellFormed_outer_extend_block h_body_wf (fun n hn => by
+                  rw [decide_eq_true_eq] at hn
+                  exact h_pre_def_disjoint_body n hn)
+            · -- After `[havoc; arb_iter_assumes] ++ pre ++ body`, the running outer is
+              -- `outer + pre_def_true + body.definedVars true`.
+              rw [defUseWellFormed_block_congr
+                    (outer₂ := fun n => outer n || decide (n ∈ pre_def_true)
+                                || decide (n ∈ Block.definedVars body Bool.true))
+                    (fun n => by
+                rw [block_definedVars_append]
+                simp [Block.definedVars, definedVars_true_havoc_block,
+                      definedVars_true_arb_iter_assumes_block, Stmt.definedVars,
+                      h_pre_def_true_eq, Bool.or_assoc])]
+              -- maintain_invariants asserts; need invs' getVars in extended outer.
+              apply defUseWellFormed_mapIdx_assert
+              intro n hn
+              simp only [Bool.or_eq_true, decide_eq_true_eq]
+              exact .inl (.inl (h_inv_getVars n hn))
+          · -- After `[havoc; arb_iter_assumes] ++ pre ++ body ++ maintain_inv`, the running
+            -- outer is `outer + pre_def_true + body.definedVars true + []`.
+            rw [defUseWellFormed_block_congr
+                  (outer₂ := fun n => outer n || decide (n ∈ pre_def_true)
+                              || decide (n ∈ Block.definedVars body Bool.true))
+                  (fun n => by
+              rw [block_definedVars_append, block_definedVars_append,
+                  block_definedVars_append, definedVars_true_mapIdx_assert]
+              simp [Block.definedVars, definedVars_true_havoc_block,
+                    definedVars_true_arb_iter_assumes_block, Stmt.definedVars,
+                    h_pre_def_true_eq, Bool.or_assoc])]
+            exact h_post_wf
+        · -- exit_state tail: `[loop_havoc; ...] ++ exit ++ exit_inv_assumes`,
+          -- against `outer ⊕ arb_facts.definedVars true = outer` (block-wrapped).
+          rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by simp [Stmt.definedVars])]
+          rw [defUseWellFormed_block_append]
+          refine ⟨?_, ?_⟩
+          · rw [defUseWellFormed_block_append]
+            refine ⟨?_, ?_⟩
+            · -- `[loop_havoc]` singleton.
+              apply defUseWellFormed_cons_intro
+              · exact defUseWellFormed_havoc_block outer body md loop_num h_body_wf
+              · rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+                  simp [definedVars_true_havoc_block])]
+                simp [Block.defUseWellFormed]
+            · -- exit, against `outer + havoc_block.definedVars true = outer`.
+              rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+                simp [Block.definedVars, definedVars_true_havoc_block, Stmt.definedVars])]
+              exact h_exit_wf
+          · -- exit_inv_assumes mapIdx.
+            rw [defUseWellFormed_block_congr (outer₂ := outer) (fun n => by
+              simp [Block.definedVars, definedVars_true_havoc_block, Stmt.definedVars,
+                    h_exit_def_true_empty])]
+            exact defUseWellFormed_mapIdx_assume outer inv md _ h_inv_getVars
+      · -- ELSE-branch: empty.
+        simp [Block.defUseWellFormed]
+    · -- TAIL 2: outer extension by ite.definedVars true = [] = outer.
+      simp [Block.defUseWellFormed, Stmt.definedVars]
+
+/-! ### Case-specific instantiations of `defUseWellFormed_buildLoopOutput_form` -/
+
+/-- Auxiliary: an assume command with single getVars in outer is WF and has
+    `definedVars _ true = []`. -/
+private theorem defUseWellFormed_singleton_assume
+    (outer : Expression.Ident → Bool) (label : String)
+    (e : Expression.Expr) (md : MetaData Expression)
+    (hgv : ∀ n ∈ HasVarsPure.getVars e, outer n = Bool.true) :
+    Block.defUseWellFormed (P := Expression) (C := Command) outer
+      [Stmt.cmd (HasPassiveCmds.assume label e md)] = Bool.true := by
+  apply defUseWellFormed_cons_intro
+  · simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+      HasVarsImp.definedVars, HasPassiveCmds.assume, Command.getVars,
+      Command.modifiedVars, Command.definedVars, Cmd.getVars, Cmd.modifiedVars,
+      Cmd.definedVars, List.all_nil, Bool.and_true, Bool.true_and]
+    rw [List.all_eq_true]; exact hgv
+  · simp [Block.defUseWellFormed]
+
+private theorem definedVars_true_singleton_assume
+    (label : String) (e : Expression.Expr) (md : MetaData Expression) :
+    @Block.definedVars Expression Command _
+      [Stmt.cmd (HasPassiveCmds.assume label e md)] true = [] := by
+  simp [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars,
+        HasPassiveCmds.assume, Command.definedVars, Cmd.definedVars]
+
+/-- WF of the loop output for the `.nondet` case (no guard, no measure):
+    all four pieces (`assumeGuard`, `pre`, `post`, `exit`) are empty. -/
+private theorem defUseWellFormed_loop_output_nondet
+    (loop_num : String) (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (outer : Expression.Ident → Bool)
+    (h_body_wf : Block.defUseWellFormed outer body = Bool.true)
+    (h_inv_getVars : ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2),
+        outer n = Bool.true) :
+    Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_" ++ loop_num)
+        [Stmt.block
+            (toString loopElimBlockPrefix ++ toString "first_iter_asserts_" ++ loop_num)
+            (inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assert
+                 (toString loopElimAssertPrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)) ++
+             inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assume
+                 (toString loopElimAssumePrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)))
+            ∅,
+          Stmt.ite (.nondet)
+            (Stmt.block
+                (toString loopElimBlockPrefix ++ toString "arbitrary_iter_facts_" ++ loop_num)
+                ([Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                      (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                        (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                          (Block.modifiedVars body)))
+                      ∅,
+                    Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "arbitrary_iter_assumes_" ++ loop_num)
+                      (([] : Statements) ++ inv.mapIdx (fun i lp =>
+                        Stmt.cmd (HasPassiveCmds.assume
+                          (toString loopElimAssumePrefix ++ loop_num ++ toString "_invariant_" ++
+                            toString (if lp.fst.isEmpty = Bool.true then toString i
+                                      else toString i ++ toString "_" ++ toString lp.fst))
+                          lp.2 md)))
+                      md] ++ ([] : Statements) ++ body ++
+                  inv.mapIdx (fun i lp =>
+                    Stmt.cmd (HasPassiveCmds.assert
+                      (toString loopElimAssertPrefix ++ loop_num ++
+                        toString "_arbitrary_iter_maintain_invariant_" ++
+                        toString (if lp.fst.isEmpty = Bool.true then toString i
+                                  else toString i ++ toString "_" ++ toString lp.fst))
+                      lp.snd md)) ++ ([] : Statements))
+                ∅
+              :: ([Stmt.block
+                    (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                    (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                      (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                        (Block.modifiedVars body)))
+                    ∅] ++ ([] : Statements) ++
+                inv.mapIdx (fun i lp =>
+                  Stmt.cmd (HasPassiveCmds.assume
+                    (toString loopElimAssumePrefix ++ loop_num ++ toString "_exit_invariant_" ++
+                      toString (if lp.fst.isEmpty = Bool.true then toString i
+                                else toString i ++ toString "_" ++ toString lp.fst))
+                    lp.snd md))))
+            [] ∅]
+        ∅) = Bool.true := by
+  apply defUseWellFormed_buildLoopOutput_form
+    (assumeGuard := []) (pre := []) (post := []) (exit := []) (pre_def_true := [])
+  · exact h_body_wf
+  · exact h_inv_getVars
+  · intro n hn; simp [ExprOrNondet.getVars] at hn
+  · simp [Block.defUseWellFormed]
+  · simp [Block.definedVars]
+  · simp [Block.definedVars]
+  · simp [Block.defUseWellFormed]
+  · intro n hn; simp at hn
+  · intro n hn; simp at hn
+  · intro n hn; simp at hn
+  · simp [Block.defUseWellFormed]
+  · simp [Block.definedVars]
+  · simp [Block.defUseWellFormed]
+  · simp [Block.definedVars]
+
+/-- WF of the loop output for the `.det g, none` case:
+    `assumeGuard = [guard_assume]`, `pre = []`, `post = []`,
+    `exit = [not_guard_assume]`. -/
+private theorem defUseWellFormed_loop_output_detNone
+    (loop_num : String) (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (outer : Expression.Ident → Bool)
+    (h_body_wf : Block.defUseWellFormed outer body = Bool.true)
+    (h_inv_getVars : ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2),
+        outer n = Bool.true)
+    (g : Expression.Expr)
+    (h_g_getVars : ∀ n ∈ HasVarsPure.getVars g, outer n = Bool.true) :
+    Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_" ++ loop_num)
+        [Stmt.block
+            (toString loopElimBlockPrefix ++ toString "first_iter_asserts_" ++ loop_num)
+            (inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assert
+                 (toString loopElimAssertPrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)) ++
+             inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assume
+                 (toString loopElimAssumePrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)))
+            ∅,
+          Stmt.ite (.det g)
+            (Stmt.block
+                (toString loopElimBlockPrefix ++ toString "arbitrary_iter_facts_" ++ loop_num)
+                ([Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                      (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                        (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                          (Block.modifiedVars body)))
+                      ∅,
+                    Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "arbitrary_iter_assumes_" ++ loop_num)
+                      ([Stmt.cmd (HasPassiveCmds.assume
+                          (toString loopElimAssumePrefix ++ loop_num ++ toString "_guard")
+                          g md)] ++ inv.mapIdx (fun i lp =>
+                        Stmt.cmd (HasPassiveCmds.assume
+                          (toString loopElimAssumePrefix ++ loop_num ++ toString "_invariant_" ++
+                            toString (if lp.fst.isEmpty = Bool.true then toString i
+                                      else toString i ++ toString "_" ++ toString lp.fst))
+                          lp.2 md)))
+                      md] ++ ([] : Statements) ++ body ++
+                  inv.mapIdx (fun i lp =>
+                    Stmt.cmd (HasPassiveCmds.assert
+                      (toString loopElimAssertPrefix ++ loop_num ++
+                        toString "_arbitrary_iter_maintain_invariant_" ++
+                        toString (if lp.fst.isEmpty = Bool.true then toString i
+                                  else toString i ++ toString "_" ++ toString lp.fst))
+                      lp.snd md)) ++ ([] : Statements))
+                ∅
+              :: ([Stmt.block
+                    (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                    (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                      (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                        (Block.modifiedVars body)))
+                    ∅] ++ [Stmt.cmd (HasPassiveCmds.assume
+                      (toString loopElimAssumePrefix ++ loop_num ++ toString "_not_guard")
+                      (HasNot.not g) md)] ++
+                inv.mapIdx (fun i lp =>
+                  Stmt.cmd (HasPassiveCmds.assume
+                    (toString loopElimAssumePrefix ++ loop_num ++ toString "_exit_invariant_" ++
+                      toString (if lp.fst.isEmpty = Bool.true then toString i
+                                else toString i ++ toString "_" ++ toString lp.fst))
+                    lp.snd md))))
+            [] ∅]
+        ∅) = Bool.true := by
+  apply defUseWellFormed_buildLoopOutput_form
+    (assumeGuard := [Stmt.cmd (HasPassiveCmds.assume
+      (toString loopElimAssumePrefix ++ loop_num ++ toString "_guard") g md)])
+    (pre := [])
+    (post := [])
+    (exit := [Stmt.cmd (HasPassiveCmds.assume
+      (toString loopElimAssumePrefix ++ loop_num ++ toString "_not_guard")
+      (HasNot.not g) md)])
+    (pre_def_true := [])
+  · exact h_body_wf
+  · exact h_inv_getVars
+  · intro n hn; simp [ExprOrNondet.getVars] at hn; exact h_g_getVars n hn
+  · -- assumeGuard WF
+    exact defUseWellFormed_singleton_assume outer _ g md h_g_getVars
+  · -- assumeGuard.definedVars true = []
+    exact definedVars_true_singleton_assume _ g md
+  · -- pre.definedVars true = []
+    simp [Block.definedVars]
+  · -- pre WF
+    simp [Block.defUseWellFormed]
+  · intro n hn; simp at hn
+  · intro n hn; simp at hn
+  · intro n hn; simp at hn
+  · simp [Block.defUseWellFormed]
+  · simp [Block.definedVars]
+  · -- exit WF
+    apply defUseWellFormed_singleton_assume
+    intro n hn
+    -- HasNot.not g's getVars ⊆ g's getVars.
+    exact h_g_getVars n (mem_getVars_not_subset hn)
+  · -- exit.definedVars true = []
+    exact definedVars_true_singleton_assume _ _ md
+
+/-- WF of the loop output for the `.det g, some m` case:
+    `assumeGuard = [guard_assume]`, `pre = [m_old_init, measure_lb]`,
+    `post = [measure_decrease]`, `exit = [not_guard_assume]`. -/
+private theorem defUseWellFormed_loop_output_detSome
+    (loop_num : String) (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (outer : Expression.Ident → Bool)
+    (h_body_wf : Block.defUseWellFormed outer body = Bool.true)
+    (h_inv_getVars : ∀ n ∈ inv.flatMap (fun lp => HasVarsPure.getVars lp.2),
+        outer n = Bool.true)
+    (g : Expression.Expr)
+    (h_g_getVars : ∀ n ∈ HasVarsPure.getVars g, outer n = Bool.true)
+    (m : Expression.Expr)
+    (h_m_getVars : ∀ n ∈ HasVarsPure.getVars m, outer n = Bool.true)
+    -- m_old freshness: not in body's touchedVars, not in outer.
+    (h_m_old_notin_body : (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+        : Expression.Ident) ∉ Block.touchedVars body)
+    (h_m_old_not_outer : outer (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+        : Expression.Ident) = Bool.false)
+    (h_m_old_notin_body_def : (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+        : Expression.Ident) ∉ Block.definedVars body Bool.false)
+    -- Note: the goal's m_old is `(HasIdent.ident ...)` but the body's touched vars
+    -- include `m`'s getVars and `g`'s getVars in outer, so m_old can't be among them
+    -- by freshness.  But since m_old ∉ outer, m_old ∉ inv_getVars and m_old ∉ g_getVars
+    -- (by `defUseWellFormed_loop` originally).  The user passes these directly.
+    (h_m_old_notin_inv : (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+        : Expression.Ident) ∉ inv.flatMap (fun lp => HasVarsPure.getVars lp.2))
+    (h_m_old_notin_g : (HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+        : Expression.Ident) ∉ HasVarsPure.getVars g) :
+    Stmt.defUseWellFormed (P := Expression) (C := Command) outer
+      (Stmt.block (toString loopElimBlockPrefix ++ toString "loop_" ++ loop_num)
+        [Stmt.block
+            (toString loopElimBlockPrefix ++ toString "first_iter_asserts_" ++ loop_num)
+            (inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assert
+                 (toString loopElimAssertPrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)) ++
+             inv.mapIdx (fun i lp =>
+               Stmt.cmd (HasPassiveCmds.assume
+                 (toString loopElimAssumePrefix ++ loop_num ++ toString "_entry_invariant_" ++
+                   toString (if lp.fst.isEmpty = Bool.true then toString i
+                             else toString i ++ toString "_" ++ toString lp.fst))
+                 lp.snd md)))
+            ∅,
+          Stmt.ite (.det g)
+            (Stmt.block
+                (toString loopElimBlockPrefix ++ toString "arbitrary_iter_facts_" ++ loop_num)
+                ([Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                      (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                        (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                          (Block.modifiedVars body)))
+                      ∅,
+                    Stmt.block
+                      (toString loopElimBlockPrefix ++ toString "arbitrary_iter_assumes_" ++ loop_num)
+                      ([Stmt.cmd (HasPassiveCmds.assume
+                          (toString loopElimAssumePrefix ++ loop_num ++ toString "_guard")
+                          g md)] ++ inv.mapIdx (fun i lp =>
+                        Stmt.cmd (HasPassiveCmds.assume
+                          (toString loopElimAssumePrefix ++ loop_num ++ toString "_invariant_" ++
+                            toString (if lp.fst.isEmpty = Bool.true then toString i
+                                      else toString i ++ toString "_" ++ toString lp.fst))
+                          lp.2 md)))
+                      md] ++ [Stmt.cmd (HasInit.init
+                        (HasIdent.ident (toString "$__loop_measure_" ++ loop_num))
+                        HasIntOrder.intTy (.det m) md),
+                      Stmt.cmd (HasPassiveCmds.assert
+                        (toString loopElimAssertPrefix ++ loop_num ++ toString "_measure_lb")
+                        (HasNot.not (HasIntOrder.lt
+                          (HasFvar.mkFvar (HasIdent.ident
+                            (toString "$__loop_measure_" ++ loop_num)))
+                          HasIntOrder.zero)) md)] ++ body ++
+                  inv.mapIdx (fun i lp =>
+                    Stmt.cmd (HasPassiveCmds.assert
+                      (toString loopElimAssertPrefix ++ loop_num ++
+                        toString "_arbitrary_iter_maintain_invariant_" ++
+                        toString (if lp.fst.isEmpty = Bool.true then toString i
+                                  else toString i ++ toString "_" ++ toString lp.fst))
+                      lp.snd md)) ++
+                  [Stmt.cmd (HasPassiveCmds.assert
+                    (toString loopElimAssertPrefix ++ loop_num ++ toString "_measure_decrease")
+                    (HasIntOrder.lt m
+                      (HasFvar.mkFvar (HasIdent.ident
+                        (toString "$__loop_measure_" ++ loop_num)))) md)])
+                ∅
+              :: ([Stmt.block
+                    (toString loopElimBlockPrefix ++ toString "loop_havoc_" ++ loop_num)
+                    (List.map (fun n => Stmt.cmd (HasHavoc.havoc n md))
+                      (List.filter (fun v => decide ¬v ∈ Block.definedVars body Bool.false)
+                        (Block.modifiedVars body)))
+                    ∅] ++ [Stmt.cmd (HasPassiveCmds.assume
+                      (toString loopElimAssumePrefix ++ loop_num ++ toString "_not_guard")
+                      (HasNot.not g) md)] ++
+                inv.mapIdx (fun i lp =>
+                  Stmt.cmd (HasPassiveCmds.assume
+                    (toString loopElimAssumePrefix ++ loop_num ++ toString "_exit_invariant_" ++
+                      toString (if lp.fst.isEmpty = Bool.true then toString i
+                                else toString i ++ toString "_" ++ toString lp.fst))
+                    lp.snd md))))
+            [] ∅]
+        ∅) = Bool.true := by
+  -- Set up the m_old identifier as a single-element list for pre_def_true.
+  let m_old : Expression.Ident :=
+    HasIdent.ident (toString "$__loop_measure_" ++ loop_num)
+  have hm_old : m_old = HasIdent.ident (toString "$__loop_measure_" ++ loop_num) := rfl
+  apply defUseWellFormed_buildLoopOutput_form
+    (assumeGuard := [Stmt.cmd (HasPassiveCmds.assume
+      (toString loopElimAssumePrefix ++ loop_num ++ toString "_guard") g md)])
+    (pre := [Stmt.cmd (HasInit.init m_old HasIntOrder.intTy (.det m) md),
+             Stmt.cmd (HasPassiveCmds.assert
+               (toString loopElimAssertPrefix ++ loop_num ++ toString "_measure_lb")
+               (HasNot.not (HasIntOrder.lt
+                 (HasFvar.mkFvar m_old) HasIntOrder.zero)) md)])
+    (post := [Stmt.cmd (HasPassiveCmds.assert
+      (toString loopElimAssertPrefix ++ loop_num ++ toString "_measure_decrease")
+      (HasIntOrder.lt m (HasFvar.mkFvar m_old)) md)])
+    (exit := [Stmt.cmd (HasPassiveCmds.assume
+      (toString loopElimAssumePrefix ++ loop_num ++ toString "_not_guard")
+      (HasNot.not g) md)])
+    (pre_def_true := [m_old])
+  · exact h_body_wf
+  · exact h_inv_getVars
+  · intro n hn; simp [ExprOrNondet.getVars] at hn; exact h_g_getVars n hn
+  · -- assumeGuard WF
+    exact defUseWellFormed_singleton_assume outer _ g md h_g_getVars
+  · -- assumeGuard.definedVars true = []
+    exact definedVars_true_singleton_assume _ g md
+  · -- pre.definedVars true = [m_old]
+    simp [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars,
+          HasInit.init, HasPassiveCmds.assert, Command.definedVars, Cmd.definedVars]
+  · -- pre WF
+    apply defUseWellFormed_cons_intro
+    · -- init m_old: m_old ∉ outer (so the "fresh" check passes)
+      simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+        HasVarsImp.definedVars, HasInit.init, Command.getVars, Command.modifiedVars,
+        Command.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
+        ExprOrNondet.getVars, List.all_nil, Bool.and_true, Bool.true_and]
+      rw [Bool.and_eq_true]
+      refine ⟨?_, ?_⟩
+      · rw [List.all_eq_true]; exact h_m_getVars
+      · simp only [List.all_cons, List.all_nil, Bool.and_true]
+        rw [hm_old, h_m_old_not_outer]; rfl
+    · -- After init, outer is extended by [m_old].
+      apply defUseWellFormed_cons_intro
+      · -- assert measure_lb: getVars = [m_old]; m_old now in extended outer.
+        simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+          HasVarsImp.definedVars, HasPassiveCmds.assert, Command.getVars,
+          Command.modifiedVars, Command.definedVars, Cmd.getVars, Cmd.modifiedVars,
+          Cmd.definedVars, List.all_nil, Bool.and_true, Bool.true_and]
+        rw [List.all_eq_true]
+        intro n hn
+        -- n ∈ HasNot.not (m_old < 0) → n is m_old (or in 0's getVars, which is []).
+        simp only [Bool.or_eq_true, decide_eq_true_eq, Stmt.definedVars,
+          HasVarsImp.definedVars, HasInit.init, Command.definedVars, Cmd.definedVars,
+          List.mem_singleton]
+        right
+        -- Need: n = m_old.  hn : n ∈ getVars (¬ (m_old < 0))
+        have hn' := mem_getVars_not_subset hn
+        have h2 := mem_getVars_lt_split hn'
+        rcases h2 with hl | hr
+        · simpa [Lambda.LExpr.LExpr.getVars, HasFvar.mkFvar] using hl
+        · simp [Lambda.LExpr.LExpr.getVars] at hr
+      · simp [Block.defUseWellFormed]
+  · -- pre_def disjoint from body (m_old ∉ body's touched vars)
+    intro n hn
+    simp at hn; subst hn
+    simp [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at h_m_old_notin_body
+    refine ⟨?_, ?_, ?_⟩
+    · exact h_m_old_notin_body.1
+    · exact h_m_old_notin_body.2.2
+    · exact h_m_old_notin_body_def
+  · -- pre_def disjoint from inv.flatMap getVars
+    intro n hn
+    simp at hn; subst hn; exact h_m_old_notin_inv
+  · -- pre_def disjoint from g.getVars
+    intro n hn
+    simp at hn; subst hn; exact h_m_old_notin_g
+  · -- post WF (against outer + [m_old] + body.definedVars true)
+    apply defUseWellFormed_cons_intro
+    · simp only [Stmt.defUseWellFormed, HasVarsPure.getVars, HasVarsImp.modifiedVars,
+        HasVarsImp.definedVars, HasPassiveCmds.assert, Command.getVars,
+        Command.modifiedVars, Command.definedVars, Cmd.getVars, Cmd.modifiedVars,
+        Cmd.definedVars, List.all_nil, Bool.and_true, Bool.true_and]
+      rw [List.all_eq_true]
+      intro n hn
+      -- n ∈ getVars (m < m_old) → n in m's getVars or n = m_old.
+      simp only [Bool.or_eq_true, decide_eq_true_eq]
+      have h2 := mem_getVars_lt_split hn
+      rcases h2 with hl | hr
+      · -- n in m's getVars, so n in outer.
+        left; left; exact h_m_getVars n hl
+      · -- n in getVars (mkFvar m_old), so n = m_old.
+        have hmo : n = m_old := by
+          simpa [Lambda.LExpr.LExpr.getVars, HasFvar.mkFvar] using hr
+        left; right; rw [List.mem_singleton]; exact hmo
+    · simp [Block.defUseWellFormed]
+  · -- post.definedVars true = []
+    simp [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars,
+      HasPassiveCmds.assert, Command.definedVars, Cmd.definedVars]
+  · -- exit WF: not_guard assume.
+    apply defUseWellFormed_singleton_assume
+    intro n hn
+    -- HasNot.not g's getVars ⊆ g's getVars.
+    exact h_g_getVars n (mem_getVars_not_subset hn)
+  · -- exit.definedVars true = []
+    exact definedVars_true_singleton_assume _ _ md
+
+/-- Loop case helper: well-formedness of the loop encoding's output.
+
+    The transform produces
+       block loop_label [first_iter_facts, ite guard (arb_facts :: exit_state) [] {}]
+    which we must show is `defUseWellFormed` against `outer`.  The freshness
+    side conditions mean every transform-introduced name (block labels,
+    havoc'd vars from the body, m_old) doesn't collide with `outer`. -/
+private theorem defUseWellFormed_stmtResult_loop
+    (σ : LoopElimState)
+    (guard : ExprOrNondet Expression)
+    (measure : Option Expression.Expr)
+    (inv : List (String × Expression.Expr))
+    (body : Statements) (md : MetaData Expression)
+    (hok : stmtOk σ (.loop guard measure inv body md))
+    (outer : Expression.Ident → Bool)
+    (h_outer_fresh : ∀ n, outer n = Bool.true →
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (h_def_not_reserved : ∀ n ∈ Block.definedVars body false,
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (hwf : Stmt.defUseWellFormed outer
+            (.loop guard measure inv body md) = Bool.true) :
+    Stmt.defUseWellFormed outer
+      (stmtResult σ (.loop guard measure inv body md)) = Bool.true := by
+  -- Extract loop-level WF facts from `hwf`.
+  unfold Stmt.defUseWellFormed at hwf
+  simp only [Bool.and_eq_true] at hwf
+  obtain ⟨⟨⟨h_guard_all, h_meas_all⟩, h_inv_all⟩, h_body_wf⟩ := hwf
+  rw [List.all_eq_true] at h_guard_all h_meas_all h_inv_all
+  -- The output: stmtResult on the source loop is the transform's output.
+  -- We use the structural lemma `definedVars_subset_stmtResult_loop` style of unfolding.
+  -- Strategy: every (n ∈ touchedVars (stmtResult σ ...)) lies in
+  -- (touchedVars source) ∪ (definedVars (stmtResult σ ...)).  Combined with
+  -- `outer`-monotone over source touched vars (from hwf) plus the body's
+  -- inner well-formedness, we directly call `defUseWellFormed_outer_extend_stmt`
+  -- on a "source statement minus m_old reservation" framing.
+  --
+  -- Easier path: directly induct on the structure exposed by stmtResult_loop_struct.
+  -- But the loop output has many nested pieces; rather than go that way, we
+  -- use the `defUseWellFormed_touched_notDef` family in reverse: a statement is
+  -- well-formed against outer if every (touched but not defined) name is in outer.
+  -- However, no such "reverse" lemma is currently available.
+  --
+  -- Direct approach: apply the structural unfolding (4-way split on guard×measure)
+  -- as in `mem_definedVars_stmtResult_loop` etc., then for each concrete output
+  -- prove `Stmt.defUseWellFormed outer ...` via the piece-wise helpers.
+  show Stmt.defUseWellFormed outer
+      (match (stmtRun σ (.loop guard measure inv body md)).fst with
+       | .ok (_, s') => s' | .error _ => default) = Bool.true
+  have hok' := hok
+  unfold stmtOk at hok'
+  -- Two `m_old`-related freshness facts proved up-front (we'll discharge them
+  -- whenever needed in the .det / .some m branch).
+  have h_m_old_pref : ∀ ln,
+      loopElimReservedPrefix.toList.isPrefixOf
+        ((⟨"$__loop_measure_" ++ ln, ()⟩ : Expression.Ident).name.toList) :=
+    fun ln => loopElimReservedPrefix_isPrefixOf_measure ln
+  have h_m_old_not_outer : ∀ ln, outer (⟨"$__loop_measure_" ++ ln, ()⟩ : Expression.Ident) = Bool.false := by
+    intro ln
+    cases hh : outer ⟨"$__loop_measure_" ++ ln, ()⟩ with
+    | false => rfl
+    | true => exact absurd (h_m_old_pref ln) (h_outer_fresh _ hh)
+  have h_m_old_notin_body_def : ∀ ln,
+      (⟨"$__loop_measure_" ++ ln, ()⟩ : Expression.Ident) ∉ Block.definedVars body false :=
+    fun ln h => h_def_not_reserved _ h (h_m_old_pref ln)
+  match h : (stmtRun σ (.loop guard measure inv body md)).fst with
+  | .error _ => simp [h, Except.isOk, Except.toBool] at hok'
+  | .ok (b, s') =>
+    simp only [h]
+    dsimp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase,
+      buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes,
+      buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants,
+      buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants,
+      buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome,
+      hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
+      bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
+      ExceptT.lift, StateT.bind, StateT.pure,
+      Functor.map, liftM, monadLift, MonadLift.monadLift,
+      modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
+      genLoopNum, bumpStat] at h
+    -- Split on the `if hasLabelConflict then throw else pure`, then on guard,
+    -- then on measure, mirroring the case structure of
+    -- `definedVars_subset_stmtResult_loop`.  In each successful branch the
+    -- equation `h` exposes a concrete `s'`, which is one of three concrete
+    -- outputs of `buildLoopOutput`.  We then prove `defUseWellFormed` for that
+    -- output by the master helper `defUseWellFormed_buildLoopOutput_form`.
+    repeat (first | contradiction | (split at h; skip))
+    -- For the `.det / .some m` case, `h` still has `StateT.pure …  .bind …`
+    -- around the freshness check; unfold and split again.
+    all_goals (first | contradiction | (
+      try (unfold StateT.pure at h
+           dsimp only [StateT.bind, StateT.map, ExceptT.bindCont, ExceptT.bind,
+             ExceptT.pure, ExceptT.mk, ExceptT.lift, bind, pure,
+             Functor.map, MonadState.modifyGet, StateT.modifyGet,
+             MonadStateOf.modifyGet, bumpStat, modify, genLoopNum] at h
+           repeat (first | contradiction | (split at h; skip)))
+      all_goals (first
+        | contradiction
+        | (obtain ⟨_, rfl⟩ := h))))
+    -- After all branching, three remaining goals: `.det g, none`, `.det g, some m`, `.nondet`.
+    -- Dispatch each by the corresponding case-specific helper.
+    case h_1.isFalse =>
+      -- det g, none
+      rename_i _hcheck _guard0 g0 _meas _hnone
+      exact defUseWellFormed_loop_output_detNone _ inv body md outer
+        h_body_wf h_inv_all g0
+        (fun n hn => h_guard_all n
+          (by show n ∈ (ExprOrNondet.det g0 : ExprOrNondet Expression).getVars
+              simp [ExprOrNondet.getVars]; exact hn))
+    case h_2.isFalse.isTrue =>
+      -- det g, some m
+      rename_i _hcheck _guard0 g0 _meas m0 h_freshness _h_some
+      apply defUseWellFormed_loop_output_detSome _ inv body md outer
+        h_body_wf h_inv_all g0
+        (fun n hn => h_guard_all n
+          (by show n ∈ (ExprOrNondet.det g0 : ExprOrNondet Expression).getVars
+              simp [ExprOrNondet.getVars]; exact hn))
+        m0
+        (fun n hn => h_meas_all n
+          (by simp [ExprOrNondet.getVars]; exact hn))
+      · exact h_freshness
+      · exact h_m_old_not_outer _
+      · exact h_m_old_notin_body_def _
+      · intro hmem
+        have hh := h_inv_all _ hmem
+        have hf := h_m_old_not_outer (toString (StringGenState.gen "loop" σ.gen).fst)
+        have hh' : outer (⟨"$__loop_measure_" ++ toString (StringGenState.gen "loop" σ.gen).fst, ()⟩ : Expression.Ident) = Bool.true := by simpa using hh
+        rw [hf] at hh'
+        exact Bool.false_ne_true hh'
+      · intro hmem
+        have hh := h_guard_all _
+          (by show _ ∈ (ExprOrNondet.det g0 : ExprOrNondet Expression).getVars
+              simp [ExprOrNondet.getVars]; exact hmem)
+        have hf := h_m_old_not_outer (toString (StringGenState.gen "loop" σ.gen).fst)
+        have hh' : outer (⟨"$__loop_measure_" ++ toString (StringGenState.gen "loop" σ.gen).fst, ()⟩ : Expression.Ident) = Bool.true := by simpa using hh
+        rw [hf] at hh'
+        exact Bool.false_ne_true hh'
+    case h_2 =>
+      -- nondet
+      exact defUseWellFormed_loop_output_nondet _ inv body md outer
+        h_body_wf h_inv_all
+
+-- Structural well-formedness preservation for `stmtResult` / `blockResult`.
+--
+-- Two side conditions on the outer scope `outer` propagate through the
+-- recursion:
+-- * `h_outer_fresh`: `outer n = true` implies `n.name` does NOT have the
+--   reserved `$__loop` prefix.  This is provided initially by
+--   `InitEnvWF.reservedFresh`.
+-- * `h_def_not_reserved`: every var in the SOURCE statement's
+--   `definedVars false` does NOT have the reserved prefix.  This is
+--   provided initially by `InitEnvWF.definedVarsNotReserved` (with the
+--   reserved list still containing `loopElimReservedPrefix`).
+--
+-- These two facts together let the cons-tail case discharge the freshness
+-- side condition for the extended outer (which adds the source's scoped
+-- definedVars to the outer scope).
+mutual
+private theorem defUseWellFormed_stmtResultAux
+    (σ : LoopElimState) (s : Statement) (hok : stmtOk σ s)
+    (outer : Expression.Ident → Bool)
+    (h_outer_fresh : ∀ n, outer n = Bool.true →
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (h_def_not_reserved : ∀ n ∈ Stmt.definedVars s false,
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (hwf : Stmt.defUseWellFormed outer s = Bool.true) :
+    Stmt.defUseWellFormed outer (stmtResult σ s) = Bool.true := by
+  match s with
+  | .cmd c => rw [stmtResult_cmd]; exact hwf
+  | .exit l md => rw [stmtResult_exit]; exact hwf
+  | .funcDecl d md => rw [stmtResult_funcDecl]; exact hwf
+  | .typeDecl tc md => rw [stmtResult_typeDecl]; exact hwf
+  | .block l bss md =>
+    rw [stmtResult_block]
+    have hwf' : Block.defUseWellFormed outer bss = Bool.true := by
+      simpa [defUseWellFormed_block] using hwf
+    have hdef_block : ∀ n ∈ Block.definedVars bss false,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_def_not_reserved n
+      show n ∈ Stmt.definedVars (s := Stmt.block l bss md) false
+      simpa [Stmt.definedVars] using hn
+    have ih := defUseWellFormed_blockResultAux σ bss (stmtOk_block_inner hok) outer
+                h_outer_fresh hdef_block hwf'
+    simpa [defUseWellFormed_block] using ih
+  | .ite c tss ess md =>
+    rw [stmtResult_ite]
+    have ⟨hwf_t, hwf_e⟩ := defUseWellFormed_ite_branches hwf
+    have hcond : ∀ n ∈ ExprOrNondet.getVars c, outer n = Bool.true := by
+      intro n hn
+      have h := hwf
+      unfold Stmt.defUseWellFormed at h
+      simp only [Bool.and_eq_true] at h
+      have hcond_all := h.1.1
+      rw [List.all_eq_true] at hcond_all
+      exact hcond_all n hn
+    have hdef_t : ∀ n ∈ Block.definedVars tss false,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_def_not_reserved n
+      show n ∈ Stmt.definedVars (s := Stmt.ite c tss ess md) false
+      simp [Stmt.definedVars]; exact .inl hn
+    have hdef_e : ∀ n ∈ Block.definedVars ess false,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_def_not_reserved n
+      show n ∈ Stmt.definedVars (s := Stmt.ite c tss ess md) false
+      simp [Stmt.definedVars]; exact .inr hn
+    have ih_t := defUseWellFormed_blockResultAux σ tss (stmtOk_ite_left hok) outer
+                  h_outer_fresh hdef_t hwf_t
+    have ih_e := defUseWellFormed_blockResultAux (blockPostState σ tss) ess
+                  (stmtOk_ite_right hok) outer h_outer_fresh hdef_e hwf_e
+    unfold Stmt.defUseWellFormed
+    simp only [Bool.and_eq_true]
+    refine ⟨⟨?_, ih_t⟩, ih_e⟩
+    rw [List.all_eq_true]
+    exact hcond
+  | .loop guard measure inv body md =>
+    have hdef_body : ∀ n ∈ Block.definedVars body false,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_def_not_reserved n
+      show n ∈ Stmt.definedVars (s := Stmt.loop guard measure inv body md) false
+      simpa [Stmt.definedVars] using hn
+    exact defUseWellFormed_stmtResult_loop σ guard measure inv body md hok outer
+      h_outer_fresh hdef_body hwf
+
+private theorem defUseWellFormed_blockResultAux
+    (σ : LoopElimState) (bss : Statements) (hok : blockOk σ bss)
+    (outer : Expression.Ident → Bool)
+    (h_outer_fresh : ∀ n, outer n = Bool.true →
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (h_def_not_reserved : ∀ n ∈ Block.definedVars bss false,
+      ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList)
+    (hwf : Block.defUseWellFormed outer bss = Bool.true) :
+    Block.defUseWellFormed outer (blockResult σ bss) = Bool.true := by
+  match bss with
+  | [] => rw [blockResult_nil]; rfl
+  | s :: rest =>
+    rw [blockResult_cons]
+    have ⟨hwf_s, hwf_rest⟩ := defUseWellFormed_cons hwf
+    have hdef_s : ∀ n ∈ Stmt.definedVars s false,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_def_not_reserved n
+      simp [Block.definedVars]; exact .inl hn
+    have hdef_rest : ∀ n ∈ Block.definedVars rest false,
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      apply h_def_not_reserved n
+      simp [Block.definedVars]; exact .inr hn
+    have ih_s := defUseWellFormed_stmtResultAux σ s (blockOk_cons_left hok) outer
+                  h_outer_fresh hdef_s hwf_s
+    apply defUseWellFormed_cons_intro ih_s
+    -- Tail's outer is extended by `Stmt.definedVars (stmtResult σ s) true`.
+    -- Use `stmtResult_definedVars_true_eq` to align that with `Stmt.definedVars s true`.
+    have hdef_eq : Stmt.definedVars (stmtResult σ s) true = Stmt.definedVars s true :=
+      stmtResult_definedVars_true_eq σ s (blockOk_cons_left hok)
+    have h_new_outer_fresh : ∀ n, (outer n || decide (n ∈ Stmt.definedVars s true)) = Bool.true →
+        ¬ loopElimReservedPrefix.toList.isPrefixOf n.name.toList := by
+      intro n hn
+      simp only [Bool.or_eq_true, decide_eq_true_eq] at hn
+      rcases hn with h | h
+      · exact h_outer_fresh n h
+      · -- n ∈ Stmt.definedVars s true → n ∈ Stmt.definedVars s false (by subset).
+        exact hdef_s n (stmt_definedVars_true_subset_false s n h)
+    have ih_rest := defUseWellFormed_blockResultAux (stmtPostState σ s) rest
+      (blockOk_cons_right hok) (fun n => outer n || decide (n ∈ Stmt.definedVars s true))
+      h_new_outer_fresh hdef_rest hwf_rest
+    have hcongr : ∀ n,
+        (outer n || decide (n ∈ Stmt.definedVars (stmtResult σ s) true)) =
+        (outer n || decide (n ∈ Stmt.definedVars s true)) := by
+      intro n; rw [hdef_eq]
+    rw [defUseWellFormed_block_congr hcongr (blockResult (stmtPostState σ s) rest)]
+    exact ih_rest
+end
+
+/-- Top-level wrapper for the structural lemma, taking an `InitEnvWF` and
+    extracting both `h_outer_fresh` and `h_def_not_reserved` from it. -/
+private theorem defUseWellFormed_stmtResult
+    (σ : LoopElimState) (s : Statement) (hok : stmtOk σ s)
+    (reserved : List String)
+    (h_loop_reserved : loopElimReservedPrefix ∈ reserved)
+    {ρ₀ : Env Expression}
+    (hswf : InitEnvWF reserved s ρ₀) :
+    Stmt.defUseWellFormed (fun n => (ρ₀.store n).isSome) (stmtResult σ s) = Bool.true := by
+  apply defUseWellFormed_stmtResultAux σ s hok (fun n => (ρ₀.store n).isSome)
+  · intro n hsome hpref
+    exact hswf.reservedFresh n hsome loopElimReservedPrefix h_loop_reserved hpref
+  · intro n hn hpref
+    exact hswf.definedVarsNotReserved n hn loopElimReservedPrefix h_loop_reserved hpref
+  · exact hswf.defUseOk
+
 theorem loopElim_overapproximatesAggressive
     (hwf_ext : WFEvalExtension φ) (σ : LoopElimState) :
     Transform.OverapproximatesAggressively
@@ -7037,7 +8537,7 @@ theorem loopElim_overapproximatesAggressive
           wfVar := hswf.wfVar,
           evalCong := hswf.evalCong,
           exprCongr := hswf.exprCongr,
-          defUseOk := sorry }
+          defUseOk := ?defUseOk }
       case readWritesDefined =>
         intro n hn hnd
         have ⟨hn_src, hnd_src⟩ := mem_touchedVars_stmtResult σ st hok n hn hnd
@@ -7087,6 +8587,9 @@ theorem loopElim_overapproximatesAggressive
           rcases h_pp_or with h | h
           · exact h_pd_left h
           · exact h_pd_right h
+      case defUseOk =>
+        exact defUseWellFormed_stmtResult σ st hok reserved
+          h_loop_reserved hswf'
   · exact absurd ht (by nofun)
 
 end Core.LoopElim
