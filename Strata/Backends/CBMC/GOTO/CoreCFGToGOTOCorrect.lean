@@ -334,7 +334,7 @@ theorem block_body_cmds_simulation
       have h_pf : c.isAdmittedCmd = true := h_call_free c h_c_mem
       cases c with
       | call _ _ _ =>
-        simp [Core.CmdExt.isAdmittedCmd] at h_pf
+        simp only [Core.CmdExt.isAdmittedCmd, reduceCtorEq] at h_pf
       | cmd inner =>
         -- Convert EvalCommand → EvalCmd via the inversion lemma.
         have h_evalCmd :
@@ -344,14 +344,14 @@ theorem block_body_cmds_simulation
         -- (c :: cs_tail).length = n, so cs_tail.length + 1 = n.
         have h_cs_pos : 0 < n := by
           have : (Core.CmdExt.cmd inner :: cs_tail).length = n := h_size
-          simp [List.length_cons] at this
+          simp only [List.length_cons] at this
           omega
         have h_k_lt : k < blk.cmds.length := by
           have h_drop_len : (blk.cmds.drop k).length =
               (Core.CmdExt.cmd inner :: cs_tail).length := by
             rw [h_suffix]
           rw [List.length_drop] at h_drop_len
-          simp [List.length_cons] at h_drop_len
+          simp only [List.length_cons] at h_drop_len
           omega
         -- The head of cs is .cmd inner; therefore blk.cmds[k] = .cmd inner.
         have h_blk_at_k : blk.cmds[k]'h_k_lt = .cmd inner := by
@@ -386,7 +386,7 @@ theorem block_body_cmds_simulation
           rw [h_get]
           -- Goal: (take k blk.cmds ++ [.cmd inner]).foldl (acc, c) (acc + gotoInstrCount c) 0
           --     = (take k blk.cmds).foldl ... 0 + Imperative.Cmd.gotoInstrCount inner
-          simp [List.foldl_append]
+          simp only [List.foldl_append]
           -- Now: a final unfold of `.cmd inner.gotoInstrCount = inner.gotoInstrCount`
           -- by definition of `Core.CmdExt.gotoInstrCount`.
           rfl
@@ -396,7 +396,7 @@ theorem block_body_cmds_simulation
           rfl
         have h_tail_size : cs_tail.length < n := by
           have h_cs_len : (Core.CmdExt.cmd inner :: cs_tail).length = n := h_size
-          simp [List.length_cons] at h_cs_len
+          simp only [List.length_cons] at h_cs_len
           omega
         obtain ⟨c_tail_goto, h_tail_steps, h_tail_sim⟩ :=
           ih cs_tail.length h_tail_size (k + 1) cs_tail h_tail_suffix
@@ -422,11 +422,11 @@ theorem block_body_cmds_simulation
                 = Imperative.updateFailure config (failed || head_failed) := by
             cases config with
             | cont t σ' f =>
-              simp [Imperative.updateFailure]
+              simp only [Imperative.updateFailure]
               -- f || head_failed || failed = f || (failed || head_failed)
               ac_rfl
             | terminal σ' f =>
-              simp [Imperative.updateFailure]
+              simp only [Imperative.updateFailure]
               ac_rfl
           rw [h_eq]
           exact h_tail_sim
