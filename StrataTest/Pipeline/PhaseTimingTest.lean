@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Pipeline.Messages
+meta import Strata.Pipeline.Context
 
 /-! ## Phase timing tests
 
@@ -56,7 +56,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
       for _ in List.range 2 do
         let ctx ← read
         ctx.withRepeatedPhase "iter" do
-          emitMessage .laurelLoweringWarning "test warning"
+          emitMessage .laurelLoweringNotImpl "test warning"
   let _ ← pipelineAction.run ctx |>.toBaseIO
   let msgs ← ctx.getMessages
   check (msgs.size == 2) s!"Expected 2 messages, got {msgs.size}"
@@ -98,7 +98,7 @@ meta def check (cond : Bool) (msg : String) : IO Unit :=
       let ctx ← read
       ctx.withRepeatedPhase "iter" do
         Strata.Pipeline.withPhase "child" do
-          emitMessage .laurelLoweringWarning "deep msg"
+          emitMessage .laurelLoweringNotImpl "deep msg"
   let _ ← pipelineAction.run ctx |>.toBaseIO
   let msgs ← ctx.getMessages
   check (msgs.size == 1) s!"Expected 1 message, got {msgs.size}"

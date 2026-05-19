@@ -23,7 +23,7 @@ import Strata.Transform.LoopElim
 import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
-public import Strata.Pipeline.Messages
+import Strata.Pipeline.Context
 
 open Strata.Pipeline (PipelineContext)
 
@@ -384,9 +384,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
 
   for id in _axms do
     Solver.assert id
+  -- Emit variable declarations as declare-fun
   for decl in varDeclarations do
     Solver.declareFun decl.name [] decl.ty
 
+  -- Emit variable definitions as define-fun (macro expansions, not constraints)
   let estate ← phase "defineFunTerms" do
     varDefinitions.foldlM (init := estate) fun estate def_ => do
       let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate

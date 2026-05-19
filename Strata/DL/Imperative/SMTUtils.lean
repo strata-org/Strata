@@ -10,7 +10,7 @@ import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DDM.Elab
 import Strata.DDM.Format
-public import Strata.Pipeline.Messages
+public import Strata.Pipeline.Context
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.EvalContext
 

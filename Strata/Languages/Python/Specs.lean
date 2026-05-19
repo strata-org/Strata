@@ -10,6 +10,7 @@ import all    Strata.DDM.Util.Fin
 import        Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
+import Strata.Languages.Python.Specs.MessageKind
 import        Strata.Pipeline.Messages
 import        Strata.Util.DecideProp
 

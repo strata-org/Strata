@@ -13,6 +13,7 @@ public import Strata.Languages.Python.Specs.Decls
 public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
+import Strata.Languages.Python.Specs.MessageKind
 
 /-!
 # PySpec to Laurel Translation
