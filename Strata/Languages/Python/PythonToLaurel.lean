@@ -489,8 +489,7 @@ def resolveDispatch (ctx : TranslationContext)
           let suffix := if fnOverloads.entries.size > 2 then s!" ... ({fnOverloads.entries.size} total)" else ""
           throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
-      let className := ident.toString (sep := "_")
-      return some className
+      return some <| ident.toString (sep := "_")
     | _ => return none
 
 /-! ## Expression Translation -/

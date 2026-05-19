@@ -21,11 +21,6 @@ public def foldlDirs {α} (mod : ModuleName) (init : α) (f : α → String → 
 def foldlMDirs {α m} [Monad m] (mod : ModuleName) (init : α) (f : α → String → m α) : m α := do
   mod.components.foldlM (init := init) (stop := mod.components.size - 1) fun a c => f a c.val
 
--- Maybe eliminate fileRoot in f
-@[deprecated ModuleName.back (since := "FIXME")]
-def fileRoot (mod : ModuleName) : String :=
-  mod.back
-
 /--
 Locate the Python source file for a module within `searchPath`.
 Navigates subdirectories for intermediate components, then looks for
