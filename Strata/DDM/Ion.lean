@@ -1528,7 +1528,8 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
       match optName, optValue with
       | "typecheck", "off" => pure (imports, decls, false)
       | "typecheck", "on" => pure (imports, decls, true)
-      | _, _ => throw s!"Unknown option '{optName}' = '{optValue}'"
+      | "typecheck", v => throw s!"Expected 'on' or 'off' for option 'typecheck', got '{v}'"
+      | name, _ => throw s!"Unknown option '{name}'"
     | name =>
       let decl ← Decl.fromIonFields name fields ctx
       pure (imports, decls.push decl, typecheck)

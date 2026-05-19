@@ -1131,6 +1131,8 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   let getKind i := .ofArgDeclKind argDecls[i].kind
   let typecheck := (← read).typecheck
   let ((args, newCtx), success) ← runChecked <|
+    -- When typecheck is off, skip pre-registration passes. Global context
+    -- is already populated by `computeGlobalContext` at program creation.
     if !typecheck then do
       let args ← runSyntaxElaborator (argc := argDecls.size) getKind se tctx stxArgs
       return (args, resultContext se tctx args)
