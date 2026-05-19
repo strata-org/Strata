@@ -172,20 +172,24 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
     }
 
     /// <summary>
-    /// Regression test: an assert_.<type> procedure with an existing ensures clause
-    /// should emit a single spec block containing both the synthetic requires and the
-    /// original ensures — not two separate spec blocks.
+    /// Regression test: assert_.<type> procedures must produce a single
+    /// merged spec block, not duplicates, regardless of whether the input
+    /// already has user-written specs. Two cases:
+    ///   1. existing ensures only — synthetic requires merges in.
+    ///   2. existing requires — synthetic requires is added alongside,
+    ///      not silently dropped.
     /// </summary>
     [Fact]
-    public void SmackAssertWithEnsuresProducesSingleSpecBlock() {
+    public void SmackAssertProducesSingleMergedSpecBlock() {
         var filePath = Path.Combine(TestsDirectory, "SmackAssertDuplicateSpec.bpl");
         Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
 
         var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
         Assert.Equal(0, exitCode);
 
-        // Count occurrences of "spec {" in the output.
-        // There should be exactly one spec block for the assert_ procedure.
+        // Three procedures (assert_.i32, assert_.i32_with_req, main); the two
+        // assert_.<type> ones each produce one spec block; main has none.
+        // Count occurrences of "spec {" in the output: must be exactly 2.
         var specCount = 0;
         var searchFrom = 0;
         while (true) {
@@ -196,11 +200,32 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         }
 
         output.WriteLine($"Output:\n{standardOutput}");
-        Assert.Equal(1, specCount);
+        Assert.Equal(2, specCount);
 
-        // The single spec block should contain both requires and ensures
+        // Overall sanity: the output contains at least one of each clause kind.
+        // (assert_.i32 has an `ensures`, both procedures have at least one
+        // `requires`.)
         Assert.Contains("requires", standardOutput);
         Assert.Contains("ensures", standardOutput);
+
+        // The critical regression check: BOTH clauses must appear in the
+        // SECOND procedure's spec block (assert_.i32_with_req) — i.e., the
+        // requires-already-present case must not silently drop the synthetic
+        // clause. Procedures emit in source order, so the second `spec {` is
+        // assert_.i32_with_req's.
+        var firstSpec = standardOutput.IndexOf("spec {", StringComparison.Ordinal);
+        Assert.True(firstSpec >= 0, "Expected at least one spec block");
+        var secondSpecStart = standardOutput.IndexOf("spec {", firstSpec + 1, StringComparison.Ordinal);
+        Assert.True(secondSpecStart >= 0, "Expected a second spec block for assert_.i32_with_req");
+        var secondSpecEnd = standardOutput.IndexOf("}", secondSpecStart, StringComparison.Ordinal);
+        Assert.True(secondSpecEnd > secondSpecStart, "Second spec block missing closing brace");
+        var secondSpec = standardOutput.Substring(secondSpecStart, secondSpecEnd - secondSpecStart);
+
+        // The user-written `requires (p.0 > -1)` (sanitized to `p_0 > -(1)`)
+        // and the synthetic `requires (p.0 != 0)` (sanitized to `p_0 != 0`)
+        // must both be present in this single spec block.
+        Assert.Contains("p_0 > -(1)", secondSpec);
+        Assert.Contains("p_0 != 0", secondSpec);
     }
 
     /// <summary>
