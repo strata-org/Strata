@@ -3,13 +3,6 @@
 This document tracks the selected Boole feature-request seeds kept under
 [`StrataTest/Languages/Boole/FeatureRequests`](../StrataTest/Languages/Boole/FeatureRequests).
 
-## Current priorities
-
-- Prioritize Rust-facing language support over Verus-only proof-visibility features.
-- Treat `opaque`, `reveal`, `hide`, `reveal_with_fuel`, `closed`, and `HasType`
-  as lower-priority compatibility items unless they unblock a broader Rust path.
-- Widening casts (`e as_int`) fully implemented (Gap #6) for bv1/8/16/32/64/128; covers all B2–B5 bitvector casts. Gap #8 (`nat` as a first-class type) is not a cast blocker — Boole has no `nat` type, so `nat`/`int` coercions are identity.
-
 ## Implemented feature requests
 
 - **Extensional equality** (#684)
@@ -62,9 +55,14 @@ This document tracks the selected Boole feature-request seeds kept under
   - `fun x : T => body` lowers to nested Core `.abs` nodes; `(f)(x)` lowers to `.app () f x`.
   - Remaining gap: first-class function values as procedure parameters / local variables still need abstract-type encoding for the SMT path.
   - Benchmark: [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean).
-- **Widening casts** (`e as_int`)
+- **Widening casts** (`e as_int`) (Gap #6 partial)
   - `e as_int` lowers to `Bv{n}.ToNat` (Core op) → SMT-LIB `bv2nat`; widths 1/8/16/32/64/128.
+  - Remaining: int→BV cast (`x as bv32` etc.).
   - Benchmarks: [`cast_expr.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_expr.lean), [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean).
+- **`type nat := int` synonym** (Gap #8 partial)
+  - Nullary synonyms expanding to `int` trigger auto-axioms `∀ x : DT . DT..isCtor(x) ⟹ DT..field(x) ≥ 0` for each `nat`-typed constructor field.
+  - Known limitation: axiom may be unsound for mixed `nat`/`int` datatypes. See [`nat_axiom_discussion.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_axiom_discussion.lean).
+  - Benchmark: [`cast_nested.lean`](../StrataTest/Languages/Boole/FeatureRequests/cast_nested.lean).
 
 ## Semantic preservation requests
 
@@ -78,7 +76,7 @@ This document tracks the selected Boole feature-request seeds kept under
 
 ## Type/model requests
 
-8. **Native `nat` support**: Stop modeling `nat` as a purely abstract type with uninterpreted coercions.
+8. **Native `nat` support**: `type nat := int` synonym implemented.
 9. **Missing model types**: Add or standardize support for model types such as `Cell`, `Atomic`, `Thread`, `Rwlock`, `Unit`, and `Arithmetic_overflow`.
 10. **On-demand stdlib/pervasive stubs**: Some pervasive stubs may be droppable after pruning translation output.
 11. **Sequence slicing**: Implemented. Int-based termination for recursive seq functions: implemented (#1167).
