@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 import Strata.DDM.Format
-import Strata.Languages.Python.OverloadTable
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Languages.Python.Specs.Error
@@ -198,8 +197,7 @@ def pushProcedure (proc : Procedure) : ToLaurelM Unit :=
 def pushType (td : TypeDefinition) : ToLaurelM Unit :=
   modify fun s => { s with types := s.types.push td }
 
-/-- Prepend the module prefix to a name. Returns the name unchanged
-    if the prefix is empty. -/
+/-- Prepend the module prefix to a name. -/
 def prefixName (name : String) : ToLaurelM String := do
   let ctx ← read
   return ctx.modulePrefix ++ "_" ++ name

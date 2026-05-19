@@ -109,7 +109,7 @@ A PySpec type is a union of atom types, stored with separate collections
 for each variant for efficient union operations on literal-heavy types.
 -/
 structure SpecType where
-  private ofComponent ::
+  private mk ::
   /-- Named type identifiers, sorted by PythonIdent ordering. -/
   idents     : Array SpecIdent
   /-- Integer literal values. -/

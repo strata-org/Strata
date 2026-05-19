@@ -354,7 +354,7 @@ private def DDM.SpecType.fromDDM (d : DDM.SpecType SourceRange) : FromDDM Specs.
   match d with
   | .typeClassNoArgs loc ⟨_, cl⟩ =>
     match PythonIdent.ofString cl with
-    | none => .throw loc "Unsupported identifier {cl} in typeClass"
+    | none => .throw loc s!"Unsupported identifier {cl} in typeClass"
     | some nm => .ok <| .ident loc nm #[]
   | .typeClass loc ⟨_, cl⟩ ⟨_, args⟩ => do
     let nm ← match PythonIdent.ofString cl with

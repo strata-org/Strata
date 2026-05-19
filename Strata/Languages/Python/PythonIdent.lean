@@ -74,7 +74,7 @@ and panics if parsing fails.
 def ofString! (mod : String) : ModuleName :=
   match ofStringAux mod #[] mod.startPos mod.startPos with
   | .some m => m
-  | .none => panic! "Malformed module {mod}" -- nopanic:ok
+  | .none => panic! s!"Malformed module {mod}" -- nopanic:ok
 
 /-- Convert a module name to a string, joining components with `sep` (default `"."`). -/
 protected def toString (m : ModuleName) (sep : String := ".") : String :=
@@ -114,7 +114,7 @@ instance : HAppend ModuleName ModuleName ModuleName where
   hAppend := append
 
 instance : Repr ModuleName where
-  reprPrec m prec := Repr.addAppParen s!"Stata.ModuleName.ofString! {m}" prec
+  reprPrec m prec := Repr.addAppParen s!"Strata.ModuleName.ofString! {m}" prec
 
 /--
 Result of parsing a Python file path into a module name.
