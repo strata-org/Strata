@@ -176,12 +176,11 @@ procedure test() opaque {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "AssignTargetCountMismatch" assignTargetCountMismatch 156 processResolution
 
-/-! ## UserDefined cross-type assignment (now rejected)
+/-! ## UserDefined cross-type assignment
 
-Cross-type assignments between unrelated user-defined types are rejected
-because `isSubtype` is currently structural equality. Once `isSubtype` walks
-`extending` chains, this test will need a related-types example to keep
-exercising the success path. -/
+Assignments between unrelated composites are rejected: `isSubtype` walks
+`extending` chains, so two composites with no common ancestor are not
+subtypes of each other. -/
 
 def userDefinedCrossType := r"
 composite Dog { }
