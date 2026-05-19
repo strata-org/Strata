@@ -3,29 +3,59 @@ using Microsoft.Boogie;
 namespace BoogieToStrata;
 
 public static class BoogieToStrata {
+    private const string Usage = "Usage: BoogieToStrata [--smack] <inputFile>";
+
+    private static bool _smack;
+
     private static void PrintResolvedProgram(ExecutionEngineOptions options, ProcessedProgram prog) {
         var writer = new TokenTextWriter(Console.Out, options);
-        // smack: true here preserves pre-task behavior; Task 3 wires the real value
-        // from the parsed CLI flag.
-        StrataGenerator.EmitProgramAsStrata(options, prog.Program, writer, smack: true);
+        StrataGenerator.EmitProgramAsStrata(options, prog.Program, writer, _smack);
+    }
+
+    /// <summary>
+    /// Parse args into (smack, filename). Returns false on any malformed
+    /// invocation (zero or two-plus positional args, unknown flags); the
+    /// caller should print Usage and return exit code 1.
+    /// </summary>
+    private static bool TryParseArgs(string[] args, out bool smack, out string filename) {
+        smack = false;
+        filename = "";
+        string? positional = null;
+        foreach (var arg in args) {
+            if (arg == "--smack") {
+                smack = true;
+            } else if (arg.StartsWith("--")) {
+                return false; // unknown flag
+            } else if (positional == null) {
+                positional = arg;
+            } else {
+                return false; // two positional args
+            }
+        }
+        if (positional == null) return false; // no positional arg
+        filename = positional;
+        return true;
     }
 
     public static int Main(string[] args) {
-        if (args.Length != 1) {
-            Console.Error.WriteLine("Usage: BoogieToStrata <inputFile>");
+        if (!TryParseArgs(args, out var smack, out var filename)) {
+            Console.Error.WriteLine(Usage);
             return 1;
         }
-
-        var filename = args[0];
+        _smack = smack;
 
         var options = new CommandLineOptions(Console.Out, new ConsolePrinter()) {
             Verify = false,
             TypeEncodingMethod = CoreOptions.TypeEncoding.Predicates,
-            // SMACK-generated Boogie often omits explicit `modifies` clauses on procedures that mutate globals.
-            // InferModifies runs ModSetCollector.CollectModifies to populate empty modifies clauses and
-            // suppresses modifies-clause typechecking (via CheckModifies), so that ResolveAndTypecheck
+            // Under --smack, SMACK-generated Boogie often omits explicit
+            // `modifies` clauses on procedures that mutate globals.
+            // InferModifies runs ModSetCollector.CollectModifies to populate
+            // empty modifies clauses and suppresses modifies-clause
+            // typechecking (via CheckModifies), so that ResolveAndTypecheck
             // does not reject SMACK programs missing modifies clauses.
-            InferModifies = true
+            // For strict Boogie input (no --smack), this stays false and
+            // missing modifies clauses are reported as typecheck errors.
+            InferModifies = smack
         };
 
         var boogieEngine = ExecutionEngine.CreateWithoutSharedCache(options);
