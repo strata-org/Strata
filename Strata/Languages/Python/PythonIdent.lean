@@ -39,7 +39,7 @@ instance : Inhabited ModuleName where
 
 
 private
-def ofStringAux (mod : String) (a : Array ModuleComponent) (start cur : mod.Pos) : Option ModuleName :=
+def ofStringAux (mod : String.Slice) (a : Array ModuleComponent) (start cur : mod.Pos) : Option ModuleName :=
   if h : cur.IsAtEnd then
     let r := mod.extract start cur
     if ne : r = "" then
@@ -64,15 +64,19 @@ def ofStringAux (mod : String) (a : Array ModuleComponent) (start cur : mod.Pos)
   termination_by cur
 
 /-- Parses a dot-separated module name string (e.g., "typing.List"). -/
-def ofString? (mod : String) : Option ModuleName :=
+def ofSlice? (mod : String.Slice) : Option ModuleName :=
   ofStringAux mod #[] mod.startPos mod.startPos
+
+/-- Parses a dot-separated module name string (e.g., "typing.List"). -/
+def ofString? (mod : String) : Option ModuleName :=
+  ofSlice? mod.toSlice
 
 /--
 Parses a dot-separated module name string (e.g., "typing.List")
 and panics if parsing fails.
 -/
 def ofString! (mod : String) : ModuleName :=
-  match ofStringAux mod #[] mod.startPos mod.startPos with
+  match ofString? mod with
   | .some m => m
   | .none => panic! s!"Malformed module {mod}" -- nopanic:ok
 
@@ -92,11 +96,16 @@ def back (m : ModuleName) : String :=
 
 /-- Drop the last `n` components. Returns `none` if fewer than `n` components remain. -/
 def parent (m : ModuleName) (n : Nat := 1) : Option ModuleName :=
-  let c := m.components.toSubarray (stop := m.components.size - n) |>.toArray
+  let c := m.components.take (m.components.size - n)
   if h : c.size > 0 then
     some ⟨c, h⟩
   else
     none
+
+#guard (ModuleName.ofString! "a.b.c" |>.parent).map ModuleName.toString = some "a.b"
+#guard (ModuleName.ofString! "a"     |>.parent) = none
+#guard (ModuleName.ofString! "a.b.c" |>.parent (n := 2)).map ModuleName.toString = some "a"
+#guard (ModuleName.ofString! "a.b.c" |>.parent (n := 3)) = none
 
 /-- Create a single-component module name. -/
 def ofComponent (c : ModuleComponent) : ModuleName :=
@@ -123,6 +132,7 @@ Result of parsing a Python file path into a module name.
 structure ModuleOfPath where
   moduleName : ModuleName
   isInit : Bool
+  deriving DecidableEq, Repr
 
 namespace ModuleOfPath
 
@@ -133,7 +143,12 @@ def modulePrefix (m : ModuleOfPath) : Array ModuleComponent :=
   if m.isInit then
     m.moduleName.components
   else
-    m.moduleName.components.toSubarray (stop := m.moduleName.components.size - 1) |>.toArray
+    m.moduleName.components.take (m.moduleName.components.size - 1)
+
+/-- Package prefix as a ModuleName, or none for top-level modules. -/
+def modulePrefix? (m : ModuleOfPath) : Option ModuleName :=
+  if m.isInit then some m.moduleName
+  else m.moduleName.parent
 
 end ModuleOfPath
 
@@ -147,23 +162,21 @@ end ModuleOfPath
 
     Fails if the path doesn't end in `.py` or would produce an empty component. -/
 def ofRelativePath (relativePath : System.FilePath) : Except String ModuleOfPath := do
-  let pathStr := relativePath.toString
-  let parts := pathStr.splitOn "/"
-  let some last := parts.getLast?
+  let parts := relativePath.components |>.toArray
+  let some last := parts.back?
     | throw s!"empty path: {relativePath}"
   let (stems, isInit) ←
     if last == "__init__.py" then
-      pure (parts.dropLast, true)
+      pure (parts.pop, true)
     else if last.endsWith ".py" then
-      pure (parts.dropLast ++ [last.dropEnd 3 |>.toString], false)
+      pure (parts.pop.push (last.dropEnd 3 |>.toString), false)
     else
       throw s!"path does not end in .py: {relativePath}"
-  let mut components : Array ModuleComponent := #[]
-  for s in stems do
-    if h : s = "" then
-      throw s!"empty component in path: {relativePath}"
-    else
-      components := components.push ⟨s, h⟩
+  let components : Array ModuleComponent ← stems.mapM fun s =>
+        if h : s = "" then
+          throw s!"empty component in path: {relativePath}"
+        else
+          return ⟨s, h⟩
   if h : components.size > 0 then
     .ok { moduleName := ⟨components, h⟩, isInit }
   else
@@ -178,8 +191,19 @@ private def testOfRelativePath (path : String) (expectedMod : String) (expectedI
 #guard testOfRelativePath "service/__init__.py" "service" true
 #guard testOfRelativePath "service/sub/module.py" "service.sub.module" false
 #guard testOfRelativePath "service/sub/__init__.py" "service.sub" true
-#guard match ofRelativePath "readme.txt" with | .error _ => true | .ok _ => false
-#guard match ofRelativePath "__init__.py" with | .error _ => true | .ok _ => false
+#guard ofRelativePath "readme.txt" |>.isOk |>.not
+#guard ofRelativePath "__init__.py" |>.isOk |>.not
+
+#guard (ModuleName.ofString! "a.b.c").toString = "a.b.c"
+#guard (ModuleName.ofString! "a").toString = "a"
+#guard ModuleName.ofString? "" = none
+#guard ModuleName.ofString? "." = none
+#guard ModuleName.ofString? "a." = none
+#guard ModuleName.ofString? ".a" = none
+#guard ModuleName.ofString? "a..b" = none
+#guard (ModuleName.ofString! "a.b.c").back = "c"
+#guard (ModuleName.ofComponent ⟨"x", by decide⟩).back = "x"
+#guard ((ModuleName.ofString! "a") ++ (ModuleName.ofString! "b.c")).toString = "a.b.c"
 
 end ModuleName
 
@@ -208,9 +232,10 @@ def ofComponent (mod : String) (name : String) (h : mod ≠ "" := by decide) : P
 protected def ofString (s : String) : Option PythonIdent := do
   let idx ← s.revFind? '.'
   let m ← ModuleName.ofString? (s.extract s.startPos idx)
+  let next ← idx.next?
   some {
     pythonModule := m
-    name := s.extract idx.next! s.endPos
+    name := s.extract next s.endPos
   }
 
 /-- Convert to a string, joining module components and name with `sep` (default `"."`). -/

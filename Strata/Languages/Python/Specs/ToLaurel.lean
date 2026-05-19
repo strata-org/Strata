@@ -73,18 +73,18 @@ def extractError (kind : WarningKind) (loc : SourceRange) (message : String) : E
 
 /-- Add an overload dispatch entry for a function. -/
 def pushOverloadEntry (funcName : String) (paramName : String)
-    (literalValue : String) (returnType : PythonIdent) : ExtractM Unit :=
-  modify fun s =>
-    let existing := s.overloads.getD funcName {}
-    let updated : FunctionOverloads := { existing with
-      paramName := existing.paramName <|> some paramName
-      entries := existing.entries.insert literalValue returnType }
-    if existing.paramName.any (· != paramName) then
-      dbg_trace s!"Warning: overload entries for '{funcName}' disagree on \
-        dispatch parameter name: existing '{existing.paramName.get!}', new '{paramName}'"
-      { s with overloads := s.overloads.insert funcName updated }
-    else
-      { s with overloads := s.overloads.insert funcName updated }
+    (literalValue : String) (returnType : PythonIdent) : ExtractM Unit := do
+  let existing := (←get).overloads.getD funcName {}
+  match existing.paramName with
+  | some prev =>
+    if prev != paramName then
+      extractError .overloadParamDisagree .none
+        s!"Overload entries for '{funcName}' disagree on dispatch parameter name: existing '{prev}', new '{paramName}'"
+  | none => pure ()
+  let updated : FunctionOverloads := { existing with
+    paramName := existing.paramName <|> some paramName
+    entries := existing.entries.insert literalValue returnType }
+  modify fun s => { s with overloads := s.overloads.insert funcName updated }
 
 /-- Extract an overload dispatch entry from an `@overload` function declaration.
     Looks for a `stringLiteral` in the first argument's type and an `.ident`

@@ -420,7 +420,9 @@ private partial def discoverModules (sourceDir : System.FilePath)
       else if entry.fileName.endsWith ".py" then
         match ModuleName.ofRelativePath relChild with
         | .ok info => acc := acc.push (info.moduleName, entry.path)
-        | .error _ => continue
+        | .error msg =>
+          let _ ← IO.eprintln s!"warning: skipping {entry.path}: {msg}" |>.toBaseIO
+          continue
     return acc
   go sourceDir ⟨""⟩
 

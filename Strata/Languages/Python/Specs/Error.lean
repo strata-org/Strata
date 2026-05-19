@@ -57,6 +57,7 @@ def overloadArgArity : WarningKind := { phase := "pySpecToLaurel", category := "
 def overloadArgNotStringLiteral : WarningKind := { phase := "pySpecToLaurel", category := "overloadArgNotStringLiteral" }
 def overloadReturnArity : WarningKind := { phase := "pySpecToLaurel", category := "overloadReturnArity" }
 def overloadReturnNotClass : WarningKind := { phase := "pySpecToLaurel", category := "overloadReturnNotClass" }
+def overloadParamDisagree : WarningKind := { phase := "pySpecToLaurel", category := "overloadParamDisagree" }
 
 -- PySpec parsing phase (generic — callers don't yet distinguish categories)
 def pySpecParsingError : WarningKind := { phase := "pySpecParsing", category := "error" }

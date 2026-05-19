@@ -94,8 +94,8 @@ private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls
     Handles both top-level functions and class methods.
     Strips `self` from class methods and expands `**kwargs` TypedDict fields. -/
 private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
-    (modulePrefix : String) : Except String (Array Python.PythonFunctionDecl) := do
-  let funcPrefix := if modulePrefix.isEmpty then "" else modulePrefix ++ "_"
+    (moduleName : Python.ModuleName) : Except String (Array Python.PythonFunctionDecl) := do
+  let funcPrefix := moduleName.toString (sep := "_") ++ "_"
   let mut result : Array Python.PythonFunctionDecl := #[]
   for sig in sigs do
     match sig with
@@ -150,12 +150,11 @@ public def buildPySpecLaurel (pyspecEntries : Array (Python.ModuleName × String
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs moduleName
-    let modulePrefix := moduleName.toString (sep := "_")
     allWarnings := allWarnings ++ errors
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     allExhaustiveClasses := exhaustiveClasses.fold (init := allExhaustiveClasses) fun s name => s.insert name
-    match extractFunctionSignatures sigs modulePrefix with
+    match extractFunctionSignatures sigs moduleName with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg => throw msg
     for td in program.types do

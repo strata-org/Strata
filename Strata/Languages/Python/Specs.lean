@@ -1340,10 +1340,10 @@ Python source if not in cache.
 -/
 partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
     PySpecM (Std.HashMap String SpecValue) := do
-  let (pythonFile, isInit) ←
+  let (pythonFile, modPath) ←
         match ← (←read).readModule mod |>.toBaseIO with
-        | .ok r =>
-          pure r
+        | .ok (path, isInit) =>
+          pure (path, ModuleName.ModuleOfPath.mk mod isInit)
         | .error msg =>
           specError loc msg
           return default
@@ -1382,9 +1382,8 @@ partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
   let ctx := { (←read) with
     pythonFile := pythonFile
     currentModule := mod
-    currentModulePrefix :=
-      let pfx := (ModuleName.ModuleOfPath.mk mod isInit).modulePrefix
-      if h : pfx.size > 0 then some ⟨pfx, h⟩ else none }
+    currentModulePrefix := modPath |>.modulePrefix?
+  }
   -- This does state shuffling to ensure warnings and errors maintain
   -- a reference count of 1 (for destructive updates).
   let s := ←get
