@@ -499,10 +499,57 @@ def seqAppendFunc : WFLFunc CoreLParams :=
               else #true))]
     ])
 
-/- A `Sequence` selection function with type `∀a. Sequence a → int → a`. -/
+/-! ### Sequence bounds preconditions
+
+`Sequence.select` / `update` / `take` / `drop` carry bounds
+preconditions; the other `Sequence.*` ops are total. -/
+
+/-- Choice of upper-bound operator in `mkSeqBoundsPrecond`: `Lt` (strict) for
+    `Sequence.select`/`update`, `Le` (non-strict) for `Sequence.take`/`drop`.
+    Restricting the parameter to this inductive rather than taking an
+    arbitrary `WFLFunc` or `LExpr` makes it impossible to attach a partial
+    operator (which would create a nested precondition obligation) by
+    accident. -/
+private inductive SeqBoundKind where | Lt | Le
+
+/-- Returns the *upper-bound* comparison for `mkSeqBoundsPrecond`.
+    The lower bound is always `0 ≤ x` (see `mkSeqBoundsPrecond`), so this
+    method characterises only the upper comparison. A future partial
+    Sequence op requiring a non-`int` comparison (e.g. a bitvector variant)
+    should introduce a separate helper rather than extend this enum. -/
+private def SeqBoundKind.upperOpExpr : SeqBoundKind → LExpr CoreLParams.mono
+  | .Lt => (intLtFunc (T := CoreLParams)).opExpr
+  | .Le => (intLeFunc (T := CoreLParams)).opExpr
+
+/-- Precondition `0 <= varName && varName `k.upperOpExpr` Sequence.length(seqName)`.
+
+    `seqName` defaults to `"s"` since all four current call sites
+    (`Sequence.select`/`update`/`take`/`drop`) name their `Sequence a` input
+    that way. The parameter exists so a future partial Sequence op with a
+    different input name need only pass it explicitly rather than rely on a
+    hidden string literal. Either way, mismatches between the function's
+    declared inputs and the names used here are caught at elaboration by
+    `polyUneval`'s `h_precond` free-vars check. -/
+private def mkSeqBoundsPrecond
+    (varName : String) (k : SeqBoundKind) (seqName : String := "s") :
+    Strata.DL.Util.FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata :=
+  let sVar  : LExpr CoreLParams.mono := .fvar default seqName (some (seqTy mty[%a]))
+  let xVar  : LExpr CoreLParams.mono := .fvar default varName (some mty[int])
+  let zero  : LExpr CoreLParams.mono := .intConst default 0
+  let lenS  : LExpr CoreLParams.mono := .app default seqLengthFunc.opExpr sVar
+  let lower : LExpr CoreLParams.mono :=
+    .app default (.app default (intLeFunc (T := CoreLParams)).opExpr zero) xVar
+  let upper : LExpr CoreLParams.mono :=
+    .app default (.app default k.upperOpExpr xVar) lenS
+  ⟨.app default (.app default (boolAndFunc (T := CoreLParams)).opExpr lower) upper,
+   default⟩
+
+/- A `Sequence` selection function with type `∀a. Sequence a → int → a`.
+   Partial: requires `0 <= i && i < Sequence.length(s)`. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+    (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
    `build(s, v)` appends a single element `v` to the end of `s`. -/
@@ -555,7 +602,8 @@ def seqBuildFunc : WFLFunc CoreLParams :=
     ])
 
 /- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
-   `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`. -/
+   `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`.
+   Partial: requires `0 <= i && i < Sequence.length(s)`. -/
 def seqUpdateFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.update" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
@@ -606,6 +654,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
                 else #true)))]
     ])
+    (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
@@ -628,7 +677,8 @@ def seqContainsFunc : WFLFunc CoreLParams :=
     ])
 
 /- A `Sequence` take function with type `∀a. Sequence a → int → Sequence a`.
-   `take(s, n)` returns the first `n` elements of `s`. -/
+   `take(s, n)` returns the first `n` elements of `s`.
+   Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
 def seqTakeFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.take" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
@@ -664,9 +714,11 @@ def seqTakeFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
     ])
+    (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 /- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
-   `drop(s, n)` returns the sequence with the first `n` elements removed. -/
+   `drop(s, n)` returns the sequence with the first `n` elements removed.
+   Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
 def seqDropFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.drop" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
@@ -709,6 +761,7 @@ def seqDropFunc : WFLFunc CoreLParams :=
                     (((~Int.Add : int → int → int) %0) %1))
               else #true))]
     ])
+    (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
