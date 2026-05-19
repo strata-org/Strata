@@ -857,6 +857,19 @@ private def natAxiomsForDatatype
         | none => []
         | some ⟨_, fs⟩ => fs.toList
       let testerName := s!"{dtypeName}..is{cname}"
+      -- Check for mixed nat/int constructor: if some fields are nat and others are
+      -- int, the generated axiom applies to all SMT terms of this datatype type and
+      -- may create an inconsistency if the solver introduces a synthetic term with a
+      -- negative nat field.  Warn so the user is aware.
+      let fieldTypes := fields.filterMap fun f => match f with
+        | .mkBinding _ _ (.expr ty) => some ty | _ => none
+      let hasNat := (← fieldTypes.mapM isNatType).any id
+      let hasInt := fieldTypes.any fun ty => match ty with | .int _ => true | _ => false
+      if hasNat && hasInt then
+        dbg_trace s!"[Boole] Warning: constructor `{dtypeName}.{cname}` has both `nat`- and `int`-typed fields. \
+          The auto-generated non-negativity axiom is globally quantified over all SMT terms of type `{dtypeName}`, \
+          which may be unsound if the solver introduces synthetic terms with negative nat fields. \
+          See `nat_axiom_discussion.lean` for design alternatives."
       for field in fields do
         match field with
         | .mkBinding _ ⟨_, fieldName⟩ tp =>
@@ -868,7 +881,7 @@ private def natAxiomsForDatatype
               let selector := mkCoreApp (.op () ⟨selectorName, ()⟩ none) [bv0]
               let geZero   := mkCoreApp Core.intGeOp [selector, .intConst () 0]
               let implies  := mkCoreApp Core.boolImpliesOp [tester, geZero]
-              let axExpr   : Core.Expression.Expr := .quant () .all "" (some dtypeTy) bv0 implies
+              let axExpr   : Core.Expression.Expr := .quant () .all "x" (some dtypeTy) bv0 implies
               let axName   := s!"{dtypeName}_{cname}_{fieldName}_nonneg"
               axioms := axioms ++ [.ax { name := axName, e := axExpr } .empty]
           | _ => pure ()
