@@ -51,7 +51,28 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         }
     }
 
+    /// <summary>
+    /// Returns true if the first 5 lines of <paramref name="filePath"/> contain
+    /// the literal token "{:smack}". Files carrying this marker opt into the
+    /// --smack CLI flag, which gates the assert_.<type> synthetic-requires
+    /// injection and InferModifies=true.
+    /// </summary>
+    private static bool HasSmackMarker(string filePath) {
+        if (!File.Exists(filePath)) return false;
+        using var reader = new StreamReader(filePath);
+        for (var i = 0; i < 5; i++) {
+            var line = reader.ReadLine();
+            if (line == null) break;
+            if (line.Contains("{:smack}", StringComparison.Ordinal)) return true;
+        }
+        return false;
+    }
+
     private (int, string, string) RunTranslation(string filePath) {
+        return RunTranslation(filePath, HasSmackMarker(filePath));
+    }
+
+    private (int, string, string) RunTranslation(string filePath, bool smack) {
         // Capture console output
         using var consoleOutput = new StringWriter();
         using var consoleError = new StringWriter();
@@ -62,7 +83,8 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         try {
             Console.SetOut(consoleOutput);
             Console.SetError(consoleError);
-            exitCode = BoogieToStrata.Main([filePath]);
+            var args = smack ? new[] { "--smack", filePath } : new[] { filePath };
+            exitCode = BoogieToStrata.Main(args);
         } catch (Exception) {
             exitCode = 1;
         } finally {
