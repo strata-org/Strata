@@ -19,17 +19,20 @@ namespace Strata.Boole
 
 open Lambda
 
-/--
-Boole verification pipeline:
+/-- Translation state for lowering a Boole program to Core.
 
-`Strata.Program` -> `BooleDDM.Program.ofAst` -> `BooleDDM.Program`
--> `toCoreProgram` -> `Core.Program` -> `Core.verify`
--/
+    Pipeline: `Strata.Program` → `BooleDDM.Program.ofAst` → `BooleDDM.Program`
+    → `toCoreProgram` → `Core.Program` → `Core.verify`
 
+    Op-vs-var classification for free variable references is derived from
+    `gctx.vars` directly (populated by the DDM elaborator with exact
+    per-symbol entries for datatypes, rec-fn blocks, etc.). The only
+    carve-out is `command_var` globals, which are stored as `.expr` in
+    `gctx` but must be emitted as `.fvar` after lowering to procedure
+    parameters — see `getFVarIsOp`. -/
 structure TranslateState where
   fileName : String := ""
   gctx : GlobalContext := {}
-  fvarIsOp : Array Bool := #[]
   tyBVars : Array String := #[]
   bvars : Array Core.Expression.Expr := #[]
   labelCounter : Nat := 0
@@ -40,8 +43,12 @@ structure TranslateState where
   /-- Names of in-out parameters for the current procedure being translated.
       `old x` is only applied to these variables; for others `old x = x`. -/
   currentInoutNames : List String := []
-  /-- Types of global variables, collected in a pre-pass.
-      Used to add globals as input parameters to procedures. -/
+  /-- Types of `command_var` globals, collected in a pre-pass.
+      Invariant: a name is present here iff introduced by `command_var`.
+      Dual role: (1) the *values* are used by `getGlobalParamPrefix` to
+      assemble procedure parameter lists; (2) the *key set* is used by
+      `getFVarIsOp` as the `command_var` carve-out for op-vs-var
+      classification. -/
   globalVarTypes : Std.HashMap String Lambda.LMonoTy := {}
 
 abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
@@ -110,15 +117,57 @@ private def getFVarName (m : SourceRange) (i : Nat) : TranslateM String := do
   | some n => return n
   | none => throwAt m s!"Unknown free variable with index {i}"
 
+/-- A name is a `command_var` global iff it appears in `globalVarTypes`.
+    Maintained by the pre-pass in `toCoreProgram`. -/
+private def TranslateState.isGlobalVar (st : TranslateState) (name : String) : Bool :=
+  st.globalVarTypes.contains name
+
+/-- Classify `gctx.vars[i]` as op (`true`) or term (`false`).
+
+    `gctx.vars` entries per command kind:
+    - `datatype`:          1 (type) + #ctors + #testers + #selectors
+    - `command_recfndefs`: #functions
+    - `typedecl` / `typesynonym` / `constdecl` / `fndecl` / `fndef`: 1
+    - `command_var`:       1 (carved out via `globalVarTypes`)
+    - `procedure` / `block` / `axiom` / `distinct`: 0
+-/
 private def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
   let st ← get
-  match st.fvarIsOp[i]? with
-  | some b => return b
+  match st.gctx.vars[i]? with
+  -- Classification is derived from `gctx.vars` (the single source of truth
+  -- populated by the DDM elaborator). Only carve-out: names introduced by
+  -- `command_var` are stored in `gctx` as `.expr` but lowered to procedure
+  -- parameters, so they must be emitted as `.fvar`. The carve-out relies on
+  -- the invariant that a name appears in `globalVarTypes` iff it was
+  -- introduced by a `command_var`.
+  | some (name, .expr _) => return !st.isGlobalVar name
+  | some (_, .type _ _) => return false
+  | none => throwAt m s!"Unknown free variable with index {i}"
+
+/-- `getFVarIsOp` agrees with `gctx.vars` classification, with `command_var`
+    names carved out as terms. -/
+private theorem getFVarIsOp_spec (st : TranslateState) (m : SourceRange) (i : Nat) :
+    match (getFVarIsOp m i).run st with
+    | .ok (b, st') =>
+        st' = st ∧
+        match st.gctx.vars[i]? with
+        | some (name, .expr _) => b = !st.globalVarTypes.contains name
+        | some (_,    .type _ _) => b = false
+        | none => False
+    | .error _ => st.gctx.vars[i]?.isNone := by
+  cases h : st.gctx.vars[i]? with
   | none =>
-    match st.gctx.vars[i]? with
-    | some (_, .expr _) => return true
-    | some (_, .type _ _) => return false
-    | none => throwAt m s!"Unknown free variable with index {i}"
+    simp [getFVarIsOp, throwAt, TranslateState.isGlobalVar, h]
+    exact True.intro
+  | some p =>
+    obtain ⟨name, k⟩ := p
+    cases k with
+    | expr _ =>
+      simp [getFVarIsOp, throwAt, TranslateState.isGlobalVar, h]
+      exact ⟨rfl, rfl⟩
+    | type _ _ =>
+      simp [getFVarIsOp, throwAt, TranslateState.isGlobalVar, h]
+      exact ⟨rfl, rfl⟩
 
 private def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression.Expr := do
   let xs := (← get).bvars
@@ -726,35 +775,6 @@ private def lowerPureFuncDef
       preconditions := pres
     }
 
-/--
-Classify command-introduced free symbols:
-- constant/function declarations are treated as function symbols,
-- variable/type/datatype declarations are treated as term/type symbols.
--/
-private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List Bool :=
-  match cmd with
-  | .command_typedecl _ _ _ => [false]
-  | .command_typesynonym _ _ _ _ _ => [false]
-  | .command_constdecl _ _ _ _ => [true]
-  | .command_fndecl _ _ _ _ _ => [true]
-  | .command_fndef _ _ _ _ _ _ _ _ => [true]
-  | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
-  | .command_var _ _ => [false]
-  -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
-  | .boole_procedure _ _ _ _ _ _ _ | .command_procedure _ _ _ _ _ _ => []
-  | .command_datatypes _ ⟨_, decls⟩ => decls.toList.map (fun _ => false)
-  | .command_block _ _ => []
-  | .command_axiom _ _ _ => []
-  | .command_distinct _ _ _ => []
-
-/--
-Build the symbol-class table used by `getFVarIsOp`.
--/
-private def initFVarIsOp (p : Boole.Program) : Array Bool :=
-  match p with
-  | .prog _ ⟨_, cmds⟩ =>
-    (cmds.map registerCommandSymbols).toList.flatten.toArray
-
 private def collectModifiesFromSpec
     (fileName : String)
     (pname : String)
@@ -901,7 +921,6 @@ def formatProgram (prog : Boole.Program) (gctx : GlobalContext) (dialects : Dial
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : String := "") : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
-    let fvarIsOp := initFVarIsOp p
     -- Pre-pass: collect global variable types and modifies info per procedure.
     let mut varTypes : Std.HashMap String Lambda.LMonoTy := {}
     let mut modMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
@@ -910,7 +929,7 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : S
       | .command_var _ b =>
         match b with
         | .bind_mk _ ⟨_, n⟩ _ ty =>
-          match (toCoreMonoType ty).run' { gctx := gctx, fvarIsOp := fvarIsOp } with
+          match (toCoreMonoType ty).run' { gctx := gctx } with
           | .ok mty => varTypes := varTypes.insert n mty
           | .error _ => pure ()
       | .boole_procedure _ nameAnn _ _ _ specAnn _ =>
@@ -923,7 +942,6 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : S
     let init : TranslateState := {
       fileName := fileName
       gctx := gctx
-      fvarIsOp := fvarIsOp
       modifiesMap := modMap
       globalVarTypes := varTypes
     }
