@@ -23,7 +23,7 @@ open Statement Lambda LExpr
 def fixupError (E : Env) : Env :=
   -- Issue #1185: pop frames AND clear `error` unconditionally. Keeping `error`
   -- across the procedure boundary contaminates subsequent procedures
-  -- (StatementEval.lean:618-619 short-circuits on Env.error.isSome). Clean-path
+  -- (StatementEval.lean:632-633 short-circuits on Env.error.isSome). Clean-path
   -- obligations already in `E.deferred` are preserved as-is — they are
   -- independently provable (each carries its own assumption list).
   { E with error := none,
