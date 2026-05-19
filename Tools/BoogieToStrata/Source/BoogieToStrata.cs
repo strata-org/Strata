@@ -5,7 +5,9 @@ namespace BoogieToStrata;
 public static class BoogieToStrata {
     private static void PrintResolvedProgram(ExecutionEngineOptions options, ProcessedProgram prog) {
         var writer = new TokenTextWriter(Console.Out, options);
-        StrataGenerator.EmitProgramAsStrata(options, prog.Program, writer);
+        // smack: true here preserves pre-task behavior; Task 3 wires the real value
+        // from the parsed CLI flag.
+        StrataGenerator.EmitProgramAsStrata(options, prog.Program, writer, smack: true);
     }
 
     public static int Main(string[] args) {
