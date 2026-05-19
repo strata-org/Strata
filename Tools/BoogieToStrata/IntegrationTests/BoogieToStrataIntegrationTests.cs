@@ -293,6 +293,60 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Assert.Contains("inout g", standardOutput);
     }
 
+    /// <summary>
+    /// Pin down the --smack gate: without the flag, the assert_.<type>
+    /// pattern is treated as an opaque procedure (no synthetic requires
+    /// injected). Translation succeeds; the output does not contain a
+    /// requires clause for the assert_ procedure.
+    /// </summary>
+    [Fact]
+    public void SmackAssertWithoutFlagDoesNotInjectRequires() {
+        var filePath = Path.Combine(TestsDirectory, "SmackAssert.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath, smack: false);
+
+        output.WriteLine($"Output:\n{standardOutput}");
+        if (!string.IsNullOrEmpty(errorOutput)) {
+            output.WriteLine($"Error output: {errorOutput}");
+        }
+
+        Assert.Equal(0, exitCode);
+
+        // Without --smack, no synthetic requires is added, so no `requires`
+        // clause should appear anywhere in the translation of this file
+        // (the .bpl has no user-written requires either).
+        Assert.DoesNotContain("requires", standardOutput);
+    }
+
+    /// <summary>
+    /// Pin down the --smack gate: without the flag, InferModifies is off.
+    /// A program that omits an explicit `modifies` clause on a procedure
+    /// that mutates a global is rejected at typecheck.
+    /// </summary>
+    [Fact]
+    public void InferModifiesOffWithoutSmackFlag() {
+        var filePath = Path.Combine(TestsDirectory, "InferModifiesGlobal.bpl");
+        Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
+
+        var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath, smack: false);
+
+        output.WriteLine($"Exit code: {exitCode}");
+        output.WriteLine($"Output:\n{standardOutput}");
+        if (!string.IsNullOrEmpty(errorOutput)) {
+            output.WriteLine($"Error output: {errorOutput}");
+        }
+
+        // Without --smack, ResolveAndTypecheck rejects the program because
+        // procedure p mutates global g without an explicit `modifies g;`
+        // clause. BoogieToStrata.Main writes a "Failed to typecheck" line
+        // to stderr and returns exit code 1. Pin both signals so a future
+        // regression that fails for an unrelated reason (parse error,
+        // arg-handling change) doesn't silently pass this test.
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Failed to typecheck", errorOutput);
+    }
+
     [Fact]
     public void ErrorCodeWithNoArguments() {
         var result = BoogieToStrata.Main(Array.Empty<string>());
