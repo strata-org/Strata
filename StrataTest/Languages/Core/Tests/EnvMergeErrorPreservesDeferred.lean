@@ -105,4 +105,34 @@ info: 2
 #eval (Env.merge dummyCond E_err_with_oblig E_err_with_oblig).deferred.size
 
 
+/-! ### Case 5: both errored with DIFFERENT errors — E1's error is kept -/
+
+private def E_err_a : Env :=
+  { Env.init (empty_factory := true) with
+    error := some (.Misc f!"error A"),
+    deferred := #[synthOblig] }
+
+private def E_err_b : Env :=
+  { Env.init (empty_factory := true) with
+    error := some (.Misc f!"error B"),
+    deferred := #[synthOblig] }
+
+-- Both errored: deferred is unioned (size 2).
+/--
+info: 2
+-/
+#guard_msgs in
+#eval (Env.merge dummyCond E_err_a E_err_b).deferred.size
+
+-- E1 wins on the error value when both error: arbitrary controller choice, not
+-- a soundness requirement (the merged env carries an error flag and
+-- short-circuits regardless). The actual value is `some "[ERROR] error A"`,
+-- not `some "[ERROR] error B"`, despite both inputs erroring.
+/--
+info: some "[ERROR] error A"
+-/
+#guard_msgs in
+#eval ((Env.merge dummyCond E_err_a E_err_b).error.map fun e => f!"{e}").map fun f => Std.Format.pretty f
+
+
 end Core
