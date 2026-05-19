@@ -127,7 +127,7 @@ private def TranslateState.isGlobalVar (st : TranslateState) (name : String) : B
     `gctx.vars` entries per command kind:
     - `datatype`:          1 (type) + #ctors + #testers + #selectors
     - `command_recfndefs`: #functions
-    - `typedecl` / `constdecl` / `fndecl` / `fndef`: 1
+    - `typedecl` / `typesynonym` / `constdecl` / `fndecl` / `fndef`: 1
     - `command_var`:       1 (carved out via `globalVarTypes`)
     - `procedure` / `block` / `axiom` / `distinct`: 0
 -/
