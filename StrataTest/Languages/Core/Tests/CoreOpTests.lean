@@ -55,6 +55,8 @@ private def checkRoundTrip (name : String) : Bool :=
 #guard checkRoundTrip "Str.Length"
 #guard checkRoundTrip "Str.Concat"
 #guard checkRoundTrip "Str.Substr"
+#guard checkRoundTrip "Str.PrefixOf"
+#guard checkRoundTrip "Str.SuffixOf"
 
 -- Regex ops
 #guard checkRoundTrip "Re.All"

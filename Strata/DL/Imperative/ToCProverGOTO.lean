@@ -335,7 +335,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let hasAnnotation := !invariants.isEmpty || measure.isSome
     if hasAnnotation then
       let mut backGuard := Expr.true
-      for inv in invariants do
+      for (_invLabel, inv) in invariants do
         let inv_expr ← G.toGotoExpr inv
         backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
       if let some meas := measure then

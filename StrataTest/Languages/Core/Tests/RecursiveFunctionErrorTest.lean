@@ -39,7 +39,7 @@ rec function len<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
 
 /--
-error: ❌ Type checking error.
+error: ❌ Symbolic evaluation error.
 Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
@@ -56,6 +56,7 @@ program Core;
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (xs : IntList) : int
+decreases xs
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
 };
@@ -63,7 +64,7 @@ rec function listLen (xs : IntList) : int
 #end
 
 /--
-error: ❌ Type checking error.
+error: ❌ Symbolic evaluation error.
 Recursive function 'listLen' requires a @[cases] parameter
 -/
 #guard_msgs in

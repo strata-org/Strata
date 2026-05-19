@@ -11,7 +11,6 @@ public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Lambda.RecursiveAxioms
 import Init.Data.String.Extra
 public import Strata.DDM.Util.DecimalRat
-import Strata.DL.Imperative.SMTUtils
 public import Strata.Languages.Core.CoreOp
 
 ---------------------------------------------------------------------
@@ -96,7 +95,7 @@ def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory Co
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
 Handles monomorphic types and type variables (as `.constr tv []`).
 -/
-private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
+def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType :=
   match ty with
   | .bitvec n => .bitvec n
   | .tcons "bool" [] => .bool
@@ -104,19 +103,23 @@ private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   | .tcons "real" [] => .real
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
-  | .tcons name args => .constr name (args.map lMonoTyToTermType)
+  | .tcons name args =>
+    if name == "Map" && useArrayTheory then
+      .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
+    else
+      .constr name (args.map $ lMonoTyToTermType useArrayTheory)
   | .ftvar tv => .constr tv []
 
 /-- Convert a datatype's constructors to typed SMT constructors. -/
-private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List SMTConstructor :=
+private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
-      (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
+      (d.name ++ ".." ++ name.name, lMonoTyToTermType useArrayTheory fieldTy)
     { name := c.name.name, args := fields }
 
 /-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
   constructor arguments-/
-private def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
+def validateDatatypesForSMT (typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta)
     (seenDatatypes : Std.HashSet String) : Except Format Unit := do
   for block in typeFactory.toList do
     for d in block do
@@ -134,7 +137,7 @@ Uses the TypeFactory ordering (already topologically sorted).
 Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
-def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+def SMT.Context.emitDatatypes (ctx : SMT.Context) (useArrayTheory : Bool := false): Strata.SMT.SolverM Unit := do
   match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
@@ -143,10 +146,10 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constructors := datatypeConstructorsToSMT d
+      let constructors := datatypeConstructorsToSMT d useArrayTheory
       Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
+      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d useArrayTheory)
       Strata.SMT.Solver.declareDatatypes dts
 
 @[expose] abbrev BoundVars := List (String × TermType)
@@ -554,6 +557,8 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | .str .Substr   => .ok (.app Op.str_substr,    .string, ctx)
     | .str .ToRegEx  => .ok (.app Op.str_to_re,     .regex,  ctx)
     | .str .InRegEx  => .ok (.app Op.str_in_re,     .bool,   ctx)
+    | .str .PrefixOf => .ok (.app Op.str_prefixof,  .bool,   ctx)
+    | .str .SuffixOf => .ok (.app Op.str_suffixof,  .bool,   ctx)
     | .re .All       => .ok (.app Op.re_all,        .regex,  ctx)
     | .re .AllChar   => .ok (.app Op.re_allchar,    .regex,  ctx)
     | .re .Range     => .ok (.app Op.re_range,      .regex,  ctx)
@@ -638,7 +643,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
               -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
               let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
-              let (term, ctx) ← toSMTTerm E bvs body ctx
+              let (term, ctx) ← toSMTTerm E bvs body ctx useArrayTheory
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
           -- For recursive functions, generate per-constructor axioms
           let recAxioms ← if func.isRecursive && isNew then
@@ -663,7 +668,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             let savedSubst := ctx.tySubst
             let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
               let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
-                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx useArrayTheory
                 .ok (new_ctx.addAxiom axiom_term)
             ) ctx
             let ctx := ctx.restoreSubst savedSubst
@@ -685,36 +690,96 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
     .ok ((et :: erestt), ctx)
 
 /--
+A variable definition to be emitted as `define-fun` in SMT-LIB.
+Contains the variable name, its SMT type, and the encoded body term.
+-/
+structure VarDefinition where
+  name : String
+  ty : Strata.SMT.TermType
+  body : Term
+
+/--
+A variable declaration to be emitted as `declare-fun` in SMT-LIB.
+Contains the variable name and its SMT type.
+-/
+structure VarDeclaration where
+  name : String
+  ty : Strata.SMT.TermType
+
+/--
 Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
 The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
 for the check-sat encoding that applies negation for validity checks.
+
+Variable definitions (from `init name ty (.det e)`) are returned separately as
+`VarDefinition`s so the caller can emit them as `define-fun`.
+Variable declarations (from `init name ty .nondet`) are returned separately as
+`VarDeclaration`s so the caller can emit them as `declare-fun`.
 -/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false) :
-  Except Format (List Term × Term × SMT.Context × Statistics) := do
-  let assumptions := d.assumptions.flatten.map (fun a => a.snd)
+  Except Format (List Term × List VarDefinition × List VarDeclaration × Term × SMT.Context × Statistics) := do
+  let flatEntries := d.assumptions.flatten
+  -- Separate assumptions from variable definitions/declarations
+  let mut assumptionExprsRev : List (LExpr CoreLParams.mono) := []
+  let mut varDefsRev : List (CoreIdent × Expression.Ty × LExpr CoreLParams.mono) := []
+  let mut varDeclsRev : List (CoreIdent × Expression.Ty) := []
+  for entry in flatEntries do
+    match entry with
+    | .assumption _ expr => assumptionExprsRev := expr :: assumptionExprsRev
+    | .varDecl name ty (.det e) => varDefsRev := (name, ty, e) :: varDefsRev
+    | .varDecl name ty .nondet => varDeclsRev := (name, ty) :: varDeclsRev
+  let assumptionExprs := assumptionExprsRev.reverse
+  let varDefs := varDefsRev.reverse
+  let varDecls := varDeclsRev.reverse
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
-  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
+  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptionExprs ctx useArrayTheory
+  -- Encode variable definitions
+  let (smtVarDefsRev, ctx) ← varDefs.foldlM (init := (([] : List VarDefinition), ctx)) fun (defs, ctx) (name, ty, rhs) => do
+    if h : ty.isMonoType then
+      let (smtTy, ctx) ← LMonoTy.toSMTType E (ty.toMonoType h) ctx useArrayTheory
+      let (rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
+      .ok ({ name := name.name, ty := smtTy, body := rhsTerm } :: defs, ctx)
+    else
+      .error f!"SMT encoding: variable definition '{name.name}' has non-monomorphic type"
+  let smtVarDefs := smtVarDefsRev.reverse
+  -- Encode variable declarations
+  let (smtVarDeclsRev, ctx) ← varDecls.foldlM (init := (([] : List VarDeclaration), ctx)) fun (decls, ctx) (name, ty) => do
+    if h : ty.isMonoType then
+      let (smtTy, ctx) ← LMonoTy.toSMTType E (ty.toMonoType h) ctx useArrayTheory
+      .ok ({ name := name.name, ty := smtTy } :: decls, ctx)
+    else
+      .error f!"SMT encoding: variable declaration '{name.name}' has non-monomorphic type"
+  let smtVarDecls := smtVarDeclsRev.reverse
   let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
   let stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
         (distinct_assumptions.length + assumptions_terms.length)
-  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx, stats)
+  .ok (distinct_assumptions ++ assumptions_terms, smtVarDefs, smtVarDecls, obligation_term, ctx, stats)
 
 ---------------------------------------------------------------------
 
-/-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
-def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
+/-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing.
+    Outputs variable declarations followed by the assertion of the encoded term. -/
+def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false)
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx useArrayTheory
   match smtctx with
   | .error e => return e.pretty
-  | .ok (smt, _) => Encoder.termToString smt
+  | .ok (smt, _) =>
+    let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+    let solver ← Solver.bufferWriter b
+    let ((enc, _), _) ← ((Encoder.encodeTerm smt).run EncoderState.init).run solver
+    let _ ← (Solver.assert enc).run solver
+    let contents ← b.get
+    if h: contents.data.IsValidUTF8
+    then return String.fromUTF8 contents.data h
+    else return "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
 
 /--
 Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).

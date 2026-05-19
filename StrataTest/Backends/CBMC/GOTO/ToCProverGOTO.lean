@@ -245,7 +245,7 @@ info: ok: #[LOCATION 0,
 /-- Test exit statement transformation -/
 def ExampleStmt5 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .exit (some "target_label") {},
+   .exit "target_label" {},
    .cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))) {}),
    .block "target_label"
      [.cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20))) {})]
@@ -449,7 +449,7 @@ def ExampleLoopInvariant : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP
    .loop (.det
      (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      none
-     [(.const { underlying := (), type := mty[bool] } (.boolConst true))]  -- invariant: true
+     [("inv_true", .const { underlying := (), type := mty[bool] } (.boolConst true))]  -- invariant: true
      [.cmd (.set (Lambda.Identifier.mk "i" ()) (.det (addBV32LExpr
        (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32]))
        (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 1)))) {})]
@@ -492,7 +492,7 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
      -- measure: i
      (some (.fvar { underlying := (), type := mty[int] } (Lambda.Identifier.mk "i" ()) (some mty[int])))
      -- invariants: [true]
-     [(.const { underlying := (), type := mty[bool] } (.boolConst true))]
+     [("inv_true", .const { underlying := (), type := mty[bool] } (.boolConst true))]
      -- body: empty
      []
      {}]

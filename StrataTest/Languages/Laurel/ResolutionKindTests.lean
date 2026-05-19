@@ -37,7 +37,7 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
 /-! ## Using a variable name where a type is expected -/
 
 def varAsType := r"
-procedure foo() {
+procedure foo() opaque {
   var x: int := 1;
   var y: x := 2
 //       ^ error: 'x' resolves to variable, but expected composite type, constrained type, datatype definition, type alias
@@ -50,8 +50,8 @@ procedure foo() {
 /-! ## Using a procedure name where a type is expected -/
 
 def procAsType := r"
-procedure bar() { };
-procedure foo() {
+procedure bar() opaque { };
+procedure foo() opaque {
   var y: bar := 1
 //       ^^^ error: 'bar' resolves to static procedure, but expected composite type, constrained type, datatype definition, type alias
 };
@@ -64,7 +64,7 @@ procedure foo() {
 
 def typeAsStaticCall := r"
 composite Foo { }
-procedure bar() {
+procedure bar() opaque {
   var x: int := Foo()
 //              ^^^^^ error: 'Foo' resolves to composite type, but expected parameter, static procedure, datatype constructor, constant
 };
@@ -76,15 +76,15 @@ procedure bar() {
 /-! ## Using a procedure name with `new` -/
 
 def newWithProc := r"
-procedure bar() { };
-procedure foo() {
+procedure bar() opaque { };
+procedure foo() opaque {
   var x: int := new bar
 //              ^^^^^^^ error: 'bar' resolves to static procedure, but expected composite type, datatype definition
 };
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "NewWithProc" newWithProc 73 processResolution
+#eval testInputWithOffset "NewWithProc" newWithProc 77 processResolution
 
 /-! ## Extending a non-composite type (e.g. a constrained type) -/
 
@@ -95,6 +95,6 @@ composite Foo extends nat { }
 "
 
 #guard_msgs (error, drop all) in
-#eval testInputWithOffset "ExtendConstrained" extendConstrained 83 processResolution
+#eval testInputWithOffset "ExtendConstrained" extendConstrained 90 processResolution
 
 end Laurel

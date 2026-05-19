@@ -161,9 +161,7 @@ private def constructorListToList : BooleDDM.ConstructorList SourceRange → Lis
 
 private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData Core.Expression) := do
   let file := (← get).fileName
-  let uri : Uri := .file file
-  let fileRangeElt := ⟨Imperative.MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩
-  return #[fileRangeElt]
+  return Imperative.MetaData.ofSourceRange (.file file) sr
 
 private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
   Lambda.LExpr.mkApp () op args
@@ -391,19 +389,23 @@ def nestMapSet (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr) 
     let updatedInner := nestMapSet innerMap rest rhs
     mkCoreApp Core.mapUpdateOp [base, i, updatedInner]
 
-def toCoreInvariants (is : BooleDDM.Invariants SourceRange) : TranslateM (List Core.Expression.Expr) := do
+def toCoreInvariants (is : BooleDDM.Invariants SourceRange) :
+    TranslateM (List (String × Core.Expression.Expr)) := do
   match is with
   | .nilInvariants _ => return []
-  | .consInvariants _ e rest => do
+  | .consInvariants _ lbl? e rest => do
+    let lbl := match lbl?.val with
+      | some (.label _ ⟨_, l⟩) => l
+      | none => ""
     let e' ← toCoreExpr e
-    return e' :: (← toCoreInvariants rest)
+    return (lbl, e') :: (← toCoreInvariants rest)
 
 def lowerFor
     (m : SourceRange)
     (id : Core.Expression.Ident)
     (ty : Lambda.LMonoTy)
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
-    (invs : List Core.Expression.Expr)
+    (invs : List (String × Core.Expression.Expr))
     (body : List Core.Statement) : TranslateM Core.Statement := do
   let blockLabel ← defaultLabel m "for" none
   let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (.det initExpr) (← toCoreMetaData m)
@@ -536,8 +538,6 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
     return .exit l (← toCoreMetaData m)
-  | .exit_unlabeled_statement m =>
-    return .exit none (← toCoreMetaData m)
   | .typeDecl_statement m ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []
@@ -858,7 +858,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let funcList := funcs.toList
     let (fsRev, _) ← funcList.foldlM (init := ([], [])) fun (acc, prevNames) func =>
       match func with
-      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ _decreases body => do
         let tys := match targs? with | none => [] | some ts => typeArgsToList ts
         let siblingBvars := prevNames.map fun sn =>
           (.op () (mkIdent sn) none : Core.Expression.Expr)

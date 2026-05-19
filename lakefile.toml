@@ -12,6 +12,9 @@ rev = "bump_to_v4.29.0-rc8"
 [[lean_lib]]
 name = "Strata"
 
+[[lean_lib]]
+name = "StrataMainLib"
+
 [[lean_exe]]
 name = "strata"
 root = "StrataMain"
@@ -27,7 +30,12 @@ globs = ["StrataTest.+"]
 [[lean_exe]]
 name = "StrataTestMain"
 root = "Scripts.StrataTestMain"
-needs = ["StrataTest"]
+# `Strata` is listed explicitly because the driver spawns `lean` on files
+# under `StrataTestExtra/` (which is not a `lean_lib`). Those files import
+# modules from the `Strata` library that are not in `StrataTest`'s transitive
+# closure (e.g., `Strata.DDM.Integration.Java`), so without this the oleans
+# would be missing when running `lake test` from a clean `.lake`.
+needs = ["Strata", "StrataTest"]
 
 [[lean_exe]]
 name = "StrataToCBMC"

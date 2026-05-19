@@ -325,6 +325,12 @@ def strToRegexFunc : WFLFunc CoreLParams :=
 def strInRegexFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Str.InRegEx" mty[string] mty[regex] mty[bool]
 
+def strPrefixOfFunc : WFLFunc CoreLParams :=
+  binaryOp "Str.PrefixOf" String.isPrefixOf
+
+def strSuffixOfFunc : WFLFunc CoreLParams :=
+  binaryOp "Str.SuffixOf" (fun s t => String.endsWith t s)
+
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
 
@@ -426,9 +432,9 @@ def seqLengthFunc : WFLFunc CoreLParams :=
     ])
 
 /- An empty `Sequence` constructor with type `∀a. Sequence a`.
-   NOTE: This is registered in the Factory for programmatic use, but is not yet
-   parseable from `.st` files because the DDM grammar cannot currently handle
-   0-ary polymorphic functions (no arguments to infer the type parameter from). -/
+   `Sequence.empty<A>()` returns an empty sequence of element type `A`.
+   The `<A>` is surface syntax produced by Grammar.lean and consumed by
+   Translate.lean; this function itself takes no value parameters. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [
@@ -822,6 +828,8 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   strSubstrFunc,
   strToRegexFunc,
   strInRegexFunc,
+  strPrefixOfFunc,
+  strSuffixOfFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -972,6 +980,8 @@ def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
 def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
+def strPrefixOfOp : Expression.Expr := strPrefixOfFunc.opExpr
+def strSuffixOfOp : Expression.Expr := strSuffixOfFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr
