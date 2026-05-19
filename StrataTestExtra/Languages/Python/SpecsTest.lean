@@ -296,7 +296,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
 
 
 meta def testNegRoundTrip (v : Nat) : Bool :=
-  DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = .negOfNat v
+  DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = Int.negOfNat v
 
 #guard testNegRoundTrip 0
 #guard testNegRoundTrip 1

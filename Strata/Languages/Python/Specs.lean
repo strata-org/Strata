@@ -8,7 +8,7 @@ module
 import        Strata.DDM.Format
 import all    Strata.DDM.Util.Fin
 import        Strata.Languages.Python.ReadPython
-import Strata.Languages.Python.Specs.DDM
+import        Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
 import        Strata.Languages.Python.Specs.Error
 import        Strata.Util.DecideProp
@@ -1407,7 +1407,7 @@ partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
 
   return signatureValueMap mod sigs
 
-partial def resolveModuleCached (loc : SourceRange) (mod : ModuleName)
+partial def parseAndResolveModule (loc : SourceRange) (mod : ModuleName)
     : PySpecM (Option (Std.HashMap String SpecValue)) := do
   match (←get).typeSigs.rank[mod]? with
   | some types =>
@@ -1417,11 +1417,6 @@ partial def resolveModuleCached (loc : SourceRange) (mod : ModuleName)
     let r := if success then some r else none
     modify fun s => { s with typeSigs := s.typeSigs.insert mod r }
     return r
-
-/-- Resolve a module, returning `none` on resolution failure. -/
-partial def parseAndResolveModule (loc : SourceRange) (mod : ModuleName)
-    : PySpecM (Option (Std.HashMap String SpecValue)) :=
-  resolveModuleCached loc mod
 
 /-- Resolve a module and register its exports under `"{asname}.{name}"`.
     If resolution fails, register `asname` as an opaque extern type. -/
@@ -1574,8 +1569,6 @@ partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRa
   return s.elements
 
 end
-
-
 
 /-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
 def translateModule

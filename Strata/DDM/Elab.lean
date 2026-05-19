@@ -181,7 +181,8 @@ def elabProgramRest
   let s := DeclState.initDeclState
   let s := { s with pos := startPos }
   let s := s.openLoadedDialect! loader d
-  let ctx : DeclContext := { inputContext, stopPos, loader := loader, missingImport := false }
+  let ctx : DeclContext := { inputContext, stopPos, loader := loader, missingImport := false,
+                             typecheck := d.typecheck }
   let (cmds, s) := runCommand leanEnv #[] stopPos ctx s
   if s.errors.isEmpty then
     let openDialects := loader.dialects.importedDialects dialect known
