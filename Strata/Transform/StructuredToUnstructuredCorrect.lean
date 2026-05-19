@@ -353,6 +353,11 @@ private theorem Cmds.definedVars_cons
     Cmds.definedVars (c :: cs) = Cmd.definedVars c ++ Cmds.definedVars cs := by
   rw [Cmds.definedVars.eq_def]
 
+private theorem Cmds.modifiedVars_cons
+    {P : PureExpr} (c : Cmd P) (cs : List (Cmd P)) :
+    Cmds.modifiedVars (c :: cs) = Cmd.modifiedVars c ++ Cmds.modifiedVars cs := by
+  rw [Cmds.modifiedVars.eq_def]
+
 /-- Single-command agreement-preservation. -/
 private theorem EvalCmd_under_agreement {P : PureExpr}
     [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
@@ -4151,6 +4156,360 @@ private theorem flushCmds_condGoto_false_agree {P : PureExpr} [HasFvar P] [HasNo
     simp [updateFailure, h_hf, Bool.or_comm]
   rw [h_uf] at h_step
   exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+
+/-- Value preservation through a single command at an untouched variable.
+This is the value-preserving generalization of `agreement_helper_unchanged_at_x`:
+if `c` does not define or modify `x`, then `σ' x = σ x` regardless of whether
+the value is `none` or `some _`. -/
+private theorem EvalCmd_value_preserved_at_x {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    {δ : SemanticEval P} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
+    {x : P.Ident}
+    (h_eval : @EvalCmd P _ _ _ δ σ c σ' failed)
+    (h_x_not_def : x ∉ Cmd.definedVars c)
+    (h_x_not_mod : x ∉ Cmd.modifiedVars c) :
+    σ' x = σ x := by
+  cases h_eval with
+  | eval_init heval hinit hwfvar =>
+    cases hinit with
+    | init h_xn h_xv h_other =>
+      rename_i ty md x_init v e
+      have h_x_ne : x_init ≠ x := by
+        intro h_eq
+        apply h_x_not_def
+        show x ∈ Cmd.definedVars (Cmd.init x_init ty (ExprOrNondet.det e) md)
+        have h_dv :
+            Cmd.definedVars (Cmd.init x_init ty (ExprOrNondet.det e) md) = [x_init] := by
+          with_unfolding_all rfl
+        rw [h_dv, h_eq]
+        exact List.mem_singleton.mpr rfl
+      exact h_other x h_x_ne
+  | eval_init_unconstrained hinit hwfvar =>
+    cases hinit with
+    | init h_xn h_xv h_other =>
+      rename_i ty md x_init v
+      have h_x_ne : x_init ≠ x := by
+        intro h_eq
+        apply h_x_not_def
+        show x ∈ Cmd.definedVars (Cmd.init x_init ty ExprOrNondet.nondet md)
+        have h_dv :
+            Cmd.definedVars (Cmd.init x_init ty ExprOrNondet.nondet md) = [x_init] := by
+          with_unfolding_all rfl
+        rw [h_dv, h_eq]
+        exact List.mem_singleton.mpr rfl
+      exact h_other x h_x_ne
+  | eval_set heval hupdate hwfvar =>
+    cases hupdate with
+    | update h_xv' h_xv h_other =>
+      rename_i md x_set v e v'
+      have h_x_ne : x_set ≠ x := by
+        intro h_eq
+        apply h_x_not_mod
+        show x ∈ Cmd.modifiedVars (Cmd.set x_set (ExprOrNondet.det e) md)
+        have h_mv :
+            Cmd.modifiedVars (Cmd.set x_set (ExprOrNondet.det e) md) = [x_set] := by
+          with_unfolding_all rfl
+        rw [h_mv, h_eq]
+        exact List.mem_singleton.mpr rfl
+      exact h_other x h_x_ne
+  | eval_set_nondet hupdate hwfvar =>
+    cases hupdate with
+    | update h_xv' h_xv h_other =>
+      rename_i md x_set v v'
+      have h_x_ne : x_set ≠ x := by
+        intro h_eq
+        apply h_x_not_mod
+        show x ∈ Cmd.modifiedVars (Cmd.set x_set ExprOrNondet.nondet md)
+        have h_mv :
+            Cmd.modifiedVars (Cmd.set x_set ExprOrNondet.nondet md) = [x_set] := by
+          with_unfolding_all rfl
+        rw [h_mv, h_eq]
+        exact List.mem_singleton.mpr rfl
+      exact h_other x h_x_ne
+  | eval_assert_pass _ _ => rfl
+  | eval_assert_fail _ _ => rfl
+  | eval_assume _ _ => rfl
+  | eval_cover _ => rfl
+
+/-- Multi-command extension of `EvalCmd_value_preserved_at_x`. -/
+private theorem EvalCmds_value_preserved_at_x {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+    {δ : SemanticEval P} {σ σ' : SemanticStore P} {cmds : List (Cmd P)} {failed : Bool}
+    {x : P.Ident}
+    (h_eval : EvalCmds P (@EvalCmd P _ _ _) δ σ cmds σ' failed)
+    (h_x_not_def : x ∉ Cmds.definedVars cmds)
+    (h_x_not_mod : x ∉ Cmds.modifiedVars cmds) :
+    σ' x = σ x := by
+  induction h_eval with
+  | eval_cmds_none => rfl
+  | eval_cmds_some hcmd hrest ih =>
+    rename_i σ_a c σ_b _ cs σ_c _
+    have h_x_not_in_head_def : x ∉ Cmd.definedVars c := by
+      intro h_x_in_head
+      apply h_x_not_def
+      rw [Cmds.definedVars_cons]
+      exact List.mem_append_left _ h_x_in_head
+    have h_x_not_in_tail_def : x ∉ Cmds.definedVars cs := by
+      intro h_x_in_tail
+      apply h_x_not_def
+      rw [Cmds.definedVars_cons]
+      exact List.mem_append_right _ h_x_in_tail
+    have h_x_not_in_head_mod : x ∉ Cmd.modifiedVars c := by
+      intro h_x_in_head
+      apply h_x_not_mod
+      rw [Cmds.modifiedVars_cons]
+      exact List.mem_append_left _ h_x_in_head
+    have h_x_not_in_tail_mod : x ∉ Cmds.modifiedVars cs := by
+      intro h_x_in_tail
+      apply h_x_not_mod
+      rw [Cmds.modifiedVars_cons]
+      exact List.mem_append_right _ h_x_in_tail
+    have h_step1 : σ_b x = σ_a x :=
+      EvalCmd_value_preserved_at_x hcmd h_x_not_in_head_def h_x_not_in_head_mod
+    have h_step2 : σ_c x = σ_b x :=
+      ih h_x_not_in_tail_def h_x_not_in_tail_mod
+    rw [h_step2, h_step1]
+
+/-- Variant of `flushCmds_condGoto_{true,false}_agree` for the `.ite .nondet`
+case: the cond expression is fixed as `mkFvar (ident freshName)`, and the
+flushCmds is called on `accum ++ [initCmd]` where `initCmd` initializes
+`freshName` to a fresh nondeterministic boolean.
+
+The CFG-side block has `cmds = (accum ++ [initCmd]).reverse = initCmd :: accum.reverse`,
+so the init runs first (havocing `freshName`), then accum runs. Since `freshName`
+was just generated and does not appear in accum, accum behaves the same way as
+in `h_accum_cfg` (modulo the extra binding at `freshName`).
+
+The helper:
+1. Decomposes the emitted block.
+2. Runs `eval_init_unconstrained` with the chosen branch's value to produce
+   `σ_post_init = σ_base[freshName ↦ chosenVal]`.
+3. Re-lifts accum from `σ_post_init` via `EvalCmds_under_agreement` to produce
+   `σ_cfg_final` with `StoreAgreement σ_cfg_after σ_cfg_final`.
+4. Evaluates the cond expr `mkFvar freshName` at `σ_cfg_final` to chosenVal using
+   `WellFormedSemanticEvalVar` and `h_lawful_fvar`, plus `EvalCmds_value_preserved_at_x`
+   to track that accum doesn't modify `freshName`.
+5. Applies `EvalDetBlock.step_goto_{true,false}` based on `b_chosen`. -/
+private theorem flushCmds_condGoto_nondet_agree {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr] [HasIdent P] [DecidableEq P.Ident]
+    (extendEval : ExtendEval P)
+    (accum : List (Cmd P))
+    (freshName : String)
+    (md_init : MetaData P)
+    (tl fl : String) (md : MetaData P)
+    (l_ite : String) (gen_e gen_f : StringGenState)
+    (accumEntry : String) (accumBlocks : DetBlocks String (Cmd P) P)
+    (h_flush_eq : flushCmds "ite$"
+      (accum ++ [HasInit.init (HasIdent.ident (P := P) freshName)
+                  HasBool.boolTy ExprOrNondet.nondet md_init])
+      (some (DetTransferCmd.condGoto
+        (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) tl fl md))
+      l_ite gen_e = ((accumEntry, accumBlocks), gen_f))
+    (σ_base σ_cfg_after : SemanticStore P) (hf_base hf_accum : Bool)
+    (ρ₀ : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (h_wf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (h_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (h_wf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_lawful_fvar : ∀ x : P.Ident,
+        HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x)
+    (h_accum_cfg : EvalCmds P (EvalCmd P) ρ₀.eval σ_base accum.reverse σ_cfg_after hf_accum)
+    (h_agree_after : StoreAgreement ρ₀.store σ_cfg_after)
+    (h_hf : ρ₀.hasFailure = (hf_base || hf_accum))
+    (h_freshName_not_in_σ_base :
+      σ_base (HasIdent.ident (P := P) freshName) = none)
+    (h_freshName_not_in_accum_def :
+      HasIdent.ident (P := P) freshName ∉ Cmds.definedVars accum.reverse)
+    (h_freshName_not_in_accum_mod :
+      HasIdent.ident (P := P) freshName ∉ Cmds.modifiedVars accum.reverse)
+    (h_fresh_accum_in_σ_base :
+      ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none)
+    (h_unique_accum : (Cmds.definedVars accum.reverse).Nodup)
+    (b_chosen : Bool)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks)
+    (h_lookup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+      cfg.blocks.lookup lbl = some blk) :
+    ∃ σ_cfg_final, StepDetCFGStar extendEval cfg
+      (.cont accumEntry σ_base hf_base)
+      (.cont (if b_chosen then tl else fl) σ_cfg_final ρ₀.hasFailure)
+      ∧ StoreAgreement ρ₀.store σ_cfg_final
+      ∧ σ_cfg_final (HasIdent.ident (P := P) freshName)
+        = some (if b_chosen then HasBool.tt else HasBool.ff)
+      ∧ (∀ y, σ_base y = none →
+            y ∉ Cmds.definedVars accum.reverse →
+            y ∉ Cmds.modifiedVars accum.reverse →
+            HasIdent.ident (P := P) freshName ≠ y →
+            σ_cfg_final y = none) := by
+  -- Notation: chosenVal = HasBool.tt or HasBool.ff based on b_chosen.
+  let chosenVal : P.Expr := if b_chosen then HasBool.tt else HasBool.ff
+  let freshIdent : P.Ident := HasIdent.ident (P := P) freshName
+  let initCmd : Cmd P :=
+    HasInit.init freshIdent HasBool.boolTy ExprOrNondet.nondet md_init
+  -- 1. Decompose flushCmds. accum ++ [initCmd] is non-empty (contains the init),
+  --    so simp reduces the `if accum.isEmpty` to the else branch automatically.
+  unfold flushCmds at h_flush_eq
+  simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_flush_eq
+  injection h_flush_eq with h_pair h_gen_eq
+  injection h_pair with h_entry_eq h_blks_eq
+  subst h_entry_eq; subst h_blks_eq
+  -- The emitted block has cmds = (accum ++ [initCmd]).reverse = initCmd :: accum.reverse.
+  have h_reverse_eq : (accum ++ [initCmd]).reverse = initCmd :: accum.reverse := by
+    rw [List.reverse_append]; rfl
+  -- 2. Construct σ_post_init and the init step.
+  let σ_post_init : SemanticStore P :=
+    fun y => if y = freshIdent then some chosenVal else σ_base y
+  have h_freshIdent_post : σ_post_init freshIdent = some chosenVal := by
+    show (if freshIdent = freshIdent then some chosenVal else σ_base freshIdent) = some chosenVal
+    simp
+  have h_other_post : ∀ y, freshIdent ≠ y → σ_post_init y = σ_base y := by
+    intro y hxy
+    show (if y = freshIdent then some chosenVal else σ_base y) = σ_base y
+    have hne : ¬ (y = freshIdent) := fun h => hxy h.symm
+    rw [if_neg hne]
+  have h_init_state : InitState P σ_base freshIdent chosenVal σ_post_init :=
+    InitState.init h_freshName_not_in_σ_base h_freshIdent_post h_other_post
+  have h_init_step : @EvalCmd P _ _ _ ρ₀.eval σ_base initCmd σ_post_init false :=
+    EvalCmd.eval_init_unconstrained h_init_state h_wf_var
+  -- 3. Re-lift accum from σ_post_init via EvalCmds_under_agreement.
+  --    StoreAgreement σ_base σ_post_init: σ_post_init has σ_base's bindings plus freshIdent.
+  have h_agree_post : StoreAgreement σ_base σ_post_init := by
+    intro x h_def
+    have h_x_some : (σ_base x).isSome = true := h_def x (List.mem_singleton.mpr rfl)
+    by_cases h_eq : x = freshIdent
+    · subst h_eq
+      rw [h_freshName_not_in_σ_base] at h_x_some
+      cases h_x_some
+    · have h_ne : freshIdent ≠ x := fun h => h_eq h.symm
+      exact (h_other_post x h_ne).symm
+  --    Freshness in σ_post_init: ∀ x ∈ definedVars(accum.reverse), σ_post_init x = none.
+  have h_fresh_accum_post : ∀ x ∈ Cmds.definedVars accum.reverse, σ_post_init x = none := by
+    intro x hx
+    have h_x_ne : freshIdent ≠ x := by
+      intro h
+      apply h_freshName_not_in_accum_def
+      show freshIdent ∈ Cmds.definedVars accum.reverse
+      rw [h]; exact hx
+    have h_σ_base_x : σ_base x = none := h_fresh_accum_in_σ_base x hx
+    rw [h_other_post x h_x_ne]; exact h_σ_base_x
+  obtain ⟨σ_cfg_final, h_accum_post, h_agree_post_final⟩ :=
+    EvalCmds_under_agreement ρ₀.eval accum.reverse h_wf_def h_congr
+      σ_base σ_post_init σ_cfg_after hf_accum h_agree_post h_accum_cfg
+      h_fresh_accum_post h_unique_accum
+  -- 4. σ_cfg_final at freshIdent: since freshIdent is not modified or defined by
+  --    accum and σ_post_init freshIdent = some chosenVal, value preservation gives:
+  have h_final_freshIdent :
+      σ_cfg_final freshIdent = some chosenVal := by
+    have h_pres :
+        σ_cfg_final freshIdent = σ_post_init freshIdent :=
+      EvalCmds_value_preserved_at_x h_accum_post
+        h_freshName_not_in_accum_def h_freshName_not_in_accum_mod
+    rw [h_pres, h_freshIdent_post]
+  -- 5. Build the EvalCmds chain on initCmd :: accum.reverse from σ_base.
+  have h_full_chain :
+      EvalCmds P (@EvalCmd P _ _ _) ρ₀.eval σ_base
+        (initCmd :: accum.reverse) σ_cfg_final (false || hf_accum) :=
+    EvalCmds.eval_cmds_some h_init_step h_accum_post
+  have h_or : (false || hf_accum) = hf_accum := Bool.false_or hf_accum
+  have h_full_chain' :
+      EvalCmds P (@EvalCmd P _ _ _) ρ₀.eval σ_base
+        (initCmd :: accum.reverse) σ_cfg_final hf_accum := by
+    rw [← h_or]; exact h_full_chain
+  -- 6. Evaluate the cond at σ_cfg_final.
+  have h_cond_eval :
+      ρ₀.eval σ_cfg_final
+        (HasFvar.mkFvar (P := P) freshIdent) = some chosenVal := by
+    rw [h_wf_var (HasFvar.mkFvar (P := P) freshIdent) freshIdent σ_cfg_final
+        (h_lawful_fvar freshIdent)]
+    exact h_final_freshIdent
+  -- 7. Block lookup
+  have h_mem := h_cfg_accum _ (List.Mem.head _)
+  have h_lkp := h_lookup _ _ h_mem
+  -- 8. Freshness preservation through the lifted chain.
+  have h_preserve_final :
+      ∀ y, σ_base y = none → y ∉ Cmds.definedVars accum.reverse →
+        y ∉ Cmds.modifiedVars accum.reverse →
+        freshIdent ≠ y → σ_cfg_final y = none := by
+    intro y h_σ_y h_y_not_acc_def h_y_not_acc_mod h_yne
+    -- y ≠ freshIdent → σ_post_init y = σ_base y = none.
+    have h_post_y : σ_post_init y = none := by
+      rw [h_other_post y h_yne]; exact h_σ_y
+    -- y ∉ accum.definedVars ∪ accum.modifiedVars → value preserved through chain.
+    have h_final_y : σ_cfg_final y = σ_post_init y :=
+      EvalCmds_value_preserved_at_x h_accum_post h_y_not_acc_def h_y_not_acc_mod
+    rw [h_final_y]; exact h_post_y
+  -- 9. Case split on b_chosen.
+  by_cases h_b : b_chosen = true
+  · -- True branch: chosenVal = HasBool.tt, dispatch to tl.
+    have h_chosen_tt : chosenVal = HasBool.tt := by
+      show (if b_chosen then HasBool.tt else HasBool.ff) = HasBool.tt
+      simp [h_b]
+    have h_cond_tt :
+        ρ₀.eval σ_cfg_final
+          (HasFvar.mkFvar (P := P) freshIdent) = some HasBool.tt := by
+      rw [h_cond_eval, h_chosen_tt]
+    have h_eval_block :
+        EvalDetBlock P (EvalCmd P) extendEval σ_base
+          ⟨(accum ++ [initCmd]).reverse,
+            DetTransferCmd.condGoto
+              (HasFvar.mkFvar (P := P) freshIdent) tl fl md⟩
+          (.cont tl σ_cfg_final hf_accum) := by
+      rw [h_reverse_eq]
+      exact EvalDetBlock.step_goto_true (δ := ρ₀.eval) h_full_chain' h_cond_tt hwfb
+    have h_step : @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
+        (updateFailure (.cont tl σ_cfg_final hf_accum) hf_base) :=
+      StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+    have h_uf : @updateFailure String P (.cont tl σ_cfg_final hf_accum) hf_base =
+        CFGConfig.cont tl σ_cfg_final ρ₀.hasFailure := by
+      simp [updateFailure, h_hf, Bool.or_comm]
+    rw [h_uf] at h_step
+    refine ⟨σ_cfg_final, ?_, ?_, ?_, h_preserve_final⟩
+    · -- StepDetCFGStar with target tl (since b_chosen = true)
+      simp only [h_b, if_true]
+      exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+    · -- StoreAgreement ρ₀.store σ_cfg_final via transitivity
+      exact StoreAgreement.trans h_agree_after h_agree_post_final
+    · -- σ_cfg_final freshIdent = some HasBool.tt (since b_chosen = true)
+      simp only [h_b, if_true]
+      rw [h_final_freshIdent, h_chosen_tt]
+  · -- False branch: chosenVal = HasBool.ff, dispatch to fl.
+    have h_b_false : b_chosen = false := by
+      cases b_chosen
+      · rfl
+      · exact absurd rfl h_b
+    have h_chosen_ff : chosenVal = HasBool.ff := by
+      show (if b_chosen then HasBool.tt else HasBool.ff) = HasBool.ff
+      simp [h_b_false]
+    have h_cond_ff :
+        ρ₀.eval σ_cfg_final
+          (HasFvar.mkFvar (P := P) freshIdent) = some HasBool.ff := by
+      rw [h_cond_eval, h_chosen_ff]
+    have h_eval_block :
+        EvalDetBlock P (EvalCmd P) extendEval σ_base
+          ⟨(accum ++ [initCmd]).reverse,
+            DetTransferCmd.condGoto
+              (HasFvar.mkFvar (P := P) freshIdent) tl fl md⟩
+          (.cont fl σ_cfg_final hf_accum) := by
+      rw [h_reverse_eq]
+      exact EvalDetBlock.step_goto_false (δ := ρ₀.eval) h_full_chain' h_cond_ff hwfb
+    have h_step : @StepCFG _ _ (Cmd P) _ P
+        (EvalDetBlock P (EvalCmd P) extendEval) cfg
+        (.cont (StringGenState.gen "ite$" gen_e).fst σ_base hf_base)
+        (updateFailure (.cont fl σ_cfg_final hf_accum) hf_base) :=
+      StepCFG.eval_next (failed := hf_base) h_lkp h_eval_block
+    have h_uf : @updateFailure String P (.cont fl σ_cfg_final hf_accum) hf_base =
+        CFGConfig.cont fl σ_cfg_final ρ₀.hasFailure := by
+      simp [updateFailure, h_hf, Bool.or_comm]
+    rw [h_uf] at h_step
+    refine ⟨σ_cfg_final, ?_, ?_, ?_, h_preserve_final⟩
+    · -- StepDetCFGStar with target fl (since b_chosen = false)
+      simp only [h_b_false, Bool.false_eq_true, if_false]
+      exact ReflTrans.step _ _ _ h_step (ReflTrans.refl _)
+    · exact StoreAgreement.trans h_agree_after h_agree_post_final
+    · simp only [h_b_false, Bool.false_eq_true, if_false]
+      rw [h_final_freshIdent, h_chosen_ff]
 
 /-! ## Block.uniqueInits projection helpers
 
