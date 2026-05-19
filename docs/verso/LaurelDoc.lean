@@ -309,12 +309,15 @@ value when `cond` is false; the then-branch is checked against
 {name Strata.Laurel.HighType.TVoid}`TVoid` so `x : int := if c then 5` is rejected at the
 branch rather than slipping through to a downstream subsumption.
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t} \quad \text{([⇒] If)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t \sqcup T_e} \quad \text{([⇒] If)}`
 
-Picks the then-branch type arbitrarily; the two branches are *not* compared, since a
-statement-position `if` often pairs a value branch with a `return`/`exit`/`assert`. The
-enclosing context's check (\[⇐\] Sub, or a containing `checkSubtype` like an assignment)
-provides the actual check downstream.
+The result is the join (least upper bound) of the two branch types, so
+`if c then small else big` synthesizes the common supertype rather than committing to one
+branch arbitrarily. The join walks `extending` chains for composites; when no common
+supertype exists (e.g. a value branch paired with a `TVoid` `return`/`exit`), it falls
+back to `T_t` and the enclosing context's check (\[⇐\] Sub, or a containing
+`checkSubtype` like an assignment) surfaces any mismatch downstream against the
+then-branch's type.
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Leftarrow T \quad \Gamma \vdash \mathit{elseBr} \Leftarrow T}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Leftarrow T} \quad \text{([⇐] If)}`
 
