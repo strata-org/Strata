@@ -1,3 +1,4 @@
+// {:smack}
 // Regression test for InferModifies = true.
 //
 // This procedure mutates the global variable `g` but has NO explicit
