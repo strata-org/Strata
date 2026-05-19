@@ -508,7 +508,7 @@ theorem loopScopeTest :
   -- Need to reconcile the env shape.
   conv => rhs; rw [show Env.mk storeWithX miniEval false =
     { Env.mk (projectStore storeWithX storeWithXY) miniEval false with
-      hasFailure := false || false } from by simp [hproj, Bool.or_false]]
+      hasFailure := false || false } from by simp [hproj]]
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
 ---------------------------------------------------------------------
