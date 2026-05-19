@@ -86,10 +86,16 @@ private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr
 
     The map values are lists of (target, replacement) pairs so that distinct
     expressions sharing the same `LExpr.hashExpr` do not displace each other
-    on insertion (cf. PR #1135 review). On lookup we walk the list with
-    structural `==` to find the matching target. The expected list length is
-    1 for typical inputs; a non-trivial collision only adds the cost of a few
-    extra `==` comparisons. -/
+    on insertion. On lookup we walk the list with structural `==` to find
+    the matching target. The expected list length is 1 for typical inputs;
+    a non-trivial collision only adds the cost of a few extra `==`
+    comparisons.
+
+    Collision safety is load-bearing for `anfEncodeBody`'s termination
+    argument: it guarantees that every duplicate found by
+    `findANFEncoderTargets` is actually rewritten by this function on the
+    same pass, so no unreplaced duplicate can survive into the next
+    iteration. -/
 def replaceExprs (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
     (e : Expression.Expr) : Expression.Expr :=
   (go e).2
