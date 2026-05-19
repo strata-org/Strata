@@ -208,6 +208,9 @@ The following options are supported:
   parameter slots are filled with anonymous type placeholders. Variable name
   resolution and global context population still operate normally.
 
+  The flag is a property of the program's primary dialect; imported dialects'
+  flags are not consulted during elaboration.
+
   This is intended for cases where the type checker cannot infer implicit type
   arguments — notably when template-generated accessors with unresolved type
   variable return types are composed with polymorphic functions that require

@@ -116,6 +116,8 @@ op command_procedure (name : Ident,
 ---------------------------------------------------------------------
 -- Same dialect with typecheck OFF.
 -- Imports all declarations from TestTCOn but disables type checking.
+-- The typecheck flag is a property of the program's primary dialect;
+-- imported dialects' flags are not consulted during elaboration.
 ---------------------------------------------------------------------
 
 #dialect
