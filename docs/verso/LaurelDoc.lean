@@ -453,14 +453,15 @@ $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_}{\Gamma \vdash \mathsf{AsT
 
 $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_}{\Gamma \vdash \mathsf{IsType}\;\mathit{target}\;T \Rightarrow \mathsf{TBool}} \quad \text{([⇒] IsType)}`
 
-$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad \mathsf{isReference}\;T_l \quad \mathsf{isReference}\;T_r}{\Gamma \vdash \mathsf{ReferenceEquals}\;\mathit{lhs}\;\mathit{rhs} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] RefEq)}`
+$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad \mathsf{isReference}\;T_l \quad \mathsf{isReference}\;T_r \quad T_l \sim T_r}{\Gamma \vdash \mathsf{ReferenceEquals}\;\mathit{lhs}\;\mathit{rhs} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] RefEq)}`
 
 `isReference T` holds when `T` is a {name Strata.Laurel.HighType.UserDefined}`UserDefined`
 or {name Strata.Laurel.HighType.Unknown}`Unknown`
-type. Reference equality is meaningless on primitives. Compatibility between `T_l` and
-`T_r` (e.g. rejecting `Cat === Dog` for unrelated user-defined types) is delegated to
-future tightening of `<:` — today, two distinct user-defined names already mismatch
-structurally, so the check would only fire under stronger subtyping.
+type. Reference equality is meaningless on primitives. The operands must also be
+consistent under `~` (Siek–Taha consistency), matching the rule applied by
+{name Strata.Laurel.Operation.Eq}`==`: two distinct user-defined types like `Cat` and
+`Dog` are rejected, while either side being `Unknown` is accepted as a gradual escape
+hatch.
 
 $$`\frac{\Gamma \vdash \mathit{target} \Rightarrow T_t \quad \Gamma(f) = T_f \quad \Gamma \vdash \mathit{newVal} \Leftarrow T_f}{\Gamma \vdash \mathsf{PureFieldUpdate}\;\mathit{target}\;f\;\mathit{newVal} \Rightarrow T_t} \quad \text{([⇒] PureFieldUpdate)}`
 
