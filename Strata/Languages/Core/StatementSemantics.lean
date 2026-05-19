@@ -291,19 +291,23 @@ inductive CoreStepStar
     `Imperative.EvalDetBlock` instantiated with `EvalCommand`. This works
     because `EvalDetBlock` has a `_enableNesting` constructor that directly
     references `EvalCmd`, satisfying the Lean kernel's nested inductive
-    requirement. See `StrataTest/Languages/Core/Tests/NestedInductiveRestriction.lean`. -/
+    requirement. See `StrataTest/Languages/Core/Tests/NestedInductiveRestriction.lean`.
+
+    The evaluator `δ` is threaded through `EvalDetBlock` as an index
+    (introduced as a parameter on `EvalDetBlock` itself). It is captured
+    here as an index of `CoreCFGStepStar` and varies per-instance. -/
 inductive CoreCFGStepStar
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :
-    DetCFG → CFGConfig String Expression →
+    CoreEval → DetCFG → CFGConfig String Expression →
     CFGConfig String Expression → Prop where
-  | refl : CoreCFGStepStar π φ cfg c c
+  | refl : CoreCFGStepStar π φ δ cfg c c
   | step :
     List.lookup t cfg.blocks = .some b →
-    Imperative.EvalDetBlock Expression (EvalCommand π φ) (EvalPureFunc φ) σ b config →
-    CoreCFGStepStar π φ cfg (updateFailure config failed) c₃ →
+    Imperative.EvalDetBlock Expression (EvalCommand π φ) (EvalPureFunc φ) δ σ b config →
+    CoreCFGStepStar π φ δ cfg (updateFailure config failed) c₃ →
     ----
-    CoreCFGStepStar π φ cfg (.cont t σ failed) c₃
+    CoreCFGStepStar π φ δ cfg (.cont t σ failed) c₃
 
 /-- Execution of a procedure body: either structured (via `CoreStepStar`)
     or unstructured CFG (via `CoreCFGStepStar`).
@@ -321,7 +325,7 @@ inductive CoreBodyExec
       (.terminal ρ') →
     CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
   | cfg :
-    CoreCFGStepStar π φ cfg
+    CoreCFGStepStar π φ δ cfg
       (.cont cfg.entry σ false)
       (.terminal σ' failed) →
     CoreBodyExec π φ (.cfg cfg) σ δ σ' δ failed

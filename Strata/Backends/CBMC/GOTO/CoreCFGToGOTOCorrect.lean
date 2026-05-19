@@ -250,16 +250,6 @@ theorem block_body_simulation
     (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
     (cfg : Core.DetCFG) (pgm : Program)
     (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
-    -- The transfer-condition evaluator used inside an `EvalDetBlock`
-    -- derivation (existentially bound by `goto_true`/`goto_false`)
-    -- must agree with the outer `δ` on the boolean values relevant to
-    -- transfers. This is a compatibility hypothesis we discharge at the
-    -- callsite by uniformly using `δ` in CFG executions.
-    (h_eval_compat :
-      ∀ {δ' : Imperative.SemanticEval Core.Expression}
-        (σ' : Imperative.SemanticStore Core.Expression)
-        (e' : Core.Expression.Expr) (b' : Core.Expression.Expr),
-        δ' σ' e' = some b' → δ σ' e' = some b')
     (l : String) (blk : Imperative.DetBlock String Core.Command Core.Expression)
     (h_block : (l, blk) ∈ cfg.blocks)
     (h_call_free : ∀ c ∈ blk.cmds, Core.CmdExt.isPlainCmd c = true)
@@ -267,7 +257,7 @@ theorem block_body_simulation
     (c_after : Imperative.CFGConfig String Core.Expression)
     (h_step :
       Imperative.EvalDetBlock Core.Expression
-        (Core.EvalCommand π φ) (Core.EvalPureFunc φ) σ blk c_after)
+        (Core.EvalCommand π φ) (Core.EvalPureFunc φ) δ σ blk c_after)
     (pc : Nat) (h_pc : wf.labelMap l = some pc)
     : ∃ c_after_goto,
         StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
@@ -284,8 +274,10 @@ theorem block_body_simulation
   | goto_true h_cond h_wf_bool_core =>
     -- Empty body, condGoto cond t e md, output is .cont t σ false.
     -- After `cases`, blk is unified with ⟨[], .condGoto cond t e md⟩.
-    -- Auto-bound binders order: md, δ_local, cond, t, e.
-    rename_i md δ_local cond t e
+    -- The eval `δ` here is the inductive's index — the outer `δ`, not a
+    -- fresh existential. So `h_cond : δ σ cond = some HasBool.tt`
+    -- directly without a compatibility bridge.
+    rename_i md cond t e
     obtain ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
             h_pc_neg_eq, h_pc_uncond_eq, h_neg_at, h_neg_ty, h_neg_tgt, h_lf_map,
             h_uncond_at, h_uncond_ty, h_uncond_tgt, h_lt_map⟩ :=
@@ -310,9 +302,8 @@ theorem block_body_simulation
     -- Build the bool reasoning: δ σ cond = some HasBool.tt
     -- ⇒ δ_goto_bool σ e_goto = some true (via h_translated.bool_tt_agree)
     -- ⇒ δ_goto_bool σ e_goto.not = some false (via h_wf_bool_goto.1).
-    have h_cond' : δ σ cond = some HasBool.tt := h_eval_compat σ cond _ h_cond
     have h_g1 : δ_goto_bool σ e_goto = some true :=
-      (h_translated.bool_tt_agree σ).mp h_cond'
+      (h_translated.bool_tt_agree σ).mp h_cond
     have h_wf_bool_neg := h_wf_bool_goto.left
     have h_wf_bool_const := h_wf_bool_goto.right
     have h_g2 : δ_goto_bool σ e_goto.not = some false :=
@@ -336,8 +327,8 @@ theorem block_body_simulation
   | goto_false h_cond h_wf_bool_core =>
     -- Empty body, condGoto cond t e md, output is .cont e σ false.
     -- One-step trace: take the negated GOTO (because cond=ff means ¬cond=tt).
-    -- Auto-bound binders order: md, δ_local, cond, t, e.
-    rename_i md δ_local cond t e
+    -- The eval `δ` here is the inductive's index — the outer `δ`.
+    rename_i md cond t e
     obtain ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
             h_pc_neg_eq, h_pc_uncond_eq, h_neg_at, h_neg_ty, h_neg_tgt, h_lf_map,
             h_uncond_at, h_uncond_ty, h_uncond_tgt, h_lt_map⟩ :=
@@ -358,9 +349,8 @@ theorem block_body_simulation
         (by rw [h_body_zero]; exact h_pc_uncond ▸ h_uncond_at)
     -- δ σ cond = some HasBool.ff ⇒ δ_goto_bool σ e_goto = some false
     -- ⇒ δ_goto_bool σ e_goto.not = some true.
-    have h_cond' : δ σ cond = some HasBool.ff := h_eval_compat σ cond _ h_cond
     have h_g1 : δ_goto_bool σ e_goto = some false :=
-      (h_translated.bool_ff_agree σ).mp h_cond'
+      (h_translated.bool_ff_agree σ).mp h_cond
     have h_wf_bool_neg := h_wf_bool_goto.left
     have h_g2 : δ_goto_bool σ e_goto.not = some true :=
       (h_wf_bool_neg σ e_goto).right.mp h_g1
@@ -481,7 +471,7 @@ theorem block_simulation
     (c_after : Imperative.CFGConfig String Core.Expression)
     (h_step :
       Imperative.EvalDetBlock Core.Expression
-        (Core.EvalCommand π φ) (Core.EvalPureFunc φ) σ blk c_after)
+        (Core.EvalCommand π φ) (Core.EvalPureFunc φ) δ σ blk c_after)
     (pc : Nat) (h_pc : wf.labelMap l = some pc)
     : ∃ c_after_goto,
         StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
@@ -537,7 +527,7 @@ theorem coreCFGToGoto_forward_simulation
       ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isPlainCmd = true)
     (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
     (h_run :
-      Core.CoreCFGStepStar π φ cfg
+      Core.CoreCFGStepStar π φ δ cfg
         (.cont cfg.entry σ false)
         (.terminal σ' b))
     : ∃ pc_entry,

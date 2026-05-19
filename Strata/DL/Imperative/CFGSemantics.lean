@@ -61,28 +61,28 @@ inductive EvalDetBlock
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
   [HasNot P] :
-  SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
+  SemanticEval P → SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
   | cmd :
     EvalCmd δ σ c σ' failed →
-    EvalDetBlock P EvalCmd extendEval σ' ⟨cs, transfer⟩ config →
-    EvalDetBlock P EvalCmd extendEval
+    EvalDetBlock P EvalCmd extendEval δ σ' ⟨cs, transfer⟩ config →
+    EvalDetBlock P EvalCmd extendEval δ
       σ ⟨ c :: cs, transfer ⟩ (updateFailure config failed)
 
   | goto_true :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
-    EvalDetBlock P EvalCmd extendEval
+    EvalDetBlock P EvalCmd extendEval δ
       σ ⟨ [], .condGoto c t e _ ⟩ (.cont t σ false)
 
   | goto_false :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
-    EvalDetBlock P EvalCmd extendEval
+    EvalDetBlock P EvalCmd extendEval δ
       σ ⟨ [], .condGoto c t e _ ⟩ (.cont e σ false)
 
   | terminal :
-    EvalDetBlock P EvalCmd extendEval
+    EvalDetBlock P EvalCmd extendEval δ
       σ ⟨ [], .finish _ ⟩ (.terminal σ false)
 
 /--
@@ -95,21 +95,21 @@ inductive EvalNondetBlock
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
   [HasNot P] :
-  SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
+  SemanticEval P → SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
 
   | cmd :
     EvalCmd δ σ c σ' failed →
-    EvalNondetBlock P EvalCmd extendEval σ' ⟨cs, transfer⟩ config →
-    EvalNondetBlock P EvalCmd extendEval
+    EvalNondetBlock P EvalCmd extendEval δ σ' ⟨cs, transfer⟩ config →
+    EvalNondetBlock P EvalCmd extendEval δ
       σ ⟨ c :: cs, transfer ⟩ (updateFailure config failed)
 
   | goto_none :
-    EvalNondetBlock P EvalCmd extendEval
+    EvalNondetBlock P EvalCmd extendEval δ
       σ ⟨ [], .goto [] _ ⟩ (.terminal σ false)
 
   | goto_some :
     lt ∈ ls →
-    EvalNondetBlock P EvalCmd extendEval
+    EvalNondetBlock P EvalCmd extendEval δ
       σ ⟨ [], .goto ls _ ⟩ (.cont lt σ false)
 
 /--

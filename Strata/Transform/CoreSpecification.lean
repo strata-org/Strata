@@ -73,7 +73,7 @@ def coreCFGIsAtAssert (cfg : DetCFG) : CoreCFGSpecConfig → AssertId Expression
     Imperative.Specification.Lang Expression where
   StmtT := DetCFG
   CfgT := CoreCFGSpecConfig
-  star := fun c₁ c₂ => CoreCFGStepStar π φ cfg c₁.cfgConfig c₂.cfgConfig
+  star := fun c₁ c₂ => CoreCFGStepStar π φ c₁.eval cfg c₁.cfgConfig c₂.cfgConfig
   stmtCfg := fun _ ρ => ⟨.cont cfg.entry ρ.store false, ρ.eval⟩
   terminalCfg := fun ρ => ⟨.terminal ρ.store ρ.hasFailure, ρ.eval⟩
   exitingCfg := fun _ ρ => ⟨.terminal ρ.store ρ.hasFailure, ρ.eval⟩
