@@ -472,23 +472,21 @@ private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (ac
   unless isConsistentSubtype ctx actual expected do
     typeMismatch source none s!"expected '{formatType expected}'" actual
 
-/-- Test whether a type is in the set of numeric primitives. `Unknown` and
-    `TCore` are accepted as gradual escape hatches. Aliases and constrained
-    types are unfolded first so e.g. `nat` (constrained over `int`) counts as
-    numeric. Used by Op-Cmp / Op-Arith. -/
+/-- Test whether a type is in the set of numeric primitives. `Unknown` is
+    accepted as a gradual escape hatch. Aliases and constrained types are
+    unfolded first so e.g. `nat` (constrained over `int`) counts as numeric.
+    Used by Op-Cmp / Op-Arith. -/
 private def isNumeric (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
   match (ctx.unfold ty).val with
   | .TInt | .TReal | .TFloat64 | .Unknown => true
-  | .TCore _ => true
   | _ => false
 
-/-- Test whether a type is a user-defined reference type. `Unknown` and `TCore`
-    are accepted as gradual escape hatches. Used by Fresh and ReferenceEquals,
-    which only make sense on composite/datatype references. -/
+/-- Test whether a type is a user-defined reference type. `Unknown` is accepted
+    as a gradual escape hatch. Used by Fresh and ReferenceEquals, which only
+    make sense on composite/datatype references. -/
 private def isReference (ctx : TypeContext) (ty : HighTypeMd) : Bool :=
   match (ctx.unfold ty).val with
   | .UserDefined _ | .Unknown => true
-  | .TCore _ => true
   | _ => false
 
 /-- Get the type of a resolved reference. Tries the lexical scope by name

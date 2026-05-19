@@ -216,10 +216,6 @@ The relation `<:` (used in Sub) is built from three Lean functions:
 - `isConsistentSubtype` — defined as `isConsistent ∨ isSubtype`. For our flat lattice this
   is the standard collapse of `∃R. T ~ R ∧ R <: U`.
 
-{name Strata.Laurel.HighType.TCore}`TCore` is bivariantly consistent for now as a temporary
-migration escape hatch from the Core language; the carve-out lives in `isConsistent` and is
-intentionally temporary.
-
 Sub (and every bespoke check rule) uses `isConsistentSubtype`. That single choice is what
 makes the system *gradual*: an expression of type
 {name Strata.Laurel.HighType.Unknown}`Unknown` (a hole, an unresolved name, a `Hole _ none`)
@@ -228,10 +224,9 @@ flows freely into any typed slot, and any expression flows freely into a slot of
 fully-known types only. The symmetric `isConsistent` is used directly by Op-Eq, where the
 operand types must be mutually consistent (no subtype direction is privileged).
 
-A previous iteration was synth-only with three *bivariantly-compatible* wildcards:
-{name Strata.Laurel.HighType.Unknown}`Unknown`,
-{name Strata.Laurel.HighType.UserDefined}`UserDefined`, and
-{name Strata.Laurel.HighType.TCore}`TCore`. The
+A previous iteration was synth-only with two *bivariantly-compatible* wildcards:
+{name Strata.Laurel.HighType.Unknown}`Unknown` and
+{name Strata.Laurel.HighType.UserDefined}`UserDefined`. The
 {name Strata.Laurel.HighType.UserDefined}`UserDefined` carve-out was load-bearing: no
 assignment, call argument, or comparison involving a user type was ever rejected. The
 bidirectional design retires that carve-out — user-defined types are now a regular
@@ -600,8 +595,8 @@ passes `Numeric`); a proper fix needs numeric promotion or unification.
                        Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
 ```
 
-`isReference T` holds when `T` is a {name Strata.Laurel.HighType.UserDefined}`UserDefined`,
-{name Strata.Laurel.HighType.Unknown}`Unknown`, or {name Strata.Laurel.HighType.TCore}`TCore`
+`isReference T` holds when `T` is a {name Strata.Laurel.HighType.UserDefined}`UserDefined`
+or {name Strata.Laurel.HighType.Unknown}`Unknown`
 type. Reference equality is meaningless on primitives. Compatibility between `T_l` and
 `T_r` (e.g. rejecting `Cat === Dog` for unrelated user-defined types) is delegated to
 future tightening of `<:` — today, two distinct user-defined names already mismatch
