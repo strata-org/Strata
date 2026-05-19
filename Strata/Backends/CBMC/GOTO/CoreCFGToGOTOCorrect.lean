@@ -162,10 +162,12 @@ instructions emitted for `c`.
 
 This is proved by `cases` on both the evaluation step and the
 `CmdEmittedAt` layout, producing one or two `StepGoto` constructor
-applications per case. Three sub-cases (`init_det`, `set_nondet`,
-`cover_emit`) are flagged `sorry` because they require GOTO-semantics
-extensions (DECL/ASSIGN combination, side-effect Nondet RHS, and
-cover-as-ASSERT respectively). -/
+applications per case. All sub-cases are closed:
+* `eval_init × init_det` uses `step_decl` then `step_assign_nondet` as
+  a no-op (via `UpdateState_self`), sidestepping the δ_goto monotonicity
+  question that `step_assign` would have raised;
+* `eval_set_nondet × set_nondet` uses the new `step_assign_nondet`;
+* `eval_cover` is unreachable under the tightened `isAdmittedCmd`. -/
 theorem single_cmd_simulation
     (δ : Imperative.SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
@@ -184,8 +186,31 @@ theorem single_cmd_simulation
   unfold StepGotoStar
   cases h_eval with
   | eval_init h_eval h_init _ =>
-    -- `.init v ty (.det e) md` — DECL then ASSIGN. Hard case (sorry).
-    sorry
+    -- `.init v ty (.det e) md` translates to DECL + ASSIGN. The two-step
+    -- target trace lands at the same store as the source's one-step
+    -- `eval_init` by:
+    --  (1) `step_decl` with the source's InitState `h_init`, which puts
+    --      x ↦ v into σ to get σ';
+    --  (2) `step_assign_nondet` (rather than `step_assign`) on σ' as a
+    --      no-op via `UpdateState_self`. We sidestep the δ_goto
+    --      evaluation premise of `step_assign` (which would otherwise
+    --      require expression-evaluator monotonicity from σ to σ').
+    --      `step_assign_nondet` only requires `instr.type = .ASSIGN`,
+    --      which the `init_det` layout supplies via `h_assn_ty`.
+    show ReflTrans _ _ (GotoConfig.running (pc + 2) _ (failed || false))
+    rw [Bool.or_false]
+    cases h_layout with
+    | init_det _ _ _ _ _ _ h_decl_at h_decl_ty h_assn_at h_assn_ty
+                _ h_assn_code h_translated =>
+      -- After step_decl's InitState lands at σ', we have σ' x = some v.
+      cases h_init with
+      | init hpre hpost hother =>
+        have h_upd_self := UpdateState_self hpost
+        exact ReflTrans.step _ _ _
+          (StepGoto.step_decl h_decl_at h_decl_ty (.init hpre hpost hother))
+          (ReflTrans.step _ _ _
+            (StepGoto.step_assign_nondet h_assn_at h_assn_ty h_upd_self)
+            (ReflTrans.refl _))
   | eval_init_unconstrained h_init _ =>
     -- `.init v ty .nondet md` — single DECL.
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
@@ -204,9 +229,14 @@ theorem single_cmd_simulation
       refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
       exact StepGoto.step_assign h_assn_at h_assn_ty h_goto_eval h_upd
   | eval_set_nondet h_upd _ =>
-    -- `.set v .nondet md` — single ASSIGN with nondet RHS.
-    -- Hard case: GOTO semantics has no `step_assign_nondet` constructor (sorry).
-    sorry
+    -- `.set v .nondet md` — single ASSIGN with nondet RHS. Uses the
+    -- new `step_assign_nondet` constructor.
+    show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
+    rw [Bool.or_false]
+    cases h_layout with
+    | set_nondet _ _ _ h_assn_at h_assn_ty _ =>
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_assign_nondet h_assn_at h_assn_ty h_upd
   | eval_assert_pass h_eval _ =>
     show ReflTrans _ _ (GotoConfig.running (pc + 1) _ (failed || false))
     rw [Bool.or_false]
@@ -235,10 +265,9 @@ theorem single_cmd_simulation
       refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
       exact StepGoto.step_assume_pass h_at h_ty h_goto_eval
   | eval_cover _ =>
-    -- `.cover label e md` — translator emits ASSERT but Cover always succeeds.
-    -- Hard case: GOTO semantics doesn't yet have step_cover or a way to
-    -- discharge the ASSERT premise without an extra hypothesis (sorry).
-    sorry
+    -- The `h_admitted : isAdmittedCmd (.cmd (.cover ...)) = true` hypothesis
+    -- is false (cover is excluded). Discharge by reduction via simp.
+    simp [Core.CmdExt.isAdmittedCmd] at h_admitted
 
 /-! ## Block-body simulation (post-LOCATION) -/
 

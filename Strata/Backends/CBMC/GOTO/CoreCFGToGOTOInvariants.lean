@@ -86,7 +86,7 @@ correspond to known semantic asymmetries:
 - nondet `init` binds a value in source but emits a single DECL in
   GOTO (precision mismatch; tracked at
   https://github.com/strata-org/Strata/issues/1186). -/
-def Core.CmdExt.isAdmittedCmd : Core.Command → Bool
+@[expose] def Core.CmdExt.isAdmittedCmd : Core.Command → Bool
   | .cmd (.cover _ _ _)         => false
   | .cmd (.init _ _ .nondet _)  => false
   | .cmd _                      => true
