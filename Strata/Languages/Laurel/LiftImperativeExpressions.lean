@@ -363,10 +363,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Block stmts labelOption =>
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-      let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
-      -- Flatten generated multi-output call wrappers: Blocks of the form
-      -- [VarDecl, MultiAssign, VarRef] where the assign has 2+ targets.
-      match filtered with
+      -- Flatten generated multi-output call wrappers BEFORE onlyKeepSideEffectStmtsAndLast
+      -- which would drop the multi-target assign. Pattern: [VarDecl, MultiAssign, VarRef].
+      match newStmts with
       | [decl, assign, last] =>
         match decl.val, assign.val with
         | .Assign [t] _, .Assign targets _ =>
@@ -377,10 +376,17 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
               prepend decl
               return last
             else
+              let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
               return ⟨ .Block filtered labelOption, source⟩
-          | _ => return ⟨ .Block filtered labelOption, source⟩
-        | _, _ => return ⟨ .Block filtered labelOption, source⟩
-      | _ => return ⟨ .Block filtered labelOption, source⟩
+          | _ =>
+            let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+            return ⟨ .Block filtered labelOption, source⟩
+        | _, _ =>
+          let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+          return ⟨ .Block filtered labelOption, source⟩
+      | _ =>
+        let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
+        return ⟨ .Block filtered labelOption, source⟩
 
   | .Var (.Declare param) =>
       -- If the substitution map has an entry for this variable, it was

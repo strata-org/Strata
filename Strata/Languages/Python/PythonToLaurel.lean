@@ -1360,7 +1360,7 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
       let mut newArgsRev : List StmtExprMd := []
       for arg in args do
         let (pre, arg') ← extractMultiOutputCalls ctx arg
-        preambleRev := pre.reverse.foldl (fun acc stmt => stmt :: acc) preambleRev
+        preambleRev := pre.foldl (fun acc stmt => stmt :: acc) preambleRev
         newArgsRev := arg' :: newArgsRev
       let preamble := preambleRev.reverse
       let newArgs := newArgsRev.reverse
@@ -1373,7 +1373,7 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
     let mut newArgsRev : List StmtExprMd := []
     for arg in args do
       let (pre, arg') ← extractMultiOutputCalls ctx arg
-      preambleRev := pre.reverse.foldl (fun acc stmt => stmt :: acc) preambleRev
+      preambleRev := pre.foldl (fun acc stmt => stmt :: acc) preambleRev
       newArgsRev := arg' :: newArgsRev
     let preamble := preambleRev.reverse
     let newArgs := newArgsRev.reverse
