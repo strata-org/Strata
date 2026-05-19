@@ -44,10 +44,9 @@ N.B. Current limitations: dispatch is always on the first positional argument
 or the matching keyword argument, and only string literal values are extracted. -/
 structure FunctionOverloads where
   /-- Expected keyword argument name for dispatch (from the PySpec). -/
-  paramName : Option String := none
+  paramName : String
   /-- Literal value → return type. -/
   entries : Std.HashMap String PythonIdent := {}
-deriving Inhabited
 
 /-- Find the dispatch argument value from positional or keyword arguments.
     Prefers the first positional arg; falls back to the keyword arg whose
@@ -56,10 +55,15 @@ def FunctionOverloads.findDispatchArg (fo : FunctionOverloads)
     (positionalArgs : Array α)
     (kwargPairs : List (Option String × α))
     : Option α :=
-  if h : positionalArgs.size > 0 then some positionalArgs[0]
-  else fo.paramName.bind fun expected =>
+  if h : positionalArgs.size > 0 then
+    some positionalArgs[0]
+  else
+    let expected := fo.paramName
     kwargPairs.findSome? fun (name?, value) =>
-      if name? == some expected then some value else none
+      if name? == some expected then
+        some value
+      else
+        none
 
 /-- Dispatch table: function name → its overloads. -/
 @[expose] abbrev OverloadTable := Std.HashMap String FunctionOverloads

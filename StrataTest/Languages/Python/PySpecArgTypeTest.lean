@@ -43,10 +43,12 @@ private def buildSpecs (sigs : Array Signature) : IO Strata.PySpecLaurelResult :
   IO.FS.withTempDir fun dir => do
     let ionFile := dir / "test.pyspec.ion"
     writeDDM ionFile sigs
-    let result ← buildPySpecLaurel #[("", ionFile.toString)] {} |>.toBaseIO
-    match result with
+    let ctx ← Strata.Pipeline.PipelineContext.create
+    match ← (buildPySpecLaurel ctx #[("", ionFile.toString)] {}).toBaseIO with
     | .ok r => pure r
-    | .error msg => throw <| .userError msg
+    | .error () =>
+      let msgs ← ctx.getMessages
+      throw <| .userError s!"buildPySpecLaurel failed: {msgs.map toString}"
 
 private def getFuncSigs (sigs : Array Signature) : IO (List PythonFunctionDecl) := do
   return (← buildSpecs sigs).functionSignatures

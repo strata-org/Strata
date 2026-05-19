@@ -12,7 +12,6 @@ import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Core.Verifier
-import Strata.Util.Profile
 import Strata.Util.Statistics
 
 /-!
@@ -144,7 +143,8 @@ When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
 program state after each named Laurel pass is written to
 `{prefix}.{n}.{passName}.laurel.st`.
 -/
-private def runLaurelPasses (options : LaurelTranslateOptions) (program : Program)
+private def runLaurelPasses (options : LaurelTranslateOptions)
+    (pctx : Strata.Pipeline.PipelineContext) (program : Program)
     : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
@@ -172,8 +172,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
-    let (program', diags, stats) ← profileStep options.profile s!"  {pass.name}" do
-      pure (pass.run program model)
+    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model)
     program := program'
     allDiags := allDiags ++ diags
     allStats := allStats.merge stats
@@ -193,9 +192,13 @@ When `keepAllFilesPrefix` is provided, the program state after each named
 Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
 -/
 def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
-    : IO TranslateResultWithLaurel :=
+    (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
+    : IO TranslateResultWithLaurel := do
+  let pctx ← match pipelineCtx with
+    | some ctx => pure ctx
+    | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
-    let (program, model, passDiags, stats) ← runLaurelPasses options program
+    let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
     let ordered := orderProgram program
 
     -- This early return is a simple way to protect against duplicative errors. Without this return,
