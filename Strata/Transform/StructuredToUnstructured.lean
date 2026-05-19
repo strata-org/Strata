@@ -90,7 +90,7 @@ match ss with
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
     let b := (l, { cmds := [], transfer := .goto bl md })
-    pure (l, accumBlocks ++ [b] ++ bbs ++ bsNext)
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
 | .ite c tss fss md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []

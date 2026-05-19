@@ -2115,17 +2115,19 @@ private theorem stmtsToBlocks_invariant
         rw [h_gen_eq] at h_in
         exact h_disj.2.2 x hx h_in
       · exact h_disj.2.1
-    · -- l ≠ bl: blocks = accumBlocks ++ (l, .goto bl md) :: (bbs ++ bsNext)
+    · -- l ≠ bl: blocks = accumBlocks ++ (l, .goto bl md) :: (bbs ++ bsNext),
+      -- entry = accumEntry (after the bug fix that uses accumEntry rather than l).
       rw [if_neg h_eq] at h_gen
       simp only [pure, StateT.pure] at h_gen
       have h_pair := (Prod.mk.inj h_gen).1
-      have h_entry_eq : l = entry := (Prod.mk.inj h_pair).1
+      -- Entry is `accumEntry`; we don't constrain entry in GenInv, so this hypothesis
+      -- is unused below.
+      have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
       let lBlk : DetBlock String (Cmd P) P :=
         { cmds := [], transfer := DetTransferCmd.goto bl md }
       have h_blocks_eq :
           accumBlocks ++ (l, lBlk) :: (bbs ++ bsNext) = blocks :=
         (Prod.mk.inj h_pair).2
-      subst h_entry_eq
       -- We have h_inv_out : GenInv ... (rest_lbls ++ bss_lbls) (accumBlocks ++ bbs ++ bsNext)
       -- Goal: GenInv ... (l :: bss_lbls ++ rest_lbls) blocks
       --     = GenInv ... (l :: bss_lbls ++ rest_lbls) (accumBlocks ++ [(l, lBlk)] ++ bbs ++ bsNext)
