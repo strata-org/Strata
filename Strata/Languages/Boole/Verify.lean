@@ -513,7 +513,9 @@ partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
       let n ← bvWidth m ty
       return mkCoreApp (.op () (mkIdent s!"Bv{n}.ToNat") none) [← toCoreExpr e]
     | .int _ => toCoreExpr e
-    | _ => throwAt m s!"'as int' requires a bitvector source type"
+    | _ =>
+      if ← isNatType ty then toCoreExpr e
+      else throwAt m s!"'as int' requires a bitvector source type"
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
