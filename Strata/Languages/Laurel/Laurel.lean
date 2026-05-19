@@ -468,6 +468,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
+  | HighType.TCore s1, HighType.TCore s2 => s1 == s2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
@@ -545,14 +546,12 @@ def isSubtype (ctx : TypeContext) (sub sup : HighTypeMd) : Bool :=
 
 /-- Consistency (Siek–Taha): the symmetric gradual relation. `Unknown` is the
     dynamic type and is consistent with everything; otherwise structural
-    equality after unfolding aliases / constrained types. `TCore` is a
-    temporary migration escape hatch. -/
+    equality after unfolding aliases / constrained types. -/
 def isConsistent (ctx : TypeContext) (a b : HighTypeMd) : Bool :=
   let a' := ctx.unfold a
   let b' := ctx.unfold b
   match a'.val, b'.val with
   | .Unknown, _ | _, .Unknown => true
-  | .TCore _, _ | _, .TCore _ => true
   | _, _ => highEq a' b'
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
