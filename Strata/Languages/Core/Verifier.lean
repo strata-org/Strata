@@ -1468,11 +1468,13 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
   let numWorkers := min workers jobs.length
   let workerTasks ← (List.range numWorkers).mapM fun _ =>
     IO.asTask (prio := .dedicated) workerFn
-  -- Wait for all workers to finish
+  -- Wait for all workers to finish (join all to prevent orphaned tasks/processes)
+  let mut firstError : Option IO.Error := none
   for task in workerTasks do
     match task.get with
     | .ok () => pure ()
-    | .error e => throw e
+    | .error e => if firstError.isNone then firstError := some e
+  if let some e := firstError then throw e
   -- Collect results in original order; skipped jobs (from stopOnFirstError) are `none`
   let rmap ← resultMap.get
   let mut results : List (Option (Except DiagnosticModel VCResult)) := []
