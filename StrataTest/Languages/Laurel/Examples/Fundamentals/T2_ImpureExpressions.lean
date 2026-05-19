@@ -46,6 +46,42 @@ procedure conditionalAssignmentInExpression(x: int)
   }
 };
 
+// Regression for #1133: an unlabeled-block expression that contains a
+// destructive assignment must be admissible inside an `assert` condition.
+// Before the fix, `containsAssignment` flagged the inner `x := 1` and
+// `transformStmt` bailed out, leaving the block in the assert condition;
+// the Laurel-to-Core translator then rejected it.
+procedure assertWithBlockExpr()
+  opaque
+{
+  var x: int := 0;
+  assert ({ x := 1; x } > 0);
+  assert x == 1
+};
+
+// Same regression, but exercising the `assume` path through
+// `containsAssignmentOutsideUnlabeledBlock`.
+procedure assumeWithBlockExpr()
+  opaque
+{
+  var x: int := 0;
+  assume ({ x := 1; x } > 0);
+  assert x == 1
+};
+
+// Regression for #1133: an unlabeled block in the initializer of a
+// declare-with-init that itself sits in expression position. Before the
+// fix, `transformExpr` on `.Assign[.Declare]` early-returned the original
+// expression without recursing into the initializer, so the inner
+// `{ x := 1; x }` survived to the Laurel-to-Core translator.
+procedure nestedBlockInDeclInit()
+  opaque
+{
+  var x: int := 0;
+  var y: int := { var t: int := { x := 1; x }; t + 1 };
+  assert y == 2
+};
+
 procedure anotherConditionAssignmentInExpression(c: bool)
   opaque
 {
