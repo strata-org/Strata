@@ -63,7 +63,7 @@ not `CmdExt.call`. -/
 /-- Total number of GOTO instructions emitted for a `Core.Command`. The call
 case yields `0` so we can state predicates uniformly; the simulation
 theorem rules out calls via a separate hypothesis (`isPlainCmd`). -/
-def Core.CmdExt.gotoInstrCount : Core.Command → Nat
+@[expose] def Core.CmdExt.gotoInstrCount : Core.Command → Nat
   | .cmd c => Imperative.Cmd.gotoInstrCount c
   -- `.call` is excluded by `isPlainCmd` in the call-free fragment we are
   -- proving correct. The actual translator emits 1 FUNCTION_CALL

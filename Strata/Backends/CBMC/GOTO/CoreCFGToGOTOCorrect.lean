@@ -269,6 +269,174 @@ theorem single_cmd_simulation
     -- is false (cover is excluded). Discharge by reduction via simp.
     simp [Core.CmdExt.isAdmittedCmd] at h_admitted
 
+/-! ## Auxiliary: command-list simulation -/
+
+/-- Size-induction helper for `block_body_simulation`'s `cmd` case.
+
+Says: given a CFG block `(l, blk) ∈ cfg.blocks` and a `k`-suffix
+`cs := blk.cmds.drop k` of its commands, an `EvalDetBlock` derivation
+on the synthetic block `⟨cs, t⟩` for `t := blk.transfer` (i.e., what's
+left after the first `k` commands) translates to a `StepGotoStar`
+starting at the appropriate offset within the block's GOTO instruction
+range. The transfer is exposed as a separate parameter `t` so that the
+three transfer cases can pattern-match on it directly.
+
+`block_body_simulation` instantiates this with `k := 0`, `cs := blk.cmds`,
+`t := blk.transfer`. -/
+theorem block_body_cmds_simulation
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_wf_bool_goto : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (π : String → Option Core.Procedure)
+    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
+    (cfg : Core.DetCFG) (pgm : Program)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
+    (l : String) (blk : Imperative.DetBlock String Core.Command Core.Expression)
+    (h_block : (l, blk) ∈ cfg.blocks)
+    (h_call_free : ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
+    (pc : Nat) (h_pc : wf.labelMap l = some pc)
+    (t : Imperative.DetTransferCmd String Core.Expression)
+    (h_t : t = blk.transfer)
+    (k : Nat)
+    (cs : List Core.Command)
+    (h_suffix : blk.cmds.drop k = cs)
+    (σ : Imperative.SemanticStore Core.Expression) (failed : Bool)
+    (c_after : Imperative.CFGConfig String Core.Expression)
+    (h_step :
+      Imperative.EvalDetBlock Core.Expression
+        (Core.EvalCommand π φ) (Core.EvalPureFunc φ) δ σ
+        ⟨cs, t⟩ c_after)
+    : ∃ c_after_goto,
+        StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
+          (.running (pc + 1 + cmdsPrefixInstrCount blk.cmds k) σ failed)
+          c_after_goto ∧
+        Sim cfg pgm wf
+          (Imperative.updateFailure c_after failed) c_after_goto := by
+  -- Strong induction on cs.length so the cmd case can recurse on the
+  -- shorter tail-suffix (which has length cs.length - 1).
+  induction h_size : cs.length using Nat.strongRecOn
+    generalizing k cs σ failed c_after
+  case _ n ih =>
+    cases h_step with
+    | cmd h_eval h_rest =>
+      -- After cases, the renames produced by Lean appear in this order:
+      -- `c` (head cmd), `σ_step` (post-store), `head_failed` (failed flag),
+      -- `cs_tail` (rest of cs), `config` (post-config). The original `cs`
+      -- has been substituted to `c :: cs_tail` everywhere.
+      rename_i c σ_step head_failed cs_tail config
+      -- After cases, `h_suffix : blk.cmds.drop k = c :: cs_tail`.
+      -- Membership of `c` in `blk.cmds` follows by `mem_of_mem_drop`.
+      have h_c_mem : c ∈ blk.cmds := by
+        have h_in_drop : c ∈ blk.cmds.drop k := by
+          rw [h_suffix]; exact List.mem_cons_self
+        exact List.mem_of_mem_drop h_in_drop
+      have h_pf : c.isAdmittedCmd = true := h_call_free c h_c_mem
+      cases c with
+      | call _ _ _ =>
+        simp [Core.CmdExt.isAdmittedCmd] at h_pf
+      | cmd inner =>
+        -- Convert EvalCommand → EvalCmd via the inversion lemma.
+        have h_evalCmd :
+            Imperative.EvalCmd (P := Core.Expression)
+              δ σ inner σ_step head_failed :=
+          (evalCommand_cmd_iff_evalCmd π φ δ σ σ_step inner head_failed).mp h_eval
+        -- (c :: cs_tail).length = n, so cs_tail.length + 1 = n.
+        have h_cs_pos : 0 < n := by
+          have : (Core.CmdExt.cmd inner :: cs_tail).length = n := h_size
+          simp [List.length_cons] at this
+          omega
+        have h_k_lt : k < blk.cmds.length := by
+          have h_drop_len : (blk.cmds.drop k).length =
+              (Core.CmdExt.cmd inner :: cs_tail).length := by
+            rw [h_suffix]
+          rw [List.length_drop] at h_drop_len
+          simp [List.length_cons] at h_drop_len
+          omega
+        -- The head of cs is .cmd inner; therefore blk.cmds[k] = .cmd inner.
+        have h_blk_at_k : blk.cmds[k]'h_k_lt = .cmd inner := by
+          have h_head : (blk.cmds.drop k).head? = some (.cmd inner) := by
+            rw [h_suffix]; rfl
+          rw [List.head?_drop] at h_head
+          rw [List.getElem?_eq_getElem h_k_lt] at h_head
+          injection h_head
+        have h_admitted_inner :
+            Core.CmdExt.isAdmittedCmd (.cmd inner) = true := by
+          rw [← h_blk_at_k]
+          exact h_call_free _ (List.getElem_mem _)
+        -- Pull layout for the head command.
+        have h_layout :
+            CmdEmittedAt δ δ_goto δ_goto_bool pgm
+              (pc + 1 + cmdsPrefixInstrCount blk.cmds k) inner :=
+          wf.layout_block_body l blk pc h_block h_pc k inner h_k_lt h_blk_at_k
+        -- Step the head via single_cmd_simulation.
+        have h_head :=
+          single_cmd_simulation δ δ_goto δ_goto_bool h_wf_bool_goto
+            pgm inner σ σ_step failed head_failed h_admitted_inner
+            h_evalCmd (pc + 1 + cmdsPrefixInstrCount blk.cmds k) h_layout
+        -- The head's post-pc equals (pc + 1 + cmdsPrefixInstrCount blk.cmds (k+1)).
+        have h_prefix_step :
+            cmdsPrefixInstrCount blk.cmds (k + 1) =
+              cmdsPrefixInstrCount blk.cmds k +
+                Imperative.Cmd.gotoInstrCount inner := by
+          unfold cmdsPrefixInstrCount
+          rw [List.take_add_one]
+          have h_get : blk.cmds[k]? = some (.cmd inner) := by
+            rw [List.getElem?_eq_getElem h_k_lt, h_blk_at_k]
+          rw [h_get]
+          -- Goal: (take k blk.cmds ++ [.cmd inner]).foldl (acc, c) (acc + gotoInstrCount c) 0
+          --     = (take k blk.cmds).foldl ... 0 + Imperative.Cmd.gotoInstrCount inner
+          simp [List.foldl_append]
+          -- Now: a final unfold of `.cmd inner.gotoInstrCount = inner.gotoInstrCount`
+          -- by definition of `Core.CmdExt.gotoInstrCount`.
+          rfl
+        -- Apply IH on the tail-suffix at index k+1.
+        have h_tail_suffix : blk.cmds.drop (k + 1) = cs_tail := by
+          rw [List.drop_add_one_eq_tail_drop, h_suffix]
+          rfl
+        have h_tail_size : cs_tail.length < n := by
+          have h_cs_len : (Core.CmdExt.cmd inner :: cs_tail).length = n := h_size
+          simp [List.length_cons] at h_cs_len
+          omega
+        obtain ⟨c_tail_goto, h_tail_steps, h_tail_sim⟩ :=
+          ih cs_tail.length h_tail_size (k + 1) cs_tail h_tail_suffix
+            σ_step (failed || head_failed) config h_rest rfl
+        -- Concatenate head and tail traces.
+        refine ⟨c_tail_goto, ?_, ?_⟩
+        · -- StepGotoStar: head's trace at offset k, then tail's trace at
+          -- offset k+1. The pcs line up via h_prefix_step.
+          unfold StepGotoStar at h_head h_tail_steps ⊢
+          have h_pc_link :
+              pc + 1 + cmdsPrefixInstrCount blk.cmds k +
+                  Imperative.Cmd.gotoInstrCount inner =
+                pc + 1 + cmdsPrefixInstrCount blk.cmds (k + 1) := by
+            rw [h_prefix_step]; omega
+          rw [h_pc_link] at h_head
+          exact ReflTrans_Transitive _ _ _ _ h_head h_tail_steps
+        · -- Sim threads through. updateFailure flag is monotone:
+          -- updateFailure (updateFailure config head_failed) failed
+          --   = updateFailure config (failed || head_failed) (up to bool comm/assoc).
+          have h_eq :
+              Imperative.updateFailure
+                  (Imperative.updateFailure config head_failed) failed
+                = Imperative.updateFailure config (failed || head_failed) := by
+            cases config with
+            | cont t σ' f =>
+              simp [Imperative.updateFailure]
+              -- f || head_failed || failed = f || (failed || head_failed)
+              ac_rfl
+            | terminal σ' f =>
+              simp [Imperative.updateFailure]
+              ac_rfl
+          rw [h_eq]
+          exact h_tail_sim
+    | goto_true h_cond _ =>
+      sorry
+    | goto_false h_cond _ =>
+      sorry
+    | terminal =>
+      sorry
+
 /-! ## Block-body simulation (post-LOCATION) -/
 
 /-- One block's `EvalDetBlock` derivation translates to a
