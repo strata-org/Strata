@@ -148,6 +148,14 @@ theorem evalCommand_cmd_iff_evalCmd
 
 /-! ## Per-command simulation -/
 
+/-- `UpdateState P σ x v σ` holds whenever `σ x = some v`: rewriting a
+variable to the value it already has is a fixed point. -/
+private theorem UpdateState_self
+    {P : Imperative.PureExpr} {σ : Imperative.SemanticStore P}
+    {x : P.Ident} {v : P.Expr}
+    (h : σ x = some v) : Imperative.UpdateState P σ x v σ :=
+  .update h h (fun _ _ => rfl)
+
 /-- A single `EvalCmd` step on a plain command corresponds to a
 `StepGotoStar` trace of length `c.gotoInstrCount` over the GOTO
 instructions emitted for `c`.
