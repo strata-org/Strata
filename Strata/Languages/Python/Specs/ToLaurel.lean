@@ -9,10 +9,11 @@ public import Strata.Languages.Laurel.Laurel
 import Strata.DDM.Format
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
-public import Strata.Languages.Python.Specs.Error
+public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
 public import Strata.Languages.Python.OverloadTable
+import Strata.Languages.Python.Specs.MessageKind
 
 /-!
 # PySpec to Laurel Translation
@@ -59,85 +60,13 @@ end Strata.Python
 
 namespace Strata.Python.Specs
 
-/-! ## ExtractM Monad — overload extraction -/
-
-structure ExtractState where
-  errors : Array SpecError := #[]
-  overloads : OverloadTable := {}
-
-abbrev ExtractM := ReaderT System.FilePath (StateM ExtractState)
-
-def extractError (kind : WarningKind) (loc : SourceRange) (message : String) : ExtractM Unit := do
-  let e : SpecError := ⟨←read, loc, kind, message⟩
-  modify fun s => { s with errors := s.errors.push e }
-
-/-- Add an overload dispatch entry for a function. -/
-def pushOverloadEntry (funcName : String) (paramName : String)
-    (literalValue : String) (returnType : PythonIdent) : ExtractM Unit := do
-  let existing := (←get).overloads.getD funcName {}
-  match existing.paramName with
-  | some prev =>
-    if prev != paramName then
-      extractError .overloadParamDisagree .none
-        s!"Overload entries for '{funcName}' disagree on dispatch parameter name: existing '{prev}', new '{paramName}'"
-  | none => pure ()
-  let updated : FunctionOverloads := { existing with
-    paramName := existing.paramName <|> some paramName
-    entries := existing.entries.insert literalValue returnType }
-  modify fun s => { s with overloads := s.overloads.insert funcName updated }
-
-/-- Extract an overload dispatch entry from an `@overload` function declaration.
-    Looks for a `stringLiteral` in the first argument's type and an `.ident`
-    return type, and records them in the dispatch table. -/
-def extractOverloadEntry (func : FunctionDecl) : ExtractM Unit := do
-  let args := func.args.args
-  let .isTrue _ := decideProp (args.size > 0)
-    | extractError .overloadNoArgs func.loc
-        s!"Overloaded function '{func.name}' has no arguments"
-      return
-  let firstArgType := args[0].type
-  let literalValue ←
-        match firstArgType.asStringLiteral with
-        | some v => pure v
-        | none =>
-          extractError .overloadArgNotStringLiteral func.loc
-            s!"Overloaded function '{func.name}': first argument \
-              type '{firstArgType}' is not a \
-              string literal (only string literal dispatch is \
-              currently supported)"
-          return
-  let retType ←
-        match func.returnType.asIdent with
-        | some nm => pure nm
-        | none =>
-          extractError .overloadReturnNotClass func.loc
-            s!"Overloaded function '{func.name}': return type \
-              '{func.returnType}' is not a \
-              class type"
-          return
-  pushOverloadEntry func.name args[0].name literalValue retType
-
-/-- Extract only the overload dispatch table from PySpec signatures.
-    Processes `@overload` function declarations, ignoring classDef,
-    typeDef, externTypeDecl, and non-overload functions. -/
-public def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
-    : OverloadTable × Array SpecError :=
-  let action : ExtractM Unit := sigs.forM fun sig =>
-    match sig with
-    | .functionDecl func =>
-      if func.isOverload then extractOverloadEntry func
-      else pure ()
-    | _ => pure ()
-  let ((), state) := action.run filepath |>.run {}
-  (state.overloads, state.errors)
-
 end Strata.Python.Specs
 
 namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
 open Strata.Python.Laurel
-open Strata.Python.Specs (SpecError)
+open Strata.Pipeline (PipelineMessage MessageKind Phase)
 
 /-! ## ToLaurelM Monad -/
 
@@ -150,7 +79,7 @@ structure ToLaurelContext where
 
 /-- State for PySpec to Laurel translation. -/
 structure ToLaurelState where
-  errors : Array SpecError := #[]
+  errors : Array PipelineMessage := #[]
   procedures : Array Procedure := #[]
   types : Array TypeDefinition := #[]
   overloads : OverloadTable := {}
@@ -162,25 +91,11 @@ structure ToLaurelState where
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 
-def liftExtractM (act : ExtractM Unit) : ToLaurelM Unit := do
-  let ctx ← read
-  let ((), es) := act.run ctx.filepath |>.run {}
-  modify fun s => { s with
-    errors := s.errors ++ es.errors
-    overloads := es.overloads.fold (init := s.overloads) fun tbl funcName newOvl =>
-      match tbl[funcName]? with
-      | none => tbl.insert funcName newOvl
-      | some existing =>
-        let merged : FunctionOverloads := { existing with
-          paramName := existing.paramName <|> newOvl.paramName
-          entries := newOvl.entries.fold (init := existing.entries) fun m k v => m.insert k v
-        }
-        tbl.insert funcName merged
-  }
-
-/-- Report an error during translation. -/
-def reportError (kind : WarningKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
-  let e : SpecError := ⟨(←read).filepath, loc, kind, message⟩
+/-- Report an error during translation. Phase is set to pySpecToLaurel since
+    this monad always runs during that phase. -/
+def reportError (kind : MessageKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
+  let phase := Phase.base "pySpecToLaurel"
+  let e : PipelineMessage := ⟨(←read).filepath, loc, phase, kind, message⟩
   modify fun s => { s with errors := s.errors.push e }
 
 def runChecked (act : ToLaurelM α) : ToLaurelM (α × Bool) := do
@@ -196,6 +111,56 @@ def pushProcedure (proc : Procedure) : ToLaurelM Unit :=
 /-- Add a Laurel type definition to the output. -/
 def pushType (td : TypeDefinition) : ToLaurelM Unit :=
   modify fun s => { s with types := s.types.push td }
+
+/-- Add an overload dispatch entry for a function. -/
+def pushOverloadEntry (funcName : String) (paramName : String)
+    (literalValue : String) (returnType : PythonIdent) : ToLaurelM Unit := do
+  match (←get).overloads[funcName]? with
+  | none =>
+    modify fun s =>
+      let entry : FunctionOverloads := {
+        paramName := paramName
+        entries := {(literalValue, returnType)}
+      }
+      { s with overloads := s.overloads.insert funcName entry }
+  | some existing =>
+    if existing.paramName != paramName then
+      reportError .overloadParamNameDisagreement default
+        s!"Overload entries for '{funcName}' disagree on dispatch parameter \
+          name: existing '{existing.paramName}', new '{paramName}'"
+    modify fun s =>
+      { s with overloads := s.overloads.modify funcName fun existing =>
+          { existing with entries := existing.entries.insert literalValue returnType }
+      }
+
+/-- Extract an overload dispatch entry from an `@overload` function declaration. -/
+def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
+  let args := func.args.args
+  let .isTrue _ := decideProp (args.size > 0)
+    | reportError .overloadNoArgs func.loc
+        s!"Overloaded function '{func.name}' has no arguments"
+      return
+  let firstArgType := args[0].type
+  let literalValue ←
+        match firstArgType.asStringLiteral with
+        | some v => pure v
+        | none =>
+          reportError .overloadArgNotStringLiteral func.loc
+            s!"Overloaded function '{func.name}': first argument \
+              type '{firstArgType}' is not a \
+              string literal (only string literal dispatch is \
+              currently supported)"
+          return
+  let retType ←
+        match func.returnType.asIdent with
+        | some nm => pure nm
+        | none =>
+          reportError .overloadReturnNotClass func.loc
+            s!"Overloaded function '{func.name}': return type \
+              '{func.returnType}' is not a \
+              class type"
+          return
+  pushOverloadEntry func.name args[0].name literalValue retType
 
 /-- Prepend the module prefix to a name. -/
 def prefixName (name : String) : ToLaurelM String := do
@@ -655,7 +620,7 @@ def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
     typeDefToLaurel td
   | .functionDecl func => do
     if func.isOverload then
-      liftExtractM (extractOverloadEntry func)
+      extractOverloadEntry func
     else do
       let procName ← prefixName func.name
       let proc ← funcDeclToLaurel procName func
@@ -665,7 +630,7 @@ def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
 /-- Result of translating PySpec signatures to Laurel. -/
 public structure TranslationResult where
   program : Laurel.Program
-  errors : Array SpecError
+  errors : Array PipelineMessage
   overloads : OverloadTable
   /-- Maps unprefixed class names to prefixed names for type resolution. -/
   typeAliases : Std.HashMap String String := {}
@@ -693,5 +658,21 @@ public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signatu
     overloads := state.overloads
     typeAliases := state.typeAliases
     exhaustiveClasses := state.exhaustiveClasses }
+
+/-- Extract only the overload dispatch table from PySpec signatures.
+    Processes `@overload` function declarations, ignoring classDef,
+    typeDef, externTypeDecl, and non-overload functions. -/
+public def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
+    : OverloadTable × Array PipelineMessage :=
+  let ctx : ToLaurelContext := { filepath, modulePrefix := "" }
+  let action := sigs.forM fun sig =>
+    match sig with
+    | .functionDecl func =>
+      if func.isOverload then extractOverloadEntry func
+      else pure ()
+    | _ => pure ()
+  let ((), state) := action.run ctx |>.run {}
+  (state.overloads, state.errors)
+
 
 end Strata.Python.Specs.ToLaurel

@@ -10,7 +10,8 @@ import all    Strata.DDM.Util.Fin
 import        Strata.Languages.Python.ReadPython
 import        Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
-import        Strata.Languages.Python.Specs.Error
+import Strata.Languages.Python.Specs.MessageKind
+import        Strata.Pipeline.Messages
 import        Strata.Util.DecideProp
 
 namespace Strata.Python.ModuleName
@@ -73,6 +74,8 @@ def mkIdent (mod : ModuleName) (name : String) : PythonIdent :=
   { pythonModule := mod, name }
 
 end Strata.Python.ModuleName
+
+open Strata.Pipeline
 
 namespace Strata.Python.Specs
 
@@ -252,8 +255,8 @@ def preludeAtoms : List (String × PythonIdent) := [
 
 structure PySpecState where
   typeSigs : TypeSignature := preludeSig
-  errors : Array SpecError
-  warnings : Array SpecError
+  errors : Array PipelineMessage
+  warnings : Array PipelineMessage
   /--
   This maps global identifiers to their value.
   -/
@@ -285,8 +288,10 @@ def shouldSkip (name : String) : PySpecM Bool := do
   let nameIdent := ctx.currentModule.mkIdent name
   return nameIdent ∈ ctx.skipNames
 
+private def pySpecParsingPhase : Phase := Phase.base "pySpecParsing"
+
 def specErrorAt (file : System.FilePath) (loc : SourceRange) (message : String) : PySpecM Unit := do
-  let e : SpecError := { file, loc, kind := .pySpecParsingError, message }
+  let e : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingError, message }
   modify fun s => { s with errors := s.errors.push e }
 
 instance : PySpecMClass PySpecM where
@@ -294,7 +299,7 @@ instance : PySpecMClass PySpecM where
     specErrorAt (←read).pythonFile loc message
   specWarning loc message := do
     let file := (←read).pythonFile
-    let w : SpecError := { file, loc, kind := .pySpecParsingWarning, message }
+    let w : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingWarning, message }
     modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
@@ -664,8 +669,8 @@ structure SpecAssertionContext where
 structure SpecAssertionState where
   assertions : Array Assertion := #[]
   postconditions : Array SpecExpr := #[]
-  errors : Array SpecError := #[]
-  warnings : Array SpecError := #[]
+  errors : Array PipelineMessage := #[]
+  warnings : Array PipelineMessage := #[]
 
 /-- Monad for extracting pre and post conditions from methods. -/
 abbrev SpecAssertionM := ReaderT SpecAssertionContext (StateM SpecAssertionState)
@@ -673,11 +678,11 @@ abbrev SpecAssertionM := ReaderT SpecAssertionContext (StateM SpecAssertionState
 instance : PySpecMClass SpecAssertionM where
   specError loc message := do
     let file := (←read) |>.filePath
-    let e : SpecError := { file, loc, kind := .pySpecParsingError, message }
+    let e : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingError, message }
     modify fun s => { s with errors := s.errors.push e }
   specWarning loc message := do
     let file := (←read) |>.filePath
-    let w : SpecError := { file, loc, kind := .pySpecParsingWarning, message }
+    let w : PipelineMessage := { file, loc, phase := pySpecParsingPhase, kind := .pySpecParsingWarning, message }
     modify fun s => { s with warnings := s.warnings.push w }
   runChecked act := do
     let cnt := (←get).errors.size
@@ -1580,7 +1585,7 @@ def translateModule
     (events : Std.HashSet EventType := {})
     (skipNames : Std.HashSet PythonIdent := {})
     (currentModulePrefix : Option ModuleName := none) :
-    BaseIO (FileMaps × Array Signature × Array SpecError × Array SpecError) := do
+    BaseIO (FileMaps × Array Signature × Array PipelineMessage × Array PipelineMessage) := do
   let fmm : FileMaps := {}
   let fmm := fmm.insert pythonFile fileMap
   let fileMapsRef : IO.Ref FileMaps ← IO.mkRef fmm
@@ -1643,7 +1648,7 @@ public def translateFile
         (.ofString contents)
         body
         mod
-  let ppErr (e : SpecError) : EIO String String :=
+  let ppErr (e : PipelineMessage) : EIO String String :=
         match fmm[e.file]? with
         | none =>
           throw s!"No location information for {e.file}"
