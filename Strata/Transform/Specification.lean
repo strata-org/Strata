@@ -91,7 +91,7 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
   /-- Terminal configuration. -/
   terminalCfg : Env P → CfgT
   /-- Exiting configuration. -/
-  exitingCfg : Option String → Env P → CfgT
+  exitingCfg : String → Env P → CfgT
   /-- Assert detection in configurations. -/
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/
@@ -287,18 +287,32 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
           exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
 
 omit [HasVal P] in
-/-- Lift a `TripleBlock` to a `Triple` by wrapping in a block. -/
+/-- A postcondition is well-formed if it is stable under `projectStore`. -/
+def PostWF (Post : Env P → Prop) : Prop :=
+  ∀ ρ σ_parent, Post ρ → ρ.hasFailure = false →
+    Post { ρ with store := projectStore σ_parent ρ.store } ∧
+      ({ ρ with store := projectStore σ_parent ρ.store } : Env P).hasFailure = false
+
+omit [HasVal P] in
+/-- Lift a `TripleBlock` to a `Triple` by wrapping in a block.
+    The postcondition `Post` is required to be stable under `projectStore`
+    (it only references variables defined before the block). -/
 theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
-    (h : TripleBlock evalCmd extendEval Pre ss Post) :
+    (h : TripleBlock evalCmd extendEval Pre ss Post)
+    (hpost_proj : PostWF Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l ss md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
   | step _ _ _ hstep hrest => cases hstep with
     | step_block =>
       match block_reaches_terminal P evalCmd extendEval hrest with
-      | .inl hterm => exact h ρ₀ ρ' hpre hwfb hf₀ (.inl hterm)
-      | .inr ⟨lbl, hexit_inner⟩ => exact h ρ₀ ρ' hpre hwfb hf₀ (.inr ⟨lbl, hexit_inner⟩)
+      | .inl ⟨ρ_inner, hterm, heq⟩ =>
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
+        subst heq; exact hpost_proj ρ_inner _ hpost hf
+      | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        subst heq; exact hpost_proj ρ_inner _ hpost hf
 
 omit [HasVal P] in
 /-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
@@ -335,9 +349,10 @@ theorem Triple.toTripleBlock {s : Stmt P CmdT}
 
 omit [HasVal P] in
 /-- Empty block is skip. -/
-theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop) :
+theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop)
+    (hpre_proj : PostWF Pre) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l [] md) Pre :=
-  TripleBlock.toTriple evalCmd extendEval isAtAssertFn (skip_block evalCmd extendEval Pre)
+  TripleBlock.toTriple evalCmd extendEval isAtAssertFn (skip_block evalCmd extendEval Pre) hpre_proj
 
 omit [HasVal P] in
 /-- If-then-else rule. -/
@@ -397,7 +412,7 @@ theorem hoareTriple_implies_assertValid
     cases hstep with
     | step_block =>
       have ⟨inner, heq_cfg, hinner_star, hat_inner⟩ :=
-        block_isAtAssert_inner P' extendEval _ _ _ _ hrest hat
+        block_isAtAssert_inner P' extendEval _ _ _ _ _ hrest hat
       subst heq_cfg
       cases hinner_star with
       | refl => exact absurd hat_inner (by simp [isAtAssert])
@@ -494,9 +509,9 @@ theorem allAssertsValid_implies_hoareTriple
       .step _ _ _ StepStmt.step_stmts_cons (.refl _)
     have h3 := seq_inner_star P' (EvalCmd P') extendEval _ _ [assert_stmt] hstar_st
     have h_inner := ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ h1 h2) h3
-    have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ block_label h_inner
+    have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ (.some block_label) ρ₀.store h_inner
     have h_start : StepStmtStar P' (EvalCmd P') extendEval
-        (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
+        (.stmt (.block block_label body block_md) ρ₀) (.block (.some block_label) ρ₀.store (.stmts body ρ₀)) :=
       .step _ _ _ StepStmt.step_block (.refl _)
     have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
     have h_result := hvalid a ρ₀ _ trivial h_full hat
@@ -514,12 +529,12 @@ theorem allAssertsValid_implies_hoareTriple
       (.stmts [assert_stmt] ρ') (.seq (.stmt assert_stmt ρ') []) :=
     .step _ _ _ StepStmt.step_stmts_cons (.refl _)
   have h_inner := ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ h1 h2) h3
-  have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ block_label h_inner
+  have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ (.some block_label) ρ₀.store h_inner
   have h_start : StepStmtStar P' (EvalCmd P') extendEval
-      (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
+      (.stmt (.block block_label body block_md) ρ₀) (.block (.some block_label) ρ₀.store (.stmts body ρ₀)) :=
     .step _ _ _ StepStmt.step_block (.refl _)
   have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
-  have h_at : isAtAssert P' (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
+  have h_at : isAtAssert P' (.block (.some block_label) ρ₀.store (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
   have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ trivial h_full h_at
   dsimp [Config.getEval, Config.getStore, Config.getEnv] at h_result
