@@ -8,7 +8,7 @@ module
 import        Strata.DDM.Format
 import all    Strata.DDM.Util.Fin
 import        Strata.Languages.Python.ReadPython
-import Strata.Languages.Python.Specs.DDM
+import        Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
 import Strata.Languages.Python.Specs.MessageKind
 import        Strata.Pipeline.Messages
@@ -1668,8 +1668,6 @@ partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRa
   return s.elements
 
 end
-
-
 
 /-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
 def translateModule
