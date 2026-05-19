@@ -95,8 +95,8 @@ class Swarm:
         self._pause_tokens[agent_name].resume()
 
     async def send_to_agent(self, agent_name: str, sender: str, payload: Any) -> None:
-        inbox = f"{agent_name}:inbox"
-        await self._channel_bus.send_to(inbox, sender=sender, payload=payload)
+        messages_channel = f"{agent_name}:messages"
+        await self._channel_bus.send_to(messages_channel, sender=sender, payload=payload)
 
     def get_agent_session_id(self, agent_name: str) -> str | None:
         if agent_name in self._results:

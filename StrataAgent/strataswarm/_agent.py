@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import Counter
 from collections.abc import Awaitable, Callable
@@ -194,31 +195,13 @@ class SwarmAgent(Generic[T]):
                 if result.halted_by != "completion" or self.cancellation.is_cancelled:
                     break
 
+                # Peek at :messages channel for pending messages (from agents or user).
+                # User messages also go through :messages — the user is just another sender.
                 has_messaging_tools = (
                     self._mcp_servers_override
                     and "agent_messaging" in self._mcp_servers_override
                 )
 
-                # --- Phase A: Check :inbox for user/framework injection (consume) ---
-                inbox = self.channel_bus[inbox_channel]
-                injected_msg = await inbox.receive(timeout=0.1)
-
-                if injected_msg:
-                    source = injected_msg.sender
-                    if source == "user":
-                        injection = f"[USER FEEDBACK]: {injected_msg.payload}"
-                    else:
-                        injection = (
-                            f"[MESSAGE FROM AGENT '{source}']: {injected_msg.payload}"
-                        )
-                    await self.backend.send_query(injection)
-                    await self._emit(
-                        "message",
-                        f"[Injected from {source}]: {injected_msg.payload}",
-                    )
-                    continue  # Loop back to receive_messages()
-
-                # --- Phase B: Peek at :messages channel for notification (no consume) ---
                 if has_messaging_tools:
                     messages_ch = self.channel_bus.get_or_create(
                         f"{self.spec.name}:messages"
@@ -246,68 +229,67 @@ class SwarmAgent(Generic[T]):
                         )
                         continue  # Loop back to receive_messages()
 
-                # No inbox message, no pending agent messages => work is done.
+                # No pending messages => work is done.
                 if not self._wait_after_completion:
                     break
 
-                # Enter waiting state: block on inbox until user sends something
-                # or cancellation fires.
+                # Enter waiting state: block until a message arrives or cancellation.
                 result.status = AgentStatus.COMPLETED
                 await self._emit("status_change", AgentStatus.COMPLETED.value)
-                await self._emit("message", "[Waiting for user input or cancellation...]")
+                await self._emit("message", "[Waiting for messages or cancellation...]")
 
-                # Wait indefinitely for user message or cancellation
                 while not self.cancellation.is_cancelled:
-                    inbox = self.channel_bus[inbox_channel]
-                    injected_msg = await inbox.receive(timeout=1.0)
-                    if injected_msg:
-                        source = injected_msg.sender
-                        if source == "user":
-                            injection = f"[USER FEEDBACK]: {injected_msg.payload}"
-                        else:
-                            injection = (
-                                f"[MESSAGE FROM AGENT '{source}']: {injected_msg.payload}"
-                            )
+                    if has_messaging_tools:
+                        messages_ch = self.channel_bus.get_or_create(
+                            f"{self.spec.name}:messages"
+                        )
+                    else:
+                        messages_ch = self.channel_bus[inbox_channel]
+
+                    pending = messages_ch.peek_summary() if has_messaging_tools else []
+                    msg = None if has_messaging_tools else await messages_ch.receive(timeout=1.0)
+
+                    if has_messaging_tools and messages_ch.pending_count > 0:
+                        sender_counts = Counter(
+                            sender for sender, _ in messages_ch.peek_summary()
+                        )
+                        sender_list = ", ".join(
+                            f"{name} ({count})" if count > 1 else name
+                            for name, count in sender_counts.items()
+                        )
+                        total = messages_ch.pending_count
+                        notification = (
+                            f"[NOTIFICATION]: You have {total} pending "
+                            f"message{'s' if total > 1 else ''} "
+                            f"from: {sender_list}. "
+                            f"Use check_messages to read them."
+                        )
+                        result.status = AgentStatus.RUNNING
+                        await self._emit("status_change", AgentStatus.RUNNING.value)
+                        await self.backend.send_query(notification)
+                        await self._emit(
+                            "message",
+                            f"[Notification: {total} pending from {sender_list}]",
+                        )
+                        break
+                    elif msg:
+                        source = msg.sender
+                        injection = (
+                            f"[USER FEEDBACK]: {msg.payload}"
+                            if source == "user"
+                            else f"[MESSAGE FROM AGENT '{source}']: {msg.payload}"
+                        )
                         result.status = AgentStatus.RUNNING
                         await self._emit("status_change", AgentStatus.RUNNING.value)
                         await self.backend.send_query(injection)
                         await self._emit(
                             "message",
-                            f"[Injected from {source}]: {injected_msg.payload}",
+                            f"[Injected from {source}]: {msg.payload}",
                         )
-                        break  # Back to outer while True → receive_messages()
-
-                    # Also check :messages channel for agent messages
-                    if has_messaging_tools:
-                        messages_ch = self.channel_bus.get_or_create(
-                            f"{self.spec.name}:messages"
-                        )
-                        if messages_ch.pending_count > 0:
-                            pending = messages_ch.peek_summary()
-                            sender_counts = Counter(
-                                sender for sender, _ in pending
-                            )
-                            sender_list = ", ".join(
-                                f"{name} ({count})" if count > 1 else name
-                                for name, count in sender_counts.items()
-                            )
-                            total = len(pending)
-                            notification = (
-                                f"[NOTIFICATION]: You have {total} pending "
-                                f"message{'s' if total > 1 else ''} "
-                                f"from: {sender_list}. "
-                                f"Use check_messages to read them."
-                            )
-                            result.status = AgentStatus.RUNNING
-                            await self._emit("status_change", AgentStatus.RUNNING.value)
-                            await self.backend.send_query(notification)
-                            await self._emit(
-                                "message",
-                                f"[Notification: {total} pending from {sender_list}]",
-                            )
-                            break
+                        break
+                    else:
+                        await asyncio.sleep(1.0)
                 else:
-                    # Cancellation fired during wait
                     result.halted_by = "cancelled"
                     result.status = AgentStatus.CANCELLED
                     await self._emit("status_change", AgentStatus.CANCELLED.value)

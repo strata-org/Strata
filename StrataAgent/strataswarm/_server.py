@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from ._channels import ChannelBus
 from ._types import AgentEvent, AgentSpec, AgentStatus
 from ._tools import ToolSet
 
+SWARM_SAVE_DIR = Path(__file__).parent.parent / "temp"
+
 
 class AgentCreateRequest(BaseModel):
     name: str
@@ -23,6 +26,11 @@ class AgentCreateRequest(BaseModel):
     max_turns: int | None = None
     max_budget_usd: float | None = None
     timeout_seconds: float | None = None
+
+
+class SwarmConfig(BaseModel):
+    name: str
+    agents: list[AgentCreateRequest]
 
 
 class SwarmDashboard:
@@ -134,6 +142,43 @@ class SwarmDashboard:
             await self._broadcast({"type": "reset"})
             return {"status": "reset"}
 
+        # --- Swarm save/load ---
+        @self.app.get("/api/swarm/saved")
+        async def list_saved() -> list[str]:
+            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            return [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+
+        @self.app.post("/api/swarm/save")
+        async def save_swarm(body: dict[str, Any]) -> dict[str, str]:
+            name = body.get("name", "").strip()
+            if not name:
+                return {"status": "error", "message": "Name is required"}
+            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            config = SwarmConfig(name=name, agents=self._agent_specs)
+            path = SWARM_SAVE_DIR / f"{name}.json"
+            path.write_text(config.model_dump_json(indent=2))
+            return {"status": "saved", "path": str(path)}
+
+        @self.app.post("/api/swarm/load")
+        async def load_swarm(body: dict[str, Any]) -> dict[str, str]:
+            name = body.get("name", "").strip()
+            path = SWARM_SAVE_DIR / f"{name}.json"
+            if not path.exists():
+                return {"status": "error", "message": f"Not found: {name}"}
+            config = SwarmConfig.model_validate_json(path.read_text())
+            self._agent_specs = config.agents
+            await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
+            await self._broadcast({"type": "swarm_loaded", "name": config.name})
+            return {"status": "loaded", "name": config.name}
+
+        @self.app.post("/api/swarm/delete_saved")
+        async def delete_saved(body: dict[str, Any]) -> dict[str, str]:
+            name = body.get("name", "").strip()
+            path = SWARM_SAVE_DIR / f"{name}.json"
+            if path.exists():
+                path.unlink()
+            return {"status": "deleted"}
+
         @self.app.post("/api/agents/{name}/pause")
         async def pause_agent(name: str) -> dict[str, str]:
             if self._swarm:
@@ -221,6 +266,42 @@ class SwarmDashboard:
                     agent_name, sender="user", payload=data.get("message", "")
                 )
 
+        elif action == "save_swarm":
+            name = data.get("name", "").strip()
+            if not name:
+                await self._broadcast({"type": "error", "message": "Swarm name is required"})
+                return
+            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            config = SwarmConfig(name=name, agents=self._agent_specs)
+            path = SWARM_SAVE_DIR / f"{name}.json"
+            path.write_text(config.model_dump_json(indent=2))
+            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+            await self._broadcast({"type": "swarm_saved", "name": name, "saved_list": saved_list})
+
+        elif action == "load_swarm":
+            name = data.get("name", "").strip()
+            path = SWARM_SAVE_DIR / f"{name}.json"
+            if not path.exists():
+                await self._broadcast({"type": "error", "message": f"Swarm '{name}' not found"})
+                return
+            config = SwarmConfig.model_validate_json(path.read_text())
+            self._agent_specs = config.agents
+            await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
+            await self._broadcast({"type": "swarm_loaded", "name": config.name})
+
+        elif action == "delete_swarm":
+            name = data.get("name", "").strip()
+            path = SWARM_SAVE_DIR / f"{name}.json"
+            if path.exists():
+                path.unlink()
+            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+            await self._broadcast({"type": "swarm_deleted", "name": name, "saved_list": saved_list})
+
+        elif action == "list_saved":
+            SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+            await self._broadcast({"type": "saved_list", "saved_list": saved_list})
+
     async def _create_and_run_swarm(self) -> None:
         from ._swarm import Swarm, ExecutionMode
 
@@ -286,11 +367,15 @@ class SwarmDashboard:
                 if name not in agents:
                     agents[name] = {"name": name, "status": "pending", "session_id": None}
 
+        SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+        saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+
         return {
             "agents": agents,
             "specs": self._get_specs_list(),
             "running": self._swarm_task is not None and not self._swarm_task.done(),
             "all_messages": self._all_messages[-200:],
+            "saved_list": saved_list,
         }
 
     async def on_agent_event(self, event: AgentEvent) -> None:

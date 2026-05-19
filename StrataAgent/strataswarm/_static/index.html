@@ -71,6 +71,13 @@ header h1 { font-size: 18px; color: #4fc3f7; }
 .modal-actions button { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
 .btn-modal-add { background: #4fc3f7; color: #1a1a2e; }
 .btn-modal-cancel { background: #424242; color: #ccc; }
+.btn-save { background: #0288d1; color: white; }
+.btn-load { background: #6a1b9a; color: white; }
+.saved-list { margin-top: 10px; }
+.saved-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #1a1a2e; border-radius: 4px; margin-bottom: 6px; font-size: 12px; }
+.saved-item button { padding: 3px 8px; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; font-weight: 600; margin-left: 6px; }
+.saved-item .btn-load-item { background: #6a1b9a; color: white; }
+.saved-item .btn-delete-item { background: #b71c1c; color: #ef9a9a; }
 </style>
 </head>
 <body>
@@ -78,7 +85,10 @@ header h1 { font-size: 18px; color: #4fc3f7; }
   <h1>StrataSwarm</h1>
   <div class="header-controls">
     <span id="total-cost">$0.0000</span>
-    <button class="btn-create" onclick="createNew()">New Swarm</button>
+    <button class="btn-save" onclick="showSaveModal()">Save</button>
+    <button class="btn-load" onclick="showLoadModal()">Load</button>
+    <button class="btn-create" onclick="createNew()" title="Clear all agents and start fresh">New</button>
+    <button class="btn-cancel" onclick="unloadSwarm()" title="Unload current agents (keeps saved configs)">Unload</button>
     <button class="btn-start" id="btn-start" onclick="startSwarm()">Start</button>
     <button class="btn-pause-all" onclick="pauseAll()">Pause All</button>
     <button class="btn-resume-all" onclick="resumeAll()">Resume All</button>
@@ -139,6 +149,30 @@ header h1 { font-size: 18px; color: #4fc3f7; }
   </div>
 </div>
 
+<!-- Save Swarm Modal -->
+<div class="modal-overlay" id="save-modal" onclick="if(event.target===this)hideSaveModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Save Swarm</h2>
+    <label>Swarm Name</label>
+    <input type="text" id="save-swarm-name" placeholder="e.g. security-test" onkeydown="if(event.key==='Enter')saveSwarm()">
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="hideSaveModal()">Cancel</button>
+      <button class="btn-modal-add" onclick="saveSwarm()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Load Swarm Modal -->
+<div class="modal-overlay" id="load-modal" onclick="if(event.target===this)hideLoadModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Load Swarm</h2>
+    <div class="saved-list" id="saved-list-container"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="hideLoadModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let ws;
 let selectedAgent = null;
@@ -150,6 +184,7 @@ let allMessages = [];
 let totalCost = 0;
 let isRunning = false;
 let pendingMessages = [];
+let savedList = [];
 
 function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -177,6 +212,7 @@ function connect() {
       specs = data.specs;
       isRunning = data.running;
       allMessages = data.all_messages || [];
+      savedList = data.saved_list || [];
       render();
     } else if (data.type === 'agent_event') {
       handleEvent(data);
@@ -194,6 +230,18 @@ function connect() {
     } else if (data.type === 'reset') {
       agents = {}; specs = []; agentMessages = {}; allMessages = []; isRunning = false; selectedAgent = null;
       render();
+    } else if (data.type === 'swarm_saved') {
+      savedList = data.saved_list || [];
+      alert(`Swarm '${data.name}' saved.`);
+    } else if (data.type === 'swarm_loaded') {
+      alert(`Swarm '${data.name}' loaded.`);
+      render();
+    } else if (data.type === 'swarm_deleted') {
+      savedList = data.saved_list || [];
+      renderLoadModal();
+    } else if (data.type === 'saved_list') {
+      savedList = data.saved_list || [];
+      renderLoadModal();
     } else if (data.type === 'error') {
       alert('Server error: ' + (data.message || 'Unknown error'));
     }
@@ -239,7 +287,13 @@ function renderSidebar() {
   if (!isRunning && Object.keys(agents).length === 0) {
     el.innerHTML = specs.map(s => `
       <div class="agent-item ${s.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${s.name}')">
-        <div class="name">${s.name} <span class="badge badge-draft">draft</span></div>
+        <div class="name" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>${s.name} <span class="badge badge-draft">draft</span></span>
+          <span>
+            <button onclick="event.stopPropagation();editAgent('${s.name}')" style="padding:2px 6px;border:none;border-radius:3px;background:#0288d1;color:white;font-size:10px;cursor:pointer;margin-right:3px;">Edit</button>
+            <button onclick="event.stopPropagation();removeAgent('${s.name}')" style="padding:2px 6px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">X</button>
+          </span>
+        </div>
         <div class="spec-info">${s.allowed_tools.join(', ') || 'no tools'} | ${s.max_turns || '?'} turns | $${s.max_budget_usd || '?'}</div>
       </div>
     `).join('') || '<div class="empty" style="padding:20px;font-size:12px;">No agents yet. Click "+ Add Agent"</div>';
@@ -317,11 +371,30 @@ function selectAgent(name) { selectedAgent = name; document.getElementById('msg-
 function switchView(v) { currentView = v; document.getElementById('tab-agent').classList.toggle('active', v==='agent'); document.getElementById('tab-chitchat').classList.toggle('active', v==='chitchat'); document.getElementById('tab-spec').classList.toggle('active', v==='spec'); renderMessages(); }
 
 // Swarm controls
-function createNew() { wsSend({ action: 'create_new' }); }
-function startSwarm() { wsSend({ action: 'start' }); }
+function createNew() { if (isRunning) { alert('Cancel the running swarm first.'); return; } wsSend({ action: 'create_new' }); }
+function unloadSwarm() { if (isRunning) { alert('Cancel the running swarm first.'); return; } specs = []; agents = {}; agentMessages = {}; allMessages = []; selectedAgent = null; wsSend({ action: 'create_new' }); }
+function startSwarm() { if (isRunning) { alert('Swarm already running.'); return; } wsSend({ action: 'start' }); }
 function pauseAll() { wsSend({ action: 'pause_all' }); }
 function resumeAll() { wsSend({ action: 'resume_all' }); }
 function cancelAll() { wsSend({ action: 'cancel' }); }
+function removeAgent(name) { if (isRunning) { alert('Cannot edit while running.'); return; } wsSend({ action: 'remove_agent', agent: name }); }
+function editAgent(name) {
+  if (isRunning) { alert('Cannot edit while running.'); return; }
+  const spec = specs.find(s => s.name === name);
+  if (!spec) return;
+  // Populate the add-agent modal with existing values for editing
+  document.getElementById('agent-name').value = spec.name;
+  document.getElementById('agent-system-prompt').value = spec.system_prompt;
+  document.getElementById('agent-prompt').value = spec.prompt;
+  document.getElementById('agent-allowed-tools').value = (spec.allowed_tools || []).join(', ');
+  document.getElementById('agent-disallowed-tools').value = (spec.disallowed_tools || []).join(', ');
+  document.getElementById('agent-max-turns').value = spec.max_turns || '';
+  document.getElementById('agent-max-budget').value = spec.max_budget_usd || '';
+  document.getElementById('agent-timeout').value = spec.timeout_seconds || '';
+  // Remove the old one, then show modal (re-adding will create updated version)
+  wsSend({ action: 'remove_agent', agent: name });
+  showAddAgent();
+}
 
 // Agent controls
 function pauseAgent() { if (selectedAgent) wsSend({ action: 'pause', agent: selectedAgent }); }
@@ -364,7 +437,7 @@ function updateTargetDropdown() {
 }
 
 // Add Agent Modal
-function showAddAgent() { document.getElementById('modal-overlay').classList.add('visible'); document.getElementById('agent-name').focus(); }
+function showAddAgent() { if (isRunning) { alert('Cannot add agents while running.'); return; } document.getElementById('modal-overlay').classList.add('visible'); document.getElementById('agent-name').focus(); }
 function hideModal() { document.getElementById('modal-overlay').classList.remove('visible'); }
 function addAgent() {
   const name = document.getElementById('agent-name').value.trim();
@@ -381,6 +454,49 @@ function addAgent() {
   hideModal();
   // Clear form
   ['agent-name','agent-system-prompt','agent-prompt','agent-allowed-tools','agent-disallowed-tools','agent-max-turns','agent-max-budget','agent-timeout'].forEach(id => document.getElementById(id).value = '');
+}
+
+// Save/Load Swarm
+function showSaveModal() {
+  if (specs.length === 0) { alert('No agents to save. Add agents first.'); return; }
+  document.getElementById('save-modal').classList.add('visible');
+  document.getElementById('save-swarm-name').focus();
+}
+function hideSaveModal() { document.getElementById('save-modal').classList.remove('visible'); }
+function saveSwarm() {
+  const name = document.getElementById('save-swarm-name').value.trim();
+  if (!name) { alert('Enter a name for this swarm.'); return; }
+  wsSend({ action: 'save_swarm', name });
+  hideSaveModal();
+  document.getElementById('save-swarm-name').value = '';
+}
+
+function showLoadModal() {
+  wsSend({ action: 'list_saved' });
+  renderLoadModal();
+  document.getElementById('load-modal').classList.add('visible');
+}
+function hideLoadModal() { document.getElementById('load-modal').classList.remove('visible'); }
+function renderLoadModal() {
+  const el = document.getElementById('saved-list-container');
+  if (!savedList.length) {
+    el.innerHTML = '<div style="color:#666;font-size:12px;padding:10px;">No saved swarms yet.</div>';
+    return;
+  }
+  el.innerHTML = savedList.map(name => `
+    <div class="saved-item">
+      <span>${escapeHtml(name)}</span>
+      <div>
+        <button class="btn-load-item" onclick="loadSwarm('${escapeHtml(name)}')">Load</button>
+        <button class="btn-delete-item" onclick="deleteSavedSwarm('${escapeHtml(name)}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+function loadSwarm(name) { wsSend({ action: 'load_swarm', name }); hideLoadModal(); }
+function deleteSavedSwarm(name) {
+  if (!confirm(`Delete saved swarm '${name}'?`)) return;
+  wsSend({ action: 'delete_swarm', name });
 }
 
 connect();
