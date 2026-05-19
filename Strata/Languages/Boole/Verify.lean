@@ -50,6 +50,10 @@ structure TranslateState where
       `getFVarIsOp` as the `command_var` carve-out for op-vs-var
       classification. -/
   globalVarTypes : Std.HashMap String Lambda.LMonoTy := {}
+  /-- Names of nullary type synonyms that expand directly to `int`, collected
+      in a pre-pass.  A field whose Boole type resolves to one of these names
+      is treated as `nat` and gets an automatic non-negativity axiom. -/
+  natSynonyms : Std.HashSet String := {}
 
 abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 
@@ -256,6 +260,13 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
 def toCoreType (t : Boole.Type) : TranslateM Core.Expression.Ty := do
   return .forAll [] (← toCoreMonoType t)
 
+private def isNatType (t : Boole.Type) : TranslateM Bool := do
+  match t with
+  | .fvar m i _ =>
+    let name ← getFVarName m i
+    return (← get).natSynonyms.contains name
+  | _ => return false
+
 private def toCoreBinding (b : BooleDDM.Binding SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
   match b with
   | .mkBinding _ ⟨_, n⟩ tp | .outBinding _ ⟨_, n⟩ tp
@@ -306,7 +317,10 @@ def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Ex
   | .int _ =>
     let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
     return .app () iop a
-  | _ => toCoreBvUn m ty op a
+  | _ =>
+    if ← isNatType ty then
+      return .app () (.op () ⟨s!"Int.{op}", ()⟩ none) a
+    else toCoreBvUn m ty op a
 
 -- Bitvector comparison operators use unsigned variants by default (Le→ULe, etc.).
 -- Signed variants use the explicit bvslt/bvsle nodes.
@@ -320,7 +334,10 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
   | .int _ =>
     let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
     return mkCoreApp iop [a, b]
-  | _ => toCoreBvBin m ty (toBvCmpOp op) a b
+  | _ =>
+    if ← isNatType ty then
+      return mkCoreApp (.op () ⟨s!"Int.{op}", ()⟩ none) [a, b]
+    else toCoreBvBin m ty (toBvCmpOp op) a b
 
 private def toCoreExtensionalEq
     (m : SourceRange)
@@ -821,6 +838,43 @@ private def toCoreDatatype
              constrs := constrs
              constrs_ne := by simp }
 
+-- For each constructor field whose Boole type is nat-like, emit an axiom:
+--   ∀ x : DatatypeName . DatatypeName..isCtor(x) ⟹ DatatypeName..field(x) ≥ 0
+-- Only generated for datatypes without type parameters (parameterised datatypes
+-- would require type-level quantification not currently supported here).
+private def natAxiomsForDatatype
+    (dtypeName : String)
+    (typeParams : List String)
+    (ctors : BooleDDM.ConstructorList SourceRange) : TranslateM (List Core.Decl) := do
+  if !typeParams.isEmpty then return []
+  let dtypeTy : Lambda.LMonoTy := .tcons dtypeName []
+  let bv0 : Core.Expression.Expr := .bvar () 0
+  let mut axioms : List Core.Decl := []
+  for ctor in constructorListToList ctors do
+    match ctor with
+    | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
+      let fields : List (BooleDDM.Binding SourceRange) := match fields? with
+        | none => []
+        | some ⟨_, fs⟩ => fs.toList
+      let testerName := s!"{dtypeName}..is{cname}"
+      for field in fields do
+        match field with
+        | .mkBinding _ ⟨_, fieldName⟩ tp =>
+          match tp with
+          | .expr fieldTy =>
+            if ← isNatType fieldTy then
+              let selectorName := s!"{dtypeName}..{fieldName}"
+              let tester   := mkCoreApp (.op () ⟨testerName, ()⟩ none) [bv0]
+              let selector := mkCoreApp (.op () ⟨selectorName, ()⟩ none) [bv0]
+              let geZero   := mkCoreApp Core.intGeOp [selector, .intConst () 0]
+              let implies  := mkCoreApp Core.boolImpliesOp [tester, geZero]
+              let axExpr   : Core.Expression.Expr := .quant () .all "" (some dtypeTy) bv0 implies
+              let axName   := s!"{dtypeName}_{cname}_{fieldName}_nonneg"
+              axioms := axioms ++ [.ax { name := axName, e := axExpr } .empty]
+          | _ => pure ()
+        | _ => pure ()
+  return axioms
+
 private def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : TranslateM (Lambda.LDatatype Unit) := do
   match decl with
   | .datatype_decl m ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
@@ -1020,7 +1074,15 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       body := ← toCoreBlock b
     } .empty]
   | .command_datatypes _ ⟨_, decls⟩ =>
-    return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
+    let datatypes ← decls.toList.mapM toCoreDatatypeDecl
+    let natAxioms ← decls.toList.mapM fun decl =>
+      match decl with
+      | .datatype_decl _ ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
+        let typeParams := match typeParams? with
+          | none => []
+          | some bs => (bindingsToList bs).map bindingName
+        withTypeBVars typeParams (natAxiomsForDatatype dtypeName typeParams ctors)
+    return .type (.data datatypes) .empty :: natAxioms.flatten
 
 /-- Render a `Boole.Program` to a format object using the provided `GlobalContext` and
 `DialectMap`. These should come from the originating `Strata.Program` (i.e. `env.globalContext`
@@ -1040,9 +1102,10 @@ def formatProgram (prog : Boole.Program) (gctx : GlobalContext) (dialects : Dial
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : String := "") : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
-    -- Pre-pass: collect global variable types and modifies info per procedure.
+    -- Pre-pass: collect global variable types, modifies info, and nat synonyms.
     let mut varTypes : Std.HashMap String Lambda.LMonoTy := {}
     let mut modMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
+    let mut natSynonyms : Std.HashSet String := {}
     for cmd in cmds do
       match cmd with
       | .command_var _ b =>
@@ -1057,12 +1120,18 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : S
       | .command_procedure _ nameAnn _ _ specAnn _ =>
         let mods ← collectModifiesFromSpec fileName nameAnn.val specAnn.val varTypes
         if !mods.isEmpty then modMap := modMap.insert nameAnn.val mods
+      | .command_typesynonym _ ⟨_, n⟩ ⟨_, args?⟩ _ rhs =>
+        if args?.isNone then
+          match (toCoreMonoType rhs).run' { gctx := gctx } with
+          | .ok .int => natSynonyms := natSynonyms.insert n
+          | _ => pure ()
       | _ => pure ()
     let init : TranslateState := {
       fileName := fileName
       gctx := gctx
       modifiesMap := modMap
       globalVarTypes := varTypes
+      natSynonyms := natSynonyms
     }
     let act : TranslateM Core.Program := do
       let decls := (← cmds.mapM toCoreDecls).toList.flatten
