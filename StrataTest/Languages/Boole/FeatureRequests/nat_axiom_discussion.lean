@@ -9,7 +9,7 @@ import Strata.MetaVerifier
 open Strata
 
 /-
-Meeting discussion: `type nat := int` + auto-generated non-negativity axioms
+Discussion: `type nat := int` + auto-generated non-negativity axioms
 
 Abdal's proposed design
 ───────────────────────
