@@ -1349,9 +1349,10 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
       set (n + 1)
       let varName := s!"$mo_{n}"
       let varDecl := mkVarDeclInit varName AnyTy AnyNone
-      let assign := mkStmtExprMd (StmtExpr.Assign
-        [mkVariableMd (.Local varName), maybeExceptVar] e)
-      let varRef := mkStmtExprMd (StmtExpr.Var (.Local varName))
+      let assign := mkStmtExprMdWithLoc (StmtExpr.Assign
+        [mkVariableMd (.Local varName), maybeExceptVar]
+        (mkStmtExprMdWithLoc (.StaticCall callee args) e.source)) e.source
+      let varRef := mkStmtExprMdWithLoc (StmtExpr.Var (.Local varName)) e.source
       return ([varDecl, assign], varRef)
     else
       -- Recurse into arguments
@@ -1394,11 +1395,13 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
         else'
       else
         mkStmtExprMdWithLoc (.Block (pre ++ [else']) none) else'.source
-    if preCond.isEmpty then
-      return ([], e)
-    else
+    let anyRewrite := !preCond.isEmpty || !preThen.isEmpty ||
+      preElse.any (fun (pre, _) => !pre.isEmpty)
+    if anyRewrite then
       return (preCond, mkStmtExprMdWithLoc
         (.IfThenElse cond' thenExpr elseExpr) e.source)
+    else
+      return ([], e)
   | _ => return ([], e)
 
 /-- Translate an expression and extract any nested multi-output calls into
@@ -1479,11 +1482,6 @@ partial def translateAssign  (ctx : TranslationContext)
         return (newctx, [initStmt] ++ exceptHavoc, true)
     | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc, false)
   }
-  -- When the RHS is a direct multi-output call (top-level), translateAssign
-  -- already handles it with multi-target assignment. Don't double-extract.
-  let moExtracts := match rhs_trans.val with
-    | .StaticCall callee _ => if withException ctx callee.text then [] else moExtracts
-    | _ => moExtracts
   let mut newctx := ctx
   match lhs with
     | .Name _ n _ =>
