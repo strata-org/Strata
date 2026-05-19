@@ -373,7 +373,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           match t.val with
           | .Declare _ =>
             if targets.length ≥ 2 then
-              modify fun s => { s with prependedStmts := s.prependedStmts ++ [decl, assign] }
+              prepend assign
+              prepend decl
               return last
             else
               return ⟨ .Block filtered labelOption, source⟩

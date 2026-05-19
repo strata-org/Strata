@@ -1355,23 +1355,27 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
       return ([varDecl, assign], varRef)
     else
       -- Recurse into arguments
-      let mut preamble : List StmtExprMd := []
-      let mut newArgs : List StmtExprMd := []
+      let mut preambleRev : List StmtExprMd := []
+      let mut newArgsRev : List StmtExprMd := []
       for arg in args do
         let (pre, arg') ← extractMultiOutputCalls ctx arg
-        preamble := preamble ++ pre
-        newArgs := newArgs ++ [arg']
+        preambleRev := pre.reverse.foldl (fun acc stmt => stmt :: acc) preambleRev
+        newArgsRev := arg' :: newArgsRev
+      let preamble := preambleRev.reverse
+      let newArgs := newArgsRev.reverse
       if preamble.isEmpty then
         return ([], e)
       else
         return (preamble, mkStmtExprMdWithLoc (.StaticCall callee.text newArgs) e.source)
   | .PrimitiveOp op args =>
-    let mut preamble : List StmtExprMd := []
-    let mut newArgs : List StmtExprMd := []
+    let mut preambleRev : List StmtExprMd := []
+    let mut newArgsRev : List StmtExprMd := []
     for arg in args do
       let (pre, arg') ← extractMultiOutputCalls ctx arg
-      preamble := preamble ++ pre
-      newArgs := newArgs ++ [arg']
+      preambleRev := pre.reverse.foldl (fun acc stmt => stmt :: acc) preambleRev
+      newArgsRev := arg' :: newArgsRev
+    let preamble := preambleRev.reverse
+    let newArgs := newArgsRev.reverse
     if preamble.isEmpty then
       return ([], e)
     else
@@ -1380,12 +1384,21 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
     let (preCond, cond') ← extractMultiOutputCalls ctx cond
     let (preThen, then') ← extractMultiOutputCalls ctx thenBr
     let preElse ← elseBr.mapM (extractMultiOutputCalls ctx)
-    let allPre := preCond ++ preThen ++ (preElse.map Prod.fst).getD []
-    if allPre.isEmpty then
+    let thenExpr :=
+      if preThen.isEmpty then
+        then'
+      else
+        mkStmtExprMdWithLoc (.Block (preThen ++ [then'])) thenBr.source
+    let elseExpr := preElse.map fun (pre, else') =>
+      if pre.isEmpty then
+        else'
+      else
+        mkStmtExprMdWithLoc (.Block (pre ++ [else'])) else'.source
+    if preCond.isEmpty then
       return ([], e)
     else
-      return (allPre, mkStmtExprMdWithLoc
-        (.IfThenElse cond' then' (preElse.map Prod.snd)) e.source)
+      return (preCond, mkStmtExprMdWithLoc
+        (.IfThenElse cond' thenExpr elseExpr) e.source)
   | _ => return ([], e)
 
 /-- Translate an expression and extract any nested multi-output calls into
@@ -1431,7 +1444,12 @@ partial def translateAssign  (ctx : TranslationContext)
     | .Attribute _ (.Name _ name _) _ _ => name.val == "self" && ctx.currentClassName.isSome
     | _ => false
   let rhsCtx := if isSelfFieldAssign then {ctx with suppressDispatch := true} else ctx
-  let (moExtracts, rhs_trans, _) ← translateExprExtractingCalls rhsCtx rhs 0
+  let extractionSeedText :=
+    match pyRangeToFileRange rhs.ann with
+    | some fr => rangeToTempName fr
+    | none => pyExprToString lhs ++ " <- " ++ pyExprToString rhs
+  let extractionSeed := extractionSeedText.foldl (fun acc ch => acc * 131 + ch.toNat) 0
+  let (moExtracts, rhs_trans, _) ← translateExprExtractingCalls rhsCtx rhs extractionSeed
   -- When an unmodeled call produces a Hole, also havoc maybe_except since
   -- the call is a black box that could throw any exception.
   let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
