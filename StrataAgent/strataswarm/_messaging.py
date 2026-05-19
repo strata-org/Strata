@@ -64,28 +64,21 @@ def create_messaging_server(
     @tool(
         name="check_messages",
         description=(
-            "Check your inbox for messages from other agents. "
-            "Returns the next unread message, or indicates the inbox is empty. "
-            "Call this periodically to see if other agents have sent you something."
+            "Read the next pending message from your inbox. "
+            "Only call this AFTER you have been notified that messages are waiting. "
+            "Do NOT call this in a loop to poll — the framework notifies you automatically."
         ),
         input_schema={
             "type": "object",
-            "properties": {
-                "wait_seconds": {
-                    "type": "number",
-                    "description": "How long to wait for a message (0 = don't wait, just check). Default: 2",
-                    "default": 2,
-                },
-            },
+            "properties": {},
             "required": [],
         },
     )
     async def check_messages(input: dict[str, Any]) -> dict[str, Any]:
-        wait = input.get("wait_seconds", 2)
         messages_channel = f"{agent_name}:messages"
         channel = channel_bus.get_or_create(messages_channel)
 
-        msg = await channel.receive(timeout=max(0.01, wait))
+        msg = await channel.receive(timeout=0.5)
         if msg is None:
             return {"content": [{"type": "text", "text": "No messages in your inbox."}]}
 

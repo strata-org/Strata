@@ -131,7 +131,7 @@ class Swarm:
         mcp_servers: dict[str, Any] | None = None
         combined_system_prompt: str | None = None
 
-        if self._enable_messaging and len(self._nodes) > 1:
+        if self._enable_messaging:
             other_agents = [n for n in self._nodes if n != name]
             messaging_server = create_messaging_server(
                 agent_name=name,
@@ -141,16 +141,24 @@ class Swarm:
             mcp_servers = dict(node.spec.mcp_servers)
             mcp_servers["agent_messaging"] = messaging_server
 
+            agents_note = (
+                f"- send_message(to, message): Send a message to another agent. "
+                f"'to' must be one of: {', '.join(other_agents)}.\n"
+                if other_agents else ""
+            )
             messaging_suffix = (
                 f"\n\n=== MESSAGING ===\n"
                 f"Your agent name is '{name}'.\n"
-                f"You have tools to communicate with other agents:\n"
-                f"- send_message(to, message): Send a message to another agent. "
-                f"'to' must be one of: {', '.join(other_agents)}.\n"
-                f"- check_messages(wait_seconds): Check your inbox for messages "
-                f"from other agents or the user. Set wait_seconds (default 2) to "
-                f"wait for a reply. Returns the next message or 'No messages'.\n\n"
-                f"Messages you receive are tagged with the sender's identity.\n"
+                f"You have tools to communicate with other agents and the user:\n"
+                f"{agents_note}"
+                f"- check_messages(): Read the next pending message from your inbox.\n\n"
+                f"Messages you receive are tagged with the sender (e.g. '[From user]: ...').\n\n"
+                f"IMPORTANT — WAITING PROTOCOL:\n"
+                f"NEVER poll or call check_messages in a loop to wait for messages. "
+                f"When you have nothing to do, simply STOP and end your turn. "
+                f"The framework will automatically notify you when a new message arrives. "
+                f"Only call check_messages AFTER you have been notified that messages are pending. "
+                f"Polling wastes budget and is strictly forbidden.\n"
                 f"================="
             )
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -80,7 +81,7 @@ class SwarmDashboard:
                 while True:
                     data = await ws.receive_json()
                     try:
-                        await self._handle_client_message(data)
+                        await self._handle_client_message(data, ws)
                     except Exception as e:
                         await ws.send_json({"type": "error", "message": str(e)})
             except WebSocketDisconnect:
@@ -146,7 +147,7 @@ class SwarmDashboard:
         @self.app.get("/api/swarm/saved")
         async def list_saved() -> list[str]:
             SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-            return [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+            return [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
 
         @self.app.post("/api/swarm/save")
         async def save_swarm(body: dict[str, Any]) -> dict[str, str]:
@@ -155,17 +156,17 @@ class SwarmDashboard:
                 return {"status": "error", "message": "Name is required"}
             SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
             config = SwarmConfig(name=name, agents=self._agent_specs)
-            path = SWARM_SAVE_DIR / f"{name}.json"
-            path.write_text(config.model_dump_json(indent=2))
+            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path.write_text(yaml.dump(config.model_dump(), default_flow_style=False, sort_keys=False))
             return {"status": "saved", "path": str(path)}
 
         @self.app.post("/api/swarm/load")
         async def load_swarm(body: dict[str, Any]) -> dict[str, str]:
             name = body.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.json"
+            path = SWARM_SAVE_DIR / f"{name}.yaml"
             if not path.exists():
                 return {"status": "error", "message": f"Not found: {name}"}
-            config = SwarmConfig.model_validate_json(path.read_text())
+            config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
             self._agent_specs = config.agents
             await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
             await self._broadcast({"type": "swarm_loaded", "name": config.name})
@@ -174,7 +175,7 @@ class SwarmDashboard:
         @self.app.post("/api/swarm/delete_saved")
         async def delete_saved(body: dict[str, Any]) -> dict[str, str]:
             name = body.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.json"
+            path = SWARM_SAVE_DIR / f"{name}.yaml"
             if path.exists():
                 path.unlink()
             return {"status": "deleted"}
@@ -204,7 +205,7 @@ class SwarmDashboard:
                 await self._swarm.send_to_agent(name, sender="user", payload=message)
             return {"status": "sent"}
 
-    async def _handle_client_message(self, data: dict[str, Any]) -> None:
+    async def _handle_client_message(self, data: dict[str, Any], ws: WebSocket) -> None:
         action = data.get("action")
         agent_name = data.get("agent")
 
@@ -273,34 +274,34 @@ class SwarmDashboard:
                 return
             SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
             config = SwarmConfig(name=name, agents=self._agent_specs)
-            path = SWARM_SAVE_DIR / f"{name}.json"
-            path.write_text(config.model_dump_json(indent=2))
-            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+            path = SWARM_SAVE_DIR / f"{name}.yaml"
+            path.write_text(yaml.dump(config.model_dump(), default_flow_style=False, sort_keys=False))
+            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
             await self._broadcast({"type": "swarm_saved", "name": name, "saved_list": saved_list})
 
         elif action == "load_swarm":
             name = data.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.json"
+            path = SWARM_SAVE_DIR / f"{name}.yaml"
             if not path.exists():
-                await self._broadcast({"type": "error", "message": f"Swarm '{name}' not found"})
+                await ws.send_json({"type": "error", "message": f"Swarm '{name}' not found"})
                 return
-            config = SwarmConfig.model_validate_json(path.read_text())
+            config = SwarmConfig.model_validate(yaml.safe_load(path.read_text()))
             self._agent_specs = config.agents
-            await self._broadcast({"type": "specs_updated", "specs": self._get_specs_list()})
-            await self._broadcast({"type": "swarm_loaded", "name": config.name})
+            await ws.send_json({"type": "specs_updated", "specs": self._get_specs_list()})
+            await ws.send_json({"type": "swarm_loaded", "name": config.name})
 
         elif action == "delete_swarm":
             name = data.get("name", "").strip()
-            path = SWARM_SAVE_DIR / f"{name}.json"
+            path = SWARM_SAVE_DIR / f"{name}.yaml"
             if path.exists():
                 path.unlink()
-            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
-            await self._broadcast({"type": "swarm_deleted", "name": name, "saved_list": saved_list})
+            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+            await ws.send_json({"type": "swarm_deleted", "name": name, "saved_list": saved_list})
 
         elif action == "list_saved":
             SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
-            await self._broadcast({"type": "saved_list", "saved_list": saved_list})
+            saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
+            await ws.send_json({"type": "saved_list", "saved_list": saved_list})
 
     async def _create_and_run_swarm(self) -> None:
         from ._swarm import Swarm, ExecutionMode
@@ -368,7 +369,7 @@ class SwarmDashboard:
                     agents[name] = {"name": name, "status": "pending", "session_id": None}
 
         SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-        saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.json")]
+        saved_list = [f.stem for f in SWARM_SAVE_DIR.glob("*.yaml")]
 
         return {
             "agents": agents,

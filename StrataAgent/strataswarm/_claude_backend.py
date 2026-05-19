@@ -36,6 +36,17 @@ class ClaudeBackend(AgentBackend):
     def __init__(self, cli_path: str | None = None) -> None:
         self._cli_path = cli_path or _default_cli_path()
         self._client: ClaudeSDKClient | None = None
+        self._cumulative_input_tokens: int = 0
+        self._cumulative_output_tokens: int = 0
+        self._cumulative_cache_read: int = 0
+        self._turn_count: int = 0
+
+    def _estimate_cost(self) -> float:
+        # Opus pricing: $15/M input, $75/M output, $1.5/M cache read
+        input_cost = self._cumulative_input_tokens * 15.0 / 1_000_000
+        output_cost = self._cumulative_output_tokens * 75.0 / 1_000_000
+        cache_cost = self._cumulative_cache_read * 1.5 / 1_000_000
+        return input_cost + output_cost + cache_cost
 
     async def connect(self, config: BackendConfig) -> None:
         opts_kwargs: dict[str, Any] = {
@@ -89,6 +100,18 @@ class ClaudeBackend(AgentBackend):
                         yield BackendMessage(
                             type="tool_result", content=str(content) if content else ""
                         )
+                # Emit usage info after processing blocks
+                if message.usage:
+                    self._cumulative_input_tokens += message.usage.get("input_tokens", 0)
+                    self._cumulative_output_tokens += message.usage.get("output_tokens", 0)
+                    self._cumulative_cache_read += message.usage.get("cache_read_input_tokens", 0)
+                    self._turn_count += 1
+                    yield BackendMessage(
+                        type="usage",
+                        content=None,
+                        num_turns=self._turn_count,
+                        cost_usd=self._estimate_cost(),
+                    )
             elif isinstance(message, UserMessage):
                 # UserMessage carries tool results back from MCP tools
                 if message.tool_use_result:

@@ -265,11 +265,16 @@ function handleEvent(ev) {
     else agents[name].status = ev.data;
     agentMessages[name].push({ text: `status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
     allMessages.push({ text: `[${name}] status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
+  } else if (ev.event_type === 'cost_estimate' && ev.data) {
+    if (!agents[name]) agents[name] = { name };
+    agents[name].cost_usd = parseFloat(ev.data);
+    agents[name].cost_is_estimate = true;
+    updateCostDisplay();
   } else if (ev.event_type === 'cost_update' && ev.data) {
     if (!agents[name]) agents[name] = { name };
     agents[name].cost_usd = parseFloat(ev.data);
-    totalCost = Object.values(agents).reduce((s, a) => s + (a.cost_usd || 0), 0);
-    document.getElementById('total-cost').textContent = `$${totalCost.toFixed(4)}`;
+    agents[name].cost_is_estimate = false;
+    updateCostDisplay();
   }
   render();
 }
@@ -286,22 +291,37 @@ function renderSidebar() {
   // Show specs (draft) if swarm not running, otherwise show live agents
   if (!isRunning && Object.keys(agents).length === 0) {
     el.innerHTML = specs.map(s => `
-      <div class="agent-item ${s.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${s.name}')">
+      <div class="agent-item ${s.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(s.name)}')">
         <div class="name" style="display:flex;justify-content:space-between;align-items:center;">
-          <span>${s.name} <span class="badge badge-draft">draft</span></span>
+          <span>${escapeHtml(s.name)} <span class="badge badge-draft">draft</span></span>
           <span>
-            <button onclick="event.stopPropagation();editAgent('${s.name}')" style="padding:2px 6px;border:none;border-radius:3px;background:#0288d1;color:white;font-size:10px;cursor:pointer;margin-right:3px;">Edit</button>
-            <button onclick="event.stopPropagation();removeAgent('${s.name}')" style="padding:2px 6px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">X</button>
+            <button onclick="event.stopPropagation();editAgent('${escapeAttr(s.name)}')" style="padding:2px 6px;border:none;border-radius:3px;background:#0288d1;color:white;font-size:10px;cursor:pointer;margin-right:3px;">Edit</button>
+            <button onclick="event.stopPropagation();removeAgent('${escapeAttr(s.name)}')" style="padding:2px 6px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:10px;cursor:pointer;">X</button>
           </span>
         </div>
-        <div class="spec-info">${s.allowed_tools.join(', ') || 'no tools'} | ${s.max_turns || '?'} turns | $${s.max_budget_usd || '?'}</div>
+        <div class="spec-info">${(s.allowed_tools||[]).join(', ') || 'no tools'} | ${s.max_turns || '?'} turns | $${s.max_budget_usd || '?'}</div>
       </div>
-    `).join('') || '<div class="empty" style="padding:20px;font-size:12px;">No agents yet. Click "+ Add Agent"</div>';
+    `).join('') || '';
+    // Show saved swarms when no agents are loaded
+    if (specs.length === 0 && savedList.length > 0) {
+      el.innerHTML += `
+        <div style="padding:12px 14px;border-bottom:1px solid #0f3460;">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:8px;">Saved Swarms</div>
+          ${savedList.map(name => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#1a1a2e;border-radius:4px;margin-bottom:4px;font-size:12px;">
+              <span>${escapeHtml(name)}</span>
+              <button onclick="loadSwarm('${escapeAttr(name)}')" style="padding:3px 8px;border:none;border-radius:3px;background:#6a1b9a;color:white;font-size:10px;cursor:pointer;">Load</button>
+            </div>
+          `).join('')}
+        </div>`;
+    } else if (specs.length === 0) {
+      el.innerHTML += '<div class="empty" style="padding:20px;font-size:12px;">No agents yet. Click "+ Add Agent" or Load a saved swarm.</div>';
+    }
   } else {
     el.innerHTML = Object.values(agents).map(a => `
-      <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${a.name}')">
-        <div class="name">${a.name} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span></div>
-        <div class="meta">${a.cost_usd ? '$' + a.cost_usd.toFixed(4) : ''} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''}</div>
+      <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${escapeAttr(a.name)}')">
+        <div class="name">${escapeHtml(a.name)} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span></div>
+        <div class="meta">${formatCost(a)} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''}</div>
       </div>
     `).join('');
   }
@@ -366,6 +386,13 @@ function renderMessages() {
 }
 
 function escapeHtml(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeAttr(t) { return (t||'').replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function updateCostDisplay() {
+  totalCost = Object.values(agents).reduce((s, a) => s + (a.cost_usd || 0), 0);
+  const anyEstimate = Object.values(agents).some(a => a.cost_is_estimate);
+  document.getElementById('total-cost').textContent = `${anyEstimate ? '~' : ''}$${totalCost.toFixed(4)}`;
+}
+function formatCost(a) { return a.cost_usd ? `${a.cost_is_estimate ? '~' : ''}$${a.cost_usd.toFixed(4)}` : ''; }
 
 function selectAgent(name) { selectedAgent = name; document.getElementById('msg-target').value = name; render(); }
 function switchView(v) { currentView = v; document.getElementById('tab-agent').classList.toggle('active', v==='agent'); document.getElementById('tab-chitchat').classList.toggle('active', v==='chitchat'); document.getElementById('tab-spec').classList.toggle('active', v==='spec'); renderMessages(); }
@@ -472,9 +499,9 @@ function saveSwarm() {
 }
 
 function showLoadModal() {
-  wsSend({ action: 'list_saved' });
   renderLoadModal();
   document.getElementById('load-modal').classList.add('visible');
+  wsSend({ action: 'list_saved' });
 }
 function hideLoadModal() { document.getElementById('load-modal').classList.remove('visible'); }
 function renderLoadModal() {
@@ -487,8 +514,8 @@ function renderLoadModal() {
     <div class="saved-item">
       <span>${escapeHtml(name)}</span>
       <div>
-        <button class="btn-load-item" onclick="loadSwarm('${escapeHtml(name)}')">Load</button>
-        <button class="btn-delete-item" onclick="deleteSavedSwarm('${escapeHtml(name)}')">Delete</button>
+        <button class="btn-load-item" onclick="loadSwarm('${escapeAttr(name)}')">Load</button>
+        <button class="btn-delete-item" onclick="deleteSavedSwarm('${escapeAttr(name)}')">Delete</button>
       </div>
     </div>
   `).join('');
