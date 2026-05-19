@@ -6,20 +6,6 @@ private def from_bytes_mod_order_wide_minimal_program : Strata.Program :=
 #strata
 program Boole;
 
- type Set (T : Type);
- function Seq_len<T> (s : Sequence T) : int {
-  Sequence.length(s)
-}
- function Seq_lib_insert<T> (s : Sequence T, i : int, val : T) : Sequence T {
-  Sequence.append(Sequence.build(Sequence.take(s, i), val), Sequence.drop(s, i))
-}
- function Seq_new<T> (len : int, f : int -> T) : Sequence T;
- function Seq_lib_map<T, U> (s : Sequence T, f : int -> T -> U) : Sequence U;
- function Seq_lib_map_values<T, U> (s : Sequence T, f : T -> U) : Sequence U;
- function Seq_lib_filter<T> (s : Sequence T, p : T -> bool) : Sequence T;
- function Seq_lib_sort_by<T> (s : Sequence T, less : T -> T -> bool) : Sequence T;
- function Seq_lib_to_set<T> (s : Sequence T) : Set T;
- function Set_finite<T> (s : Set T) : bool;
  datatype scalar {
   scalar_ctor(bytes : Sequence bv8)
 };
@@ -38,8 +24,12 @@ program Boole;
  }
  ;
  function u8_32_as_nat (bytes : Sequence bv8) : int;
- function group_order () : int;
- function group_canonical (n : int) : int;
+ function group_order () : int {
+  7237005577332262213973186563042994240857116359379907606001950938285454250989
+}
+ function group_canonical (n : int) : int {
+  n mod group_order
+}
  rec function seq_as_nat_52 (limbs : Sequence bv64) : int
    decreases Sequence.length(limbs)
  {
@@ -236,6 +226,7 @@ spec {
   assert Arithmetic_Power2_pow2(126) == 85070591730234615865843651857942052864;
   assert 27742317777372353535851937790883648493 < Arithmetic_Power2_pow2(126);
   call Arithmetic_Power2_lemma_pow2_strictly_increases(126, 252);
+  assume Arithmetic_Power2_pow2(252) == 7237005577332262213973186563042994240829374041602535252466099000494570602496;
   assert group_order < Arithmetic_Power2_pow2(252) + Arithmetic_Power2_pow2(252);
   call Arithmetic_Power2_lemma_pow2_adds(1, 252);
   call Arithmetic_Power2_lemma2_to64();
