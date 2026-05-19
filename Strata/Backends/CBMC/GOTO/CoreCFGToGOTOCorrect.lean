@@ -27,8 +27,8 @@ correctness theorem for the `coreCFGToGotoTransform` translation pipeline:
 ## Scope
 
 * **Source language**: `Core.DetCFG` with `EvalDetBlock` step relation,
-  restricted to the call-free fragment (`CmdExt.cmd` only — see
-  `Core.Command.isPlainCmd`).
+  restricted to the admitted fragment (no `.call`, no `.cover`, no
+  nondet `.init` — see `Core.CmdExt.isAdmittedCmd`).
 * **Target language**: GOTO `Program`s under the small-step
   `StepGoto`/`StepGotoStar` semantics defined in `Semantics.lean`.
 * **Theorem shape**: forward simulation for terminating runs, mirroring
@@ -166,6 +166,7 @@ theorem single_cmd_simulation
     (pgm : Program) (c : Imperative.Cmd Core.Expression)
     (σ σ' : Imperative.SemanticStore Core.Expression)
     (failed cmd_failed : Bool)
+    (h_admitted : Core.CmdExt.isAdmittedCmd (.cmd c) = true)
     (h_eval : Imperative.EvalCmd (P := Core.Expression) δ σ c σ' cmd_failed)
     (pc : Nat)
     (h_layout : CmdEmittedAt δ δ_goto δ_goto_bool pgm pc c)
@@ -252,7 +253,7 @@ theorem block_body_simulation
     (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
     (l : String) (blk : Imperative.DetBlock String Core.Command Core.Expression)
     (h_block : (l, blk) ∈ cfg.blocks)
-    (h_call_free : ∀ c ∈ blk.cmds, Core.CmdExt.isPlainCmd c = true)
+    (h_call_free : ∀ c ∈ blk.cmds, Core.CmdExt.isAdmittedCmd c = true)
     (σ : Imperative.SemanticStore Core.Expression) (failed : Bool)
     (c_after : Imperative.CFGConfig String Core.Expression)
     (h_step :
@@ -466,7 +467,7 @@ theorem block_simulation
     (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
     (l : String) (blk : Imperative.DetBlock String Core.Command Core.Expression)
     (h_block : (l, blk) ∈ cfg.blocks)
-    (h_call_free : ∀ c ∈ blk.cmds, c.isPlainCmd = true)
+    (h_call_free : ∀ c ∈ blk.cmds, c.isAdmittedCmd = true)
     (σ : Imperative.SemanticStore Core.Expression) (failed : Bool)
     (c_after : Imperative.CFGConfig String Core.Expression)
     (h_step :
@@ -525,7 +526,7 @@ theorem coreCFGToGoto_forward_simulation
     (cfg : Core.DetCFG) (pgm : Program)
     (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
     (h_call_free :
-      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isPlainCmd = true)
+      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isAdmittedCmd = true)
     (σ σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
     (h_run :
       Core.CoreCFGStepStar π φ δ cfg
