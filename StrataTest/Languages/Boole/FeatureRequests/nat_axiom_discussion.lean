@@ -49,11 +49,11 @@ spec {
 #end
 
 /-- info:
-Obligation: use_nat_list_post_use_nat_list_ensures_1_373_calls_NatList..head_0
+Obligation: use_nat_list_post_use_nat_list_ensures_1_1512_calls_NatList..head_0
 Property: assert
 Result: ✅ pass
 
-Obligation: use_nat_list_ensures_1_373
+Obligation: use_nat_list_ensures_1_1512
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
@@ -104,15 +104,15 @@ spec {
 
 -- ⚠️  This should be ❌ fail but is ✅ pass — the auto-axiom is too strong.
 /-- info:
-Obligation: unsound_example_pre_unsound_example_requires_0_318_calls_Pair..second_0
+Obligation: unsound_example_pre_unsound_example_requires_0_3451_calls_Pair..second_0
 Property: assert
 Result: ✅ pass
 
-Obligation: unsound_example_post_unsound_example_ensures_1_393_calls_Pair..second_0
+Obligation: unsound_example_post_unsound_example_ensures_1_3505_calls_Pair..second_0
 Property: assert
 Result: ✅ pass
 
-Obligation: unsound_example_ensures_1_393
+Obligation: unsound_example_ensures_1_3505
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
