@@ -68,10 +68,6 @@ private theorem projectStore_sub {σ₀ σ' : SemanticStore Expression}
     projectStore σ₀ σ' = σ' :=
   projectStore_id (fun x hne => by simp [Option.ne_none_iff_isSome] at hne ⊢; exact h x hne)
 
-private theorem env_with_same_store (ρ : Env Expression) :
-    { ρ with store := ρ.store } = ρ := by
-  cases ρ; simp
-
 private theorem projectStore_self_env (ρ : Env Expression) :
     ({ ρ with store := projectStore ρ.store ρ.store } : Env Expression) = ρ := by
   have h : projectStore ρ.store ρ.store = ρ.store := projectStore_self ρ.store
@@ -201,93 +197,6 @@ private theorem onestep_preserves_wf
   | step_funcDecl =>
     intro h; simp [Config.getEnv]
     exact hwf_ext.preserves_wfBool _ _ _ h
-  | step_typeDecl => intro h; exact h
-  | step_stmts_nil => intro h; exact h
-  | step_stmts_cons => intro h; exact h
-  | step_seq_inner _ ih => intro h; exact ih h
-  | step_seq_done => intro h; exact h
-  | step_seq_exit => intro h; exact h
-  | step_block_body _ ih => intro h; exact ih h
-  | step_block_done => intro h; exact h
-  | step_block_exit_match => intro h; exact h
-  | step_block_exit_mismatch => intro h; exact h
-
-private theorem star_preserves_wf
-    (hwf_ext : WFEvalExtension φ)
-    {c₁ c₂ : CC}
-    (hstar : CoreStar π φ c₁ c₂)
-    (hwfb : WellFormedSemanticEvalBool c₁.getEnv.eval) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval := by
-  induction hstar with
-  | refl => exact hwfb
-  | step _ _ _ hstep _ ih =>
-    exact ih (onestep_preserves_wf (π := π) (φ := φ) hwf_ext hstep hwfb)
-
-private theorem star_preserves_wfVal
-    (hwf_ext : WFEvalExtension φ)
-    {c₁ c₂ : CC}
-    (hstar : CoreStar π φ c₁ c₂)
-    (hwfv : WellFormedSemanticEvalVal c₁.getEnv.eval) :
-    WellFormedSemanticEvalVal c₂.getEnv.eval := by
-  suffices ∀ (a b : CC),
-      StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) a b →
-      WellFormedSemanticEvalVal a.getEnv.eval →
-      WellFormedSemanticEvalVal b.getEnv.eval by
-    induction hstar with
-    | refl => exact hwfv
-    | step _ _ _ hstep _ ih => exact ih (this _ _ hstep hwfv)
-  intro a b hstep
-  induction hstep with
-  | step_cmd _ => intro h; simp [Config.getEnv]; exact h
-  | step_block => intro h; exact h
-  | step_ite_true => intro h; exact h
-  | step_ite_false => intro h; exact h
-  | step_ite_nondet_true => intro h; exact h
-  | step_ite_nondet_false => intro h; exact h
-  | step_loop_enter => intro h; exact h
-  | step_loop_exit => intro h; exact h
-  | step_loop_nondet_enter => intro h; exact h
-  | step_loop_nondet_exit => intro h; exact h
-  | step_exit => intro h; exact h
-  | step_funcDecl => intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfVal _ _ _ h
-  | step_typeDecl => intro h; exact h
-  | step_stmts_nil => intro h; exact h
-  | step_stmts_cons => intro h; exact h
-  | step_seq_inner _ ih => intro h; exact ih h
-  | step_seq_done => intro h; exact h
-  | step_seq_exit => intro h; exact h
-  | step_block_body _ ih => intro h; exact ih h
-  | step_block_done => intro h; exact h
-  | step_block_exit_match => intro h; exact h
-  | step_block_exit_mismatch => intro h; exact h
-
-private theorem star_preserves_wfVar
-    (hwf_ext : WFEvalExtension φ)
-    {c₁ c₂ : CC}
-    (hstar : CoreStar π φ c₁ c₂)
-    (hwfvar : WellFormedSemanticEvalVar c₁.getEnv.eval) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval := by
-  suffices ∀ (a b : CC),
-      StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) a b →
-      WellFormedSemanticEvalVar a.getEnv.eval →
-      WellFormedSemanticEvalVar b.getEnv.eval by
-    induction hstar with
-    | refl => exact hwfvar
-    | step _ _ _ hstep _ ih => exact ih (this _ _ hstep hwfvar)
-  intro a b hstep
-  induction hstep with
-  | step_cmd _ => intro h; simp [Config.getEnv]; exact h
-  | step_block => intro h; exact h
-  | step_ite_true => intro h; exact h
-  | step_ite_false => intro h; exact h
-  | step_ite_nondet_true => intro h; exact h
-  | step_ite_nondet_false => intro h; exact h
-  | step_loop_enter => intro h; exact h
-  | step_loop_exit => intro h; exact h
-  | step_loop_nondet_enter => intro h; exact h
-  | step_loop_nondet_exit => intro h; exact h
-  | step_exit => intro h; exact h
-  | step_funcDecl => intro h; simp [Config.getEnv]; exact hwf_ext.preserves_wfVar _ _ _ h
   | step_typeDecl => intro h; exact h
   | step_stmts_nil => intro h; exact h
   | step_stmts_cons => intro h; exact h
@@ -575,34 +484,6 @@ private theorem measure_eval_from_lt
 
 /-- Convert from `eval me = some v ∧ eval (lt v zero) = ff` to `eval (lt me zero) = ff`
     using `WellFormedCoreEvalCong.appcongr` and `WellFormedSemanticEvalVal`. -/
-private theorem measure_lt_congr
-    (δ : CoreEval) (σ : CoreStore) (me v : Expression.Expr)
-    (hwfc : WellFormedCoreEvalCong δ)
-    (hwfv : WellFormedSemanticEvalVal δ)
-    (heval_me : δ σ me = .some v)
-    (hlt_v : δ σ (HasIntOrder.lt v HasIntOrder.zero) = .some HasBool.ff) :
-    δ σ (HasIntOrder.lt me HasIntOrder.zero) = .some HasBool.ff := by
-  -- HasIntOrder.lt e zero = .app () (.app () Core.intLtOp e) (.intConst () 0)
-  -- We need: eval σ (app (app intLtOp me) zero) = eval σ (app (app intLtOp v) zero)
-  -- By appcongr: need eval σ (app intLtOp me) = eval σ (app intLtOp v) and eval σ zero = eval σ zero
-  -- By appcongr: need eval σ intLtOp = eval σ intLtOp and eval σ me = eval σ v
-  -- eval σ me = some v, and eval σ v = some v (by WellFormedSemanticEvalVal, since v is a value output of eval)
-  have hval_v : HasVal.value (P := Expression) v := hwfv.1 me v σ heval_me
-  have heval_v : δ σ v = .some v := hwfv.2 v σ hval_v
-  have hme_eq_v : δ σ me = δ σ v := by rw [heval_me, heval_v]
-  have hinner_congr : δ σ (.app () Core.intLtOp me) = δ σ (.app () Core.intLtOp v) :=
-    hwfc.appcongr σ σ () Core.intLtOp Core.intLtOp me v rfl hme_eq_v
-  have houter_congr : δ σ (.app () (.app () Core.intLtOp me) (.intConst () 0)) =
-      δ σ (.app () (.app () Core.intLtOp v) (.intConst () 0)) :=
-    hwfc.appcongr σ σ () (.app () Core.intLtOp me) (.app () Core.intLtOp v)
-      (.intConst () 0) (.intConst () 0) hinner_congr rfl
-  show δ σ (.app () (.app () Core.intLtOp me) (.intConst () 0)) = .some HasBool.ff
-  rw [houter_congr]; exact hlt_v
-
-/-- The pre_termination stmts [init_m_old, assert_lb] terminate at some ρ_pf
-    that agrees with ρ₀ on all variables except the fresh m_old.
-    Derives measure evaluability from `hmeas_lb` using `WellFormedCoreEvalCong`,
-    and proves the lt-congruence after init using `appcongr`. -/
 private theorem pre_termination_stmts_terminal
     (loop_num : String) (m : Expression.Expr) (md : MetaData Expression)
     (ρ₀ : Env Expression)
@@ -1316,44 +1197,7 @@ private theorem initState_store_frame
     σ' y = σ y := by
   cases hinit with | init _ _ hframe => exact hframe y hne
 
-private theorem initStates_store_frame
-    {σ σ' : CoreStore} {xs : List Expression.Ident} {vs : List Expression.Expr}
-    (hinits : InitStates σ xs vs σ')
-    {y : Expression.Ident} (hy : y ∉ xs) :
-    σ' y = σ y := by
-  induction hinits with
-  | init_none => rfl
-  | init_some hinit _ ih =>
-    have hne : _ ≠ y := fun h => hy (List.mem_cons.mpr (.inl h.symm))
-    have htail : y ∉ _ := fun h => hy (List.mem_cons.mpr (.inr h))
-    exact (ih htail).trans (initState_store_frame hinit hne)
-
 /-! ### EvalCmd store frame -/
-
-private theorem evalCmd_store_frame
-    {δ : CoreEval} {σ σ' : CoreStore} {c : Cmd Expression} {f : Bool}
-    (heval : EvalCmd (P := Expression) δ σ c σ' f)
-    {x : Expression.Ident}
-    (hmod : x ∉ Cmd.modifiedVars c)
-    (hdef : x ∉ Cmd.definedVars c) :
-    σ' x = σ x := by
-  cases heval with
-  | eval_init _ hinit _ =>
-    exact initState_store_frame hinit
-      (fun h => hdef (by simp [Cmd.definedVars]; exact h.symm))
-  | eval_init_unconstrained hinit _ =>
-    exact initState_store_frame hinit
-      (fun h => hdef (by simp [Cmd.definedVars]; exact h.symm))
-  | eval_set _ hup _ =>
-    exact updateState_store_frame hup
-      (fun h => hmod (by simp [Cmd.modifiedVars]; exact h.symm))
-  | eval_set_nondet hup _ =>
-    exact updateState_store_frame hup
-      (fun h => hmod (by simp [Cmd.modifiedVars]; exact h.symm))
-  | eval_assert_pass _ _ => rfl
-  | eval_assert_fail _ _ => rfl
-  | eval_assume _ _ => rfl
-  | eval_cover _ => rfl
 
 /-! ### EvalCommand store frame -/
 
@@ -1545,20 +1389,6 @@ private theorem stmts_star_preserves_isSome
   have hinv₂ := star_preserves_outerInv π φ hstar hinv₀
   exact outerInv_implies_getEnv_isSome ρ₀.store c₂ hinv₂ x hx
 
-/-- Convenient wrapper: block-level trace from `.block .none σ_p inner`, combined
-    with `(σ_outer x).isSome → (σ_p x).isSome`, preserves isSome. -/
-private theorem block_none_star_preserves_isSome
-    (σ_p : SemanticStore Expression) (inner : CC) (c₂ : CC)
-    (hstar : CoreStar π φ (.block .none σ_p inner) c₂)
-    (σ_outer : SemanticStore Expression)
-    (hpar : ∀ n, (σ_outer n).isSome → (σ_p n).isSome)
-    (hinner : outerInv σ_outer inner)
-    (x : Expression.Ident) (hx : (σ_outer x).isSome) :
-    (c₂.getEnv.store x).isSome := by
-  have hinv₀ : outerInv σ_outer (.block .none σ_p inner) := ⟨hpar, hinner⟩
-  have hinv₂ := star_preserves_outerInv π φ hstar hinv₀
-  exact outerInv_implies_getEnv_isSome σ_outer c₂ hinv₂ x hx
-
 /-! ### Equality of projected store for loop-elim body
 
     In the loop-elim context, the block's `σ_parent = ρ₀.store` and the body execution
@@ -1572,18 +1402,6 @@ private theorem block_none_star_preserves_isSome
     fire during execution, meaning no new vars are introduced. -/
 
 /-- `projectStore_self_env` applied at an env with a different store. -/
-private theorem env_projectStore_sub {ρ₀ : Env Expression} {σ : SemanticStore Expression}
-    (hsub : ∀ x, (σ x).isSome → (ρ₀.store x).isSome) :
-    ({ ρ₀ with store := projectStore ρ₀.store σ } : Env Expression) = { ρ₀ with store := σ } := by
-  rw [projectStore_sub hsub]
-
-/-- A config's stores have the same isSome domain as σ_outer.
-    This is a strengthening of `outerInv`: not only does `σ_outer`'s domain fit in the
-    config's store, but the config's store has exactly the same domain.
-
-    Trivially true when σ_outer equals the current store. Preserved by non-init steps.
-    For init steps, preserved when the init doesn't fire (which requires the init target
-    to already be defined — guaranteed by σ_outer's domain equality). -/
 private def sameDomInv (σ_outer : SemanticStore Expression) : CC → Prop
   | .stmt _ ρ => ∀ n, (ρ.store n).isSome ↔ (σ_outer n).isSome
   | .stmts _ ρ => ∀ n, (ρ.store n).isSome ↔ (σ_outer n).isSome
@@ -1688,15 +1506,6 @@ private def Config.cmdsIn : CC → List Command
   | .seq inner ss => Config.cmdsIn inner ++ Block.commandsIn ss
 
 /-- Helper: commands in `Block.commandsIn (ss ++ ss')` split as append. -/
-private theorem Block.commandsIn_append (ss ss' : Statements) :
-    Block.commandsIn (ss ++ ss') = Block.commandsIn ss ++ Block.commandsIn ss' := by
-  induction ss with
-  | nil => simp [Block.commandsIn]
-  | cons s rest ih => simp [Block.commandsIn, ih, List.append_assoc]
-
-/-- **Lemma 1 (trace reachability)**: if a step `a → b` fires, then all commands in `b`
-    appeared in `a`'s syntactic command set. In particular, `step_cmd`'s active command
-    was in `a`'s commandsIn. -/
 private theorem step_cmdsIn_subset
     {a b : CC} (hstep : StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) a b) :
     ∀ c, c ∈ Config.cmdsIn b → c ∈ Config.cmdsIn a := by
@@ -1766,25 +1575,6 @@ private theorem step_cmdsIn_subset
   | step_block_exit_mismatch _ => intro c hc; simp [Config.cmdsIn] at hc
 
 /-- Star version: commands only shrink along a trace. -/
-private theorem star_cmdsIn_subset
-    {a b : CC} (hstar : CoreStar π φ a b) :
-    ∀ c, c ∈ Config.cmdsIn b → c ∈ Config.cmdsIn a := by
-  induction hstar with
-  | refl => exact fun _ h => h
-  | step _ _ _ hstep _ ih => exact fun c hc => step_cmdsIn_subset π φ hstep c (ih c hc)
-
-/-- A step that fires `step_cmd` has its command in the current config's `cmdsIn`. -/
-private theorem step_cmd_in_cmdsIn
-    {a b : CC} {c : Command} {σ' : CoreStore} {f : Bool}
-    (hstep : StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) a b)
-    (hform : ∃ ρ, a = .stmt (.cmd c) ρ) :
-    c ∈ Config.cmdsIn a := by
-  obtain ⟨ρ, rfl⟩ := hform
-  simp [Config.cmdsIn, Stmt.commandsIn]
-
-/-- `Stmt.definedVars s ⊆ Stmt.modifiedOrDefinedVars s` / `Block.definedVars ss ⊆
-    Block.modifiedOrDefinedVars ss`. Purely syntactic. Proved by strong induction on
-    the combined `Stmt.sizeOf`/`Block.sizeOf`. -/
 private theorem definedVars_subset_modifiedOrDefinedVars (sz : Nat) (ex : Bool) :
     (∀ (s : Stmt Expression Command), Stmt.sizeOf s ≤ sz →
       ∀ x, x ∈ Stmt.definedVars s ex → x ∈ Stmt.modifiedOrDefinedVars s ex) ∧
@@ -1999,35 +1789,6 @@ private theorem stmt_star_preserves_reservedFresh
   exact this hn
 
 /-- `Block.noFuncDecl (body ++ [loop body]) = true` when `Block.noFuncDecl body = true`. -/
-private theorem noFuncDecl_body_append_loop
-    (guard : ExprOrNondet Expression) (measure : Option Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression)
-    (hnofd : Block.noFuncDecl body = Bool.true) :
-    Block.noFuncDecl (body ++ [.loop guard measure inv body md]) = Bool.true := by
-  have h_append : ∀ (ss₁ ss₂ : Statements),
-      Block.noFuncDecl ss₁ = Bool.true → Block.noFuncDecl ss₂ = Bool.true →
-      Block.noFuncDecl (ss₁ ++ ss₂) = Bool.true := by
-    intro ss₁; induction ss₁ with
-    | nil => intro _ _ h; exact h
-    | cons s ss ih =>
-      intro ss₂ h₁ h₂
-      simp only [Block.noFuncDecl] at h₁ ⊢
-      cases hs : Stmt.noFuncDecl s
-      · simp [hs] at h₁
-      · simp_all [Block.noFuncDecl]
-  exact h_append _ _ hnofd (by simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd])
-
-/-- `Block.modifiedVars` is a subset of `Block.modifiedOrDefinedVars` (local version). -/
-private theorem modifiedVars_subset_modifiedOrDefinedVars' (sz : Nat) (ex : Bool) :
-    (∀ (s : Statement), Stmt.sizeOf s ≤ sz →
-      ∀ n, n ∈ Stmt.modifiedVars s → n ∈ Stmt.modifiedOrDefinedVars s ex) ∧
-    (∀ (ss : Statements), Block.sizeOf ss ≤ sz →
-      ∀ n, n ∈ Block.modifiedVars ss → n ∈ Block.modifiedOrDefinedVars ss ex) := by
-  exact ⟨fun _ _ n hn => by simp only [Stmt.modifiedOrDefinedVars, List.mem_append]; exact Or.inl hn,
-         fun _ _ n hn => by simp only [Block.modifiedOrDefinedVars, List.mem_append]; exact Or.inl hn⟩
-
-/-- Membership in `Block.modifiedOrDefinedVars` distributes over append. -/
 private theorem mem_Block_modifiedOrDefinedVars_append {ss₁ ss₂ : Statements} {ex : Bool}
     {n : Expression.Ident}
     (hmem : n ∈ Block.modifiedOrDefinedVars (ss₁ ++ ss₂) ex) :
@@ -2041,27 +1802,6 @@ private theorem mem_Block_modifiedOrDefinedVars_append {ss₁ ss₂ : Statements
   · exact Or.inr (Or.inl h)
   · exact Or.inl (Or.inr h)
   · exact Or.inr (Or.inr h)
-
-/-- If `n ∈ Block.modifiedOrDefinedVars (body ++ [loop body])`, then
-    `n ∈ Block.modifiedOrDefinedVars body`. -/
-private theorem mem_mod_def_body_append_loop
-    {guard : ExprOrNondet Expression} {measure : Option Expression.Expr}
-    {inv : List (String × Expression.Expr)}
-    {body : Statements} {md : MetaData Expression}
-    {n : Expression.Ident}
-    (hmem : n ∈ Block.modifiedOrDefinedVars
-      (body ++ [.loop guard measure inv body md]) false) :
-    n ∈ Block.modifiedOrDefinedVars body false := by
-  rcases mem_Block_modifiedOrDefinedVars_append hmem with h | h
-  · exact h
-  · simp only [Block.modifiedOrDefinedVars, Block.modifiedVars, Block.definedVars,
-               Stmt.modifiedVars, Stmt.definedVars, List.append_nil, List.mem_append] at h
-    rcases h with h | h
-    · exact (modifiedVars_subset_modifiedOrDefinedVars' (Block.sizeOf body) false).2
-        body (Nat.le_refl _) n h
-    · exact (definedVars_subset_modifiedOrDefinedVars (Block.sizeOf body) false).2
-        body (Nat.le_refl _) n h
-
 
 /-! ### Single step preserves store outside touched vars
 
@@ -2386,20 +2126,6 @@ private theorem stmts_concat_terminal
     (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ) ss₁ ss₂ ρ₀ ρ₁ h₁)
     h₂
 
-/-- If a prefix of statements terminates and the suffix CanFails, the whole
-    concatenation CanFails. -/
-private theorem canFailBlock_prefix_terminal_suffix
-    (pfx sfx : Statements) (ρ₀ ρ₁ : Env Expression)
-    (hpfx : CoreStar π φ (.stmts pfx ρ₀) (.terminal ρ₁))
-    (hsfx : CanFailBlock π φ sfx ρ₁) :
-    CanFailBlock π φ (pfx ++ sfx) ρ₀ := by
-  obtain ⟨cfg, hfail, hreach⟩ := hsfx
-  exact ⟨cfg, hfail,
-    ReflTrans_Transitive _ _ _ _
-      (stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ)
-        pfx sfx ρ₀ ρ₁ hpfx)
-      hreach⟩
-
 /-! ## Store preservation lemmas -/
 
 /-! ## Assume block step -/
@@ -2453,31 +2179,6 @@ private theorem assume_block_step_nondet
   rw [projectStore_self_env] at h; exact h
 
 /-! ## Assert list CanFail for maintain invariants -/
-
-/-- The maintain_invariants assert list CanFails when some invariant is ff. -/
-private theorem stmts_mapIdx_maintain_assert_canFail
-    (inv : List (String × Expression.Expr)) (ρ : Env Expression)
-    (md : MetaData Expression) (mkLabel : Nat → String → String)
-    (hwfb : WellFormedSemanticEvalBool ρ.eval)
-    (hnf : ρ.hasFailure = Bool.false)
-    (hinv_bool : ∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt ∨
-                              ρ.eval ρ.store le.2 = .some HasBool.ff)
-    (hsome_ff : ∃ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.ff) :
-    CanFailBlock π φ (inv.mapIdx fun i le =>
-      Stmt.cmd (HasPassiveCmds.assert (mkLabel i le.1) le.2 md)) ρ :=
-  stmts_mapIdx_assert_canFail π φ inv ρ md mkLabel hwfb hnf hinv_bool hsome_ff
-
-/-- The maintain_invariants assert list terminates when all invs are tt. -/
-private theorem stmts_mapIdx_maintain_assert_terminal
-    (inv : List (String × Expression.Expr)) (ρ : Env Expression)
-    (md : MetaData Expression) (mkLabel : Nat → String → String)
-    (hwfb : WellFormedSemanticEvalBool ρ.eval)
-    (hall_tt : ∀ le ∈ inv, ρ.eval ρ.store le.2 = .some HasBool.tt) :
-    CoreStar π φ
-      (.stmts (inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assert (mkLabel i le.1) le.2 md)) ρ)
-      (.terminal ρ) :=
-  stmts_mapIdx_assert_terminal π φ inv ρ md mkLabel hwfb hall_tt
 
 /-! ## Block-none decomposition and hcov-free stmts decomposition -/
 
@@ -2582,55 +2283,6 @@ private theorem stmtsT_cons_reaches_exiting
 /-- Decompose `stmts (ss₁ ++ [s])` reaching `.exiting lbl ρ'` in `ReflTransT`:
     either `stmts ss₁` exits (as `CoreStar`), or `stmts ss₁` terminates at ρ₁
     and `stmt s ρ₁` exits with a strictly shorter `ReflTransT` trace. -/
-private theorem stmtsT_append_reaches_exiting
-    (ss₁ : Statements) (s : Statement) (lbl : String)
-    (ρ₀ ρ' : Env Expression)
-    (hstar : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-      (.stmts (ss₁ ++ [s]) ρ₀) (.exiting lbl ρ')) :
-    CoreStar π φ (.stmts ss₁ ρ₀) (.exiting lbl ρ') ∨
-    ∃ ρ₁,
-      CoreStar π φ (.stmts ss₁ ρ₀) (.terminal ρ₁) ∧
-      ∃ (hs : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-          (.stmt s ρ₁) (.exiting lbl ρ')),
-        hs.len < hstar.len := by
-  induction ss₁ generalizing ρ₀ with
-  | nil =>
-    match hstar with
-    | .step _ _ _ .step_stmts_cons hrest =>
-      match seqT_reaches_exiting (π := π) (φ := φ) hrest with
-      | .inl ⟨h_inner, hlen⟩ =>
-        exact .inr ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), h_inner,
-          by simp [ReflTransT.len]; omega⟩
-      | .inr ⟨ρ₁, _, h2, hlen⟩ =>
-        -- stmts [] ρ₁ exits: impossible
-        match h2 with
-        | .step _ _ _ .step_stmts_nil hrest_nil =>
-          match hrest_nil with
-          | .step _ _ _ h _ => cases h
-  | cons s' rest' ih =>
-    match stmtsT_cons_reaches_exiting (π := π) (φ := φ) hstar with
-    | .inl ⟨h_exit, _⟩ =>
-      exact .inl (stmts_cons_exiting π φ s' rest' lbl ρ₀ ρ' (reflTransT_to_prop h_exit))
-    | .inr ⟨ρ_mid, hstmt_term, h_tail, hlen_tail⟩ =>
-      match ih ρ_mid h_tail with
-      | .inl hrest_exits =>
-        exact .inl (ReflTrans_Transitive _ _ _ _
-          (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
-            s' rest' ρ₀ ρ_mid hstmt_term) hrest_exits)
-      | .inr ⟨ρ₁, hrest_term, hs_exit, hlen_s⟩ =>
-        -- hlen_s : hs_exit.len < h_tail.len
-        -- hlen_tail : h_tail.len + 2 ≤ hstar.len
-        have h_tail_le : h_tail.len ≤ hstar.len := Nat.le_of_add_right_le hlen_tail
-        have hbound : hs_exit.len < hstar.len :=
-          Nat.lt_of_lt_of_le hlen_s h_tail_le
-        exact .inr ⟨ρ₁, ReflTrans_Transitive _ _ _ _
-          (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
-            s' rest' ρ₀ ρ_mid hstmt_term) hrest_term, hs_exit, hbound⟩
-
-/-- Decompose `.stmts (ss₁ ++ [s])` reaching terminal into:
-    a full `.stmts ss₁` run to some intermediate `ρ₁` followed by
-    a strictly shorter `s`-run.  Unlike `stmtsT_append_terminal`,
-    this does **not** require `exitsCoveredByBlocks`. -/
 private theorem stmtsT_append_terminal_noCov
     (ss₁ : List Statement) (s : Statement) (ρ₀ ρ' : Env Expression)
     (hstar : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
@@ -2660,26 +2312,6 @@ private theorem stmtsT_append_terminal_noCov
 
 /-- When a block body has no function declarations and reaches `.exiting`,
     the evaluator is preserved. -/
-private theorem noFuncDecl_preserves_eval_block_exiting
-    (bss : Statements) (ρ ρ' : Env Expression) (lbl : String)
-    (hnofd : Block.noFuncDecl bss = Bool.true)
-    (hstar : CoreStar π φ (.stmts bss ρ) (.exiting lbl ρ')) :
-    ρ'.eval = ρ.eval := by
-  suffices ∀ c₁ c₂,
-      Config.noFuncDecl (P := Expression) (CmdT := Command) c₁ →
-      CoreStar π φ c₁ c₂ →
-      c₂.getEnv.eval = c₁.getEnv.eval by
-    exact this _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
-  intro c₁ c₂ hnofd_c hstar_c
-  induction hstar_c with
-  | refl => rfl
-  | step _ mid _ hstep _ ih =>
-    have ⟨heq, hnofd_mid⟩ :=
-      step_preserves_eval_noFuncDecl Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ hstep hnofd_c
-    rw [ih hnofd_mid, heq]
-
-/-- If `.block .none inner` reaches `.exiting l ρ'`, then `inner` reaches
-    `.exiting l ρ_inner` and the store is projected through the parent store. -/
 private theorem block_none_reaches_exiting_some
     {inner : CC} {σ_parent : SemanticStore Expression} {l : String} {ρ' : Env Expression}
     (hstar : CoreStar π φ (.block .none σ_parent inner) (.exiting l ρ')) :
@@ -2709,62 +2341,6 @@ private theorem block_none_reaches_exiting_some
       cases hrest with
       | refl => exact ⟨_, .refl _, rfl⟩
       | step _ _ _ h _ => cases h
-
-/-- Decompose `stmts (s :: ss) ρ₀` reaching `.exiting lbl ρ'`:
-    either `s` exits, or `s` terminates at some `ρ₁` and `stmts ss ρ₁` exits. -/
-private theorem stmts_cons_reaches_exiting
-    (s : Statement) (ss : Statements) (lbl : String)
-    (ρ₀ ρ' : Env Expression)
-    (hstar : CoreStar π φ (.stmts (s :: ss) ρ₀) (.exiting lbl ρ')) :
-    CoreStar π φ (.stmt s ρ₀) (.exiting lbl ρ') ∨
-    ∃ ρ₁, CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁) ∧
-      CoreStar π φ (.stmts ss ρ₁) (.exiting lbl ρ') := by
-  match hstar with
-  | .step _ _ _ .step_stmts_cons hrest =>
-    match seq_reaches_exiting Expression (EvalCommand π φ) (EvalPureFunc φ) hrest with
-    | .inl hexit => exact .inl hexit
-    | .inr ⟨ρ₁, hterm, htail⟩ => exact .inr ⟨ρ₁, hterm, htail⟩
-
-/-- Decompose `stmts (ss₁ ++ [s]) ρ₀` reaching `.exiting lbl ρ'`:
-    either `stmts ss₁` exits, or `stmts ss₁` terminates and `stmt s` exits. -/
-private theorem stmts_append_reaches_exiting
-    (ss₁ : Statements) (s : Statement) (lbl : String)
-    (ρ₀ ρ' : Env Expression)
-    (hstar : CoreStar π φ (.stmts (ss₁ ++ [s]) ρ₀) (.exiting lbl ρ')) :
-    CoreStar π φ (.stmts ss₁ ρ₀) (.exiting lbl ρ') ∨
-    ∃ ρ₁, CoreStar π φ (.stmts ss₁ ρ₀) (.terminal ρ₁) ∧
-      CoreStar π φ (.stmt s ρ₁) (.exiting lbl ρ') := by
-  induction ss₁ generalizing ρ₀ with
-  | nil =>
-    match hstar with
-    | .step _ _ _ .step_stmts_cons hrest =>
-      match seq_reaches_exiting Expression (EvalCommand π φ) (EvalPureFunc φ) hrest with
-      | .inl hexit =>
-        exact .inr ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), hexit⟩
-      | .inr ⟨ρ₁, hterm, htail_exit⟩ =>
-        -- stmts [] ρ₁ exits: impossible
-        match htail_exit with
-        | .step _ _ _ .step_stmts_nil hrest_nil =>
-          match hrest_nil with
-          | .step _ _ _ h _ => cases h
-  | cons s' rest' ih =>
-    have h_eq : (s' :: rest') ++ [s] = s' :: (rest' ++ [s]) := rfl
-    rw [h_eq] at hstar
-    match hstar with
-    | .step _ _ _ .step_stmts_cons hrest =>
-      match seq_reaches_exiting Expression (EvalCommand π φ) (EvalPureFunc φ) hrest with
-      | .inl hstmt_exit =>
-        exact .inl (stmts_cons_exiting π φ s' rest' lbl ρ₀ ρ' hstmt_exit)
-      | .inr ⟨ρ_mid, hstmt_term, hrest_exit⟩ =>
-        match ih ρ_mid hrest_exit with
-        | .inl hrest_exits =>
-          exact .inl (ReflTrans_Transitive _ _ _ _
-            (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
-              s' rest' ρ₀ ρ_mid hstmt_term) hrest_exits)
-        | .inr ⟨ρ₁, hrest_term, hs_exit⟩ =>
-          exact .inr ⟨ρ₁, ReflTrans_Transitive _ _ _ _
-            (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
-              s' rest' ρ₀ ρ_mid hstmt_term) hrest_term, hs_exit⟩
 
 /-! ## Loop invariant dichotomy
 
@@ -3074,758 +2650,9 @@ private theorem loop_invariant_dichotomy_det
           fun x hmod hdef => (h8store x hmod hdef).trans (hstore_bridge x hmod hdef),
           h9eval.trans heval_ρ₁_eq, h10meas⟩
 
-/-- Nondet version of `loop_invariant_dichotomy_det`.
-
-    The hypothesis `hbody_then_loop` captures the trace *after* the first
-    `step_loop_nondet_enter` has fired: `.seq (.block .none ρ₀.store
-    (.stmts body ρ₀)) [loop] →* .terminal ρ'`.  Note that with
-    `hasInvFailure = false` (which we derive from `hnf`), the post-enter
-    body env is just `ρ₀`.  This shape rules out the spurious
-    "0-iteration" case where `step_loop_nondet_exit` fires immediately,
-    which would not give us a body trace. -/
-private theorem loop_invariant_dichotomy_nondet
-    (hwf_ext : WFEvalExtension φ)
-    (reserved : List String)
-    (measure : Option Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression)
-    (ρ₀ ρ' : Env Expression)
-    (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt)
-    (hnofd : Block.noFuncDecl body = Bool.true)
-    (hnf₀ : ρ₀.hasFailure = Bool.false)
-    (hswf : BlockInitEnvWF reserved body ρ₀)
-    (hnf : ρ'.hasFailure = Bool.false)
-    -- Post-enter trace: the loop has entered at least once.
-    (hbody_then_loop : CoreStar π φ
-      (.seq (.block .none ρ₀.store (.stmts body ρ₀))
-            [.loop .nondet measure inv body md])
-      (.terminal ρ')) :
-    -- Success: last iteration body terminates at ρ_body_exit, ρ' is its projection
-    -- through ρ_last.store.
-    ∃ ρ_last ρ_body_exit,
-      (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-      ρ_last.hasFailure = Bool.false ∧
-      CoreStar π φ (.stmts body ρ_last) (.terminal ρ_body_exit) ∧
-      ρ'.eval = ρ_body_exit.eval ∧
-      ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-      ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-      (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
-      BlockInitEnvWF reserved body ρ_last ∧
-      (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false → ρ_last.store x = ρ₀.store x) ∧
-      ρ_last.eval = ρ₀.eval := by
-  -- Convert to ReflTransT and use strong induction on trace length,
-  -- generalized over ρ₀ and measure.
-  have hstartT := reflTrans_to_T hbody_then_loop
-  suffices ∀ (n : Nat) (ρ₀ : Env Expression) (measure : Option Expression.Expr),
-      (∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt) →
-      ρ₀.hasFailure = Bool.false →
-      BlockInitEnvWF reserved body ρ₀ →
-      ∀ (hstartT : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-          (.seq (.block .none ρ₀.store (.stmts body ρ₀))
-                [.loop .nondet measure inv body md])
-          (.terminal ρ')),
-        hstartT.len ≤ n →
-      ∃ ρ_last ρ_body_exit,
-        (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-        ρ_last.hasFailure = Bool.false ∧
-        CoreStar π φ (.stmts body ρ_last) (.terminal ρ_body_exit) ∧
-        ρ'.eval = ρ_body_exit.eval ∧
-        ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-        ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-        (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
-        BlockInitEnvWF reserved body ρ_last ∧
-        (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false →
-              ρ_last.store x = ρ₀.store x) ∧
-        ρ_last.eval = ρ₀.eval by
-    exact this hstartT.len ρ₀ measure hall_tt hnf₀ hswf hstartT (Nat.le_refl _)
-  intro n
-  induction n with
-  | zero =>
-    intro ρ₀ measure _ _ _ hstartT hlen
-    -- Trace must take at least one step (LHS is .seq ..., RHS is .terminal),
-    -- so hstartT.len ≥ 1, contradiction with hlen ≤ 0.
-    match hstartT, hlen with
-    | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
-  | succ n ih =>
-    intro ρ₀ measure hall_tt₀ hnf₀ hswf₀ hstartT hlen
-    -- Extract WF eval fields from hswf₀.
-    have hwfb₀ := hswf₀.wfBool
-    have hwfv₀ := hswf₀.wfVal
-    have hwfvar₀ := hswf₀.wfVar
-    have hwfc₀ := hswf₀.evalCong
-    have hwfecong₀ := hswf₀.exprCongr
-    -- Decompose .seq: block reaches some ρ₁, then [loop] reaches ρ'.
-    obtain ⟨ρ₁, h_block, h_tail, hlen_seq⟩ :=
-      seqT_reaches_terminal (extendEval := EvalPureFunc φ) hstartT
-    -- Decompose the block: inner reaches terminal ρ_inner with strict length decrease.
-    obtain ⟨ρ_inner, ⟨hbodyT, hlen_block⟩, hρ₁_eq⟩ :=
-      blockT_none_reaches_terminal (π := π) (φ := φ) h_block
-    -- The body trace as a CoreStar from ρ₀.
-    have hbody : CoreStar π φ (.stmts body ρ₀) (.terminal ρ_inner) :=
-      reflTransT_to_prop hbodyT
-    -- Under BlockInitEnvWF, ρ₁ is the projected env (no longer = ρ_inner).
-    have hρ₁_eq' :
-        ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := hρ₁_eq
-    -- Now decompose the tail: .stmts [loop] ρ₁ →T .terminal ρ'.
-    obtain ⟨ρ_loop_term, h_loop_raw, h_nil, hlen_tail⟩ :=
-      stmtsT_cons_terminal (extendEval := EvalPureFunc φ) h_tail
-    have hρlt : ρ' = ρ_loop_term := by
-      match h_nil with
-      | .step _ _ _ .step_stmts_nil hrest_nil =>
-        match hrest_nil with
-        | .refl _ => rfl
-    subst hρlt
-    -- Now h_loop_raw : .stmt loop ρ₁ →T .terminal ρ' directly.
-    let h_loop := h_loop_raw
-    -- The body did not change the eval, so ρ_inner.eval = ρ₀.eval.
-    have heval_inner : ρ_inner.eval = ρ₀.eval :=
-      smallStep_noFuncDecl_preserves_eval_block Expression
-        (EvalCommand π φ) (EvalPureFunc φ) body ρ₀ ρ_inner hnofd hbody
-    have heval_ρ₁ : ρ₁.eval = ρ_inner.eval := by rw [hρ₁_eq']
-    have heval_ρ₁_eq : ρ₁.eval = ρ₀.eval := heval_ρ₁.trans heval_inner
-    -- WF properties at ρ₁.
-    have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval := heval_ρ₁_eq ▸ hwfb₀
-    have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval := heval_ρ₁_eq ▸ hwfv₀
-    have hwfvar₁ : WellFormedSemanticEvalVar ρ₁.eval := heval_ρ₁_eq ▸ hwfvar₀
-    have hwfc₁ : WellFormedCoreEvalCong ρ₁.eval := heval_ρ₁_eq ▸ hwfc₀
-    have hwfecong₁ : WellFormedSemanticEvalExprCongr ρ₁.eval := heval_ρ₁_eq ▸ hwfecong₀
-    -- hasFailure at ρ₁ is false (backwards from ρ').
-    have hnf_ρ₁ : ρ₁.hasFailure = Bool.false := by
-      have hloop_prop : CoreStar π φ (.stmt (.loop .nondet measure inv body md) ρ₁)
-          (.terminal ρ') := reflTransT_to_prop h_loop
-      exact hasFailure_false_backwards (π := π) (φ := φ) hloop_prop hnf
-    -- Bridge for store agreement: ρ_inner.store x = ρ₀.store x outside body's vars,
-    -- when (ρ₀.store x).isSome.
-    have hstore_bridge_inner : ∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false →
-        (ρ₀.store x).isSome → ρ_inner.store x = ρ₀.store x := by
-      intro x hmod hdef hsome
-      have hinv₀ : outerInv ρ₀.store (.stmts body ρ₀) := fun _ h => h
-      have hxnot : x ∉ Config.touchedVarsSet (.stmts body ρ₀) := by
-        simp only [Config.touchedVarsSet, List.mem_append]
-        exact fun h => h.elim hmod hdef
-      have h := star_preserves_store_outside_touchedVars_outerInv
-        (π := π) (φ := φ) ρ₀.store _ _ hbody hinv₀ x hsome hxnot
-      simpa [Config.getEnv] using h
-    have hstore_bridge : ∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false →
-        ρ₁.store x = ρ₀.store x := by
-      intro x hmod hdef
-      rw [hρ₁_eq']
-      show projectStore ρ₀.store ρ_inner.store x = ρ₀.store x
-      simp only [projectStore]
-      by_cases hsome : (ρ₀.store x).isSome
-      · rw [if_pos hsome]; exact hstore_bridge_inner x hmod hdef hsome
-      · rw [if_neg hsome]
-        exact (Option.not_isSome_iff_eq_none.mp hsome).symm
-    -- BlockInitEnvWF at ρ₁: preserved across an iteration.
-    have hswf_ρ₁ : BlockInitEnvWF reserved body ρ₁ := by
-      refine
-        { readWritesDefined := ?_, defsUndefined := ?_,
-          definedVarsNotReserved := hswf₀.definedVarsNotReserved,
-          reservedFresh := ?_,
-          wfBool := hwfb₁, wfVal := hwfv₁, wfVar := hwfvar₁,
-          evalCong := hwfc₁, exprCongr := hwfecong₁,
-          defUseOk := ?_ }
-      · intro x hxt hxnd
-        rw [hρ₁_eq']
-        show (projectStore ρ₀.store ρ_inner.store x).isSome
-        simp only [projectStore]
-        have hsome₀ : (ρ₀.store x).isSome :=
-          hswf₀.readWritesDefined x hxt hxnd
-        rw [if_pos hsome₀]
-        have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody x hsome₀
-        simpa [Config.getEnv] using this
-      · intro x hxd
-        rw [hρ₁_eq']
-        show (projectStore ρ₀.store ρ_inner.store x).isNone
-        simp only [projectStore]
-        have hnone₀ : (ρ₀.store x).isNone := hswf₀.defsUndefined x hxd
-        rw [if_neg (by rw [Option.isNone_iff_eq_none.mp hnone₀]; simp)]
-        rfl
-      · intro x hxsome p hp
-        have hxsome' : (ρ₁.store x).isSome := hxsome
-        rw [hρ₁_eq'] at hxsome'
-        show ¬ p.toList.isPrefixOf x.name.toList
-        have hρ₀_some : (ρ₀.store x).isSome := by
-          simp only [projectStore] at hxsome'
-          split at hxsome'
-          · assumption
-          · simp at hxsome'
-        exact hswf₀.reservedFresh x hρ₀_some p hp
-      · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
-        have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
-          funext itm
-          simp only [hρ₁_eq', projectStore]
-          split
-          · next hsome₀ =>
-            have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-            simp [Config.getEnv] at this
-            simp [this, hsome₀]
-          · next hns =>
-            simp [Bool.eq_false_iff.mpr hns]
-        rw [heq_pred]
-        exact hswf₀.defUseOk
-    -- Build a length bound for h_loop relative to n.
-    have hloop_len : h_loop.len ≤ n := by
-      have h1 : h_loop_raw.len ≤ h_tail.len := by
-        have : h_loop_raw.len + h_nil.len + 2 ≤ h_tail.len := hlen_tail
-        omega
-      have h2 : h_tail.len < hstartT.len := by
-        have : h_block.len + h_tail.len < hstartT.len := hlen_seq
-        omega
-      show h_loop_raw.len ≤ n
-      omega
-    -- Case split on the loop trace's first step at ρ₁.
-    match h_loop, hloop_len with
-    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure₁ hinv_bool₁ hff_iff₁) hrest₁, _ =>
-      -- Last iteration: loop chose to exit at ρ₁.
-      have hρ'_eq_raw :
-          ρ' = { ρ₁ with hasFailure := ρ₁.hasFailure || hasInvFailure₁ } := by
-        match hrest₁ with
-        | .refl _ => rfl
-        | .step _ _ _ h _ => cases h
-      have hnf_or₁ : (ρ₁.hasFailure || hasInvFailure₁) = Bool.false := by
-        have hh : ρ'.hasFailure = (ρ₁.hasFailure || hasInvFailure₁) := by
-          rw [hρ'_eq_raw]
-        rw [← hh]; exact hnf
-      have hnif₁ : hasInvFailure₁ = Bool.false :=
-        loop_step_hasInvFailure_false_of_or hnf_or₁
-      have hall_tt₁ := all_inv_tt_of_hasInvFailure_false hinv_bool₁ hff_iff₁ hnif₁
-      subst hnif₁
-      have hρ'_eq : ρ' = ρ₁ := by
-        rw [hρ'_eq_raw]; cases ρ₁; simp [Bool.or_false]
-      -- ρ_last := ρ₀, ρ_body_exit := ρ_inner.
-      refine ⟨ρ₀, ρ_inner, hall_tt₀, hnf₀, hbody, ?_, ?_, ?_, ?_,
-        hswf₀, fun _ _ _ => rfl, rfl⟩
-      · rw [hρ'_eq, hρ₁_eq']
-      · rw [hρ'_eq, hρ₁_eq']
-      · rw [hρ'_eq, hρ₁_eq']
-      · intro le hle
-        rw [hρ'_eq]; exact hall_tt₁ le hle
-    | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure₁ hinv_bool₁ hff_iff₁) hrest₁, hloop_len =>
-      -- Recursive case: another iteration was performed.
-      -- Successor: .seq (.block .none ρ₁.store (.stmts body ρ₁')) [loop]
-      -- where ρ₁' = { ρ₁ with hasFailure := ρ₁.hasFailure || hasInvFailure₁ }.
-      have hrest₁_prop := reflTransT_to_prop hrest₁
-      have hnf_start₁ : (ρ₁.hasFailure || hasInvFailure₁) = Bool.false := by
-        have hh := hasFailure_false_backwards (π := π) (φ := φ) hrest₁_prop hnf
-        simpa [Config.getEnv] using hh
-      have hnif₁ : hasInvFailure₁ = Bool.false :=
-        loop_step_hasInvFailure_false_of_or hnf_start₁
-      have hall_tt₁ := all_inv_tt_of_hasInvFailure_false hinv_bool₁ hff_iff₁ hnif₁
-      subst hnif₁
-      -- Apply IH at ρ₁ via env-equality helper.
-      have hsame :
-          ({ ρ₁ with hasFailure := ρ₁.hasFailure || Bool.false } : Env Expression)
-            = ρ₁ := by
-        rcases ρ₁ with ⟨_, _, _⟩
-        simp [Bool.or_false]
-      have hrest₁_len : hrest₁.len ≤ n := by
-        have hh : (1 + hrest₁.len) ≤ n := hloop_len
-        omega
-      have helper : ∀ (ρ_arg : Env Expression),
-          ρ_arg = ρ₁ →
-          ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-              (.seq (.block .none ρ₁.store (.stmts body ρ_arg))
-                    [.loop .nondet measure inv body md])
-              (.terminal ρ')),
-          h.len ≤ n →
-          ∃ ρ_last ρ_body_exit,
-            (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-            ρ_last.hasFailure = Bool.false ∧
-            CoreStar π φ (.stmts body ρ_last) (.terminal ρ_body_exit) ∧
-            ρ'.eval = ρ_body_exit.eval ∧
-            ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-            ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-            (∀ le ∈ inv, ρ'.eval ρ'.store le.2 = some HasBool.tt) ∧
-            BlockInitEnvWF reserved body ρ_last ∧
-            (∀ x, x ∉ Block.modifiedVars body → x ∉ Block.definedVars body false →
-                  ρ_last.store x = ρ₁.store x) ∧
-            ρ_last.eval = ρ₁.eval := fun ρ_arg heq h hlen' => by
-        cases heq
-        exact ih ρ₁ measure hall_tt₁ hnf_ρ₁ hswf_ρ₁ h hlen'
-      have ih_result := helper _ hsame hrest₁ hrest₁_len
-      obtain ⟨ρ_last, ρ_body_exit, h1, h2, h3, h4_eval, h4_fail, h4_store,
-        h5inv, h6swf, h7store, h8eval⟩ := ih_result
-      refine ⟨ρ_last, ρ_body_exit, h1, h2, h3, h4_eval, h4_fail, h4_store, h5inv, h6swf,
-        fun x hmod hdef => (h7store x hmod hdef).trans (hstore_bridge x hmod hdef),
-        h8eval.trans heval_ρ₁_eq⟩
-
-/-- When a det loop from ρ₀ reaches `.exiting (some l) ρ'` with guard tt, all
-    invs tt, hasFailure false at ρ₀, and ρ'.hasFailure false, there exists
-    ρ_last with invs tt, eval = ρ₀.eval, and body from ρ_last exits at ρ_body_exit
-    whose projection through ρ_last.store equals ρ'. -/
-private theorem loop_det_exiting_body_exit
-    (hwf_ext : WFEvalExtension φ)
-    (reserved : List String)
-    (g : Expression.Expr) (measure : Option Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression)
-    (ρ₀ ρ' : Env Expression) (l : String)
-    (hguard_tt : ρ₀.eval ρ₀.store g = some HasBool.tt)
-    (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt)
-    (hnofd : Block.noFuncDecl body = Bool.true)
-    (hswf : BlockInitEnvWF reserved body ρ₀)
-    (hnf : ρ'.hasFailure = Bool.false)
-    (hloop : CoreStar π φ
-      (.stmt (.loop (.det g) measure inv body md) ρ₀) (.exiting l ρ')) :
-    ∃ ρ_last ρ_body_exit,
-      ρ_last.eval ρ_last.store g = some HasBool.tt ∧
-      (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-      ρ_last.hasFailure = Bool.false ∧
-      CoreStar π φ (.stmts body ρ_last) (.exiting l ρ_body_exit) ∧
-      ρ'.eval = ρ_body_exit.eval ∧
-      ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-      ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-      BlockInitEnvWF reserved body ρ_last ∧
-      ρ_last.eval = ρ₀.eval := by
-  -- Convert to ReflTransT and use strong induction on trace length, generalized over ρ₀.
-  have hloopT := reflTrans_to_T hloop
-  suffices ∀ (n : Nat) (ρ₀ : Env Expression) (measure : Option Expression.Expr),
-      ρ₀.eval ρ₀.store g = some HasBool.tt →
-      (∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt) →
-      BlockInitEnvWF reserved body ρ₀ →
-      ∀ (hstarT : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-          (.stmt (.loop (.det g) measure inv body md) ρ₀) (.exiting l ρ')),
-        hstarT.len ≤ n →
-      ∃ ρ_last ρ_body_exit,
-        ρ_last.eval ρ_last.store g = some HasBool.tt ∧
-        (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-        ρ_last.hasFailure = Bool.false ∧
-        CoreStar π φ (.stmts body ρ_last) (.exiting l ρ_body_exit) ∧
-        ρ'.eval = ρ_body_exit.eval ∧
-        ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-        ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-        BlockInitEnvWF reserved body ρ_last ∧
-        ρ_last.eval = ρ₀.eval by
-    exact this hloopT.len ρ₀ measure hguard_tt hall_tt hswf hloopT (Nat.le_refl _)
-  intro n
-  induction n with
-  | zero =>
-    intro ρ₀ measure _ _ _ hstarT hlen
-    match hstarT, hlen with
-    | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
-  | succ n ih =>
-    intro ρ₀ measure hguard_tt₀ hall_tt₀ hswf₀ hstarT hlen
-    have hwfb₀ := hswf₀.wfBool
-    have hwfv₀ := hswf₀.wfVal
-    have hwfvar₀ := hswf₀.wfVar
-    have hwfc₀ := hswf₀.evalCong
-    have hwfecong₀ := hswf₀.exprCongr
-    -- Invert the first step of the trace.
-    match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _ _
-        _ hg_ff _ _ _) hrest, _ =>
-      exfalso; rw [hguard_tt₀] at hg_ff; cases hg_ff
-    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure _ hinv_bool hff_iff _ hmeas_lb₀) hrest, hlen =>
-      have hrest_prop := reflTransT_to_prop hrest
-      have hnf_start : (ρ₀.hasFailure || hasInvFailure) = Bool.false := by
-        have h := hasFailure_false_backwards (π := π) (φ := φ) hrest_prop hnf
-        simpa [Config.getEnv] using h
-      have hnf₀ : ρ₀.hasFailure = Bool.false := by
-        cases h : ρ₀.hasFailure
-        · rfl
-        · simp [h, Bool.true_or] at hnf_start
-      have hnif : hasInvFailure = Bool.false :=
-        loop_step_hasInvFailure_false_of_or hnf_start
-      subst hnif
-      have hρ₀_eq :
-          ({ ρ₀ with hasFailure := ρ₀.hasFailure || Bool.false } : Env Expression) = ρ₀ := by
-        cases ρ₀; simp [Bool.or_false]
-      -- Now decompose .seq via seqT_reaches_exiting.
-      match seqT_reaches_exiting (π := π) (φ := φ) hrest with
-      | .inl ⟨h_block, hlen_block_outer⟩ =>
-        -- Inner block exited with l: body itself exits with l.
-        obtain ⟨ρ_inner, hbodyT, hlen_body, hρ'_eq⟩ :=
-          blockT_none_reaches_exiting_some (π := π) (φ := φ) h_block
-        have hbody_ρ₀' : CoreStar π φ
-            (.stmts body
-              ({ ρ₀ with hasFailure := ρ₀.hasFailure || Bool.false } : Env Expression))
-            (.exiting l ρ_inner) := reflTransT_to_prop hbodyT
-        have hbody : CoreStar π φ (.stmts body ρ₀) (.exiting l ρ_inner) :=
-          hρ₀_eq ▸ hbody_ρ₀'
-        -- ρ' is the projection of ρ_inner via ρ₀.store.
-        -- ρ_last := ρ₀, ρ_body_exit := ρ_inner.
-        refine ⟨ρ₀, ρ_inner, hguard_tt₀, hall_tt₀, hnf₀, hbody, ?_, ?_, ?_, hswf₀, rfl⟩
-        · rw [hρ'_eq]
-        · rw [hρ'_eq]
-        · rw [hρ'_eq]
-      | .inr ⟨ρ₁, h_block, h_tail, hlen_seq⟩ =>
-        -- Block terminates at ρ₁ (projected env), then tail [loop] exits with l.
-        obtain ⟨ρ_inner, ⟨hbodyT, hlen_block⟩, hρ₁_eq⟩ :=
-          blockT_none_reaches_terminal (π := π) (φ := φ) h_block
-        have hbody_ρ₀' : CoreStar π φ (.stmts body
-            ({ ρ₀ with hasFailure := ρ₀.hasFailure || Bool.false } : Env Expression))
-            (.terminal ρ_inner) := reflTransT_to_prop hbodyT
-        have hbody : CoreStar π φ (.stmts body ρ₀) (.terminal ρ_inner) :=
-          hρ₀_eq ▸ hbody_ρ₀'
-        have hρ₁_eq' :
-            ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := hρ₁_eq
-        -- Decompose the tail: .stmts [loop] ρ₁ →T .exiting l ρ'.
-        match stmtsT_cons_reaches_exiting (π := π) (φ := φ) h_tail with
-        | .inl ⟨h_loop, hlen_loop_outer⟩ =>
-          -- .stmt loop ρ₁ →T .exiting l ρ' directly.
-          have heval_inner : ρ_inner.eval = ρ₀.eval :=
-            smallStep_noFuncDecl_preserves_eval_block Expression
-              (EvalCommand π φ) (EvalPureFunc φ) body ρ₀ ρ_inner hnofd hbody
-          have heval_ρ₁ : ρ₁.eval = ρ_inner.eval := by rw [hρ₁_eq']
-          have heval_ρ₁_eq : ρ₁.eval = ρ₀.eval := heval_ρ₁.trans heval_inner
-          have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval := heval_ρ₁_eq ▸ hwfb₀
-          have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval := heval_ρ₁_eq ▸ hwfv₀
-          have hwfvar₁ : WellFormedSemanticEvalVar ρ₁.eval := heval_ρ₁_eq ▸ hwfvar₀
-          have hwfc₁ : WellFormedCoreEvalCong ρ₁.eval := heval_ρ₁_eq ▸ hwfc₀
-          have hwfecong₁ : WellFormedSemanticEvalExprCongr ρ₁.eval := heval_ρ₁_eq ▸ hwfecong₀
-          -- BlockInitEnvWF at ρ₁: preserved across an iteration.
-          have hswf_ρ₁ : BlockInitEnvWF reserved body ρ₁ := by
-            refine
-              { readWritesDefined := ?_, defsUndefined := ?_,
-                definedVarsNotReserved := hswf₀.definedVarsNotReserved,
-                reservedFresh := ?_,
-                wfBool := hwfb₁, wfVal := hwfv₁, wfVar := hwfvar₁,
-                evalCong := hwfc₁, exprCongr := hwfecong₁,
-                defUseOk := ?_ }
-            · intro x hxt hxnd
-              rw [hρ₁_eq']
-              show (projectStore ρ₀.store ρ_inner.store x).isSome
-              simp only [projectStore]
-              have hsome₀ : (ρ₀.store x).isSome :=
-                hswf₀.readWritesDefined x hxt hxnd
-              rw [if_pos hsome₀]
-              have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody x hsome₀
-              simpa [Config.getEnv] using this
-            · intro x hxd
-              rw [hρ₁_eq']
-              show (projectStore ρ₀.store ρ_inner.store x).isNone
-              simp only [projectStore]
-              have hnone₀ : (ρ₀.store x).isNone := hswf₀.defsUndefined x hxd
-              rw [if_neg (by rw [Option.isNone_iff_eq_none.mp hnone₀]; simp)]
-              rfl
-            · intro x hxsome p hp
-              have hxsome' : (ρ₁.store x).isSome := hxsome
-              rw [hρ₁_eq'] at hxsome'
-              show ¬ p.toList.isPrefixOf x.name.toList
-              have hρ₀_some : (ρ₀.store x).isSome := by
-                simp only [projectStore] at hxsome'
-                split at hxsome'
-                · assumption
-                · simp at hxsome'
-              exact hswf₀.reservedFresh x hρ₀_some p hp
-            · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
-              have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
-                funext itm
-                simp only [hρ₁_eq', projectStore]
-                split
-                · next hsome₀ =>
-                  have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-                  simp [Config.getEnv] at this
-                  simp [this, hsome₀]
-                · next hns =>
-                  simp [Bool.eq_false_iff.mpr hns]
-              rw [heq_pred]
-              exact hswf₀.defUseOk
-          -- Length bound for h_loop ≤ n.
-          have hloop_len : h_loop.len ≤ n := by
-            have h1 : h_loop.len ≤ h_tail.len := by
-              have : h_loop.len + 2 ≤ h_tail.len := hlen_loop_outer
-              omega
-            have h2 : h_tail.len ≤ hrest.len := by
-              have : h_block.len + h_tail.len < hrest.len := hlen_seq
-              omega
-            have h3 : hrest.len ≤ n := by
-              have hh : 1 + hrest.len ≤ n + 1 := hlen
-              omega
-            omega
-          match h_loop, hloop_len with
-          | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _ _
-              _ _ _ _ _) hrest_x, _ =>
-            exfalso
-            match hrest_x with
-            | .step _ _ _ h _ => cases h
-          | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _ _
-              hasInvFailure₁ hg_tt₁ hinv_bool₁ hff_iff₁ _ _) hrest₁, hloop_full_len =>
-            let h_loop_full : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-                (.stmt (.loop (.det g) measure inv body md) ρ₁) (.exiting l ρ') :=
-              .step _ _ _ (.step_loop_enter hg_tt₁ hinv_bool₁ hff_iff₁ ‹_› ‹_›) hrest₁
-            have h_loop_full_len : h_loop_full.len ≤ n := by
-              show 1 + hrest₁.len ≤ n
-              have : (1 + hrest₁.len) ≤ n := hloop_full_len
-              omega
-            have ih_result := ih ρ₁ measure hg_tt₁
-              (by
-                have hnf_start₁ : (ρ₁.hasFailure || hasInvFailure₁) = Bool.false := by
-                  have hh := hasFailure_false_backwards (π := π) (φ := φ)
-                    (reflTransT_to_prop hrest₁) hnf
-                  simpa [Config.getEnv] using hh
-                have hnif₁ : hasInvFailure₁ = Bool.false :=
-                  loop_step_hasInvFailure_false_of_or hnf_start₁
-                exact all_inv_tt_of_hasInvFailure_false hinv_bool₁ hff_iff₁ hnif₁)
-              hswf_ρ₁ h_loop_full h_loop_full_len
-            obtain ⟨ρ_last, ρ_body_exit, h1, h2, h3, h4_body, h5_eval, h5_fail, h5_store,
-              h6swf, h7eval⟩ := ih_result
-            exact ⟨ρ_last, ρ_body_exit, h1, h2, h3, h4_body, h5_eval, h5_fail, h5_store,
-              h6swf, h7eval.trans heval_ρ₁_eq⟩
-        | .inr ⟨ρ_mid, h_loop_term, h_tail_nil_exit, _⟩ =>
-          exfalso
-          match h_tail_nil_exit with
-          | .step _ _ _ .step_stmts_nil hrest_nil =>
-            match hrest_nil with
-            | .step _ _ _ h _ => cases h
-
-/-- When a nondet loop from ρ₀ reaches `.exiting l ρ'` (having entered),
-    with all invs tt, hasFailure false, and ρ'.hasFailure false, there exists
-    ρ_last with invs tt, eval = ρ₀.eval, and body from ρ_last exits at ρ_body_exit
-    whose projection through ρ_last.store equals ρ'. -/
-private theorem loop_nondet_exiting_body_exit
-    (hwf_ext : WFEvalExtension φ)
-    (reserved : List String)
-    (measure : Option Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression)
-    (ρ₀ ρ' : Env Expression) (l : String)
-    (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt)
-    (hnofd : Block.noFuncDecl body = Bool.true)
-    (hswf : BlockInitEnvWF reserved body ρ₀)
-    (hnf : ρ'.hasFailure = Bool.false)
-    (henter : CoreStar π φ
-      (.seq (.block .none ρ₀.store (.stmts body ρ₀))
-            [.loop .nondet measure inv body md])
-      (.exiting l ρ'))
-    (hnf₀ : ρ₀.hasFailure = Bool.false) :
-    ∃ ρ_last ρ_body_exit,
-      (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-      ρ_last.hasFailure = Bool.false ∧
-      CoreStar π φ (.stmts body ρ_last) (.exiting l ρ_body_exit) ∧
-      ρ'.eval = ρ_body_exit.eval ∧
-      ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-      ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-      BlockInitEnvWF reserved body ρ_last ∧
-      ρ_last.eval = ρ₀.eval := by
-  -- Convert to ReflTransT and use strong induction on trace length, generalized over ρ₀.
-  have hstartT := reflTrans_to_T henter
-  suffices ∀ (n : Nat) (ρ₀ : Env Expression) (measure : Option Expression.Expr),
-      (∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = some HasBool.tt) →
-      ρ₀.hasFailure = Bool.false →
-      BlockInitEnvWF reserved body ρ₀ →
-      ∀ (hstartT : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-          (.seq (.block .none ρ₀.store (.stmts body ρ₀))
-                [.loop .nondet measure inv body md])
-          (.exiting l ρ')),
-        hstartT.len ≤ n →
-      ∃ ρ_last ρ_body_exit,
-        (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-        ρ_last.hasFailure = Bool.false ∧
-        CoreStar π φ (.stmts body ρ_last) (.exiting l ρ_body_exit) ∧
-        ρ'.eval = ρ_body_exit.eval ∧
-        ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-        ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-        BlockInitEnvWF reserved body ρ_last ∧
-        ρ_last.eval = ρ₀.eval by
-    exact this hstartT.len ρ₀ measure hall_tt hnf₀ hswf hstartT (Nat.le_refl _)
-  intro n
-  induction n with
-  | zero =>
-    intro ρ₀ measure _ _ _ hstartT hlen
-    match hstartT, hlen with
-    | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
-  | succ n ih =>
-    intro ρ₀ measure hall_tt₀ hnf₀ hswf₀ hstartT hlen
-    have hwfb₀ := hswf₀.wfBool
-    have hwfv₀ := hswf₀.wfVal
-    have hwfvar₀ := hswf₀.wfVar
-    have hwfc₀ := hswf₀.evalCong
-    have hwfecong₀ := hswf₀.exprCongr
-    -- Decompose .seq via seqT_reaches_exiting.
-    match seqT_reaches_exiting (π := π) (φ := φ) hstartT with
-    | .inl ⟨h_block, hlen_block_outer⟩ =>
-      -- Inner block exited with l: body itself exits with l.
-      obtain ⟨ρ_inner, hbodyT, hlen_body, hρ'_eq⟩ :=
-        blockT_none_reaches_exiting_some (π := π) (φ := φ) h_block
-      have hbody : CoreStar π φ (.stmts body ρ₀) (.exiting l ρ_inner) :=
-        reflTransT_to_prop hbodyT
-      -- ρ_last := ρ₀, ρ_body_exit := ρ_inner.
-      refine ⟨ρ₀, ρ_inner, hall_tt₀, hnf₀, hbody, ?_, ?_, ?_, hswf₀, rfl⟩
-      · rw [hρ'_eq]
-      · rw [hρ'_eq]
-      · rw [hρ'_eq]
-    | .inr ⟨ρ₁, h_block, h_tail, hlen_seq⟩ =>
-      -- Block terminates at ρ₁ (projected), then tail [loop] exits with l.
-      obtain ⟨ρ_inner, ⟨hbodyT, hlen_block⟩, hρ₁_eq⟩ :=
-        blockT_none_reaches_terminal (π := π) (φ := φ) h_block
-      have hbody : CoreStar π φ (.stmts body ρ₀) (.terminal ρ_inner) :=
-        reflTransT_to_prop hbodyT
-      have hρ₁_eq' :
-          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := hρ₁_eq
-      -- Decompose tail: .stmts [loop] ρ₁ →T .exiting l ρ'.
-      match stmtsT_cons_reaches_exiting (π := π) (φ := φ) h_tail with
-      | .inl ⟨h_loop, hlen_loop_outer⟩ =>
-        -- .stmt loop ρ₁ →T .exiting l ρ' directly.
-        have heval_inner : ρ_inner.eval = ρ₀.eval :=
-          smallStep_noFuncDecl_preserves_eval_block Expression
-            (EvalCommand π φ) (EvalPureFunc φ) body ρ₀ ρ_inner hnofd hbody
-        have heval_ρ₁ : ρ₁.eval = ρ_inner.eval := by rw [hρ₁_eq']
-        have heval_ρ₁_eq : ρ₁.eval = ρ₀.eval := heval_ρ₁.trans heval_inner
-        have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval := heval_ρ₁_eq ▸ hwfb₀
-        have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval := heval_ρ₁_eq ▸ hwfv₀
-        have hwfvar₁ : WellFormedSemanticEvalVar ρ₁.eval := heval_ρ₁_eq ▸ hwfvar₀
-        have hwfc₁ : WellFormedCoreEvalCong ρ₁.eval := heval_ρ₁_eq ▸ hwfc₀
-        have hwfecong₁ : WellFormedSemanticEvalExprCongr ρ₁.eval := heval_ρ₁_eq ▸ hwfecong₀
-        have hnf_ρ₁ : ρ₁.hasFailure = Bool.false := by
-          have hloop_prop : CoreStar π φ
-              (.stmt (.loop .nondet measure inv body md) ρ₁) (.exiting l ρ') :=
-            reflTransT_to_prop h_loop
-          exact hasFailure_false_backwards (π := π) (φ := φ) hloop_prop hnf
-        -- BlockInitEnvWF at ρ₁: preserved across an iteration.
-        have hswf_ρ₁ : BlockInitEnvWF reserved body ρ₁ := by
-          refine
-            { readWritesDefined := ?_, defsUndefined := ?_,
-              definedVarsNotReserved := hswf₀.definedVarsNotReserved,
-              reservedFresh := ?_,
-              wfBool := hwfb₁, wfVal := hwfv₁, wfVar := hwfvar₁,
-              evalCong := hwfc₁, exprCongr := hwfecong₁,
-              defUseOk := ?_ }
-          · intro x hxt hxnd
-            rw [hρ₁_eq']
-            show (projectStore ρ₀.store ρ_inner.store x).isSome
-            simp only [projectStore]
-            have hsome₀ : (ρ₀.store x).isSome :=
-              hswf₀.readWritesDefined x hxt hxnd
-            rw [if_pos hsome₀]
-            have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody x hsome₀
-            simpa [Config.getEnv] using this
-          · intro x hxd
-            rw [hρ₁_eq']
-            show (projectStore ρ₀.store ρ_inner.store x).isNone
-            simp only [projectStore]
-            have hnone₀ : (ρ₀.store x).isNone := hswf₀.defsUndefined x hxd
-            rw [if_neg (by rw [Option.isNone_iff_eq_none.mp hnone₀]; simp)]
-            rfl
-          · intro x hxsome p hp
-            have hxsome' : (ρ₁.store x).isSome := hxsome
-            rw [hρ₁_eq'] at hxsome'
-            show ¬ p.toList.isPrefixOf x.name.toList
-            have hρ₀_some : (ρ₀.store x).isSome := by
-              simp only [projectStore] at hxsome'
-              split at hxsome'
-              · assumption
-              · simp at hxsome'
-            exact hswf₀.reservedFresh x hρ₀_some p hp
-          · -- defUseOk: ρ₁ has the same isSome-domain as ρ₀ (projectStore mask).
-            have heq_pred : (fun n => (ρ₁.store n).isSome) = (fun n => (ρ₀.store n).isSome) := by
-              funext itm
-              simp only [hρ₁_eq', projectStore]
-              split
-              · next hsome₀ =>
-                have := stmts_star_preserves_isSome (π := π) (φ := φ) body ρ₀ _ hbody itm hsome₀
-                simp [Config.getEnv] at this
-                simp [this, hsome₀]
-              · next hns =>
-                simp [Bool.eq_false_iff.mpr hns]
-            rw [heq_pred]
-            exact hswf₀.defUseOk
-        -- Length bound.
-        have hloop_len : h_loop.len ≤ n := by
-          have h1 : h_loop.len ≤ h_tail.len := by
-            have : h_loop.len + 2 ≤ h_tail.len := hlen_loop_outer
-            omega
-          have h2 : h_tail.len ≤ hstartT.len := by
-            have : h_block.len + h_tail.len < hstartT.len := hlen_seq
-            omega
-          have h3 : hstartT.len ≤ n + 1 := hlen
-          omega
-        -- Case split on the loop's first step at ρ₁.
-        match h_loop, hloop_len with
-        | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
-            _ _ _) hrest_x, _ =>
-          exfalso
-          match hrest_x with
-          | .step _ _ _ h _ => cases h
-        | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _ _
-            hasInvFailure₁ hinv_bool₁ hff_iff₁) hrest₁, hloop_full_len =>
-          have hrest₁_prop := reflTransT_to_prop hrest₁
-          have hnf_start₁ : (ρ₁.hasFailure || hasInvFailure₁) = Bool.false := by
-            have hh := hasFailure_false_backwards (π := π) (φ := φ) hrest₁_prop hnf
-            simpa [Config.getEnv] using hh
-          have hnif₁ : hasInvFailure₁ = Bool.false :=
-            loop_step_hasInvFailure_false_of_or hnf_start₁
-          have hall_tt₁ := all_inv_tt_of_hasInvFailure_false hinv_bool₁ hff_iff₁ hnif₁
-          subst hnif₁
-          have hsame :
-              ({ ρ₁ with hasFailure := ρ₁.hasFailure || Bool.false } : Env Expression)
-                = ρ₁ := by
-            rcases ρ₁ with ⟨_, _, _⟩
-            simp [Bool.or_false]
-          have hrest₁_len : hrest₁.len ≤ n := by
-            have hh : (1 + hrest₁.len) ≤ n := hloop_full_len
-            omega
-          have helper : ∀ (ρ_arg : Env Expression),
-              ρ_arg = ρ₁ →
-              ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
-                  (.seq (.block .none ρ₁.store (.stmts body ρ_arg))
-                        [.loop .nondet measure inv body md])
-                  (.exiting l ρ')),
-              h.len ≤ n →
-              ∃ ρ_last ρ_body_exit,
-                (∀ le ∈ inv, ρ_last.eval ρ_last.store le.2 = some HasBool.tt) ∧
-                ρ_last.hasFailure = Bool.false ∧
-                CoreStar π φ (.stmts body ρ_last) (.exiting l ρ_body_exit) ∧
-                ρ'.eval = ρ_body_exit.eval ∧
-                ρ'.hasFailure = ρ_body_exit.hasFailure ∧
-                ρ'.store = projectStore ρ_last.store ρ_body_exit.store ∧
-                BlockInitEnvWF reserved body ρ_last ∧
-                ρ_last.eval = ρ₁.eval := fun ρ_arg heq h hlen' => by
-            cases heq
-            exact ih ρ₁ measure hall_tt₁ hnf_ρ₁ hswf_ρ₁ h hlen'
-          have ih_result := helper _ hsame hrest₁ hrest₁_len
-          obtain ⟨ρ_last, ρ_body_exit, h1, h2, h3, h4_eval, h4_fail, h4_store,
-            h5swf, h6eval⟩ := ih_result
-          exact ⟨ρ_last, ρ_body_exit, h1, h2, h3, h4_eval, h4_fail, h4_store, h5swf,
-            h6eval.trans heval_ρ₁_eq⟩
-      | .inr ⟨ρ_mid, h_loop_term, h_tail_nil_exit, _⟩ =>
-        exfalso
-        match h_tail_nil_exit with
-        | .step _ _ _ .step_stmts_nil hrest_nil =>
-          match hrest_nil with
-          | .step _ _ _ h _ => cases h
-
-
 /-! ## TouchedVars subset lemmas -/
 
 /-- `Block.modifiedOrDefinedVars ss ⊆ Block.definedVars ss ++ Block.modifiedVars ss`. -/
-private theorem modifiedOrDefinedVars_subset (sz : Nat) :
-    (∀ (s : Statement), Stmt.sizeOf s ≤ sz →
-      ∀ n, n ∈ Stmt.modifiedOrDefinedVars s false → n ∈ Stmt.definedVars s false ++ Stmt.modifiedVars s) ∧
-    (∀ (ss : Statements), Block.sizeOf ss ≤ sz →
-      ∀ n, n ∈ Block.modifiedOrDefinedVars ss false → n ∈ Block.definedVars ss false ++ Block.modifiedVars ss) := by
-  exact ⟨fun _ _ n hn => by
-    simp only [Stmt.modifiedOrDefinedVars, List.mem_append] at hn
-    simp only [List.mem_append]
-    rcases hn with h | h
-    · exact Or.inr h
-    · exact Or.inl h,
-  fun _ _ n hn => by
-    simp only [Block.modifiedOrDefinedVars, List.mem_append] at hn
-    simp only [List.mem_append]
-    rcases hn with h | h
-    · exact Or.inr h
-    · exact Or.inl h⟩
-
-private theorem loop_modifiedOrDefinedVars_implies_body_modifiedOrDefinedVars
-    {guard : ExprOrNondet Expression}
-    {measure : Option Expression.Expr}
-    {inv : List (String × Expression.Expr)}
-    {body : Statements} {md : MetaData Expression}
-    {ρ₀ : Env Expression}
-    (hswf : ∀ n ∈ Stmt.modifiedOrDefinedVars (.loop guard measure inv body md) false, (ρ₀.store n).isSome) :
-    ∀ n ∈ Block.modifiedOrDefinedVars body false, (ρ₀.store n).isSome := by
-  intro n hn
-  apply hswf
-  simp only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
-    Block.modifiedOrDefinedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append] at hn ⊢
-  exact hn
-
-/-- `Block.modifiedVars` is a subset of `Block.modifiedOrDefinedVars`. -/
 private theorem modifiedVars_subset_modifiedOrDefinedVars (sz : Nat) :
     (∀ (s : Statement), Stmt.sizeOf s ≤ sz →
       ∀ n, n ∈ Stmt.modifiedVars s → n ∈ Stmt.modifiedOrDefinedVars s false) ∧
@@ -3838,216 +2665,6 @@ private theorem modifiedVars_subset_modifiedOrDefinedVars (sz : Nat) :
     guard+invs are tt and all body-touched vars are defined.
     Returns the same structural decomposition as `stmtResult_loop_then_branch_struct`
     plus a prefix termination proof. -/
-private theorem stmtResult_loop_with_prefix_term (σ : LoopElimState)
-    (reserved : List String)
-    (guard : ExprOrNondet Expression)
-    (measure : Option Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression)
-    (ρ₀ : Env Expression)
-    (hnf : ρ₀.hasFailure = Bool.false)
-    (hall_tt : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
-    (hguard_ok : match guard with
-      | .det g => ρ₀.eval ρ₀.store g = some HasBool.tt | .nondet => True)
-    (hswf_body : BlockInitEnvWF reserved body ρ₀)
-    (hmeas_wf : ∀ me, measure = .some me →
-      ρ₀.eval ρ₀.store (HasIntOrder.lt me HasIntOrder.zero) = .some HasBool.ff)
-    (hm_old_fresh : ρ₀.store (HasIdent.ident (P := Expression)
-      s!"$__loop_measure_{(StringGenState.gen "loop" σ.gen).fst}") = none)
-    (hok : stmtOk σ (.loop guard measure inv body md)) :
-    ∃ (loop_label first_iter_label arb_iter_label : String)
-      (first_iter_body : Statements)
-      (prefix_stmts suffix_stmts exit_state_stmts : Statements)
-      (maintain_invariants : Statements)
-      (body_statements : Statements),
-    stmtResult σ (.loop guard measure inv body md) =
-      .block loop_label
-        [.block first_iter_label first_iter_body {},
-         .ite guard
-           (.block arb_iter_label
-             (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) {}
-            :: exit_state_stmts) [] {}] {} ∧
-    body_statements = body ∧
-    (maintain_invariants = inv.mapIdx fun i le =>
-      Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if le.1.isEmpty then toString i else s!"{i}_{le.1}"}" le.2 md)) ∧
-    (first_iter_body =
-      let loop_num := (StringGenState.gen "loop" σ.gen).fst
-      let invSuffix : Nat → String → String := fun i lbl =>
-        if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) ++
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
-        s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md))) ∧
-    (∃ ρ_pf, CoreStar π φ (.stmts prefix_stmts ρ₀) (.terminal ρ_pf) ∧
-      ρ_pf.eval = ρ₀.eval ∧ ρ_pf.hasFailure = ρ₀.hasFailure ∧
-      (∀ n ∈ Block.touchedVars body, ρ_pf.store n = ρ₀.store n)) := by
-  -- Common infrastructure for the semantic part
-  -- Extract WF eval fields from BlockInitEnvWF.
-  have hwfb := hswf_body.wfBool
-  have hwfvar := hswf_body.wfVar
-  have hwfc := hswf_body.evalCong
-  have hwfv := hswf_body.wfVal
-  let loop_num := (StringGenState.gen "loop" σ.gen).fst
-  let assigned_vars := (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body false)
-  -- `assigned_vars ⊆ touchedVars body \ definedVars body`, so `readWritesDefined`
-  -- from `BlockInitEnvWF` gives `(ρ₀.store n).isSome`.
-  have hdef_assigned : ∀ n ∈ assigned_vars, (ρ₀.store n).isSome := by
-    intro n hn
-    have hmod : n ∈ Block.modifiedVars body :=
-      (List.mem_filter.mp hn).1
-    have hndef : n ∉ Block.definedVars body false := by
-      have h := (List.mem_filter.mp hn).2
-      simpa using h
-    apply hswf_body.readWritesDefined n
-    · show n ∈ Block.modifiedOrDefinedVars body true ++ Block.getVars body
-      exact List.mem_append_left _ (List.mem_append_left _ hmod)
-    · exact hndef
-  -- Havoc identity: the havoc block terminates at ρ₀.  The loop-elim transform
-  -- wraps the havoc commands in a block with empty metadata `∅`, so we use
-  -- `havoc_block_identity_empty_outer` (matching the run output).
-  have hhavoc_id := havoc_block_identity_empty_outer π φ
-    s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ₀
-    hdef_assigned hwfvar hnf
-  -- Full unfolding to get concrete prefix_stmts and prove termination
-  change ∃ (loop_label first_iter_label arb_iter_label : String)
-    (first_iter_body : Statements)
-    (prefix_stmts suffix_stmts exit_state_stmts : Statements)
-    (maintain_invariants : Statements)
-    (body_statements : Statements),
-    (match (stmtRun σ (.loop guard measure inv body md)).fst with
-      | .ok (_, s') => s' | .error _ => default) =
-    .block loop_label
-      [.block first_iter_label first_iter_body {},
-       .ite guard
-         (.block arb_iter_label
-           (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) {}
-          :: exit_state_stmts) [] {}] {} ∧
-    body_statements = body ∧
-    (maintain_invariants = inv.mapIdx fun i le =>
-      Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if le.1.isEmpty then toString i else s!"{i}_{le.1}"}" le.2 md)) ∧
-    (first_iter_body =
-      let loop_num := (StringGenState.gen "loop" σ.gen).fst
-      let invSuffix : Nat → String → String := fun i lbl =>
-        if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) ++
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
-        s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md))) ∧
-    (∃ ρ_pf, CoreStar π φ (.stmts prefix_stmts ρ₀) (.terminal ρ_pf) ∧
-      ρ_pf.eval = ρ₀.eval ∧ ρ_pf.hasFailure = ρ₀.hasFailure ∧
-      (∀ n ∈ Block.touchedVars body, ρ_pf.store n = ρ₀.store n))
-  have hok' := hok
-  unfold stmtOk at hok'
-  match h : (stmtRun σ (.loop guard measure inv body md)).fst with
-  | .error e => simp [h, Except.isOk, Except.toBool] at hok'
-  | .ok (b, s') =>
-    simp only [h]
-    simp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-      bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-      ExceptT.lift, StateT.bind,
-      Functor.map, liftM, monadLift, MonadLift.monadLift,
-      modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
-      genLoopNum, bumpStat] at h
-    -- We need to handle the freshness check. Extract that `m_old_ident ∉ modifiedOrDefinedVars` from the
-    -- successful stmtRun (the else branch of the if check).
-    -- Use a helper that provides semantic proofs alongside structural witnesses.
-    -- After simp + repeated split, we get goals where h is a Prod.mk equality.
-    repeat (first
-      | (cases h
-         refine ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl, ?_⟩
-         first
-           -- Nondet case: prefix = [havocd, assumes_block_nondet], terminates at ρ₀
-           | exact ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_id
-               (assume_block_step_nondet π φ
-                 s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-                 inv md
-                 (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-                 ρ₀ hall_tt hwfb),
-               rfl, rfl, fun _ _ => rfl⟩
-           -- Det+none case: prefix = [havocd, assumes_block_det], terminates at ρ₀
-           | exact ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_id
-               (assume_block_step_det π φ
-                 s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-                 _ s!"{loopElimAssumePrefix}{loop_num}_guard"
-                 inv md
-                 (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-                 ρ₀ hguard_ok hall_tt hwfb),
-               rfl, rfl, fun _ _ => rfl⟩
-           -- Det+some case: prefix = [havocd, assumes_block_det, init_m_old, assert_lb]
-           | (have hmeas_lb := hmeas_wf _ rfl
-              obtain ⟨ρ_pf, hpf_star, hpf_eval, hpf_fail, hpf_agree⟩ :=
-                pre_termination_stmts_terminal π φ loop_num _ md ρ₀ hwfb hwfvar hnf hwfc hwfv hmeas_lb
-                  hm_old_fresh
-              exact ⟨ρ_pf,
-                stmts_concat_terminal π φ _ _ ρ₀ ρ₀ ρ_pf
-                  (stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_id
-                    (assume_block_step_det π φ
-                      s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-                      _ s!"{loopElimAssumePrefix}{loop_num}_guard"
-                      inv md
-                      (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-                      ρ₀ hguard_ok hall_tt hwfb))
-                  hpf_star,
-                hpf_eval, hpf_fail,
-                fun n hn => hpf_agree n (by
-                  intro heq; rename_i hfresh
-                  exact absurd (heq ▸ hn) hfresh)⟩))
-      | (simp [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-              bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-              ExceptT.lift, StateT.bind, Functor.map, liftM, monadLift, MonadLift.monadLift,
-              modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
-              genLoopNum, bumpStat, Except.isOk, Except.toBool,
-              StateT.pure] at hok'; contradiction)
-      | contradiction
-      | (split at h; skip))
-    all_goals (first
-      | (cases h
-         refine ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl, ?_⟩
-         first
-           | exact ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_id
-               (assume_block_step_nondet π φ
-                 s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-                 inv md
-                 (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-                 ρ₀ hall_tt hwfb),
-               rfl, rfl, fun _ _ => rfl⟩
-           | exact ⟨ρ₀, stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_id
-               (assume_block_step_det π φ
-                 s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-                 _ s!"{loopElimAssumePrefix}{loop_num}_guard"
-                 inv md
-                 (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-                 ρ₀ hguard_ok hall_tt hwfb),
-               rfl, rfl, fun _ _ => rfl⟩
-           | (have hmeas_lb := hmeas_wf _ rfl
-              obtain ⟨ρ_pf, hpf_star, hpf_eval, hpf_fail, hpf_agree⟩ :=
-                pre_termination_stmts_terminal π φ loop_num _ md ρ₀ hwfb hwfvar hnf hwfc hwfv hmeas_lb
-                  hm_old_fresh
-              exact ⟨ρ_pf,
-                stmts_concat_terminal π φ _ _ ρ₀ ρ₀ ρ_pf
-                  (stmts_pair_terminal π φ _ _ ρ₀ ρ₀ ρ₀ hhavoc_id
-                    (assume_block_step_det π φ
-                      s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-                      _ s!"{loopElimAssumePrefix}{loop_num}_guard"
-                      inv md
-                      (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-                      ρ₀ hguard_ok hall_tt hwfb))
-                  hpf_star,
-                hpf_eval, hpf_fail,
-                fun n hn => hpf_agree n (by
-                  intro heq; rename_i hfresh
-                  exact absurd (heq ▸ hn) hfresh)⟩))
-      | (simp [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-              bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-              ExceptT.lift, StateT.bind, Functor.map, liftM, monadLift, MonadLift.monadLift,
-              modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
-              genLoopNum, bumpStat, Except.isOk, Except.toBool,
-              StateT.pure] at hok'; (try contradiction); (try simp_all)))
-
-/-- When `ρ_target` has the same `eval` and `hasFailure` as `ρ₀`, updating
-    `ρ₀.store` to `ρ_target.store` gives `ρ_target`. -/
 private theorem env_with_store_eq (ρ₀ ρ_target : Env Expression)
     (heval : ρ_target.eval = ρ₀.eval)
     (hfail : ρ_target.hasFailure = ρ₀.hasFailure) :
@@ -4315,192 +2932,6 @@ private theorem stmtResult_loop_with_prefix_targeting_det (σ : LoopElimState)
               genLoopNum, bumpStat, Except.isOk, Except.toBool,
               StateT.pure] at hok'; (try contradiction); (try simp_all)))
 
-/-- Nondet analog of `stmtResult_loop_with_prefix_targeting_det`.  The nondet
-    loop has no guard expression, no measure handling, and no `assume(¬G)` in
-    the exit state.  Otherwise the structure is the same: prefix
-    (havoc + invariant assumes) targets `ρ_target` from `ρ₀` on
-    `assigned_vars = (modifiedVars body) \ definedVars body`. -/
-private theorem stmtResult_loop_with_prefix_targeting_nondet (σ : LoopElimState)
-    (reserved : List String)
-    (measure : Option Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (body : Statements) (md : MetaData Expression)
-    (ρ₀ ρ_target : Env Expression)
-    (hnf : ρ₀.hasFailure = Bool.false)
-    (hall_tt₀ : ∀ le ∈ inv, ρ₀.eval ρ₀.store le.2 = .some HasBool.tt)
-    (hswf_body : BlockInitEnvWF reserved body ρ₀)
-    -- Target conditions
-    (hall_tt_tgt : ∀ le ∈ inv, ρ_target.eval ρ_target.store le.2 = some HasBool.tt)
-    (hswf_tgt : BlockInitEnvWF reserved body ρ_target)
-    (heval_tgt : ρ_target.eval = ρ₀.eval)
-    (hfail_tgt : ρ_target.hasFailure = ρ₀.hasFailure)
-    (hagree : ∀ x, x ∉ (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body false) →
-      ρ_target.store x = ρ₀.store x)
-    (hok : stmtOk σ (.loop .nondet measure inv body md)) :
-    ∃ (loop_label first_iter_label arb_iter_label : String)
-      (first_iter_body : Statements)
-      (prefix_stmts suffix_stmts exit_state_stmts : Statements)
-      (maintain_invariants : Statements)
-      (body_statements : Statements),
-    stmtResult σ (.loop .nondet measure inv body md) =
-      .block loop_label
-        [.block first_iter_label first_iter_body {},
-         .ite .nondet
-           (.block arb_iter_label
-             (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) {}
-            :: exit_state_stmts) [] {}] {} ∧
-    body_statements = body ∧
-    (maintain_invariants = inv.mapIdx fun i le =>
-      Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if le.1.isEmpty then toString i else s!"{i}_{le.1}"}" le.2 md)) ∧
-    (first_iter_body =
-      let loop_num := (StringGenState.gen "loop" σ.gen).fst
-      let invSuffix : Nat → String → String := fun i lbl =>
-        if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) ++
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
-        s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md))) ∧
-    (∃ ρ_pf_tgt, CoreStar π φ (.stmts prefix_stmts ρ₀) (.terminal ρ_pf_tgt) ∧
-      ρ_pf_tgt.eval = ρ_target.eval ∧ ρ_pf_tgt.hasFailure = ρ_target.hasFailure ∧
-      (∀ n ∈ Block.touchedVars body, ρ_pf_tgt.store n = ρ_target.store n)) ∧
-    -- Exit-state structure (nondet): [havocd] ++ invariant_assumes (no assume_not_guard)
-    (exit_state_stmts =
-      let loop_num := (StringGenState.gen "loop" σ.gen).fst
-      let invSuffix : Nat → String → String := fun i lbl =>
-        if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-      let assigned_vars := (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body false)
-      [.block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
-          (assigned_vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) {}]
-      ++ inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assume
-          s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{invSuffix i le.1}" le.2 md)) ∧
-    -- Suffix structure (nondet): always []
-    suffix_stmts = [] := by
-  -- Common infrastructure for the semantic part
-  have hwfb := hswf_body.wfBool
-  have hwfvar := hswf_body.wfVar
-  let loop_num := (StringGenState.gen "loop" σ.gen).fst
-  let assigned_vars := (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body false)
-  -- `assigned_vars ⊆ touchedVars body \ definedVars body`, so `readWritesDefined`
-  -- from `BlockInitEnvWF` gives `(ρ.store n).isSome` for ρ ∈ {ρ₀, ρ_target}.
-  have hdef_assigned : ∀ n ∈ assigned_vars, (ρ₀.store n).isSome := by
-    intro n hn
-    have hmod : n ∈ Block.modifiedVars body :=
-      (List.mem_filter.mp hn).1
-    have hndef : n ∉ Block.definedVars body false := by
-      have h := (List.mem_filter.mp hn).2
-      simpa using h
-    apply hswf_body.readWritesDefined n
-    · show n ∈ Block.modifiedOrDefinedVars body true ++ Block.getVars body
-      exact List.mem_append_left _ (List.mem_append_left _ hmod)
-    · exact hndef
-  have hdef_assigned_tgt : ∀ n ∈ assigned_vars, (ρ_target.store n).isSome := by
-    intro n hn
-    have hmod : n ∈ Block.modifiedVars body :=
-      (List.mem_filter.mp hn).1
-    have hndef : n ∉ Block.definedVars body false := by
-      have h := (List.mem_filter.mp hn).2
-      simpa using h
-    apply hswf_tgt.readWritesDefined n
-    · show n ∈ Block.modifiedOrDefinedVars body true ++ Block.getVars body
-      exact List.mem_append_left _ (List.mem_append_left _ hmod)
-    · exact hndef
-  -- Havoc targeting: ρ₀ → ρ_target on assigned_vars.
-  have hhavoc_tgt := havoc_block_to_target_empty_outer π φ
-    s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ₀ ρ_target
-    hwfvar hdef_assigned hdef_assigned_tgt hagree hnf
-  have henv_eq := env_with_store_eq ρ₀ ρ_target heval_tgt hfail_tgt
-  rw [henv_eq] at hhavoc_tgt
-  have hwfb_tgt : WellFormedSemanticEvalBool ρ_target.eval := heval_tgt ▸ hwfb
-  -- Full unfolding to get concrete prefix_stmts and prove termination
-  change ∃ (loop_label first_iter_label arb_iter_label : String)
-    (first_iter_body : Statements)
-    (prefix_stmts suffix_stmts exit_state_stmts : Statements)
-    (maintain_invariants : Statements)
-    (body_statements : Statements),
-    (match (stmtRun σ (.loop .nondet measure inv body md)).fst with
-      | .ok (_, s') => s' | .error _ => default) =
-    .block loop_label
-      [.block first_iter_label first_iter_body {},
-       .ite .nondet
-         (.block arb_iter_label
-           (prefix_stmts ++ body_statements ++ maintain_invariants ++ suffix_stmts) {}
-          :: exit_state_stmts) [] {}] {} ∧
-    body_statements = body ∧
-    (maintain_invariants = inv.mapIdx fun i le =>
-      Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{(StringGenState.gen "loop" σ.gen).fst}_arbitrary_iter_maintain_invariant_{if le.1.isEmpty then toString i else s!"{i}_{le.1}"}" le.2 md)) ∧
-    (first_iter_body =
-      let loop_num := (StringGenState.gen "loop" σ.gen).fst
-      let invSuffix : Nat → String → String := fun i lbl =>
-        if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assert
-        s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md)) ++
-      (inv.mapIdx fun i le => Stmt.cmd (HasPassiveCmds.assume
-        s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{invSuffix i le.1}" le.2 md))) ∧
-    (∃ ρ_pf_tgt, CoreStar π φ (.stmts prefix_stmts ρ₀) (.terminal ρ_pf_tgt) ∧
-      ρ_pf_tgt.eval = ρ_target.eval ∧ ρ_pf_tgt.hasFailure = ρ_target.hasFailure ∧
-      (∀ n ∈ Block.touchedVars body, ρ_pf_tgt.store n = ρ_target.store n)) ∧
-    (exit_state_stmts =
-      let loop_num := (StringGenState.gen "loop" σ.gen).fst
-      let invSuffix : Nat → String → String := fun i lbl =>
-        if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-      let assigned_vars := (Block.modifiedVars body).filter (fun v => v ∉ Block.definedVars body false)
-      [.block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
-          (assigned_vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) {}]
-      ++ inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assume
-          s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{invSuffix i le.1}" le.2 md)) ∧
-    suffix_stmts = []
-  have hok' := hok
-  unfold stmtOk at hok'
-  match h : (stmtRun σ (.loop .nondet measure inv body md)).fst with
-  | .error e => simp [h, Except.isOk, Except.toBool] at hok'
-  | .ok (b, s') =>
-    simp only [h]
-    simp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-      bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-      ExceptT.lift, StateT.bind,
-      Functor.map, liftM, monadLift, MonadLift.monadLift,
-      modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
-      genLoopNum, bumpStat] at h
-    repeat (first
-      | (cases h
-         refine ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl, ?_, rfl, rfl⟩
-         -- Nondet prefix: [havocd, assumes_block_nondet], targets ρ_target from ρ₀.
-         exact ⟨ρ_target, stmts_pair_terminal π φ _ _ ρ₀ ρ_target ρ_target hhavoc_tgt
-             (assume_block_step_nondet π φ
-               s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-               inv md
-               (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-               ρ_target hall_tt_tgt hwfb_tgt),
-             rfl, rfl, fun _ _ => rfl⟩)
-      | (simp [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-              bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-              ExceptT.lift, StateT.bind, Functor.map, liftM, monadLift, MonadLift.monadLift,
-              modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
-              genLoopNum, bumpStat, Except.isOk, Except.toBool,
-              StateT.pure] at hok'; contradiction)
-      | contradiction
-      | (split at h; skip))
-    all_goals (first
-      | (cases h
-         refine ⟨_, _, _, _, _, _, _, _, _, rfl, rfl, rfl, rfl, ?_, rfl, rfl⟩
-         exact ⟨ρ_target, stmts_pair_terminal π φ _ _ ρ₀ ρ_target ρ_target hhavoc_tgt
-             (assume_block_step_nondet π φ
-               s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
-               inv md
-               (fun i lbl => s!"{loopElimAssumePrefix}{loop_num}_invariant_{if lbl.isEmpty then toString i else s!"{i}_{lbl}"}")
-               ρ_target hall_tt_tgt hwfb_tgt),
-             rfl, rfl, fun _ _ => rfl⟩)
-      | (simp [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-              bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-              ExceptT.lift, StateT.bind, Functor.map, liftM, monadLift, MonadLift.monadLift,
-              modify, MonadState.modifyGet, StateT.modifyGet, StateT.map,
-              genLoopNum, bumpStat, Except.isOk, Except.toBool,
-              StateT.pure] at hok'; (try contradiction); (try simp_all)))
-
 /-! ## Arbitrary-iteration block plumbing
 
 These are pure trace-composition helpers used by the main simulation
@@ -4553,95 +2984,6 @@ private theorem arb_iter_block_terminates
     `arb_iter_label` — the exit propagates out of the block.  Here we
     take the most general statement: assume the inner concatenation runs
     to `.exiting lv` for `lv ≠ arb_iter_label`. -/
-private theorem arb_iter_block_exiting
-    (arb_iter_label : String)
-    (inner_stmts : Statements)
-    (md : MetaData Expression)
-    (lv : String)
-    (ρ₀ ρ' : Env Expression)
-    (hne : lv ≠ arb_iter_label)
-    (hinner : CoreStar π φ (.stmts inner_stmts ρ₀) (.exiting lv ρ')) :
-    CoreStar π φ
-      (.stmt (.block arb_iter_label inner_stmts md) ρ₀)
-      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
-  block_wrap_exiting_mismatch π φ arb_iter_label _ md lv ρ₀ ρ' hne hinner
-
-/-- The exit_state_stmts (havoc block + assume(¬G) + invariant_assumes)
-    runs from `ρ_end` to `ρ_end` (modulo the projected store from the
-    havoc block) when:
-    - all assigned vars are already defined at `ρ_end`,
-    - the guard evaluates to `ff` at `ρ_end`,
-    - all invariants evaluate to `tt` at `ρ_end`.
-
-    The havoc block targets `ρ_end` itself (identity), so the prefix runs
-    `ρ_end → ρ_end`.  Then `assume (¬G)` passes (since g = ff implies
-    not g = tt), and the invariant assumes pass (each invariant is tt). -/
-private theorem exit_state_stmts_terminates
-    (loop_num : String) (g : Expression.Expr)
-    (inv : List (String × Expression.Expr))
-    (assigned_vars : List Expression.Ident)
-    (md : MetaData Expression)
-    (ρ_end : Env Expression)
-    (hwfb : WellFormedSemanticEvalBool ρ_end.eval)
-    (hwfvar : WellFormedSemanticEvalVar ρ_end.eval)
-    (hnf : ρ_end.hasFailure = Bool.false)
-    (hdef : ∀ x ∈ assigned_vars, (ρ_end.store x).isSome)
-    (hguard_ff : ρ_end.eval ρ_end.store g = some HasBool.ff)
-    (hall_tt : ∀ le ∈ inv, ρ_end.eval ρ_end.store le.2 = some HasBool.tt) :
-    let invSuffix : Nat → String → String := fun i lbl =>
-      if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-    let exit_state_stmts : Statements :=
-      [.block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
-          (assigned_vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) {},
-        .cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_not_guard"
-          (HasNot.not g) md)]
-      ++ inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assume
-          s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{invSuffix i le.1}" le.2 md)
-    CoreStar π φ (.stmts exit_state_stmts ρ_end) (.terminal ρ_end) := by
-  intro invSuffix exit_state_stmts
-  -- Step 1: havoc block at ρ_end targeting ρ_end (identity).
-  have hhavoc : CoreStar π φ
-      (.stmt (.block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
-        (assigned_vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) {}) ρ_end)
-      (.terminal ρ_end) := by
-    have h := havoc_block_to_target_empty_outer π φ
-      s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" assigned_vars md ρ_end ρ_end
-      hwfvar hdef hdef (fun _ _ => rfl) hnf
-    have heq : ({ ρ_end with store := ρ_end.store } : Env Expression) = ρ_end := by
-      cases ρ_end; rfl
-    rw [heq] at h; exact h
-  -- Step 2: assume (not g) passes since g = ff means not g = tt.
-  have hnot_tt : ρ_end.eval ρ_end.store (HasNot.not g) = some HasBool.tt :=
-    (hwfb ρ_end.store g).2.1 hguard_ff
-  have hassume_ng : CoreStar π φ
-      (.stmt (.cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_not_guard"
-        (HasNot.not g) md)) ρ_end) (.terminal ρ_end) :=
-    assume_pass_step π φ _ _ md ρ_end hnot_tt hwfb
-  -- Combine the first two statements.
-  have hpair : CoreStar π φ
-      (.stmts [.block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}"
-        (assigned_vars.map fun n => Stmt.cmd (HasHavoc.havoc n md)) {},
-        .cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_not_guard"
-          (HasNot.not g) md)] ρ_end) (.terminal ρ_end) :=
-    stmts_pair_terminal π φ _ _ ρ_end ρ_end ρ_end hhavoc hassume_ng
-  -- Step 3: the invariant assume list passes.
-  have hinv : CoreStar π φ
-      (.stmts (inv.mapIdx fun i le =>
-        Stmt.cmd (HasPassiveCmds.assume
-          s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{invSuffix i le.1}" le.2 md)) ρ_end)
-      (.terminal ρ_end) :=
-    stmts_mapIdx_assume_terminal π φ inv ρ_end md
-      (fun i lbl =>
-        s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{invSuffix i lbl}")
-      hwfb hall_tt
-  -- Concatenate.
-  exact stmts_concat_terminal π φ _ _ ρ_end ρ_end ρ_end hpair hinv
-
-/-- If-block dispatch (det branch true): given `g(ρ₀) = tt`, the
-    statement `.ite (.det g) then_branch [] {}` reduces (in one step) to
-    `.stmts then_branch ρ₀`.  Combined with a terminating run of
-    `then_branch`, the full ite terminates at the same env. -/
 private theorem ite_det_true_terminal
     (g : Expression.Expr) (then_branch : Statements) (md : MetaData Expression)
     (ρ₀ ρ' : Env Expression)
@@ -4654,21 +2996,6 @@ private theorem ite_det_true_terminal
     (ReflTrans_Transitive _ _ _ _
       (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ .none ρ₀.store hthen)
       (.step _ _ _ .step_block_done (.refl _)))
-
-/-- Variant of `ite_det_true_terminal`: when the then-branch exits at
-    label `lv`, the full ite exits at the same label. -/
-private theorem ite_det_true_exiting
-    (g : Expression.Expr) (then_branch : Statements) (md : MetaData Expression)
-    (lv : String) (ρ₀ ρ' : Env Expression)
-    (hguard_tt : ρ₀.eval ρ₀.store g = some HasBool.tt)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (hthen : CoreStar π φ (.stmts then_branch ρ₀) (.exiting lv ρ')) :
-    CoreStar π φ (.stmt (.ite (.det g) then_branch [] md) ρ₀)
-      (.exiting lv { ρ' with store := projectStore ρ₀.store ρ'.store }) :=
-  .step _ _ _ (.step_ite_true hguard_tt hwfb)
-    (ReflTrans_Transitive _ _ _ _
-      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ .none ρ₀.store hthen)
-      (.step _ _ _ (.step_block_exit_mismatch (by simp)) (.refl _)))
 
 /-! ## Partial-store agreement transfer for CoreStar
 
@@ -4831,58 +3158,6 @@ private theorem block_self_exitsCoveredByBlocks
              (fun l hl => heq ▸ List.mem_append_left _ hl),
            (exitsCoveredByBlocks_weaken (Block.labels rest) (Block.labels (s :: rest))
              (fun l hl => heq ▸ List.mem_append_right _ hl)).2 rest ih⟩
-
-/-- If executing a block of statements reaches `.exiting l ρ'`,
-    then `l` is syntactically present in `Block.labels body`. -/
-private theorem stmts_exiting_label_mem
-    (body : Statements) (l : String) (ρ ρ' : Env Expression)
-    (hstar : CoreStar π φ (.stmts body ρ) (.exiting l ρ')) :
-    l ∈ Block.labels body := by
-  have hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (Block.labels body) body :=
-    block_self_exitsCoveredByBlocks body
-  -- Multi-step preservation of exitsCoveredByBlocks
-  have hpres : ∀ c₁ c₂,
-      Config.exitsCoveredByBlocks (Block.labels body) c₁ →
-      StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      Config.exitsCoveredByBlocks (Block.labels body) c₂ := by
-    intro c₁ c₂ hwp hstar_c
-    induction hstar_c with
-    | refl => exact hwp
-    | step _ _ _ hstep _ ih =>
-      exact ih (step_preserves_exitsCoveredByBlocks Expression
-        (EvalCommand π φ) (EvalPureFunc φ) (Block.labels body) _ _ hstep hwp)
-  have hcov' : Config.exitsCoveredByBlocks (Block.labels body) (.stmts body ρ) := hcov
-  have hwp_final := hpres _ _ hcov' hstar
-  -- Config.exitsCoveredByBlocks (Block.labels body) (.exiting l ρ') = (l ∈ Block.labels body)
-  exact hwp_final
-
-/-- When the loop transformation succeeds, generated block labels don't collide
-    with exit labels in the body. -/
-private theorem stmtOk_loop_label_fresh {σ : LoopElimState}
-    {guard : ExprOrNondet Expression} {measure : Option Expression.Expr}
-    {inv : List (String × Expression.Expr)} {body : Statements}
-    {md : MetaData Expression}
-    (h : stmtOk σ (.loop guard measure inv body md)) :
-    let loop_num := (StringGenState.gen "loop" σ.gen).fst
-    s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}" ∉ Block.labels body ∧
-    s!"{loopElimBlockPrefix}loop_{loop_num}" ∉ Block.labels body := by
-  have hok' := h
-  unfold stmtOk at hok'
-  match hrun : (stmtRun σ (.loop guard measure inv body md)).fst with
-  | .error e => simp [hrun, Except.isOk, Except.toBool] at hok'
-  | .ok (b, s') =>
-    simp only [stmtRun, StateT.run, ExceptT.run, Stmt.removeLoopsM, removeLoopsLoopCase, buildLoopOutput, buildLoopPassive, buildArbitraryIterFacts, buildArbitraryIterAssumes, buildExitStateAssumes, buildHavocBlock, buildFirstIterFacts, buildEntryInvariants, buildEntryInvariantAssumes, buildInvAssumes, buildMaintainInvariants, buildExitInvariantAssumes, buildGuardParts, buildTerminationStmtsSome, hasLabelConflict, numAssertAssumesForLoop, invSuffix, measureOldIdent,
-      bind, pure, ExceptT.bind, ExceptT.pure, ExceptT.mk, ExceptT.bindCont,
-      ExceptT.lift, StateT.bind,
-      Functor.map, liftM, monadLift, MonadLift.monadLift,
-      modify, MonadState.modifyGet, StateT.map,
-      genLoopNum, bumpStat] at hrun
-    repeat (first
-      | (split at hrun; skip)
-      | contradiction)
-    all_goals (first
-      | (cases hrun; rename_i h; simp_all)
-      | (simp_all))
 
 /-! ## InitEnvWF derivations for sub-statements
 
@@ -5248,40 +3523,6 @@ private theorem BlockInitEnvWF.toStmt_head {reserved : List String} {s : Stateme
 
 /-- Any variable that becomes `isSome` after executing `s` (from `isNone` before)
     must be in `Stmt.definedVars s`. -/
-private theorem newVars_in_definedVars {s : Statement} {ρ₀ ρ₁ : Env Expression}
-    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (hrwd : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s false → (ρ₀.store n).isSome) :
-    ∀ n, (ρ₁.store n).isSome → (ρ₀.store n).isNone → n ∈ Stmt.definedVars s false := by
-  intro n hsome₁ hnone₀
-  by_cases hnd : n ∈ Stmt.definedVars s false
-  · exact hnd
-  · exfalso
-    by_cases hn_touched : n ∈ Stmt.touchedVars s
-    · have hsome₀ := hrwd n hn_touched hnd
-      simp only [Option.isNone_iff_eq_none] at hnone₀
-      simp only [Option.isSome_iff_ne_none, hnone₀] at hsome₀
-      exact hsome₀ rfl
-    · have hx : n ∉ Config.touchedVarsSet (.stmt s ρ₀) := by
-        intro hmem
-        -- hmem : n ∈ Stmt.modifiedVars s ++ Stmt.definedVars s false
-        simp only [Config.touchedVarsSet, List.mem_append] at hmem
-        rcases hmem with hmod | hdef
-        · apply hn_touched
-          show n ∈ Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
-          exact List.mem_append_left _ ((modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s) true).1
-            s (Nat.le_refl _) n hmod)
-        · exact hnd hdef
-      have hframe := star_preserves_store_outside_touchedVars_isNone (π := π) (φ := φ)
-        hstar n (by simp only [Config.getEnv]; exact hnone₀) hx
-      simp only [Config.getEnv] at hframe
-      rw [hframe] at hsome₁
-      simp only [Option.isNone_iff_eq_none] at hnone₀
-      simp [hnone₀] at hsome₁
-
-/-- After executing a non-funcDecl statement `s` terminally, every variable in
-    `Stmt.definedVars s true` (i.e., non-scoped inits) is `isSome` in the output env.
-    For `.cmd`, these are `init` variables that fire (since they start `isNone`).
-    For all other non-funcDecl statements, `definedVars s true = []` so the claim is vacuous. -/
 private theorem cmd_definedVars_true_isSome_after
     {cmd : Command} {ρ₀ ρ₁ : Env Expression}
     (hstar : CoreStar π φ (.stmt (.cmd cmd) ρ₀) (.terminal ρ₁))
@@ -5337,65 +3578,659 @@ private theorem stmt_definedVars_true_isSome_after
   | .funcDecl .., _, _ => exact absurd _hnofd (by simp [Stmt.noFuncDecl])
   | .typeDecl .., _, hn' => simp [Stmt.definedVars] at hn'
 
+/-- From `Block.defUseWellFormed outer ss = true` and `n ∈ Block.definedVars ss false`,
+    conclude that `outer n = false`.  This is the def-side dual of
+    `defUseWellFormed_modGetVars_implies_outer`: in a well-formed block, freshly-defined
+    variables can't already be in the outer scope.  We prove it by mutual induction on
+    statement/block size, mirroring `defUseWellFormed_touched_notDef_aux`. -/
+private theorem defUseWellFormed_definedVars_notMem_outer_aux (sz : Nat) :
+    (∀ (outer : Expression.Ident → Bool) (s : Statement),
+      Stmt.sizeOf s ≤ sz →
+      Stmt.defUseWellFormed outer s = Bool.true →
+      ∀ (n : Expression.Ident),
+        n ∈ Stmt.definedVars s false →
+        outer n = Bool.false) ∧
+    (∀ (outer : Expression.Ident → Bool) (bss : Statements),
+      Block.sizeOf bss ≤ sz →
+      Block.defUseWellFormed outer bss = Bool.true →
+      ∀ (n : Expression.Ident),
+        n ∈ Block.definedVars bss false →
+        outer n = Bool.false) := by
+  induction sz with
+  | zero =>
+    refine ⟨?_, ?_⟩
+    · intro outer s hsz; cases s <;> simp [Stmt.sizeOf] at hsz
+    · intro outer bss hsz hwf n hn
+      match bss with
+      | [] => simp [Block.definedVars] at hn
+      | s :: rest => simp [Block.sizeOf] at hsz
+  | succ k ih =>
+    obtain ⟨ih_stmt, ih_block⟩ := ih
+    refine ⟨?_, ?_⟩
+    · -- Stmt case
+      intro outer s hsz hwf n hn
+      match s with
+      | .cmd c =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨_, hdefs⟩ := hwf
+        rw [List.all_eq_true] at hdefs
+        simp only [Stmt.definedVars, HasVarsImp.definedVars] at hn
+        have := hdefs n hn
+        simp only [decide_eq_true_eq] at this
+        cases h : outer n
+        · rfl
+        · exact absurd h this
+      | .block l bss md =>
+        simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hn
+        unfold Stmt.defUseWellFormed at hwf
+        have hsz_bss : Block.sizeOf bss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        exact ih_block outer bss hsz_bss hwf n hn
+      | .ite cond tbss ebss md =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨⟨_, htbss⟩, hebss⟩ := hwf
+        simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte, List.mem_append] at hn
+        have hsz_t : Block.sizeOf tbss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        have hsz_e : Block.sizeOf ebss ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        rcases hn with ht | he
+        · exact ih_block outer tbss hsz_t htbss n ht
+        · exact ih_block outer ebss hsz_e hebss n he
+      | .loop guard measure inv body md =>
+        unfold Stmt.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨_, hbody⟩ := hwf
+        simp only [Stmt.definedVars, Bool.false_eq_true, ↓reduceIte] at hn
+        have hsz_body : Block.sizeOf body ≤ k := by simp [Stmt.sizeOf] at hsz; omega
+        exact ih_block outer body hsz_body hbody n hn
+      | .exit l md => simp [Stmt.definedVars] at hn
+      | .funcDecl decl md =>
+        unfold Stmt.defUseWellFormed at hwf; simp at hwf
+      | .typeDecl tc md => simp [Stmt.definedVars] at hn
+    · -- Block case
+      intro outer bss hsz hwf n hn
+      match bss with
+      | [] => simp [Block.definedVars] at hn
+      | s :: rest =>
+        unfold Block.defUseWellFormed at hwf
+        simp only [Bool.and_eq_true] at hwf
+        obtain ⟨hwf_s, hwf_rest⟩ := hwf
+        simp only [Block.definedVars, List.mem_append] at hn
+        have hsz_s : Stmt.sizeOf s ≤ k := by simp [Block.sizeOf] at hsz; omega
+        have hsz_rest : Block.sizeOf rest ≤ k := by simp [Block.sizeOf] at hsz; omega
+        rcases hn with hs | hr
+        · exact ih_stmt outer s hsz_s hwf_s n hs
+        · -- n ∈ Block.definedVars rest false ⟹ extended-outer n = false
+          have h_rest_result := ih_block
+            (fun m => outer m || decide (m ∈ Stmt.definedVars s true))
+            rest hsz_rest hwf_rest n hr
+          simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not] at h_rest_result
+          exact h_rest_result.1
+
+/-- Block-level: from `defUseWellFormed`, freshly-defined vars are not in the outer scope. -/
+private theorem defUseWellFormed_block_definedVars_notMem_outer
+    {outer : Expression.Ident → Bool} {bss : Statements}
+    (hwf : Block.defUseWellFormed outer bss = Bool.true)
+    {n : Expression.Ident}
+    (hn : n ∈ Block.definedVars bss false) : outer n = Bool.false :=
+  (defUseWellFormed_definedVars_notMem_outer_aux (Block.sizeOf bss)).2
+    outer bss (Nat.le_refl _) hwf n hn
+
+/-! ### Configuration-level isNone invariant
+
+For loops, we need a star-trace argument that handles iteration.  The key
+invariant: at every config `c` reachable from `.stmt (.loop ..) ρ₀`, the
+"refresh value" of `n` at `c` (computed by ignoring inner block scopes) is
+`none`.  More precisely, every enclosing block in `c` has `σ_parent n = none`,
+and the innermost env has `.store n = none` UNLESS we're inside a block scope
+that will project it away.
+
+We use a simpler invariant based on `outerInv`'s structure: track that
+`(σ_outer n) = none` (where `σ_outer` is the loop's parent context) AND
+every block scope in `c` has its `σ_parent n = none`.  If those hold, then
+when blocks pop (via `step_block_done`), the result `projectStore σ_parent _ n`
+is `none`. -/
+
+/-- "n is none-anchored at c":
+    `(c.getEnv.store n).isNone` AND every enclosing block in `c` has
+    `σ_parent n = none`.  This is the invariant we propagate through trace
+    induction for the loop case. -/
+private def isNoneAnchored (n : Expression.Ident) : CC → Prop
+  | .stmt _ ρ => (ρ.store n).isNone
+  | .stmts _ ρ => (ρ.store n).isNone
+  | .terminal ρ => (ρ.store n).isNone
+  | .exiting _ ρ => (ρ.store n).isNone
+  | .block _ σ_parent inner => (σ_parent n).isNone ∧ isNoneAnchored n inner
+  | .seq inner _ => isNoneAnchored n inner
+
+/-- `isNoneAnchored n c` implies `(c.getEnv.store n).isNone`. -/
+private theorem isNoneAnchored_implies_isNone (n : Expression.Ident) (c : CC)
+    (h : isNoneAnchored n c) : (c.getEnv.store n).isNone := by
+  match c with
+  | .stmt _ _ => exact h
+  | .stmts _ _ => exact h
+  | .terminal _ => exact h
+  | .exiting _ _ => exact h
+  | .block _ _ inner =>
+    obtain ⟨_, hinner⟩ := h
+    show (inner.getEnv.store n).isNone
+    exact isNoneAnchored_implies_isNone n inner hinner
+  | .seq inner _ =>
+    show (inner.getEnv.store n).isNone
+    exact isNoneAnchored_implies_isNone n inner h
+
+/-- Single-step preserves `isNoneAnchored n` when `n` is outside the
+    "writable" surface: not in `c₁`'s `Stmt.modifiedVars` (modifications) and
+    `n` is also not init'd at the current step.  In particular, for any
+    statement where the modifiedVars covers all writes (excluding scoped inits),
+    `isNoneAnchored` is preserved. -/
+private theorem step_preserves_isNoneAnchored
+    {n : Expression.Ident} {a b : CC}
+    (hstep : StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) a b)
+    (hinv : isNoneAnchored n a)
+    (hnoWrite : n ∉ Config.touchedVarsSet a) :
+    isNoneAnchored n b := by
+  induction hstep with
+  | step_cmd heval =>
+    -- a = .stmt (.cmd c) ρ, b = .terminal ρ' with ρ'.store = σ'
+    -- hnoWrite: n ∉ Stmt.modifiedVars (.cmd c) ++ Stmt.definedVars (.cmd c) false
+    -- Use evalCommand_store_frame_stmt: σ' n = ρ.store n.
+    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    have hmod : n ∉ Stmt.modifiedVars (.cmd ‹Command›) :=
+      fun hmem => hnoWrite (by
+        simp only [Config.touchedVarsSet, List.mem_append]; exact .inl hmem)
+    have hdef : n ∉ Stmt.definedVars (.cmd ‹Command›) false :=
+      fun hmem => hnoWrite (by
+        simp only [Config.touchedVarsSet, List.mem_append]; exact .inr hmem)
+    have hframe := evalCommand_store_frame_stmt (π := π) (φ := φ) heval hmod hdef
+    rw [Option.isNone_iff_eq_none]
+    rw [hframe]
+    exact Option.isNone_iff_eq_none.mp hinv
+  | step_block =>
+    -- a = .stmt (.block l ss md) ρ, b = .block (.some l) ρ.store (.stmts ss ρ)
+    -- hinv : (ρ.store n).isNone
+    -- goal isNoneAnchored n b = ⟨(ρ.store n).isNone, isNoneAnchored n (.stmts ss ρ)⟩
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_ite_true _ _ =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_ite_false _ _ =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_ite_nondet_true =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_ite_nondet_false =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_loop_enter _ _ _ _ _ =>
+    -- a = .stmt (.loop ..) ρ, b = .seq (.block .none ρ.store (.stmts body ρ')) [loop]
+    -- where ρ' = { ρ with hasFailure := ... }, so ρ'.store = ρ.store.
+    -- hinv : (ρ.store n).isNone.  goal: isNoneAnchored n b = isNoneAnchored n (.block ...) = ⟨(ρ.store n).isNone, (ρ'.store n).isNone⟩
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_loop_exit _ _ _ _ =>
+    -- b = .terminal { ρ with hasFailure := ... }
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_loop_nondet_enter _ _ =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ⟨hinv, hinv⟩
+  | step_loop_nondet_exit _ _ =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_exit =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_funcDecl =>
+    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    exact hinv
+  | step_typeDecl =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_stmts_nil =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_stmts_cons =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_seq_inner _ ih =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact ih hinv (fun hmem => hnoWrite (by
+      simp only [Config.touchedVarsSet, List.mem_append]
+      left; left; exact hmem))
+  | step_seq_done =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_seq_exit =>
+    simp only [isNoneAnchored] at hinv ⊢
+    exact hinv
+  | step_block_body _ ih =>
+    simp only [isNoneAnchored] at hinv ⊢
+    obtain ⟨hpar, hinner⟩ := hinv
+    refine ⟨hpar, ih hinner ?_⟩
+    simp only [Config.touchedVarsSet] at hnoWrite
+    exact hnoWrite
+  | step_block_done =>
+    -- a = .block l σ_parent (.terminal ρ'), hinv = ⟨(σ_parent n).isNone, (ρ'.store n).isNone⟩
+    -- b = .terminal { ρ' with store := projectStore σ_parent ρ'.store }
+    -- goal: ((projectStore σ_parent ρ'.store) n).isNone
+    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    obtain ⟨hpar, _⟩ := hinv
+    simp only [projectStore]
+    rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hpar)]
+    rfl
+  | step_block_exit_match _ =>
+    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    obtain ⟨hpar, _⟩ := hinv
+    simp only [projectStore]
+    rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hpar)]
+    rfl
+  | step_block_exit_mismatch _ =>
+    simp only [isNoneAnchored, Config.getEnv] at hinv ⊢
+    obtain ⟨hpar, _⟩ := hinv
+    simp only [projectStore]
+    rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hpar)]
+    rfl
+
+/-- Star version of `step_preserves_isNoneAnchored`. -/
+private theorem stmt_terminal_preserves_isNone
+    {s : Statement} {ρ₀ ρ₁ : Env Expression}
+    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
+    (hnofd : Stmt.noFuncDecl s = Bool.true)
+    (n : Expression.Ident)
+    (hnone : (ρ₀.store n).isNone)
+    (hnmod : n ∉ Stmt.modifiedVars s)
+    (hndef_true : n ∉ Stmt.definedVars s true) :
+    (ρ₁.store n).isNone := by
+  match s with
+  | .cmd c =>
+    -- For .cmd, definedVars true = definedVars false, so we use existing frame.
+    have hndef_false : n ∉ Stmt.definedVars (.cmd c) false := by
+      simpa [Stmt.definedVars] using hndef_true
+    have hxnot : n ∉ Config.touchedVarsSet (.stmt (.cmd c) ρ₀) := by
+      simp only [Config.touchedVarsSet, List.mem_append]
+      rintro (hmod | hdef)
+      · exact hnmod hmod
+      · exact hndef_false hdef
+    have hframe := star_preserves_store_outside_touchedVars_isNone (π := π) (φ := φ)
+      hstar n (by simpa [Config.getEnv] using hnone) hxnot
+    simp only [Config.getEnv] at hframe
+    rw [Option.isNone_iff_eq_none, hframe]
+    exact Option.isNone_iff_eq_none.mp hnone
+  | .block l bss md =>
+    -- Trace: step_block + (block_reaches_terminal: inner reaches terminal/exiting,
+    -- ρ₁ = projectStore ρ₀.store ρ_inner.store).  In both projection cases,
+    -- (projectStore ρ₀.store ρ_inner.store n) = if (ρ₀.store n).isSome then ... else none.
+    -- Since hnone : (ρ₀.store n).isNone, the result is `none`.
+    cases hstar with
+    | step _ mid _ h1 r1 =>
+      cases h1
+      -- mid = .block (.some l) ρ₀.store (.stmts bss ρ₀)
+      match block_reaches_terminal (P := Expression)
+          (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1 with
+      | .inl ⟨ρ_inner, _, heq⟩ =>
+        rw [heq]
+        show (projectStore ρ₀.store ρ_inner.store n).isNone
+        simp only [projectStore]
+        rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+        rfl
+      | .inr ⟨_, ρ_inner, _, heq⟩ =>
+        rw [heq]
+        show (projectStore ρ₀.store ρ_inner.store n).isNone
+        simp only [projectStore]
+        rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+        rfl
+  | .ite c tss ess md =>
+    -- Trace begins with step_ite_*, leading to .block .none ρ₀.store (.stmts ?? ρ₀).
+    -- Same projection argument as for .block.
+    cases hstar with
+    | step _ mid _ h1 r1 =>
+      cases h1 with
+      | step_ite_true _ _ | step_ite_false _ _ | step_ite_nondet_true | step_ite_nondet_false =>
+        match block_reaches_terminal (P := Expression)
+            (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1 with
+        | .inl ⟨ρ_inner, _, heq⟩ =>
+          rw [heq]
+          show (projectStore ρ₀.store ρ_inner.store n).isNone
+          simp only [projectStore]
+          rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+          rfl
+        | .inr ⟨_, ρ_inner, _, heq⟩ =>
+          rw [heq]
+          show (projectStore ρ₀.store ρ_inner.store n).isNone
+          simp only [projectStore]
+          rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+          rfl
+  | .loop g m inv body md =>
+    -- For loops, the trace either:
+    --   (a) takes step_loop_exit immediately: store unchanged.
+    --   (b) takes step_loop_enter, leading to a seq with a block-wrapped body.
+    --       The body's iteration runs in `.block .none ρ_iter.store ...`; the
+    --       block-exit projection drops `n` to `none` since `(ρ_iter.store n).isNone`.
+    --       The recursive [loop] then runs from the projected env, where `n`
+    --       remains `none`.  Trace-length induction over `ReflTransT`.
+    have hstarT := reflTrans_to_T hstar
+    -- Strong induction on trace length.
+    suffices ∀ (n_steps : Nat) (ρ₀ ρ₁ : Env Expression),
+        (ρ₀.store n).isNone →
+        ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
+            (.stmt (.loop g m inv body md) ρ₀) (.terminal ρ₁)),
+          h.len ≤ n_steps → (ρ₁.store n).isNone by
+      exact this hstarT.len ρ₀ ρ₁ hnone hstarT (Nat.le_refl _)
+    clear hstar hstarT ρ₀ ρ₁ hnone
+    intro n_steps
+    induction n_steps with
+    | zero =>
+      intro ρ₀ ρ₁ _ hT hlen
+      match hT, hlen with
+      | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
+    | succ k ih =>
+      intro ρ₀ ρ₁ hnone₀ hT hlen
+      -- Case-split on the first step of the loop trace.
+      match hT with
+      | .step _ _ _ hstep1 hrest =>
+        cases hstep1 with
+        | step_loop_exit _ _ _ _ =>
+          -- ρ₁ = { ρ₀ with hasFailure := ρ₀.hasFailure || ... }, store unchanged.
+          match hrest with
+          | .refl _ => exact hnone₀
+          | .step _ _ _ h _ => exact nomatch h
+        | step_loop_nondet_exit _ _ =>
+          match hrest with
+          | .refl _ => exact hnone₀
+          | .step _ _ _ h _ => exact nomatch h
+        | step_loop_enter _ _ _ _ _ =>
+          -- successor is .seq (.block .none ρ₀.store (.stmts body ρ₀'))
+          --                     [.loop (.det g) m inv body md].
+          have hlen_rest : hrest.len ≤ k := by simp only [ReflTransT.len] at hlen; omega
+          have ⟨ρ_mid, hT_block, hT_tail, hlen_split⟩ := seqT_reaches_terminal hrest
+          have ⟨ρ_inner, ⟨hT_inner, hlen_inner⟩, heq⟩ := blockT_none_reaches_terminal π φ hT_block
+          have hnone_mid : (ρ_mid.store n).isNone := by
+            rw [heq]
+            show (projectStore ρ₀.store ρ_inner.store n).isNone
+            simp only [projectStore]
+            rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone₀)]
+            rfl
+          match hT_tail, hlen_split with
+          | .step _ _ _ .step_stmts_cons hrest', hlen_split =>
+            have hlen_rest' : hrest'.len < hrest.len := by
+              simp only [ReflTransT.len] at hlen_split ⊢; omega
+            have ⟨ρ_mid', hT_loop', hT_nil, hlen_split'⟩ := seqT_reaches_terminal hrest'
+            have hρ_eq : ρ_mid' = ρ₁ := by
+              match hT_nil with
+              | .step _ _ _ .step_stmts_nil hrr =>
+                match hrr with
+                | .refl _ => rfl
+                | .step _ _ _ h _ => exact nomatch h
+            subst hρ_eq
+            have hlen_loop : hT_loop'.len ≤ k := by omega
+            exact ih ρ_mid ρ_mid' hnone_mid hT_loop' hlen_loop
+        | step_loop_nondet_enter _ _ =>
+          have hlen_rest : hrest.len ≤ k := by simp only [ReflTransT.len] at hlen; omega
+          have ⟨ρ_mid, hT_block, hT_tail, hlen_split⟩ := seqT_reaches_terminal hrest
+          have ⟨ρ_inner, ⟨hT_inner, hlen_inner⟩, heq⟩ := blockT_none_reaches_terminal π φ hT_block
+          have hnone_mid : (ρ_mid.store n).isNone := by
+            rw [heq]
+            show (projectStore ρ₀.store ρ_inner.store n).isNone
+            simp only [projectStore]
+            rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone₀)]
+            rfl
+          match hT_tail, hlen_split with
+          | .step _ _ _ .step_stmts_cons hrest', hlen_split =>
+            have hlen_rest' : hrest'.len < hrest.len := by
+              simp only [ReflTransT.len] at hlen_split ⊢; omega
+            have ⟨ρ_mid', hT_loop', hT_nil, hlen_split'⟩ := seqT_reaches_terminal hrest'
+            have hρ_eq : ρ_mid' = ρ₁ := by
+              match hT_nil with
+              | .step _ _ _ .step_stmts_nil hrr =>
+                match hrr with
+                | .refl _ => rfl
+                | .step _ _ _ h _ => exact nomatch h
+            subst hρ_eq
+            have hlen_loop : hT_loop'.len ≤ k := by omega
+            exact ih ρ_mid ρ_mid' hnone_mid hT_loop' hlen_loop
+  | .exit l md =>
+    -- .exit cannot reach .terminal: it always reaches .exiting.
+    exfalso
+    cases hstar with
+    | step _ _ _ h1 r1 =>
+      cases h1
+      cases r1 with
+      | step _ _ _ h2 _ => cases h2
+  | .funcDecl decl md => exact absurd hnofd (by simp [Stmt.noFuncDecl])
+  | .typeDecl tc md =>
+    -- Trace = step_typeDecl + refl, ρ₁ = ρ₀.
+    cases hstar with
+    | step _ _ _ h1 r1 =>
+      cases h1
+      cases r1 with
+      | refl => exact hnone
+      | step _ _ _ h2 _ => cases h2
+
+/-- For compound `s` (`.block`/`.ite`/`.loop`), terminal trace preserves
+    `(ρ₀.store n).isNone` regardless of `n`'s status in `modifiedVars`/
+    `definedVars`.  The argument: each of these begins with a step that wraps
+    the inner body in `.block .none ρ₀.store ...`, and the block-exit projection
+    drops `n` to `none` since `(ρ₀.store n).isNone`.  For `.loop`, this
+    extends through trace-length induction. -/
+private theorem stmt_compound_terminal_preserves_isNone
+    {s : Statement} {ρ₀ ρ₁ : Env Expression}
+    (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
+    (hcompound : ∀ c, s ≠ .cmd c) (hnoexit : ∀ l md, s ≠ .exit l md)
+    (hnofd : Stmt.noFuncDecl s = Bool.true)
+    (n : Expression.Ident)
+    (hnone : (ρ₀.store n).isNone) :
+    (ρ₁.store n).isNone := by
+  match s with
+  | .cmd c => exact absurd rfl (hcompound c)
+  | .exit l md => exact absurd rfl (hnoexit l md)
+  | .funcDecl _ _ => exact absurd hnofd (by simp [Stmt.noFuncDecl])
+  | .typeDecl tc md =>
+    cases hstar with
+    | step _ _ _ h1 r1 =>
+      cases h1
+      cases r1 with
+      | refl => exact hnone
+      | step _ _ _ h2 _ => cases h2
+  | .block l bss md =>
+    cases hstar with
+    | step _ mid _ h1 r1 =>
+      cases h1
+      match block_reaches_terminal (P := Expression)
+          (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1 with
+      | .inl ⟨ρ_inner, _, heq⟩ =>
+        rw [heq]
+        show (projectStore ρ₀.store ρ_inner.store n).isNone
+        simp only [projectStore]
+        rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+        rfl
+      | .inr ⟨_, ρ_inner, _, heq⟩ =>
+        rw [heq]
+        show (projectStore ρ₀.store ρ_inner.store n).isNone
+        simp only [projectStore]
+        rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+        rfl
+  | .ite c tss ess md =>
+    cases hstar with
+    | step _ mid _ h1 r1 =>
+      cases h1 with
+      | step_ite_true _ _ | step_ite_false _ _ | step_ite_nondet_true | step_ite_nondet_false =>
+        match block_reaches_terminal (P := Expression)
+            (EvalCmd := EvalCommand π φ) (extendEval := EvalPureFunc φ) r1 with
+        | .inl ⟨ρ_inner, _, heq⟩ =>
+          rw [heq]
+          show (projectStore ρ₀.store ρ_inner.store n).isNone
+          simp only [projectStore]
+          rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+          rfl
+        | .inr ⟨_, ρ_inner, _, heq⟩ =>
+          rw [heq]
+          show (projectStore ρ₀.store ρ_inner.store n).isNone
+          simp only [projectStore]
+          rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone)]
+          rfl
+  | .loop g m inv body md =>
+    have hstarT := reflTrans_to_T hstar
+    suffices ∀ (n_steps : Nat) (ρ₀ ρ₁ : Env Expression),
+        (ρ₀.store n).isNone →
+        ∀ (h : ReflTransT (StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ))
+            (.stmt (.loop g m inv body md) ρ₀) (.terminal ρ₁)),
+          h.len ≤ n_steps → (ρ₁.store n).isNone by
+      exact this hstarT.len ρ₀ ρ₁ hnone hstarT (Nat.le_refl _)
+    clear hstar hstarT ρ₀ ρ₁ hnone
+    intro n_steps
+    induction n_steps with
+    | zero =>
+      intro ρ₀ ρ₁ _ hT hlen
+      match hT, hlen with
+      | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
+    | succ k ih =>
+      intro ρ₀ ρ₁ hnone₀ hT hlen
+      match hT with
+      | .step _ _ _ hstep1 hrest =>
+        cases hstep1 with
+        | step_loop_exit _ _ _ _ =>
+          match hrest with
+          | .refl _ => exact hnone₀
+          | .step _ _ _ h _ => exact nomatch h
+        | step_loop_nondet_exit _ _ =>
+          match hrest with
+          | .refl _ => exact hnone₀
+          | .step _ _ _ h _ => exact nomatch h
+        | step_loop_enter _ _ _ _ _ =>
+          have hlen_rest : hrest.len ≤ k := by simp only [ReflTransT.len] at hlen; omega
+          have ⟨ρ_mid, hT_block, hT_tail, hlen_split⟩ := seqT_reaches_terminal hrest
+          have ⟨ρ_inner, ⟨hT_inner, hlen_inner⟩, heq⟩ := blockT_none_reaches_terminal π φ hT_block
+          have hnone_mid : (ρ_mid.store n).isNone := by
+            rw [heq]
+            show (projectStore ρ₀.store ρ_inner.store n).isNone
+            simp only [projectStore]
+            rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone₀)]
+            rfl
+          match hT_tail, hlen_split with
+          | .step _ _ _ .step_stmts_cons hrest', hlen_split =>
+            have hlen_rest' : hrest'.len < hrest.len := by
+              simp only [ReflTransT.len] at hlen_split ⊢; omega
+            have ⟨ρ_mid', hT_loop', hT_nil, hlen_split'⟩ := seqT_reaches_terminal hrest'
+            have hρ_eq : ρ_mid' = ρ₁ := by
+              match hT_nil with
+              | .step _ _ _ .step_stmts_nil hrr =>
+                match hrr with
+                | .refl _ => rfl
+                | .step _ _ _ h _ => exact nomatch h
+            subst hρ_eq
+            have hlen_loop : hT_loop'.len ≤ k := by omega
+            exact ih ρ_mid ρ_mid' hnone_mid hT_loop' hlen_loop
+        | step_loop_nondet_enter _ _ =>
+          have hlen_rest : hrest.len ≤ k := by simp only [ReflTransT.len] at hlen; omega
+          have ⟨ρ_mid, hT_block, hT_tail, hlen_split⟩ := seqT_reaches_terminal hrest
+          have ⟨ρ_inner, ⟨hT_inner, hlen_inner⟩, heq⟩ := blockT_none_reaches_terminal π φ hT_block
+          have hnone_mid : (ρ_mid.store n).isNone := by
+            rw [heq]
+            show (projectStore ρ₀.store ρ_inner.store n).isNone
+            simp only [projectStore]
+            rw [if_neg (by rw [Option.not_isSome_iff_eq_none]; exact Option.isNone_iff_eq_none.mp hnone₀)]
+            rfl
+          match hT_tail, hlen_split with
+          | .step _ _ _ .step_stmts_cons hrest', hlen_split =>
+            have hlen_rest' : hrest'.len < hrest.len := by
+              simp only [ReflTransT.len] at hlen_split ⊢; omega
+            have ⟨ρ_mid', hT_loop', hT_nil, hlen_split'⟩ := seqT_reaches_terminal hrest'
+            have hρ_eq : ρ_mid' = ρ₁ := by
+              match hT_nil with
+              | .step _ _ _ .step_stmts_nil hrr =>
+                match hrr with
+                | .refl _ => rfl
+                | .step _ _ _ h _ => exact nomatch h
+            subst hρ_eq
+            have hlen_loop : hT_loop'.len ≤ k := by omega
+            exact ih ρ_mid ρ_mid' hnone_mid hT_loop' hlen_loop
+
+/-! ### Note: The old `_disjoint` bridges (cons_head_disjoint, ite_left_disjoint,
+    ite_right_disjoint) have been removed. The `toBlock_ite_left/right` and
+    `toStmt_head` lemmas now use `defUseOk` directly via
+    `defUseWellFormed_modGetVars_implies_outer`, eliminating the need for
+    disjointness hypotheses entirely. -/
+
 /-- `BlockInitEnvWF ss ρ₁` follows from `BlockInitEnvWF (s :: ss) ρ₀` after `s`
-    ran from `ρ₀` to `ρ₁`.  This version takes all needed assumptions as
-    parameters and includes a complete `defUseOk` derivation. -/
-private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
+    ran from `ρ₀` to `ρ₁`, using the block's own `defUseOk` to discharge the
+    side conditions.  This avoids the need for callers to supply a `hdisj`
+    hypothesis or a `hnewVars_in_def` proof. -/
+private theorem BlockInitEnvWF.toBlock_tail_via_defUseOk {reserved : List String}
     {s : Statement} {ss : Statements} {ρ₀ ρ₁ : Env Expression}
     (h : BlockInitEnvWF reserved (s :: ss) ρ₀)
     (hstar : CoreStar π φ (.stmt s ρ₀) (.terminal ρ₁))
-    (hnofd_s : Stmt.noFuncDecl s = Bool.true)
-    (hdisj : ∀ n, (n ∈ Block.touchedVars ss ∨ n ∈ Block.definedVars ss false) →
-      n ∉ Stmt.modifiedOrDefinedVars s false)
-    (hnewVars_in_def : ∀ n, (ρ₁.store n).isSome → (ρ₀.store n).isNone →
-      n ∈ Stmt.definedVars s true) :
+    (hnofd_s : Stmt.noFuncDecl s = Bool.true) :
     BlockInitEnvWF reserved ss ρ₁ where
   readWritesDefined n hn hnd := by
-    have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := hdisj n (Or.inl hn)
-    have hndef_s : n ∉ Stmt.definedVars s false := fun hd =>
-      hdisj_n ((definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1 s
-        (Nat.le_refl _) n hd)
-    have hsome₀ : (ρ₀.store n).isSome := by
-      apply h.readWritesDefined n
-      · show n ∈ Block.touchedVars (s :: ss)
-        simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
-          Block.definedVars, Block.getVars, List.mem_append]
-        have hmem : n ∈ Block.touchedVars ss := hn
-        simp only [Block.touchedVars, Block.modifiedOrDefinedVars, Block.modifiedVars,
-          Block.definedVars, Block.getVars, List.mem_append] at hmem
-        rcases hmem with ((hm | hd) | hg)
-        · exact Or.inl (Or.inl (Or.inr hm))
-        · exact Or.inl (Or.inr (Or.inr hd))
-        · exact Or.inr (Or.inr hg)
-      · show n ∉ Block.definedVars (s :: ss) false
-        simp only [Block.definedVars, List.mem_append, not_or]
-        exact ⟨hndef_s, hnd⟩
-    have := stmt_star_preserves_isSome (π := π) (φ := φ) s ρ₀ _ hstar n hsome₀
-    simpa [Config.getEnv] using this
+    -- n ∈ Block.touchedVars ss, n ∉ Block.definedVars ss false → (ρ₁.store n).isSome.
+    -- defUseOk on (s :: ss) extends with definedVars s true for tail.  So tail's
+    -- well-formedness against (fun m => (ρ₀.store m).isSome || decide (m ∈ defVars s true)).
+    have ⟨_, htail_def⟩ := defUseWellFormed_cons h.defUseOk
+    have hmod_or_get :
+        n ∈ Block.modifiedVars ss ∨ n ∈ Block.getVars ss := by
+      simp only [Block.touchedVars, Block.modifiedOrDefinedVars, List.mem_append] at hn
+      rcases hn with ((hm | hd_true) | hg)
+      · exact .inl hm
+      · exact absurd (block_definedVars_true_subset_false ss n hd_true) hnd
+      · exact .inr hg
+    -- Apply: tail well-formedness gives extended-outer n = true.
+    have houter :
+        ((ρ₀.store n).isSome || decide (n ∈ Stmt.definedVars s true)) = Bool.true :=
+      defUseWellFormed_modGetVars_implies_outer htail_def hmod_or_get hnd
+    rw [Bool.or_eq_true] at houter
+    rcases houter with h₀ | hd_true
+    · -- (ρ₀.store n).isSome - propagated by trace.
+      have := stmt_star_preserves_isSome (π := π) (φ := φ) s ρ₀ _ hstar n h₀
+      simpa [Config.getEnv] using this
+    · -- n ∈ Stmt.definedVars s true: head's def made it isSome.
+      have hmem : n ∈ Stmt.definedVars s true := by
+        simp only [decide_eq_true_eq] at hd_true; exact hd_true
+      have hdefsNone : ∀ m ∈ Stmt.definedVars s true, (ρ₀.store m).isNone := fun m hm =>
+        h.defsUndefined m (by
+          simp only [Block.definedVars, List.mem_append]; left
+          exact stmt_definedVars_true_subset_false s m hm)
+      exact stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hnofd_s hdefsNone n hmem
   defsUndefined n hn := by
-    have hdisj_n : n ∉ Stmt.modifiedOrDefinedVars s false := hdisj n (Or.inr hn)
-    have hndef_s : n ∉ Stmt.definedVars s false := fun hd =>
-      hdisj_n ((definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1 s
-        (Nat.le_refl _) n hd)
-    have hnone₀ : (ρ₀.store n).isNone := h.defsUndefined n (by
-      show n ∈ Block.definedVars (s :: ss) false
-      simp only [Block.definedVars, List.mem_append]; right; exact hn)
-    have hxnot : n ∉ Config.touchedVarsSet (.stmt s ρ₀) := by
-      simp only [Config.touchedVarsSet, List.mem_append]
-      intro hmem
-      apply hdisj_n
-      cases hmem with
-      | inl hmod =>
-        exact (modifiedVars_subset_modifiedOrDefinedVars' (Stmt.sizeOf s) false).1
-          s (Nat.le_refl _) n hmod
-      | inr hdef =>
-        exact (definedVars_subset_modifiedOrDefinedVars (Stmt.sizeOf s) false).1
-          s (Nat.le_refl _) n hdef
-    have hframe := star_preserves_store_outside_touchedVars_isNone
-      (π := π) (φ := φ) hstar n (by simpa [Config.getEnv] using hnone₀) hxnot
-    simp only [Config.getEnv] at hframe
-    rw [Option.isNone_iff_eq_none, hframe]
-    exact Option.isNone_iff_eq_none.mp hnone₀
+    -- n ∈ Block.definedVars ss false → (ρ₁.store n).isNone.
+    -- From `defUseOk` on tail, extended-outer n = false, i.e. (ρ₀.store n).isNone
+    -- AND n ∉ Stmt.definedVars s true.
+    have ⟨hhead_def, htail_def⟩ := defUseWellFormed_cons h.defUseOk
+    have houter_false :
+        ((ρ₀.store n).isSome || decide (n ∈ Stmt.definedVars s true)) = Bool.false :=
+      defUseWellFormed_block_definedVars_notMem_outer htail_def hn
+    rw [Bool.or_eq_false_iff] at houter_false
+    obtain ⟨hsome_false, hd_false⟩ := houter_false
+    have hnone₀ : (ρ₀.store n).isNone := by
+      cases hx : ρ₀.store n <;> simp_all
+    have hndef_true : n ∉ Stmt.definedVars s true := by
+      simp only [decide_eq_false_iff_not] at hd_false; exact hd_false
+    -- Case-split on n ∈ Stmt.definedVars s false.
+    by_cases hn_def_s : n ∈ Stmt.definedVars s false
+    · -- n is inner-defined in compound s.  The compound-exit projection scrubs
+      -- n back to none: stmt_compound_terminal_preserves_isNone requires only
+      -- (ρ₀.store n).isNone.  s must be compound since for .cmd, def_true = def_false.
+      apply stmt_compound_terminal_preserves_isNone (π := π) (φ := φ) hstar
+      · intro c heq; subst heq
+        simp only [Stmt.definedVars] at hn_def_s hndef_true
+        exact hndef_true hn_def_s
+      · intro l md heq; subst heq
+        simp only [Stmt.definedVars] at hn_def_s
+        exact List.not_mem_nil hn_def_s
+      · exact hnofd_s
+      · exact hnone₀
+    · -- n ∉ Stmt.definedVars s false: then we can derive n ∉ Stmt.modifiedVars s
+      -- (else defUseOk forces outer = true, contradicting hnone₀).
+      have hnmod : n ∉ Stmt.modifiedVars s := by
+        intro hmod
+        have houter_true : ((ρ₀.store n).isSome) = Bool.true :=
+          defUseWellFormed_touched_notDef_implies_outer hhead_def (.inl hmod) hn_def_s
+        have heq : ρ₀.store n = none := Option.isNone_iff_eq_none.mp hnone₀
+        rw [heq] at houter_true
+        cases houter_true
+      exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar hnofd_s n hnone₀ hnmod hndef_true
   definedVarsNotReserved n hn p hp := h.definedVarsNotReserved n (by
     show n ∈ Block.definedVars (s :: ss) false
     simp only [Block.definedVars, List.mem_append]; right; exact hn) p hp
@@ -5403,11 +4238,44 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
     by_cases hsome₀ : (ρ₀.store n).isSome
     · exact h.reservedFresh n hsome₀ p hp
     · have hnone : (ρ₀.store n).isNone := Option.not_isSome_iff_eq_none.mp hsome₀ ▸ rfl
-      have hnDef_s : n ∈ Stmt.definedVars s true := hnewVars_in_def n hsome₁ hnone
-      apply h.definedVarsNotReserved n _ p hp
-      show n ∈ Block.definedVars (s :: ss) false
-      simp only [Block.definedVars, List.mem_append]; left
-      exact stmt_definedVars_true_subset_false s n hnDef_s
+      -- Need: n ∈ Stmt.definedVars s true (to apply head's definedVarsNotReserved-style).
+      -- If (ρ₁.store n).isSome but (ρ₀.store n).isNone, then by no-fresh-creation outside
+      -- definedVars, n must be in Stmt.definedVars s true (transitively).
+      -- This is `stmt_definedVars_true_or_isNone_after`: its converse direction.
+      -- Approach: split on n ∈ Stmt.definedVars s true.
+      by_cases hn_def_true : n ∈ Stmt.definedVars s true
+      · apply h.definedVarsNotReserved n _ p hp
+        show n ∈ Block.definedVars (s :: ss) false
+        simp only [Block.definedVars, List.mem_append]; left
+        exact stmt_definedVars_true_subset_false s n hn_def_true
+      · -- (ρ₁.store n).isSome but (ρ₀.store n).isNone and n ∉ Stmt.definedVars s true.
+        -- Goal: contradiction.  Strategy: show (ρ₁.store n).isNone by case-split on
+        -- n ∈ Stmt.definedVars s false.
+        exfalso
+        have ⟨hhead_def, _⟩ := defUseWellFormed_cons h.defUseOk
+        have hres : (ρ₁.store n).isNone := by
+          by_cases hn_def_s : n ∈ Stmt.definedVars s false
+          · -- Inner-scoped def in compound s: projection scrubs n back to none.
+            apply stmt_compound_terminal_preserves_isNone (π := π) (φ := φ) hstar
+            · intro c heq; subst heq
+              simp only [Stmt.definedVars] at hn_def_s hn_def_true
+              exact hn_def_true hn_def_s
+            · intro l md heq; subst heq
+              simp only [Stmt.definedVars] at hn_def_s
+              exact List.not_mem_nil hn_def_s
+            · exact hnofd_s
+            · exact hnone
+          · have hnmod : n ∉ Stmt.modifiedVars s := by
+              intro hmod
+              have houter_true : ((ρ₀.store n).isSome) = Bool.true :=
+                defUseWellFormed_touched_notDef_implies_outer hhead_def (.inl hmod) hn_def_s
+              have heq : ρ₀.store n = none := Option.isNone_iff_eq_none.mp hnone
+              rw [heq] at houter_true
+              cases houter_true
+            exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar hnofd_s n hnone hnmod hn_def_true
+        rw [Option.isNone_iff_eq_none] at hres
+        rw [hres] at hsome₁
+        cases hsome₁
   wfBool := by
     have heval : ρ₁.eval = ρ₀.eval :=
       smallStep_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ)
@@ -5437,8 +4305,7 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
     have ⟨_, htail⟩ := defUseWellFormed_cons h.defUseOk
     rw [defUseWellFormed_block_congr (fun n => ?_) ss] at htail
     · exact htail
-    · -- Show: (ρ₁.store n).isSome = ((ρ₀.store n).isSome || decide (n ∈ Stmt.definedVars s true))
-      have hdefsNone : ∀ m ∈ Stmt.definedVars s true, (ρ₀.store m).isNone := fun m hm =>
+    · have hdefsNone : ∀ m ∈ Stmt.definedVars s true, (ρ₀.store m).isNone := fun m hm =>
         h.defsUndefined m (by
           simp only [Block.definedVars, List.mem_append]; left
           exact stmt_definedVars_true_subset_false s m hm)
@@ -5457,18 +4324,34 @@ private theorem BlockInitEnvWF.toBlock_tail {reserved : List String}
             simp [decide_eq_true_eq] at hd; exact hd
           exact (stmt_definedVars_true_isSome_after (π := π) (φ := φ) hstar hnofd_s hdefsNone n hmem).symm
         case false =>
+          -- (ρ₀.store n).isNone ∧ n ∉ Stmt.definedVars s true → goal: false = (ρ₁.store n).isSome
           have hnotmem : n ∉ Stmt.definedVars s true := by
             simp [decide_eq_true_eq] at hd; exact hd
           apply Eq.symm
+          have ⟨hhead_def, _⟩ := defUseWellFormed_cons h.defUseOk
+          have hres : (ρ₁.store n).isNone := by
+            by_cases hn_def_s : n ∈ Stmt.definedVars s false
+            · -- Inner-scoped def in compound s: projection scrubs n back to none.
+              apply stmt_compound_terminal_preserves_isNone (π := π) (φ := φ) hstar
+              · intro c heq; subst heq
+                simp only [Stmt.definedVars] at hn_def_s hnotmem
+                exact hnotmem hn_def_s
+              · intro l md heq; subst heq
+                simp only [Stmt.definedVars] at hn_def_s
+                exact List.not_mem_nil hn_def_s
+              · exact hnofd_s
+              · exact hnone₀
+            · have hnmod : n ∉ Stmt.modifiedVars s := by
+                intro hmod
+                have houter_true : ((ρ₀.store n).isSome) = Bool.true :=
+                  defUseWellFormed_touched_notDef_implies_outer hhead_def (.inl hmod) hn_def_s
+                have heq : ρ₀.store n = none := Option.isNone_iff_eq_none.mp hnone₀
+                rw [heq] at houter_true
+                cases houter_true
+              exact stmt_terminal_preserves_isNone (π := π) (φ := φ) hstar hnofd_s n hnone₀ hnmod hnotmem
           cases h_eq : (ρ₁.store n).isSome with
-          | true => exact absurd (hnewVars_in_def n h_eq hnone₀) hnotmem
+          | true => rw [Option.isNone_iff_eq_none] at hres; rw [hres] at h_eq; cases h_eq
           | false => rfl
-
-/-! ### Note: The old `_disjoint` bridges (cons_head_disjoint, ite_left_disjoint,
-    ite_right_disjoint) have been removed. The `toBlock_ite_left/right` and
-    `toStmt_head` lemmas now use `defUseOk` directly via
-    `defUseWellFormed_modGetVars_implies_outer`, eliminating the need for
-    disjointness hypotheses entirely. -/
 
 /-! ## Simulation -/
 
@@ -6229,7 +5112,8 @@ private theorem simulation
                     cases h : ρ₁.hasFailure <;> simp_all
                   have htgt_s := hok_s hnf₁'
                   have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss hnofd_ss
-                    (blockOk_cons_right hok) ρ₁ sorry
+                    (blockOk_cons_right hok) ρ₁
+                    (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hswf hterm_s hnofd_s)
                   match hsim_ss.1 ρ' hreach_ss with
                   | .inl hcf_ss =>
                     refine .inl ?_
@@ -6305,7 +5189,8 @@ private theorem simulation
                       cases h : ρ₁.hasFailure <;> simp_all
                     have htgt_s := hok_s hnf₁'
                     have hsim_ss := ih.2.1 (stmtPostState σ s) ss hsz_ss hnofd_ss
-                      (blockOk_cons_right hok) ρ₁ sorry
+                      (blockOk_cons_right hok) ρ₁
+                      (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hswf hterm_s hnofd_s)
                     match hsim_ss.2 lbl ρ' hexit_ss with
                     | .inl hcf_ss =>
                       refine .inl ?_
@@ -6520,7 +5405,8 @@ private theorem simulation
                     cases h : ρ₁.hasFailure <;> simp_all
                   have htgt_s := hok_s hnf₁'
                   have ⟨kcfg2, hkf2, hkstar2⟩ := ih.2.2.2 (stmtPostState σ s) ss hsz_ss hnofd_ss
-                    (blockOk_cons_right hok) ρ₁ sorry
+                    (blockOk_cons_right hok) ρ₁
+                    (BlockInitEnvWF.toBlock_tail_via_defUseOk (π := π) (φ := φ) hswf hterm_s hnofd_s)
                     ⟨cfg', hf', hstar_rest⟩
                   exact canFail_tail_to_block π φ (stmtResult σ s)
                     (blockResult (stmtPostState σ s) ss) ρ₀ ρ₁ htgt_s ⟨kcfg2, hkf2, hkstar2⟩
@@ -6627,23 +5513,6 @@ private theorem block_getVars_append (ss₁ ss₂ : Statements) :
   induction ss₁ with
   | nil => simp [Block.getVars]
   | cons s rest ih => simp [Block.getVars, ih, List.append_assoc]
-
-private theorem block_modifiedOrDefinedVars_append_mem (ss₁ ss₂ : Statements) (n : Expression.Ident) :
-    n ∈ Block.modifiedOrDefinedVars (ss₁ ++ ss₂) false ↔
-      n ∈ Block.modifiedOrDefinedVars ss₁ false ∨ n ∈ Block.modifiedOrDefinedVars ss₂ false := by
-  simp only [Block.modifiedOrDefinedVars, List.mem_append,
-    block_modifiedVars_append, block_definedVars_append]
-  constructor
-  · rintro ((h | h) | h | h)
-    · exact Or.inl (Or.inl h)
-    · exact Or.inr (Or.inl h)
-    · exact Or.inl (Or.inr h)
-    · exact Or.inr (Or.inr h)
-  · rintro ((h | h) | h | h)
-    · exact Or.inl (Or.inl h)
-    · exact Or.inr (Or.inl h)
-    · exact Or.inl (Or.inr h)
-    · exact Or.inr (Or.inr h)
 
 private theorem block_modifiedOrDefinedVars_append (ss₁ ss₂ : Statements) :
     Block.modifiedOrDefinedVars (ss₁ ++ ss₂) false =
@@ -6806,111 +5675,6 @@ unfolding), these LHS patterns no longer match. The unfolded variants below
 mirror the originals with `CmdExt.cmd (Cmd.assert/assume ...)` in the LHS, so
 they work regardless of which form the simp normal form chooses. -/
 
-private theorem modifiedVars_mapIdx_assert'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.modifiedVars Expression Command _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) = [] := by
-  exact modifiedVars_mapIdx_assert inv md label
-
-private theorem modifiedOrDefinedVars_mapIdx_assert'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.modifiedOrDefinedVars Expression Command _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) false = [] := by
-  exact modifiedOrDefinedVars_mapIdx_assert inv md label
-
-private theorem definedVars_mapIdx_assert'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.definedVars Expression Command _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) false = [] := by
-  exact definedVars_mapIdx_assert inv md label
-
-private theorem getVars_mapIdx_assert'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.getVars Expression Command _ _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assert (label i le) le.2 md))) =
-    inv.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
-  exact getVars_mapIdx_assert inv md label
-
-private theorem modifiedVars_mapIdx_assume'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.modifiedVars Expression Command _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) = [] := by
-  exact modifiedVars_mapIdx_assume inv md label
-
-private theorem modifiedOrDefinedVars_mapIdx_assume'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.modifiedOrDefinedVars Expression Command _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) false = [] := by
-  exact modifiedOrDefinedVars_mapIdx_assume inv md label
-
-private theorem definedVars_mapIdx_assume'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.definedVars Expression Command _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) false = [] := by
-  exact definedVars_mapIdx_assume inv md label
-
-private theorem getVars_mapIdx_assume'
-    (inv : List (String × Expression.Expr)) (md : MetaData Expression)
-    (label : Nat → (String × Expression.Expr) → String) :
-    @Block.getVars Expression Command _ _
-      (inv.mapIdx fun i le =>
-        Stmt.cmd (CmdExt.cmd (Cmd.assume (label i le) le.2 md))) =
-    inv.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
-  exact getVars_mapIdx_assume inv md label
-
-private theorem modifiedVars_havoc_map'
-    (xs : List Expression.Ident) (md : MetaData Expression) :
-    @Block.modifiedVars Expression Command _
-      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) = xs := by
-  exact modifiedVars_havoc_map xs md
-
-private theorem modifiedOrDefinedVars_havoc_map'
-    (xs : List Expression.Ident) (md : MetaData Expression) :
-    @Block.modifiedOrDefinedVars Expression Command _
-      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) false = xs := by
-  exact modifiedOrDefinedVars_havoc_map xs md
-
-private theorem definedVars_havoc_map'
-    (xs : List Expression.Ident) (md : MetaData Expression) :
-    @Block.definedVars Expression Command _
-      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) false = [] := by
-  exact definedVars_havoc_map xs md
-
-private theorem getVars_havoc_map'
-    (xs : List Expression.Ident) (md : MetaData Expression) :
-    @Block.getVars Expression Command _ _
-      (xs.map (fun n => Stmt.cmd (CmdExt.cmd (Cmd.set n .nondet md)))) = [] := by
-  exact getVars_havoc_map xs md
-
-/-- The loop case of `mem_definedVars_stmtResult`.
-
-    Strategy: we reduce to an existential over the concrete transformed statement,
-    then use the `dsimp`+`split`+`cases` scaffold (mirroring `stmtResult_loop_struct`)
-    to close each branch.  Each happy path (after the monadic plumbing is fully
-    resolved) requires showing that every name in `definedVars` of the result is
-    either from the loop body or is the measure variable (which has the reserved
-    prefix).  Error paths (freshness/label conflicts) are contradictions with `hok`.
-
-    The case splits correspond to:
-    1. `guard` = `.det g` vs `.nondet`
-    2. (if `.det g`) `measure` = `none` vs `some m`
-    3. (if `some m`) `m_old_ident ∈ Block.touchedVars body` → error (contradiction)
-    4. Label-conflict check → error (contradiction)
--/
 private theorem mem_definedVars_stmtResult_loop
     (σ : LoopElimState)
     (guard : ExprOrNondet Expression)
@@ -7362,142 +6126,6 @@ private theorem getVars_buildEntryInvariantAssumes
   exact getVars_mapIdx_assume _ _ _
 
 /-- `Block.modifiedVars` of inv-assumes is empty. -/
-private theorem modifiedVars_buildInvAssumes
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.modifiedVars (Imperative.LoopElim.buildInvAssumes (P := Expression) (C := Command)
-      loop_num invariants md) = [] := by
-  unfold Imperative.LoopElim.buildInvAssumes
-  exact modifiedVars_mapIdx_assume _ _ _
-
-private theorem definedVars_buildInvAssumes
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.definedVars (Imperative.LoopElim.buildInvAssumes (P := Expression) (C := Command)
-      loop_num invariants md) false = [] := by
-  unfold Imperative.LoopElim.buildInvAssumes
-  exact definedVars_mapIdx_assume _ _ _
-
-private theorem getVars_buildInvAssumes
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.getVars (Imperative.LoopElim.buildInvAssumes (P := Expression) (C := Command)
-      loop_num invariants md) =
-    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
-  unfold Imperative.LoopElim.buildInvAssumes
-  exact getVars_mapIdx_assume _ _ _
-
-/-- `Block.modifiedVars` of maintain-invariants is empty. -/
-private theorem modifiedVars_buildMaintainInvariants
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.modifiedVars (Imperative.LoopElim.buildMaintainInvariants (P := Expression) (C := Command)
-      loop_num invariants md) = [] := by
-  unfold Imperative.LoopElim.buildMaintainInvariants
-  exact modifiedVars_mapIdx_assert _ _ _
-
-private theorem definedVars_buildMaintainInvariants
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.definedVars (Imperative.LoopElim.buildMaintainInvariants (P := Expression) (C := Command)
-      loop_num invariants md) false = [] := by
-  unfold Imperative.LoopElim.buildMaintainInvariants
-  exact definedVars_mapIdx_assert _ _ _
-
-private theorem getVars_buildMaintainInvariants
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.getVars (Imperative.LoopElim.buildMaintainInvariants (P := Expression) (C := Command)
-      loop_num invariants md) =
-    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
-  unfold Imperative.LoopElim.buildMaintainInvariants
-  exact getVars_mapIdx_assert _ _ _
-
-/-- `Block.modifiedVars` of exit-invariant-assumes is empty. -/
-private theorem modifiedVars_buildExitInvariantAssumes
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.modifiedVars (Imperative.LoopElim.buildExitInvariantAssumes (P := Expression) (C := Command)
-      loop_num invariants md) = [] := by
-  unfold Imperative.LoopElim.buildExitInvariantAssumes
-  exact modifiedVars_mapIdx_assume _ _ _
-
-private theorem definedVars_buildExitInvariantAssumes
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.definedVars (Imperative.LoopElim.buildExitInvariantAssumes (P := Expression) (C := Command)
-      loop_num invariants md) false = [] := by
-  unfold Imperative.LoopElim.buildExitInvariantAssumes
-  exact definedVars_mapIdx_assume _ _ _
-
-private theorem getVars_buildExitInvariantAssumes
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Block.getVars (Imperative.LoopElim.buildExitInvariantAssumes (P := Expression) (C := Command)
-      loop_num invariants md) =
-    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
-  unfold Imperative.LoopElim.buildExitInvariantAssumes
-  exact getVars_mapIdx_assume _ _ _
-
-/-- `Stmt.modifiedVars` of the havoc-block: it's the filtered modifiedVars
-    of the body (those not declared inside the body). -/
-private theorem modifiedVars_buildHavocBlock
-    (loop_num : String) (bss : Statements) (md : MetaData Expression) :
-    Stmt.modifiedVars (Imperative.LoopElim.buildHavocBlock (P := Expression) (C := Command)
-      loop_num bss md) =
-    (Block.modifiedVars bss).filter (fun v => v ∉ Block.definedVars bss false) := by
-  simp only [Imperative.LoopElim.buildHavocBlock, Stmt.modifiedVars]
-  exact modifiedVars_havoc_map _ _
-
-private theorem definedVars_buildHavocBlock
-    (loop_num : String) (bss : Statements) (md : MetaData Expression) :
-    Stmt.definedVars (Imperative.LoopElim.buildHavocBlock (P := Expression) (C := Command)
-      loop_num bss md) false = [] := by
-  simp only [Imperative.LoopElim.buildHavocBlock, Stmt.definedVars,
-    Bool.false_eq_true, ↓reduceIte]
-  exact definedVars_havoc_map _ _
-
-private theorem getVars_buildHavocBlock
-    (loop_num : String) (bss : Statements) (md : MetaData Expression) :
-    Stmt.getVars (Imperative.LoopElim.buildHavocBlock (P := Expression) (C := Command)
-      loop_num bss md) = [] := by
-  simp only [Imperative.LoopElim.buildHavocBlock, Stmt.getVars]
-  exact getVars_havoc_map _ _
-
-/-- The first-iter-facts block has empty modifiedVars (only asserts/assumes). -/
-private theorem modifiedVars_buildFirstIterFacts
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Stmt.modifiedVars (Imperative.LoopElim.buildFirstIterFacts (P := Expression) (C := Command)
-      loop_num invariants md) = [] := by
-  simp only [Imperative.LoopElim.buildFirstIterFacts, Stmt.modifiedVars]
-  rw [block_modifiedVars_append, modifiedVars_buildEntryInvariants,
-      modifiedVars_buildEntryInvariantAssumes]
-  rfl
-
-private theorem definedVars_buildFirstIterFacts
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Stmt.definedVars (Imperative.LoopElim.buildFirstIterFacts (P := Expression) (C := Command)
-      loop_num invariants md) false = [] := by
-  simp only [Imperative.LoopElim.buildFirstIterFacts, Stmt.definedVars,
-    Bool.false_eq_true, ↓reduceIte]
-  rw [block_definedVars_append, definedVars_buildEntryInvariants,
-      definedVars_buildEntryInvariantAssumes]
-  rfl
-
-private theorem getVars_buildFirstIterFacts
-    (loop_num : String) (invariants : List (String × Expression.Expr))
-    (md : MetaData Expression) :
-    Stmt.getVars (Imperative.LoopElim.buildFirstIterFacts (P := Expression) (C := Command)
-      loop_num invariants md) =
-    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) ++
-    invariants.flatMap (fun lp => HasVarsPure.getVars lp.2) := by
-  simp only [Imperative.LoopElim.buildFirstIterFacts, Stmt.getVars]
-  rw [block_getVars_append, getVars_buildEntryInvariants,
-      getVars_buildEntryInvariantAssumes]
-
-/-- The `boolNotFunc.opExpr` LExpr has no free variables. -/
 private theorem getVars_boolNotFunc_opExpr_eq_nil :
     Lambda.LExpr.LExpr.getVars
       (T := Core.CoreLParams.mono)
