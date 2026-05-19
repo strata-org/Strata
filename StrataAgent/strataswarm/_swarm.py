@@ -32,6 +32,7 @@ class Swarm:
         backend_factory: Callable[[], AgentBackend],
         context: SwarmContext | None = None,
         enable_messaging: bool = True,
+        wait_after_completion: bool = False,
     ) -> None:
         self._nodes: dict[str, AgentNode] = {}
         self._results: dict[str, AgentResult[Any]] = {}
@@ -43,6 +44,7 @@ class Swarm:
         self._backend_factory = backend_factory
         self._event_callback: EventCallback | None = None
         self._enable_messaging = enable_messaging
+        self._wait_after_completion = wait_after_completion
 
     @property
     def context(self) -> SwarmContext:
@@ -166,6 +168,7 @@ class Swarm:
             on_event=self._event_callback,
             mcp_servers_override=mcp_servers,
             system_prompt_override=combined_system_prompt,
+            wait_after_completion=self._wait_after_completion,
         )
 
         result = await agent.run()

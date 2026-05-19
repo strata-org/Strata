@@ -7,79 +7,195 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
-header { background: #16213e; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #0f3460; }
+header { background: #16213e; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #0f3460; }
 header h1 { font-size: 18px; color: #4fc3f7; }
-#total-cost { font-size: 14px; color: #81c784; }
+.header-controls { display: flex; gap: 8px; align-items: center; }
+.header-controls button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+#total-cost { font-size: 13px; color: #81c784; margin-right: 12px; }
+.btn-create { background: #7c4dff; color: white; }
+.btn-start { background: #00c853; color: white; }
+.btn-pause-all { background: #e65100; color: white; }
+.btn-resume-all { background: #1b5e20; color: white; }
+.btn-cancel-all { background: #b71c1c; color: white; }
+.btn-start:disabled, .btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
 .container { display: flex; flex: 1; overflow: hidden; }
-.sidebar { width: 260px; background: #16213e; border-right: 1px solid #0f3460; overflow-y: auto; }
-.agent-item { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #0f3460; transition: background 0.2s; }
+.sidebar { width: 280px; background: #16213e; border-right: 1px solid #0f3460; display: flex; flex-direction: column; }
+.sidebar-header { padding: 10px 14px; font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
+.sidebar-header button { padding: 3px 8px; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; background: #4fc3f7; color: #1a1a2e; font-weight: 600; }
+.agent-list { flex: 1; overflow-y: auto; }
+.agent-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #0f3460; transition: background 0.2s; }
 .agent-item:hover, .agent-item.active { background: #1a1a2e; }
-.agent-item .name { font-weight: 600; font-size: 14px; }
-.agent-item .meta { font-size: 11px; color: #888; margin-top: 4px; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.agent-item .name { font-weight: 600; font-size: 13px; }
+.agent-item .meta { font-size: 11px; color: #888; margin-top: 3px; }
+.agent-item .spec-info { font-size: 10px; color: #666; margin-top: 2px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; margin-left: 6px; }
 .badge-pending { background: #424242; color: #bbb; }
 .badge-running { background: #1b5e20; color: #a5d6a7; }
 .badge-paused { background: #e65100; color: #ffcc02; }
 .badge-completed { background: #004d40; color: #80cbc4; }
-.badge-cancelled { background: #b71c1c; color: #ef9a9a; }
-.badge-failed { background: #b71c1c; color: #ef9a9a; }
+.badge-cancelled, .badge-failed { background: #b71c1c; color: #ef9a9a; }
 .badge-halted { background: #4a148c; color: #ce93d8; }
+.badge-draft { background: #37474f; color: #90a4ae; }
 .main { flex: 1; display: flex; flex-direction: column; }
-.messages { flex: 1; overflow-y: auto; padding: 16px; }
-.msg { margin-bottom: 8px; padding: 8px 12px; background: #1e2a3a; border-radius: 6px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.view-tabs { display: flex; background: #16213e; border-bottom: 1px solid #0f3460; }
+.view-tab { padding: 8px 16px; cursor: pointer; font-size: 12px; font-weight: 600; color: #888; border-bottom: 2px solid transparent; }
+.view-tab.active { color: #4fc3f7; border-bottom-color: #4fc3f7; }
+.messages { flex: 1; overflow-y: auto; padding: 12px 16px; }
+.msg { margin-bottom: 6px; padding: 6px 10px; background: #1e2a3a; border-radius: 5px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.msg .msg-agent { font-weight: 700; font-size: 11px; margin-bottom: 2px; }
+.msg.tool { background: #1a2e2a; border-left: 3px solid #80cbc4; font-family: monospace; font-size: 11px; }
+.msg.tool_result { background: #1a2a2e; border-left: 3px solid #4fc3f7; font-family: monospace; font-size: 11px; }
 .msg.injected { background: #2e1a3a; border-left: 3px solid #ce93d8; }
-.msg.tool { background: #1a2e2a; border-left: 3px solid #80cbc4; font-family: monospace; font-size: 12px; }
-.controls { display: flex; gap: 8px; padding: 12px 16px; background: #16213e; border-top: 1px solid #0f3460; }
-.controls button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.msg.notification { background: #2a2a1a; border-left: 3px solid #ffcc02; font-size: 11px; }
+.msg.status { background: transparent; color: #666; font-size: 11px; padding: 2px 10px; }
+.controls { display: flex; gap: 8px; padding: 10px 14px; background: #16213e; border-top: 1px solid #0f3460; align-items: center; }
+.controls button { padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; }
 .btn-pause { background: #e65100; color: white; }
 .btn-resume { background: #1b5e20; color: white; }
 .btn-cancel { background: #b71c1c; color: white; }
-.controls input { flex: 1; padding: 8px 12px; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; color: #e0e0e0; font-size: 13px; }
-.controls input::placeholder { color: #666; }
+.controls input { flex: 1; padding: 7px 10px; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; color: #e0e0e0; font-size: 12px; }
+.controls input::placeholder { color: #555; }
 .btn-send { background: #4fc3f7; color: #1a1a2e; }
-.session-id { font-size: 11px; color: #666; padding: 4px 16px; font-family: monospace; }
-.empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 14px; }
+.empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 13px; }
+/* Modal */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.visible { display: flex; }
+.modal { background: #16213e; border-radius: 8px; padding: 20px; width: 500px; max-height: 80vh; overflow-y: auto; border: 1px solid #0f3460; }
+.modal h2 { font-size: 16px; color: #4fc3f7; margin-bottom: 14px; }
+.modal label { display: block; font-size: 12px; color: #aaa; margin-top: 10px; margin-bottom: 4px; }
+.modal input, .modal textarea { width: 100%; padding: 8px 10px; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; color: #e0e0e0; font-size: 12px; font-family: inherit; }
+.modal textarea { min-height: 60px; resize: vertical; }
+.modal .row { display: flex; gap: 10px; }
+.modal .row > div { flex: 1; }
+.modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+.modal-actions button { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.btn-modal-add { background: #4fc3f7; color: #1a1a2e; }
+.btn-modal-cancel { background: #424242; color: #ccc; }
 </style>
 </head>
 <body>
 <header>
   <h1>StrataSwarm</h1>
-  <span id="total-cost">$0.0000</span>
+  <div class="header-controls">
+    <span id="total-cost">$0.0000</span>
+    <button class="btn-create" onclick="createNew()">New Swarm</button>
+    <button class="btn-start" id="btn-start" onclick="startSwarm()">Start</button>
+    <button class="btn-pause-all" onclick="pauseAll()">Pause All</button>
+    <button class="btn-resume-all" onclick="resumeAll()">Resume All</button>
+    <button class="btn-cancel-all" onclick="cancelAll()">Cancel All</button>
+  </div>
 </header>
 <div class="container">
-  <div class="sidebar" id="sidebar"></div>
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Agents</span>
+      <button onclick="showAddAgent()">+ Add Agent</button>
+    </div>
+    <div class="agent-list" id="agent-list"></div>
+  </div>
   <div class="main">
-    <div class="session-id" id="session-id"></div>
-    <div class="messages" id="messages"><div class="empty">Select an agent to view messages</div></div>
+    <div class="view-tabs">
+      <div class="view-tab active" onclick="switchView('agent')" id="tab-agent">Agent View</div>
+      <div class="view-tab" onclick="switchView('chitchat')" id="tab-chitchat">All Messages</div>
+      <div class="view-tab" onclick="switchView('spec')" id="tab-spec">Agent Spec</div>
+    </div>
+    <div class="messages" id="messages"><div class="empty">Add agents and start the swarm</div></div>
     <div class="controls">
       <button class="btn-pause" onclick="pauseAgent()">Pause</button>
       <button class="btn-resume" onclick="resumeAgent()">Resume</button>
       <button class="btn-cancel" onclick="cancelAgent()">Cancel</button>
-      <input type="text" id="msg-input" placeholder="Send feedback to agent..." onkeydown="if(event.key==='Enter')sendMessage()">
+      <select id="msg-target" style="padding:6px 8px;border:1px solid #0f3460;border-radius:4px;background:#1a1a2e;color:#e0e0e0;font-size:12px;min-width:120px;">
+        <option value="">-- select target --</option>
+      </select>
+      <input type="text" id="msg-input" placeholder="Type message..." onkeydown="if(event.key==='Enter')sendMessage()" style="flex:1;">
       <button class="btn-send" onclick="sendMessage()">Send</button>
     </div>
   </div>
 </div>
+
+<!-- Add Agent Modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)hideModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Add Agent</h2>
+    <label>Name</label>
+    <input type="text" id="agent-name" placeholder="e.g. researcher">
+    <label>System Prompt (role + collaborators)</label>
+    <textarea id="agent-system-prompt" placeholder="You are the Researcher. You work with: writer (summarizes findings)."></textarea>
+    <label>Task Prompt</label>
+    <textarea id="agent-prompt" placeholder="Find the highest revenue month in metrics.csv and send it to writer."></textarea>
+    <label>Allowed Tools (comma-separated)</label>
+    <input type="text" id="agent-allowed-tools" placeholder="Bash, Read, Grep">
+    <label>Disallowed Tools (comma-separated, optional)</label>
+    <input type="text" id="agent-disallowed-tools" placeholder="Edit, Write">
+    <div class="row">
+      <div><label>Max Turns</label><input type="number" id="agent-max-turns" placeholder="10"></div>
+      <div><label>Max Budget ($)</label><input type="number" id="agent-max-budget" step="0.01" placeholder="0.50"></div>
+      <div><label>Timeout (s)</label><input type="number" id="agent-timeout" placeholder="120"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="hideModal()">Cancel</button>
+      <button class="btn-modal-add" onclick="addAgent()">Add Agent</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let ws;
 let selectedAgent = null;
+let currentView = 'agent';
 let agents = {};
+let specs = [];
 let agentMessages = {};
+let allMessages = [];
 let totalCost = 0;
+let isRunning = false;
+let pendingMessages = [];
+
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  } else {
+    pendingMessages.push(obj);
+  }
+}
+
+const AGENT_COLORS = ['#4fc3f7','#81c784','#ffcc02','#ce93d8','#ef9a9a','#80cbc4','#ffab91','#b39ddb'];
+function agentColor(name) {
+  const idx = Object.keys(agents).indexOf(name);
+  return AGENT_COLORS[idx >= 0 ? idx % AGENT_COLORS.length : 0];
+}
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen = () => { document.body.classList.add('connected'); pendingMessages.forEach(m => ws.send(JSON.stringify(m))); pendingMessages = []; };
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data);
-    if (data.agents) {
-      Object.entries(data.agents).forEach(([name, info]) => {
-        agents[name] = info;
-        if (!agentMessages[name]) agentMessages[name] = [];
-      });
-      renderSidebar();
+    if (data.agents !== undefined && data.specs !== undefined) {
+      // Full state
+      Object.entries(data.agents).forEach(([name, info]) => { agents[name] = info; if (!agentMessages[name]) agentMessages[name] = []; });
+      specs = data.specs;
+      isRunning = data.running;
+      allMessages = data.all_messages || [];
+      render();
     } else if (data.type === 'agent_event') {
       handleEvent(data);
+    } else if (data.type === 'specs_updated') {
+      specs = data.specs;
+      render();
+    } else if (data.type === 'swarm_started') {
+      isRunning = true;
+      specs.forEach(s => { agents[s.name] = { name: s.name, status: 'pending' }; agentMessages[s.name] = []; });
+      render();
+    } else if (data.type === 'swarm_completed') {
+      isRunning = false;
+      Object.entries(data.results).forEach(([name, r]) => { if (agents[name]) Object.assign(agents[name], r); });
+      render();
+    } else if (data.type === 'reset') {
+      agents = {}; specs = []; agentMessages = {}; allMessages = []; isRunning = false; selectedAgent = null;
+      render();
+    } else if (data.type === 'error') {
+      alert('Server error: ' + (data.message || 'Unknown error'));
     }
   };
   ws.onclose = () => setTimeout(connect, 2000);
@@ -89,61 +205,182 @@ function handleEvent(ev) {
   const name = ev.agent;
   if (!agentMessages[name]) agentMessages[name] = [];
   if (ev.event_type === 'message') {
-    agentMessages[name].push({ text: ev.data, type: ev.data && ev.data.startsWith('[tool]') ? 'tool' : (ev.data && ev.data.startsWith('[Injected') ? 'injected' : 'normal') });
+    const text = ev.data || '';
+    let type = 'normal';
+    if (text.startsWith('[tool]')) type = 'tool';
+    else if (text.startsWith('[tool_result]')) type = 'tool_result';
+    else if (text.startsWith('[Injected') || text.startsWith('[Notification')) type = 'notification';
+    agentMessages[name].push({ text, type, agent: name, ts: ev.timestamp_ms });
+    allMessages.push({ text, type, agent: name, ts: ev.timestamp_ms });
   } else if (ev.event_type === 'status_change') {
     if (!agents[name]) agents[name] = { name, status: ev.data };
     else agents[name].status = ev.data;
+    agentMessages[name].push({ text: `status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
+    allMessages.push({ text: `[${name}] status: ${ev.data}`, type: 'status', agent: name, ts: ev.timestamp_ms });
   } else if (ev.event_type === 'cost_update' && ev.data) {
     if (!agents[name]) agents[name] = { name };
     agents[name].cost_usd = parseFloat(ev.data);
     totalCost = Object.values(agents).reduce((s, a) => s + (a.cost_usd || 0), 0);
     document.getElementById('total-cost').textContent = `$${totalCost.toFixed(4)}`;
-  } else if (ev.event_type === 'result') {
-    agentMessages[name].push({ text: `[Result] ${ev.data}`, type: 'normal' });
   }
+  render();
+}
+
+function render() {
   renderSidebar();
-  if (name === selectedAgent) renderMessages();
+  renderMessages();
+  updateTargetDropdown();
+  document.getElementById('btn-start').disabled = isRunning || specs.length === 0;
 }
 
 function renderSidebar() {
-  const sb = document.getElementById('sidebar');
-  sb.innerHTML = Object.values(agents).map(a => `
-    <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${a.name}')">
-      <div class="name">${a.name} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span></div>
-      <div class="meta">${a.cost_usd ? '$' + a.cost_usd.toFixed(4) : ''} ${a.num_turns ? a.num_turns + ' turns' : ''}</div>
-    </div>
-  `).join('');
-}
-
-function selectAgent(name) {
-  selectedAgent = name;
-  renderSidebar();
-  renderMessages();
-  const a = agents[name];
-  document.getElementById('session-id').textContent = a && a.session_id ? `session: ${a.session_id}` : '';
+  const el = document.getElementById('agent-list');
+  // Show specs (draft) if swarm not running, otherwise show live agents
+  if (!isRunning && Object.keys(agents).length === 0) {
+    el.innerHTML = specs.map(s => `
+      <div class="agent-item ${s.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${s.name}')">
+        <div class="name">${s.name} <span class="badge badge-draft">draft</span></div>
+        <div class="spec-info">${s.allowed_tools.join(', ') || 'no tools'} | ${s.max_turns || '?'} turns | $${s.max_budget_usd || '?'}</div>
+      </div>
+    `).join('') || '<div class="empty" style="padding:20px;font-size:12px;">No agents yet. Click "+ Add Agent"</div>';
+  } else {
+    el.innerHTML = Object.values(agents).map(a => `
+      <div class="agent-item ${a.name === selectedAgent ? 'active' : ''}" onclick="selectAgent('${a.name}')">
+        <div class="name">${a.name} <span class="badge badge-${a.status || 'pending'}">${a.status || 'pending'}</span></div>
+        <div class="meta">${a.cost_usd ? '$' + a.cost_usd.toFixed(4) : ''} ${a.num_turns ? a.num_turns + ' turns' : ''} ${a.halted_by && a.halted_by !== 'completion' ? '(' + a.halted_by + ')' : ''}</div>
+      </div>
+    `).join('');
+  }
 }
 
 function renderMessages() {
   const el = document.getElementById('messages');
-  const msgs = agentMessages[selectedAgent] || [];
-  if (!msgs.length) { el.innerHTML = '<div class="empty">No messages yet</div>'; return; }
-  el.innerHTML = msgs.map(m => `<div class="msg ${m.type}">${escapeHtml(m.text)}</div>`).join('');
+
+  if (currentView === 'spec') {
+    const spec = specs.find(s => s.name === selectedAgent);
+    if (!spec) {
+      el.innerHTML = '<div class="empty">Select an agent to view its spec</div>';
+      return;
+    }
+    el.innerHTML = `
+      <div style="padding:8px 0;">
+        <div style="font-size:14px;font-weight:700;color:#4fc3f7;margin-bottom:12px;">${escapeHtml(spec.name)}</div>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:4px;">System Prompt</div>
+          <div style="background:#1e2a3a;padding:10px 12px;border-radius:5px;font-size:12px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(spec.system_prompt)}</div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:4px;">Task Prompt</div>
+          <div style="background:#1e2a3a;padding:10px 12px;border-radius:5px;font-size:12px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(spec.prompt)}</div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:4px;">Allowed Tools</div>
+            <div style="font-size:12px;">${spec.allowed_tools.length ? spec.allowed_tools.map(t => `<span style="background:#1b5e20;color:#a5d6a7;padding:2px 6px;border-radius:3px;font-size:11px;margin-right:4px;">${escapeHtml(t)}</span>`).join('') : '<span style="color:#666;">none</span>'}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:4px;">Disallowed Tools</div>
+            <div style="font-size:12px;">${spec.disallowed_tools.length ? spec.disallowed_tools.map(t => `<span style="background:#b71c1c;color:#ef9a9a;padding:2px 6px;border-radius:3px;font-size:11px;margin-right:4px;">${escapeHtml(t)}</span>`).join('') : '<span style="color:#666;">none</span>'}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:12px;">
+          <div style="font-size:12px;color:#aaa;">Max turns: <strong>${spec.max_turns || 'unlimited'}</strong></div>
+          <div style="font-size:12px;color:#aaa;">Budget: <strong>${spec.max_budget_usd ? '$' + spec.max_budget_usd : 'unlimited'}</strong></div>
+          <div style="font-size:12px;color:#aaa;">Timeout: <strong>${spec.timeout_seconds ? spec.timeout_seconds + 's' : 'none'}</strong></div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  let msgs;
+  if (currentView === 'chitchat') {
+    msgs = allMessages;
+  } else {
+    msgs = selectedAgent ? (agentMessages[selectedAgent] || []) : [];
+  }
+  if (!msgs.length) {
+    el.innerHTML = `<div class="empty">${currentView === 'chitchat' ? 'No messages yet' : (selectedAgent ? 'No messages for this agent' : 'Select an agent')}</div>`;
+    return;
+  }
+  el.innerHTML = msgs.slice(-500).map(m => {
+    const showAgent = currentView === 'chitchat' && m.agent;
+    const color = m.agent ? agentColor(m.agent) : '#888';
+    const agentTag = showAgent ? `<div class="msg-agent" style="color:${color}">${m.agent}</div>` : '';
+    return `<div class="msg ${m.type}">${agentTag}${escapeHtml(m.text)}</div>`;
+  }).join('');
   el.scrollTop = el.scrollHeight;
 }
 
-function escapeHtml(t) {
-  if (!t) return '';
-  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+function escapeHtml(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function pauseAgent() { if (selectedAgent && ws) ws.send(JSON.stringify({ action: 'pause', agent: selectedAgent })); }
-function resumeAgent() { if (selectedAgent && ws) ws.send(JSON.stringify({ action: 'resume', agent: selectedAgent })); }
-function cancelAgent() { if (selectedAgent && ws) ws.send(JSON.stringify({ action: 'cancel', agent: selectedAgent })); }
+function selectAgent(name) { selectedAgent = name; document.getElementById('msg-target').value = name; render(); }
+function switchView(v) { currentView = v; document.getElementById('tab-agent').classList.toggle('active', v==='agent'); document.getElementById('tab-chitchat').classList.toggle('active', v==='chitchat'); document.getElementById('tab-spec').classList.toggle('active', v==='spec'); renderMessages(); }
+
+// Swarm controls
+function createNew() { wsSend({ action: 'create_new' }); }
+function startSwarm() { wsSend({ action: 'start' }); }
+function pauseAll() { wsSend({ action: 'pause_all' }); }
+function resumeAll() { wsSend({ action: 'resume_all' }); }
+function cancelAll() { wsSend({ action: 'cancel' }); }
+
+// Agent controls
+function pauseAgent() { if (selectedAgent) wsSend({ action: 'pause', agent: selectedAgent }); }
+function resumeAgent() { if (selectedAgent) wsSend({ action: 'resume', agent: selectedAgent }); }
+function cancelAgent() { if (selectedAgent) wsSend({ action: 'cancel_agent', agent: selectedAgent }); }
 function sendMessage() {
   const input = document.getElementById('msg-input');
-  if (!selectedAgent || !input.value.trim()) return;
-  ws.send(JSON.stringify({ action: 'send_message', agent: selectedAgent, message: input.value }));
+  const targetSelect = document.getElementById('msg-target');
+  const target = targetSelect.value;
+  const msg = input.value.trim();
+  if (!msg) return;
+  if (!target) { alert('Select a target agent to send the message to.'); return; }
+
+  if (target === '__all__') {
+    Object.keys(agents).forEach(name => {
+      wsSend({ action: 'send_message', agent: name, message: msg });
+      if (agentMessages[name]) agentMessages[name].push({ text: `[user]: ${msg}`, type: 'injected', agent: 'user', ts: Date.now() });
+    });
+    allMessages.push({ text: `[user -> ALL]: ${msg}`, type: 'injected', agent: 'user', ts: Date.now() });
+  } else {
+    wsSend({ action: 'send_message', agent: target, message: msg });
+    allMessages.push({ text: `[user -> ${target}]: ${msg}`, type: 'injected', agent: 'user', ts: Date.now() });
+    if (agentMessages[target]) agentMessages[target].push({ text: `[user]: ${msg}`, type: 'injected', agent: 'user', ts: Date.now() });
+  }
   input.value = '';
+  renderMessages();
+}
+
+function updateTargetDropdown() {
+  const select = document.getElementById('msg-target');
+  const currentVal = select.value;
+  const names = Object.keys(agents).length > 0 ? Object.keys(agents) : specs.map(s => s.name);
+  let html = '<option value="">-- select target --</option>';
+  html += '<option value="__all__">All Agents</option>';
+  names.forEach(name => { html += `<option value="${name}">${name}</option>`; });
+  select.innerHTML = html;
+  // Restore selection
+  if (currentVal && (names.includes(currentVal) || currentVal === '__all__')) select.value = currentVal;
+  else if (selectedAgent && names.includes(selectedAgent)) select.value = selectedAgent;
+}
+
+// Add Agent Modal
+function showAddAgent() { document.getElementById('modal-overlay').classList.add('visible'); document.getElementById('agent-name').focus(); }
+function hideModal() { document.getElementById('modal-overlay').classList.remove('visible'); }
+function addAgent() {
+  const name = document.getElementById('agent-name').value.trim();
+  const systemPrompt = document.getElementById('agent-system-prompt').value.trim();
+  const prompt = document.getElementById('agent-prompt').value.trim();
+  const allowed = document.getElementById('agent-allowed-tools').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const disallowed = document.getElementById('agent-disallowed-tools').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const maxTurns = parseInt(document.getElementById('agent-max-turns').value) || null;
+  const maxBudget = parseFloat(document.getElementById('agent-max-budget').value) || null;
+  const timeout = parseFloat(document.getElementById('agent-timeout').value) || null;
+  if (!name || !systemPrompt || !prompt) { alert('Name, system prompt, and task prompt are required.'); return; }
+  const spec = { name, system_prompt: systemPrompt, prompt, allowed_tools: allowed, disallowed_tools: disallowed, max_turns: maxTurns, max_budget_usd: maxBudget, timeout_seconds: timeout };
+  wsSend({ action: 'add_agent', spec });
+  hideModal();
+  // Clear form
+  ['agent-name','agent-system-prompt','agent-prompt','agent-allowed-tools','agent-disallowed-tools','agent-max-turns','agent-max-budget','agent-timeout'].forEach(id => document.getElementById(id).value = '');
 }
 
 connect();
