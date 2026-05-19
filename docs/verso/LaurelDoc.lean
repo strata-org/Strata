@@ -302,11 +302,12 @@ remainder of the enclosing scope.
 
 ### Control flow
 
-$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] If-NoElse)}`
+$$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Leftarrow \mathsf{TVoid}}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] If-NoElse)}`
 
 The construct synthesizes {name Strata.Laurel.HighType.TVoid}`TVoid` because there is no
-value when `cond` is false; without this, `x : int := if c then 5` would type-check
-spuriously.
+value when `cond` is false; the then-branch is checked against
+{name Strata.Laurel.HighType.TVoid}`TVoid` so `x : int := if c then 5` is rejected at the
+branch rather than slipping through to a downstream subsumption.
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t} \quad \text{([⇒] If)}`
 
