@@ -1557,7 +1557,7 @@ def verifySingleEnv (oblProgram : Program)
           if options.verbose >= .debug then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
-          if !useParallel && options.stopOnFirstError then break
+          if options.stopOnFirstError then break
         continue
     -- Need the solver for at least one check
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
@@ -1637,12 +1637,15 @@ def verifySingleEnv (oblProgram : Program)
     let t5 ← IO.monoNanosNow
     solverNs := solverNs + (t5 - t4)
     -- Patch placeholder results with actual solver results; skip jobs not executed (stopOnFirstError)
+    let mut firstError : Option DiagnosticModel := none
     for (jobResult?, jobIdx) in jobResults.zip solverJobIndices.reverse do
       match jobResult? with
       | some (.ok result) =>
         results := results.setIfInBounds jobIdx result
-      | some (.error diag) => throw diag
+      | some (.error diag) =>
+        if firstError.isNone then firstError := some diag
       | none => pure () -- job was skipped by stopOnFirstError; leave placeholder
+    if let some diag := firstError then throw diag
   if profile then
     let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
     let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
