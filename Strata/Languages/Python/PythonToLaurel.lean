@@ -1388,12 +1388,12 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
       if preThen.isEmpty then
         then'
       else
-        mkStmtExprMdWithLoc (.Block (preThen ++ [then'])) thenBr.source
+        mkStmtExprMdWithLoc (.Block (preThen ++ [then']) none) thenBr.source
     let elseExpr := preElse.map fun (pre, else') =>
       if pre.isEmpty then
         else'
       else
-        mkStmtExprMdWithLoc (.Block (pre ++ [else'])) else'.source
+        mkStmtExprMdWithLoc (.Block (pre ++ [else']) none) else'.source
     if preCond.isEmpty then
       return ([], e)
     else
@@ -1445,9 +1445,10 @@ partial def translateAssign  (ctx : TranslationContext)
     | _ => false
   let rhsCtx := if isSelfFieldAssign then {ctx with suppressDispatch := true} else ctx
   let extractionSeedText :=
-    match pyRangeToFileRange rhs.ann with
-    | some fr => rangeToTempName fr
-    | none => pyExprToString lhs ++ " <- " ++ pyExprToString rhs
+    if rhs.ann.isNone then
+      pyExprToString lhs ++ " <- " ++ pyExprToString rhs
+    else
+      s!"{rhs.ann.start}_{rhs.ann.stop}"
   let extractionSeed := extractionSeedText.foldl (fun acc ch => acc * 131 + ch.toNat) 0
   let (moExtracts, rhs_trans, _) ← translateExprExtractingCalls rhsCtx rhs extractionSeed
   -- When an unmodeled call produces a Hole, also havoc maybe_except since
