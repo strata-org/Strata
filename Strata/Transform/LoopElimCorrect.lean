@@ -344,6 +344,44 @@ private theorem block_wrap_terminal
       (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (some l) ρ₀.store h)
       (.step _ _ _ .step_block_done (.refl _)))
 
+/-- Taking the false/else branch of a det-ite with empty else-block terminates at the
+    same env (after scoped-ite projection, which is identity on self). -/
+private theorem ite_det_false_empty_terminal
+    (g : Expression.Expr) (then_branch : Statements) (md : MetaData Expression)
+    (ρ₀ : Env Expression)
+    (hg_ff : ρ₀.eval ρ₀.store g = some HasBool.ff)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval) :
+    CoreStar π φ (.stmt (.ite (.det g) then_branch [] md) ρ₀) (.terminal ρ₀) := by
+  have h_inner : CoreStar π φ (.stmts ([] : Statements) ρ₀) (.terminal ρ₀) :=
+    .step _ _ _ .step_stmts_nil (.refl _)
+  have h_block : CoreStar π φ
+      (.block .none ρ₀.store (.stmts ([] : Statements) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
+    ReflTrans_Transitive _ _ _ _
+      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+        _ _ .none ρ₀.store h_inner)
+      (.step _ _ _ .step_block_done (.refl _))
+  rw [projectStore_self_env] at h_block
+  exact .step _ _ _ (.step_ite_false hg_ff hwfb) h_block
+
+/-- Taking the false/else branch of a nondet-ite with empty else-block terminates at the
+    same env (after scoped-ite projection, which is identity on self). -/
+private theorem ite_nondet_false_empty_terminal
+    (then_branch : Statements) (md : MetaData Expression)
+    (ρ₀ : Env Expression) :
+    CoreStar π φ (.stmt (.ite .nondet then_branch [] md) ρ₀) (.terminal ρ₀) := by
+  have h_inner : CoreStar π φ (.stmts ([] : Statements) ρ₀) (.terminal ρ₀) :=
+    .step _ _ _ .step_stmts_nil (.refl _)
+  have h_block : CoreStar π φ
+      (.block .none ρ₀.store (.stmts ([] : Statements) ρ₀))
+      (.terminal { ρ₀ with store := projectStore ρ₀.store ρ₀.store }) :=
+    ReflTrans_Transitive _ _ _ _
+      (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ)
+        _ _ .none ρ₀.store h_inner)
+      (.step _ _ _ .step_block_done (.refl _))
+  rw [projectStore_self_env] at h_block
+  exact .step _ _ _ .step_ite_nondet_false h_block
+
 private theorem block_wrap_exiting_mismatch
     (l : String) (bss : Statements) (md : MetaData Expression)
     (lv : String) (ρ₀ ρ' : Env Expression)
@@ -5872,9 +5910,21 @@ private theorem simulation
                         first_iter_body {} ρ₀ ρ₀ h_fib_run
                       rw [projectStore_self_env] at h; exact h
                     -- Step 2: ite guard is ff at ρ₀, take else (empty [] via block), terminate.
-                    -- Trace: step_ite_false → block(.stmts [] ρ₀) → stmts_nil → block_done
-                    -- → project (self = id). Then outer block wraps and projects (also id).
-                    sorry
+                    have h_ite := ite_det_false_empty_terminal (π := π) (φ := φ)
+                      _ then_branch {} ρ₀ hg_ff hwfb'
+                    have h_stmts : CoreStar π φ (.stmts [.block first_iter_label
+                        first_iter_body {}, .ite _ then_branch [] {}] ρ₀)
+                        (.terminal ρ₀) :=
+                      ReflTrans_Transitive _ _ _ _
+                        (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+                          _ _ ρ₀ ρ₀ h_fib_block)
+                        (ReflTrans_Transitive _ _ _ _
+                          (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+                            _ _ ρ₀ ρ₀ h_ite)
+                          (.step _ _ _ .step_stmts_nil (.refl _)))
+                    have h_outer := block_wrap_terminal π φ loop_label _ {} ρ₀ ρ₀ h_stmts
+                    rw [projectStore_self_env] at h_outer
+                    exact h_outer
                   | step_loop_enter _ _ _ _ _ =>
                     -- ≥1-iter det.  Derive hasInvFailure = false and apply
                     -- h_enter_case directly with hrest.
@@ -5925,9 +5975,21 @@ private theorem simulation
                         first_iter_body {} ρ₀ ρ₀ h_fib_run
                       rw [projectStore_self_env] at h; exact h
                     -- Nondet ite: take else (= [] via block), terminate at ρ₀.
-                    -- Trace: step_ite_nondet_false → block(.stmts [] ρ₀) → stmts_nil → block_done
-                    -- → project (self = id). Then outer block wraps and projects (also id).
-                    sorry
+                    have h_ite := ite_nondet_false_empty_terminal (π := π) (φ := φ)
+                      then_branch {} ρ₀
+                    have h_stmts : CoreStar π φ (.stmts [.block first_iter_label
+                        first_iter_body {}, .ite _ then_branch [] {}] ρ₀)
+                        (.terminal ρ₀) :=
+                      ReflTrans_Transitive _ _ _ _
+                        (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+                          _ _ ρ₀ ρ₀ h_fib_block)
+                        (ReflTrans_Transitive _ _ _ _
+                          (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+                            _ _ ρ₀ ρ₀ h_ite)
+                          (.step _ _ _ .step_stmts_nil (.refl _)))
+                    have h_outer := block_wrap_terminal π φ loop_label _ {} ρ₀ ρ₀ h_stmts
+                    rw [projectStore_self_env] at h_outer
+                    exact h_outer
                   | step_loop_nondet_enter _ _ =>
                     -- ≥1-iter nondet.
                     have hh := hasFailure_false_backwards (π := π) (φ := φ) hrest hnf''
