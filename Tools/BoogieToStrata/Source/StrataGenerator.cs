@@ -1850,14 +1850,17 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Procedure VisitProcedure(Procedure node) {
         if (!_program.Implementations.Any(i => i.Name.Equals(node.Name))) {
-            // SMACK encodes C assert(expr) as a call to assert_.*(cond).
-            // Inject a synthetic requires precondition so the call-elimination
-            // pass generates a VC checking the condition is non-zero.
-            // We add it to node.Requires so WriteProcedureHeader emits it
-            // inside a single spec block alongside any existing specs.
+            // Under --smack, SMACK encodes C assert(expr) as a call to
+            // assert_.*(cond). Inject a synthetic requires precondition so the
+            // call-elimination pass generates a VC checking the condition is
+            // non-zero. We add it to node.Requires so WriteProcedureHeader
+            // emits it inside a single spec block alongside any existing
+            // specs. The injection always fires when the name pattern matches
+            // (no Requires.Count == 0 guard) — if the procedure already has a
+            // hand-written requires, both clauses appear in the merged spec
+            // block, preserving the SMACK invariant unconditionally.
             Requires? syntheticReq = null;
-            if (node.Name.StartsWith("assert_.") && node.InParams.Count > 0
-                && node.Requires.Count == 0) {
+            if (_smack && node.Name.StartsWith("assert_.") && node.InParams.Count > 0) {
                 var param = node.InParams[0];
                 var paramExpr = new IdentifierExpr(param.tok, param);
                 var zero = new LiteralExpr(param.tok, Microsoft.BaseTypes.BigNum.FromInt(0));
