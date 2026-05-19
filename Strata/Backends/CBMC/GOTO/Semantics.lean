@@ -140,6 +140,19 @@ inductive StepGoto
     StepGoto P δ_goto δ_goto_bool pgm
       (.running pc σ failed) (.running (pc + 1) σ' failed)
 
+  /-- An `ASSIGN` instruction whose RHS is a side-effect Nondet GOTO
+  expression: arbitrary value `v` is assigned. Mirrors
+  `EvalCmd.eval_set_nondet` on the source side. The RHS shape is not
+  constrained at the constructor level; the layout predicate
+  `CmdEmittedAt.set_nondet` carries that structural witness, gating
+  where this rule may fire. -/
+  | step_assign_nondet :
+    pgm.instrAt pc = some instr →
+    instr.type = .ASSIGN →
+    UpdateState P σ x v σ' →
+    StepGoto P δ_goto δ_goto_bool pgm
+      (.running pc σ failed) (.running (pc + 1) σ' failed)
+
   /-- `ASSERT` with a guard that holds: store and failure flag are
   unchanged, `pc` advances. -/
   | step_assert_pass :
