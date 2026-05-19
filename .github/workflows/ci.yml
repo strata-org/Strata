@@ -54,10 +54,7 @@ jobs:
       - name: Run tests (excluding Python)
         run: lake test -- --exclude Languages.Python
       - name: Save lake cache
-        uses: actions/cache/save@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        uses: ./.github/actions/save-lake-cache
       - name: Verify Java testdata is up to date
         run: |
           StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh

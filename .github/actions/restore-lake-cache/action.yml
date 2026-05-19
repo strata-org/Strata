@@ -36,12 +36,14 @@ inputs:
     default: "lake"
   use-restore-keys:
     description: >
-      If 'true' (default), include three fallback `restore-keys` so that
-      a near match (same toolchain/manifest/.st files but different SHA)
-      is used when no exact-SHA cache exists.
+      Must be the string `'true'` or `'false'`.
 
-      Set to 'false' for downstream jobs that depend on a cache saved by
-      an upstream job for the *same* SHA (typically together with
+      If `'true'` (default), include three fallback `restore-keys` so
+      that a near match (same toolchain/manifest/.st files but different
+      SHA) is used when no exact-SHA cache exists.
+
+      Set to `'false'` for downstream jobs that depend on a cache saved
+      by an upstream job for the *same* SHA (typically together with
       `fail-on-cache-miss: 'true'`); see
       https://github.com/strata-org/Strata/issues/952. With fallback
       keys present, `fail-on-cache-miss` only triggers when every
