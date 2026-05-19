@@ -11,6 +11,7 @@ public import Strata.Languages.Core.EntryPoint
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.PyFactory
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.SimpleAPI
 
 namespace Strata.Pipeline
@@ -46,6 +47,12 @@ private def runPipeline (config : PyAnalyzeConfig)
       (specDir := config.specDir)
       config.filePath config.dispatchModules config.pyspecModules config.sourcePath
 
+  if config.outputMode == .verbose then
+    let _ ← (show IO Unit from do
+      IO.println "---- BEGIN Laurel Program ----"
+      IO.println (toString (Std.format combinedLaurel))
+      IO.println "---- END Laurel Program ----").toBaseIO
+
   let uri := config.sourcePath.getD config.filePath
 
   let (coreProgram, laurelPassStats) ← withPhase "laurelToCore" do
@@ -66,6 +73,12 @@ private def runPipeline (config : PyAnalyzeConfig)
         emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel to Core translation failed: {diags}"
     | .error e =>
       emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel translation error: {e}"
+
+  if config.outputMode == .verbose then
+    let _ ← (show IO Unit from do
+      IO.println "---- BEGIN Core Program ----"
+      IO.println (toString coreProgram)
+      IO.println "---- END Core Program ----").toBaseIO
 
   if config.skipVerification then
     return (PyAnalyzeOutcome.verified #[] coreProgram, laurelPassStats)
