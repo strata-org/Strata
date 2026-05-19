@@ -5,7 +5,7 @@
 -/
 module
 meta import Strata.Languages.Python.Specs
-meta import Strata.Languages.Python.Specs.DDM
+meta import all Strata.Languages.Python.Specs.DDM
 import Strata.DDM.Ion
 import Strata.Languages.Python.PythonDialect
 meta import StrataTest.Util.Python
@@ -294,7 +294,7 @@ meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
 
 
 meta def testNegRoundTrip (v : Nat) : Bool :=
-  DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = .negOfNat v
+  DDM.Int.ofDDM (.negInt SourceRange.none ⟨.none, v⟩) = Int.negOfNat v
 
 #guard testNegRoundTrip 0
 #guard testNegRoundTrip 1
