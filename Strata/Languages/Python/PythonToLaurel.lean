@@ -473,12 +473,12 @@ def resolveDispatch (ctx : TranslationContext)
   | some fnOverloads =>
     let kwPairs := kwords.map Python.keyword.nameAndValue
     let some firstArg := fnOverloads.findDispatchArg args kwPairs
-      | let msg := match fnOverloads.paramName, kwPairs.filterMap (·.1) with
-          | some expected, provided@(_ :: _) =>
+      | let msg := match kwPairs.filterMap (·.1) with
+          | provided@(_ :: _) =>
             s!"Dispatched function '{funcName}' called with wrong \
-              keyword argument, expected '{expected}' but got \
+              keyword argument, expected '{fnOverloads.paramName}' but got \
               '{String.intercalate "', '" provided}'"
-          | _, _ =>
+          | _ =>
             s!"Dispatched function '{funcName}' called with no \
               arguments (expected a string literal first argument)"
         throw (.typeError msg)

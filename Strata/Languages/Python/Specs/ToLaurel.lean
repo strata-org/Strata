@@ -10,9 +10,10 @@ import Strata.DDM.Format
 import Strata.Languages.Python.OverloadTable
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
-public import Strata.Languages.Python.Specs.Error
+public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
+import Strata.Languages.Python.Specs.MessageKind
 
 /-!
 # PySpec to Laurel Translation
@@ -62,7 +63,7 @@ namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
 open Strata.Python.Laurel
-open Strata.Python.Specs (SpecError)
+open Strata.Pipeline (PipelineMessage MessageKind Phase)
 
 /-! ## ToLaurelM Monad -/
 
@@ -75,7 +76,7 @@ structure ToLaurelContext where
 
 /-- State for PySpec to Laurel translation. -/
 structure ToLaurelState where
-  errors : Array SpecError := #[]
+  errors : Array PipelineMessage := #[]
   procedures : Array Procedure := #[]
   types : Array TypeDefinition := #[]
   overloads : OverloadTable := {}
@@ -87,9 +88,11 @@ structure ToLaurelState where
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 
-/-- Report an error during translation. -/
-def reportError (kind : WarningKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
-  let e : SpecError := ⟨(←read).filepath, loc, kind, message⟩
+/-- Report an error during translation. Phase is set to pySpecToLaurel since
+    this monad always runs during that phase. -/
+def reportError (kind : MessageKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
+  let phase := Phase.base "pySpecToLaurel"
+  let e : PipelineMessage := ⟨(←read).filepath, loc, phase, kind, message⟩
   modify fun s => { s with errors := s.errors.push e }
 
 def runChecked (act : ToLaurelM α) : ToLaurelM (α × Bool) := do
@@ -108,18 +111,24 @@ def pushType (td : TypeDefinition) : ToLaurelM Unit :=
 
 /-- Add an overload dispatch entry for a function. -/
 def pushOverloadEntry (funcName : String) (paramName : String)
-    (literalValue : String) (returnType : PythonIdent) : ToLaurelM Unit :=
-  modify fun s =>
-    let existing := s.overloads.getD funcName {}
-    let updated : FunctionOverloads := { existing with
-      paramName := existing.paramName <|> some paramName
-      entries := existing.entries.insert literalValue returnType }
-    if existing.paramName.any (· != paramName) then
-      dbg_trace s!"Warning: overload entries for '{funcName}' disagree on \
-        dispatch parameter name: existing '{existing.paramName.get!}', new '{paramName}'"
-      { s with overloads := s.overloads.insert funcName updated }
-    else
-      { s with overloads := s.overloads.insert funcName updated }
+    (literalValue : String) (returnType : PythonIdent) : ToLaurelM Unit := do
+  match (←get).overloads[funcName]? with
+  | none =>
+    modify fun s =>
+      let entry : FunctionOverloads := {
+        paramName := paramName
+        entries := {(literalValue, returnType)}
+      }
+      { s with overloads := s.overloads.insert funcName entry }
+  | some existing =>
+    if existing.paramName != paramName then
+      reportError .overloadParamNameDisagreement default
+        s!"Overload entries for '{funcName}' disagree on dispatch parameter \
+          name: existing '{existing.paramName}', new '{paramName}'"
+    modify fun s =>
+      { s with overloads := s.overloads.modify funcName fun existing =>
+          { existing with entries := existing.entries.insert literalValue returnType }
+      }
 
 /-- Prepend the module prefix to a name. Returns the name unchanged
     if the prefix is empty. -/
@@ -623,7 +632,7 @@ def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
 /-- Result of translating PySpec signatures to Laurel. -/
 public structure TranslationResult where
   program : Laurel.Program
-  errors : Array SpecError
+  errors : Array PipelineMessage
   overloads : OverloadTable
   /-- Maps unprefixed class names to prefixed names for type resolution. -/
   typeAliases : Std.HashMap String String := {}
@@ -653,7 +662,7 @@ public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signatu
     Processes `@overload` function declarations, ignoring classDef,
     typeDef, externTypeDecl, and non-overload functions. -/
 public def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
-    : OverloadTable × Array SpecError :=
+    : OverloadTable × Array PipelineMessage :=
   let ctx : ToLaurelContext := { filepath, modulePrefix := "" }
   let action := sigs.forM fun sig =>
     match sig with
