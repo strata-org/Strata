@@ -271,6 +271,17 @@ theorem single_cmd_simulation
 
 /-! ## Auxiliary: command-list simulation -/
 
+/-- When `k` meets or exceeds `blk.cmds.length`, the prefix instruction
+count saturates at the full block body count. Used by the transfer
+cases of `block_body_cmds_simulation` where `cs = []` (the suffix is
+empty), implying `blk.cmds.length ≤ k`. -/
+private theorem cmdsPrefixInstrCount_at_blk_length
+    (blk : Imperative.DetBlock String Core.Command Core.Expression)
+    (k : Nat) (h : blk.cmds.length ≤ k) :
+    cmdsPrefixInstrCount blk.cmds k = DetBlockBodyInstrCount blk := by
+  unfold cmdsPrefixInstrCount DetBlockBodyInstrCount
+  rw [List.take_of_length_le h]
+
 /-- Size-induction helper for `block_body_simulation`'s `cmd` case.
 
 Says: given a CFG block `(l, blk) ∈ cfg.blocks` and a `k`-suffix
@@ -430,12 +441,106 @@ theorem block_body_cmds_simulation
               ac_rfl
           rw [h_eq]
           exact h_tail_sim
-    | goto_true h_cond _ =>
-      sorry
-    | goto_false h_cond _ =>
-      sorry
+    | goto_true h_cond h_wf_bool_core =>
+      -- Empty cs case: cs = [] (from the constructor), and t is unified
+      -- with `.condGoto cond t' e' md`. Use `h_t` to recover the equality
+      -- `blk.transfer = .condGoto cond t' e' md` for the layout helpers.
+      rename_i md cond t' e'
+      have h_xfer_eq : blk.transfer = DetTransferCmd.condGoto cond t' e' md := by
+        rw [← h_t]
+      have h_drop_empty : blk.cmds.drop k = [] := h_suffix
+      have h_k_ge : blk.cmds.length ≤ k :=
+        List.drop_eq_nil_iff.mp h_drop_empty
+      have h_prefix_eq :
+          cmdsPrefixInstrCount blk.cmds k = DetBlockBodyInstrCount blk :=
+        cmdsPrefixInstrCount_at_blk_length blk k h_k_ge
+      obtain ⟨pc_neg, pc_uncond, pc_lf, pc_lt, instr_neg, instr_uncond,
+              h_pc_neg_eq, h_pc_uncond_eq, h_neg_at, h_neg_ty, _h_neg_tgt, _h_lf_map,
+              h_uncond_at, h_uncond_ty, h_uncond_tgt, h_lt_map⟩ :=
+        wf.layout_cond_goto l _ pc cond t' e' md h_block h_pc h_xfer_eq
+      have h_pc_neg : pc_neg = pc + 1 + DetBlockBodyInstrCount blk := h_pc_neg_eq
+      have h_pc_uncond : pc_uncond = pc + 1 + DetBlockBodyInstrCount blk + 1 := by
+        rw [h_pc_uncond_eq, h_pc_neg]
+      obtain ⟨e_goto, h_neg_guard, h_translated, h_uncond_guard⟩ :=
+        wf.layout_cond_goto_guards l _ pc cond t' e' md instr_neg instr_uncond
+          h_block h_pc h_xfer_eq
+          (by rw [← h_pc_neg]; exact h_neg_at)
+          (by rw [← h_pc_uncond]; exact h_uncond_at)
+      have h_g1 : δ_goto_bool σ e_goto = some true :=
+        (h_translated.bool_tt_agree σ).mp h_cond
+      have h_wf_bool_neg := h_wf_bool_goto.left
+      have h_wf_bool_const := h_wf_bool_goto.right
+      have h_g2 : δ_goto_bool σ e_goto.not = some false :=
+        (h_wf_bool_neg σ e_goto).left.mp h_g1
+      -- 2-step trace: fallthrough on negated guard, then unconditional taken.
+      refine ⟨GotoConfig.running pc_lt σ failed, ?_, .sim_cont h_lt_map⟩
+      unfold StepGotoStar
+      rw [h_prefix_eq, ← h_pc_neg]
+      refine ReflTrans.step
+        (GotoConfig.running pc_neg σ failed)
+        (GotoConfig.running (pc_neg + 1) σ failed)
+        (GotoConfig.running pc_lt σ failed) ?_ ?_
+      · refine StepGoto.step_goto_fallthrough h_neg_at h_neg_ty ?_
+        · rw [h_neg_guard]; exact h_g2
+      · refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+        rw [show pc_neg + 1 = pc_uncond from h_pc_uncond_eq.symm]
+        refine StepGoto.step_goto_taken h_uncond_at h_uncond_ty h_uncond_tgt ?_
+        · rw [h_uncond_guard]; exact h_wf_bool_const σ
+    | goto_false h_cond h_wf_bool_core =>
+      -- Empty cs case: cs = [] (from constructor), one-step trace via the
+      -- negated GOTO (because cond=ff means ¬cond=tt).
+      rename_i md cond t' e'
+      have h_xfer_eq : blk.transfer = DetTransferCmd.condGoto cond t' e' md := by
+        rw [← h_t]
+      have h_drop_empty : blk.cmds.drop k = [] := h_suffix
+      have h_k_ge : blk.cmds.length ≤ k :=
+        List.drop_eq_nil_iff.mp h_drop_empty
+      have h_prefix_eq :
+          cmdsPrefixInstrCount blk.cmds k = DetBlockBodyInstrCount blk :=
+        cmdsPrefixInstrCount_at_blk_length blk k h_k_ge
+      obtain ⟨pc_neg, pc_uncond, pc_lf, _pc_lt, instr_neg, instr_uncond,
+              h_pc_neg_eq, h_pc_uncond_eq, h_neg_at, h_neg_ty, h_neg_tgt, h_lf_map,
+              h_uncond_at, _h_uncond_ty, _h_uncond_tgt, _h_lt_map⟩ :=
+        wf.layout_cond_goto l _ pc cond t' e' md h_block h_pc h_xfer_eq
+      have h_pc_neg : pc_neg = pc + 1 + DetBlockBodyInstrCount blk := h_pc_neg_eq
+      have h_pc_uncond : pc_uncond = pc + 1 + DetBlockBodyInstrCount blk + 1 := by
+        rw [h_pc_uncond_eq, h_pc_neg]
+      obtain ⟨e_goto, h_neg_guard, h_translated, _⟩ :=
+        wf.layout_cond_goto_guards l _ pc cond t' e' md instr_neg instr_uncond
+          h_block h_pc h_xfer_eq
+          (by rw [← h_pc_neg]; exact h_neg_at)
+          (by rw [← h_pc_uncond]; exact h_uncond_at)
+      have h_g1 : δ_goto_bool σ e_goto = some false :=
+        (h_translated.bool_ff_agree σ).mp h_cond
+      have h_wf_bool_neg := h_wf_bool_goto.left
+      have h_g2 : δ_goto_bool σ e_goto.not = some true :=
+        (h_wf_bool_neg σ e_goto).right.mp h_g1
+      refine ⟨GotoConfig.running pc_lf σ failed, ?_, .sim_cont h_lf_map⟩
+      unfold StepGotoStar
+      rw [h_prefix_eq, ← h_pc_neg]
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      refine StepGoto.step_goto_taken h_neg_at h_neg_ty h_neg_tgt ?_
+      · rw [h_neg_guard]; exact h_g2
     | terminal =>
-      sorry
+      -- Empty cs case: cs = [] (from constructor), t = .finish md, output
+      -- is `.terminal σ false`. One-step trace via END_FUNCTION.
+      rename_i md
+      have h_xfer_eq : blk.transfer = DetTransferCmd.finish md := by
+        rw [← h_t]
+      have h_drop_empty : blk.cmds.drop k = [] := h_suffix
+      have h_k_ge : blk.cmds.length ≤ k :=
+        List.drop_eq_nil_iff.mp h_drop_empty
+      have h_prefix_eq :
+          cmdsPrefixInstrCount blk.cmds k = DetBlockBodyInstrCount blk :=
+        cmdsPrefixInstrCount_at_blk_length blk k h_k_ge
+      obtain ⟨pc_end, _instr_end, h_pc_end_eq, h_end_at, h_end_ty⟩ :=
+        wf.layout_finish l _ pc md h_block h_pc h_xfer_eq
+      have h_pc_end : pc_end = pc + 1 + DetBlockBodyInstrCount blk := h_pc_end_eq
+      refine ⟨GotoConfig.terminal σ failed, ?_, .sim_terminal⟩
+      unfold StepGotoStar
+      rw [h_prefix_eq, ← h_pc_end]
+      refine ReflTrans.step _ _ _ ?_ (ReflTrans.refl _)
+      exact StepGoto.step_end_function h_end_at h_end_ty
 
 /-! ## Block-body simulation (post-LOCATION) -/
 
