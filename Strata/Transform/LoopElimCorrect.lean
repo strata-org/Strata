@@ -5871,8 +5871,9 @@ private theorem simulation
                       have h := block_wrap_terminal π φ first_iter_label
                         first_iter_body {} ρ₀ ρ₀ h_fib_run
                       rw [projectStore_self_env] at h; exact h
-                    -- Step 2: ite guard is ff at ρ₀, take else (empty), terminate.
-                    -- (ite steps now produce .block .none wrapper; sorry for now)
+                    -- Step 2: ite guard is ff at ρ₀, take else (empty [] via block), terminate.
+                    -- Trace: step_ite_false → block(.stmts [] ρ₀) → stmts_nil → block_done
+                    -- → project (self = id). Then outer block wraps and projects (also id).
                     sorry
                   | step_loop_enter _ _ _ _ _ =>
                     -- ≥1-iter det.  Derive hasInvFailure = false and apply
@@ -5923,8 +5924,9 @@ private theorem simulation
                       have h := block_wrap_terminal π φ first_iter_label
                         first_iter_body {} ρ₀ ρ₀ h_fib_run
                       rw [projectStore_self_env] at h; exact h
-                    -- Nondet ite: take else (= []), terminate at ρ₀.
-                    -- (ite steps now produce .block .none wrapper; sorry for now)
+                    -- Nondet ite: take else (= [] via block), terminate at ρ₀.
+                    -- Trace: step_ite_nondet_false → block(.stmts [] ρ₀) → stmts_nil → block_done
+                    -- → project (self = id). Then outer block wraps and projects (also id).
                     sorry
                   | step_loop_nondet_enter _ _ =>
                     -- ≥1-iter nondet.
