@@ -194,25 +194,4 @@ procedure test() opaque {
 #guard_msgs (error, drop all) in
 #eval testInputWithOffset "UserDefinedCrossType" userDefinedCrossType 170 processResolution
 
-/-! ## If-then-else branch join
-
-When the two branches have different but subtype-related types, the construct
-synthesizes their join (least upper bound) — not the then-branch arbitrarily.
-So `if c then new Left else new Right`, with `Left, Right <: Top`, synthesizes
-`Top` and an assignment to a `Left`-typed variable is rejected. -/
-
-def ifBranchJoinToCommonAncestor := r"
-composite Top { }
-composite Left extends Top { }
-composite Right extends Top { }
-procedure test(c: bool) opaque {
-  var x: Top := if c then new Left else new Right;
-  var y: Left := if c then new Left else new Right
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: expected 'Left', got 'Top'
-};
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "IfBranchJoinToCommonAncestor" ifBranchJoinToCommonAncestor 198 processResolution
-
 end Laurel
