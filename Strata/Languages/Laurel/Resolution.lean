@@ -160,7 +160,8 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved source => ⟨ .Unknown, source ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; default
+ | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
+ | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
 
 /-! ## Resolution result -/
 
