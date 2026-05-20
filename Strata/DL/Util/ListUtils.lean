@@ -91,7 +91,7 @@ theorem List.Forall_append : Forall P (a ++ b) ↔ Forall P a ∧ Forall P b := 
 * `replace [1, 4, 2, 3, 3, 7] 5 6 = [1, 4, 2, 3, 3, 7]`
 Adapted from List.replace
 -/
-def List.replaceAll [BEq α] : List α → α → α → List α
+@[expose] def List.replaceAll [BEq α] : List α → α → α → List α
   | [],    _, _ => []
   | a::as, b, c => match b == a with
     | true  => c :: replaceAll as b c
@@ -260,7 +260,7 @@ theorem List.Subset.subset_app_of_or_4 {l: List α}: l ⊆ l1 ∨ l ⊆ l2 ∨ l
 theorem List.Subset.assoc {l: List α}: l ⊆ l1 ++ l2 ++ l3 ↔ l ⊆ l1 ++ (l2 ++ l3) := by
   simp [Subset, List.Subset]
 
-theorem List.replaceAll_app {α : Type} [DecidableEq α] {h h' : α} {as bs : List α}:
+public theorem List.replaceAll_app {α : Type} [DecidableEq α] {h h' : α} {as bs : List α}:
   List.replaceAll as h h' ++ List.replaceAll bs h h' = List.replaceAll (as ++ bs) h h' := by
   induction as generalizing bs
   case nil => simp [List.replaceAll]
@@ -278,7 +278,7 @@ theorem cons_removeAll [BEq α] {x : α} {xs ys : List α} :
         xs.removeAll ys := by
   simp [List.removeAll, List.filter_cons]
 
-theorem List.app_removeAll {α : Type} [BEq α] {xs₁ xs₂ ys : List α}:
+public theorem List.app_removeAll {α : Type} [BEq α] {xs₁ xs₂ ys : List α}:
   (xs₁ ++ xs₂).removeAll ys =
   (xs₁.removeAll ys) ++ (xs₂.removeAll ys) := by
   induction xs₁ <;> simp_all
@@ -325,13 +325,13 @@ theorem List.removeAll_comm {α : Type} [BEq α] {xs₁ xs₂ ys : List α}:
 
 /-- From Mathlib4 https://github.com/leanprover-community/mathlib4/blob/e70dc4ede17dd5fcda9926c84268e0f270147cba/Mathlib/Data/List/Zip.lean#L32-L37 -/
 @[simp]
-theorem zip_swap : ∀ (l₁ : List α) (l₂ : List β), (List.zip l₁ l₂).map Prod.swap = List.zip l₂ l₁
+public theorem zip_swap : ∀ (l₁ : List α) (l₂ : List β), (List.zip l₁ l₂).map Prod.swap = List.zip l₂ l₁
   | [], _ => List.zip_nil_right.symm
   | l₁, [] => by rw [List.zip_nil_right]; rfl
   | a :: l₁, b :: l₂ => by
     simp only [List.zip_cons_cons, List.map_cons, zip_swap l₁ l₂, Prod.swap_prod_mk]
 
-theorem replaceAll_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' k : α} {t: List α}:
+public theorem replaceAll_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' k : α} {t: List α}:
   k ∈ (t.replaceAll h h') → k ∈ t ∨ k = h' := by
   intros Hr
   induction t generalizing k h h' <;> simp [List.replaceAll] at *
@@ -348,21 +348,21 @@ theorem replaceAll_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' k : α} {t: L
       specialize ih hin
       cases ih <;> simp_all
 
-theorem zip_self_eq :
+public theorem zip_self_eq :
 (k1, k2) ∈ List.zip ks ks → k1 = k2 := by
   intros Hin
   induction ks <;> simp_all
   case cons h t ih =>
   cases Hin <;> simp_all
 
-theorem zip_self_eq' :
+public theorem zip_self_eq' :
 k ∈ ks → (k, k) ∈ List.zip ks ks := by
   intros Hin
   induction ks <;> simp_all
   case cons h t ih =>
   cases Hin <;> simp_all
 
-theorem in_replaceAll_removeAll {α : Type u} [BEq α] [LawfulBEq α] {h h' k2 : α} {vs t: List α}:
+public theorem in_replaceAll_removeAll {α : Type u} [BEq α] [LawfulBEq α] {h h' k2 : α} {vs t: List α}:
   k2 ∈ (vs.replaceAll h h').removeAll t → k2 = h' ∨ k2 ∈ vs.removeAll t := by
   intros H
   induction vs generalizing k2 <;> simp [List.removeAll, List.replaceAll] at *
@@ -380,7 +380,7 @@ theorem in_replaceAll_removeAll {α : Type u} [BEq α] [LawfulBEq α] {h h' k2 :
       have Hor := replaceAll_mem Hin
       cases Hor <;> simp_all
 
-theorem removeAll_cons {α : Type u} [BEq α] [LawfulBEq α] {k h : α} {vs t : List α} :
+public theorem removeAll_cons {α : Type u} [BEq α] [LawfulBEq α] {k h : α} {vs t : List α} :
   k ≠ h →
   k ∈ List.removeAll vs t →
   k ∈ List.removeAll vs (h :: t) := by
@@ -389,11 +389,11 @@ theorem removeAll_cons {α : Type u} [BEq α] [LawfulBEq α] {k h : α} {vs t : 
   case cons h' t' ih =>
     simp_all
 
-theorem removeAll_sublist {α : Type u} [BEq α] [LawfulBEq α] (as bs : List α):
+public theorem removeAll_sublist {α : Type u} [BEq α] [LawfulBEq α] (as bs : List α):
   (List.removeAll as bs).Sublist as := by
   induction as <;> simp [List.removeAll]
 
-theorem replaceAll_not_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' : α} {vs : List α}:
+public theorem replaceAll_not_mem {α : Type u} [BEq α] [LawfulBEq α] {h h' : α} {vs : List α}:
   h ≠ h' →
   ¬ h ∈ (vs.replaceAll h h') := by
   intros Hne Hin

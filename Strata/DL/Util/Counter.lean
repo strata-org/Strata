@@ -36,6 +36,7 @@ def WF (σ : CounterState)
   := (∀ c, c ∈ σ.generated → c < σ.counter)
       ∧ σ.generated.Nodup
 
+@[expose]
 def genCounter (σ : CounterState)
   : Nat × CounterState
   := (σ.counter, { σ with

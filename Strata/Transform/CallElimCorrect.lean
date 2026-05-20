@@ -19,17 +19,13 @@ public import Strata.DL.Imperative.CmdSemantics
 public import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
+public import Strata.DL.Util.String
 
-/-! # Call Elimination Correctness Proof (DEPRECATED)
-
-  We are deprecating this proof because it relies on the old big-step semantics for
-  `Stmt`. This proof will be re-done with a new small-step semantics in the near
-  future.
+/-! # Call Elimination Correctness Proof
 
   This file contains the main proof that the call elimination transformation is
-  semantics preserving (see `callElimStatementCorrect`).
-  Additionally, `callElimBlockNoExcept` shows that the call elimination
-  transformation always succeeds on well-formed statements.
+  semantics preserving (see `callElimStatementCorrect`), formulated against the
+  small-step `Stmt` semantics in `Strata.Languages.Core.StatementSemanticsProps`.
 -/
 
 namespace CallElimCorrect
@@ -39,209 +35,313 @@ public section
 
 -- inidividual lemmas
 
-theorem createHavocsApp :
+private theorem createHavocsApp :
 createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
 simp [createHavocs]
 
-theorem createFvarsApp :
+private theorem createFvarsApp :
 createFvars (a ++ b) = createFvars a ++ createFvars b := by
 simp [createFvars]
 
-theorem createFvarsLength :
+private theorem createFvarsLength :
 (createFvars ls).length = ls.length := by
 induction ls <;> simp [createFvars]
 
-/-
--- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
-theorem callElimBlockNoExcept :
-  ∀ (st : Core.Statement)
-    (p : Core.Program),
-    WF.WFStatementsProp p [st] →
-  ∃ sts, Except.ok sts = ((run [st] (CallElim.callElimStmts · p)))
-  -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
-  -- ∧ WF.WFStatementsProp p sts
-  := by
-  intros st p wf
-  simp [Transform.run, runStmts, CallElim.callElimStmts, CallElim.callElimCmd]
-  cases st with
-  | block l b md => exists [.block l b md]
-  | ite cd tb eb md => exists [.ite cd tb eb md]
-  | exit l b => exists [.exit l b]
-  | loop g m i b md => exists [.loop g m i b md]
-  | funcDecl f md => exists [.funcDecl f md]
-  | cmd c =>
-    cases c with
-    | cmd c' => exists [Imperative.Stmt.cmd (CmdExt.cmd c')]
-    | call lhs procName args md =>
-    split
-    . -- call case
-      next heq =>
-      cases heq
-      next st =>
-      sorry
-      /-
-      simp only [] -- reduce match
-      split <;>
-        simp only [StateT.run, bind, ExceptT.bind, ExceptT.mk, StateT.bind, genArgExprIdentsTrip, ne_eq, liftM,
-              monadLift, MonadLift.monadLift, ExceptT.lift, Functor.map, List.unzip_snd, ite_not, ExceptT.bindCont, ExceptT.map,
-              genOldExprIdentsTrip]
-      . split
-        next res a s heq1 =>
-        split
-        . -- succeeded, prove it is well-formed
-          simp [StateT.bind, pure, Functor.map, ExceptT.mk, genOutExprIdentsTrip, liftM, monadLift,
-            MonadLift.monadLift, ExceptT.lift, bind, ExceptT.bind, ExceptT.bindCont, StateT.bind]
-          split at heq1 <;> try cases heq1
-          . next res' a' s' heq2 =>
-            split
-            split <;> simp only [bind, StateT.bind, StateT.pure]
-            . split
-              sorry
-              /-
-              split <;> simp [pure, StateT.pure, Except.ok.injEq]
-              -- old expression returns error, contradiction by well-formedness
-              next ss _ _ _ _ s x e heq1 =>
-              split at heq1 <;> simp_all
-              next a' s' hif heq' =>
-              cases heq' <;> simp_all
-              simp [bind, ExceptT.bindCont, StateT.bind] at heq1
-              split at heq1 <;> simp_all
-              split at heq1
-              . simp [ExceptT.pure, pure, ExceptT.mk, StateT.pure] at heq1
-                cases heq1
-              . next s x e heq =>
-                generalize Heq : (List.filter (isGlobalVar p)
-                  (List.flatMap OldExpressions.extractOldExprVars
-                    (OldExpressions.normalizeOldExprs
-                      (List.map Procedure.Check.expr res'.spec.postconditions.values))).eraseDups)
-                        = eq at *
-                have Hgen := @getIdentTys!_no_throw p eq (List.mapM.loop genOldExprIdent eq [] ss).snd ?_
-                simp [runWith, StateT.run] at Hgen
-                . cases Hgen with
-                  | intro tys Hgen =>
-                  simp_all
-                . simp [← Heq, isGlobalVar] at *
-              -/
-            . -- output length not equal, contradiction
-              next x e heq1 =>
-              split at heq1
-              . next x e heq1' =>
-                simp [StateT.bind, StateT.map, pure, ExceptT.pure, ExceptT.bindCont, ExceptT.mk] at heq1
-                cases heq1
-              . -- lhs length not equal to outputs length
-                next Hne =>
-                cases wf with
-                | mk df al ol =>
-                exfalso
-                apply Hne
-                simp [Option.isSome] at df
-                unfold CoreIdent.unres at *
-                split at df <;> simp_all
-                apply Hne
-                simp [← ol, Lambda.LMonoTySignature.toTrivialLTy]
-        . -- failed to get type for arguments, contradiction
-          split at heq1
-          . next x e heq1' =>
-            simp [StateT.bind, StateT.map, pure, ExceptT.pure, ExceptT.bindCont, ExceptT.mk] at heq1
-            cases heq1
-          . -- arg length not equal to inputs length
-            next Hne =>
-            cases wf with
-            | mk df al ol =>
-            exfalso
-            apply Hne
-            simp [Option.isSome] at df
-            unfold CoreIdent.unres at *
-            split at df <;> simp_all
-            apply Hne
-            simp [← al, Lambda.LMonoTySignature.toTrivialLTy]
-      . exfalso
-        next proc Hfalse =>
-        simp [Program.Procedure.find?] at Hfalse
-        split at Hfalse <;> simp_all
-        next heq' =>
-        cases wf with
-        | intro wf =>
-        cases wf with
-        | mk wf =>
-        simp [Program.Procedure.find?] at wf
-        unfold CoreIdent.unres at *
-        split at wf <;> simp_all
-      -/
-    . -- other case
-      grind
 
-theorem postconditions_subst_unwrap :
-  substPost ∈
-  OldExpressions.substsOldExprs (createOldVarsSubst oldTrips)
-    (OldExpressions.normalizeOldExprs ps) →
-  ∃ post, post ∈ ps ∧ substPost = (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips)
-    (OldExpressions.normalizeOldExpr post)) := by
-  intros H
-  induction ps
-  case nil =>
-    simp [OldExpressions.normalizeOldExprs, OldExpressions.substsOldExprs] at H
-  case cons h t ih =>
-    simp [OldExpressions.normalizeOldExprs, OldExpressions.substsOldExprs] at H
-    cases H with
-    | inl Hin =>
-      simp_all
-    | inr Hin =>
-      simp
-      cases Hin with
-      | intro x Hin =>
-      right
-      refine ⟨x, Hin.1, ?_⟩
-      symm
-      exact Hin.2
+-- ============================================================
+-- Small-step call-elimination correctness.
+-- ============================================================
+-- The sorry-free proof of `callElimStatementCorrect` lives below and uses
+-- only currently-live infrastructure from
+-- `Strata.Languages.Core.StatementSemanticsProps`.
 
-theorem prepostconditions_unwrap {ps : List (CoreLabel × Procedure.Check)} :
-post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
-∃ label attr md, (label, { expr := post, attr := attr, md := md : Procedure.Check }) ∈ ps := by
-  intros H
-  induction ps
-  case nil =>
-    cases H
-  case cons h t ih =>
-    simp at H
-    cases H with
-    | intro c Hc
-    simp [ListMap.values] at Hc
-    cases Hc.1 with
-    | inl Hin =>
-      simp_all
-      refine ⟨h.1, c.attr, c.md, ?_⟩
-      left
-      simp [← Hc, Hin]
-    | inr Hin =>
-      simp
-      specialize ih ?_
-      . simp [← Hc.2]
-        refine ⟨c, ⟨Hin, rfl⟩⟩
-      . cases ih with
-        | intro label ih => grind
+/-! ## Helper block-evaluator lemmas (small-step) -/
 
-theorem updatedStateIsDefinedMono :
-  (σ k').isSome = true →
-  (updatedState σ k v k').isSome = true := by
-  intros Hsome
-  simp [updatedState]
-  by_cases Heq : (k' = k) <;> simp [Heq]
-  case neg => assumption
+-- A top-level helper to project the universal-modified-old clause
+-- from `WellFormedCoreEvalTwoState` was attempted here but is BLOCKED
+-- by the new Lean module system.
+--
+-- Intended signature (commented out below for reference):
+--
+-- private theorem WellFormedCoreEvalTwoState_old_havoc
+--     {δ : CoreEval} {σ_pre σ_caller σ_post σ_arg : CoreStore}
+--     {vs vs' : List Expression.Ident} {v : Expression.Ident}
+--     (Hwf2 : Core.WellFormedCoreEvalTwoState δ σ_pre σ_caller)
+--     (Hhav : HavocVars σ_pre vs σ_post)
+--     (HInit : InitVars σ_post vs' σ_arg)
+--     (Hv : v ∈ vs) :
+--     δ σ_arg (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none) =
+--       σ_pre v
+--
+-- The proof would project Hwf2's universal `.2` clause and apply it
+-- with (vs, vs', σ_pre, σ_post, σ_arg) plus `⟨Hhav, HInit⟩`, picking
+-- `.1 Hv` from the resulting per-variable conjunction.
+--
+-- WHY BLOCKED:
+-- `WellFormedCoreEvalTwoState` is a `def` over `∧` whose body is not
+-- `@[expose]`'d in `Strata.Languages.Core.StatementSemantics`.  Under
+-- the new module system, the following all fail outside the def's
+-- own module:
+--   - `simp [WellFormedCoreEvalTwoState]`: "Expected a definition
+--     with an exposed body".
+--   - `unfold WellFormedCoreEvalTwoState`: same reason.
+--   - `show ⟨...⟩ := Hwf2` (definitional coercion): elaborator does
+--     not reduce non-exposed defs across modules.
+--   - `WellFormedCoreEvalTwoState.eq_def` (auto-generated equation
+--     lemma): not synthesized when the body is non-exposed
+--     ("Unknown constant Core.WellFormedCoreEvalTwoState.eq_def").
+--   - `match Hwf2 with | ⟨_, _⟩ => ...`: anonymous-constructor
+--     notation requires the EXPECTED type to be a known inductive
+--     with a single constructor, which non-exposed `def` does not
+--     reduce to in this scope.
+--
+-- RECOMMENDED UNBLOCK (out of this task's scope, production code):
+-- add `@[expose]` to the def in `StatementSemantics.lean` (line 199).
+-- Once exposed, the bridge becomes a 2-line `simp` + `.2.1` projection.
 
-theorem EvalExpressionUpdatedState {δ : CoreEval}:
-Imperative.WellFormedSemanticEvalVar δ →
-Core.WellFormedCoreEvalCong δ →
-Imperative.WellFormedSemanticEvalVal δ →
-¬ k ∈ (Imperative.HasVarsPure.getVars e) →
-δ σ e = some v' →
-δ (updatedState σ k v) e = some v' := by
-  intros Hwfv Hwfc Hwfvl Hnin Hsome
+/-- A single contract-evaluating command produces a single-statement
+    `EvalStatementsContract` derivation.  Reusable scaffold for the
+    block helpers below. -/
+private theorem singleCmdToStmts
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore} {c : Core.Command}
+    (Hcmd : Core.EvalCommandContract π δ σ c σ' false) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      [Imperative.Stmt.cmd c]
+      ⟨σ', δ, false⟩ := by
+  unfold EvalStatementsContract Imperative.EvalStmtsSmall
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_cons
+  apply ReflTrans.step _ _ _
+          (Imperative.StepStmt.step_seq_inner (Imperative.StepStmt.step_cmd Hcmd))
+  apply ReflTrans.step _ _ _ Imperative.StepStmt.step_seq_done
+  exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+
+/-- Evaluating `createHavocs vs md` under contract semantics steps from σ
+    through `HavocVars vs` to σ'. -/
+private theorem H_havocs
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ' : CoreStore}
+    {vs : List Expression.Ident}
+    {md : Imperative.MetaData Expression}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hdef : Imperative.isDefined σ vs)
+    (Hhav : HavocVars σ vs σ') :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      (Core.Transform.createHavocs vs md)
+      ⟨σ', δ, false⟩ := by
+  induction vs generalizing σ with
+  | nil =>
+    have heq : σ' = σ := by cases Hhav; rfl
+    subst heq
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons h t ih =>
+    cases Hhav with
+    | update_some hUp hTail =>
+      rename_i v σmid
+      have Hcmd : Core.EvalCommandContract π δ σ
+                    (Core.CmdExt.cmd (Imperative.Cmd.set h .nondet md))
+                    σmid false :=
+        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_set_nondet hUp Hwfv)
+      have Hdef_tail : Imperative.isDefined σ t :=
+        fun v hv => Hdef v (List.mem_cons_of_mem h hv)
+      have HdefTail : Imperative.isDefined σmid t :=
+        Imperative.UpdateStateDefMonotone Hdef_tail hUp
+      have HrecTail := ih HdefTail hTail
+      simp only [Core.Transform.createHavocs, List.map_cons,
+                 Core.Transform.createHavoc]
+      exact EvalStatementsContractApp (singleCmdToStmts Hcmd) HrecTail
+
+/-- Evaluating a single `Statement.init x ty (.det e) md` under contract
+    semantics steps from σ to `updatedState σ x v`, given `δ σ e = some v`
+    and that `x` is currently undefined in σ. -/
+private theorem H_init
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    {x : Expression.Ident} {ty : Expression.Ty}
+    {e : Expression.Expr} {v : Expression.Expr}
+    {md : Imperative.MetaData Expression}
+    (Heval : δ σ e = some v)
+    (Hnone : σ x = none)
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      [Statement.init x ty (.det e) md]
+      ⟨updatedState σ x v, δ, false⟩ := by
+  have Hinit : Imperative.InitState Expression σ x v (updatedState σ x v) := by
+    apply Imperative.InitState.init Hnone
+    · simp [updatedState]
+    · intro y Hne
+      simp [updatedState]
+      intro Heq
+      exact absurd Heq.symm Hne
+  have Hcmd : Core.EvalCommandContract π δ σ
+                (Core.CmdExt.cmd (Imperative.Cmd.init x ty (.det e) md))
+                (updatedState σ x v) false :=
+    Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_init Heval Hinit Hwfv)
+  exact singleCmdToStmts Hcmd
+
+/-- If `k ∉ ks`, then `ReadValues σ ks vs` is preserved when extending σ
+    with an unrelated key.  Re-derived from the legacy `ReadValuesUpdatedState`. -/
+private theorem readValues_updatedState
+    {σ : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
+    {ks : List Expression.Ident} {vs : List Expression.Expr}
+    (Hnin : ¬ k ∈ ks)
+    (Hrd : ReadValues σ ks vs) :
+    ReadValues (updatedState σ k v) ks vs := by
+  induction ks generalizing vs with
+  | nil =>
+    cases Hrd
+    exact ReadValues.read_none
+  | cons x xs ih =>
+    cases vs with
+    | nil => cases Hrd
+    | cons v' vs' =>
+      cases Hrd with
+      | read_some Hsome Hrest =>
+      have Hxk : x ≠ k :=
+        fun heq => Hnin (heq ▸ List.mem_cons_self)
+      have Hnin_t : ¬ k ∈ xs :=
+        fun hin => Hnin (List.mem_cons_of_mem _ hin)
+      have Hsome' : updatedState σ k v x = some v' := by
+        simp [updatedState, Hxk]
+        exact Hsome
+      exact ReadValues.read_some Hsome' (ih Hnin_t Hrest)
+
+/-- Evaluating `createInitVars trips md` under contract semantics steps σ
+    through one `Statement.init` per trip, given:
+    - generated names disjoint from referenced source names (Nodup gen ++ src),
+    - `ReadValues σ source-names readVals`,
+    - generated names not currently defined in σ. -/
+private theorem H_initVars
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    {trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    {readVals : List Expression.Expr}
+    {md : Imperative.MetaData Expression}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hndup : List.Nodup (trips.unzip.fst.unzip.fst ++ trips.unzip.snd))
+    (Hrd : ReadValues σ trips.unzip.snd readVals)
+    (Hndef : Imperative.isNotDefined σ trips.unzip.fst.unzip.fst) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      (Core.Transform.createInitVars trips md)
+      ⟨updatedStates σ trips.unzip.fst.unzip.fst readVals, δ, false⟩ := by
+  induction trips generalizing σ readVals with
+  | nil =>
+    cases Hrd
+    simp only [Core.Transform.createInitVars, List.map_nil,
+               List.unzip_nil, updatedStates, updatedStates', List.zip_nil_left]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons h t ih =>
+    obtain ⟨⟨x', ty⟩, src⟩ := h
+    -- Unfold the head Read, and the indices in goal/Hndup/Hndup
+    simp only [List.unzip_cons] at Hrd Hndup Hndef ⊢
+    -- Hrd : ReadValues σ (src :: t.unzip.snd) readVals
+    -- Use a separate term-mode lemma to invert Hrd cleanly.
+    rcases Hrd with _ | ⟨_, Hrest_rd⟩
+    rename_i tail_vals vv Hsrc
+    -- After simp, Hndup : List.Nodup (x' :: t.unzip.fst.unzip.fst ++
+    --                                  src :: t.unzip.snd)
+    -- Tail Nodup: drop x' from heads, drop src from tails
+    have Hndup_tail :
+        List.Nodup (t.unzip.fst.unzip.fst ++ t.unzip.snd) := by
+      rw [List.cons_append] at Hndup
+      have Hndup1 : List.Nodup (t.unzip.fst.unzip.fst ++ src :: t.unzip.snd) :=
+        (List.nodup_cons.mp Hndup).2
+      apply List.Sublist.nodup ?_ Hndup1
+      apply List.Sublist.append_left
+      exact List.sublist_cons_self src t.unzip.snd
+    -- isNotDefined for the tail keys after updating x'
+    have Hndef_t : Imperative.isNotDefined σ t.unzip.fst.unzip.fst := by
+      unfold Imperative.isNotDefined
+      intro y hy
+      exact Hndef y (List.mem_cons_of_mem _ hy)
+    -- Read-values preserved on updated state for the tail's source list.
+    -- We need `¬ x' ∈ t.unzip.snd` from Hndup.
+    have Hxsrc_tail : ¬ x' ∈ t.unzip.snd := by
+      rw [List.cons_append] at Hndup
+      -- Hndup : List.Nodup (x' :: (t.unzip.fst.unzip.fst ++ src :: t.unzip.snd))
+      have Hnotin : x' ∉ (t.unzip.fst.unzip.fst ++ src :: t.unzip.snd) :=
+        (List.nodup_cons.mp Hndup).1
+      intro Hin
+      apply Hnotin
+      apply List.mem_append_right
+      exact List.mem_cons_of_mem _ Hin
+    have Hrest_rd' : ReadValues (updatedState σ x' vv) t.unzip.snd tail_vals :=
+      readValues_updatedState Hxsrc_tail Hrest_rd
+    -- isNotDefined preserved on the updated state for the rest of heads.
+    have Hndef_t' :
+        Imperative.isNotDefined (updatedState σ x' vv) t.unzip.fst.unzip.fst := by
+      unfold Imperative.isNotDefined
+      intro y hy
+      have Hyne : y ≠ x' := by
+        intro heq
+        rw [List.cons_append] at Hndup
+        have Hnotin : x' ∉ (t.unzip.fst.unzip.fst ++ src :: t.unzip.snd) :=
+          (List.nodup_cons.mp Hndup).1
+        apply Hnotin
+        apply List.mem_append_left
+        exact heq.symm ▸ hy
+      simp [updatedState, Hyne]
+      exact Hndef_t y hy
+    -- Recursive call.
+    have Hrec := ih Hndup_tail Hrest_rd' Hndef_t'
+    -- Build the head step: Statement.init x' ty (.det (fvar src)) md
+    have Hsrc_eval : δ σ (Lambda.LExpr.fvar () src none) = some vv := by
+      have := Hwfv (Lambda.LExpr.fvar () src none) src σ
+      simp [Imperative.HasFvar.getFvar] at this
+      rw [this]
+      exact Hsrc
+    have Hxnone : σ x' = none := Hndef x' (by simp)
+    have Hhead :
+        EvalStatementsContract π φ ⟨σ, δ, false⟩
+          [Statement.init x' ty
+            (.det (Lambda.LExpr.fvar () src none)) md]
+          ⟨updatedState σ x' vv, δ, false⟩ :=
+      H_init Hsrc_eval Hxnone Hwfv
+    -- Glue: createInitVars unfolds to head :: rest, and the updated states
+    -- compose.
+    have Hshape :
+        updatedStates σ (x' :: t.unzip.fst.unzip.fst) (vv :: tail_vals) =
+        updatedStates (updatedState σ x' vv) t.unzip.fst.unzip.fst tail_vals := by
+      simp [updatedStates, updatedStates']
+    rw [Hshape]
+    have Hcombined :
+        EvalStatementsContract π φ ⟨σ, δ, false⟩
+          ([Statement.init x' ty
+              (.det (Lambda.LExpr.fvar () src none)) md] ++
+           Core.Transform.createInitVars t md)
+          ⟨updatedStates (updatedState σ x' vv) t.unzip.fst.unzip.fst tail_vals,
+            δ, false⟩ := EvalStatementsContractApp Hhead Hrec
+    have Hunfold :
+        Core.Transform.createInitVars (((x', ty), src) :: t) md =
+        [Statement.init x' ty (.det (Lambda.LExpr.fvar () src none)) md] ++
+          Core.Transform.createInitVars t md := by
+      simp [Core.Transform.createInitVars, Core.Transform.createInitVar]
+    rw [Hunfold]
+    exact Hcombined
+
+/-- If `k` is not in the free variables of `e`, evaluating `e` is unchanged
+    when σ is extended with `k ↦ v`.  Re-derived from the legacy
+    `EvalExpressionUpdatedState` for the small-step proof. -/
+private theorem evalExpression_updatedState
+    {δ : CoreEval} {σ : CoreStore}
+    {k : Expression.Ident} {v : Expression.Expr}
+    {e v' : Expression.Expr}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal δ)
+    (Hnin : ¬ k ∈ Imperative.HasVarsPure.getVars e)
+    (Heval : δ σ e = some v') :
+    δ (updatedState σ k v) e = some v' := by
   simp [Imperative.WellFormedSemanticEvalVar, Imperative.HasFvar.getFvar] at Hwfv
   simp [Imperative.WellFormedSemanticEvalVal] at Hwfvl
   have Hval := Hwfvl.2
-  simp [← Hsome] at *
-  induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+  simp [← Heval] at *
+  induction e <;>
+    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
   case const c | op o ty | bvar b =>
     rw [Hval]; rw [Hval]; constructor; constructor
   case fvar m n ty =>
@@ -260,764 +360,193 @@ Imperative.WellFormedSemanticEvalVal δ →
   case eq m e1 e2 e1ih e2ih =>
     apply Hwfc.eqcongr <;> grind
 
-theorem EvalExpressionsUpdatedState {δ : CoreEval} :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Core.WellFormedCoreEvalCong δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  ¬ k ∈ es.flatMap Imperative.HasVarsPure.getVars →
-  EvalExpressions (P:=Core.Expression) δ σ es vs →
-  EvalExpressions (P:=Core.Expression) δ (updatedState σ k v) es vs := by
-  intros Hwfv Hwfc Hwfvl Hnin Heval
-  have Hlen := EvalExpressionsLength Heval
-  induction es generalizing vs σ
-  case nil =>
-    have Hnil := List.eq_nil_of_length_eq_zero (Eq.symm Hlen)
-    simp [Hnil]
-    constructor
-  case cons h t ih =>
-    cases vs
-    . cases Heval
-    . case cons h' t' =>
-      rcases Heval
-      case eval_some Hdef Heval Hevals =>
-      constructor
-      . exact updatedStateDefMonotone Hdef
-      . apply EvalExpressionUpdatedState <;> simp_all
-      . apply ih <;> simp_all
-
-theorem EvalExpressionUpdatedStates {δ : CoreEval} :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Core.WellFormedCoreEvalCong δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  ks'.length = vs'.length →
-  ks'.Nodup →
-  ks'.Disjoint (Imperative.HasVarsPure.getVars e) →
-  δ σ e = some v →
-  δ (updatedStates σ ks' vs') e = some v := by
-  intros Hwfv Hwfc Hwfvl Hlen Hnd Hnin Heval
-  induction ks' generalizing vs' σ
-  case nil =>
-    have Hnil := List.eq_nil_of_length_eq_zero (Eq.symm Hlen)
-    simp [Hnil]
-    simp [updatedStates, updatedStates']
-    assumption
-  case cons h t ih =>
-    cases vs'
-    . simp_all
-    . case cons h' t' =>
-      simp [updatedStates, updatedStates']
-      rw [← updatedStateComm']
-      apply EvalExpressionUpdatedState <;> try assumption
-      . intros Hin
-        apply Hnin _ Hin
-        simp_all
-      . apply ih <;> simp_all
-        apply List.Disjoint.mono_left _ Hnin
-        simp_all
-      . rw [List.unzip_zip] <;> grind
-
-theorem EvalExpressionsUpdatedStates {δ : CoreEval} :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Core.WellFormedCoreEvalCong δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  ks'.length = vs'.length →
-  ks'.Nodup →
-  ks'.Disjoint (es.flatMap Imperative.HasVarsPure.getVars) →
-  EvalExpressions (P:=Core.Expression) δ σ es vs →
-  EvalExpressions (P:=Core.Expression) δ (updatedStates σ ks' vs') es vs := by
-  intros Hwfv Hwfc Hwfvl Hlen Hnd Hnin Heval
-  have Hlen := EvalExpressionsLength Heval
-  induction ks' generalizing vs' σ
-  case nil =>
-    have Hnil := List.eq_nil_of_length_eq_zero (Eq.symm Hlen)
-    simp [Hnil]
-    simp [updatedStates, updatedStates']
-    assumption
-  case cons h t ih =>
-    cases vs'
-    . simp_all
-    . case cons h' t' =>
-      simp [updatedStates, updatedStates']
-      rw [← updatedStateComm']
-      apply EvalExpressionsUpdatedState <;> try assumption
-      . intros Hin
-        apply Hnin _ Hin
-        simp_all
-      . apply ih <;> simp_all
-        apply List.Disjoint.mono_left _ Hnin
-        simp_all
-      . rw [List.unzip_zip] <;> grind
-
-theorem ReadValueUpdatedState :
-  x ≠ k →
-  σ x = some v' →
-  updatedState σ k v x = some v' := by
-  intros Hne Hsome
-  simp [updatedState, Hne] <;> simp_all
-
-theorem ReadValueUpdatedStates :
-  ¬ x ∈ ks →
-  σ x = some v' →
-  ks.length = vs.length →
-  updatedStates σ ks vs x = some v' := by
-  intros Hne Hsome Hlen
-  induction ks generalizing σ vs
-  case nil =>
-    cases vs <;> simp_all
-    simp [updatedStates, updatedStates']
-    assumption
-  case cons h t ih =>
-    cases vs
-    case nil => simp_all
-    case cons h' t' =>
-    simp [updatedStates, updatedStates']
-    apply ih <;> simp_all
-    simp [updatedState]
-    simp_all
-
-theorem ReadValuesUpdatedState :
-  ¬ k ∈ ks →
-  ReadValues σ ks vs →
-  ReadValues (updatedState σ k v) ks vs := by
-  intros Hin Hrd
-  induction Hrd
-  case read_none =>
-    apply ReadValues.read_none
-  case read_some xs' vs' x v' Hsome Hrd Hrd2 =>
-    constructor <;> try assumption
-    apply ReadValueUpdatedState <;> simp_all
-    apply Ne.symm Hin.1
-    apply Hrd2 <;> simp_all
-
-theorem ReadValuesUpdatedStates :
-  ks'.length = vs'.length →
-  ks'.Disjoint ks →
-  ReadValues σ ks vs →
-  ReadValues (updatedStates σ ks' vs') ks vs := by
-  intros Hlen Hin Hrd
-  induction ks generalizing vs
-  case nil =>
-    cases Hrd
-    constructor
-  case cons h t ih =>
-    cases vs with
-    | nil =>
-      cases Hrd
-    | cons h t =>
-      cases Hrd with
-      | read_some Hh Ht =>
-      constructor
-      . refine ReadValueUpdatedStates ?_ Hh Hlen
-        . intros Hin'
-          exact Hin Hin' List.mem_cons_self
-      . apply ih ?_ Ht
-        apply List.Disjoint.mono_right _ Hin
-        simp_all
-
-theorem ReadValueUpdatedState' :
-  x ≠ k →
-  updatedState σ k v x = some v' →
-  σ x = some v' := by
-  intros Hne Hsome
-  simp [updatedState, Hne] at Hsome <;> simp_all
-
-theorem ReadValueUpdatedStates' :
-  ¬ x ∈ ks →
-  updatedStates σ ks vs x = some v' →
-  ks.length = vs.length →
-  σ x = some v' := by
-  intros Hne Hsome Hlen
-  induction ks generalizing σ vs
-  case nil =>
-    cases vs <;> simp_all
-    simp [updatedStates, updatedStates'] at Hsome
-    assumption
-  case cons h t ih =>
-    cases vs
-    case nil => simp_all
-    case cons h' t' =>
-    simp [updatedStates, updatedStates'] at *
-    specialize ih Hne.2 Hsome Hlen
-    exact ReadValueUpdatedState' Hne.1 ih
-
-theorem ReadValuesUpdatedState' :
-  ¬ k ∈ ks →
-  ReadValues (updatedState σ k v) ks vs →
-  ReadValues σ ks vs := by
-  intros Hin Hrd
-  induction Hrd
-  case read_none =>
-    apply ReadValues.read_none
-  case read_some xs' vs' x v' Hsome Hrd Hrd2 =>
-    constructor <;> try assumption
-    apply ReadValueUpdatedState' (k:=k) (v:=v) _ Hsome
-    . exact Ne.symm (List.ne_of_not_mem_cons Hin)
-    . apply Hrd2
-      exact List.not_mem_of_not_mem_cons Hin
-
-theorem ReadValuesUpdatedStates' :
-  ks'.length = vs'.length →
-  ks'.Disjoint ks →
-  ReadValues (updatedStates σ ks' vs') ks vs →
-  ReadValues σ ks vs := by
-  intros Hlen Hin Hrd
-  induction ks generalizing vs
-  case nil =>
-    cases Hrd
-    constructor
-  case cons h t ih =>
-    cases vs with
-    | nil =>
-      cases Hrd
-    | cons h t =>
-      cases Hrd with
-      | read_some Hh Ht =>
-      constructor
-      . refine ReadValueUpdatedStates' ?_ Hh Hlen
-        . intros Hin'
-          exact Hin Hin' List.mem_cons_self
-      . apply ih ?_ Ht
-        apply List.Disjoint.mono_right _ Hin
-        simp_all
-
-theorem ReadValuesUpdatedStatesSame :
-  ks.length = vs.length →
-  ks.Nodup →
-  ReadValues (updatedStates σ ks vs) ks vs := by
-  intros Hlen Hnd
-  induction ks generalizing σ vs
-  case nil =>
-    cases vs <;> simp_all
-    constructor
-  case cons h t ih =>
-    cases vs
-    . simp_all
-    . simp [updatedStates, updatedStates']
-      rw [← updatedStateComm']
-      constructor <;> simp_all
-      simp [updatedState]
-      rw [updatedStateComm']
-      apply ih <;> simp_all
-      rw [List.unzip_zip] <;> simp_all
-      rw [List.unzip_zip] <;> simp_all
-
-theorem EvalStatementContractInitVar :
-  Imperative.WellFormedSemanticEvalVar δ →
-  σ v = some vv →
-  σ v' = none →
-  EvalStatementContract π φ δ σ
-    (createInitVar ((v', ty), v))
-    (updatedState σ v' vv) δ := by
-  intros Hwf Hsome Hnone
-  simp [createInitVar]
-  constructor
-  constructor
-  . apply Imperative.EvalCmd.eval_init <;> try assumption
-    have Hwfv := Hwf (Lambda.LExpr.fvar () v none) v σ
-    rw [Hwfv]; assumption
-    simp [Imperative.HasFvar.getFvar]
-    apply Imperative.InitState.init Hnone
-    simp [updatedState]
-    intros y Hne
-    simp [updatedState]
-    intros Heq
-    simp_all
-  . simp [Imperative.isDefinedOver,
-          Imperative.isDefined,
-          Imperative.HasVarsImp.modifiedVars,
-          Command.modifiedVars,
-          Imperative.Cmd.modifiedVars]
-
-theorem EvalStatementsContractInitVars :
-  Imperative.WellFormedSemanticEvalVar δ →
-  -- the generated old variable names shouldn't overlap with original variables
-  List.Nodup ((trips.unzip.fst.unzip.fst) ++ (trips.unzip.snd)) →
-  ReadValues σ (trips.unzip.snd) vvs →
-  Imperative.isNotDefined σ (trips.unzip.fst.unzip.fst) →
-  EvalStatementsContract π φ δ σ
-    (createInitVars trips)
-    (updatedStates σ
-      (trips.unzip.fst.unzip.fst) vvs) δ := by
-  intros Hwf Hndup Hdef Hndef
-  induction trips generalizing σ vvs with
+/-- List version: if `k` is not in the union of free variables of any `e ∈ es`,
+    `EvalExpressions δ σ es vs` survives the extension `σ[k ↦ v]`. -/
+private theorem evalExpressions_updatedState
+    {δ : CoreEval} {σ : CoreStore}
+    {k : Expression.Ident} {v : Expression.Expr}
+    {es : List Expression.Expr} {vs : List Expression.Expr}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal δ)
+    (Hnin : ¬ k ∈ es.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)))
+    (Heval : EvalExpressions (P:=Core.Expression) δ σ es vs) :
+    EvalExpressions (P:=Core.Expression) δ (updatedState σ k v) es vs := by
+  induction es generalizing vs with
   | nil =>
-    simp [createInitVars, updatedStates]
-    constructor
-  | cons h t ih =>
-    cases Hdef
-    next vs vv Hsome Hrest =>
-    cases h with
-    | mk pair v =>
-    cases pair with
-    | mk v' ty =>
-    apply Imperative.EvalBlock.stmts_some_sem
-    apply EvalStatementContractInitVar <;> try assumption
-    apply Hndef <;> simp_all
-    unfold updatedStates
-    apply ih
-    . simp_all
-      have HH := Hndup.2
-      apply List.Sublist.nodup (by simp) HH
-    . refine ReadValuesUpdatedState ?_ Hrest
-      simp [List.Nodup] at Hndup
-      have Hin := Hndup.1
-      apply List.forall_mem_ne.mp
-      intros x' ty'
-      simp_all
-    . simp [Imperative.isNotDefined] at Hndef ⊢
-      intros v x x1 Hin
-      simp [updatedState]
-      split <;> simp_all
-      apply Hndef.2
-      apply Hin
+    cases Heval
+    exact EvalExpressions.eval_none
+  | cons e' es_t ih =>
+    cases vs with
+    | nil => cases Heval
+    | cons v_h vs_t =>
+      cases Heval with
+      | eval_some Hdef He Hes =>
+      have Hnin_h : ¬ k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e' := by
+        intro Hin
+        apply Hnin
+        simp [List.mem_flatMap]
+        exact Or.inl Hin
+      have Hnin_t : ¬ k ∈
+          es_t.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+        intro Hin
+        apply Hnin
+        simp [List.mem_flatMap]
+        right
+        simp [List.mem_flatMap] at Hin
+        obtain ⟨e2, He2_in, He2_var⟩ := Hin
+        exact ⟨e2, He2_in, He2_var⟩
+      have Hdef' : Imperative.isDefined (updatedState σ k v)
+                    (Imperative.HasVarsPure.getVars e') := by
+        unfold Imperative.isDefined
+        intro x Hx
+        have Hsome := Hdef x Hx
+        simp [updatedState]
+        split <;> simp_all
+      have He' : δ (updatedState σ k v) e' = some v_h :=
+        evalExpression_updatedState Hwfv Hwfc Hwfvl Hnin_h He
+      exact EvalExpressions.eval_some Hdef' He' (ih Hnin_t Hes)
 
-theorem EvalStatementContractInit :
-  Imperative.WellFormedSemanticEvalVar δ →
-  δ σ e = some vv →
-  σ v' = none →
-  EvalStatementContract π φ δ σ
-    (createInit ((v', ty), e))
-    (updatedState σ v' vv) δ := by
-  intros Hwf Hsome Hnone
-  simp [createInit]
-  constructor
-  constructor
-  . apply Imperative.EvalCmd.eval_init <;> try assumption
-    apply Imperative.InitState.init Hnone
-    simp [updatedState]
-    intros y Hne
-    simp [updatedState]
-    intros Heq
-    simp_all
-  . simp [Imperative.isDefinedOver,
-          Imperative.isDefined,
-          Command.modifiedVars,
-          Imperative.Cmd.modifiedVars,
-          Imperative.HasVarsImp.modifiedVars]
-
-theorem EvalStatementsContractInits :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  WellFormedCoreEvalCong δ →
-  -- the generated old variable names shouldn't overlap with original variables
-  trips.unzip.1.unzip.1.Disjoint (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)) trips.unzip.2) →
-  List.Nodup (trips.unzip.1.unzip.1) →
-  EvalExpressions (P:=Core.Expression) δ σ (trips.unzip.2) vvs →
-  -- ReadValues σ (trips.unzip.2) vvs →
-  Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
-  EvalStatementsContract π φ δ σ
-    (createInits trips)
-    (updatedStates σ
-      (trips.unzip.1.unzip.1) vvs) δ := by
-  intros Hwfvr Hwfvl Hwfc Hdisj Hndup Hdef Hndef
-  induction trips generalizing σ vvs with
+/-- Evaluating `createInits trips md` under contract semantics steps σ
+    through one `Statement.init` per trip with the trip's expression
+    evaluating to the corresponding value. -/
+private theorem H_inits
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ : CoreStore}
+    {trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr)}
+    {evalVals : List Expression.Expr}
+    {md : Imperative.MetaData Expression}
+    (Hwfv : Imperative.WellFormedSemanticEvalVar δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal δ)
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hdisj : trips.unzip.fst.unzip.fst.Disjoint
+              (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression))
+                  trips.unzip.snd))
+    (Hndup : List.Nodup trips.unzip.fst.unzip.fst)
+    (Heval : EvalExpressions (P:=Core.Expression) δ σ trips.unzip.snd evalVals)
+    (Hndef : Imperative.isNotDefined σ trips.unzip.fst.unzip.fst) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      (Core.Transform.createInits trips md)
+      ⟨updatedStates σ trips.unzip.fst.unzip.fst evalVals, δ, false⟩ := by
+  induction trips generalizing σ evalVals with
   | nil =>
-    simp [createInits, updatedStates]
-    constructor
+    cases Heval
+    simp only [Core.Transform.createInits, List.map_nil,
+               List.unzip_nil, updatedStates, updatedStates', List.zip_nil_left]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
   | cons h t ih =>
-    cases Hdef
-    next vs vv Hsome Hrest =>
-    cases h with
-    | mk pair v =>
-    cases pair with
-    | mk v' ty =>
-    apply Imperative.EvalBlock.stmts_some_sem
-    apply EvalStatementContractInit <;> try assumption
-    apply Hndef <;> simp_all
-    unfold updatedStates
-    apply ih
-    . apply List.Disjoint.mono ?_ ?_ Hdisj <;> simp_all
-    . simp_all
-    . refine EvalExpressionsUpdatedState Hwfvr Hwfc Hwfvl ?_ Hrest
-      simp at Hdisj
-      have Hdisj' :
-        [v'].Disjoint (List.flatMap Imperative.HasVarsPure.getVars t.unzip.snd) := by
-        apply List.Disjoint.mono ?_ ?_ Hdisj <;> simp_all
-      intros Hin
-      exact Hdisj' (List.mem_singleton.mpr rfl) Hin
-    . simp [Imperative.isNotDefined] at Hndef ⊢
-      intros v x x1 Hin
-      simp [updatedState]
-      split <;> simp_all
-      apply Hndef.2
-      apply Hin
+    obtain ⟨⟨x', ty⟩, e⟩ := h
+    simp only [List.unzip_cons] at Heval Hdisj Hndup Hndef ⊢
+    cases Heval
+    rename_i tail_vals vv Hdef He Hes
+    have Hndup_t : List.Nodup t.unzip.fst.unzip.fst :=
+      (List.nodup_cons.mp Hndup).2
+    have Hxnotin_e : ¬ x' ∈ Imperative.HasVarsPure.getVars (P:=Expression) e := by
+      intro Hin
+      have Hxmem : x' ∈ (x' :: t.unzip.fst.unzip.fst) := by simp
+      have Hflat : x' ∈ (e :: t.unzip.snd).flatMap
+                  (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+        simp [List.mem_flatMap]
+        exact Or.inl Hin
+      exact Hdisj Hxmem Hflat
+    have Hxnotin_es : ¬ x' ∈ t.unzip.snd.flatMap
+        (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+      intro Hin
+      have Hxmem : x' ∈ (x' :: t.unzip.fst.unzip.fst) := by simp
+      have Hflat : x' ∈ (e :: t.unzip.snd).flatMap
+                  (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+        simp [List.mem_flatMap]
+        right
+        simp [List.mem_flatMap] at Hin
+        obtain ⟨e2, He2_in, He2_var⟩ := Hin
+        exact ⟨e2, He2_in, He2_var⟩
+      exact Hdisj Hxmem Hflat
+    have Hes' : EvalExpressions (P:=Core.Expression) δ
+                  (updatedState σ x' vv) t.unzip.snd tail_vals :=
+      evalExpressions_updatedState Hwfv Hwfc Hwfvl Hxnotin_es Hes
+    have Hxnone : σ x' = none := Hndef x' (by simp)
+    have Hndef_t : Imperative.isNotDefined σ t.unzip.fst.unzip.fst := by
+      unfold Imperative.isNotDefined
+      intro y hy
+      exact Hndef y (List.mem_cons_of_mem _ hy)
+    have Hndef_t' : Imperative.isNotDefined (updatedState σ x' vv)
+                      t.unzip.fst.unzip.fst := by
+      unfold Imperative.isNotDefined
+      intro y hy
+      have Hyne : y ≠ x' := by
+        intro heq
+        have Hnotin : x' ∉ t.unzip.fst.unzip.fst :=
+          (List.nodup_cons.mp Hndup).1
+        apply Hnotin
+        exact heq ▸ hy
+      simp [updatedState, Hyne]
+      exact Hndef_t y hy
+    have Hdisj_t :
+        t.unzip.fst.unzip.fst.Disjoint
+          (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression))
+            t.unzip.snd) := by
+      intro y Hy_in_t Hy_in_var
+      have Hy_in_h : y ∈ (x' :: t.unzip.fst.unzip.fst) :=
+        List.mem_cons_of_mem _ Hy_in_t
+      have Hflat : y ∈ (e :: t.unzip.snd).flatMap
+                  (Imperative.HasVarsPure.getVars (P:=Expression)) := by
+        simp [List.mem_flatMap]
+        right
+        simp [List.mem_flatMap] at Hy_in_var
+        obtain ⟨e2, He2_in_t, He2_var⟩ := Hy_in_var
+        exact ⟨e2, He2_in_t, He2_var⟩
+      exact Hdisj Hy_in_h Hflat
+    have Hrec : EvalStatementsContract π φ ⟨updatedState σ x' vv, δ, false⟩
+                  (Core.Transform.createInits t md)
+                  ⟨updatedStates (updatedState σ x' vv) t.unzip.fst.unzip.fst
+                                   tail_vals, δ, false⟩ :=
+      ih Hdisj_t Hndup_t Hes' Hndef_t'
+    have Hhead :
+        EvalStatementsContract π φ ⟨σ, δ, false⟩
+          [Statement.init x' ty (.det e) md]
+          ⟨updatedState σ x' vv, δ, false⟩ :=
+      H_init He Hxnone Hwfv
+    have Hshape :
+        updatedStates σ (x' :: t.unzip.fst.unzip.fst) (vv :: tail_vals) =
+        updatedStates (updatedState σ x' vv) t.unzip.fst.unzip.fst tail_vals := by
+      simp [updatedStates, updatedStates']
+    rw [Hshape]
+    have Hcombined :
+        EvalStatementsContract π φ ⟨σ, δ, false⟩
+          ([Statement.init x' ty (.det e) md] ++ Core.Transform.createInits t md)
+          ⟨updatedStates (updatedState σ x' vv) t.unzip.fst.unzip.fst tail_vals,
+            δ, false⟩ := EvalStatementsContractApp Hhead Hrec
+    have Hunfold :
+        Core.Transform.createInits (((x', ty), e) :: t) md =
+        [Statement.init x' ty (.det e) md] ++ Core.Transform.createInits t md := by
+      simp [Core.Transform.createInits, Core.Transform.createInit]
+    rw [Hunfold]
+    exact Hcombined
 
-theorem EvalStatementContractHavocUpdated :
-  ∀ vv,
-  Imperative.WellFormedSemanticEvalVar δ →
-  σ v = some vv' →
-  EvalStatementContract π φ δ σ
-    (createHavoc v)
-    (updatedState σ v vv) δ := by
-  intros vv Hwf Hsome
-  simp [createHavoc]
-  constructor
-  constructor
-  . constructor
-    . exact updatedStateUpdate Hsome
-    . assumption
-  . simp [Imperative.isDefinedOver, Imperative.isDefined,
-          Imperative.HasVarsImp.modifiedVars,
-          Command.modifiedVars,
-          Imperative.Cmd.modifiedVars, Option.isSome]
-    split <;> simp_all
+/-! ### Substitution-correctness lemmas (small-step)
 
-theorem ReadValuesSome :
-  Imperative.isDefined σ ks →
-  ∃ vs, ReadValues σ ks vs := by
-  intros H
-  induction ks
-  case nil =>
-    exists []
-    constructor
-  case cons h t ih =>
-    have Hh := H h
-    have Ht := ih ?_
-    . cases Ht with
-      | intro t' Hrd =>
-      simp [Option.isSome] at Hh
-      split at Hh <;> simp_all
-      next x val heq =>
-      exists val :: t'
-      constructor <;> simp_all
-    . simp [Imperative.isDefined] at *
-      intros v a
-      simp_all
+    These re-derive the legacy `Lambda.LExpr.substFvarCorrect` and
+    `Lambda.LExpr.substFvarsCorrect` proofs using only currently-live
+    infrastructure. They are pure expression-level lemmas and are the
+    workhorses behind `H_asserts` / `H_assumes` below. -/
 
-theorem idents2havocsApp :
-createHavocs (vs₁ ++ vs₂) =
-createHavocs vs₁ ++ createHavocs vs₂ := by
-cases vs₁ <;> simp [createHavocs]
-
-theorem createFvarsSubstStores :
-  ks1.length = ks2.length →
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.substDefined σ σA (ks1.zip ks2) →
-  Imperative.substStores σ σA (ks1.zip ks2) →
-  ReadValues σA ks2 argVals →
-  EvalExpressions (P:=Core.Expression) δ σ (createFvars ks1) argVals := by
-    intros Hlen Hwfv Hdef Hsubst Hrd
-    simp [createFvars]
-    have Hlen2 := ReadValuesLength Hrd
-    induction Hrd generalizing ks1
-    case read_none => simp_all; constructor
-    case read_some xs vs x v Hsome Hrds ih' =>
-      induction ks1 generalizing ks2 vs v with
-      | nil =>
-        simp_all
-      | cons h t ih =>
-        simp
-        constructor
-        . simp [createFvar,
-                Imperative.HasVarsPure.getVars,
-                Lambda.LExpr.LExpr.getVars]
-          simp [Imperative.substDefined] at Hdef
-          intros hh Hin
-          apply (Hdef hh x ?_).1
-          left
-          simp_all
-        . simp [createFvar]
-          simp [Imperative.WellFormedSemanticEvalVar] at Hwfv
-          simp [Imperative.HasFvar.getFvar] at Hwfv
-          simp [Hwfv]
-          rw [Hsubst]
-          exact Hsome
-          simp_all
-        . apply ih' <;> simp_all
-          . intros k1 k2 Hin
-            apply Hdef <;> simp_all
-          . simp [Imperative.substStores] at *
-            intros
-            apply Hsubst <;> simp_all
-
-theorem EvalStatementsContractHavocVars :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.isDefined σ vs →
-  HavocVars σ vs σ' →
-  EvalStatementsContract π φ δ σ
-    (createHavocs vs) σ' δ := by
-  intros Hwfv Hdef Hhav
-  simp [createHavocs]
-  induction vs generalizing σ
-  case nil =>
-    have Heq := HavocVarsEmpty Hhav
-    simp_all
-    exact Imperative.EvalBlock.stmts_none_sem
-  case cons h t ih =>
-    simp [createHavoc]
-    cases Hhav with
-    | update_some Hup Hhav =>
-    apply Imperative.EvalBlock.stmts_some_sem
-    apply EvalStmtRefinesContract
-    apply Imperative.EvalStmt.cmd_sem
-    apply EvalCommand.cmd_sem
-    apply Imperative.EvalCmd.eval_set_nondet <;> try assumption
-    . simp [Imperative.isDefinedOver, Command.modifiedVars,Imperative.Cmd.modifiedVars,
-            Imperative.HasVarsImp.modifiedVars]
-      simp [Imperative.isDefined] at Hdef ⊢
-      apply Hdef.1
-    . apply ih <;> try assumption
-      . apply UpdateStateDefMonotone (σ:=σ) (vs:=t) <;> try assumption
-        simp [Imperative.isDefined] at * <;> simp_all
-
-theorem updatedStateInv :
-¬k = h →
-updatedState σ h h' k = σ k := by
-intros Hne
-unfold updatedState
-simp [Hne] <;> simp_all
-
-theorem updatedStatesInv :
-¬k ∈ ks' →
-updatedStates σ ks' vs' k = σ k := by
-intros Hin
-induction ks' generalizing vs' σ <;> simp_all
-case nil =>
-  simp [updatedStates, updatedStates']
-case cons h t ih =>
-  cases vs'
-  case nil =>
-    simp [updatedStates, updatedStates']
-  case cons h' t' =>
-    unfold updatedStates
-    have Hsome' : (updatedState σ h h') k = σ k := by
-      apply updatedStateInv <;> simp_all
-    simp [← Hsome']
-    exact ih
-
-theorem UpdateStateUpdatedDists
-{P : Imperative.PureExpr}
-{σ σ' : Imperative.SemanticStore P}
-{h : P.Ident} {v : P.Expr} {ks : List P.Ident} {vs : List P.Expr} :
-¬ h ∈ ks →
-Imperative.UpdateState P σ h v σ' →
-Imperative.UpdateState P (updatedStates σ ks vs) h v (updatedStates σ' ks vs) := by
-intros Hnin Hup
-cases Hup with
-| update Hsome HH =>
-simp [updatedStates]
-generalize Hls : ks.zip vs = ls
-induction ls generalizing ks vs σ σ'
-case nil =>
-  simp [updatedStates']
-  simp_all
-  constructor <;> try simp_all
-  rfl
-case cons h t ih H' =>
-  simp [updatedStates']
-  have Hzip := List.zip_eq_cons_iff.mp Hls
-  cases Hzip with | intro l1 Hzip => cases Hzip with | intro l2 Hzip =>
-  apply ih ?_ (ks:=l1) (vs:=l2) <;> simp_all
-  . simp [updatedState]
-    split <;> simp_all
-  . intros y Hne
-    simp [updatedState]
-    split <;> simp_all
-  . cases h with
-    | mk l r =>
-    simp [updatedState] at *
-    split <;> simp_all
-
-theorem InitStateUpdatedDists
-{P : Imperative.PureExpr}
-{σ σ' : Imperative.SemanticStore P}
-{h : P.Ident} {v : P.Expr} {ks : List P.Ident} {vs : List P.Expr} :
-¬ h ∈ ks →
-Imperative.InitState P σ h v σ' →
-Imperative.InitState P (updatedStates σ ks vs) h v (updatedStates σ' ks vs) := by
-intros Hnin Hup
-cases Hup with
-| init Hsome HH =>
-simp [updatedStates]
-generalize Hls : ks.zip vs = ls
-induction ls generalizing ks vs σ σ'
-case nil =>
-  simp [updatedStates']
-  simp_all
-  constructor <;> try simp_all
-case cons h t ih H' =>
-  simp [updatedStates']
-  have Hzip := List.zip_eq_cons_iff.mp Hls
-  cases Hzip with | intro l1 Hzip => cases Hzip with | intro l2 Hzip =>
-  apply ih ?_ (ks:=l1) (vs:=l2) <;> simp_all
-  . simp [updatedState]
-    split <;> simp_all
-  . intros y Hne
-    simp [updatedState]
-    split <;> simp_all
-  . cases h with
-    | mk l r =>
-    simp [updatedState] at *
-    split <;> simp_all
-
-theorem UpdateStatesUpdatedDists
-{P : Imperative.PureExpr}
-{σ σ' : Imperative.SemanticStore P}
-{ks ks': List P.Ident} {vs vs' : List P.Expr} :
-  ks.Disjoint ks' →
-  UpdateStates σ ks vs σ' →
-  UpdateStates (updatedStates σ ks' vs') ks vs (updatedStates σ' ks' vs') := by
-intros Hnd Hup
-induction Hup
-case update_none =>
-  exact UpdateStates.update_none
-case update_some Hup Hups ih =>
-  apply UpdateStates.update_some
-  . apply UpdateStateUpdatedDists <;> try assumption
-    simp [List.Disjoint] at Hnd
-    simp_all
-  . apply ih
-    simp [List.Disjoint] at *
-    simp_all
-
-theorem InitStatesUpdatedDists
-{P : Imperative.PureExpr}
-{σ σ' : Imperative.SemanticStore P}
-{ks ks': List P.Ident} {vs vs' : List P.Expr} :
-  ks.Disjoint ks' →
-  InitStates σ ks vs σ' →
-  InitStates (updatedStates σ ks' vs') ks vs (updatedStates σ' ks' vs') := by
-intros Hnd Hup
-induction Hup
-case init_none =>
-  exact InitStates.init_none
-case init_some Hup Hups ih =>
-  apply InitStates.init_some
-  . apply InitStateUpdatedDists <;> try assumption
-    simp [List.Disjoint] at Hnd
-    simp_all
-  . apply ih
-    simp [List.Disjoint] at *
-    simp_all
-
-theorem UpdateStatesUpdatedDist
-{P : Imperative.PureExpr}
-{σ σ' : Imperative.SemanticStore P}
-{ks : List P.Ident} {vs : List P.Expr}
-{k : P.Ident} {v : P.Expr} :
-  ¬ k ∈ ks →
-  UpdateStates σ ks vs σ' →
-  UpdateStates (updatedState σ k v) ks vs (updatedState σ' k v) := by
-intros Hnd Hup
-have Hnd : ks.Disjoint [k] := by
-  intros a Hin1 Hin2
-  apply Hnd
-  simp_all
-have HH := UpdateStatesUpdatedDists (vs':=[v]) Hnd Hup
-simp [updatedStates, updatedStates'] at HH
-assumption
-
-theorem HavocVarsUpdatedDists :
-ks.Disjoint ks' →
-HavocVars σ ks σ' →
-HavocVars (updatedStates σ ks' vs') ks
-          (updatedStates σ' ks' vs') := by
-intros Hnd Hhav
-induction ks generalizing σ
-case nil =>
-  have Heq := HavocVarsEmpty Hhav
-  simp_all
-  exact HavocVars.update_none
-case cons h t ih =>
-  cases Hhav
-  next v σ'' Hup Hhav2 =>
-  apply HavocVars.update_some (v:=v) (σ':=(updatedStates σ'' ks' vs'))
-  . simp [List.Disjoint] at Hnd
-    apply UpdateStateUpdatedDists Hnd.1 Hup
-  . apply ih ?_ Hhav2
-    apply List.Disjoint.mono_left ?_ Hnd
-    simp_all
-
-theorem InitVarsUpdatedDists :
-ks.Disjoint ks' →
-InitVars σ ks σ' →
-InitVars (updatedStates σ ks' vs') ks
-          (updatedStates σ' ks' vs') := by
-intros Hnd Hhav
-induction ks generalizing σ
-case nil =>
-  have Heq := InitVarsEmpty Hhav
-  simp_all
-  exact InitVars.init_none
-case cons h t ih =>
-  cases Hhav
-  next v σ'' Hup Hhav2 =>
-  apply InitVars.init_some (v:=v) (σ':=(updatedStates σ'' ks' vs'))
-  . simp [List.Disjoint] at Hnd
-    apply InitStateUpdatedDists Hnd.1 Hup
-  . apply ih ?_ Hhav2
-    apply List.Disjoint.mono_left ?_ Hnd
-    simp_all
-
-theorem HavocVarsUpdatedDist :
-¬ k ∈ ks →
-HavocVars σ ks σ' →
-HavocVars (updatedState σ k v) ks
-          (updatedState σ' k v) := by
-intros Hnd Hhav
-have Hnd : ks.Disjoint [k] := by
-  intros a Hin1 Hin2
-  apply Hnd
-  simp_all
-have HH := HavocVarsUpdatedDists (vs':=[v]) Hnd Hhav
-simp [updatedStates, updatedStates'] at HH
-assumption
-
-theorem InitVarsUpdatedDist :
-¬ k ∈ ks →
-InitVars σ ks σ' →
-InitVars (updatedState σ k v) ks
-          (updatedState σ' k v) := by
-intros Hnd Hhav
-have Hnd : ks.Disjoint [k] := by
-  intros a Hin1 Hin2
-  apply Hnd
-  simp_all
-have HH := InitVarsUpdatedDists (vs':=[v]) Hnd Hhav
-simp [updatedStates, updatedStates'] at HH
-assumption
-
-theorem UpdatedStatesDisjNotDefMonotone :
-  ks.Disjoint ks' →
-  ks.length = vs.length →
-  Imperative.isNotDefined σ ks' →
-  Imperative.isNotDefined (updatedStates σ ks vs) ks' := by
-intros Hdis Hlen Hndef
-simp [Imperative.isNotDefined, updatedStates] at *
-intros v Hin
-induction ks generalizing vs σ <;> simp_all
-case nil =>
-  simp [updatedStates']
-  exact Hndef v Hin
-case cons h t ih =>
-  induction vs generalizing h t σ <;> simp_all
-  case cons h' t' ih' =>
-    simp [updatedStates']
-    rw [ih] <;> try simp_all
-    . apply List.Disjoint.mono_left _ Hdis
-      simp_all
-    . intros v Hin
-      simp [updatedState]
-      split <;> simp_all
-      apply Hdis _ Hin
-      simp_all
-
-/-- We can't use arbitrary expressions for substitution,
-    because then we can't say anything about the stores
-    due to not knowing the exact form of the expressions -/
-theorem Lambda.LExpr.substFvarCorrect :
-  Core.WellFormedCoreEvalCong δ →
-  Imperative.WellFormedSemanticEvalVar (P:=Expression) δ →
-  Imperative.WellFormedSemanticEvalVal (P:=Expression) δ →
-  Imperative.substStores σ σ' [(fro, to)] →
-  -- NOTE: `to` shouldn't be referred to in the original expression as well, but it is not needed in this lemma.
-  Imperative.invStores σ σ'
-    ((@Imperative.HasVarsPure.getVars Expression _ _ e).removeAll [fro]) →
-  -- NOTE: the old store is irrelevant because we assume congruence on old expressions as well,
-  -- More relation between the old store would be needed if we remove old expression congruence from WellFormedSemanticEvalVal
-  δ σ e = δ σ' (e.substFvar fro (createFvar to)) := by
-  intros Hwfc Hwfvr Hwfvl Hsubst2 Hinv
-  induction e <;> simp [Lambda.LExpr.substFvar, createFvar] at *
+/-- Substitution of a single free variable preserves expression evaluation
+    when the source/target stores agree on the substitution and on
+    everything-else used in `e`. -/
+private theorem subst_fvar_correct
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {fro to : Expression.Ident}
+    {e : Expression.Expr}
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hsubst : Imperative.substStores σ σ' [(fro, to)])
+    (Hinv : Imperative.invStores σ σ'
+              ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll [fro])) :
+    δ σ e = δ σ' (e.substFvar fro (Core.Transform.createFvar to)) := by
+  induction e <;> simp [Lambda.LExpr.substFvar, Core.Transform.createFvar] at *
   case const c | op o ty | bvar x =>
     rw [Hwfvl.2]
     rw [Hwfvl.2]
@@ -1026,10 +555,10 @@ theorem Lambda.LExpr.substFvarCorrect :
   case fvar name ty =>
     simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
     split <;> try simp_all
-    . simp [Imperative.substStores] at Hsubst2
+    . simp [Imperative.substStores] at Hsubst
       rw [Hwfvr]
       rw [Hwfvr]
-      exact Hsubst2
+      exact Hsubst
       simp [Imperative.HasFvar.getFvar]
       simp [Imperative.HasFvar.getFvar]
     . next Hne =>
@@ -1041,10 +570,9 @@ theorem Lambda.LExpr.substFvarCorrect :
       exact Hinv
       simp [Imperative.HasFvar.getFvar]
       simp [Imperative.HasFvar.getFvar]
-  case abs m ty e ih  =>
+  case abs m ty e ih =>
     specialize ih Hinv
-    have e2 := (e.substFvar fro (Lambda.LExpr.fvar () to none))
-    have Hwfc := Hwfc.1 σ σ' e ((e.substFvar fro (Lambda.LExpr.fvar () to none)))
+    have Hwfca := Hwfc.1 σ σ' e ((e.substFvar fro (Lambda.LExpr.fvar () to none)))
     grind
   case quant m k ty tr e trih eih =>
     simp [Imperative.invStores, Imperative.substStores,
@@ -1105,13 +633,19 @@ theorem Lambda.LExpr.substFvarCorrect :
       right; assumption
     apply Hwfc.eqcongr <;> grind
 
-theorem Lambda.LExpr.substFvarsCorrectZero :
-  Core.WellFormedCoreEvalCong δ →
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Imperative.invStores σ σ' (Imperative.HasVarsPure.getVars e) →
-  δ σ e = δ σ' e := by
-  intros Hwfc Hwfvr Hwfvl Hinv
+/-- Zero-substitution case: when the source/target stores agree on every
+    free variable of `e`, evaluation is unchanged. Re-derived from the
+    legacy `Lambda.LExpr.substFvarsCorrectZero`. -/
+private theorem subst_fvarsZero_correct
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {e : Expression.Expr}
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hinv : Imperative.invStores σ σ'
+              (Imperative.HasVarsPure.getVars (P:=Expression) e)) :
+    δ σ e = δ σ' e := by
   induction e <;> simp at *
   case const c | op o ty | bvar x =>
     rw [Hwfvl.2]
@@ -1127,10 +661,10 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
     simp [Imperative.HasFvar.getFvar]
     simp [Imperative.HasFvar.getFvar]
-  case abs m ty e ih  =>
+  case abs m ty e ih =>
     specialize ih Hinv
-    have Hwfc := Hwfc.abscongr σ σ' e e ih
-    apply Hwfc
+    have Hwfca := Hwfc.abscongr σ σ' e e ih
+    apply Hwfca
   case quant m k ty tr e trih eih =>
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1188,73 +722,201 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
       right; assumption
     apply Hwfc.eqcongr <;> grind
 
-theorem updatedStoresInvStores :
-  ¬ k ∈ ks →
-  Imperative.invStores σ (updatedState σ k v) ks := by
+/-! ### Substitution-list helpers
+
+    Re-derived from the legacy code (currently in the comment block) so the
+    new small-step proofs of `H_asserts`/`H_assumes` can stand on their own.
+    These are pure list-level / store-level lemmas about
+    `substDefined`, `substNodup`, `substStores`, and `invStores`. -/
+
+private theorem updatedStateIsDefinedMono'
+    {σ : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
+    {x : Expression.Ident} :
+    (σ x).isSome = true → ((updatedState σ k v) x).isSome = true := by
+  intros Hsome
+  simp [updatedState]
+  split <;> simp_all
+
+private theorem subst_defined_tail
+    {σ σ' : CoreStore} {h : Expression.Ident × Expression.Ident}
+    {t : List (Expression.Ident × Expression.Ident)} :
+    Imperative.substDefined σ σ' (h :: t) →
+    Imperative.substDefined σ σ' t := by
+  intros Hsubst k1 k2 Hin
+  apply Hsubst
+  exact List.mem_cons_of_mem h Hin
+
+private theorem subst_nodup_tail
+    {h : Expression.Ident × Expression.Ident}
+    {t : List (Expression.Ident × Expression.Ident)} :
+    Imperative.substNodup (h :: t) →
+    Imperative.substNodup t := by
+  intros Hsubst
+  simp [Imperative.substNodup] at *
+  exact (List.nodup_cons.mp (nodup_middle Hsubst.right)).right
+
+private theorem subst_defined_updatedState
+    {σ σ' : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
+    {ls : List (Expression.Ident × Expression.Ident)} :
+    Imperative.substDefined σ σ' ls →
+    Imperative.substDefined (updatedState σ k v) σ' ls := by
+  intros Hsubst k1 k2 Hin
+  refine ⟨?_, (Hsubst k1 k2 Hin).2⟩
+  exact updatedStateIsDefinedMono' (Hsubst k1 k2 Hin).1
+
+private theorem zip_notin_fst_pair
+    {h : Expression.Ident}
+    {t : List Expression.Ident} {t' : List Expression.Ident} :
+    t.length = t'.length →
+    (∀ x, ¬(h, x) ∈ List.zip t t') →
+    ¬ h ∈ t := by
+  intros Hlen H
+  induction t generalizing t' h <;> simp_all
+  case cons h t ih =>
+    cases t' with
+    | nil => simp at Hlen
+    | cons h' t' =>
+      simp_all
+      have HH := H h'
+      simp_all
+      exact ih rfl H
+
+private theorem zip_notin_snd_pair
+    {h : Expression.Ident}
+    {t : List Expression.Ident} {t' : List Expression.Ident} :
+    t.length = t'.length →
+    (∀ x, ¬(x, h) ∈ List.zip t t') →
+    ¬ h ∈ t' := by
+  intros Hlen H
+  induction t' generalizing t h <;> simp_all
+  case cons h t ih =>
+    cases t with
+    | nil => simp at Hlen
+    | cons h' t' =>
+      simp_all
+      have HH := H h'
+      simp_all
+      exact ih Hlen H
+
+private theorem subst_nodup_ht
+    {h h' : Expression.Ident}
+    {t t' : List Expression.Ident} :
+    t.length = t'.length →
+    Imperative.substNodup ((h, h') :: List.zip t t') →
+    ¬ h ∈ t ∧ ¬ h' ∈ t' := by
+  intros Hlen Hsubst
+  simp [Imperative.substNodup] at Hsubst
+  refine ⟨?_, ?_⟩
+  · exact zip_notin_fst_pair Hlen Hsubst.1.1
+  · have Hnd := nodup_middle Hsubst.2
+    simp at Hnd
+    have Hnd' := Hnd.1.2
+    exact zip_notin_snd_pair Hlen Hnd'
+
+private theorem getVars_substFvar_or
+    {e : Expression.Expr} {h h' v : Expression.Ident} :
+    v ∈ (Imperative.HasVarsPure.getVars (P:=Expression)
+          (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))) →
+    v ∈ (Imperative.HasVarsPure.getVars (P:=Expression) e) ∨ v = h' := by
+  intros Hin
+  induction e <;>
+    simp [Lambda.LExpr.substFvar,
+          Imperative.HasVarsPure.getVars,
+          Lambda.LExpr.LExpr.getVars,
+          Core.Transform.createFvar
+         ] at * <;> try simp_all
+  case fvar name ty =>
+    split at Hin <;> simp [Lambda.LExpr.LExpr.getVars] at * <;> simp_all
+  case app m fn e fn_ih e_ih =>
+    cases Hin <;> simp_all
+    · cases fn_ih <;> simp_all
+    · cases e_ih <;> simp_all
+  case quant m qk name ty tr e tr_ih e_ih =>
+    cases Hin <;> simp_all
+    · cases tr_ih <;> simp_all
+    · cases e_ih <;> simp_all
+  case ite m c t e c_ih t_ih e_ih =>
+    cases Hin with
+    | inl Hin => cases (c_ih Hin) <;> simp_all
+    | inr Hin =>
+      cases Hin with
+      | inl Hin => cases (t_ih Hin) <;> simp_all
+      | inr Hin => cases (e_ih Hin) <;> simp_all
+  case eq m e1 e2 e1_ih e2_ih =>
+    cases Hin <;> simp_all
+    · cases e1_ih <;> simp_all
+    · cases e2_ih <;> simp_all
+
+private theorem getVars_substFvar_replace
+    {e : Expression.Expr} {h h' : Expression.Ident} :
+    (Imperative.HasVarsPure.getVars
+        (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))) =
+    (Imperative.HasVarsPure.getVars (P:=Expression) e).replaceAll h h' := by
+  induction e <;>
+    simp [Imperative.HasVarsPure.getVars,
+          Lambda.LExpr.LExpr.getVars,
+          Lambda.LExpr.substFvar,
+          Core.Transform.createFvar,
+          List.replaceAll] at * <;> try assumption
+  case fvar name ty =>
+    by_cases h_eq : name = h
+    · subst h_eq
+      simp [Lambda.LExpr.LExpr.getVars]
+    · simp [h_eq, Lambda.LExpr.LExpr.getVars]
+      have hbeq : (h == name) = false := by
+        simp; intro heq; exact h_eq heq.symm
+      rw [hbeq]
+  case app fn e fn_ih e_ih =>
+    rw [fn_ih, e_ih, List.replaceAll_app]
+  case quant qk ty tr_ih e_ih =>
+    rw [tr_ih, e_ih, List.replaceAll_app]
+  case ite c t e c_ih t_ih e_ih =>
+    rw [c_ih, t_ih, e_ih, List.replaceAll_app, List.replaceAll_app]
+  case eq e1 e2 e1_ih e2_ih =>
+    rw [e1_ih, e2_ih, List.replaceAll_app]
+
+private theorem updatedStores_invStores
+    {σ : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
+    {ks : List Expression.Ident} :
+    ¬ k ∈ ks →
+    Imperative.invStores σ (updatedState σ k v) ks := by
   intros Hnin k1 k2 Hin
   have Heq : k1 = k2 := zip_self_eq Hin
   simp_all
   have Hin := (List.of_mem_zip Hin).1
-  have Hne : k2 ≠ k := by
-    exact ne_of_mem_of_not_mem Hin Hnin
+  have Hne : k2 ≠ k := ne_of_mem_of_not_mem Hin Hnin
   simp [updatedState]
   simp_all
 
-theorem invStoresSubstHead :
-  Imperative.substStores (P := Expression) σ (updatedState σ h' v₁) [(h, h')] →
-  ¬ h' ∈ vs →
-  Imperative.invStores σ (updatedState σ h' v₁) (List.removeAll vs [h]) := by
-intros Hnin Hsubst k1 k2
-apply updatedStoresInvStores
-simp [List.removeAll]
-simp_all
-
-theorem invStoresEraseDups' :
-  Imperative.invStores (P:=Expression) σ σ' vs.eraseDups →
-  Imperative.invStores (P:=Expression) σ σ' vs := by
-  intros Hinv k1 k2 Hin
-  specialize Hinv k1 k2
-  have Heq := zip_self_eq Hin
+private theorem invStores_subst_head
+    {σ : CoreStore} {h h' : Expression.Ident} {v₁ : Expression.Expr}
+    {vs : List Expression.Ident} :
+    Imperative.substStores (P := Expression) σ (updatedState σ h' v₁) [(h, h')] →
+    ¬ h' ∈ vs →
+    Imperative.invStores σ (updatedState σ h' v₁) (List.removeAll vs [h]) := by
+  intros _ Hnin
+  apply updatedStores_invStores
+  simp [List.removeAll]
   simp_all
-  apply Hinv
-  apply zip_self_eq'
-  refine eraseDupsBy.sound ?_
-  have Hsub := eraseDupsBy.sound Hin
-  have Hmem := List.of_mem_zip Hin
-  exact Hmem.1
 
-theorem invStoresSubstTail'  [BEq P.Ident] [LawfulBEq P.Ident] {σ : Imperative.SemanticStore P}:
-  σ h = some v₁ →
-  Imperative.invStores (P:=P) σ₀ σ (List.removeAll vs (h :: t)) →
-  Imperative.invStores (updatedState σ₀ h v₁) σ (List.removeAll vs t) := by
-  intros Hsome Hinv k1 k2 Hin
-  have Heq := zip_self_eq Hin
-  simp_all
-  simp [Imperative.invStores, Imperative.substStores] at *
-  simp [updatedState]
-  split <;> simp_all
-  . next neq =>
-    apply Hinv
-    apply zip_self_eq'
-    have Hin := (List.of_mem_zip Hin).1
-    apply removeAll_cons <;> simp_all
-
-theorem invStoresSubstTail :
-  Imperative.substStores (P := Expression) σ σ' ((h, h') :: t.zip t') →
-  Imperative.substStores (P := Expression) (updatedState σ h' v₁) σ' (t.zip t') →
-  σ h = some v₁ →
-  h ≠ h' →
-  Imperative.invStores σ σ' (List.removeAll vs ((h :: t) ++ (h' :: t'))) →
-  Imperative.invStores (updatedState σ h' v₁) σ'
+private theorem invStores_subst_tail
+    {σ σ' : CoreStore} {h h' : Expression.Ident} {v₁ : Expression.Expr}
+    {t t' vs : List Expression.Ident} :
+    Imperative.substStores (P := Expression) σ σ' ((h, h') :: t.zip t') →
+    Imperative.substStores (P := Expression) (updatedState σ h' v₁) σ' (t.zip t') →
+    σ h = some v₁ →
+    h ≠ h' →
+    Imperative.invStores σ σ' (List.removeAll vs ((h :: t) ++ (h' :: t'))) →
+    Imperative.invStores (updatedState σ h' v₁) σ'
                             (List.removeAll (vs.replaceAll h h') (t ++ t')) := by
-  intros Hsubst1 Hsubst2 Hsome Hne Hinv k1 k2 Hin
+  intros Hsubst1 _ Hsome Hne Hinv k1 k2 Hin
   have Heq := zip_self_eq Hin
   simp_all
   simp [Imperative.invStores, Imperative.substStores] at *
   simp [updatedState]
   split
-  . rw [← Hsubst1 h] <;> simp_all
-  . next neq =>
+  · rw [← Hsubst1 h] <;> simp_all
+  · next neq =>
     apply Hinv
     apply zip_self_eq'
     have Hin := (List.of_mem_zip Hin).1
@@ -1263,810 +925,1784 @@ theorem invStoresSubstTail :
     have Hor := in_replaceAll_removeAll Hin
     cases Hor <;> simp_all
     apply removeAll_cons
-    . intros Heq
+    · intros Heq
       simp_all
       have Hnmem : ¬ h ∈ vs.replaceAll h h' := replaceAll_not_mem Hne
       exact Hnmem Hin'
-    . simp [List.removeAll] at *
+    · simp [List.removeAll] at *
       simp_all
 
-theorem subst_create_replace :
-(Imperative.HasVarsPure.getVars (Lambda.LExpr.substFvar e h (createFvar h'))) =
-(Imperative.HasVarsPure.getVars e).replaceAll h h'
-:= by
-induction e <;> simp [
-    Imperative.HasVarsPure.getVars,
-    Lambda.LExpr.LExpr.getVars,
-    Lambda.LExpr.substFvar,
-    createFvar,
-    List.replaceAll,
-  ] at * <;> try assumption
-case fvar name ty =>
-  split <;> try simp_all
-  simp [Lambda.LExpr.LExpr.getVars]
-  split <;> simp_all
-  simp [Lambda.LExpr.LExpr.getVars]
-case app fn e fn_ih e_ih =>
-  rw [fn_ih, e_ih]
-  rw [List.replaceAll_app]
-case quant k ty tr_ih e_ih =>
-  rw [tr_ih, e_ih]
-  rw [List.replaceAll_app]
-case ite c t e c_ih t_ih e_ih =>
-  rw [c_ih, t_ih, e_ih]
-  rw [List.replaceAll_app]
-  rw [List.replaceAll_app]
-case eq e1 e2 e1_ih e2_ih =>
-  rw [e1_ih, e2_ih]
-  rw [List.replaceAll_app]
+/-- Helper: `Map.find? rest h' = none` when `h'` is not a key in `rest`. -/
+private theorem map_find_none_of_not_key
+    {h' : Expression.Ident}
+    {rest : List (Expression.Ident × Expression.Expr)} :
+    (∀ a b, (a, b) ∈ rest → a ≠ h') →
+    Map.find? rest h' = none := by
+  intro Hnk
+  induction rest with
+  | nil => rfl
+  | cons p rs ih =>
+    obtain ⟨a, b⟩ := p
+    have hane : a ≠ h' := Hnk a b List.mem_cons_self
+    have ih' : Map.find? rs h' = none := by
+      apply ih
+      intros a' b' hin
+      exact Hnk a' b' (List.mem_cons_of_mem _ hin)
+    show (if a = h' then some b else Map.find? rs h') = none
+    rw [if_neg hane, ih']
 
-theorem substDefined_tail :
-Imperative.substDefined σ σ' (h :: t) →
-Imperative.substDefined σ σ' t := by
-intros Hsubst k1 k2 Hin
-apply Hsubst
-exact List.mem_cons_of_mem h Hin
+/-- Helper: `Map.find? ((h, v) :: rest) name = Map.find? rest name` when `name ≠ h`. -/
+private theorem map_find_cons_ne
+    {h name : Expression.Ident} {v : Expression.Expr}
+    {rest : List (Expression.Ident × Expression.Expr)} :
+    name ≠ h →
+    Map.find? ((h, v) :: rest) name = Map.find? rest name := by
+  intro Hne
+  show (if h = name then some v else Map.find? rest name) = Map.find? rest name
+  rw [if_neg (fun heq => Hne heq.symm)]
 
-theorem substNodup_tail :
-Imperative.substNodup (h :: t) →
-Imperative.substNodup t := by
-intros Hsubst
-simp [Imperative.substNodup] at *
-exact (List.nodup_cons.mp (nodup_middle Hsubst.right)).right
+/-- For a cons-substitution `(h, fv) :: rest`, when `h` and `h'` (the source of
+    `fv = createFvar h'`) are not keys, `substFvars` decomposes as a leading
+    single-var substitution. -/
+private theorem substFvars_cons_eq
+    {e : Expression.Expr} {h h' : Expression.Ident}
+    {rest : List (Expression.Ident × Expression.Expr)}
+    (Hh_notin_keys : ∀ a b, (a, b) ∈ rest → a ≠ h)
+    (Hh'_notin_keys : ∀ a b, (a, b) ∈ rest → a ≠ h') :
+    Lambda.LExpr.substFvars e ((h, Core.Transform.createFvar h') :: rest) =
+    Lambda.LExpr.substFvars
+      (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h')) rest := by
+  induction e with
+  | const m c =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_const']
+  | op m n t =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_op']
+  | bvar m i =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_bvar]
+  | fvar m name ty =>
+    by_cases heq : name = h
+    · subst heq
+      -- LHS: substFvars (fvar name) ((name, fv) :: rest) = fv
+      have hfind_lhs : Map.find?
+            ((name, Core.Transform.createFvar h') :: rest) name =
+            some (Core.Transform.createFvar h') := by
+        show (if name = name then some (Core.Transform.createFvar h')
+              else Map.find? rest name) = _
+        rw [if_pos rfl]
+      have hLHS := Lambda.LExpr.substFvars_fvar_find m name ty
+                      ((name, Core.Transform.createFvar h') :: rest)
+                      (Core.Transform.createFvar h') hfind_lhs
+      -- RHS: substFvar (fvar name) name fv  =  fv = createFvar h'
+      have hsubst : Lambda.LExpr.substFvar
+                      (Lambda.LExpr.fvar m name ty)
+                      name (Core.Transform.createFvar h') =
+                    Core.Transform.createFvar h' := by
+        show (if (name == name) = true then _ else _) = _
+        simp
+      rw [hsubst]
+      -- Now goal: substFvars (fvar name ...) (...) = substFvars (createFvar h') rest
+      -- LHS rewrites via hLHS to createFvar h'
+      rw [hLHS]
+      -- RHS: substFvars (createFvar h' = fvar h') rest
+      have hfind_rhs : Map.find? rest h' = none :=
+        map_find_none_of_not_key Hh'_notin_keys
+      -- Use substFvars_fvar_none, with implicits inferred from rest's type
+      have hRHS : Lambda.LExpr.substFvars
+                    (Core.Transform.createFvar h' :
+                      Expression.Expr) rest =
+                  Core.Transform.createFvar h' := by
+        unfold Core.Transform.createFvar
+        exact Lambda.LExpr.substFvars_fvar_none _ _ _ _ hfind_rhs
+      show Core.Transform.createFvar h' =
+            Lambda.LExpr.substFvars (Core.Transform.createFvar h' : Expression.Expr) rest
+      rw [hRHS]
+    · -- name ≠ h
+      have hsubst : Lambda.LExpr.substFvar
+                      (Lambda.LExpr.fvar m name ty)
+                      h (Core.Transform.createFvar h') =
+                    Lambda.LExpr.fvar m name ty := by
+        show (if (name == h) = true then _ else _) = _
+        rw [if_neg]
+        intro hbeq
+        exact heq (beq_iff_eq.mp hbeq)
+      rw [hsubst]
+      have hcons := map_find_cons_ne (h := h) (v := Core.Transform.createFvar h')
+                      (name := name) (rest := rest) heq
+      cases hf : Map.find? rest name with
+      | none =>
+        have hf' : Map.find? ((h, Core.Transform.createFvar h') :: rest) name = none := by
+          rw [hcons]; exact hf
+        rw [Lambda.LExpr.substFvars_fvar_none m name ty _ hf']
+        rw [Lambda.LExpr.substFvars_fvar_none m name ty rest hf]
+      | some v =>
+        have hf' : Map.find? ((h, Core.Transform.createFvar h') :: rest) name = some v := by
+          rw [hcons]; exact hf
+        rw [Lambda.LExpr.substFvars_fvar_find m name ty _ v hf']
+        rw [Lambda.LExpr.substFvars_fvar_find m name ty rest v hf]
+  | abs m pn ty body ih =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_abs, ih]
+  | quant m qk pn ty tr body trih bih =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_quant, trih, bih]
+  | app m fn arg fih aih =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_app, fih, aih]
+  | ite m c t f cih tih fih =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_ite, cih, tih, fih]
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [Lambda.LExpr.substFvar, Lambda.LExpr.substFvars_eq, ih1, ih2]
 
-theorem substDefined_updatedState :
-Imperative.substDefined σ σ' ls →
-Imperative.substDefined (updatedState σ k v) σ' ls := by
-intros Hsubst k1 k2 Hin
-apply And.intro
-. apply updatedStateIsDefinedMono
-  exact (Hsubst k1 k2 Hin).1
-. exact (Hsubst k1 k2 Hin).2
+/-- Helper: if `h' ∉ ts`, then `h'` is not a key in `(t.zip (createFvars ts)).fst`. -/
+private theorem zip_createFvars_keys_notin
+    {h : Expression.Ident}
+    {t : List Expression.Ident} {ts : List Expression.Ident} :
+    ¬ h ∈ t →
+    ∀ a b, (a, b) ∈ t.zip (Core.Transform.createFvars ts) → a ≠ h := by
+  intros Hnin a b Hin Heq
+  subst Heq
+  exact Hnin (List.of_mem_zip Hin).1
 
-theorem zip_notin_fst :
-  t.length = t'.length →
-  (∀ x, ¬(h, x) ∈ List.zip t t') →
-  ¬ h ∈ t := by
-intros Hlen H
-induction t generalizing t' h <;> simp_all
-case cons h t ih =>
-induction t' <;> simp_all
-case cons h' t' =>
-have HH := H h'
-simp_all
-exact ih rfl H
-
-theorem zip_notin_snd :
-  t.length = t'.length →
-  (∀ x, ¬(x, h) ∈ List.zip t t') →
-  ¬ h ∈ t' := by
-intros Hlen H
-induction t' generalizing t h <;> simp_all
-case cons h t ih =>
-induction t <;> simp_all
-case cons h' t' =>
-have HH := H h'
-simp_all
-exact ih Hlen H
-
-theorem substNodup_ht :
-  t.length = t'.length →
-  Imperative.substNodup ((h, h') :: List.zip t t') →
-  ¬ h ∈ t ∧ ¬ h' ∈ t' := by
-  intros Hlen Hsubst
-  simp [Imperative.substNodup] at Hsubst
-  apply And.intro
-  . intros Hin
-    exact zip_notin_fst Hlen Hsubst.1.1 Hin
-  . have Hnd := nodup_middle Hsubst.2
-    simp at Hnd
-    have Hnd' := Hnd.1.2
-    exact zip_notin_snd Hlen Hnd'
-
-theorem getVarsSubstCreateFvar :
-v ∈ (Imperative.HasVarsPure.getVars (P:=Expression) (Lambda.LExpr.substFvar e h (createFvar h'))) →
-v ∈ (Imperative.HasVarsPure.getVars e) ∨ v = h' := by
-intros Hin
-induction e <;>
-simp [Lambda.LExpr.substFvar,
-      Imperative.HasVarsPure.getVars,
-      Lambda.LExpr.LExpr.getVars,
-      createFvar
-      ] at * <;> try simp_all
-case fvar name ty =>
-  split at Hin <;> simp [Lambda.LExpr.LExpr.getVars] at * <;> simp_all
-case app fn e fn_ih e_ih =>
-  cases Hin <;> simp_all
-  cases fn_ih <;> simp_all
-  cases e_ih <;> simp_all
-case quant k ty tr_ih e_ih =>
-  cases Hin <;> simp_all
-  cases tr_ih <;> simp_all
-  cases e_ih <;> simp_all
-case ite c t e c_ih t_ih e_ih =>
-  cases Hin with
-  | inl Hin => cases (c_ih Hin) <;> simp_all
-  | inr Hin =>
-  cases Hin with
-  | inl Hin => cases (t_ih Hin) <;> simp_all
-  | inr Hin => cases (e_ih Hin) <;> simp_all
-case eq fn e fn_ih e_ih =>
-  cases Hin <;> simp_all
-  cases fn_ih <;> simp_all
-  cases e_ih <;> simp_all
-
-theorem Lambda.LExpr.substFvarsCorrect :
-  WellFormedCoreEvalCong δ →
-  Imperative.WellFormedSemanticEvalVar (P:=Expression) δ →
-  Imperative.WellFormedSemanticEvalVal (P:=Expression) δ →
-  fro.length = to.length →
-  Imperative.substDefined σ σ' (fro.zip to) →
-  Imperative.substNodup (fro.zip to) →
-  Imperative.substStores σ σ' (fro.zip to) →
-  to.Disjoint (@Imperative.HasVarsPure.getVars Expression _ _ e) →
-  Imperative.invStores σ σ'
-    ((@Imperative.HasVarsPure.getVars Expression _ _ e).removeAll (fro ++ to)) →
-  δ σ e = δ σ' (e.substFvars (fro.zip $ createFvars to)) := by
-  intros Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst Hnin Hinv
+/-- Multi-variable substitution preserves expression evaluation. Re-derived
+    from the legacy `Lambda.LExpr.substFvarsCorrect`. -/
+private theorem subst_fvars_correct
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {fro to : List Expression.Ident}
+    {e : Expression.Expr}
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hlen : fro.length = to.length)
+    (Hdef : Imperative.substDefined σ σ' (fro.zip to))
+    (Hnd : Imperative.substNodup (fro.zip to))
+    (Hsubst : Imperative.substStores σ σ' (fro.zip to))
+    (Hnin : to.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) e))
+    (Hinv : Imperative.invStores σ σ'
+              ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll (fro ++ to))) :
+    δ σ e = δ σ' (e.substFvars (fro.zip (Core.Transform.createFvars to))) := by
   induction fro generalizing to σ σ' e
   case nil =>
-    simp_all
-    have Hemp : to = [] := by
-      apply List.eq_nil_of_length_eq_zero (Eq.symm Hlen)
-    simp [Hemp] at *
-    simp [Lambda.LExpr.substFvars]
-    exact substFvarsCorrectZero Hwfc Hwfvr Hwfvl Hinv
+    have Hemp : to = [] := List.eq_nil_of_length_eq_zero (Eq.symm Hlen)
+    subst Hemp
+    simp only [Core.Transform.createFvars, List.map_nil, List.zip_nil_right]
+    -- substFvars on empty map is identity
+    have hsubstEmp :
+        Lambda.LExpr.substFvars e ([] : Map Expression.Ident Expression.Expr) = e := by
+      simp [Lambda.LExpr.substFvars, Map.isEmpty]
+    rw [hsubstEmp]
+    -- Hinv came in with `removeAll ([] ++ [])`, simplify
+    have HinvSimp :
+        Imperative.invStores σ σ'
+          (Imperative.HasVarsPure.getVars (P:=Expression) e) := by
+      have := Hinv
+      simp at this
+      exact this
+    exact subst_fvarsZero_correct Hwfc Hwfvr Hwfvl HinvSimp
   case cons h t ih =>
     cases to with
-    | nil => simp_all
+    | nil => simp at Hlen
     | cons h' t' =>
-    simp [Lambda.LExpr.substFvars] at *
-    simp [createFvars] at *
-    have Hsubst1 := substStoresCons' Hnd Hdef Hsubst
-    cases Hsubst1 with
-    | intro σ₁ Hsubst1 =>
-    cases Hsubst1 with
-    | intro v₁ Hsubst1 =>
-    cases Hsubst1 with
-    | intro Hsome Hsubst1 =>
-    cases Hsubst1 with
-    | intro Hstore Hsubst1 =>
-    cases Hsubst1 with
-    | intro Hsubst' Hsubst1 =>
-    -- the old store can stay unchanged since it is irrelevant
-    rw [substFvarCorrect (e := e) Hwfc Hwfvr Hwfvl Hsubst'] <;> simp_all
-    rw [ih] <;> try simp_all
-    . refine substDefined_updatedState ?_
-      exact substDefined_tail Hdef
-    . simp [Imperative.substNodup] at Hnd ⊢
-      have Hnd2 := nodup_middle Hnd.2
-      simp_all
-    . -- Disjoint
-      intros a' Hin Hin2
-      have Hor := getVarsSubstCreateFvar Hin2
-      cases Hor <;> simp_all
-      next Hin3 =>
-        apply @Hnin a' ?_ ?_
-        exact List.mem_cons_of_mem h' Hin
-        exact Hin3
-      next Heq =>
-        apply @Hnin h' ?_ ?_
-        simp_all
-        exfalso
-        have Hht := substNodup_ht Hlen Hnd
-        simp_all
-    . -- invStores from σ₁ to σ'
-      rw [subst_create_replace]
-      apply invStoresSubstTail Hsubst Hsubst1 Hsome ?_ Hinv
-      . simp [Imperative.substNodup] at Hnd
-        simp_all
-    . simp [List.Disjoint] at Hnin
-      exact invStoresSubstHead Hsubst' Hnin.1
+      have Hlen_t : t.length = t'.length := by
+        simp at Hlen; exact Hlen
+      have Hnd_t : Imperative.substNodup (t.zip t') := subst_nodup_tail Hnd
+      have Hht := subst_nodup_ht Hlen_t Hnd
+      have Hne : h ≠ h' := by
+        intro heq
+        subst heq
+        simp [Imperative.substNodup] at Hnd
+      have Hsubst1 := substStoresCons' Hnd Hdef Hsubst
+      obtain ⟨σ₁, v₁, Hsome, Hstore, Hsubst', Hsubst1⟩ := Hsubst1
+      subst Hstore
+      -- Step 1: rewrite δ σ e using subst_fvar_correct.
+      have Hinv_head : Imperative.invStores σ (updatedState σ h' v₁)
+                          ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll [h]) := by
+        apply invStores_subst_head Hsubst'
+        intro Hin
+        exact Hnin (List.mem_cons_self) Hin
+      have Hhead : δ σ e =
+                   δ (updatedState σ h' v₁)
+                     (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h')) :=
+        subst_fvar_correct Hwfc Hwfvr Hwfvl Hsubst' Hinv_head
+      rw [Hhead]
+      -- Step 2: rewrite using IH. We apply IH at e' = substFvar e h (createFvar h').
+      have Hdef_σ₁ : Imperative.substDefined (updatedState σ h' v₁) σ' (t.zip t') :=
+        subst_defined_updatedState (subst_defined_tail Hdef)
+      have Hnin_t : t'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression)
+                      (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))) := by
+        intros a' Hin Hin2
+        have Hor := getVars_substFvar_or Hin2
+        cases Hor with
+        | inl Hin3 =>
+          exact Hnin (List.mem_cons_of_mem h' Hin) Hin3
+        | inr Heq =>
+          subst Heq
+          exact Hht.2 Hin
+      have Hinv_t : Imperative.invStores (updatedState σ h' v₁) σ'
+          ((Imperative.HasVarsPure.getVars
+              (Lambda.LExpr.substFvar e h (Core.Transform.createFvar h'))).removeAll
+            (t ++ t')) := by
+        rw [getVars_substFvar_replace]
+        have HinvE : Imperative.invStores σ σ'
+            ((Imperative.HasVarsPure.getVars (P:=Expression) e).removeAll
+              ((h :: t) ++ (h' :: t'))) := by
+          have heq : (h :: t) ++ (h' :: t') = h :: t ++ h' :: t' := by simp
+          rw [heq]; exact Hinv
+        exact invStores_subst_tail Hsubst Hsubst1 Hsome Hne HinvE
+      have Hres := ih Hlen_t Hdef_σ₁ Hnd_t Hsubst1 Hnin_t Hinv_t
+      rw [Hres]
+      -- Step 3: align substFvars-cons with substFvars after substFvar.
+      have Hh_notin : ∀ a b, (a, b) ∈ t.zip (Core.Transform.createFvars t') → a ≠ h :=
+        zip_createFvars_keys_notin Hht.1
+      -- substNodup: nodup of fst++snd = h::t ++ h'::t'. h' ∉ t (and h' ∉ t').
+      have Hh'_notin_t : ¬ h' ∈ t := by
+        intro hh
+        have HzipUnzip : (t.zip t').unzip = (t, t') := by
+          rw [List.unzip_zip]; exact Hlen_t
+        have HndStart : List.Nodup
+            (((h, h') :: t.zip t').unzip.fst ++
+              ((h, h') :: t.zip t').unzip.snd) := Hnd
+        -- Manually unfold: ((h,h')::t.zip t').unzip = (h :: t, h' :: t')
+        have Hcons_fst :
+            ((h, h') :: t.zip t').unzip.fst = h :: t := by
+          simp [HzipUnzip]
+        have Hcons_snd :
+            ((h, h') :: t.zip t').unzip.snd = h' :: t' := by
+          simp [HzipUnzip]
+        rw [Hcons_fst, Hcons_snd] at HndStart
+        -- HndStart : Nodup (h :: t ++ h' :: t')
+        have HtailNd : List.Nodup (t ++ h' :: t') := by
+          have : List.Nodup ((h :: t) ++ h' :: t') := HndStart
+          rw [List.cons_append] at this
+          exact (List.nodup_cons.mp this).2
+        have HmidNd := nodup_middle HtailNd
+        have Hnotin : h' ∉ t ++ t' := (List.nodup_cons.mp HmidNd).1
+        exact Hnotin (List.mem_append_left _ hh)
+      have Hh'_notin : ∀ a b, (a, b) ∈ t.zip (Core.Transform.createFvars t') → a ≠ h' := by
+        intros a b Hin Heq
+        subst Heq
+        exact Hh'_notin_t ((List.of_mem_zip Hin).1)
+      have Hcons := substFvars_cons_eq (e := e) (h := h) (h' := h')
+                      (rest := t.zip (Core.Transform.createFvars t'))
+                      Hh_notin Hh'_notin
+      rw [← Hcons]
+      simp [Core.Transform.createFvars]
 
-/-
-theorem createAssertsCorrect :
-  Imperative.WellFormedSemanticEvalBool δ →
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  -- TODO: remove congruence of old expressions, and require pre to contain no old expressions
-  Core.WellFormedCoreEvalCong δ →
-  ks.length = ks'.length →
-  Imperative.substNodup (ks.zip ks') →
-  Imperative.substDefined σA σ' (ks.zip ks') →
-  (∀ pre, pre ∈ pres →
-    Imperative.invStores σA σ'
-      ((Imperative.HasVarsPure.getVars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
-    ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) pre) ∧
-    δ σA pre = some Imperative.HasBool.tt) →
-  EvalExpressions δ σ (createFvars ks') vals →
-  ReadValues σA ks vals →
-  Imperative.substStores σ' σA (ks'.zip ks) →
-  EvalStatementsContract π φ δ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' δ := by
-   intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hpres Heval Hrd Hsubst2
-   simp [createAsserts]
-   -- Make index parameter `i` explicit so that we can induct generalizing `i`.
-   suffices h : ∀ (i : Nat) (l : List Expression.Expr),
-     (∀ pre, pre ∈ l →
+/-! ### Pure list-shape analogues of `createAsserts` / `createAssumes`.
+
+    The monadic `Core.Transform.createAsserts` / `createAssumes` use a fresh
+    label generator. For the small-step proof we need a pure-list version that
+    we can induct over directly. -/
+
+/-- Pure-list analogue of `Core.Transform.createAsserts` (without the
+    monadic label generator). Produces `Statement.assert` statements,
+    one per entry, with substituted predicates. -/
+private def createAsserts_list
+    (entries : List (CoreLabel × Procedure.Check))
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (labelPrefix : String) :
+    List Statement :=
+  entries.mapIdx (fun i (l, check) =>
+    Statement.assert s!"{labelPrefix}{i}_{l}"
+                     (Lambda.LExpr.substFvars check.expr subst)
+                     (check.md.setCallSiteFileRange md))
+
+/-- Pure-list analogue of `Core.Transform.createAssumes`. -/
+private def createAssumes_list
+    (entries : List (CoreLabel × Procedure.Check))
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (labelPrefix : String) :
+    List Statement :=
+  entries.mapIdx (fun i (l, check) =>
+    Statement.assume s!"{labelPrefix}{i}_{l}"
+                     (Lambda.LExpr.substFvars check.expr subst)
+                     (check.md.setCallSiteFileRange md))
+
+/-! ### Small-step block helpers for assert/assume sequences -/
+
+/-- A list of `Statement.assert` with substituted predicates evaluates from
+    σ' to σ' (store unchanged) under contract semantics, given that each
+    substituted predicate evaluates to `tt` in σ' and the substitution
+    well-formedness assumptions hold. -/
+private theorem H_asserts
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {pres : List (CoreLabel × Procedure.Check)}
+    {md : Imperative.MetaData Expression}
+    {labelPrefix : String}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σ' σA (ks'.zip ks))
+    (Hpres : ∀ entry, entry ∈ pres →
        Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) pre) ∧
-       δ σA pre = some Imperative.HasBool.tt) →
-     EvalStatementsContract π φ δ σ'
-       (List.mapIdx (fun j pred => Statement.assert s!"assert_{i + j}"
-         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ' δ
-   by
-    have := @h 0 pres Hpres
-    simp at this; exact this
-   intros i l Hl
-   induction l generalizing i
-   case nil =>
-     simp; constructor
-   case cons st sts ih =>
-     simp; constructor; constructor; constructor; constructor
-     specialize Hl st (by simp)
-     . have Heq : δ σA st = δ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) := by
-         apply Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd ?_ Hl.2.1 Hl.1
-         . apply Imperative.substStoresFlip'
-           simp [Imperative.substSwap, zip_swap]
-           assumption
-       simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-       rw [← Heq]
-       exact Hl.2.2
-     . assumption
-     . simp [Imperative.isDefinedOver, Command.modifiedVars,
-             Imperative.Cmd.modifiedVars,
-             Imperative.HasVarsImp.modifiedVars,
-             Imperative.isDefined]
-     . have ih' := ih (i + 1)
-       ac_nf at ih'
-       apply ih'
-       intros pre Hin
-       simp_all
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      (createAsserts_list pres (ks.zip (Core.Transform.createFvars ks')) md labelPrefix)
+      ⟨σ', δ, false⟩ := by
+  -- Generalize over the starting index of mapIdx so we can induct on the list.
+  suffices Hgen :
+      ∀ (i : Nat) (l : List (CoreLabel × Procedure.Check)),
+        (∀ entry, entry ∈ l →
+           Imperative.invStores σA σ'
+             ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+           ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+           δ σA entry.snd.expr = some Imperative.HasBool.tt) →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩
+          (l.mapIdx (fun j (lbl, check) =>
+            Statement.assert s!"{labelPrefix}{i + j}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)))
+          ⟨σ', δ, false⟩ by
+    have := Hgen 0 pres Hpres
+    simp [createAsserts_list] at this ⊢
+    exact this
+  intros i l Hl
+  induction l generalizing i with
+  | nil =>
+    simp [List.mapIdx]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    obtain ⟨lbl, check⟩ := head
+    -- Apply IH at index i+1.
+    have HtailHyp :
+        ∀ entry, entry ∈ tail →
+          Imperative.invStores σA σ'
+            ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+              (ks ++ ks')) ∧
+          ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+          δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+      intros entry hin; exact Hl entry (List.mem_cons_of_mem _ hin)
+    have Htail := ih (i + 1) HtailHyp
+    -- Use Hl on the head entry to evaluate the substituted predicate.
+    have HlHead := Hl (lbl, check) List.mem_cons_self
+    obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+    -- Apply subst_fvars_correct to relate δ σA expr to δ σ' (substFvars expr ...)
+    have Hsubst' : Imperative.substStores σA σ' (ks.zip ks') := by
+      apply Imperative.substStoresFlip'
+      simp [Imperative.substSwap, zip_swap]
+      exact Hsubst
+    have Heq : δ σA check.expr =
+                δ σ' (Lambda.LExpr.substFvars check.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) :=
+      subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst' HnininHead HinvHead
+    have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.tt := by
+      rw [← Heq]; exact HevHead
+    -- Build the assert command derivation
+    have Hassert :
+        Core.EvalCommandContract π δ σ'
+          (Core.CmdExt.cmd
+            (Imperative.Cmd.assert
+              s!"{labelPrefix}{i}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)))
+          σ' false :=
+      Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass HevSubst Hwfb)
+    have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassert
+    -- Adjust the tail's index: tail with i+1 should equal head's continuation.
+    -- Goal shape: mapIdx (...) ((lbl, check) :: tail) at index i.
+    -- = head_stmt :: mapIdx (...) tail at index i+1.
+    -- We need: head_stmt :: tail_stmts = [head_stmt] ++ tail_stmts.
+    -- And the tail_stmts should match Htail.
+    -- Combined chain. mapIdx_cons unfolds head with index 0, then tail with j+1
+    have Hcombined :
+        EvalStatementsContract π φ ⟨σ', δ, false⟩
+          ([Statement.assert s!"{labelPrefix}{i}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)] ++
+           tail.mapIdx (fun j p =>
+              Statement.assert s!"{labelPrefix}{i + 1 + j}_{p.fst}"
+                (Lambda.LExpr.substFvars p.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (p.snd.md.setCallSiteFileRange md)))
+          ⟨σ', δ, false⟩ := EvalStatementsContractApp HheadStmts Htail
+    -- Massage to match the goal shape produced by mapIdx on cons.
+    have Hgoal_eq :
+        ((lbl, check) :: tail).mapIdx (fun j p =>
+            Statement.assert s!"{labelPrefix}{i + j}_{p.fst}"
+              (Lambda.LExpr.substFvars p.snd.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (p.snd.md.setCallSiteFileRange md)) =
+        [Statement.assert s!"{labelPrefix}{i}_{lbl}"
+            (Lambda.LExpr.substFvars check.expr
+              (ks.zip (Core.Transform.createFvars ks')))
+            (check.md.setCallSiteFileRange md)] ++
+        tail.mapIdx (fun j p =>
+            Statement.assert s!"{labelPrefix}{i + 1 + j}_{p.fst}"
+              (Lambda.LExpr.substFvars p.snd.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (p.snd.md.setCallSiteFileRange md)) := by
+      rw [List.mapIdx_cons]
+      simp only [List.singleton_append, List.cons.injEq, Nat.add_zero, true_and]
+      -- Goal: tail.mapIdx (fun j ... i + (j+1) ...) = tail.mapIdx (fun j ... i + 1 + j ...)
+      apply List.mapIdx_eq_iff.mpr
+      intros k
+      simp [List.getElem?_mapIdx]
+      cases hh : tail[k]? with
+      | none => rfl
+      | some p =>
+        have : i + 1 + k = i + (k + 1) := by omega
+        rw [this]
+    show EvalStatementsContract π φ ⟨σ', δ, false⟩
+      (((lbl, check) :: tail).mapIdx (fun j p =>
+        Statement.assert s!"{labelPrefix}{i + j}_{p.fst}"
+          (Lambda.LExpr.substFvars p.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (p.snd.md.setCallSiteFileRange md))) ⟨σ', δ, false⟩
+    rw [Hgoal_eq]
+    exact Hcombined
 
-theorem createAssumesCorrect :
-  Imperative.WellFormedSemanticEvalBool δ →
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  ks.length = ks'.length →
-  Imperative.substNodup (ks.zip ks') →
-  Imperative.substDefined σA σ' (ks.zip ks') →
-  (∀ post, post ∈ posts →
-    Imperative.invStores σA σ'
-      ((Imperative.HasVarsPure.getVars (P:=Expression) post).removeAll (ks ++ ks')) ∧
-    ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
-    δ σA post = some Imperative.HasBool.tt) →
-  Imperative.substStores σA σ' (ks.zip ks') →
-  EvalStatementsContract π φ δ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' δ := by
-   intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hposts Hsubst2
-   simp [createAssumes]
-   -- Make index parameter `i` explicit so that we can induct generalizing `i`.
-   suffices h : ∀ (i : Nat) (l : List Expression.Expr),
-     (∀ post, post ∈ l →
+/-- Symmetric to `H_asserts`: a list of `Statement.assume` with substituted
+    predicates evaluates from σ' to σ'. -/
+private theorem H_assumes
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {posts : List (CoreLabel × Procedure.Check)}
+    {md : Imperative.MetaData Expression}
+    {labelPrefix : String}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hposts : ∀ entry, entry ∈ posts →
        Imperative.invStores σA σ'
-         ((Imperative.HasVarsPure.getVars (P:=Expression) post).removeAll (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
-       δ σA post = some Imperative.HasBool.tt) →
-     EvalStatementsContract π φ δ σ'
-       (List.mapIdx (fun j pred => Statement.assume s!"assume_{i + j}"
-         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ' δ
-   by
-    have := @h 0 posts Hposts
-    simp at this; exact this
-   intros i l Hl
-   induction l generalizing i
-   case nil =>
-    simp; constructor
-   case cons st sts ih =>
-    simp ; constructor ; constructor ; constructor ; constructor
-    specialize Hl st (by simp)
-    . have Heq : δ σA st = δ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) := by
-        apply Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst2 Hl.2.1 Hl.1
-      rw [← Heq]
-      exact Hl.2.2
-    . assumption
-    . simp [Imperative.isDefinedOver, Command.modifiedVars,
-            Imperative.Cmd.modifiedVars,
-            Imperative.HasVarsImp.modifiedVars,
-            Imperative.isDefined]
-    . have ih' := ih (i + 1)
-      ac_nf at ih'
-      apply ih'
-      intros post Hin
-      simp_all
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      (createAssumes_list posts (ks.zip (Core.Transform.createFvars ks')) md labelPrefix)
+      ⟨σ', δ, false⟩ := by
+  suffices Hgen :
+      ∀ (i : Nat) (l : List (CoreLabel × Procedure.Check)),
+        (∀ entry, entry ∈ l →
+           Imperative.invStores σA σ'
+             ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+           ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+           δ σA entry.snd.expr = some Imperative.HasBool.tt) →
+        EvalStatementsContract π φ ⟨σ', δ, false⟩
+          (l.mapIdx (fun j (lbl, check) =>
+            Statement.assume s!"{labelPrefix}{i + j}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)))
+          ⟨σ', δ, false⟩ by
+    have := Hgen 0 posts Hposts
+    simp [createAssumes_list] at this ⊢
+    exact this
+  intros i l Hl
+  induction l generalizing i with
+  | nil =>
+    simp [List.mapIdx]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    obtain ⟨lbl, check⟩ := head
+    have HtailHyp :
+        ∀ entry, entry ∈ tail →
+          Imperative.invStores σA σ'
+            ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+              (ks ++ ks')) ∧
+          ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+          δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+      intros entry hin; exact Hl entry (List.mem_cons_of_mem _ hin)
+    have Htail := ih (i + 1) HtailHyp
+    have HlHead := Hl (lbl, check) List.mem_cons_self
+    obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+    have Heq : δ σA check.expr =
+                δ σ' (Lambda.LExpr.substFvars check.expr
+                        (ks.zip (Core.Transform.createFvars ks'))) :=
+      subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
+    have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) =
+                    some Imperative.HasBool.tt := by
+      rw [← Heq]; exact HevHead
+    have Hassume :
+        Core.EvalCommandContract π δ σ'
+          (Core.CmdExt.cmd
+            (Imperative.Cmd.assume
+              s!"{labelPrefix}{i}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)))
+          σ' false :=
+      Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume HevSubst Hwfb)
+    have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassume
+    -- Combined chain. mapIdx_cons unfolds head with index 0, then tail with j+1
+    have Hcombined :
+        EvalStatementsContract π φ ⟨σ', δ, false⟩
+          ([Statement.assume s!"{labelPrefix}{i}_{lbl}"
+              (Lambda.LExpr.substFvars check.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (check.md.setCallSiteFileRange md)] ++
+           tail.mapIdx (fun j p =>
+              Statement.assume s!"{labelPrefix}{i + 1 + j}_{p.fst}"
+                (Lambda.LExpr.substFvars p.snd.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (p.snd.md.setCallSiteFileRange md)))
+          ⟨σ', δ, false⟩ := EvalStatementsContractApp HheadStmts Htail
+    -- Massage to match the goal shape produced by mapIdx on cons.
+    have Hgoal_eq :
+        ((lbl, check) :: tail).mapIdx (fun j p =>
+            Statement.assume s!"{labelPrefix}{i + j}_{p.fst}"
+              (Lambda.LExpr.substFvars p.snd.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (p.snd.md.setCallSiteFileRange md)) =
+        [Statement.assume s!"{labelPrefix}{i}_{lbl}"
+            (Lambda.LExpr.substFvars check.expr
+              (ks.zip (Core.Transform.createFvars ks')))
+            (check.md.setCallSiteFileRange md)] ++
+        tail.mapIdx (fun j p =>
+            Statement.assume s!"{labelPrefix}{i + 1 + j}_{p.fst}"
+              (Lambda.LExpr.substFvars p.snd.expr
+                (ks.zip (Core.Transform.createFvars ks')))
+              (p.snd.md.setCallSiteFileRange md)) := by
+      rw [List.mapIdx_cons]
+      simp only [List.singleton_append, List.cons.injEq, Nat.add_zero, true_and]
+      apply List.mapIdx_eq_iff.mpr
+      intros k
+      simp [List.getElem?_mapIdx]
+      cases hh : tail[k]? with
+      | none => rfl
+      | some p =>
+        have : i + 1 + k = i + (k + 1) := by omega
+        rw [this]
+    show EvalStatementsContract π φ ⟨σ', δ, false⟩
+      (((lbl, check) :: tail).mapIdx (fun j p =>
+        Statement.assume s!"{labelPrefix}{i + j}_{p.fst}"
+          (Lambda.LExpr.substFvars p.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (p.snd.md.setCallSiteFileRange md))) ⟨σ', δ, false⟩
+    rw [Hgoal_eq]
+    exact Hcombined
 
-theorem SubstPostsMem :
-  substPost ∈ OldExpressions.substsOldExprs (createOldVarsSubst oldTrips)
-  (OldExpressions.normalizeOldExprs vs) →
-  ∃ post, post ∈ vs ∧
-    substPost = OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) (OldExpressions.normalizeOldExpr post)
-  := by
-  intros Hin
-  generalize Heq : OldExpressions.substsOldExprs
-                    (createOldVarsSubst oldTrips)
-                    (OldExpressions.normalizeOldExprs vs) = l at *
-  cases vs <;> simp [OldExpressions.normalizeOldExprs,
-                     OldExpressions.substsOldExprs] at *
-  case nil => simp_all
-  case cons h t =>
-    simp [← Heq] at *
+/-- Labels-aware variant of `H_asserts`: takes a separate `labels`
+    list (paired positionally with `pres` via `zip`) rather than a
+    `labelOf` projection.  This matches the shape exposed by the
+    `HassertsShape` clause of `callElimCmd_call_eq` (B3 layer), which
+    forms the asserts list as `(pres.zip labels).map (fun (entry, lbl) => …)`. -/
+private theorem H_asserts_zip
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {pres : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σ' σA (ks'.zip ks))
+    (Hpres : ∀ entry, entry ∈ pres →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      ((pres.zip labels).map (fun (entry, lbl) =>
+        Statement.assert lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ := by
+  induction pres generalizing labels with
+  | nil =>
+    simp [List.zip_nil_left, List.map_nil]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    cases labels with
+    | nil =>
+      simp [List.zip_nil_right, List.map_nil]
+      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+    | cons lbl labels' =>
+      obtain ⟨_, check⟩ := head
+      have HtailHyp :
+          ∀ entry, entry ∈ tail →
+            Imperative.invStores σA σ'
+              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+        intros entry hin; exact Hpres entry (List.mem_cons_of_mem _ hin)
+      have Htail := ih (labels := labels') HtailHyp
+      have HlHead := Hpres _ List.mem_cons_self
+      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+      have Hsubst' : Imperative.substStores σA σ' (ks.zip ks') := by
+        apply Imperative.substStoresFlip'
+        simp [Imperative.substSwap, zip_swap]
+        exact Hsubst
+      have Heq : δ σA check.expr =
+                  δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) :=
+        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst' HnininHead HinvHead
+      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                            (ks.zip (Core.Transform.createFvars ks'))) =
+                      some Imperative.HasBool.tt := by
+        rw [← Heq]; exact HevHead
+      have Hassert :
+          Core.EvalCommandContract π δ σ'
+            (Core.CmdExt.cmd
+              (Imperative.Cmd.assert
+                lbl
+                (Lambda.LExpr.substFvars check.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (check.md.setCallSiteFileRange md)))
+            σ' false :=
+        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assert_pass HevSubst Hwfb)
+      have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassert
+      simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
+      exact EvalStatementsContractApp HheadStmts Htail
+
+/-- Labels-aware variant of `H_assumes`: takes a separate `labels`
+    list (paired positionally with `posts` via `zip`) rather than a
+    `labelOf` projection.  This matches the shape exposed by the
+    `HassumesShape` clause of `callElimCmd_call_eq` (B3 layer), which
+    forms the assumes list as `(posts.zip labels).map (fun (entry, lbl) => …)`. -/
+private theorem H_assumes_zip
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σA σ' : CoreStore}
+    {ks ks' : List Expression.Ident}
+    {posts : List (CoreLabel × Procedure.Check)}
+    {labels : List String}
+    {md : Imperative.MetaData Expression}
+    (Hwfb  : Imperative.WellFormedSemanticEvalBool δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hwfc  : Core.WellFormedCoreEvalCong δ)
+    (Hlen  : ks.length = ks'.length)
+    (Hnd   : Imperative.substNodup (ks.zip ks'))
+    (Hdef  : Imperative.substDefined σA σ' (ks.zip ks'))
+    (Hsubst : Imperative.substStores σA σ' (ks.zip ks'))
+    (Hposts : ∀ entry, entry ∈ posts →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+            (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+       δ σA entry.snd.expr = some Imperative.HasBool.tt) :
+    EvalStatementsContract π φ ⟨σ', δ, false⟩
+      ((posts.zip labels).map (fun (entry, lbl) =>
+        Statement.assume lbl
+          (Lambda.LExpr.substFvars entry.snd.expr
+            (ks.zip (Core.Transform.createFvars ks')))
+          (entry.snd.md.setCallSiteFileRange md)))
+      ⟨σ', δ, false⟩ := by
+  induction posts generalizing labels with
+  | nil =>
+    simp [List.zip_nil_left, List.map_nil]
+    exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+  | cons head tail ih =>
+    cases labels with
+    | nil =>
+      simp [List.zip_nil_right, List.map_nil]
+      exact ReflTrans.step _ _ _ Imperative.StepStmt.step_stmts_nil (.refl _)
+    | cons lbl labels' =>
+      obtain ⟨_, check⟩ := head
+      have HtailHyp :
+          ∀ entry, entry ∈ tail →
+            Imperative.invStores σA σ'
+              ((Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr).removeAll
+                (ks ++ ks')) ∧
+            ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr) ∧
+            δ σA entry.snd.expr = some Imperative.HasBool.tt := by
+        intros entry hin; exact Hposts entry (List.mem_cons_of_mem _ hin)
+      have Htail := ih (labels := labels') HtailHyp
+      have HlHead := Hposts _ List.mem_cons_self
+      obtain ⟨HinvHead, HnininHead, HevHead⟩ := HlHead
+      have Heq : δ σA check.expr =
+                  δ σ' (Lambda.LExpr.substFvars check.expr
+                          (ks.zip (Core.Transform.createFvars ks'))) :=
+        subst_fvars_correct Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst HnininHead HinvHead
+      have HevSubst : δ σ' (Lambda.LExpr.substFvars check.expr
+                            (ks.zip (Core.Transform.createFvars ks'))) =
+                      some Imperative.HasBool.tt := by
+        rw [← Heq]; exact HevHead
+      have Hassume :
+          Core.EvalCommandContract π δ σ'
+            (Core.CmdExt.cmd
+              (Imperative.Cmd.assume
+                lbl
+                (Lambda.LExpr.substFvars check.expr
+                  (ks.zip (Core.Transform.createFvars ks')))
+                (check.md.setCallSiteFileRange md)))
+            σ' false :=
+        Core.EvalCommandContract.cmd_sem (Imperative.EvalCmd.eval_assume HevSubst Hwfb)
+      have HheadStmts := singleCmdToStmts (π := π) (φ := φ) Hassume
+      simp only [List.zip_cons_cons, List.map_cons, List.singleton_append]
+      exact EvalStatementsContractApp HheadStmts Htail
+
+/-- Helper: lifting `ReadValues σ ks vs` across an `updatedStates` extension
+    by names disjoint from `ks`. Live-code analogue of the legacy
+    `ReadValuesUpdatedStates` (which lives inside the deprecated comment
+    block at line 393). -/
+private theorem readValues_updatedStates
+    {σ : CoreStore} {ks ks' : List Expression.Ident}
+    {vs : List Expression.Expr} {vs' : List Expression.Expr}
+    (Hlen : ks'.length = vs'.length)
+    (Hdisj : ks.Disjoint ks')
+    (Hrd : ReadValues σ ks vs) :
+    ReadValues (updatedStates σ ks' vs') ks vs := by
+  induction ks' generalizing σ vs' with
+  | nil =>
+    cases vs' <;> simp_all [updatedStates, updatedStates']
+  | cons k' ks'' ih =>
+    cases vs' with
+    | nil => simp at Hlen
+    | cons v' vs'' =>
+      simp only [updatedStates, List.zip_cons_cons, updatedStates']
+      have Hdisj' : ks.Disjoint ks'' := by
+        intro x Hin1 Hin2
+        exact Hdisj Hin1 (List.mem_cons_of_mem _ Hin2)
+      -- Prove ReadValues (updatedState σ k' v') ks vs using readValues_updatedState.
+      have Hk'_notin : ¬ k' ∈ ks := by
+        intro Hin
+        exact Hdisj Hin List.mem_cons_self
+      have Hrd_step : ReadValues (updatedState σ k' v') ks vs :=
+        readValues_updatedState (k:=k') (v:=v') Hk'_notin Hrd
+      have Hlen' : ks''.length = vs''.length := by
+        simp at Hlen
+        exact Hlen
+      -- Apply ih on the remaining list.
+      exact ih (σ:=updatedState σ k' v') Hlen' Hdisj' Hrd_step
+
+/-- Helper: lookup of an unrelated key through `updatedStates` falls
+    through. -/
+private theorem updatedStates_get_notin
+    {σ : CoreStore} {ks : List Expression.Ident}
+    {vs : List Expression.Expr} {k : Expression.Ident}
+    (Hkn : ¬ k ∈ ks) :
+    (updatedStates σ ks vs) k = σ k := by
+  induction ks generalizing σ vs with
+  | nil =>
+    cases vs <;> simp [updatedStates, updatedStates']
+  | cons t ts ih =>
+    cases vs with
+    | nil => simp [updatedStates, updatedStates', List.zip]
+    | cons w ws =>
+      have Hkt : k ≠ t := fun h => Hkn (h ▸ List.mem_cons_self)
+      have Hkts : ¬ k ∈ ts := fun h => Hkn (List.mem_cons_of_mem _ h)
+      -- updatedStates σ (t::ts) (w::ws) = updatedStates' (updatedState σ t w) (ts.zip ws)
+      -- = updatedStates (updatedState σ t w) ts ws (def of updatedStates).
+      have Hunfold :
+          updatedStates σ (t :: ts) (w :: ws) =
+          updatedStates (updatedState σ t w) ts ws := by
+        simp [updatedStates, updatedStates', List.zip, List.zipWith]
+      rw [Hunfold]
+      rw [ih (σ := updatedState σ t w) (vs := ws) Hkts]
+      simp [updatedState, Hkt]
+
+/-- Positional projection of `ReadValues`: when `ReadValues σ ks vs`
+    holds and `i < ks.length` (= `vs.length`), `σ ks[i] = some vs[i]`. -/
+private theorem readValues_get
+    {σ : CoreStore} {ks : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (Hrd : ReadValues σ ks vs) {i : Nat}
+    {hi : i < ks.length} {hi' : i < vs.length} :
+    σ (ks[i]'hi) = some (vs[i]'hi') := by
+  induction Hrd generalizing i with
+  | read_none =>
+    exact absurd hi (by simp)
+  | read_some Hsome Hrest ih =>
+    cases i with
+    | zero =>
+      simp only [List.getElem_cons_zero]
+      exact Hsome
+    | succ n =>
+      simp only [List.getElem_cons_succ]
+      have hi_n : n < _ := Nat.lt_of_succ_lt_succ hi
+      have hi'_n : n < _ := Nat.lt_of_succ_lt_succ hi'
+      exact ih (hi := hi_n) (hi' := hi'_n)
+
+/-- Positional projection of `EvalExpressions`: when
+    `EvalExpressions δ σ es vs` holds and `i < es.length` (= `vs.length`),
+    `δ σ es[i] = some vs[i]`.  Mirrors `readValues_get`.
+
+    The conclusion is stated using `List.get` rather than `es[i]'hi`
+    because Lean's `lexpr` parser refuses the latter syntax inside
+    `δ σ (...)` — the bracketed indexing form gets parsed as an
+    `LExpr` literal rather than a Lean term. -/
+private theorem evalExpressions_get
+    {δ : CoreEval} {σ : CoreStore}
+    {es : List Expression.Expr} {vs : List Expression.Expr}
+    (Heval : EvalExpressions (P:=Expression) δ σ es vs) {i : Nat}
+    (hi : i < es.length) (hi' : i < vs.length) :
+    δ σ (List.get es ⟨i, hi⟩) = some (List.get vs ⟨i, hi'⟩) := by
+  induction Heval generalizing i with
+  | eval_none =>
+    exact absurd hi (by simp)
+  | eval_some _ Hsome _ ih =>
+    cases i with
+    | zero =>
+      simp only [List.get]
+      exact Hsome
+    | succ n =>
+      simp only [List.get]
+      have hi_n : n < _ := Nat.lt_of_succ_lt_succ hi
+      have hi'_n : n < _ := Nat.lt_of_succ_lt_succ hi'
+      exact ih hi_n hi'_n
+
+/-- Helper: `ReadValues (updatedStates σ ks vs) ks vs` whenever `ks.Nodup`
+    and lengths agree. Live-code version of the legacy
+    `ReadValuesUpdatedStatesSame`. -/
+private theorem readValues_updatedStatesSame
+    {σ : CoreStore} {ks : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (Hlen : ks.length = vs.length)
+    (Hnd : ks.Nodup) :
+    ReadValues (updatedStates σ ks vs) ks vs := by
+  induction ks generalizing σ vs with
+  | nil =>
+    cases vs <;> simp_all
+    exact ReadValues.read_none
+  | cons k ks' ih =>
+    cases vs with
+    | nil => simp at Hlen
+    | cons v vs' =>
+      simp only [updatedStates, List.zip_cons_cons, updatedStates']
+      have Hk_notin : ¬ k ∈ ks' := (List.nodup_cons.mp Hnd).1
+      have Hnd' : ks'.Nodup := (List.nodup_cons.mp Hnd).2
+      have Hlen' : ks'.length = vs'.length := by
+        simp at Hlen; exact Hlen
+      -- updatedStates' (updatedState σ k v) (ks'.zip vs') k = some v
+      -- because k is not in ks'.
+      have Hk_lookup : (updatedStates' (updatedState σ k v) (ks'.zip vs')) k = some v := by
+        -- Convert via updatedStates definition.
+        have Hfall : (updatedStates (updatedState σ k v) ks' vs') k = (updatedState σ k v) k :=
+          updatedStates_get_notin (σ:=updatedState σ k v) (vs:=vs') Hk_notin
+        unfold updatedStates at Hfall
+        rw [Hfall]
+        simp [updatedState]
+      -- Apply read_some.
+      apply ReadValues.read_some Hk_lookup
+      -- Tail: ReadValues (updatedStates' (updatedState σ k v) (ks'.zip vs')) ks' vs'.
+      have Hih := ih (σ := updatedState σ k v) Hlen' Hnd'
+      simp only [updatedStates] at Hih
+      exact Hih
+
+/-! ### Structural decomposition for `getVars (substFvars e sm)`.
+
+    For the L6 (assumes) site of `callElimStatementCorrect`, we need to
+    reason about the free variables of the post-`oldSubst` postcondition
+    expressions.  The decomposition lemma below shows that any variable
+    in `getVars (substFvars e sm)` either survives from `e` (when it is
+    not a key of `sm`) or comes from the codomain expression of some
+    key-substitution that `e` references.  This is the multi-step
+    analogue of the existing `getVars_substFvar_or` lemma. -/
+
+/-- Multi-step substitution decomposition: every free variable of
+    `substFvars e sm` either (a) was free in `e` and not a key of `sm`,
+    or (b) was contributed by the codomain expression `w` of some
+    `(k, w) ∈ sm` where `k` was a free variable of `e`. -/
+private theorem getVars_substFvars_mem
+    {e : Expression.Expr} {v : Expression.Ident}
+    {sm : Map Expression.Ident Expression.Expr}
+    (Hin : v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.substFvars e sm)) :
+    (v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e ∧
+      Map.find? sm v = none) ∨
+    (∃ k w,
+        k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e ∧
+        Map.find? sm k = some w ∧
+        v ∈ Imperative.HasVarsPure.getVars (P:=Expression) w) := by
+  induction e with
+  | const m c =>
+    simp only [Lambda.LExpr.substFvars_const',
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.not_mem_nil] at Hin
+  | op m n t =>
+    simp only [Lambda.LExpr.substFvars_op',
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.not_mem_nil] at Hin
+  | bvar m i =>
+    simp only [Lambda.LExpr.substFvars_bvar,
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.not_mem_nil] at Hin
+  | fvar m name ty =>
+    -- substFvars (fvar name) sm = match sm.find? name with | some w => w | none => fvar name
+    by_cases hfind : Map.find? sm name = none
+    · rw [Lambda.LExpr.substFvars_fvar_none m name ty sm hfind] at Hin
+      -- Hin : v ∈ getVars (fvar name) = [name]
+      simp only [Imperative.HasVarsPure.getVars,
+                 Lambda.LExpr.LExpr.getVars,
+                 List.mem_singleton] at Hin
+      subst Hin
+      refine Or.inl ⟨?_, hfind⟩
+      simp [Imperative.HasVarsPure.getVars,
+            Lambda.LExpr.LExpr.getVars]
+    · -- find? returns some w
+      rcases Option.ne_none_iff_exists.mp hfind with ⟨w, hf⟩
+      rw [Lambda.LExpr.substFvars_fvar_find m name ty sm w hf.symm] at Hin
+      -- Hin : v ∈ getVars w
+      refine Or.inr ⟨name, w, ?_, hf.symm, Hin⟩
+      simp [Imperative.HasVarsPure.getVars,
+            Lambda.LExpr.LExpr.getVars]
+  | abs m name ty body ih =>
+    simp only [Lambda.LExpr.substFvars_abs,
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars] at Hin
+    have Hbody := ih Hin
+    simp only [Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars]
+    exact Hbody
+  | quant m qk name ty tr body trih bih =>
+    simp only [Lambda.LExpr.substFvars_quant,
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append] at Hin
+    simp only [Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append]
     cases Hin with
     | inl Hin =>
-      left; assumption
+      cases trih Hin with
+      | inl h => exact Or.inl ⟨Or.inl h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inl Hk, Hf, Hv⟩
     | inr Hin =>
-      right
-      cases Hin with
-      | intro id HH => exact ⟨id, HH.1, Eq.symm HH.2⟩
--/
-
-/--
-Generate the substitution pairs needed for the body of the procedure
--/
-def createOldStoreSubst
-  (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
-  : List (Expression.Ident × Expression.Ident) :=
-    trips.map go where go
-    | ((v', _), v) => (v, v')
-
-theorem createOldStoreSubstEq :
-  createOldStoreSubst oldTrips =
-  oldTrips.unzip.2.zip oldTrips.unzip.1.unzip.1 := by
-  induction oldTrips <;> simp [createOldStoreSubst, createOldStoreSubst.go] at *
-  case cons h t ih => exact ih
-
-theorem substOldCorrect :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  Core.WellFormedCoreEvalTwoState δ σ₀ σ →
-  OldExpressions.NormalizedOldExpr e →
-  --Imperative.invStores σ₀ σ
-  --  ((OldExpressions.extractOldExprVars e).removeAll [fro]) →
-  Imperative.substDefined σ₀ σ [(fro, to)] →
-  Imperative.substStores σ₀ σ [(fro, to)] →
-  -- substitute the store and the expression simultaneously
-  δ σ e = δ σ (OldExpressions.substOld fro (createFvar to) e) := by
-  intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hdef Hsubst
-  induction e <;> simp [OldExpressions.substOld] at *
-  case abs m ty e ih  =>
-    cases Hnorm with
-    | abs Hnorm =>
-      apply Hwfc.1
-      apply ih Hnorm
-  case quant m k ty tr e trih eih =>
-    cases Hnorm with
-    | quant Ht He =>
-      specialize eih He
-      specialize trih Ht
-      apply Hwfc.quantcongr <;> grind
-  case app m c fn fih eih =>
-    cases Hnorm with
-    | app Hc Hfn Hwf =>
-    specialize fih Hc
-    specialize eih Hfn
-    split
-    . -- is an old var
-      split
-      . -- is an old var that is substituted
-        next x ty eq =>
-        simp [eq] at *
-        simp [WellFormedCoreEvalTwoState] at Hwf2
-        cases Hwf2.1 with
-        | intro vs Hwf2' =>
-        cases Hwf2' with
-        | intro vs' Hwf2' =>
-        cases Hwf2' with
-        | intro σ₁ Hwf2' =>
-        by_cases Hin : fro ∈ vs
-        case pos =>
-        -- old var is modified
-          have HH:= Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2 fro
-          simp [OldExpressions.oldVar,
-                OldExpressions.oldExpr,
-                CoreIdent.unres, Hin] at HH
-          rw [HH]
-          simp [createFvar]
-          simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-          rw [Hwfvr (v:=to)]
-          apply Hsubst
-          exact List.mem_singleton.mpr rfl
-          simp [Imperative.HasFvar.getFvar]
-        case neg =>
-        -- old var is not modified
-          have Hup := HavocVarsUpdateStates Hwf2'.1
-          cases Hup with
-          | intro as Hup =>
-          have Hinit := InitVarsInitStates Hwf2'.2
-          cases Hinit with
-          | intro bs Hinit =>
-          have Hsubst' := substStoresUpdatesInv' ?_ Hsubst Hup
-          have Hsubst'' := substStoresInitsInv' ?_ Hsubst' Hinit
-          . have HH:= Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2 fro
-            simp [OldExpressions.oldVar,
-                  OldExpressions.oldExpr,
-                  CoreIdent.unres, Hin] at HH
-            simp [createFvar]
-            simp [HH]
-            simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-            rw [Hwfvr (v:=to)]
-            . simp [Imperative.substStores] at Hsubst''
-              exact Hsubst''
-            . simp [Imperative.HasFvar.getFvar]
-          . simp [Imperative.substDefined] at *
-            have Hdef' : Imperative.isDefined σ₀ [fro] := by
-              simp [Imperative.isDefined]
-              exact Hdef.1
-            have Hdef'' := UpdateStatesDefMonotone Hdef' Hup
-            simp [Imperative.isDefined] at Hdef''
-            refine ⟨Hdef'', Hdef.2⟩
-          . simp [List.Disjoint]
-            intros a Hin Heq
-            simp [Heq] at *
-            contradiction
-      . -- is an old var that is not substituted, use congruence
-        rename_i e1 e2 mOp ty0 mVar x ty1 h
-        simp at m mOp ty0 mVar x ty1
-        apply Hwfc.appcongr <;> grind
-    . -- is not an old var, use congruence
-      apply Hwfc.appcongr <;> grind
-  case ite m c t e cih tih eih =>
-    cases Hnorm with
-    | ite Hc Ht He =>
-      specialize cih Hc
-      specialize tih Ht
-      specialize eih He
-      apply Hwfc.itecongr <;> grind
-  case eq m e1 e2 e1ih e2ih =>
-    cases Hnorm with
-    | eq He1 He2 =>
-    specialize e2ih He2
-    apply Hwfc.eqcongr <;> grind
-
-
--- Needed from refinement theorem
--- UpdateState P✝ σ id v✝ σ'✝
--- Ht : TouchVars σ'✝ l₂ σ''
--- ⊢ TouchVars σ l₂ σ''
-
-theorem UpdateStatesUpdatedId :
-k ∈ vs →
-UpdateStates σ₀ vs vs' σ₁ →
-UpdateStates (updatedState σ₀ k v) vs vs' σ₁ := by
-intros Hin Hup
-have Hlen := UpdateStatesLength Hup
-induction vs generalizing vs' σ₀ σ₁ k v <;> simp_all
-case cons h t ih =>
-  cases vs'
-  case nil => simp_all
-  case cons h' t' =>
-    cases Hup with
-    | update_some Hup Hups =>
-    next σ'' =>
+      cases bih Hin with
+      | inl h => exact Or.inl ⟨Or.inr h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
+  | app m fn arg fih aih =>
+    simp only [Lambda.LExpr.substFvars_app,
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append] at Hin
+    simp only [Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append]
     cases Hin with
-    | inl Heq =>
-      -- the head is overwritten
-      simp [Heq] at *
-      apply UpdateStates.update_some (σ':=σ'') ?_ Hups
-      constructor
-      . simp [updatedState]
-        rfl
-      . cases Hup
-        assumption
-      . intros y Hne
-        simp [updatedState]
-        cases Hup
-        split <;> simp_all
-    | inr Heq =>
-      -- a part of the tail is overwritten
-      cases Hup with
-      | update Hsome Hall Hsome' =>
-      next v' =>
-      by_cases Heq : h = k
-      case pos =>
-        -- both the tail and head are overwritten
-        simp [Heq] at *
-        apply UpdateStates.update_some (σ':=(updatedState σ'' k h'))
-        . constructor
-          . simp [updatedState]
-            rfl
-          . simp [updatedState]
-          . intros y Hne
+    | inl Hin =>
+      cases fih Hin with
+      | inl h => exact Or.inl ⟨Or.inl h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inl Hk, Hf, Hv⟩
+    | inr Hin =>
+      cases aih Hin with
+      | inl h => exact Or.inl ⟨Or.inr h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
+  | ite m c t f cih tih fih =>
+    simp only [Lambda.LExpr.substFvars_ite,
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append] at Hin
+    simp only [Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append]
+    cases Hin with
+    | inl Hin =>
+      cases Hin with
+      | inl Hin =>
+        cases cih Hin with
+        | inl h => exact Or.inl ⟨Or.inl (Or.inl h.1), h.2⟩
+        | inr h =>
+          obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+          exact Or.inr ⟨k, w, Or.inl (Or.inl Hk), Hf, Hv⟩
+      | inr Hin =>
+        cases tih Hin with
+        | inl h => exact Or.inl ⟨Or.inl (Or.inr h.1), h.2⟩
+        | inr h =>
+          obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+          exact Or.inr ⟨k, w, Or.inl (Or.inr Hk), Hf, Hv⟩
+    | inr Hin =>
+      cases fih Hin with
+      | inl h => exact Or.inl ⟨Or.inr h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
+  | eq m e1 e2 e1ih e2ih =>
+    simp only [Lambda.LExpr.substFvars_eq,
+               Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append] at Hin
+    simp only [Imperative.HasVarsPure.getVars,
+               Lambda.LExpr.LExpr.getVars,
+               List.mem_append]
+    cases Hin with
+    | inl Hin =>
+      cases e1ih Hin with
+      | inl h => exact Or.inl ⟨Or.inl h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inl Hk, Hf, Hv⟩
+    | inr Hin =>
+      cases e2ih Hin with
+      | inl h => exact Or.inl ⟨Or.inr h.1, h.2⟩
+      | inr h =>
+        obtain ⟨k, w, Hk, Hf, Hv⟩ := h
+        exact Or.inr ⟨k, w, Or.inr Hk, Hf, Hv⟩
+
+/-- Pointwise δ-eval bridge for an arbitrary substitution `sm`.  Given two
+    pointwise hypotheses — (a) δ σ' agrees with δ σ on every "surviving"
+    free variable of `e` (those with `find? sm = none`), and (b) for every
+    `(k, w) ∈ sm` with `k ∈ getVars e`, δ σ' w equals δ σ (fvar k) — we
+    obtain `δ σ' (substFvars e sm) = δ σ e`.
+
+    This generalizes `subst_fvars_correct` (which only handles
+    `createFvars to`-style codomain) to arbitrary expression codomains.
+    Used at the call site to bridge `δ σ_R1 (substFvars c.expr oldSubst_L6)`
+    to `δ σO c.expr` for the L6 post-substitution eval. -/
+private theorem subst_fvars_eval_bridge
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {e : Expression.Expr}
+    {sm : Map Expression.Ident Expression.Expr}
+    (Hwfc : Core.WellFormedCoreEvalCong δ)
+    (Hwfvr : Imperative.WellFormedSemanticEvalVar (P:=Expression) δ)
+    (Hwfvl : Imperative.WellFormedSemanticEvalVal (P:=Expression) δ)
+    (Hsurv : ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e,
+              Map.find? sm v = none →
+              δ σ' (Lambda.LExpr.fvar () v none) =
+                δ σ (Lambda.LExpr.fvar () v none))
+    (Hsub : ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e →
+              Map.find? sm k = some w →
+              δ σ' w = δ σ (Lambda.LExpr.fvar () k none)) :
+    δ σ' (Lambda.LExpr.substFvars e sm) = δ σ e := by
+  induction e with
+  | const m c =>
+    simp only [Lambda.LExpr.substFvars_const']
+    rw [Hwfvl.2, Hwfvl.2]
+    constructor; constructor
+  | op m n t =>
+    simp only [Lambda.LExpr.substFvars_op']
+    rw [Hwfvl.2, Hwfvl.2]
+    constructor; constructor
+  | bvar m i =>
+    simp only [Lambda.LExpr.substFvars_bvar]
+    rw [Hwfvl.2, Hwfvl.2]
+    constructor; constructor
+  | fvar m name ty =>
+    by_cases hfind : Map.find? sm name = none
+    · rw [Lambda.LExpr.substFvars_fvar_none m name ty sm hfind]
+      simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+      have HwfL : δ σ' (Lambda.LExpr.fvar m name ty) = σ' name := by
+        rw [Hwfvr (Lambda.LExpr.fvar m name ty) name]
+        simp [Imperative.HasFvar.getFvar]
+      have HwfR : δ σ (Lambda.LExpr.fvar m name ty) = σ name := by
+        rw [Hwfvr (Lambda.LExpr.fvar m name ty) name]
+        simp [Imperative.HasFvar.getFvar]
+      have HwfL' : δ σ' (Lambda.LExpr.fvar () name none) = σ' name := by
+        rw [Hwfvr (Lambda.LExpr.fvar () name none) name]
+        simp [Imperative.HasFvar.getFvar]
+      have HwfR' : δ σ (Lambda.LExpr.fvar () name none) = σ name := by
+        rw [Hwfvr (Lambda.LExpr.fvar () name none) name]
+        simp [Imperative.HasFvar.getFvar]
+      have HsurvAt :=
+        Hsurv name
+          (by simp [Imperative.HasVarsPure.getVars,
+                    Lambda.LExpr.LExpr.getVars])
+          hfind
+      rw [HwfL', HwfR'] at HsurvAt
+      rw [HwfL, HwfR]
+      exact HsurvAt
+    · rcases Option.ne_none_iff_exists.mp hfind with ⟨w, hf⟩
+      rw [Lambda.LExpr.substFvars_fvar_find m name ty sm w hf.symm]
+      have Hself :
+          name ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                  (Lambda.LExpr.fvar m name ty) := by
+        simp [Imperative.HasVarsPure.getVars,
+              Lambda.LExpr.LExpr.getVars]
+      have HsubAt := Hsub name w Hself hf.symm
+      simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+      have HwfR : δ σ (Lambda.LExpr.fvar m name ty) = σ name := by
+        rw [Hwfvr (Lambda.LExpr.fvar m name ty) name]
+        simp [Imperative.HasFvar.getFvar]
+      have HwfR' : δ σ (Lambda.LExpr.fvar () name none) = σ name := by
+        rw [Hwfvr (Lambda.LExpr.fvar () name none) name]
+        simp [Imperative.HasFvar.getFvar]
+      rw [HwfR]
+      rw [HwfR'] at HsubAt
+      exact HsubAt
+  | abs m name ty body ih =>
+    simp only [Lambda.LExpr.substFvars_abs]
+    have Hsurv_body :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) body,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.abs m name ty body)
+      simp [Lambda.LExpr.LExpr.getVars]
+      show v ∈ Lambda.LExpr.LExpr.getVars body
+      exact Hv
+    have Hsub_body :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.abs m name ty body)
+      simp [Lambda.LExpr.LExpr.getVars]
+      show k ∈ Lambda.LExpr.LExpr.getVars body
+      exact Hk
+    have Hbody := ih Hsurv_body Hsub_body
+    exact Hwfc.abscongr σ' σ _ _ Hbody m name ty
+  | quant m qk name ty tr body trih bih =>
+    simp only [Lambda.LExpr.substFvars_quant]
+    have Hsurv_tr :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inl Hv
+    have Hsurv_body :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) body,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inr Hv
+    have Hsub_tr :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) tr →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inl Hk
+    have Hsub_body :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) body →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.quant m qk name ty tr body)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inr Hk
+    have Htr := trih Hsurv_tr Hsub_tr
+    have Hbody := bih Hsurv_body Hsub_body
+    exact Hwfc.quantcongr σ' σ m qk name ty _ _ _ _ Htr Hbody
+  | app m fn arg fih aih =>
+    simp only [Lambda.LExpr.substFvars_app]
+    have Hsurv_fn :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inl Hv
+    have Hsurv_arg :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inr Hv
+    have Hsub_fn :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) fn →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inl Hk
+    have Hsub_arg :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) arg →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.app m fn arg)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inr Hk
+    have Hfn := fih Hsurv_fn Hsub_fn
+    have Harg := aih Hsurv_arg Hsub_arg
+    exact Hwfc.appcongr σ' σ m _ _ _ _ Hfn Harg
+  | ite m c t f cih tih fih =>
+    simp only [Lambda.LExpr.substFvars_ite]
+    have HmkLeft : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) c →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.ite m c t f) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars c ++ Lambda.LExpr.LExpr.getVars t
+                  ++ Lambda.LExpr.LExpr.getVars f
+      exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl Hx)))
+    have HmkMid : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) t →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.ite m c t f) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars c ++ Lambda.LExpr.LExpr.getVars t
+                  ++ Lambda.LExpr.LExpr.getVars f
+      exact List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr Hx)))
+    have HmkRight : ∀ {x : Expression.Ident},
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression) f →
+        x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+              (Lambda.LExpr.ite m c t f) := by
+      intro x Hx
+      show x ∈ Lambda.LExpr.LExpr.getVars c ++ Lambda.LExpr.LExpr.getVars t
+                  ++ Lambda.LExpr.LExpr.getVars f
+      exact List.mem_append.mpr (Or.inr Hx)
+    have Hc := cih (fun v Hv Hnone => Hsurv v (HmkLeft Hv) Hnone)
+                   (fun k w Hk Hf => Hsub k w (HmkLeft Hk) Hf)
+    have Ht := tih (fun v Hv Hnone => Hsurv v (HmkMid Hv) Hnone)
+                   (fun k w Hk Hf => Hsub k w (HmkMid Hk) Hf)
+    have Hf' := fih (fun v Hv Hnone => Hsurv v (HmkRight Hv) Hnone)
+                    (fun k w Hk Hf => Hsub k w (HmkRight Hk) Hf)
+    exact Hwfc.itecongr σ' σ m _ _ _ _ _ _ Ht Hf' Hc
+  | eq m e1 e2 e1ih e2ih =>
+    simp only [Lambda.LExpr.substFvars_eq]
+    have Hsurv_l :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inl Hv
+    have Hsurv_r :
+        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2,
+          Map.find? sm v = none →
+          δ σ' (Lambda.LExpr.fvar () v none) =
+            δ σ (Lambda.LExpr.fvar () v none) := by
+      intro v Hv Hnone
+      apply Hsurv v ?_ Hnone
+      show v ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inr Hv
+    have Hsub_l :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e1 →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inl Hk
+    have Hsub_r :
+        ∀ k w, k ∈ Imperative.HasVarsPure.getVars (P:=Expression) e2 →
+          Map.find? sm k = some w →
+          δ σ' w = δ σ (Lambda.LExpr.fvar () k none) := by
+      intro k w Hk Hf
+      apply Hsub k w ?_ Hf
+      show k ∈ Lambda.LExpr.LExpr.getVars (Lambda.LExpr.eq m e1 e2)
+      simp [Lambda.LExpr.LExpr.getVars, List.mem_append]
+      exact Or.inr Hk
+    have Hl := e1ih Hsurv_l Hsub_l
+    have Hr := e2ih Hsurv_r Hsub_r
+    exact Hwfc.eqcongr σ' σ m _ _ _ _ Hl Hr
+
+/-! ### Temp-extension lift helpers and the `EvalCallElim_glue` combinator
+
+`updateState_updatedStates_lift` / `havocVars_updatedStates_lift` lift a
+single `UpdateState` / `HavocVars` derivation across an `updatedStates` temp
+extension, given suitable disjointness. `EvalCallElim_glue` chains the six
+call-elim segments (argument init, output init, old init, asserts, havocs,
+assumes) through `EvalStatementsContractApp`. -/
+
+/-- A single `UpdateState` lifts across an `updatedStates` temp extension as
+    long as the updated variable `x` is disjoint from the temp variables. -/
+private theorem updateState_updatedStates_lift
+    {σ σ' : CoreStore} {x : Expression.Ident} {v : Expression.Expr}
+    {tempVars : List Expression.Ident} {tempVals : List Expression.Expr}
+    (Hnotin : ¬ x ∈ tempVars)
+    (Hup : Imperative.UpdateState (P:=Expression) σ x v σ') :
+    Imperative.UpdateState (P:=Expression)
+      (updatedStates σ tempVars tempVals) x v
+      (updatedStates σ' tempVars tempVals) := by
+  cases Hup with
+  | update Hsome Hsome' Hother =>
+    rename_i v'
+    -- Lookup x in extended σ.
+    have HlookupL :
+        (updatedStates σ tempVars tempVals) x = some v' := by
+      simp [updatedStates]
+      have : ∀ (ts : List Expression.Ident) (vs : List Expression.Expr) (s : CoreStore),
+          ¬ x ∈ ts → s x = some v' →
+          (updatedStates' s (ts.zip vs)) x = some v' := by
+        intro ts
+        induction ts with
+        | nil => intros vs s _ Hs; simp [updatedStates']; exact Hs
+        | cons t ts ih =>
+          intro vs s Hxn Hs
+          cases vs with
+          | nil => simp [updatedStates', List.zip]; exact Hs
+          | cons w ws =>
+            simp [updatedStates', List.zip, List.zipWith]
+            have Hxt : x ≠ t := fun h => Hxn (h ▸ List.mem_cons_self)
+            have Hxts : ¬ x ∈ ts := fun h => Hxn (List.mem_cons_of_mem _ h)
+            have HsTail : (updatedState s t w) x = some v' := by
+              simp [updatedState, Hxt]; exact Hs
+            exact ih ws (updatedState s t w) Hxts HsTail
+      exact this tempVars tempVals σ Hnotin Hsome
+    have HlookupR :
+        (updatedStates σ' tempVars tempVals) x = some v := by
+      simp [updatedStates]
+      have : ∀ (ts : List Expression.Ident) (vs : List Expression.Expr) (s : CoreStore),
+          ¬ x ∈ ts → s x = some v →
+          (updatedStates' s (ts.zip vs)) x = some v := by
+        intro ts
+        induction ts with
+        | nil => intros vs s _ Hs; simp [updatedStates']; exact Hs
+        | cons t ts ih =>
+          intro vs s Hxn Hs
+          cases vs with
+          | nil => simp [updatedStates', List.zip]; exact Hs
+          | cons w ws =>
+            simp [updatedStates', List.zip, List.zipWith]
+            have Hxt : x ≠ t := fun h => Hxn (h ▸ List.mem_cons_self)
+            have Hxts : ¬ x ∈ ts := fun h => Hxn (List.mem_cons_of_mem _ h)
+            have HsTail : (updatedState s t w) x = some v := by
+              simp [updatedState, Hxt]; exact Hs
+            exact ih ws (updatedState s t w) Hxts HsTail
+      exact this tempVars tempVals σ' Hnotin Hsome'
+    have Hframe : ∀ y, x ≠ y →
+        (updatedStates σ' tempVars tempVals) y =
+        (updatedStates σ tempVars tempVals) y := by
+      intro y Hne
+      simp [updatedStates]
+      -- Induct over tempVars, tempVals together.
+      have : ∀ (ts : List Expression.Ident) (vs : List Expression.Expr)
+              (s s2 : CoreStore),
+          (∀ z, x ≠ z → s2 z = s z) →
+          (updatedStates' s2 (ts.zip vs)) y =
+          (updatedStates' s (ts.zip vs)) y := by
+        intro ts
+        induction ts with
+        | nil => intros vs s s2 Hs2; simp [updatedStates']; exact Hs2 y Hne
+        | cons t ts ih =>
+          intro vs s s2 Hs2
+          cases vs with
+          | nil => simp [updatedStates', List.zip]; exact Hs2 y Hne
+          | cons w ws =>
+            simp [updatedStates', List.zip, List.zipWith]
+            apply ih ws (updatedState s t w) (updatedState s2 t w)
+            intro z Hxz
             simp [updatedState]
-            split <;> simp_all
-        . apply ih <;> simp_all
-      case neg =>
-        -- only the tail is overwritten
-        apply UpdateStates.update_some (σ':=(updatedState σ'' k v))
-        . constructor
-          . simp [updatedState]
-            simp_all
-            rfl
-          . simp [updatedState]
-            simp_all
-          . intros y Hne
-            simp [updatedState]
-            split <;> simp_all
-        . apply ih <;> simp_all
+            split
+            · rfl
+            · exact Hs2 z Hxz
+      exact this tempVars tempVals σ σ' Hother
+    exact Imperative.UpdateState.update HlookupL HlookupR Hframe
 
-theorem InitVarsRemoveAll {P: Imperative.PureExpr} [BEq P.Ident] [LawfulBEq P.Ident]
-  {σ σ' : Imperative.SemanticStore P}
-  {k : P.Ident} {v : P.Expr} {vs : List P.Ident} :
-  σ' k = some v →
-  InitVars σ vs σ' →
-  InitVars (updatedState (P:=P) σ k v) (List.removeAll vs [k]) σ' := by
-intros Hsome Hinit
-have HinitSt := InitVarsInitStates Hinit
-cases HinitSt with
-| intro mv HinitSt =>
-have Hnd := InitStatesNodup HinitSt
-clear HinitSt
-induction vs generalizing σ σ' k v
-case nil =>
-  simp_all
-  simp [InitVarsEmpty Hinit] at *
-  rw [updatedStateId] <;> simp_all
-case cons h t ih =>
-  cases Hinit with
-  | init_some Hinit Hinits
-  next vv σ₁ =>
-  simp only [List.cons_removeAll]
-  split
-  -- the initialized variable h is not the same as the updated variable k
-  . next Hne =>
-    simp_all
-    apply InitVars.init_some (σ':=(updatedState (updatedState σ k v) h vv))
-    apply updatedStateInit
-    . simp [updatedState]
-      split <;> simp_all
-      cases Hinit
-      assumption
-    . rw [updatedStateComm]
-      apply ih Hsome
-      have Heq := InitStateUpdated Hinit <;> simp_all
-      exact fun a => Hne (Eq.symm a)
-  -- the initialized variable h *is* the same as the updated variable k
-  . next Heq =>
-    -- assert that v = vv, since it has been initialized
-    have Heq' : σ₁ k = some v := by
-      have Hinitst := InitVarsInitStates Hinits
-      cases Hinitst
-      case intro t' Hinitst =>
-        apply InitStatesSomeMonotone' ?_ Hsome
-        apply Hinitst
-        simp_all
-    have Heq'' : σ₁ k = some vv := by
-      have Hrd := InitStateReadValues Hinit
-      cases Hrd <;> simp_all
-    simp_all
-    have Heq''' : (updatedState σ k v) = (updatedState σ₁ k v) := by
-      funext x
-      simp [updatedState]
-      split <;> simp_all
-      next Hne =>
-      cases Hinit with
-      | init Hnone Hsome Hall =>
-      rw [Hall]
-      exact fun a => Hne (Eq.symm a)
-    simp_all
+/-- Lift a `HavocVars` derivation across a temp-extension, given the havoc'd
+    variables are disjoint from the temp variables. -/
+private theorem havocVars_updatedStates_lift
+    {σ σ' : CoreStore} {ks tempVars : List Expression.Ident}
+    {tempVals : List Expression.Expr}
+    (Hdisj : ks.Disjoint tempVars)
+    (Hhav : HavocVars σ ks σ') :
+    HavocVars (updatedStates σ tempVars tempVals) ks
+              (updatedStates σ' tempVars tempVals) := by
+  induction Hhav with
+  | update_none => exact HavocVars.update_none
+  | @update_some σ_a x v σ_b ks_t σ_c hUp hTail ih =>
+    have Hxnotin : ¬ x ∈ tempVars :=
+      fun hin => Hdisj (List.mem_cons_self) hin
+    have Hdisj_t : ks_t.Disjoint tempVars := by
+      intro y Hy_in_t Hy_in_temp
+      exact Hdisj (List.mem_cons_of_mem _ Hy_in_t) Hy_in_temp
+    have hUp' : Imperative.UpdateState (P:=Expression)
+                  (updatedStates σ_a tempVars tempVals) x v
+                  (updatedStates σ_b tempVars tempVals) :=
+      updateState_updatedStates_lift Hxnotin hUp
+    have hTail' : HavocVars (updatedStates σ_b tempVars tempVals) ks_t
+                            (updatedStates σ_c tempVars tempVals) :=
+      ih Hdisj_t
+    exact HavocVars.update_some hUp' hTail'
 
-theorem updatedStateOldWellFormedCoreEvalTwoState :
-  σ k = some v →
-  WellFormedCoreEvalTwoState δ σ₀ σ →
-  WellFormedCoreEvalTwoState δ (updatedState σ₀ k v) σ := by
-  intros Hsome Hwf2
-  simp [WellFormedCoreEvalTwoState] at *
-  refine ⟨?_, Hwf2.2⟩
-  cases Hwf2.1 with
-  | intro vs Hwf2 =>
-  cases Hwf2 with
-  | intro vs' Hwf =>
-  cases Hwf with
-  | intro σ₁ Hwf =>
-  by_cases Hin : k ∈ vs
-  -- k is already in vs, use the mod/init lists as is
-  case pos =>
-    refine ⟨vs,vs',σ₁,?_,Hwf.2⟩
-    have Hup := HavocVarsUpdateStates Hwf.1
-    cases Hup with
-    | intro vs' Hup =>
-    apply UpdateStatesHavocVars (modvals:=vs')
-    exact UpdateStatesUpdatedId Hin Hup
-  -- k is not in vs, add k to vs
-  case neg =>
-    by_cases Hin' : k ∈ vs'
-    -- k not in vs, but is in vs'.
-    -- This is the case that k is a newly created variable
-    -- Since we are updating/initializing k in σ₀, we remove k from vs'
-    case pos =>
-      refine ⟨vs,vs'.removeAll [k],(updatedState σ₁ k v),?_,?_⟩
-      . refine HavocVarsUpdatedDist Hin ?_
-        exact Hwf.1
-      . apply InitVarsRemoveAll <;> simp_all
-    -- k is not in vs'
-    case neg =>
-      have Hup := HavocVarsUpdateStates Hwf.1
-      cases Hup with
-      | intro es' Hup =>
-      refine ⟨k :: vs,vs',σ₁,?_,Hwf.2⟩
-      have Hdef1 : Imperative.isDefined σ₁ [k] := by
-        apply InitVarsDefMonotone' (σ':=σ) (vs':=vs') <;> simp_all
-        . simp_all [List.Disjoint]
-        . simp [Imperative.isDefined, Option.isSome]
-          split <;> simp_all
-      have Hdef0 : Imperative.isDefined σ₀ [k] := by
-        exact HavocVarsDefMonotone' (vs':=vs) Hdef1 Hwf.1
-      simp [Imperative.isDefined, Option.isSome] at Hdef0
-      split at Hdef0 <;> simp_all
-      next x val heq =>
-      apply UpdateStatesHavocVars (modvals:=val :: es')
-      refine UpdateStatesUpdatedId ?_ ?_
-      . exact List.mem_cons_self
-      . apply UpdateStates.update_some (σ':=updatedState σ₀ k val)
-        apply updatedStateUpdate <;> assumption
-        rw [updatedStateId] <;> simp_all
+/-- Glue lemma: chain L1–L6 via `EvalStatementsContractApp` to produce the
+    full call-elim block evaluation from σ to σ_havoc. -/
+private theorem EvalCallElim_glue
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval} {σ σ_arg σ_out σ_old σ_havoc : CoreStore}
+    {argInit outInit oldInit asserts havocs assumes : List Statement}
+    (HL1 : EvalStatementsContract π φ ⟨σ, δ, false⟩ argInit ⟨σ_arg, δ, false⟩)
+    (HL2 : EvalStatementsContract π φ ⟨σ_arg, δ, false⟩ outInit ⟨σ_out, δ, false⟩)
+    (HL3 : EvalStatementsContract π φ ⟨σ_out, δ, false⟩ oldInit ⟨σ_old, δ, false⟩)
+    (HL4 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ asserts ⟨σ_old, δ, false⟩)
+    (HL5 : EvalStatementsContract π φ ⟨σ_old, δ, false⟩ havocs ⟨σ_havoc, δ, false⟩)
+    (HL6 : EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩ assumes ⟨σ_havoc, δ, false⟩) :
+    EvalStatementsContract π φ ⟨σ, δ, false⟩
+      (argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes)
+      ⟨σ_havoc, δ, false⟩ := by
+  have H12 := EvalStatementsContractApp HL1 HL2
+  have H123 := EvalStatementsContractApp H12 HL3
+  have H1234 := EvalStatementsContractApp H123 HL4
+  have H12345 := EvalStatementsContractApp H1234 HL5
+  exact EvalStatementsContractApp H12345 HL6
 
-open OldExpressions in
-theorem substOld_create_replace :
-NormalizedOldExpr e →
-(extractOldExprVars (substOld h (createFvar h') e)) =
-(extractOldExprVars e).removeAll [h] := by
-  intros Hnorm
-  induction Hnorm <;> simp [extractOldExprVars, createFvar, substOld] at * <;> try assumption
-  case app fn e m Hnfn Hne Hwf ih1 ih2 =>
-    split
-    . -- is old var
-      next e1 e2 ty x ty =>
-      split <;> simp [extractOldExprVars, List.removeAll] <;> simp_all
-    . -- is a normal expression (non-old)
-      next e1 e2 HH =>
-      have Hnold : ¬ IsOldPred fn := by
-        intros Hold
-        specialize Hwf Hold
-        cases Hold
-        cases Hwf
-        simp_all
-        simp [CoreIdent.unres] at HH
-        rename_i md tyy id v
-        have HH2 := HH md tyy () id v
-        simp_all
-      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar () h' none) fn) := by
-        intros Hold
-        apply Hnold
-        apply substOldIsOldPred' ?_ Hold
-        intros Hold
-        cases Hold
-      unfold extractOldExprVars
-      simp
-      split <;> simp_all
-      . -- old var, contradiction
-        exfalso; apply Hnold'; constructor
-      . -- old expr, contradiction
-        exfalso; apply Hnold'; constructor
-      split
-      · rename_i x1 x2 x3 m1 id ty2 x7
-        have hI: Lambda.LExpr.op x2 ⟨"old", Visibility.unres⟩ x3 = Lambda.LExpr.op x2 ⟨"old", Visibility.unres⟩ x3 := by rfl
-        have hI2: Lambda.LExpr.fvar m1 id ty2 = Lambda.LExpr.fvar m1 id ty2 := by rfl
-        have h2 := HH x2 x3 m1 id ty2 hI hI2
-        exfalso
-        contradiction
-      . -- old expr, contradiction
-        exfalso; apply Hnold; constructor
-      . simp [List.app_removeAll]
-  case ite c t e cih tih eih =>
-    rw [cih, tih, eih]
-    simp [List.app_removeAll]
-  case eq e1 e2 e1ih e2ih =>
-    rw [e1ih, e2ih]
-    simp [List.app_removeAll]
-  case quant tr e trih eih =>
-    rw [trih, eih]
-    simp [List.app_removeAll]
+/-! ### Top-level call-elimination correctness theorem -/
 
-theorem substOldExpr_cons:
-  Imperative.substNodup (createOldStoreSubst (h::t)) →
-  OldExpressions.substsOldExpr (createOldVarsSubst (h :: t)) e
-          = OldExpressions.substsOldExpr (createOldVarsSubst t) (OldExpressions.substOld h.snd (createFvar h.1.fst) e) :=by
-  intro Hnd
-  induction e
-  case app Hfn He =>
-    simp [OldExpressions.substsOldExpr, createOldVarsSubst, Map.isEmpty, OldExpressions.substOld, createFvar]
-    split; split; split
-    simp [OldExpressions.substOld, createFvar,Map.find? , *, createOldVarsSubst.go] at *
-    rename_i H; simp [← H, OldExpressions.substsOldExpr]
-    simp_all [OldExpressions.substOld, createFvar,Map.find?, createOldVarsSubst.go]
-    rename_i H _; split at H <;> simp_all [OldExpressions.substsOldExpr]
-    intro; simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all [Map.find?]
-    split <;> (rename_i H _; simp [*, createOldVarsSubst.go, Map.find?] at H)
-    split at H; contradiction
-    unfold OldExpressions.substsOldExpr
-    split <;> simp [*]
-    simp_all [createOldVarsSubst, createFvar]
-    rename_i _ fn e _ _ H
-    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) fn) = fn'
-    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) e) = e'
-    rw (occs := [3]) [Core.OldExpressions.substsOldExpr.eq_def]
-    simp; split
-    simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all
-    rw[OldExpressions.substOldExpr_nil, OldExpressions.substOldExpr_nil]; simp
-    split; split
-    unfold OldExpressions.substOld at H1
-    split at H1 <;> simp_all
-    unfold OldExpressions.substOld at H2
-    split at H2 <;> simp_all; grind
-    split at H2; split at H2
-    any_goals simp_all
-    simp [← H2.left] at *
-    have : Map.find? (List.map createOldVarsSubst.go t) h.fst.fst = none :=by
-      simp [Imperative.substNodup, createOldStoreSubst, createOldStoreSubst.go] at Hnd
-      have Hnd := Hnd.right
-      have : List.map (Prod.fst ∘ createOldStoreSubst.go) t = List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
-        simp [createOldStoreSubst.go, createOldVarsSubst.go]
-      have : ¬ h.fst.fst ∈ List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
-       rw[← this]
-       rw [List.nodup_append] at Hnd
-       false_or_by_contra
-       have Hnd := Hnd.right.right h.fst.fst (by assumption) h.fst.fst (by simp)
-       contradiction
-      apply Map.findNone_eq_notmem_mapfst.mp
-      simp only [List.map_map]
-      assumption
-    simp_all
-    split at H1 <;> try simp_all
-    split at H1 <;> try simp_all
-    simp [OldExpressions.substsOldExpr]
-  any_goals simp [OldExpressions.substsOldExpr, OldExpressions.substOld, createOldVarsSubst, Map.isEmpty]
-  any_goals (split <;> rename_i H; split at H)
-  any_goals (simp_all [createOldVarsSubst];  rw [OldExpressions.substOldExpr_nil])
-  any_goals simp_all
-  any_goals (split at H <;> try contradiction)
-  any_goals simp_all [createOldVarsSubst]
-  any_goals rw [OldExpressions.substOldExpr_nil]
-  simp [createFvar]; rw [OldExpressions.substOldExpr_nil]
+/-- Returns the call-elim transformation result of a single command:
+    either the rewritten statement list (for a `.call`) or `[s]`
+    unchanged (for a non-call statement). -/
+@[expose]
+def callElimStmt (s : Statement) (p : Program)
+    : CoreTransformM (List Statement) := do
+  modify (fun σ => { σ with currentProgram := .some p })
+  match s with
+  | .cmd (CmdExt.call procName args md) => do
+      match (← CallElim.callElimCmd (CmdExt.call procName args md)) with
+      | .none    => return [s]
+      | .some s' => return s'
+  | _ => return [s]
 
-theorem substsOldCorrect :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  Core.WellFormedCoreEvalTwoState δ σ₀ σ →
-  OldExpressions.NormalizedOldExpr e →
-  Imperative.substStores σ₀ σ (createOldStoreSubst oldTrips) →
-  Imperative.substDefined σ₀ σ (createOldStoreSubst oldTrips) →
-  Imperative.substNodup (createOldStoreSubst oldTrips) →
-  oldTrips.unzip.1.unzip.1.Disjoint (OldExpressions.extractOldExprVars e) →
-  δ σ e = δ σ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) e) := by
-  intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hsubst Hdef Hnd Hdisj
-  induction oldTrips generalizing e
+/-- A `CoreIdent` is a call-elim temp if its name has the `tmp_` prefix
+    used by `Strata.Transform.CoreTransform.tmpVarPrefix`. This is the
+    live replacement for the legacy (now-removed) `CoreIdent.isTemp`
+    predicate that was referenced by the big-step proof.
+
+    The check is implemented via `List.isPrefixOf` on the `toList`
+    representation rather than `String.startsWith` so that we can
+    discharge it via the elementary `isPrefixOf_append_self` lemma
+    without going through the opaque `String.Slice`/`Pattern`
+    machinery. -/
+def isTempIdent (v : Expression.Ident) : Bool :=
+  "tmp_".toList.isPrefixOf v.name.toList
+
+/-- Mirror of `isTempIdent` for `old`-prefixed identifiers (those generated
+    by `oldVarPrefix` via `genOldExprIdent`).  See
+    `Strata.Transform.CoreTransform.oldVarPrefix`. -/
+def isOldTempIdent (v : Expression.Ident) : Bool :=
+  "old_".toList.isPrefixOf v.name.toList
+
+/-- `tmp_*` and `old_*` prefixed identifiers are pairwise disjoint:
+    no identifier can be both `isTempIdent` and `isOldTempIdent`.
+
+    Used to discharge `argTemps.Disjoint genOldIdents`-style facts at
+    the L6 site. -/
+private theorem isTempIdent_isOldTempIdent_disjoint
+    {x : Expression.Ident}
+    (Htmp : isTempIdent x = true) (Hold : isOldTempIdent x = true) : False := by
+  -- isTempIdent x = "tmp_".toList.isPrefixOf x.name.toList
+  -- isOldTempIdent x = "old_".toList.isPrefixOf x.name.toList
+  -- The first characters differ: 't' vs 'o'.
+  unfold isTempIdent at Htmp
+  unfold isOldTempIdent at Hold
+  match hL : x.name.toList with
+  | [] =>
+    rw [hL] at Htmp
+    simp at Htmp
+  | c :: cs =>
+    rw [hL] at Htmp Hold
+    simp [List.isPrefixOf] at Htmp Hold
+    have h1 : 't' = c := Htmp.1
+    have h2 : 'o' = c := Hold.1
+    rw [← h1] at h2
+    exact absurd h2 (by decide)
+
+/-- An inline analogue of the inner-`go` walk inside
+    `Procedure.Spec.updateCheckExprs`: given a substituted-expression
+    list and an original-checks list, produce the per-entry checks with
+    the new expression.  This mirrors the `where go` clause of
+    `Procedure.Spec.updateCheckExprs` so we can reason about its result
+    without referring to the where-private constant. -/
+private def updateCheckExprs_walk
+    (es : List Expression.Expr) (checks : List Procedure.Check) :
+    List Procedure.Check :=
+  match es, checks with
+  | [], _ => checks
+  | _, [] => checks
+  | e :: erest, c :: crest =>
+    { c with expr := e } :: updateCheckExprs_walk erest crest
+
+/-- The walk preserves length when `es = checks.map f`. -/
+private theorem updateCheckExprs_walk_length_map
+    (vs : List Procedure.Check)
+    (f : Procedure.Check → Expression.Expr) :
+    (updateCheckExprs_walk (vs.map f) vs).length = vs.length := by
+  induction vs with
+  | nil => simp [updateCheckExprs_walk]
+  | cons hd tl ih =>
+    simp only [List.map_cons, updateCheckExprs_walk,
+               List.length_cons]
+    exact congrArg (· + 1) ih
+
+/-- Positional access into `updateCheckExprs_walk (vs.map (substFvars ·.expr sm)) vs`. -/
+private theorem updateCheckExprs_walk_getElem_substFvars
+    {sm : Map Expression.Ident Expression.Expr}
+    (vs : List Procedure.Check)
+    (i : Nat)
+    (Hi : i < vs.length)
+    (Hi' : i < (updateCheckExprs_walk
+                  (vs.map (fun c =>
+                    Lambda.LExpr.substFvars c.expr sm))
+                  vs).length) :
+    ((updateCheckExprs_walk
+        (vs.map (fun c => Lambda.LExpr.substFvars c.expr sm))
+        vs)[i]'Hi').expr =
+    Lambda.LExpr.substFvars (vs[i]'Hi).expr sm := by
+  induction vs generalizing i with
+  | nil =>
+    exact absurd Hi (by simp)
+  | cons hd tl ih =>
+    cases i with
+    | zero =>
+      simp only [List.map_cons, updateCheckExprs_walk,
+                 List.getElem_cons_zero]
+    | succ k =>
+      have Hk : k < tl.length := by
+        simp only [List.length_cons] at Hi; omega
+      have Hk' : k < (updateCheckExprs_walk
+                      (tl.map (fun c =>
+                        Lambda.LExpr.substFvars c.expr sm))
+                      tl).length := by
+        simp only [List.map_cons, updateCheckExprs_walk,
+                   List.length_cons] at Hi'
+        omega
+      have HiH := ih k Hk Hk'
+      simp only [List.map_cons, updateCheckExprs_walk,
+                 List.getElem_cons_succ]
+      exact HiH
+
+/-- The local `updateCheckExprs_walk` mirror agrees pointwise with the
+    where-private `Procedure.Spec.updateCheckExprs.go`.  Both walk the two
+    lists in parallel and return the original `checks` list when either
+    argument is exhausted; the equality holds for all input shapes. -/
+private theorem updateCheckExprs_walk_eq_go :
+    ∀ (es : List Expression.Expr) (cs : List Procedure.Check),
+    updateCheckExprs_walk es cs =
+    Procedure.Spec.updateCheckExprs.go es cs := by
+  intro es cs
+  induction es generalizing cs with
+  | nil =>
+    cases cs with
+    | nil =>
+      simp [updateCheckExprs_walk,
+            Procedure.Spec.updateCheckExprs.go]
+    | cons hd tl =>
+      simp [updateCheckExprs_walk,
+            Procedure.Spec.updateCheckExprs.go]
+  | cons e es' ih =>
+    cases cs with
+    | nil =>
+      simp [updateCheckExprs_walk,
+            Procedure.Spec.updateCheckExprs.go]
+    | cons hd tl =>
+      simp [updateCheckExprs_walk,
+            Procedure.Spec.updateCheckExprs.go,
+            ih]
+
+/-- For each entry in `updateCheckExprs (conds.values.map (substFvars · sm))
+    conds`, the entry's expression is exactly `substFvars c.expr sm` for some
+    `c ∈ conds.values`.  This is the per-entry correspondence used by D2f
+    to lift `δ σO original_post = tt` (Hpost) to the substituted
+    postcondition form.
+
+    Note: the proof relies on the `where`-clause `Procedure.Spec.updateCheckExprs.go`
+    walking the lists in parallel; we mirror this via `updateCheckExprs_walk`
+    and use definitional unfolding via `show`. -/
+private theorem updateCheckExprs_substFvars_mem
+    {sm : Map Expression.Ident Expression.Expr}
+    {conds : ListMap CoreLabel Procedure.Check}
+    {entry : CoreLabel × Procedure.Check}
+    (Hentry : entry ∈
+      (conds.keys.zip
+        (updateCheckExprs_walk
+          (conds.values.map
+            (fun c => Lambda.LExpr.substFvars c.expr sm))
+          conds.values))) :
+    ∃ c ∈ conds.values,
+      entry.snd.expr = Lambda.LExpr.substFvars c.expr sm := by
+  rcases List.mem_iff_get.mp Hentry with ⟨n, Hn⟩
+  have Hn_lt_zip := n.isLt
+  have Hzip_len :
+      (conds.keys.zip
+        (updateCheckExprs_walk
+          (conds.values.map
+            (fun c => Lambda.LExpr.substFvars c.expr sm))
+          conds.values)).length =
+      Nat.min conds.keys.length
+        (updateCheckExprs_walk
+          (conds.values.map
+            (fun c => Lambda.LExpr.substFvars c.expr sm))
+          conds.values).length := List.length_zip
+  have Hwalk_len :
+      (updateCheckExprs_walk
+        (conds.values.map (fun c =>
+          Lambda.LExpr.substFvars c.expr sm))
+        conds.values).length = conds.values.length :=
+    updateCheckExprs_walk_length_map _ _
+  have Hn_lt_zip' : n.val <
+      Nat.min conds.keys.length
+        (updateCheckExprs_walk
+          (conds.values.map
+            (fun c => Lambda.LExpr.substFvars c.expr sm))
+          conds.values).length := Hzip_len ▸ Hn_lt_zip
+  have Hn_lt_keys : n.val < conds.keys.length :=
+    Nat.lt_of_lt_of_le Hn_lt_zip' (Nat.min_le_left _ _)
+  have Hn_lt_walk :
+      n.val < (updateCheckExprs_walk
+                (conds.values.map (fun c =>
+                  Lambda.LExpr.substFvars c.expr sm))
+                conds.values).length :=
+    Nat.lt_of_lt_of_le Hn_lt_zip' (Nat.min_le_right _ _)
+  have Hn_lt_vs : n.val < conds.values.length := Hwalk_len ▸ Hn_lt_walk
+  have HzipGet :
+      (conds.keys.zip
+        (updateCheckExprs_walk
+          (conds.values.map
+            (fun c => Lambda.LExpr.substFvars c.expr sm))
+          conds.values))[n.val]'Hn_lt_zip =
+        (conds.keys[n.val]'Hn_lt_keys,
+         (updateCheckExprs_walk
+            (conds.values.map
+              (fun c => Lambda.LExpr.substFvars c.expr sm))
+            conds.values)[n.val]'Hn_lt_walk) :=
+    List.getElem_zip
+  have HhE : (conds.keys.zip _).get n = entry := Hn
+  have HhE_get : (conds.keys.zip _)[n.val]'Hn_lt_zip = entry := by
+    have : (conds.keys.zip _).get n =
+           (conds.keys.zip _)[n.val]'Hn_lt_zip := rfl
+    rw [← this]; exact HhE
+  rw [HzipGet] at HhE_get
+  have Hsnd_eq :
+      entry.snd =
+        (updateCheckExprs_walk
+          (conds.values.map (fun c =>
+            Lambda.LExpr.substFvars c.expr sm))
+          conds.values)[n.val]'Hn_lt_walk :=
+    ((Prod.mk.injEq _ _ _ _).mp HhE_get).2.symm
+  refine ⟨conds.values[n.val]'Hn_lt_vs, List.getElem_mem _, ?_⟩
+  rw [Hsnd_eq]
+  exact updateCheckExprs_walk_getElem_substFvars
+    conds.values n.val Hn_lt_vs Hn_lt_walk
+
+/-! ### Producing-side `genIdent → isTempIdent` lemmas
+
+The `CoreGenState.gen pf s` operation produces an identifier whose name is
+`pf.name ++ "_" ++ toString counter` (cf. `StringGenState.gen`).  When
+`pf.name` itself begins with the literal `"tmp_"` (resp. `"old_"`)
+prefix — as it does for `genIdent _ tmpVarPrefix` (resp.
+`genIdent _ oldVarPrefix`) — the resulting identifier satisfies
+`isTempIdent` (resp. `isOldTempIdent`).
+
+These helpers are kept as their own block so that the producing-side
+prefix reasoning is encapsulated in two short proofs rather than scattered
+through the inductive helpers below. -/
+
+/-- A single application of `CoreGenState.gen` against the `tmpVarPrefix`
+    family of prefixes produces an identifier satisfying `isTempIdent`. -/
+private theorem genIdent_tmp_isTempIdent
+    {ident : String} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : (CoreGenState.gen ⟨tmpVarPrefix ident, ()⟩ s) = (l, s')) :
+    isTempIdent l = true := by
+  -- Unfold the gen step to expose the produced string.
+  unfold CoreGenState.gen StringGenState.gen tmpVarPrefix at Hgen
+  -- `Hgen` is now a `Prod.mk` equation; project out the identifier component.
+  have Hl : l = ⟨"tmp_" ++ ident ++ "_" ++ toString (Counter.genCounter s.cs.cs).fst, ()⟩ := by
+    have := congrArg Prod.fst Hgen
+    simp at this
+    -- Reduce `s!` interpolation.
+    rw [show (s!"tmp_{ident}" : String) = "tmp_" ++ ident from rfl] at this
+    exact this.symm
+  rw [Hl]
+  simp only [isTempIdent]
+  -- Goal:
+  --   "tmp_".toList.isPrefixOf ("tmp_" ++ ident ++ "_" ++ toString counter).toList
+  simp only [String.toList_append, List.append_assoc]
+  exact isPrefixOf_append_self _ _
+
+/-- Mirror of `genIdent_tmp_isTempIdent` for the `oldVarPrefix` family. -/
+private theorem genIdent_old_isOldTempIdent
+    {ident : String} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : (CoreGenState.gen ⟨oldVarPrefix ident, ()⟩ s) = (l, s')) :
+    isOldTempIdent l = true := by
+  unfold CoreGenState.gen StringGenState.gen oldVarPrefix at Hgen
+  have Hl : l = ⟨"old_" ++ ident ++ "_" ++ toString (Counter.genCounter s.cs.cs).fst, ()⟩ := by
+    have := congrArg Prod.fst Hgen
+    simp at this
+    rw [show (s!"old_{ident}" : String) = "old_" ++ ident from rfl] at this
+    exact this.symm
+  rw [Hl]
+  simp only [isOldTempIdent]
+  simp only [String.toList_append, List.append_assoc]
+  exact isPrefixOf_append_self _ _
+
+/-! ### Length lemmas for the `gen*ExprIdents{,Trip}` family
+
+The `_snd` and `*GeneratedWF` helpers below need to know that
+`genArgExprIdents n` produces a list of length exactly `n`, etc.  These
+follow inductively from `genIdent`'s contract.  Proved here so that the
+trip-level helpers can quote them directly. -/
+
+/-- The fst-projection of running `genArgExprIdent` `t.length`-many times
+    (with `t : List Unit`) is a list of length `t.length`.  This is the
+    raw form; `genArgExprIdents_length'` specializes to `n = t.length`. -/
+private theorem genArgExprIdent_len'
+    {t : List Unit} {s : CoreGenState} :
+    (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
+  induction t generalizing s <;> simp_all
   case nil =>
-    simp [createOldVarsSubst] at *; rw[OldExpressions.substOldExpr_nil]
+    simp [pure, StateT.pure]
   case cons h t ih =>
-  have : OldExpressions.substsOldExpr (createOldVarsSubst (h :: t)) e
-          = OldExpressions.substsOldExpr (createOldVarsSubst t) (OldExpressions.substOld h.snd (createFvar h.1.fst) e) :=by
-    apply substOldExpr_cons Hnd
-  rw[this, ← ih]
-  apply substOldCorrect <;> try assumption
-  intro k1 k2 Hin
-  simp [Imperative.substDefined] at Hdef
-  apply Hdef; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  intro k1 k2 Hin
-  simp [Imperative.substStores] at Hsubst
-  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  apply OldExpressions.substOldNormalizedMono
-  intro H; cases H; assumption;
-  constructor
-  intro k1 k2 Hin
-  simp [Imperative.substStores] at Hsubst
-  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  exact substDefined_tail Hdef
-  simp [createOldStoreSubst] at *
-  exact substNodup_tail Hnd
-  simp at Hdisj
-  rw [substOld_create_replace] <;> try assumption
-  have H:= List.Disjoint.removeAll (zs:=[h.snd]) Hdisj
-  rw[← List.Disjoint_app] at H;
+    simp [bind, StateT.bind, Functor.map]
+    split
+    simp [StateT.map, Functor.map]
+    apply ih
+
+private theorem genArgExprIdents_length'
+    (n : Nat) (s : CoreGenState) :
+    (genArgExprIdents n s).fst.length = n := by
+  simp only [genArgExprIdents]
+  rw [genArgExprIdent_len']
   simp
-  exact List.Disjoint_cons_tail H.right
 
-theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
+private theorem genArgExprIdents_length
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : genArgExprIdents n s = (ls, s')) :
+    ls.length = n := by
+  have := genArgExprIdents_length' n s
+  rw [Hgen] at this
+  exact this
+
+private theorem genOutExprIdent_len'
+    {t : List Expression.Ident} {s : CoreGenState} :
+    (List.mapM genOutExprIdent t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
   case nil =>
     simp [pure, StateT.pure]
@@ -2076,2521 +2712,6962 @@ theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.le
     simp [StateT.map, Functor.map]
     apply ih
 
-theorem genArgExprIdent_len : List.mapM (fun _ => genArgExprIdent) t s = (a, s') → t.length = a.length := by
-  intros Hgen
-  generalize Heq : List.mapM (fun _ => genArgExprIdent) t s = res at Hgen
-  cases res with
-  | mk fst snd =>
-  have Heq' : (List.mapM (fun _ => genArgExprIdent) t s).fst = fst := by simp [Heq]
-  cases Hgen
-  simp [← Heq']
-  symm
-  exact genArgExprIdent_len'
-
-theorem genOutExprIdent_len' : (List.mapM genOutExprIdent t s).fst.length = t.length := by
-  induction t generalizing s <;> simp_all
-  case nil =>
-    simp [pure, StateT.pure]
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map]
-    split
-    simp [StateT.map, Functor.map]
-    apply ih
-
-theorem genOldExprIdent_len' : (List.mapM genOldExprIdent t s).fst.length = t.length := by
-  induction t generalizing s <;> simp_all
-  case nil =>
-    simp [pure, StateT.pure]
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map]
-    split
-    simp [StateT.map, Functor.map]
-    apply ih
-
-theorem getIdentTys!_len :
-  getIdentTys! p xs s = (Except.ok a,s') →
-  xs.length = a.length := by
-  intros H
-  induction xs generalizing s s' a <;> simp [getIdentTys!] at H
-  case nil =>
-    cases H
-    rfl
-  case cons h t ih =>
-    simp [bind, ExceptT.bind, StateT.bind,
-          ExceptT.bindCont, Functor.map, ExceptT.map, ExceptT.mk] at H
-    split at H
-    split at H
-    . simp [bind, StateT.bind] at H
-      split at H
-      split at H
-      . simp [pure, StateT.pure] at H
-        cases H
-        simp_all
-        apply ih
-        assumption
-      . cases H
-    . sorry
-      -- cases H
-/-
-theorem genOutExprIdent_len : List.mapM genOutExprIdent t s = (a, s') → t.length = a.length := by
-  intros Hgen
-  generalize Heq : List.mapM genOutExprIdent t s = res at Hgen
-  cases res with
-  | mk fst snd =>
-  have Heq' : (List.mapM genOutExprIdent t s).fst = fst := by simp [Heq]
-  cases Hgen
-  simp [← Heq']
-  symm
+private theorem genOutExprIdents_length'
+    (idents : List Expression.Ident) (s : CoreGenState) :
+    (genOutExprIdents idents s).fst.length = idents.length := by
+  simp only [genOutExprIdents]
   exact genOutExprIdent_len'
 
-theorem genArgExprIdentsTrip_snd :
-  genArgExprIdentsTrip tys args s = (Except.ok a, s') →
-  List.map Prod.snd a = args := by
-  intros Hgen
-  simp [genArgExprIdentsTrip] at Hgen
+private theorem genOutExprIdents_length
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : genOutExprIdents idents s = (ls, s')) :
+    ls.length = idents.length := by
+  have := genOutExprIdents_length' idents s
+  rw [Hgen] at this
+  exact this
+
+private theorem genOldExprIdent_len'
+    {t : List Expression.Ident} {s : CoreGenState} :
+    (List.mapM genOldExprIdent t s).fst.length = t.length := by
+  induction t generalizing s <;> simp_all
+  case nil =>
+    simp [pure, StateT.pure]
+  case cons h t ih =>
+    simp [bind, StateT.bind, Functor.map]
+    split
+    simp [StateT.map, Functor.map]
+    apply ih
+
+private theorem genOldExprIdents_length'
+    (idents : List Expression.Ident) (s : CoreGenState) :
+    (genOldExprIdents idents s).fst.length = idents.length := by
+  simp only [genOldExprIdents]
+  exact genOldExprIdent_len'
+
+private theorem genOldExprIdents_length
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : genOldExprIdents idents s = (ls, s')) :
+    ls.length = idents.length := by
+  have := genOldExprIdents_length' idents s
+  rw [Hgen] at this
+  exact this
+
+/-! ### `_snd` projection lemmas for the `gen*ExprIdentsTrip` family
+
+These say: the `Prod.snd` projection of the trip list is exactly the
+input arguments/lhs/old-vars list.  The legacy proofs went through
+intricate splittings; the live forms are short reductions through the
+monad layers because we have the structural form
+`(gen_idents.zip inputs.unzip.2).zip args` directly visible. -/
+
+private theorem genArgExprIdentsTrip_snd
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    argTrips.unzip.snd = args := by
+  simp only [genArgExprIdentsTrip] at Hgen
   split at Hgen
-  . simp [Functor.map, liftM, monadLift, MonadLift.monadLift, ExceptT.lift,
-          ExceptT.mk, ExceptT.map, bind, StateT.bind] at Hgen
-    split at Hgen
-    split at Hgen <;> try cases Hgen
-    next x a heq =>
-    simp [genArgExprIdents] at heq
-    induction args <;> simp_all
-    case cons h t ih =>
-    simp [bind, List.replicate, StateT.bind, StateT.map] at heq
-    rw [List.map_snd_zip]
-    simp
-    split at heq
-    cases heq
-    next a' e' heq =>
-    split at heq
-    split at heq
-    next a'' e'' heq'' =>
-    cases heq
-    simp_all
-    have Hlen: t.length = (List.replicate t.length ()).length := by
-      solve | simp
-    rw [Hlen]
-    rw [genArgExprIdent_len (t:=List.replicate t.length ()) (a:=a'')] <;> try assumption
+  case isTrue Hne =>
+    -- length mismatch: throws, contradicts Except.ok
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    -- success branch
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genArgExprIdents args.length s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      -- Hgen now equates argTrips with the constructed zip and s' with the new state.
+      have Hat : (gen_idents.zip (List.map Prod.snd inputs)).zip args = argTrips := by
+        have := congrArg Prod.fst Hgen
+        simp at this
+        exact this
+      rw [← Hat]
+      rw [List.unzip_zip_right]
+      rw [List.length_zip]
+      have Hglen : gen_idents.length = args.length := genArgExprIdents_length Hgi
+      simp at Hlen
+      have Hilen : inputs.length = args.length := Hlen
+      simp [List.length_map, Hilen]
+      omega
+
+private theorem genOutExprIdentsTrip_snd
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    outTrips.unzip.snd = lhs := by
+  simp only [genOutExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genOutExprIdents lhs s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hot : (gen_idents.zip (List.map Prod.snd outputs)).zip lhs = outTrips := by
+        have := congrArg Prod.fst Hgen
+        simp at this
+        exact this
+      rw [← Hot]
+      rw [List.unzip_zip_right]
+      rw [List.length_zip]
+      have Hglen : gen_idents.length = lhs.length := genOutExprIdents_length Hgi
+      simp at Hlen
+      have Hilen : outputs.length = lhs.length := Hlen
+      simp [List.length_map, Hilen]
+      omega
+
+/-- The "snd" projection lemma for the `oldTripsRaw` shape used in the
+    live `callElimCmd`: `oldTripsRaw = (genOldIdents.zip oldTys).zip oldVars`,
+    so its `snd` projection is `oldVars` provided
+    `genOldIdents.length = oldVars.length` and `oldTys.length = oldVars.length`.
+
+    Unlike the arg/out cases, the live `callElimCmd` does not call a
+    dedicated `genOldExprIdentsTrip` wrapper; instead it constructs
+    `oldTripsRaw` inline.  This helper provides the equivalent
+    structural fact. -/
+private theorem genOldExprIdentsTrip_snd
+    {oldVars : List Expression.Ident}
+    {oldTys : List Lambda.LTy}
+    {s s' : CoreGenState}
+    {genOldIdents : List Expression.Ident}
+    (Hgen : genOldExprIdents oldVars s = (genOldIdents, s'))
+    (Htylen : oldTys.length = oldVars.length) :
+    ((genOldIdents.zip oldTys).zip oldVars).unzip.snd = oldVars := by
+  rw [List.unzip_zip_right]
+  rw [List.length_zip]
+  have Hglen : genOldIdents.length = oldVars.length := genOldExprIdents_length Hgen
+  omega
+
+/-! ### `*GeneratedWF` lemmas: each generator pushes its results to `generated`
+
+`CoreGenState.gen` extends `generated` by one cons; running `mapM` of a
+generator over a list extends `generated` by the produced list reversed.
+The trip-wrapper variants quote these and additionally lift the
+`generated` accounting through `CoreTransformState`. -/
+
+private theorem genCoreIdentGeneratedWF
+    {pf : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : CoreGenState.gen pf s = (l, s')) :
+    s'.generated = l :: s.generated := by
+  unfold CoreGenState.gen at Hgen
+  have Hl : l = ⟨(StringGenState.gen pf.name s.cs).fst, ()⟩ := by
+    have := congrArg Prod.fst Hgen
+    simp at this
+    exact this.symm
+  have Hs : s' = { cs := (StringGenState.gen pf.name s.cs).snd,
+                   generated := ⟨(StringGenState.gen pf.name s.cs).fst, ()⟩ :: s.generated } := by
+    have := congrArg Prod.snd Hgen
+    simp at this
+    exact this.symm
+  rw [Hl, Hs]
+
+private theorem genIdentGeneratedWF
+    {ident : Expression.Ident} {pf : String → String}
+    {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genIdent ident pf s = (l, s')) :
+    s'.generated = l :: s.generated :=
+  genCoreIdentGeneratedWF Hgen
+
+private theorem genArgExprIdentGeneratedWF
+    {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genArgExprIdent s = (l, s')) :
+    s'.generated = l :: s.generated :=
+  genCoreIdentGeneratedWF Hgen
+
+private theorem genOutExprIdentGeneratedWF
+    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genOutExprIdent e s = (l, s')) :
+    s'.generated = l :: s.generated :=
+  genCoreIdentGeneratedWF Hgen
+
+private theorem genOldExprIdentGeneratedWF
+    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genOldExprIdent e s = (l, s')) :
+    s'.generated = l :: s.generated :=
+  genCoreIdentGeneratedWF Hgen
+
+private theorem genArgExprIdents_GeneratedWF
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : genArgExprIdents n s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated := by
+  induction n generalizing s s' ls with
+  | zero =>
+      simp only [genArgExprIdents, List.replicate_zero, List.mapM_nil,
+                 pure, StateT.pure] at Hgen
+      cases Hgen
+      simp
+  | succ k ih =>
+      simp only [genArgExprIdents, List.replicate_succ, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genArgExprIdent s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM (fun (_ : Unit) => genArgExprIdent)
+                        (List.replicate k ()) s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := genArgExprIdentGeneratedWF hg1
+          have HH₂ := ih (s := s₁) (ls := a₂)
+                       (by simp only [genArgExprIdents]; exact hg2)
+          rw [HH₂, HH₁]
+          simp
+
+private theorem genOutExprIdents_GeneratedWF
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : genOutExprIdents idents s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated := by
+  induction idents generalizing s s' ls with
+  | nil =>
+      simp only [genOutExprIdents, List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp
+  | cons h t ih =>
+      simp only [genOutExprIdents, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genOutExprIdent h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM genOutExprIdent t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := genOutExprIdentGeneratedWF hg1
+          have HH₂ := ih (s := s₁) (ls := a₂)
+                       (by simp only [genOutExprIdents]; exact hg2)
+          rw [HH₂, HH₁]
+          simp
+
+private theorem genOldExprIdents_GeneratedWF
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : genOldExprIdents idents s = (ls, s')) :
+    s'.generated = ls.reverse ++ s.generated := by
+  induction idents generalizing s s' ls with
+  | nil =>
+      simp only [genOldExprIdents, List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp
+  | cons h t ih =>
+      simp only [genOldExprIdents, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genOldExprIdent h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM genOldExprIdent t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := genOldExprIdentGeneratedWF hg1
+          have HH₂ := ih (s := s₁) (ls := a₂)
+                       (by simp only [genOldExprIdents]; exact hg2)
+          rw [HH₂, HH₁]
+          simp
+
+/-- Trip-level GeneratedWF for arg trips: the generated list is extended
+    with `argTrips.unzip.fst.unzip.fst.reverse`. -/
+private theorem genArgExprIdentsTripGeneratedWF
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    s'.genState.generated =
+        argTrips.unzip.fst.unzip.fst.reverse ++ s.genState.generated := by
+  simp only [genArgExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genArgExprIdents args.length s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hat : (gen_idents.zip (List.map Prod.snd inputs)).zip args = argTrips := by
+        have := congrArg Prod.fst Hgen
+        simp at this
+        exact this
+      have Hs' : s' = { s with genState := s_gen } := by
+        have := congrArg Prod.snd Hgen
+        simp at this
+        exact this.symm
+      rw [Hs']
+      simp only
+      have HH := genArgExprIdents_GeneratedWF Hgi
+      rw [HH]
+      -- Goal:
+      --   gen_idents.reverse ++ s.genState.generated =
+      --     argTrips.unzip.fst.unzip.fst.reverse ++ s.genState.generated
+      congr 1
+      rw [← Hat]
+      simp at Hlen
+      have Hilen : inputs.length = args.length := Hlen
+      have Hglen : gen_idents.length = args.length := genArgExprIdents_length Hgi
+      rw [List.unzip_zip_left (l₁ := (gen_idents.zip (List.map Prod.snd inputs))) (l₂ := args)]
+      · rw [List.unzip_zip_left (l₁ := gen_idents) (l₂ := List.map Prod.snd inputs)]
+        rw [List.length_map]
+        omega
+      · rw [List.length_zip, List.length_map]
+        omega
+
+private theorem genOutExprIdentsTripGeneratedWF
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    s'.genState.generated =
+        outTrips.unzip.fst.unzip.fst.reverse ++ s.genState.generated := by
+  simp only [genOutExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genOutExprIdents lhs s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hot : (gen_idents.zip (List.map Prod.snd outputs)).zip lhs = outTrips := by
+        have := congrArg Prod.fst Hgen
+        simp at this
+        exact this
+      have Hs' : s' = { s with genState := s_gen } := by
+        have := congrArg Prod.snd Hgen
+        simp at this
+        exact this.symm
+      rw [Hs']
+      simp only
+      have HH := genOutExprIdents_GeneratedWF Hgi
+      rw [HH]
+      congr 1
+      rw [← Hot]
+      simp at Hlen
+      have Hilen : outputs.length = lhs.length := Hlen
+      have Hglen : gen_idents.length = lhs.length := genOutExprIdents_length Hgi
+      rw [List.unzip_zip_left (l₁ := (gen_idents.zip (List.map Prod.snd outputs))) (l₂ := lhs)]
+      · rw [List.unzip_zip_left (l₁ := gen_idents) (l₂ := List.map Prod.snd outputs)]
+        rw [List.length_map]
+        omega
+      · rw [List.length_zip, List.length_map]
+        omega
+
+/-! ### `gen*ExprIdents{,Trip}_isTempIdent` lemmas
+
+Each fresh identifier produced by `gen{Arg,Out}ExprIdent` (which calls
+`genIdent _ tmpVarPrefix`) satisfies `isTempIdent`; each produced by
+`genOldExprIdent` satisfies `isOldTempIdent`.  These lift through the
+list-mapM iterators (`gen*ExprIdents`) and the trip wrappers
+(`gen*ExprIdentsTrip`). -/
+
+private theorem genArgExprIdent_isTempIdent
+    {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genArgExprIdent s = (l, s')) :
+    isTempIdent l = true := by
+  simp only [genArgExprIdent, genIdent] at Hgen
+  exact genIdent_tmp_isTempIdent Hgen
+
+private theorem genOutExprIdent_isTempIdent
+    {ident : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genOutExprIdent ident s = (l, s')) :
+    isTempIdent l = true := by
+  simp only [genOutExprIdent, genIdent] at Hgen
+  exact genIdent_tmp_isTempIdent Hgen
+
+private theorem genOldExprIdent_isOldTempIdent
+    {ident : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hgen : genOldExprIdent ident s = (l, s')) :
+    isOldTempIdent l = true := by
+  simp only [genOldExprIdent, genIdent] at Hgen
+  exact genIdent_old_isOldTempIdent Hgen
+
+private theorem genArgExprIdents_isTempIdent
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hgen : genArgExprIdents n s = (ls, s')) :
+    Forall (fun x => isTempIdent x) ls := by
+  induction n generalizing s s' ls with
+  | zero =>
+      simp only [genArgExprIdents, List.replicate_zero, List.mapM_nil,
+                 pure, StateT.pure] at Hgen
+      cases Hgen
+      simp [Forall]
+  | succ k ih =>
+      simp only [genArgExprIdents, List.replicate_succ, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genArgExprIdent s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM (fun (_ : Unit) => genArgExprIdent)
+                        (List.replicate k ()) s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          simp [Forall]
+          refine ⟨?_, ?_⟩
+          · exact genArgExprIdent_isTempIdent hg1
+          · exact ih (s := s₁) (ls := a₂)
+                   (by simp only [genArgExprIdents]; exact hg2)
+
+private theorem genOutExprIdents_isTempIdent
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : genOutExprIdents idents s = (ls, s')) :
+    Forall (fun x => isTempIdent x) ls := by
+  induction idents generalizing s s' ls with
+  | nil =>
+      simp only [genOutExprIdents, List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp [Forall]
+  | cons h t ih =>
+      simp only [genOutExprIdents, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genOutExprIdent h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM genOutExprIdent t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          simp [Forall]
+          refine ⟨?_, ?_⟩
+          · exact genOutExprIdent_isTempIdent hg1
+          · exact ih (s := s₁) (ls := a₂)
+                   (by simp only [genOutExprIdents]; exact hg2)
+
+private theorem genOldExprIdents_isOldTempIdent
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hgen : genOldExprIdents idents s = (ls, s')) :
+    Forall (fun x => isOldTempIdent x) ls := by
+  induction idents generalizing s s' ls with
+  | nil =>
+      simp only [genOldExprIdents, List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      simp [Forall]
+  | cons h t ih =>
+      simp only [genOldExprIdents, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genOldExprIdent h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM genOldExprIdent t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          simp [Forall]
+          refine ⟨?_, ?_⟩
+          · exact genOldExprIdent_isOldTempIdent hg1
+          · exact ih (s := s₁) (ls := a₂)
+                   (by simp only [genOldExprIdents]; exact hg2)
+
+/-- Trip-level isTempIdent for arg trips: every fresh ident produced by
+    `genArgExprIdentsTrip` satisfies `isTempIdent`. -/
+private theorem genArgExprIdentsTrip_isTempIdent
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hgen : genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    Forall (fun x => isTempIdent x) argTrips.unzip.fst.unzip.fst := by
+  simp only [genArgExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genArgExprIdents args.length s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hat : (gen_idents.zip (List.map Prod.snd inputs)).zip args = argTrips := by
+        have := congrArg Prod.fst Hgen
+        simp at this
+        exact this
+      rw [← Hat]
+      simp at Hlen
+      have Hilen : inputs.length = args.length := Hlen
+      have Hglen : gen_idents.length = args.length := genArgExprIdents_length Hgi
+      rw [List.unzip_zip_left (l₁ := (gen_idents.zip (List.map Prod.snd inputs))) (l₂ := args)]
+      · rw [List.unzip_zip_left (l₁ := gen_idents) (l₂ := List.map Prod.snd inputs)]
+        · exact genArgExprIdents_isTempIdent Hgi
+        · rw [List.length_map]
+          omega
+      · rw [List.length_zip, List.length_map]
+        omega
+
+private theorem genOutExprIdentsTrip_isTempIdent
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hgen : genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    Forall (fun x => isTempIdent x) outTrips.unzip.fst.unzip.fst := by
+  simp only [genOutExprIdentsTrip] at Hgen
+  split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genOutExprIdents lhs s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hot : (gen_idents.zip (List.map Prod.snd outputs)).zip lhs = outTrips := by
+        have := congrArg Prod.fst Hgen
+        simp at this
+        exact this
+      rw [← Hot]
+      simp at Hlen
+      have Hilen : outputs.length = lhs.length := Hlen
+      have Hglen : gen_idents.length = lhs.length := genOutExprIdents_length Hgi
+      rw [List.unzip_zip_left (l₁ := (gen_idents.zip (List.map Prod.snd outputs))) (l₂ := lhs)]
+      · rw [List.unzip_zip_left (l₁ := gen_idents) (l₂ := List.map Prod.snd outputs)]
+        · exact genOutExprIdents_isTempIdent Hgi
+        · rw [List.length_map]
+          omega
+      · rw [List.length_zip, List.length_map]
+        omega
+
+/-- For the live `callElimCmd`, `oldTrips`'s `fst.fst` projection is exactly
+    the fresh `genOldIdents` produced by `genOldExprIdents`, since the trip
+    structure is `((freshIdent, ty), origVar)`. -/
+private theorem genOldExprIdentsTrip_isOldTempIdent
+    {oldVars : List Expression.Ident}
+    {oldTys : List Lambda.LTy}
+    {s s' : CoreGenState}
+    {genOldIdents : List Expression.Ident}
+    (Hgen : genOldExprIdents oldVars s = (genOldIdents, s'))
+    (Htylen : oldTys.length = oldVars.length) :
+    Forall (fun x => isOldTempIdent x)
+      ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst := by
+  have HForall := genOldExprIdents_isOldTempIdent Hgen
+  have Hglen : genOldIdents.length = oldVars.length := genOldExprIdents_length Hgen
+  rw [List.unzip_zip_left (l₁ := (genOldIdents.zip oldTys)) (l₂ := oldVars)]
+  · rw [List.unzip_zip_left (l₁ := genOldIdents) (l₂ := oldTys)]
+    · exact HForall
+    · omega
+  · rw [List.length_zip]
     omega
-  . simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
-    cases Hgen
 
-theorem genOutExprIdentsTrip_snd :
-  genOutExprIdentsTrip tys args s = (Except.ok a, s') →
-  List.map Prod.snd a = args := by
-  intros Hgen
-  simp [genOutExprIdentsTrip] at Hgen
-  split at Hgen
-  . simp [Functor.map, liftM, monadLift, MonadLift.monadLift, ExceptT.lift,
-          ExceptT.mk, ExceptT.map, bind, StateT.bind] at Hgen
-    split at Hgen
-    split at Hgen <;> try cases Hgen
-    next x a heq =>
-    simp [genOutExprIdents] at heq
-    induction args <;> simp_all
-    case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map] at heq
-    rw [List.map_snd_zip]
-    simp
-    split at heq
-    cases heq
-    next a' e' heq =>
-    split at heq
-    split at heq
-    next a'' e'' heq'' =>
-    cases heq
-    simp_all
-    rw [genOutExprIdent_len (t:=t) (a:=a'')] <;> try assumption
-    simp_all
-  . simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
-    cases Hgen
+/-! ### `*WFMono` lemmas: each generator preserves `CoreGenState.WF`
 
-theorem genOldExprIdentsTrip_snd :
-  genOldExprIdentsTrip p ids s = (Except.ok a, s') →
-  List.map Prod.snd a = ids := by
-  intros Hgen
-  simp [genOldExprIdentsTrip, Functor.map, liftM, monadLift,
-        MonadLift.monadLift, ExceptT.lift, ExceptT.mk, bind, pure, ExceptT.pure, ExceptT.bind,
-        StateT.bind, ExceptT.bindCont, StateT.map] at Hgen
-  split at Hgen
-  next heq =>
-  split at Hgen
-  . simp [bind, StateT.bind, ExceptT.bindCont] at Hgen
-    split at Hgen
-    split at Hgen <;> try cases Hgen
-    next x a heq' =>
-    split at heq <;> simp_all
-    next heq'' =>
-    simp [genOldExprIdents] at heq''
-    cases heq
-    have Hlen := genOldExprIdent_len' (t:=ids) (s:=s)
-    simp [heq''] at Hlen
-    rw [List.map_snd_zip]
-    simp [Hlen]
-    simp [getIdentTys!_len heq']
-  . cases Hgen
+These lift `CoreGenState.WFMono'` through the inductive structure of
+`gen*ExprIdents` and the `CoreTransformM` wrapping of `gen*ExprIdentsTrip`. -/
 
-theorem Procedure.find.go_in_decls :
-  Program.find?.go DeclKind.proc name decls = some (Decl.proc proc md) →
-  Decl.proc proc md ∈ decls := by
-  intro Hsome
-  induction decls generalizing md <;> simp_all
-  case nil => cases Hsome
-  case cons h t ih =>
-    simp [Program.find?.go] at Hsome
-    split at Hsome <;> simp_all
+private theorem genArgExprIdentWFMono
+    {s s' : CoreGenState} {l : Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : genArgExprIdent s = (l, s')) :
+    CoreGenState.WF s' :=
+  CoreGenState.WFMono' Hwf Hgen
 
-theorem Procedure.find_in_decls :
-  Program.Procedure.find? p name = some proc →
-  ∃ md, .proc proc md ∈ p.decls := by
-  intros Hsome
-  simp only [Program.Procedure.find?] at Hsome
-  split at Hsome
-  case h_1 =>
-    grind
-  case h_2 d heq =>
-    simp only [Decl.getProc, Option.some.injEq] at Hsome
-    split at Hsome
-    case h_1 _ _ proc' md _ =>
-      exists md
-      simp only [Hsome] at heq
-      exact find.go_in_decls heq
+private theorem genOutExprIdentWFMono
+    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : genOutExprIdent e s = (l, s')) :
+    CoreGenState.WF s' :=
+  CoreGenState.WFMono' Hwf Hgen
 
-theorem Program.find.go_decl_kind_match :
-  Program.find?.go d name decls = some decl →
-  decl.kind = d := by
-  intro Hsome
-  induction decls
-  case nil => cases Hsome
-  case cons h t ih =>
-    simp [Program.find?.go] at Hsome
-    split at Hsome <;> simp_all
+private theorem genOldExprIdentWFMono
+    {e : Expression.Ident} {s s' : CoreGenState} {l : Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : genOldExprIdent e s = (l, s')) :
+    CoreGenState.WF s' :=
+  CoreGenState.WFMono' Hwf Hgen
 
-theorem Program.find.go_decl_name_match :
-  Program.find?.go d name decls = some decl →
-  decl.name = name := by
-  intro Hsome
-  induction decls
-  case nil => cases Hsome
-  case cons h t ih =>
-    simp [Program.find?.go] at Hsome
-    split at Hsome <;> simp_all
-
-theorem Program.find.go_var_in_decls :
-  Program.find?.go DeclKind.var name decls = some (Decl.var n ty e md) →
-  Decl.var n ty e md ∈ decls := by
-  intro Hsome
-  induction decls generalizing md <;> simp_all
-  case nil => cases Hsome
-  case cons h t ih =>
-    simp [Program.find?.go] at Hsome
-    split at Hsome <;> simp_all
-
-theorem Program.find.var_in_decls :
-  Program.find? p DeclKind.var name = some decl →
-  ∃ ty e md, Decl.var name ty e md ∈ p.decls ∧ decl = Decl.var name ty e md := by
-  intros Hsome
-  cases decl
-  case var ty e md =>
-    have H := go_decl_name_match Hsome
-    simp [Decl.name] at H
-    simp_all
-    refine ⟨ty,e,md,?_,?_⟩
-    . apply go_var_in_decls (name:=name)
-      exact Hsome
-    . simp_all
-  case type | ax | distinct | proc | func =>
-    simp [Program.find?] at Hsome
-    have HH := Program.find.go_decl_kind_match Hsome
-    simp [Decl.kind] at HH
-
-theorem WFProgGlob :
-  WF.WFDeclsProp p p.decls →
-  PredImplies (isGlobalVar p ·) (CoreIdent.isGlob ·) := by
-  intros Hwf x HH
-  simp [isGlobalVar, Option.isSome] at HH
-  split at HH <;> simp at HH
-  next x val heq =>
-  have Hdecl := Program.find.var_in_decls heq
-  cases Hdecl with
-  | intro ty Hdecl => cases Hdecl with
-  | intro e Hdecl => cases Hdecl with
-  | intro md Hdecl =>
-  have Hwfv := (List.Forall_mem_iff.mp Hwf) _ Hdecl.1
-  exact Hwfv.1
-
-theorem genOldExprIdentsEmpty :
-  genOldExprIdentsTrip p [] s = (Except.ok trips, cs') → trips = [] := by
-  intros Hgen
-  simp [genOldExprIdentsTrip, bind, pure, liftM, MonadLift.monadLift, ExceptT.lift,
-        ExceptT.bindCont, monadLift, ExceptT.bind, ExceptT.mk, StateT.bind, Functor.map] at Hgen
-  split at Hgen
-  split at Hgen
-  . simp [ExceptT.bindCont, ExceptT.pure, ExceptT.mk, pure, StateT.bind, bind] at Hgen
-    split at Hgen
-    split at Hgen <;> simp_all
-    . simp [StateT.pure,pure] at Hgen
+private theorem genArgExprIdents_WFMono
+    {n : Nat} {s s' : CoreGenState} {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : genArgExprIdents n s = (ls, s')) :
+    CoreGenState.WF s' := by
+  induction n generalizing s s' ls with
+  | zero =>
+      simp only [genArgExprIdents, List.replicate_zero, List.mapM_nil,
+                 pure, StateT.pure] at Hgen
       cases Hgen
-      rfl
-    . simp [StateT.pure,pure] at Hgen
-      cases Hgen
-  . simp [StateT.pure,pure] at Hgen
-    cases Hgen
+      exact Hwf
+  | succ k ih =>
+      simp only [genArgExprIdents, List.replicate_succ, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genArgExprIdent s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM (fun (_ : Unit) => genArgExprIdent)
+                        (List.replicate k ()) s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := genArgExprIdentWFMono Hwf hg1
+          exact ih (s := s₁) (ls := a₂) HH₁
+            (by simp only [genArgExprIdents]; exact hg2)
 
-theorem genOldExprIdentsFind :
-(∀ l, l ∈ ls → (p.find? DeclKind.var l).isSome) →
-genOldExprIdentsTrip p ls s_out =
-  (Except.ok oldTrips, cs) →
-k ∈ oldTrips.unzip.snd →
-(p.find? DeclKind.var k).isSome := by
-intros Hfa Hgen Hin
-induction ls generalizing oldTrips cs s_out <;> simp_all
-case nil =>
-  have Hempty := genOldExprIdentsEmpty Hgen
-  simp [Hempty] at *
-case cons h t ih =>
-  simp [genOldExprIdentsTrip, bind, pure, liftM, MonadLift.monadLift, ExceptT.lift,
-        ExceptT.bindCont, monadLift, ExceptT.bind, ExceptT.mk, StateT.bind, Functor.map] at Hgen
+private theorem genOutExprIdents_WFMono
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : genOutExprIdents idents s = (ls, s')) :
+    CoreGenState.WF s' := by
+  induction idents generalizing s s' ls with
+  | nil =>
+      simp only [genOutExprIdents, List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      exact Hwf
+  | cons h t ih =>
+      simp only [genOutExprIdents, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genOutExprIdent h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM genOutExprIdent t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := genOutExprIdentWFMono Hwf hg1
+          exact ih (s := s₁) (ls := a₂) HH₁
+            (by simp only [genOutExprIdents]; exact hg2)
+
+private theorem genOldExprIdents_WFMono
+    {idents : List Expression.Ident} {s s' : CoreGenState}
+    {ls : List Expression.Ident}
+    (Hwf : CoreGenState.WF s) (Hgen : genOldExprIdents idents s = (ls, s')) :
+    CoreGenState.WF s' := by
+  induction idents generalizing s s' ls with
+  | nil =>
+      simp only [genOldExprIdents, List.mapM_nil, pure, StateT.pure] at Hgen
+      cases Hgen
+      exact Hwf
+  | cons h t ih =>
+      simp only [genOldExprIdents, List.mapM_cons,
+                 bind, StateT.bind, pure, StateT.pure] at Hgen
+      cases hg1 : genOldExprIdent h s with
+      | mk a₁ s₁ =>
+        rw [hg1] at Hgen
+        simp only at Hgen
+        cases hg2 : List.mapM genOldExprIdent t s₁ with
+        | mk a₂ s₂ =>
+          rw [hg2] at Hgen
+          cases Hgen
+          have HH₁ := genOldExprIdentWFMono Hwf hg1
+          exact ih (s := s₁) (ls := a₂) HH₁
+            (by simp only [genOldExprIdents]; exact hg2)
+
+/-- Trip-level WFMono for arg trips. -/
+private theorem genArgExprIdentsTripWFMono
+    {inputs : @Lambda.LTySignature Visibility} {args : List Expression.Expr}
+    {s s' : CoreTransformState}
+    {argTrips : List ((Expression.Ident × Lambda.LTy) × Expression.Expr)}
+    (Hwf : CoreGenState.WF s.genState)
+    (Hgen : genArgExprIdentsTrip inputs args s = (Except.ok argTrips, s')) :
+    CoreGenState.WF s'.genState := by
+  simp only [genArgExprIdentsTrip] at Hgen
   split at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
+    cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genArgExprIdents args.length s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hs' : s' = { s with genState := s_gen } := by
+        have := congrArg Prod.snd Hgen
+        simp at this
+        exact this.symm
+      rw [Hs']
+      simp only
+      exact genArgExprIdents_WFMono Hwf Hgi
+
+/-- Trip-level WFMono for out trips. -/
+private theorem genOutExprIdentsTripWFMono
+    {outputs : @Lambda.LTySignature Visibility} {lhs : List Expression.Ident}
+    {s s' : CoreTransformState}
+    {outTrips : List ((Expression.Ident × Expression.Ty) × Expression.Ident)}
+    (Hwf : CoreGenState.WF s.genState)
+    (Hgen : genOutExprIdentsTrip outputs lhs s = (Except.ok outTrips, s')) :
+    CoreGenState.WF s'.genState := by
+  simp only [genOutExprIdentsTrip] at Hgen
   split at Hgen
-  . next heq =>
-    simp [ExceptT.bindCont, ExceptT.pure, ExceptT.mk, pure, StateT.bind, bind] at Hgen
-    split at Hgen
-    split at Hgen <;> simp_all
-    . simp [StateT.pure,pure] at Hgen
-      cases Hgen
-      cases Hin with
-      | intro a Hin =>
-      cases Hin with
-      | intro b Hin =>
-      have Hin := List.of_mem_zip Hin
-      simp at Hin
-      cases Hin.2 <;> simp_all
-    . simp [StateT.pure,pure] at Hgen
-      cases Hgen
-  . simp [StateT.pure,pure] at Hgen
+  case isTrue Hne =>
+    simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
     cases Hgen
+  case isFalse Hlen =>
+    simp [bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk, ExceptT.lift,
+          ExceptT.pure, StateT.bind, StateT.pure, pure, monadLift,
+          MonadLift.monadLift, liftM, Functor.map, StateT.map,
+          liftCoreGenM] at Hgen
+    generalize Hgi : genOutExprIdents lhs s.genState = gi at Hgen
+    cases gi with
+    | mk gen_idents s_gen =>
+      have Hs' : s' = { s with genState := s_gen } := by
+        have := congrArg Prod.snd Hgen
+        simp at this
+        exact this.symm
+      rw [Hs']
+      simp only
+      exact genOutExprIdents_WFMono Hwf Hgi
 
-/--! Theorems about well-formedness of CoreGen -/
+/-- Bare WFMono for old vars (live `callElimCmd` builds `oldTripsRaw` inline). -/
+private theorem genOldExprIdentsTripWFMono
+    {oldVars : List Expression.Ident}
+    {s s' : CoreGenState} {genOldIdents : List Expression.Ident}
+    (Hwf : CoreGenState.WF s)
+    (Hgen : genOldExprIdents oldVars s = (genOldIdents, s')) :
+    CoreGenState.WF s' :=
+  genOldExprIdents_WFMono Hwf Hgen
 
-theorem genArgExprIdentTemp :
-  genArgExprIdent s = (l, s') → CoreIdent.isTemp l :=
-  fun Hgen => by exact genCoreIdentTemp Hgen
+/-- Trip-level GeneratedWF for old trips, parameterized over the bare
+    `genOldExprIdents` (since the live `callElimCmd` constructs its
+    `oldTripsRaw` inline rather than through a wrapper). -/
+private theorem genOldExprIdentsTripGeneratedWF
+    {oldVars : List Expression.Ident} {oldTys : List Lambda.LTy}
+    {s s' : CoreGenState} {genOldIdents : List Expression.Ident}
+    (Hgen : genOldExprIdents oldVars s = (genOldIdents, s'))
+    (Htylen : oldTys.length = oldVars.length) :
+    s'.generated =
+        ((genOldIdents.zip oldTys).zip oldVars).unzip.fst.unzip.fst.reverse ++ s.generated := by
+  rw [genOldExprIdents_GeneratedWF Hgen]
+  congr 1
+  have Hglen : genOldIdents.length = oldVars.length := genOldExprIdents_length Hgen
+  rw [List.unzip_zip_left (l₁ := (genOldIdents.zip oldTys)) (l₂ := oldVars)]
+  · rw [List.unzip_zip_left (l₁ := genOldIdents) (l₂ := oldTys)]
+    omega
+  · rw [List.length_zip]
+    omega
 
-theorem genOutExprIdentTemp :
-  genOutExprIdent e s = (l, s') → CoreIdent.isTemp l :=
-  fun Hgen => genCoreIdentTemp Hgen
+/-! ## Call-case helper lemmas
 
-theorem genCoreIdentGeneratedWF :
-  CoreGenState.gen pf s = (l, s') → s'.generated = l :: s.generated := by
-  intros Hgen
-  simp [CoreGenState.gen] at Hgen
-  rw [← Hgen.2]
-  simp_all
+These helpers bridge the post-`Visibility`-removal WF infrastructure to the
+disjointness/Nodup obligations the L1–L6 wrappers need.  See
+`docs/superpowers/research/2026-05-21-wf-infrastructure-survey.md` and
+`docs/superpowers/research/2026-05-21-legacy-call-case-recipe.md` for
+context.
 
-theorem genIdentGeneratedWF :
-  genIdent ident pf s = (l, s') → s'.generated = l :: s.generated :=
-  fun Hgen => genCoreIdentGeneratedWF Hgen
+Most helpers here *consume* a `Forall isTempIdent` (resp.
+`Forall isOldTempIdent`) hypothesis on a list of newly-generated names
+rather than producing one from `genIdent` semantics directly: producing
+`isTempIdent` requires reasoning about `String.startsWith`, which goes
+through opaque `Slice`/`Pattern` infrastructure (cf.
+`Strata.DL.Util.String` for context).  The producing-side derivation is
+deferred to Task 6e along with the open `sorry`. -/
 
-theorem genArgExprIdentGeneratedWF :
-  genArgExprIdent s = (l, s') → s'.generated = l :: s.generated :=
-  fun Hgen => genCoreIdentGeneratedWF Hgen
+/-- Identifiers in a procedure header's input keys are also names of `p`
+    (via `Decl.names`) when `proc` is found by `Program.Procedure.find?`.
+    Useful for combining `WFProgramProp.namesNodup` with per-procedure
+    `inputsNodup` to derive disjointness facts. -/
+private theorem program_def_not_temp
+    {x : Expression.Ident}
+    (Hpfresh : ¬ isTempIdent x ∧ ¬ isOldTempIdent x) :
+    ¬ isTempIdent x := Hpfresh.1
 
-theorem genArgExprIdentsGeneratedWF :
-  genArgExprIdents n s = (ls, s') →
-  ls.reverse ++ s.generated = s'.generated
-  := by
-  intros Hgen
-  simp [genArgExprIdents] at Hgen
-  induction n generalizing s ls s'
-  case zero =>
-    rw [List.replicate_zero] at Hgen
-    simp [StateT.pure, pure] at Hgen
-    cases Hgen <;> simp_all
-  case succ n =>
-    simp only [List.replicate] at Hgen
-    simp [bind, StateT.bind, pure] at Hgen
-    split at Hgen
-    next a s₁ heq =>
-    split at Hgen
-    next a' s₂ heq' =>
-    cases Hgen
-    have HH := genArgExprIdentGeneratedWF heq
-    grind
+/-- Mirror of `program_def_not_temp` for the `old_` prefix. -/
+private theorem program_def_not_oldTemp
+    {x : Expression.Ident}
+    (Hpfresh : ¬ isTempIdent x ∧ ¬ isOldTempIdent x) :
+    ¬ isOldTempIdent x := Hpfresh.2
 
-theorem genArgExprIdentsTripGeneratedWF { s s' : CoreGenState } :
-  genArgExprIdentsTrip outs xs s = (Except.ok trips, s') →
-  trips.unzip.1.unzip.1.reverse ++ s.generated = s'.generated := by
-  intros Hgen
-  apply genArgExprIdentsGeneratedWF (n:=xs.length)
-  simp [genArgExprIdentsTrip] at *
-  split at Hgen
-  . simp [Functor.map, ExceptT.map, bind,
-          liftM, monadLift, MonadLift.monadLift, ExceptT.lift,
-          ExceptT.mk, StateT.bind] at Hgen
-    split at Hgen
-    split at Hgen
-    . next heq =>
-      simp [pure, StateT.pure] at Hgen
-      cases Hgen
-      simp [StateT.map, Functor.map] at heq
-      cases heq
-      rw [← List.map_map]
-      rw [List.map_fst_zip] <;> try simp_all
-      rw [List.map_fst_zip] <;> try simp_all
-      . rfl
-      . simp [genArgExprIdents]
-        rw [genArgExprIdent_len'] <;> simp_all
-      . simp [genArgExprIdents]
-        rw [genArgExprIdent_len'] <;> simp_all
-    . simp [StateT.pure, pure] at Hgen
-      cases Hgen
-  . simp [throw, throwThe, MonadExceptOf.throw,
-          ExceptT.mk, StateT.pure, pure] at Hgen
-    cases Hgen
+/-- A `Forall isTempIdent` list is disjoint from any list of identifiers
+    none of which is `isTempIdent`.  This is the canonical disjointness
+    bridge between freshly-generated temps and program-defined names. -/
+private theorem isTemp_disjoint_notTemp
+    {temps progNames : List Expression.Ident}
+    (Htemps : Forall (fun x => isTempIdent x) temps)
+    (Hprog : ∀ x ∈ progNames, ¬ isTempIdent x) :
+    temps.Disjoint progNames := by
+  intro x Hin1 Hin2
+  have Htemp : isTempIdent x := (List.Forall_mem_iff.mp Htemps) x Hin1
+  exact (Hprog x Hin2) Htemp
 
-theorem genArgExprIdentWFMono :
-  CoreGenState.WF s →
-  genArgExprIdent s = (l, s') →
-  CoreGenState.WF s' :=
-  fun Hgen => CoreGenState.WFMono' Hgen
+/-- Mirror of `isTemp_disjoint_notTemp` for the `old_` prefix. -/
+private theorem isOldTemp_disjoint_notOldTemp
+    {olds progNames : List Expression.Ident}
+    (Holds : Forall (fun x => isOldTempIdent x) olds)
+    (Hprog : ∀ x ∈ progNames, ¬ isOldTempIdent x) :
+    olds.Disjoint progNames := by
+  intro x Hin1 Hin2
+  have Hold : isOldTempIdent x := (List.Forall_mem_iff.mp Holds) x Hin1
+  exact (Hprog x Hin2) Hold
 
-theorem genArgExprIdentsWFMono :
-  CoreGenState.WF s →
-  genArgExprIdents n s = (ls, s') →
-  CoreGenState.WF s' := by
-  intros Hwf Hgen
-  simp [genArgExprIdents] at Hgen
-  induction n generalizing s ls s'
-  case zero =>
-    simp [StateT.pure, pure] at Hgen
-    cases Hgen <;> simp_all
-  case succ n' =>
-    simp only [List.replicate] at Hgen
-    simp [bind, StateT.bind, pure] at Hgen
-    split at Hgen
-    next a s₁ heq =>
-    split at Hgen
-    next a' s₂ heq' =>
-    cases Hgen
-    have HH := genArgExprIdentWFMono Hwf heq
-    grind
+/-- Pairwise disjointness between three concatenated lists, extracted
+    from `(a ++ b ++ c).Nodup`.  Convenience re-packaging used downstream
+    to peel `cs'.generated`'s Nodup into per-segment disjointness. -/
+private theorem disjoint_of_nodup_append_three
+    {a b c : List Expression.Ident}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Disjoint b ∧ a.Disjoint c ∧ b.Disjoint c := by
+  rw [List.append_assoc] at Hnd
+  have Hnd' := List.nodup_append.mp Hnd
+  -- Hnd'.1 : a.Nodup
+  -- Hnd'.2.1 : (b ++ c).Nodup
+  -- Hnd'.2.2 : ∀ x ∈ a, ∀ y ∈ b ++ c, x ≠ y
+  have Hbc := List.nodup_append.mp Hnd'.2.1
+  refine ⟨?_, ?_, ?_⟩
+  · intro x hxa hxb
+    exact Hnd'.2.2 x hxa x (List.mem_append_left c hxb) rfl
+  · intro x hxa hxc
+    exact Hnd'.2.2 x hxa x (List.mem_append_right b hxc) rfl
+  · intro x hxb hxc
+    exact Hbc.2.2 x hxb x hxc rfl
 
-theorem genArgExprIdentsTripWFMono :
-  CoreGenState.WF s →
-  genArgExprIdentsTrip outs xs s = (Except.ok trips, s') →
-  CoreGenState.WF s' := by
-  intros Hwf Hgen
-  simp [genArgExprIdentsTrip] at *
-  split at Hgen
-  . simp [Functor.map, ExceptT.map, bind,
-          liftM, monadLift, MonadLift.monadLift, ExceptT.lift,
-          ExceptT.mk, StateT.bind] at Hgen
-    split at Hgen
-    split at Hgen
-    . next a heq =>
-      simp [pure, StateT.pure] at Hgen
-      cases Hgen
-      simp [StateT.map, Functor.map] at heq
-      generalize Hgen' : (genArgExprIdents xs.length s) = gen at heq
-      cases gen with
-      | mk fst snd =>
-      simp at heq
-      cases heq
-      apply genArgExprIdentsWFMono Hwf Hgen'
-    . simp [StateT.pure, pure] at Hgen
-      cases Hgen
-  . simp [throw, throwThe, MonadExceptOf.throw,
-          ExceptT.mk, StateT.pure, pure] at Hgen
-    cases Hgen
+/-- Bridge from the `tmp_` half of `Hwfgenst` to `isNotDefined` for a list
+    of fresh temp names: if a name is `isTempIdent` and is *not* in
+    `γ.generated`, then it must be undefined in σ (otherwise the iff in
+    `Hwfgentmp` would put it in `γ.generated`).
 
-theorem genOutExprIdentGeneratedWF :
-  genOutExprIdent e s = (l, s') → s'.generated = l :: s.generated :=
-  fun Hgen => genCoreIdentGeneratedWF Hgen
-
-theorem genOutExprIdentsGeneratedWF :
-  genOutExprIdents es s = (ls, s') →
-  ls.reverse ++ s.generated = s'.generated
-  := by
-  intros Hgen
-  simp [genOutExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
-    simp [StateT.pure, pure] at Hgen
-    cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
-    split at Hgen
-    next a s₁ heq =>
-    split at Hgen
-    next a' s₂ heq' =>
-    cases Hgen
-    have HH := genOutExprIdentGeneratedWF heq
-    specialize ih heq'
-    simp [HH] at ih
-    simp_all
-
-theorem genOutExprIdentsTripGeneratedWF { s s' : CoreGenState } :
-  genOutExprIdentsTrip outs xs s = (Except.ok trips, s') →
-  trips.unzip.1.unzip.1.reverse ++ s.generated = s'.generated := by
-  intros Hgen
-  apply genOutExprIdentsGeneratedWF (es:=xs)
-  simp [genOutExprIdentsTrip] at *
-  split at Hgen
-  . simp [Functor.map, ExceptT.map, bind,
-          liftM, monadLift, MonadLift.monadLift, ExceptT.lift,
-          ExceptT.mk, StateT.bind] at Hgen
-    split at Hgen
-    split at Hgen
-    . next heq =>
-      simp [pure, StateT.pure] at Hgen
-      cases Hgen
-      simp [StateT.map, Functor.map] at heq
-      cases heq
-      rw [← List.map_map]
-      rw [List.map_fst_zip] <;> try simp_all
-      rw [List.map_fst_zip] <;> try simp_all
-      . rfl
-      . simp [genOutExprIdents]
-        rw [genOutExprIdent_len'] <;> simp_all
-      . simp [genOutExprIdents]
-        rw [genOutExprIdent_len'] <;> simp_all
-    . simp [StateT.pure, pure] at Hgen
-      cases Hgen
-  . simp [throw, throwThe, MonadExceptOf.throw,
-          ExceptT.mk, StateT.pure, pure] at Hgen
-    cases Hgen
-
-theorem genOutExprIdentWFMono :
-  CoreGenState.WF s →
-  genOutExprIdent e s = (l, s') →
-  CoreGenState.WF s' :=
-  fun Hgen => CoreGenState.WFMono' Hgen
-
-theorem genOutExprIdentsWFMono :
-  CoreGenState.WF s →
-  genOutExprIdents es s = (ls, s') →
-  CoreGenState.WF s' := by
-  intros Hwf Hgen
-  simp [genOutExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
-    simp [StateT.pure, pure] at Hgen
-    cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
-    split at Hgen
-    next a s₁ heq =>
-    split at Hgen
-    next a' s₂ heq' =>
-    cases Hgen
-    have HH := genOutExprIdentWFMono Hwf heq
-    exact ih HH heq'
-
-theorem genOutExprIdentsTripWFMono :
-  CoreGenState.WF s →
-  genOutExprIdentsTrip outs xs s = (Except.ok trips, s') →
-  CoreGenState.WF s' := by
-  intros Hwf Hgen
-  simp [genOutExprIdentsTrip] at *
-  split at Hgen
-  . simp [Functor.map, ExceptT.map, bind,
-          liftM, monadLift, MonadLift.monadLift, ExceptT.lift,
-          ExceptT.mk, StateT.bind] at Hgen
-    split at Hgen
-    split at Hgen
-    . next a heq =>
-      simp [pure, StateT.pure] at Hgen
-      cases Hgen
-      simp [StateT.map, Functor.map] at heq
-      generalize Hgen' : (genOutExprIdents xs s) = gen at heq
-      cases gen with
-      | mk fst snd =>
-      simp at heq
-      cases heq
-      apply genOutExprIdentsWFMono Hwf Hgen'
-    . simp [StateT.pure, pure] at Hgen
-      cases Hgen
-  . simp [throw, throwThe, MonadExceptOf.throw,
-          ExceptT.mk, StateT.pure, pure] at Hgen
-    cases Hgen
-
-theorem genOldExprIdentGeneratedWF :
-  genOldExprIdent e s = (l, s') → s'.generated = l :: s.generated :=
-  fun Hgen => genCoreIdentGeneratedWF Hgen
-
-theorem genOldExprIdentsGeneratedWF :
-  genOldExprIdents es s = (ls, s') →
-  ls.reverse ++ s.generated = s'.generated
-  := by
-  intros Hgen
-  simp [genOldExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
-    simp [StateT.pure, pure] at Hgen
-    cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
-    split at Hgen
-    next a s₁ heq =>
-    split at Hgen
-    next a' s₂ heq' =>
-    cases Hgen
-    have HH := genOldExprIdentGeneratedWF heq
-    specialize ih heq'
-    simp [HH] at ih
-    simp_all
-
-theorem genOldExprIdentsTripGeneratedWF { s s' : CoreGenState } :
-  genOldExprIdentsTrip p xs s = (Except.ok trips, s') →
-  trips.unzip.1.unzip.1.reverse ++ s.generated = s'.generated := by
-  intros Hgen
-  apply genOldExprIdentsGeneratedWF (es:=xs)
-  simp [genOldExprIdentsTrip, bind, liftM,] at *
-  simp [Functor.map, ExceptT.bind, ExceptT.bindCont, bind,
-        monadLift, MonadLift.monadLift, ExceptT.lift,
-        ExceptT.mk, StateT.bind] at Hgen
-  split at Hgen
-  split at Hgen
-  . next heq =>
-    simp [bind, StateT.bind] at Hgen
-    split at Hgen
-    next heq' =>
-    simp [ExceptT.bindCont] at Hgen
-    split at Hgen
-    . cases Hgen
-      simp [StateT.map, Functor.map] at heq
-      cases heq
-      rw [← List.map_map]
-      rw [List.map_fst_zip] <;> try simp_all
-      rw [List.map_fst_zip] <;> try simp_all
-      rw [← getIdentTys!_store_same heq']
-      congr
-      . simp [genOldExprIdents]
-        rw [← getIdentTys!_len heq']
-        rw [genOldExprIdent_len'] <;> simp_all
-      . simp [genOldExprIdents]
-        rw [← getIdentTys!_len heq']
-        rw [genOldExprIdent_len'] <;> simp_all
-    . cases Hgen
-  . cases Hgen
-
-theorem genOldExprIdentWFMono :
-  CoreGenState.WF s →
-  genOldExprIdent e s = (l, s') →
-  CoreGenState.WF s' :=
-  fun Hgen => CoreGenState.WFMono' Hgen
-
-theorem genOldExprIdentsWFMono :
-  CoreGenState.WF s →
-  genOldExprIdents es s = (ls, s') →
-  CoreGenState.WF s' := by
-  intros Hwf Hgen
-  simp [genOldExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
-    simp [StateT.pure, pure] at Hgen
-    cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
-    split at Hgen
-    next a s₁ heq =>
-    split at Hgen
-    next a' s₂ heq' =>
-    cases Hgen
-    have HH := genOldExprIdentWFMono Hwf heq
-    exact ih HH heq'
-
-theorem genOldExprIdentsTripWFMono :
-  CoreGenState.WF s →
-  genOldExprIdentsTrip outs xs s = (Except.ok trips, s') →
-  CoreGenState.WF s' := by
-  intros Hwf Hgen
-  simp [genOldExprIdentsTrip, bind, liftM,] at *
-  simp [Functor.map, ExceptT.bind, ExceptT.bindCont, bind,
-        monadLift, MonadLift.monadLift, ExceptT.lift,
-        ExceptT.mk, StateT.bind] at Hgen
-  split at Hgen
-  split at Hgen
-  . next heq =>
-    simp [bind, StateT.bind] at Hgen
-    split at Hgen
-    next heq' =>
-    simp [ExceptT.bindCont] at Hgen
-    split at Hgen
-    . cases Hgen
-      simp [StateT.map, Functor.map] at heq
-      cases heq
-      generalize Hgen' : (genOldExprIdents xs s) = gen at heq'
-      cases gen with
-      | mk fst snd =>
-      rw [← getIdentTys!_store_same heq']
-      exact genOldExprIdentsWFMono Hwf Hgen'
-    . cases Hgen
-  . cases Hgen
-
-private theorem List.Subset.trans :
-  List.Subset a b → b.Subset c → a.Subset c := fun H1 H2 _ Hin => H2 (H1 Hin)
-
-private theorem List.Subset.app :
-  List.Subset a c → b.Subset c → (a ++ b).Subset c := by
-  intros H1 H2
-  intros x Hin
-  simp at Hin
-  cases Hin with
-  | inl Hin =>
-    exact H1 Hin
-  | inr Hin =>
-    exact H2 Hin
-
-open OldExpressions in
-theorem extractedOldExprInVars :
-  NormalizedOldExpr post →
-  (extractOldExprVars post).Subset
-  (Imperative.HasVarsPure.getVars post) := by
-  intros Hnorm
-  induction post <;>
-    simp [Imperative.HasVarsPure.getVars, extractOldExprVars,
-          Lambda.LExpr.LExpr.getVars] at * <;>
-    try simp_all
-  case app fn e fn_ih e_ih =>
-    unfold extractOldExprVars
-    split
-    . simp [Lambda.LExpr.LExpr.getVars]
-      intros x Hin
-      exact Hin
-    . next Hfalse =>
-      cases Hnorm with
-      | app H1 H2 Hn =>
+    Takes the dual-clause `tmp_` half: for every `v`, `v ∈ generated ∧
+    isTempIdent v ↔ (σ v).isSome ∧ isTempIdent v`. -/
+private theorem fresh_temps_not_defined
+    {σ : CoreStore} {γ : CoreTransformState}
+    (Hwfgentmp : ∀ v, v ∈ γ.genState.generated ∧ isTempIdent v ↔
+                  ((σ v).isSome ∧ isTempIdent v))
+    {newTemps : List Expression.Ident}
+    (Hnotgen : ∀ x ∈ newTemps, x ∉ γ.genState.generated)
+    (HtempPred : Forall (fun x => isTempIdent x) newTemps) :
+    Imperative.isNotDefined σ newTemps := by
+  intro v Hin
+  have Htemp : isTempIdent v := (List.Forall_mem_iff.mp HtempPred) v Hin
+  have Hnotin : v ∉ γ.genState.generated := Hnotgen v Hin
+  -- If σ v = some _ then `Hwfgentmp.mpr` would put v in `γ.generated`,
+  -- contradicting `Hnotin`.  Case split on `σ v` directly.
+  match hσ : σ v with
+  | none => rfl
+  | some w =>
       exfalso
-      specialize Hn ?_
-      constructor
-      cases Hn
-      apply Hfalse
+      apply Hnotin
+      have Hbundle : (σ v).isSome ∧ isTempIdent v := by
+        refine ⟨?_, Htemp⟩
+        simp [hσ]
+      exact ((Hwfgentmp v).mpr Hbundle).1
+
+/-- Bridge from the `old_` half of `Hwfgenst` to `isNotDefined` for a list
+    of fresh `old_`-prefixed names: if every name is `isOldTempIdent`, then
+    each must be undefined in σ by the freshness clause. -/
+private theorem fresh_olds_not_defined
+    {σ : CoreStore}
+    (Hwfgenold : ∀ v, isOldTempIdent v → (σ v).isNone)
+    {newOlds : List Expression.Ident}
+    (HoldPred : Forall (fun x => isOldTempIdent x) newOlds) :
+    Imperative.isNotDefined σ newOlds := by
+  intro v Hin
+  have Hold : isOldTempIdent v := (List.Forall_mem_iff.mp HoldPred) v Hin
+  exact Option.isNone_iff_eq_none.mp (Hwfgenold v Hold)
+
+/-- Specialization of `disjoint_of_nodup_append_three` to extract the
+    three pairwise disjointness facts as a Forall-friendly tuple. -/
+private theorem nodup_append_three_disjoint
+    {a b c : List Expression.Ident}
+    (Hnd : (a ++ b ++ c).Nodup) :
+    a.Disjoint b ∧ b.Disjoint c ∧ a.Disjoint c :=
+  let ⟨h1, h2, h3⟩ := disjoint_of_nodup_append_three Hnd
+  ⟨h1, h3, h2⟩
+
+/-- Pointwise σ-definedness for the `flatMap getVars` of a list of
+    expressions, derived from the `EvalExpressions.eval_some` per-cons
+    `isDefined σ (getVars e)` clauses.  Used by D1 to bypass the
+    `HdefOver` → `Statement.allVarsTrans` route (the latter relies on
+    unexposed defs and is hard to reduce in current module-system mode). -/
+private theorem evalExpressions_isDefined_flatMap
+    {δ : CoreEval} {σ : CoreStore}
+    {es : List Expression.Expr} {vs : List Expression.Expr}
+    (Heval : EvalExpressions (P:=Core.Expression) δ σ es vs) :
+    Imperative.isDefined σ
+      (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)) es) := by
+  induction Heval with
+  | eval_none =>
+    intro v Hv
+    simp at Hv
+  | eval_some Hdef _ _ Hrec_isdef =>
+    intro v Hv
+    -- Hv : v ∈ flatMap (getVars) (e :: es)
+    rw [List.flatMap_cons] at Hv
+    rcases List.mem_append.mp Hv with Hin | Hin
+    · exact Hdef v Hin
+    · exact Hrec_isdef v Hin
+
+/-- For any `v ∉ ks`, `InitStates σ ks vs σ'` leaves `σ' v = σ v`.
+
+    Each `InitState` step in the chain only changes the slot at its
+    target identifier (per the `(∀ y, x ≠ y → σ' y = σ y)` clause in
+    `InitState.init`); chaining these gives the multi-step preservation
+    fact for keys outside the full target list. -/
+private theorem initStates_get_notin
+    {P : Imperative.PureExpr}
+    {σ σ' : Imperative.SemanticStore P}
+    {ks : List P.Ident} {vs : List P.Expr} {v : P.Ident}
+    (Hinit : InitStates σ ks vs σ')
+    (Hnin : v ∉ ks) :
+    σ' v = σ v := by
+  induction Hinit with
+  | init_none => rfl
+  | @init_some σ x e σ_step xs ys σ'' Hstep Hinits ih =>
+    -- v ≠ x (since v ∉ x :: xs)
+    have Hvx : x ≠ v := fun heq =>
+      Hnin (heq ▸ List.mem_cons_self)
+    -- v ∉ xs (rest of cons membership)
+    have Hnin_tail : v ∉ xs := fun hin =>
+      Hnin (List.mem_cons_of_mem _ hin)
+    -- σ' v = σ_step v (by InitState's preservation clause)
+    have Hstep_eq : σ_step v = σ v := by
+      cases Hstep with
+      | init _ _ Heq =>
+        exact Heq v Hvx
+    -- σ'' v = σ_step v (by IH on the tail)
+    have Hih := ih Hnin_tail
+    rw [Hih, Hstep_eq]
+
+/-- The length of `trips.unzip.snd` matches `trips.length`.  Convenient
+    one-liner used to bridge `genXxxExprIdentsTrip_snd` shape facts to a
+    `triplen` length equation, instead of inlining the `simp
+    [List.unzip_eq_map]` rewrite at every length proof. -/
+private theorem unzip_snd_length {α β : Type _} (trips : List (α × β)) :
+    trips.unzip.snd.length = trips.length := by
+  simp [List.unzip_eq_map]
+
+/-- Decompose a non-membership fact over a balanced 4-way append
+    `a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)` into four leaf-level non-membership
+    facts.  Used at the L4 (preVars) and L6 (postVars) `Hinv` sites in
+    `callElimStatementCorrect` to flatten the per-`removeAll` decomposition
+    cascades. -/
+private theorem notin_append4
+    {α} {a : α} {l₁ l₂ l₃ l₄ : List α}
+    (Hnin : a ∉ (l₁ ++ l₂) ++ (l₃ ++ l₄)) :
+    a ∉ l₁ ∧ a ∉ l₂ ∧ a ∉ l₃ ∧ a ∉ l₄ :=
+  ⟨fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inr h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl h)))),
+   fun h => Hnin (List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inr h))))⟩
+
+/-- For an entry of `conds.filter f`, its `.snd.expr` is contained in
+    `getCheckExprs conds` (in `.contains` form).  Used at both the
+    pre-filtered and post-filtered sites of `callElimStatementCorrect` to
+    bridge filter membership to the `.contains` argument expected by the
+    `Hpre`/`Hpost` hypotheses from `call_sem`. -/
+private theorem filterCheck_in_getCheckExprs [LawfulBEq Expression.Expr]
+    {conds : ListMap CoreLabel Procedure.Check}
+    {f : CoreLabel × Procedure.Check → Bool}
+    {entry : CoreLabel × Procedure.Check}
+    (Hentry : entry ∈ conds.filter f) :
+    (Procedure.Spec.getCheckExprs conds).contains entry.snd.expr := by
+  have Hin_full := (List.mem_filter.mp Hentry).1
+  apply List.contains_iff_mem.mpr
+  simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+  refine ⟨entry.snd, ?_, rfl⟩
+  rw [ListMap.values_eq_map_snd]
+  exact List.mem_map_of_mem Hin_full
+
+/-- Membership form of `filterCheck_in_getCheckExprs`: the entry's
+    `.snd.expr` lies in `getCheckExprs conds` (as a `List` membership
+    predicate, not the `.contains` boolean form). -/
+private theorem filterCheck_mem_getCheckExprs
+    {conds : ListMap CoreLabel Procedure.Check}
+    {f : CoreLabel × Procedure.Check → Bool}
+    {entry : CoreLabel × Procedure.Check}
+    (Hentry : entry ∈ conds.filter f) :
+    entry.snd.expr ∈ Procedure.Spec.getCheckExprs conds := by
+  have Hin_full := (List.mem_filter.mp Hentry).1
+  simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+  refine ⟨entry.snd, ?_, rfl⟩
+  rw [ListMap.values_eq_map_snd]
+  exact List.mem_map_of_mem Hin_full
+
+/-- Store-agreement helper for `σ_R1`-style stacks (the σ_R1 layer
+    overlaying `genOldIdents ↦ oldVals` on σO, plus the σO ← σAO ←
+    σA ← σ chain from havoc + InitStates).
+
+    For any identifier `v` not touched by any layer, all four stores
+    agree: `updatedStates σO genOldIds oldVals v = σ v`.  Used at three
+    sites in `callElimStatementCorrect` (D2c "argExpr survives" branches
+    and the L6 `Hinv` derivations). -/
+private theorem σR1_eq_σ_for_notTouched
+    {σ σA σAO σO : CoreStore}
+    {ins outs genOldIds : List Expression.Ident}
+    {argVals oVals oldVals : List Expression.Expr}
+    (Hinitin : InitStates σ ins argVals σA)
+    (Hinitout : InitStates σA outs oVals σAO)
+    (Hhav : HavocVars σAO outs σO)
+    {v : Expression.Ident}
+    (HvNotIns : v ∉ ins)
+    (HvNotOuts : v ∉ outs)
+    (HvNotGen : v ∉ genOldIds) :
+    updatedStates σO genOldIds oldVals v = σ v := by
+  rw [updatedStates_get_notin HvNotGen]
+  rcases HavocVarsUpdateStates Hhav with ⟨ovh, Hup_havoc⟩
+  have HσO_eq : σO = updatedStates σAO outs ovh := UpdateStatesUpdated Hup_havoc
+  rw [HσO_eq, updatedStates_get_notin HvNotOuts,
+      initStates_get_notin Hinitout HvNotOuts,
+      initStates_get_notin Hinitin HvNotIns]
+
+/-- No-throw fact for the `oldTys ← oldVars.mapM ...` step inside
+    `callElimCmd`.  When every `g ∈ oldVars` already appears as a key in
+    `proc.header.inputs`, the `find?`-driven lookup never hits the
+    `throw` branch, so the whole `mapM` reduces to an `Except.ok` with a
+    `oldTys` list whose length matches `oldVars`.
+
+    This is one of the no-throw lemmas needed by
+    `callElimCmd_call_eq` (B3) to refute the `Except.error` branches in
+    the post-`outTrips` layers.  By construction the `oldVars` produced
+    inside `callElimCmd` is `lhs.filter (fun g => inputNames.contains g
+    && ...)`, so the `Holdvars_in_inputs` precondition is immediate at
+    the call site. -/
+private theorem oldVars_oldTys_mapM_ok
+    {proc : Procedure}
+    {oldVars : List Expression.Ident}
+    {γ : CoreTransformState}
+    (Holdvars_in_inputs :
+      ∀ g ∈ oldVars, (ListMap.keys proc.header.inputs).contains g) :
+    ∃ (oldTys : List (Lambda.LTy)) (γ' : CoreTransformState),
+      (oldVars.mapM (m:=CoreTransformM) (oldTyLookupCallElim proc))
+        γ
+        = (Except.ok oldTys, γ') ∧
+      oldTys.length = oldVars.length := by
+  -- Bridge: `keys.contains g = true` gives `find? g = some _`.
+  -- Use the contrapositive of `ListMap.find?_of_not_mem_values`:
+  --   `find? = none → g ∉ keys`, so `g ∈ keys → find? ≠ none`.
+  have Hfind_some :
+      ∀ (m : ListMap Expression.Ident Lambda.LMonoTy)
+        (g : Expression.Ident),
+        (ListMap.keys m).contains g = true →
+          ∃ v, ListMap.find? m g = some v := by
+    intro m g Hcontains
+    have Hmem : g ∈ ListMap.keys m := List.contains_iff_mem.mp Hcontains
+    cases hf : ListMap.find? m g with
+    | none =>
+      have := ListMap.find?_of_not_mem_values m hf
+      exact absurd Hmem this
+    | some v => exact ⟨v, rfl⟩
+  -- Induct on `oldVars`; threading the state explicitly.
+  induction oldVars generalizing γ with
+  | nil =>
+    refine ⟨[], γ, ?_, rfl⟩
+    simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk]
+  | cons g rest ih =>
+    -- Head: lookup succeeds via `Holdvars_in_inputs`.
+    have Hg_in : (ListMap.keys proc.header.inputs).contains g = true := by
+      exact Holdvars_in_inputs g (by simp)
+    obtain ⟨ty, Hty⟩ := Hfind_some proc.header.inputs g Hg_in
+    -- Tail: IH applies because `Holdvars_in_inputs` weakens.
+    have Hrest : ∀ g' ∈ rest, (ListMap.keys proc.header.inputs).contains g' = true :=
+      fun g' Hin => Holdvars_in_inputs g' (List.mem_cons_of_mem _ Hin)
+    obtain ⟨tys', γ'', Heqtail, Hlen⟩ := ih Hrest (γ := γ)
+    refine ⟨Lambda.LTy.forAll [] ty :: tys', γ'', ?_, ?_⟩
+    · -- Unfold mapM_cons and chain the head match through to the tail mapM.
+      -- Strategy: unfold the bind shell and `pure` in both the goal and
+      -- `Heqtail` so the inner-mapM call is in a matching form, then `rw`.
+      simp only [List.mapM_cons, oldTyLookupCallElim,
+                 bind, ExceptT.bind, ExceptT.bindCont,
+                 ExceptT.mk, StateT.bind,
+                 pure, ExceptT.pure, StateT.pure, Hty]
+      simp only [pure, ExceptT.pure, StateT.pure, ExceptT.mk] at Heqtail
+      rw [Heqtail]
       rfl
-    . cases Hnorm with
-      | app H1 H2 Hn =>
-      apply List.Subset.app
-      . apply List.Subset.trans
-        apply fn_ih
-        exact H1
-        intros x Hin
-        simp_all
-      . apply List.Subset.trans
-        apply e_ih
-        exact H2
-        intros x Hin
-        simp_all
-  case abs ih =>
-    cases Hnorm
-    apply ih <;> assumption
-  case quant trih eih =>
-    cases Hnorm
-    rename_i e_normalized
-    rename_i tr_normalized
-    rename_i tr e ty k
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply trih <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case ite cih tih eih =>
-    cases Hnorm
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply cih <;> assumption
-      intros x Hin
-      simp_all
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply tih <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case eq ih1 ih2 =>
-    cases Hnorm
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply ih1 <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply ih2 <;> assumption
-      intros x Hin
-      simp_all
+    · simp [Hlen]
 
-open OldExpressions in
-theorem normalizeOldExprInVarsTrue:
-  (Lambda.LExpr.LExpr.getVars (normalizeOldExpr e true)).Subset
-  (Lambda.LExpr.LExpr.getVars (normalizeOldExpr e)) := by
-  induction e <;>
-      simp [normalizeOldExpr, Lambda.LExpr.LExpr.getVars] at * <;>
-      try simp_all
-  case app fn e fn_ih e_ih =>
-    unfold normalizeOldExpr
-    split
-    split
-    split
-    . simp [Lambda.LExpr.LExpr.getVars] at *
-      intros x Hin
-      exact Hin
-    . intros x Hin
-      exact Hin
-    . simp [Lambda.LExpr.LExpr.getVars, normalizeOldExpr] at *
-      exact e_ih
-    . simp [Lambda.LExpr.LExpr.getVars] at *
-      apply List.Subset.app
-      . apply List.Subset.trans
-        apply fn_ih
-        intros x Hin
-        simp_all
-      . apply List.Subset.trans
-        apply e_ih
-        intros x Hin
-        simp_all
-  case fvar => intros x Hin; exact Hin
-  case ite cih tih eih =>
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply cih <;> assumption
-      intros x Hin
-      simp_all
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply tih <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case quant k ty trih eih =>
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply trih <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case eq ih1 ih2 =>
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply ih1 <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply ih2 <;> assumption
-      intros x Hin
-      simp_all
+/-- No-throw fact for `Core.Transform.createAsserts`.  The body of its
+    inner `mapM` only invokes `genIdent` (a pure state mutation that
+    cannot throw) followed by a `return`, so the entire computation
+    always reduces to `Except.ok asserts` for some asserts list whose
+    length matches `conds`.
 
-open OldExpressions in
-theorem normalizeOldExprInVars :
-  (Imperative.HasVarsPure.getVars (P:=Expression) (normalizeOldExpr post)).Subset
-  (Imperative.HasVarsPure.getVars post) := by
-  induction post <;>
-    simp [normalizeOldExpr,
-          Imperative.HasVarsPure.getVars,
-          Lambda.LExpr.LExpr.getVars] at * <;>
-    try simp_all
-  case app fn e fn_ih e_ih =>
-    unfold normalizeOldExpr
-    split
-    split
-    split
-    . simp [Lambda.LExpr.LExpr.getVars] at *
-      intros x Hin
-      exact Hin
-    . simp [Lambda.LExpr.LExpr.getVars] at *
-      apply List.Subset.trans
-      apply normalizeOldExprInVarsTrue
-      exact e_ih
-    . simp [Lambda.LExpr.LExpr.getVars, normalizeOldExpr] at *
-      exact e_ih
-    . simp [Lambda.LExpr.LExpr.getVars] at *
-      apply List.Subset.app
-      . apply List.Subset.trans
-        apply fn_ih
-        intros x Hin
-        simp_all
-      . apply List.Subset.trans
-        apply e_ih
-        intros x Hin
-        simp_all
-  case fvar => intros x Hin; exact Hin
-  case ite cih tih eih =>
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply cih <;> assumption
-      intros x Hin
-      simp_all
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply tih <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case quant k ty trih eih =>
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply trih <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case eq ih1 ih2 =>
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply ih1 <;> assumption
-      intros x Hin
-      simp_all
-    . apply List.Subset.trans
-      apply ih2 <;> assumption
-      intros x Hin
-      simp_all
+    This is the second of three "no-throw" lemmas needed by
+    `callElimCmd_call_eq` (B3) to refute the `Except.error` branches
+    in the post-`outTrips` layers.
 
-open OldExpressions in
-theorem extractedOldVarsInVars :
-  ValidExpression post →
-  (extractOldExprVars
-    (normalizeOldExpr post)).Subset
-  (Imperative.HasVarsPure.getVars post) := by
-  intros Hvalid
-  apply List.Subset.trans
-  . apply extractedOldExprInVars
-    exact normalizeOldExprSound Hvalid
-  . exact normalizeOldExprInVars
+    The lemma deliberately does NOT bridge to `createAsserts_list`
+    (the pure-list pure analogue used in earlier lemmas).  The
+    monadic version produces counter-based labels (e.g. `assert_pre0_5`)
+    while `createAsserts_list` produces index-based labels
+    (e.g. `assert_0_pre0`); the two strings differ.  Fortunately,
+    `EvalCmd.eval_assert_pass` ignores the label entirely, so the
+    label discrepancy is irrelevant to the contract derivation.  The
+    length fact below is sufficient for the call-site reasoning.
 
-open OldExpressions in
-theorem substOldPostSubset:
-  (Imperative.HasVarsPure.getVars (P:=Expression)
-    (substOld h2 (Lambda.LExpr.fvar m h1 ty) post)).Subset
-    (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := by
-  induction post <;> simp [substOld]
-  case fvar =>
-    intros x Hin
-    rename_i m name ty2
-    simp at m
-    simp at name
-    simp at ty2
+    The `asserts_shape` conjunct exposes the list as a `conds.map`-shape
+    over an existential `labelOf`, which is what the label-agnostic
+    `H_asserts_anylist` consumes downstream. -/
+private theorem createAsserts_ok
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (labelPrefix : String)
+    (γ : CoreTransformState) :
+    ∃ (asserts : List Statement) (γ' : CoreTransformState),
+      Core.Transform.createAsserts conds subst md labelPrefix γ
+        = (Except.ok asserts, γ') ∧
+      asserts.length = conds.length ∧
+      ∃ (labels : List String), labels.length = conds.length ∧
+        asserts = (conds.zip labels).map (fun (entry, lbl) =>
+          Statement.assert lbl
+            (Lambda.LExpr.substFvars entry.snd.expr subst)
+            (entry.snd.md.setCallSiteFileRange md)) := by
+  unfold Core.Transform.createAsserts
+  -- `ListMap α β := List (α × β)`, so `conds.mapM` is `List.mapM` over
+  -- the underlying list.  Induct on that list, threading the state.
+  induction conds generalizing γ with
+  | nil =>
+    refine ⟨[], γ, ?_, rfl, [], rfl, ?_⟩
+    · simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk]
+    · simp
+  | cons head rest ih =>
+    obtain ⟨l, check⟩ := head
+    -- Head: genIdent always succeeds, producing a label and updated state.
+    cases hgi : Core.Transform.genIdent l (fun s => s!"{labelPrefix}{s}") γ.genState with
+    | mk newLabel γgen' =>
+      -- The post-genIdent CoreTransformState (genState updated, rest preserved).
+      let γhead : CoreTransformState :=
+        { genState := γgen',
+          currentProgram := γ.currentProgram,
+          currentProcedureName := γ.currentProcedureName,
+          cachedAnalyses := γ.cachedAnalyses,
+          factory := γ.factory,
+          statistics := γ.statistics }
+      obtain ⟨asserts', γ'', Heqtail, Hlen, labelsTail, HlblsLen, Hshape⟩ := ih (γ := γhead)
+      refine ⟨Statement.assert newLabel.toPretty
+                (Lambda.LExpr.substFvars check.expr subst)
+                (check.md.setCallSiteFileRange md) :: asserts', γ'', ?_, ?_, ?_⟩
+      · -- Reduce both sides to the same `List.mapM` core, then chain via Heqtail.
+        -- Apply the same simp set on both the goal and Heqtail so the inner-mapM
+        -- shape matches.
+        simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.bindCont,
+                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
+                   StateT.bind, StateT.pure, pure,
+                   monadLift, MonadLift.monadLift, liftM,
+                   Functor.map, StateT.map, liftCoreGenM, hgi]
+        simp only [bind, ExceptT.bind,
+                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
+                   pure,
+                   monadLift, MonadLift.monadLift, liftM,
+                   Functor.map] at Heqtail
+        rw [Heqtail]
+        rfl
+      · simp [Hlen]
+      · refine ⟨newLabel.toPretty :: labelsTail, ?_, ?_⟩
+        · simp [HlblsLen]
+        · simp only [List.zip_cons_cons, List.map_cons]
+          rw [Hshape]
 
-    simp_all
-  case op =>
-    intros x Hin
-    rename_i m name ty2
-    simp at m
-    simp at name
-    simp at ty2
-    simp_all
-  case const =>
-    intros x Hin
-    rename_i m name
-    simp at m
-    simp_all
-  case bvar =>
-    intros x Hin
-    rename_i m d
-    simp at m
-    simp_all
-  case abs ih =>
-    exact ih
-  case ite cih tih eih =>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply cih <;> assumption
-      intros x Hin
-      simp_all
-      cases Hin <;> simp_all
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply tih <;> assumption
-      intros x Hin
-      simp_all
-      cases Hin <;> simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case app ih1 ih2 =>
-    split
-    . split
-      . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-        intros x Hin
-        simp_all
-      . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-        intros x Hin
-        simp_all
-    . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-      apply List.Subset.app
-      . apply List.Subset.trans
-        apply ih1 <;> assumption
-        intros x Hin
-        simp_all
-        cases Hin <;> simp_all
-      . apply List.Subset.trans
-        apply ih2 <;> assumption
-        intros x Hin
-        simp_all
-  case quant trih eih =>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply trih <;> assumption
-      intros x Hin
-      rename_i m1 k1 ty1 trigger1 e1
-      have assoc := List.append_assoc (Lambda.LExpr.LExpr.getVars trigger1) (Lambda.LExpr.LExpr.getVars e1) [h1]
-      simp_all
-      cases Hin <;> simp_all
-    . apply List.Subset.trans
-      apply eih <;> assumption
-      intros x Hin
-      simp_all
-  case eq ih1 ih2 =>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-    apply List.Subset.app
-    . apply List.Subset.trans
-      apply ih1 <;> assumption
-      intros x Hin
-      simp_all
-      cases Hin <;> simp_all
-    . apply List.Subset.trans
-      apply ih2 <;> assumption
-      intros x Hin
-      simp_all
+/-- No-throw fact for `Core.Transform.createAssumes`.  Mirror of
+    `createAsserts_ok` for the assume case.  Same `genIdent`-only
+    structure, same conclusion, same caveats about labels. -/
+private theorem createAssumes_ok
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (labelPrefix : String)
+    (γ : CoreTransformState) :
+    ∃ (assumes : List Statement) (γ' : CoreTransformState),
+      Core.Transform.createAssumes conds subst md labelPrefix γ
+        = (Except.ok assumes, γ') ∧
+      assumes.length = conds.length ∧
+      ∃ (labels : List String), labels.length = conds.length ∧
+        assumes = (conds.zip labels).map (fun (entry, lbl) =>
+          Statement.assume lbl
+            (Lambda.LExpr.substFvars entry.snd.expr subst)
+            (entry.snd.md.setCallSiteFileRange md)) := by
+  unfold Core.Transform.createAssumes
+  induction conds generalizing γ with
+  | nil =>
+    refine ⟨[], γ, ?_, rfl, [], rfl, ?_⟩
+    · simp [List.mapM_nil, pure, ExceptT.pure, StateT.pure, ExceptT.mk]
+    · simp
+  | cons head rest ih =>
+    obtain ⟨l, check⟩ := head
+    cases hgi : Core.Transform.genIdent l (fun s => s!"{labelPrefix}{s}") γ.genState with
+    | mk newLabel γgen' =>
+      let γhead : CoreTransformState :=
+        { genState := γgen',
+          currentProgram := γ.currentProgram,
+          currentProcedureName := γ.currentProcedureName,
+          cachedAnalyses := γ.cachedAnalyses,
+          factory := γ.factory,
+          statistics := γ.statistics }
+      obtain ⟨assumes', γ'', Heqtail, Hlen, labelsTail, HlblsLen, Hshape⟩ := ih (γ := γhead)
+      refine ⟨Statement.assume newLabel.toPretty
+                (Lambda.LExpr.substFvars check.expr subst)
+                (check.md.setCallSiteFileRange md) :: assumes', γ'', ?_, ?_, ?_⟩
+      · -- Reduce both sides to the same `List.mapM` core, then chain via Heqtail.
+        simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.bindCont,
+                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
+                   StateT.bind, StateT.pure, pure,
+                   monadLift, MonadLift.monadLift, liftM,
+                   Functor.map, StateT.map, liftCoreGenM, hgi]
+        simp only [bind, ExceptT.bind,
+                   ExceptT.mk, ExceptT.lift, ExceptT.pure,
+                   pure,
+                   monadLift, MonadLift.monadLift, liftM,
+                   Functor.map] at Heqtail
+        rw [Heqtail]
+        rfl
+      · simp [Hlen]
+      · refine ⟨newLabel.toPretty :: labelsTail, ?_, ?_⟩
+        · simp [HlblsLen]
+        · simp only [List.zip_cons_cons, List.map_cons]
+          rw [Hshape]
 
-theorem substOldExprPostSubset':
-  (Imperative.HasVarsPure.getVars (P:=Expression)
-    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar m h1 ty))] post)).Subset
-    (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := by
-  rw [OldExpressions.substsOldExpr_singleton]
-  apply substOldPostSubset
+/-- Internal-shape destructuring of a successful `callElimCmd` call.
 
-theorem substOldExprPostSubset'':
-  (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) ⊆ S →
-  (Imperative.HasVarsPure.getVars (P:=Expression)
-    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar m h1 ty))] post)) ⊆ S := by
-  have : (Imperative.HasVarsPure.getVars (P:=Expression)
-    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar m h1 ty))] post)).Subset
-    (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := substOldExprPostSubset'
-  apply List.Subset.trans this
+    The B1 phase of `callElimStatementCorrect` needs to bind the
+    `argTrips`, `outTrips`, `genOldIdents`, `oldTys`, `asserts`,
+    `assumes` and intermediate gen states produced inside
+    `callElimCmd`'s `do` block, plus a procedure-lookup result and
+    the structural equation `sts' = argInit ++ outInit ++ oldInit ++
+    asserts ++ havocs ++ assumes`.  Because the inner
+    `bind`/`ExceptT.bindCont` envelope does not normalize
+    syntactically to a bare `match`, the destructuring is factored
+    through this helper so the call site stays clean.
 
-open OldExpressions in
-theorem substOldExprPostSubset:
-  (Imperative.HasVarsPure.getVars (P:=Expression)
-    (substsOldExpr ((h2, (Lambda.LExpr.fvar m h1 ty))::t) post)).Subset
-    (Imperative.HasVarsPure.getVars (P:=Expression) (substsOldExpr t post) ++ [h1]) := by
-  induction post
-  any_goals (simp only [Imperative.HasVarsPure.getVars, substsOldExpr, Map.isEmpty, Bool.false_eq_true, ↓reduceIte, ite_self] at *; try apply List.subset_append_left)
-  any_goals (by_cases Hnil: t = [] <;> (simp only [Hnil]; simp only [Bool.false_eq_true, ↓reduceIte, Lambda.LExpr.LExpr.getVars]); try apply substOldExprPostSubset'; try assumption)
-  any_goals (try simp only [Hnil, List.append_assoc] at *; try rw [OldExpressions.substOldExpr_nil] at *)
-  any_goals (apply List.append_subset.mpr; constructor <;> try apply List.Subset.trans (by assumption); try apply List.append_subset.mpr; constructor)
-  any_goals (apply List.append_subset.mpr; constructor)
-  any_goals apply List.Subset.assoc.mp
-  any_goals (solve | apply List.Subset.subset_app_of_or_3; simp)
-  split <;> try split
-  any_goals (split <;> try split)
-  any_goals split
-  any_goals (simp [Map.find?] at *)
-  any_goals simp [Lambda.LExpr.LExpr.getVars]
-  any_goals (apply substOldExprPostSubset'')
-  any_goals (try apply List.Subset.trans (by assumption))
-  any_goals (apply List.append_subset.mpr; constructor)
-  any_goals (repeat apply List.Subset.assoc.mp)
-  any_goals apply List.Subset.subset_app_of_or_4
-  any_goals simp [Imperative.HasVarsPure.getVars]
-  rename_i H; simp [← H.right, Lambda.LExpr.LExpr.getVars]
-  constructor <;> (apply substOldExprPostSubset''; apply List.Subset.assoc.mp; apply List.append_subset.mpr; constructor <;> (apply List.Subset.subset_app_of_or_3; simp[Imperative.HasVarsPure.getVars]))
-  rename_i H _ _ _
-  split at H <;> try contradiction
-  apply List.Subset.subset_app_of_or_2
-  simp at H
-  simp [← H, Lambda.LExpr.LExpr.getVars]
-  simp_all
-  apply List.Subset.subset_app_of_or_2; simp
-  rename_i H _ _
-  split at H <;> try contradiction
-  simp at H
-  simp [← H, Lambda.LExpr.LExpr.getVars, List.Subset]
-  simp_all
-  rename_i H _ _ _
-  split at H <;> try contradiction
-  simp_all
-  unfold substsOldExpr; simp [Map.isEmpty, Lambda.LExpr.LExpr.getVars]
-  apply List.Subset.trans (by assumption)
-  any_goals (try apply List.Subset.trans (by assumption); apply List.append_subset.mpr <;> constructor)
-  apply List.append_subset.mpr; constructor
-  any_goals (try apply List.Subset.assoc.mp; apply List.Subset.subset_app_of_or_3; simp)
+    The input state is constrained to have `currentProgram := some p`
+    (which is the post-`modify` shape produced by `callElimStmt`'s
+    outer `runWith`).
 
-open OldExpressions in
-theorem substsOldPostSubset:
-  oldTrips.unzip.1.unzip.1.Disjoint oldTrips.unzip.2 →
-  (Imperative.HasVarsPure.getVars (substsOldExpr (createOldVarsSubst oldTrips) post)).Subset
-    (Imperative.HasVarsPure.getVars post ++ (oldTrips.unzip.1.unzip.1)) := by
-  intros Hdisj
-  induction oldTrips generalizing post <;>
-    simp [createFvar, createOldVarsSubst, createOldVarsSubst.go] at *
-  case nil =>
-    intros x Hin
-    unfold substsOldExpr at Hin
-    simp [Map.isEmpty] at Hin
-    exact Hin
-  case cons h t ih =>
-    have Hdisj: (List.map (Prod.fst ∘ Prod.fst) t).Disjoint (List.map Prod.snd t) := by
-      apply List.Disjoint_Subsets Hdisj <;> apply List.subset_cons_self
+    The helper exposes everything the call site needs to subst the
+    structural equation and continue with L1-L6 reasoning.  Internal
+    state names `s_arg/s_out/s_old/s_postold/s_assert/s_assume` are
+    threaded through; only state-shape relevant downstream are retained.
+-/
+private theorem callElimCmd_call_eq
+    {procName : String} {args : List (CallArg Expression)}
+    {md : Imperative.MetaData Expression}
+    {γ : CoreTransformState}
+    {γ_out : CoreTransformState}
+    {p : Program}
+    {sts' : List Statement}
+    (Heq : (callElimCmd (CmdExt.call procName args md))
+              { γ with currentProgram := some p }
+            = (Except.ok (some sts'), γ_out)) :
+    ∃ proc argTrips outTrips genOldIdents oldTys asserts assumes
+       s_arg s_out s_old,
+      Program.Procedure.find? p ⟨procName, ()⟩ = some proc ∧
+      genArgExprIdentsTrip
+          (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs)
+          (CallArg.getInputExprs args)
+          { γ with currentProgram := some p,
+                   statistics := γ.statistics.increment
+                     (toString CallElim.Stats.visitedCalls) 1 }
+        = (Except.ok argTrips, s_arg) ∧
+      genOutExprIdentsTrip
+          (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs)
+          (CallArg.getLhs args) s_arg
+        = (Except.ok outTrips, s_out) ∧
+      genOldExprIdents
+        (List.filter
+          (fun g =>
+            (ListMap.keys proc.header.inputs).contains g &&
+                (ListMap.keys proc.header.outputs).contains g &&
+              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+          (CallArg.getLhs args))
+        s_out.genState
+        = (genOldIdents, s_old) ∧
+      oldTys.length =
+        (List.filter
+          (fun g =>
+            (ListMap.keys proc.header.inputs).contains g &&
+                (ListMap.keys proc.header.outputs).contains g &&
+              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+          (CallArg.getLhs args)).length ∧
+      sts' =
+        Core.Transform.createInits argTrips md ++
+        Core.Transform.createInitVars outTrips md ++
+        Core.Transform.createInitVars
+          ((genOldIdents.zip oldTys).zip
+            (List.filter
+              (fun g =>
+                (ListMap.keys proc.header.inputs).contains g &&
+                    (ListMap.keys proc.header.outputs).contains g &&
+                  (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                    List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+              (CallArg.getLhs args)))
+          md ++
+        asserts ++
+        Core.Transform.createHavocs (CallArg.getLhs args) md ++
+        assumes ∧
+      -- Structural shape of `asserts`:  abstract `pres.zip labels` map.
+      (∃ (assertLabels : List String),
+        let pres := (proc.spec.preconditions.filter
+                       (fun (_, check) => check.attr != .Free))
+        let assertSubst :=
+              ((ListMap.keys proc.header.inputs).zip
+                (Core.Transform.createFvars argTrips.unzip.fst.unzip.fst) ++
+              (ListMap.keys proc.header.outputs).zip
+                (Core.Transform.createFvars (CallArg.getLhs args)))
+        assertLabels.length = pres.length ∧
+        asserts = (pres.zip assertLabels).map (fun (entry, lbl) =>
+          Statement.assert lbl
+            (Lambda.LExpr.substFvars entry.snd.expr assertSubst)
+            (entry.snd.md.setCallSiteFileRange md))) ∧
+      -- Structural shape of `assumes`:  abstract `posts.zip labels` map.
+      (∃ (assumeLabels : List String),
+        let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
+              (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap
+                fun (paramId, argExpr) =>
+                  let oldVar := CoreIdent.mkOld paramId.name
+                  if !(ListMap.keys proc.header.outputs).contains paramId &&
+                     (proc.spec.postconditions.values.map Procedure.Check.expr).any
+                       (fun e => Lambda.LExpr.freeVars e |>.any
+                         (fun (id, _) => id == oldVar))
+                  then some (oldVar, argExpr)
+                  else none
+        let oldTripsCanonical :=
+              (((genOldIdents.zip oldTys).zip
+                (List.filter
+                  (fun g =>
+                    (ListMap.keys proc.header.inputs).contains g &&
+                        (ListMap.keys proc.header.outputs).contains g &&
+                      (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                        List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                  (CallArg.getLhs args))).zip
+              ((List.filter
+                (fun g =>
+                  (ListMap.keys proc.header.inputs).contains g &&
+                      (ListMap.keys proc.header.outputs).contains g &&
+                    (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                      List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                (CallArg.getLhs args)).map (fun g => CoreIdent.mkOld g.name))).map
+              fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
+        let oldSubst : Map Expression.Ident Expression.Expr :=
+              Core.Transform.createOldVarsSubst oldTripsCanonical ++ inputOnlyOldSubst
+        let posts := Procedure.Spec.updateCheckExprs
+                       (proc.spec.postconditions.values.map
+                         (fun c => Lambda.LExpr.substFvars c.expr oldSubst))
+                       proc.spec.postconditions
+        let assumeSubst :=
+              ((ListMap.keys proc.header.outputs).zip
+                (Core.Transform.createFvars (CallArg.getLhs args)) ++
+              ((ListMap.keys proc.header.inputs).zip
+                (Core.Transform.createFvars argTrips.unzip.fst.unzip.fst)).filter
+                  (fun (id, _) => !(ListMap.keys proc.header.outputs).contains id))
+        assumeLabels.length = posts.length ∧
+        assumes = (posts.zip assumeLabels).map (fun (entry, lbl) =>
+          Statement.assume lbl
+            (Lambda.LExpr.substFvars entry.snd.expr assumeSubst)
+            (entry.snd.md.setCallSiteFileRange md))) := by
+  -- Unfold `callElimCmd`'s `do` block step-by-step.  The first action
+  -- is `incrementStat` (a `modify`), then `(← get).currentProgram` is
+  -- matched.  Because we passed `{γ with currentProgram := some p}`,
+  -- we can compute the post-increment state explicitly.
+  unfold callElimCmd at Heq
+  simp only [incrementStat, modify, modifyGet, MonadStateOf.modifyGet,
+             MonadState.modifyGet, StateT.modifyGet,
+             bind, StateT.bind, ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+             pure, ExceptT.pure, StateT.pure,
+             get, getThe, MonadStateOf.get, MonadState.get, StateT.get,
+             monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
+             Functor.map, StateT.map] at Heq
+  cases hfind : Program.Procedure.find? p ⟨procName, ()⟩ with
+  | none =>
+      rw [hfind] at Heq
+      exact absurd Heq (by intro h; cases h)
+  | some proc =>
+      rw [hfind] at Heq
+      simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont,
+                 ExceptT.mk, pure, StateT.pure] at Heq
+      generalize Heqarg :
+        (genArgExprIdentsTrip
+          (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs)
+          (CallArg.getInputExprs args)
+          { γ with currentProgram := some p,
+                   statistics := γ.statistics.increment
+                     (toString CallElim.Stats.visitedCalls) 1 }) =
+            pair_arg at Heq
+      cases pair_arg with
+      | mk res_arg s_arg =>
+        cases res_arg with
+        | error e =>
+            exact absurd Heq (by intro h; cases h)
+        | ok argTrips =>
+            simp only [bind, StateT.bind, ExceptT.bind, ExceptT.bindCont,
+                       ExceptT.mk, pure, StateT.pure] at Heq
+            generalize Heqout :
+              (genOutExprIdentsTrip
+                (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs)
+                (CallArg.getLhs args) s_arg) = pair_out at Heq
+            cases pair_out with
+            | mk res_out s_out =>
+              cases res_out with
+              | error e =>
+                  exact absurd Heq (by intro h; cases h)
+              | ok outTrips =>
+                  -- Now extract `genOldIdents` from the next layer.
+                  -- The next layer is `(StateT.map Except.ok
+                  --   (liftCoreGenM (genOldExprIdents oldVars))).bind ...`.
+                  simp only [liftCoreGenM, bind, StateT.bind,
+                             ExceptT.bind, ExceptT.bindCont, ExceptT.mk,
+                             pure, ExceptT.pure, StateT.pure,
+                             Functor.map, StateT.map] at Heq
+                  generalize Heqold :
+                    (genOldExprIdents
+                      (List.filter
+                        (fun g =>
+                          (ListMap.keys proc.header.inputs).contains g &&
+                              (ListMap.keys proc.header.outputs).contains g &&
+                            (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                              List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                        (CallArg.getLhs args))
+                      s_out.genState) = pair_old at Heq
+                  cases pair_old with
+                  | mk genOldIdents s_old =>
+                    -- ── B1 layer: oldTys ← oldVars.mapM ... ──
+                    -- The mapM body uses `proc.header.inputs.find?`; we
+                    -- need to show every g ∈ oldVars satisfies
+                    -- `inputs.keys.contains g`.  By construction of
+                    -- oldVars (filter of lhs by inputNames.contains g
+                    -- && outputNames.contains g && ...), this holds.
+                    have Holdvars_in_inputs :
+                        ∀ g ∈ (List.filter
+                              (fun g =>
+                                (ListMap.keys proc.header.inputs).contains g &&
+                                    (ListMap.keys proc.header.outputs).contains g &&
+                                  (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                                    List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                              (CallArg.getLhs args)),
+                          (ListMap.keys proc.header.inputs).contains g := by
+                      intro g Hg
+                      have Hfilt : _ ∧ _ := List.mem_filter.mp Hg
+                      have Hcond : _ = true := Hfilt.2
+                      simp only [Bool.and_eq_true] at Hcond
+                      exact Hcond.1.1
+                    obtain ⟨oldTys, s_postold, Heqty, _Hlenty⟩ :=
+                      oldVars_oldTys_mapM_ok (γ := { s_out with genState := s_old })
+                        Holdvars_in_inputs
+                    -- Reduce the `bind` shell in `Heq` so the inner
+                    -- `mapM` is no longer wrapped by ExceptT.bindCont.
+                    simp only [bind, StateT.bind, ExceptT.bind,
+                               ExceptT.bindCont, ExceptT.mk] at Heq
+                    -- Reduce `pure`/`throw` under the lambda in `Heqty`
+                    -- to match the reduced form in `Heq`.  Without this,
+                    -- `Heqty` has `| some ty => pure (...)` while `Heq`
+                    -- has `| some ty => StateT.pure (Except.ok (...))`.
+                    -- Additionally, the `match` inside the lambda is
+                    -- compiled to a private auxiliary `match_N` whose
+                    -- name differs between `oldVars_oldTys_mapM_ok` and
+                    -- `callElimCmd`; reduce both via match-eliminator
+                    -- congruence to share the same form.
+                    have HeqtyR : _ := Heqty
+                    simp only [pure, ExceptT.pure, StateT.pure,
+                               ExceptT.mk] at HeqtyR
+                    rw [HeqtyR] at Heq
+                    simp only [bind, StateT.bind, ExceptT.bind,
+                               ExceptT.bindCont, ExceptT.mk,
+                               pure, ExceptT.pure, StateT.pure] at Heq
+                    -- ── B2 layer: asserts ← createAsserts ... ──
+                    obtain ⟨asserts, s_assert, Heqas, _Hlenas,
+                            assertLabels, HassertLabelsLen, HassertShape⟩ :=
+                      createAsserts_ok
+                        (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
+                        ((ListMap.keys proc.header.inputs).zip
+                          (Core.Transform.createFvars argTrips.unzip.fst.unzip.fst) ++
+                         (ListMap.keys proc.header.outputs).zip
+                          (Core.Transform.createFvars (CallArg.getLhs args)))
+                        md
+                        callElimAssertPrefix
+                        s_postold
+                    rw [Heqas] at Heq
+                    simp only [bind, StateT.bind, ExceptT.bind,
+                               ExceptT.bindCont, ExceptT.mk,
+                               pure, ExceptT.pure, StateT.pure] at Heq
+                    -- ── B2 layer: assumes ← createAssumes ... ──
+                    -- Bind the post-substitution `oldSubst` and the
+                    -- post-substitution postcondition list as helper
+                    -- variables so we don't restate the giant filterMap
+                    -- expression in the `createAssumes` argument.
+                    let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
+                      (proc.header.inputs.keys.zip (CallArg.getInputExprs args)).filterMap
+                        fun (paramId, argExpr) =>
+                          let oldVar := CoreIdent.mkOld paramId.name
+                          if !(ListMap.keys proc.header.outputs).contains paramId &&
+                             (proc.spec.postconditions.values.map Procedure.Check.expr).any
+                               (fun e => Lambda.LExpr.freeVars e |>.any
+                                 (fun (id, _) => id == oldVar))
+                          then some (oldVar, argExpr)
+                          else none
+                    let oldTrips :=
+                      (((genOldIdents.zip oldTys).zip
+                        (List.filter
+                          (fun g =>
+                            (ListMap.keys proc.header.inputs).contains g &&
+                                (ListMap.keys proc.header.outputs).contains g &&
+                              (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                                List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                          (CallArg.getLhs args))).zip
+                      ((List.filter
+                        (fun g =>
+                          (ListMap.keys proc.header.inputs).contains g &&
+                              (ListMap.keys proc.header.outputs).contains g &&
+                            (List.map Procedure.Check.expr proc.spec.postconditions.values).any fun e =>
+                              List.any e.freeVars fun x => x.fst == CoreIdent.mkOld g.name)
+                        (CallArg.getLhs args)).map (fun g => CoreIdent.mkOld g.name))).map
+                      fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
+                    let oldSubst : Map Expression.Ident Expression.Expr :=
+                      Core.Transform.createOldVarsSubst oldTrips ++ inputOnlyOldSubst
+                    obtain ⟨assumes, s_assume, Heqasm, _Hlenasm,
+                            assumeLabels, HassumeLabelsLen, HassumeShape⟩ :=
+                      createAssumes_ok
+                        (Procedure.Spec.updateCheckExprs
+                          (proc.spec.postconditions.values.map
+                            (fun c => Lambda.LExpr.substFvars c.expr oldSubst))
+                          proc.spec.postconditions)
+                        ((ListMap.keys proc.header.outputs).zip
+                          (Core.Transform.createFvars (CallArg.getLhs args)) ++
+                         ((ListMap.keys proc.header.inputs).zip
+                            (Core.Transform.createFvars argTrips.unzip.fst.unzip.fst)).filter
+                              (fun (id, _) => !(ListMap.keys proc.header.outputs).contains id))
+                        md
+                        callElimAssumePrefix
+                        s_assert
+                    rw [Heqasm] at Heq
+                    simp only [bind, StateT.bind, ExceptT.bind,
+                               ExceptT.bindCont, ExceptT.mk,
+                               pure, ExceptT.pure, StateT.pure,
+                               get, getThe, MonadStateOf.get,
+                               MonadState.get, StateT.get,
+                               set, MonadStateOf.set, StateT.set,
+                               monadLift, MonadLift.monadLift, liftM,
+                               ExceptT.lift, Functor.map,
+                               StateT.map] at Heq
+                    -- ── Callgraph update ──
+                    -- `match σ.cachedAnalyses.callGraph, σ.currentProcedureName`.
+                    -- We split on both branches.  The first branch may
+                    -- throw via decrementEdge; refute that case.
+                    refine ⟨proc, argTrips, outTrips, genOldIdents, oldTys,
+                            asserts, assumes,
+                            s_arg, s_out, s_old,
+                            rfl, Heqarg, Heqout, Heqold, _Hlenty, ?_,
+                            ⟨assertLabels, HassertLabelsLen, HassertShape⟩,
+                            ⟨assumeLabels, HassumeLabelsLen, HassumeShape⟩⟩
+                    · -- Structural equation: split on callgraph match,
+                      -- then read off `sts' = ...`.  Use a single simp
+                      -- set that unfolds `set`/`StateT.set`/`StateT.map`
+                      -- so the post-callgraph pure-return reduces to a
+                      -- raw `(Except.ok (List ...), state)` pair.
+                      cases hcg : s_assume.cachedAnalyses.callGraph with
+                      | none =>
+                        cases hcpn : s_assume.currentProcedureName with
+                        | none =>
+                          rw [hcg, hcpn] at Heq
+                          simp only [pure, ExceptT.pure, StateT.pure,
+                                     bind, StateT.bind, ExceptT.bind,
+                                     ExceptT.bindCont, ExceptT.mk,
+                                     set, MonadStateOf.set, StateT.set,
+                                     Functor.map, StateT.map] at Heq
+                          have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
+                          have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
+                          have Hopt := Option.some.injEq _ _ |>.mp Hexc
+                          exact Hopt.symm
+                        | some _ =>
+                          rw [hcg, hcpn] at Heq
+                          simp only [pure, ExceptT.pure, StateT.pure,
+                                     bind, StateT.bind, ExceptT.bind,
+                                     ExceptT.bindCont, ExceptT.mk,
+                                     set, MonadStateOf.set, StateT.set,
+                                     Functor.map, StateT.map] at Heq
+                          have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
+                          have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
+                          have Hopt := Option.some.injEq _ _ |>.mp Hexc
+                          exact Hopt.symm
+                      | some cg =>
+                        cases hcpn : s_assume.currentProcedureName with
+                        | none =>
+                          rw [hcg, hcpn] at Heq
+                          simp only [pure, ExceptT.pure, StateT.pure,
+                                     bind, StateT.bind, ExceptT.bind,
+                                     ExceptT.bindCont, ExceptT.mk,
+                                     set, MonadStateOf.set, StateT.set,
+                                     Functor.map, StateT.map] at Heq
+                          have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
+                          have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
+                          have Hopt := Option.some.injEq _ _ |>.mp Hexc
+                          exact Hopt.symm
+                        | some callerName =>
+                          rw [hcg, hcpn] at Heq
+                          -- decrementEdge result inspected.
+                          simp only [bind, StateT.bind, ExceptT.bind,
+                                     ExceptT.bindCont, ExceptT.mk,
+                                     pure, ExceptT.pure, StateT.pure,
+                                     Functor.map, StateT.map,
+                                     Except.mapError] at Heq
+                          cases hde :
+                            (cg.decrementEdge callerName procName) with
+                          | error e =>
+                            rw [hde] at Heq
+                            simp only [Except.mapError, pure, ExceptT.pure,
+                                       StateT.pure] at Heq
+                            -- Heq is `(Except.error _, s_assume)
+                            --        = (Except.ok (some sts'), γ_out)`
+                            -- which is contradictory.
+                            exact absurd Heq (by intro h; cases h)
+                          | ok cg' =>
+                            rw [hde] at Heq
+                            simp only [Except.mapError, pure, ExceptT.pure,
+                                       StateT.pure, bind, StateT.bind,
+                                       ExceptT.bind, ExceptT.bindCont,
+                                       ExceptT.mk, set, MonadStateOf.set,
+                                       StateT.set,
+                                       Functor.map, StateT.map] at Heq
+                            have Hpair := Prod.mk.injEq _ _ _ _ |>.mp Heq
+                            have Hexc := Except.ok.injEq _ _ |>.mp Hpair.1
+                            have Hopt := Option.some.injEq _ _ |>.mp Hexc
+                            exact Hopt.symm
 
-    have ih := @ih post Hdisj
-    have : (Imperative.HasVarsPure.getVars
-      (substsOldExpr ((h.snd, Lambda.LExpr.fvar () h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
-          ((Imperative.HasVarsPure.getVars (substsOldExpr (List.map createOldVarsSubst.go t) post)) ++ [h.1.fst]) := by
-      apply substOldExprPostSubset
-    apply List.Subset.trans this
-    apply List.Subset.app _ (by simp [List.Subset])
-    apply List.Subset.trans ih
-    apply List.Subset.app
-    apply List.subset_append_left
-    apply List.subset_append_of_subset_right
-    apply List.subset_cons_self
+/-- For every non-call statement `s`, the call-elimination transformer
+    `callElimStmt s p` returns `[s]` unchanged.  This collapses what was
+    eight identical simp blocks (one per `Statement` constructor that is
+    not a `Cmd.call`) into a single uniform reduction.  Used by
+    `callElimStatementCorrect` to dispatch the non-call branches. -/
+private theorem callElimStmt_non_call_eq
+    {p : Program} {γ γ' : CoreTransformState} {sts : List Statement}
+    {s : Statement}
+    (hne : ∀ procName args md, s ≠ .cmd (CmdExt.call procName args md))
+    (hH : (Except.ok sts, γ') = (runWith s (callElimStmt · p) γ)) :
+    sts = [s] := by
+  -- All 7 non-call top-level cases (cmd.cmd, block, ite, loop, exit,
+  -- funcDecl, typeDecl) reduce uniformly via the same simp set; the
+  -- inner `cmd.call` case is discharged by `hne`.
+  match s, hne, hH with
+  | .cmd (.call procName args md), hne, _ =>
+      exact absurd rfl (hne procName args md)
+  | .cmd (.cmd _), _, hH
+  | .block _ _ _, _, hH
+  | .ite _ _ _ _, _, hH
+  | .loop _ _ _ _ _, _, hH
+  | .exit _ _, _, hH
+  | .funcDecl _ _, _, hH
+  | .typeDecl _ _, _, hH =>
+      simp only [runWith, StateT.run, callElimStmt, bind, pure,
+                 StateT.bind, ExceptT.bind, ExceptT.bindCont,
+                 ExceptT.mk, ExceptT.pure, modify, modifyGet,
+                 MonadStateOf.modifyGet, MonadState.modifyGet,
+                 StateT.modifyGet, MonadStateOf.set,
+                 monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
+                 StateT.pure, Functor.map, ExceptT.map, StateT.map,
+                 Prod.mk.injEq, Except.ok.injEq] at hH
+      exact hH.1
 
+/-- Call-site WF/disjointness invariants required by `callElimStatementCorrect`.
 
-set_option maxHeartbeats 500000
--- Second, the program/statement returned by callElim has the same semantics as the pre-transformation program/statement
-theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
-  -- procedure lookup function is well-behaved
-  (∀ pname, π pname = (Program.Procedure.find? p (.unres pname))) →
-  -- all global variables in p exist in σ
-  (∀ gk, (p.find? .var gk).isSome → (σ gk).isSome) →
-  EvalStatementsContract π φ δ σ [st] σ' δ →
-  WellFormedCoreEvalCong δ →
-  WF.WFStatementsProp p [st] →
-  WF.WFProgramProp p →
-  CoreGenState.WF γ →
-  (∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ CoreIdent.isTemp v)) →
-  (Except.ok sts, γ') = (runWith [st] (CallElim.callElimStmts · p) γ) →
-  -- NOTE: The theorem does not expect the same store due to inserting new temp variables
-  exists σ'',
-    Inits σ' σ'' ∧
-    EvalStatementsContract π φ δ σ sts σ'' δ
-    := by
-  intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
-  cases st <;>
-  simp [Transform.runWith, StateT.run, callElimStmts, runStmts, callElimCmd,
-        pure, ExceptT.pure, ExceptT.mk, StateT.pure,
-        bind, ExceptT.bind, ExceptT.bindCont, StateT.bind,
-        ] at Helim
-        <;> try simp [Helim]
-  case block => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case ite => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case exit => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case loop => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case funcDecl => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case cmd c =>
-  cases c with
-  | cmd c' =>
-    exists σ'
-    refine ⟨?_, ?_⟩
-    exact Inits.init InitVars.init_none
-    simp [StateT.pure, StateT.bind, ExceptT.bindCont, pure, bind] at Helim
-    simp_all
-  | call lhs procName args md =>
-  split at Helim
-  next pair l cs' Helim' =>
-  -- NOTE: the simplifier must be invoked in two stages in this case
-  -- in order to get to
-  -- Helim : sts = a✝ ∧ γ' = cs'
-  split at Helim
-    <;> simp only [StateT.bind, StateT.pure, ExceptT.bindCont, pure_bind, List.append_nil] at Helim
-    <;> simp [pure] at Helim
-  next res l =>
-    simp [Helim] at *
-    simp only [Forall, and_true] at Hwf
-    cases Hwf with | mk Hwf =>
-    simp [Option.isSome] at Hwf
-    split at Hwf <;> simp_all
-    next decl' proc Harglen Houtlen Hlhsdisj Hlhs Hwfargs Hfind =>
-    cases Heval with | stmts_some_sem Heval Heval2 =>
-    cases Heval with
-    | cmd_sem Heval Hdef =>
-    cases Heval with
-    | call_sem lkup Hevalargs Hevalouts Hwfval Hwfvars Hwfb Hwf2 Hwf Hinitin Hinitout Hpre Hhav1 Hhav2 Hpost Hrd Hupdate =>
-      next outVals argVals σA σAO σO σR p' modvals =>
-      unfold CoreIdent.unres at Hfind
-      have Hsome : (Program.Procedure.find? p procName).isSome := by
-        grind
-      simp [Option.isSome] at Hsome
-      unfold CoreIdent.unres at *
-      have lkup' := lkup
-      split at Hsome <;> try contradiction
-      next x val Hfind =>
-      simp_all [-lkup]
-      simp [bind,StateT.bind,ExceptT.bindCont,pure] at Helim'
-      split at Helim' <;> try contradiction
-      -- refactor arg labels generation expressions
-      next res_arg s_arg Heqarg =>
-      simp [←lkup'] at *
-      split at Helim' <;> try simp [StateT.pure, StateT.bind, ExceptT.bindCont] at Helim' <;> try cases Helim'
-      next argTrips =>
-      have Heqargs : List.map Prod.snd argTrips = args := genArgExprIdentsTrip_snd Heqarg
-      -- refactor out labels generation expressions
-      generalize Heqout : (genOutExprIdentsTrip proc.header.outputs.toTrivialLTy lhs s_arg) = pair_out at Helim'
-      cases pair_out
-      next res_out s_out =>
-      simp only [bind] at Helim'
-      split at Helim' <;> try simp [pure, StateT.pure] at Helim' <;> try cases Helim'
-      next outTrips =>
-      have Heqouts : lhs = List.map Prod.snd outTrips := Eq.symm $ genOutExprIdentsTrip_snd Heqout
-      have Hrdout := InitStatesReadValues Hinitout
-      simp [StateT.bind, ExceptT.bindCont] at Helim'
-      -- refactor old expressions generation expressions
-      generalize Heqold : (genOldExprIdentsTrip p
-          (List.filter (isGlobalVar p)
-            (List.flatMap OldExpressions.extractOldExprVars
-                (OldExpressions.normalizeOldExprs
-                  (List.map Procedure.Check.expr proc.spec.postconditions.values))).eraseDups)
-                s_out) = pair_old at Helim'
-      cases pair_old <;> simp only at Helim'
-      next res_old s_old =>
-      simp only [bind] at Helim'
-      split at Helim' <;> try simp [pure, StateT.pure] at Helim' <;> try cases Helim'
-      next st' oldTrips =>
-      -- extract well-formed program properties
-      cases Hwfp with
-      | mk wfnd Hwfp =>
-      have Hdecl := List.Forall_mem_iff.mp Hwfp
-      have HH := Procedure.find_in_decls Hfind
-      repeat sorry
-      /-
-      cases HH with
-      | intro md HH =>
-      specialize Hdecl (.proc proc md) HH
-      cases Hdecl with
-      | mk wfstmts wfloclnd Hiodisj Hinnd Houtnd Hmodsnd Hinlc Houtlc wfspec =>
-      cases wfspec with
-      | mk wfpre wfpost wfmod =>
-      have HoldDef : Imperative.isDefined σ oldTrips.unzip.snd := by
-        intros k Hin
-        apply Hgv
-        apply genOldExprIdentsFind ?_ Heqold Hin
-        intros l Hin
-        have HH := List.mem_filter.mp Hin
-        exact HH.2
-      have HrdOld := isDefinedReadValues HoldDef
-      have Hwfgenargs : CoreGenState.WF s_arg := genArgExprIdentsTripWFMono Hwfgen Heqarg
-      have Hwfgenouts : CoreGenState.WF s_out := genOutExprIdentsTripWFMono Hwfgenargs Heqout
-      have Hwfgenolds : CoreGenState.WF cs' := genOldExprIdentsTripWFMono Hwfgenouts Heqold
-      have Hgenargs := genArgExprIdentsTripGeneratedWF Heqarg
-      have Hgenouts := genOutExprIdentsTripGeneratedWF Heqout
-      have Hgenolds := genOldExprIdentsTripGeneratedWF Heqold
-      have HargTemp : Forall (CoreIdent.isTemp ·) argTrips.unzip.1.unzip.1 := by
-        simp [CoreGenState.WF] at Hwfgenargs
-        have HH := List.Forall_mem_iff.mp Hwfgenargs.2.2.2
-        simp only [← Hgenargs] at HH
-        refine List.Forall_mem_iff.mpr ?_
-        intros x Hin
-        apply HH
-        exact List.mem_append_left γ.generated (List.mem_reverse.mpr Hin)
-      have HoutTemp : Forall (CoreIdent.isTemp ·) outTrips.unzip.1.unzip.1 := by
-        simp [CoreGenState.WF] at Hwfgenouts
-        have HH := List.Forall_mem_iff.mp Hwfgenouts.2.2.2
-        simp only [← Hgenouts] at HH
-        refine List.Forall_mem_iff.mpr ?_
-        intros x Hin
-        apply HH
-        exact List.mem_append_left s_arg.generated (List.mem_reverse.mpr Hin)
-      have HoldTemp : Forall (CoreIdent.isTemp ·) oldTrips.unzip.1.unzip.1 := by
-        simp [CoreGenState.WF] at Hwfgenolds
-        have HH := List.Forall_mem_iff.mp Hwfgenolds.2.2.2
-        simp only [← Hgenolds] at HH
-        refine List.Forall_mem_iff.mpr ?_
-        intros x Hin
-        apply HH
-        exact List.mem_append_left s_out.generated (List.mem_reverse.mpr Hin)
-      have HgenApp : oldTrips.unzip.fst.unzip.fst.reverse ++
-                     outTrips.unzip.fst.unzip.fst.reverse ++
-                     argTrips.unzip.fst.unzip.fst.reverse ++
-                     γ.generated = cs'.generated := by
-        simp only [← Hgenargs,← Hgenouts,← Hgenolds]
-        simp [List.append_assoc]
-      have Hgennd' : (γ.generated.reverse ++
-                      argTrips.unzip.fst.unzip.fst ++
-                      outTrips.unzip.fst.unzip.fst ++
-                      oldTrips.unzip.fst.unzip.fst).Nodup := by
-        simp [CoreGenState.WF] at Hwfgenolds
-        have Hnd := nodup_reverse Hwfgenolds.2.2.1
-        simp only [List.reverse_append, List.reverse_reverse, ← List.append_assoc,
-                  ← Hgenargs,← Hgenouts,← Hgenolds] at Hnd
-        exact Hnd
-      have Hgennd : (argTrips.unzip.fst.unzip.fst ++
-                      outTrips.unzip.fst.unzip.fst ++
-                      oldTrips.unzip.fst.unzip.fst).Nodup := by
-        simp only [List.append_assoc] at Hgennd' ⊢
-        exact (List.nodup_append.mp Hgennd').2.1
-      have Hinoutnd : (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs).Nodup := by
-        apply List.Disjoint_Nodup_iff.mp
-        refine ⟨Hinnd, Houtnd, ?_⟩
-        . exact Hiodisj
-      have Hndefgen : Imperative.isNotDefined σ'
-                      (argTrips.unzip.fst.unzip.fst ++
-                      outTrips.unzip.fst.unzip.fst ++
-                      oldTrips.unzip.fst.unzip.fst) := by
-        have ⟨Hσeq, _⟩ := Imperative.EvalBlockEmpty Heval2
-        simp only [← Hσeq]
-        apply UpdateStatesNotDefMonotone ?_ Hupdate
-        intros v Hin
-        have Htemp : v.isTemp = true := by
-          simp only [List.append_assoc, List.mem_append] at Hin
-          cases Hin with
-          | inl Hin =>
-            exact (List.Forall_mem_iff.mp HargTemp) _ Hin
-          | inr Hin => cases Hin with
-          | inl Hin =>
-            exact (List.Forall_mem_iff.mp HoutTemp) _ Hin
-          | inr Hin =>
-            exact (List.Forall_mem_iff.mp HoldTemp) _ Hin
-        refine Option.not_isSome_iff_eq_none.mp ?_
-        intros Hsome
-        have Hcontra := List.mem_reverse.mpr ((Hwfgenst v).mpr ⟨Hsome, Htemp⟩)
-        simp only [List.append_assoc] at Hin Hgennd'
-        exact (List.nodup_append.mp Hgennd').2.2 v Hcontra v Hin rfl
-      have Hmodglob : Forall (CoreIdent.isGlob ·) proc.spec.modifies := by
-        simp [WF.WFModsProp] at wfmod
-        apply List.Forall_PredImplies
-        exact wfmod
-        intros x HH
-        apply WFProgGlob Hwfp
-        exact WF.WFModProp.defined HH
-      have Holdsndglob : Forall (CoreIdent.isGlob ·) oldTrips.unzip.snd := by
-        simp [genOldExprIdentsTrip_snd Heqold]
-        apply List.Forall_PredImplies
-        apply List.Forall_filter
-        apply WFProgGlob Hwfp
-      -- derive some equivalence between stores
-      have Hrd' := ReadValuesAppKeys' Hrd
-      cases Hrd' with
-      | intro v1 Hrd' => cases Hrd' with
-      | intro v2 Hrd' =>
-      have Hup1 := HavocVarsUpdateStates Hhav1
-      cases Hup1 with
-      | intro v1' Hup1 =>
-      have Hup2 := HavocVarsUpdateStates Hhav2
-      cases Hup2 with
-      | intro v2' Hup2 =>
-      cases HrdOld with
-      | intro oldVals HoldVals =>
-      have Hargtriplen : argTrips.length = argVals.length :=
-        calc argTrips.length
-          _ = argTrips.unzip.snd.length := by simp [List.unzip_eq_map]
-          _ = args.length := by simp [← Heqargs]
-          _ = argVals.length := by apply EvalExpressionsLength Hevalargs
-      have Houttriplen : outTrips.length = outVals.length :=
-        calc outTrips.length
-          _ = outTrips.unzip.snd.length := by simp [List.unzip_eq_map]
-          _ = lhs.length := by simp [← Heqouts]
-          _ = (ListMap.keys proc.header.outputs).length := by simp_all [ListMap.keys.length]
-          _ = outVals.length := ReadValuesLength Hrdout
-      have Holdtriplen : oldTrips.length = oldVals.length :=
-        calc oldTrips.length
-          _ = oldTrips.unzip.snd.length := by simp [List.unzip_eq_map]
-          _ = oldVals.length := by apply ReadValuesLength HoldVals
-      have Hinit := updatedStatesInit ?_ ?_ ?_ (σ:=σ')
-          (hs:=argTrips.unzip.fst.unzip.fst ++
-              outTrips.unzip.fst.unzip.fst ++
-              oldTrips.unzip.fst.unzip.fst)
-          (vs:=argVals ++ outVals ++ oldVals)
-      rotate_left
-      . simp [Hargtriplen, Houttriplen, Holdtriplen]
-      . exact Hndefgen
-      . exact Hgennd
-      . have Heq := EvalStatementsContractEmpty Heval2
-        simp only [Heq] at *
-        have Hinit' := InitsUpdatesComm Hupdate Hinit
-        cases Hinit' with
-        | intro σ₁ Hinit' =>
-        exists (updatedStates σ'
-              (argTrips.unzip.1.unzip.1 ++ outTrips.unzip.1.unzip.1 ++ oldTrips.unzip.1.unzip.1)
-              (argVals ++ outVals ++ oldVals))
-        apply And.intro
-        . exact InitStatesInits Hinit
-        . apply EvalStatementsContractApp
-          . -- Prove args expression initialization is correct
-            apply EvalStatementsContractInits
-            . assumption
-            . assumption
-            . assumption
-            . simp [genArgExprIdentsTrip_snd Heqarg]
-              apply List.PredDisjoint_Disjoint
-                (P:=(CoreIdent.isTemp ·))
-                (Q:=(CoreIdent.isGlobOrLocl ·))
-              . simp at HargTemp
-                apply HargTemp
-              . apply List.Forall_flatMap.mp
-                apply List.Forall_PredImplies Hwfargs
-                intros x Hp
-                exact WF.WFargProp.glarg Hp
-              . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-            . apply List.Sublist.nodup (List.sublist_append_left _ _) ?_
-              . exact outTrips.unzip.fst.unzip.fst
-              apply List.Sublist.nodup (List.sublist_append_left _ _) ?_
-              . exact oldTrips.unzip.fst.unzip.fst
-              exact Hgennd
-            . simp
-              simp [Heqargs]
-              assumption
-            . -- arg vars generated are not defined
-              apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
-              simp [Imperative.isNotDefined] at *
-              intros v x x' Hin
-              apply Hndefgen
-              left; exact ⟨x, x', Hin⟩
-          -- Reused assumption : lhs and modifies are defined
-          have Hdeflm : Imperative.isDefined σ (lhs ++ proc.spec.modifies) := by
-                  simp [Imperative.isDefinedOver,
-                        Imperative.HasVarsTrans.allVarsTrans,
-                        Statement.allVarsTrans,
-                        Statement.modifiedOrDefinedVarsTrans,
-                        Command.definedVarsTrans,
-                        Command.definedVars,
-                        Command.modifiedVarsTrans,
-                        Imperative.HasVarsTrans.modifiedVarsTrans,
-                        Procedure.modifiedVarsTrans,
-                        lkup] at Hwf
-                  simp [Imperative.isDefined] at *
-                  intros v Hin
-                  apply Hwf
-                  cases Hin with
-                  | inl a => right; left; exact a
-                  | inr a => right; right; left; exact a
-          apply EvalStatementsContractApp (σ':=(updatedStates (updatedStates σ
-                                            argTrips.unzip.fst.unzip.fst argVals)
-                                            outTrips.unzip.fst.unzip.fst outVals))
-          . -- Prove output variables initialization is correct
-            apply EvalStatementsContractInitVars
-            . assumption
-            . apply List.Disjoint_Nodup_iff.mp
-              refine ⟨?_, ?_, ?_⟩
-              . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.1
-              . simp [genOutExprIdentsTrip_snd Heqout]
-                exact Hlhs.1
-              . -- Disjoint between localGlob and Temp
-                simp [genOutExprIdentsTrip_snd Heqout]
-                apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isLocl ·))
-                . simp at HoutTemp
-                  exact HoutTemp
-                . exact Hlhs.2
-                . apply List.PredDisjoint_PredImplies_right
-                  exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                  exact CoreIdent.isLocl_isGlobOrLocl
-            . simp
-              refine ReadValuesUpdatedStates ?_ ?_ ?_
-              . simp [Hargtriplen]
-              . apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isLocl ·))
-                . simp at HargTemp
-                  exact HargTemp
-                . simp [← Heqouts]
-                  exact Hlhs.2
-                . apply List.PredDisjoint_PredImplies_right
-                  exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                  exact CoreIdent.isLocl_isGlobOrLocl
-              . simp [← Heqouts]
-                exact Hevalouts
-            . -- out vars generated are not defined
-              apply UpdatedStatesDisjNotDefMonotone
-              . have Hnd' := List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1
-                exact Hnd'.2.2
-              . simp [← Hargtriplen]
-              . apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
-                simp [Imperative.isNotDefined] at *
-                intros v x x' Hin
-                apply Hndefgen
-                right; left; exact ⟨x, x', Hin⟩
-          apply EvalStatementsContractApp (σ':=(updatedStates (updatedStates (updatedStates σ
-                                            argTrips.unzip.fst.unzip.fst argVals)
-                                            outTrips.unzip.fst.unzip.fst outVals)
-                                            oldTrips.unzip.fst.unzip.fst oldVals))
-          . -- Prove old expressions initialization is correct
-            apply EvalStatementsContractInitVars Hwfvars
-            . apply List.Disjoint_Nodup_iff.mp
-              refine ⟨?_, ?_, ?_⟩
-              . exact (List.nodup_append.mp Hgennd).2.1
-              . simp [genOldExprIdentsTrip_snd Heqold]
-                apply filter_nodup
-                apply eraseDups_Nodup
-              . apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isGlob ·))
-                . exact HoldTemp
-                . simp [genOldExprIdentsTrip_snd Heqold]
-                  apply List.Forall_PredImplies
-                  . apply List.Forall_filter
-                  . exact WFProgGlob Hwfp
-                . apply List.PredDisjoint_PredImplies_right
-                  exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                  exact CoreIdent.isGlob_isGlobOrLocl
-            . simp
-              apply ReadValuesUpdatedStates
-              . simp [Houttriplen]
-              . apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isGlob ·))
-                . simp at HoutTemp
-                  exact HoutTemp
-                . simp [genOldExprIdentsTrip_snd Heqold]
-                  apply List.Forall_PredImplies
-                  . apply List.Forall_filter
-                  . exact WFProgGlob Hwfp
-                . apply List.PredDisjoint_PredImplies_right
-                  exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                  exact CoreIdent.isGlob_isGlobOrLocl
-              apply ReadValuesUpdatedStates
-              . simp [Hargtriplen]
-              . apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isGlob ·))
-                . simp at HargTemp
-                  exact HargTemp
-                . simp [genOldExprIdentsTrip_snd Heqold]
-                  apply List.Forall_PredImplies
-                  . apply List.Forall_filter
-                  . exact WFProgGlob Hwfp
-                . apply List.PredDisjoint_PredImplies_right
-                  exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                  exact CoreIdent.isGlob_isGlobOrLocl
-              . simp at HoldVals
-                exact HoldVals
-            . -- old vars generated are not defined
-              apply UpdatedStatesDisjNotDefMonotone
-              . simp only [List.append_assoc] at Hgennd
-                exact (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).2.1).2.2
-              . simp [← Houttriplen]
-              apply UpdatedStatesDisjNotDefMonotone
-              . simp only [nodup_swap'] at Hgennd
-                simp only [← List.append_assoc] at Hgennd
-                have Hnd' := (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
-                exact List.Disjoint.symm Hnd'
-              . simp [← Hargtriplen]
-              . apply UpdateStatesNotDefMonotone' (σ:=σ) (σ':=σ') ?_ Hupdate
-                intros x Hin
-                apply Hndefgen
-                simp_all
-          -- σA contains inputs as keys, while σ₁ contains the generated keys as keys
-          have Hinit2 := InitStatesApp' Hinit'.2.1 (by simp_all) (by simp_all)
-          cases Hinit2 with
-          | intro σ₁' Hinit2 =>
-          have Hinit3 := InitStatesApp' Hinit2.2.1 (by simp_all) (by simp_all)
-          cases Hinit3 with
-          | intro σ₁'' Hinit3 =>
-            -- NOTE: We split the single InitStates into three stages
-            -- σ |-- init argVal --> σ₁'' |-- init outVal --> σ₁' |-- init oldVal --> σ₁
-            simp [← List.append_assoc]
-            apply EvalStatementsContractApp (σ':=
-                      (updatedStates (updatedStates (updatedStates (updatedStates σ
-                      (List.map (Prod.fst ∘ Prod.fst) argTrips) argVals)
-                      (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals)
-                      (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals)
-                      (lhs ++ proc.spec.modifies) modvals))
-            . simp [List.append_assoc]
-              apply EvalStatementsContractApp
-              . -- asserts
-                have Hrdin : ReadValues σAO (ListMap.keys proc.header.inputs) argVals := by
-                  apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-                  exact InitStatesReadValues Hinitin
-                have Hrdinout : ReadValues σAO
-                      (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
-                      (argVals ++ outVals) := ReadValuesApp Hrdin Hrdout
-                have Hlen : (ListMap.keys proc.header.inputs).length =
-                            (createFvars (List.map (Prod.fst ∘ Prod.fst) argTrips)).length := by calc
-                            _ = argVals.length := InitStatesLength Hinitin
-                            _ = argTrips.length := by simp_all
-                            _ = (List.map (Prod.fst ∘ Prod.fst) argTrips).length := by simp_all
-                            _ = _ := by rw [createFvarsLength]
-                rw [← (List.zip_append Hlen)]
-                rw [← createFvarsApp]
-                apply createAssertsCorrect (σA:=σAO) Hwfb Hwfvars
-                . assumption
-                . assumption
-                . simp_all
-                  rw [createFvarsLength]
-                  simp [← Hargtriplen]
-                . -- substNodup
-                  have Hlen := ReadValuesLength Hrdin
-                  simp [Imperative.substNodup]
-                  rw [List.map_fst_zip, List.map_snd_zip] <;> simp_all
-                  -- TODO: input names of function not overlapping with generated variables
-                  -- can come from local/global distinction
-                  conv => arg 1; rw [← List.append_assoc]
-                  refine List.Disjoint_Nodup_iff.mp ⟨?_, ?_, ?_⟩
-                  . exact Hinoutnd
-                  . apply List.Disjoint_Nodup_iff.mp ⟨?_, ?_, ?_⟩
-                    . exact (List.Disjoint_Nodup_iff.mpr Hgennd).1
-                    . exact Hlhs.1
-                    . apply List.PredDisjoint_Disjoint
-                        (P:=(CoreIdent.isTemp ·))
-                        (Q:=(CoreIdent.isLocl ·))
-                      . exact HargTemp
-                      . exact Hlhs.2
-                      . apply List.PredDisjoint_PredImplies_right
-                        exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                        exact CoreIdent.isLocl_isGlobOrLocl
-                  . apply List.Disjoint.symm
-                    apply List.Disjoint_app.mp ⟨?_, ?_⟩
-                    . apply List.PredDisjoint_Disjoint
-                        (P:=(CoreIdent.isTemp ·))
-                        (Q:=(CoreIdent.isGlobOrLocl ·))
-                      . exact HargTemp
-                      . apply List.Forall_append.mpr ⟨?_, ?_⟩
-                        . exact List.Forall_PredImplies Hinlc CoreIdent.isLocl_isGlobOrLocl
-                        . exact List.Forall_PredImplies Houtlc CoreIdent.isLocl_isGlobOrLocl
-                      . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                    . intros x Hin1 Hin2
-                      apply Hlhsdisj Hin1
-                      simp_all
-                . -- substDefined
-                  intros k1 k2 Hin
-                  have Hmem := List.of_mem_zip Hin
-                  simp only [List.mem_append] at Hmem
-                  apply And.intro
-                  . cases Hmem.1 with
-                    | inl Hmem =>
-                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.inputs) := by
-                      apply InitStatesDefMonotone ?_ Hinitout
-                      exact InitStatesDefined Hinitin
-                    exact Hdef k1 Hmem
-                    | inr Hmem =>
-                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.outputs) := by
-                      exact InitStatesDefined Hinitout
-                    exact Hdef k1 Hmem
-                  . cases Hmem.2 with
-                    | inl Hmem =>
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefined
-                      simp_all
-                    | inr Hmem =>
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                . -- precondition correct
-                  intros pre Hin; simp_all
-                  apply And.intro
-                  . simp [updatedStates]
-                    rw [← updatedStates'App]
-                    rw [← updatedStates'App]
-                    rw [← List.zip_append] <;> try simp_all
-                    rw [← List.zip_append] <;> try simp_all
-                    rw [← updatedStates]
-                    apply InvStoresExceptInvStores
-                    apply Imperative.invStoresExceptComm
-                    apply InvStoresExceptUpdated
-                    apply Imperative.invStoresExceptComm
-                    apply InvStoresExceptInitStates (σ:=σA) (ks':=ListMap.keys proc.header.outputs)
-                    apply InvStoresExceptInitStates (σ:=σ) (ks':=ListMap.keys proc.header.inputs)
-                    exact InvStoresExceptEmpty
-                    exact Hinitin
-                    exact Hinitout
-                    simp_all
-                    simp_all
-                    simp [← List.append_assoc]
-                    generalize ListMap.keys proc.header.inputs ++
-                               ListMap.keys proc.header.outputs ++
-                               List.map (Prod.fst ∘ Prod.fst) argTrips
-                               = inoutarg
-                    simp [List.append_assoc]
-                    simp [List.removeAll_app]
-                    rw [List.removeAll_comm]
-                    apply List.Disjoint.removeAll
-                    apply List.Disjoint.mono_right
-                    . exact List.removeAll_Sublist
-                    . apply List.PredDisjoint_Disjoint
-                        (P:=(CoreIdent.isTemp ·))
-                        (Q:=(CoreIdent.isGlobOrLocl ·))
-                      . apply List.Forall_append.mpr
-                        exact ⟨HoutTemp, HoldTemp⟩
-                      . have HH := prepostconditions_unwrap Hin
-                        cases HH with
-                        | intro label HH =>
-                        cases HH with
-                        | intro attr HH =>
-                        cases HH with
-                        | intro md HH =>
-                        have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
-                        simp at Hwf
-                        exact Hwf
-                      . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                  . have HH := prepostconditions_unwrap Hin
-                    cases HH with
-                    | intro label HH =>
-                    cases HH with
-                    | intro attr HH =>
-                    cases HH with
-                    | intro md HH =>
-                    apply List.Disjoint_app.mp ⟨?_, ?_⟩
-                    . apply List.PredDisjoint_Disjoint
-                        (P:=(CoreIdent.isTemp ·))
-                        (Q:=(CoreIdent.isGlobOrLocl ·))
-                      . exact HargTemp
-                      . have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
-                        simp at Hwf
-                        exact Hwf
-                      . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                    . have Hpre := (List.Forall_mem_iff.mp wfpre _ HH)
-                      have Hlcl := List.Forall_mem_iff.mp Hpre.lvars
-                      have Hgl := List.Forall_mem_iff.mp Hpre.glvars
-                      simp at Hlcl Hgl
-                      intros x Hin1 Hin2
-                      specialize Hgl x Hin2
-                      simp [CoreIdent.isGlobOrLocl] at Hgl
-                      cases Hgl with
-                      | inl Hg =>
-                        -- disjoint of local and global
-                        have Hlhs := List.Forall_mem_iff.mp Hlhs.2
-                        specialize Hlhs x Hin1
-                        exact CoreIdent.Disjoint_isLocl_isGlob _ Hlhs Hg
-                      | inr Hl =>
-                        -- disjoint because of WF
-                        specialize Hlcl x Hin2 Hl
-                        apply Hlhsdisj Hin1
-                        simp_all
-                . apply createFvarsSubstStores (σ:=σ₁') (σA:=σAO)
-                        (ks2:=(ListMap.keys proc.header.inputs) ++ (ListMap.keys proc.header.outputs))
-                  . -- length
-                    simp_all
-                    rw [createFvarsLength]
-                    simp [← Hargtriplen]
-                  . assumption
-                  . -- substDefined
-                    intros k1 k2 Hin
-                    have Hmem := List.of_mem_zip Hin
-                    apply And.intro
-                    . simp only [List.mem_append] at Hmem
-                      cases Hmem.1 with
-                      | inl Hmem =>
-                      have Hdef : Imperative.isDefined σ₁' argTrips.unzip.1.unzip.1 := by
-                        apply InitStatesDefMonotone ?_ Hinit3.2.2
-                        exact InitStatesDefined Hinit3.2.1
-                      simp at Hdef
-                      exact Hdef k1 Hmem
-                      | inr Hmem =>
-                      have Hdef : Imperative.isDefined σ₁' lhs := by
-                        simp [Hinit2.1]
-                        apply updatedStatesDefMonotone
-                        intros k Hin
-                        apply Hdeflm
-                        exact List.mem_append_left proc.spec.modifies Hin
-                      exact Hdef _ Hmem
-                    . apply ReadValuesIsDefined Hrdinout
-                      exact Hmem.2
-                  . -- substStores
-                    simp_all
-                    apply ReadValuesSubstStores ?_ Hrdinout
-                    apply ReadValuesApp
-                    simp [updatedStates]
-                    rw [List.zip_append]
-                    rw [updatedStates'App]
-                    apply ReadValuesUpdatedStates
-                    . simp [Houttriplen]
-                    . intros a Hin1 Hin2
-                      apply (List.nodup_append.mp Hgennd).2.2 a ?_ a ?_
-                      . rfl
-                      . simp only at Hin2 ⊢
-                        exact Hin2
-                      . simp only at Hin1 ⊢
-                        exact List.mem_append_left _ Hin1
-                    . apply ReadValuesUpdatedStatesSame
-                      simp [Hargtriplen]
-                      grind
-                    . -- length, provable
-                      simp [Hargtriplen]
-                    . apply ReadValuesUpdatedStates
-                      . -- length, provable
-                        simp [Hargtriplen, Houttriplen]
-                      . apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isLocl ·))
-                        . apply List.Forall_append.mpr ⟨HargTemp, HoutTemp⟩
-                        . exact Hlhs.2
-                        . apply List.PredDisjoint_PredImplies_right
-                          exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                          exact CoreIdent.isLocl_isGlobOrLocl
-                      . exact Hevalouts
-                  . exact Hrdinout
-                . -- Read Values
-                  exact Hrdinout
-                . -- substStores
-                  apply ReadValuesSubstStores ?_ Hrdinout
-                  apply ReadValuesApp
-                  simp [updatedStates]
-                  apply ReadValuesUpdatedStates
-                  . simp [Holdtriplen]
-                  . intros a Hin1 Hin2
-                    apply (List.nodup_append.mp Hgennd).2.2 a ?_ a ?_
-                    . rfl
-                    . simp at Hin2 ⊢
-                      exact Or.inl Hin2
-                    . simp at Hin1 ⊢
-                      exact Hin1
-                  apply ReadValuesUpdatedStates
-                  . simp [Houttriplen]
-                  . intros a Hin1 Hin2
-                    apply (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.2 a ?_ a ?_
-                    . rfl
-                    . simp at Hin2 ⊢
-                      exact Hin2
-                    . simp at Hin1 ⊢
-                      exact Hin1
-                  . apply ReadValuesUpdatedStatesSame
-                    simp [Hargtriplen]
-                    grind
-                  . apply ReadValuesUpdatedStates
-                    . simp [Holdtriplen]
-                    . apply List.PredDisjoint_Disjoint
-                        (P:=(CoreIdent.isTemp ·))
-                        (Q:=(CoreIdent.isLocl ·))
-                      . simp at HoldTemp
-                        exact HoldTemp
-                      . exact Hlhs.2
-                      . apply List.PredDisjoint_PredImplies_right
-                        exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                        exact CoreIdent.isLocl_isGlobOrLocl
-                    . apply ReadValuesUpdatedStates
-                      . simp [Houttriplen]
-                      . apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isLocl ·))
-                        . simp at HoutTemp
-                          exact HoutTemp
-                        . exact Hlhs.2
-                        . apply List.PredDisjoint_PredImplies_right
-                          exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                          exact CoreIdent.isLocl_isGlobOrLocl
-                      . apply ReadValuesUpdatedStates
-                        . simp [Hargtriplen]
-                        . apply List.PredDisjoint_Disjoint
-                            (P:=(CoreIdent.isTemp ·))
-                            (Q:=(CoreIdent.isLocl ·))
-                          . simp at HargTemp
-                            exact HargTemp
-                          . exact Hlhs.2
-                          . apply List.PredDisjoint_PredImplies_right
-                            exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                            exact CoreIdent.isLocl_isGlobOrLocl
-                        . exact Hevalouts
-              . -- Prove havocs correct
-                simp [← createHavocsApp]
-                apply EvalStatementsContractHavocVars (σ':=
-                      (updatedStates (updatedStates (updatedStates (updatedStates σ
-                      (List.map (Prod.fst ∘ Prod.fst) argTrips) argVals)
-                      (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals)
-                      (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals)
-                      (lhs ++ proc.spec.modifies) modvals))
-                . assumption
-                . apply updatedStatesDefMonotone
-                  apply updatedStatesDefMonotone
-                  apply updatedStatesDefMonotone
-                  exact Hdeflm
-                . apply UpdateStatesHavocVars (modvals:=modvals)
-                  refine updatedStatesUpdate ?_ ?_
-                  exact UpdateStatesLength Hupdate
-                  apply updatedStatesDefMonotone
-                  apply updatedStatesDefMonotone
-                  apply updatedStatesDefMonotone
-                  exact Hdeflm
-            . -- Prove assumes correct
-              -- transform to the same store
-              simp [updatedStates]
-              rw [updatedStatesComm]
-              rw [updatedStatesComm (kvs':=(lhs ++ proc.spec.modifies).zip modvals)]
-              rw [updatedStatesComm (kvs':=(lhs ++ proc.spec.modifies).zip modvals)]
-              simp [UpdateStatesUpdated Hupdate, updatedStates]
-              rw [List.zip_append] <;> simp_all
-              rw [List.zip_append]
-              rw [updatedStates'App]
-              rw [updatedStates'App]
-              rw [← List.zip_append]
-              -- combine fvars
-              rw [← createFvarsApp]
-              . -- createAssumesCorrect
-                -- NOTE: σR here should be σR with the temporary old variables
-                generalize HσR₁ : (updatedStates (updatedStates σR
-                                  (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals))
-                                  (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals = σR₁
-                apply createAssumesCorrect (σA:=σR₁) Hwfb Hwfvars
-                . assumption
-                . assumption
-                . -- length
-                  simp_all
+    Bundles the six call-site WF clauses that were previously expressed as a
+    single nested conjunction (`Hpre_post_lhs_disj`).  Each field is a
+    universally-quantified property that fires only when `st` is a call;
+    for non-call statements every field is vacuously true. -/
+structure WFCallSiteProp (p : Program)
+                         (π : String → Option Procedure)
+                         (st : Statement) : Prop where
+  /-- Pre-condition free vars are not `tmp_`/`old_`-prefixed and not in the
+      call's `lhs`. -/
+  preVarsFresh :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ proc, π procName = some proc →
+    ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) pre,
+      ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+      v ∉ CallArg.getLhs args
+  /-- Post-condition free vars are not `tmp_`/`old_`-prefixed and not in the
+      call's `lhs`. -/
+  postVarsFresh :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ proc, π procName = some proc →
+    ∀ post ∈ Procedure.Spec.getCheckExprs proc.spec.postconditions,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) post,
+      ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+      v ∉ CallArg.getLhs args
+  /-- Argument-expression free vars are disjoint from the call's `lhs`. -/
+  argVarsNotInLhs :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ _proc, π procName = some _proc →
+    ∀ argExpr ∈ CallArg.getInputExprs args,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      v ∉ CallArg.getLhs args
+  /-- Procedure input/output parameter names are not `tmp_`/`old_`-prefixed. -/
+  inoutFresh :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ proc, π procName = some proc →
+    ∀ v ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
+      ¬ isTempIdent v ∧ ¬ isOldTempIdent v
+  /-- Argument-expression free vars are disjoint from the procedure's
+      `outputs.keys` (the global modset). -/
+  argVarsNotInOutKeys :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ proc, π procName = some proc →
+    ∀ argExpr ∈ CallArg.getInputExprs args,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      v ∉ ListMap.keys proc.header.outputs
+  /-- Argument-expression free vars are disjoint from the procedure's
+      `inputs.keys` (procedure parameter names). -/
+  argVarsNotInInKeys :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ proc, π procName = some proc →
+    ∀ argExpr ∈ CallArg.getInputExprs args,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      v ∉ ListMap.keys proc.header.inputs
+  /-- Positional-alignment WF for inout outputs: for each output parameter
+      `v ∈ outputs.keys` that is also an `lhs` entry (i.e., an inout pass),
+      the call's lhs index for `v` agrees with the procedure's outputs-keys
+      index.  Backs the L6 `HoldEval_bridge` derivation. -/
+  outAlignment :
+    ∀ procName args md, st = .cmd (CmdExt.call procName args md) →
+    ∀ proc, π procName = some proc →
+    ∀ v ∈ ListMap.keys proc.header.outputs,
+      v ∈ CallArg.getLhs args →
+      (CallArg.getLhs args).idxOf v =
+        (ListMap.keys proc.header.outputs).idxOf v
+
+/-- Call-site WF clauses already specialized at a fixed call form
+    `(procName, args, md)` and a fixed procedure `proc`.
+
+    Bundles the seven `WFCallSiteProp` fields with the per-call
+    `(procName, args, md, rfl, proc, lkup)` instantiation already
+    applied, so call-site code can `obtain ⟨...⟩ := ... .specialize ...`
+    in one step instead of repeating the instantiation per field. -/
+structure WFCallSiteSpec (proc : Procedure) (args : List (CallArg Expression)) : Prop where
+  preVarsFresh :
+    ∀ pre ∈ Procedure.Spec.getCheckExprs proc.spec.preconditions,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) pre,
+      ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+      v ∉ CallArg.getLhs args
+  postVarsFresh :
+    ∀ post ∈ Procedure.Spec.getCheckExprs proc.spec.postconditions,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) post,
+      ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+      v ∉ CallArg.getLhs args
+  argVarsNotInLhs :
+    ∀ argExpr ∈ CallArg.getInputExprs args,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      v ∉ CallArg.getLhs args
+  inoutFresh :
+    ∀ v ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
+      ¬ isTempIdent v ∧ ¬ isOldTempIdent v
+  argVarsNotInOutKeys :
+    ∀ argExpr ∈ CallArg.getInputExprs args,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      v ∉ ListMap.keys proc.header.outputs
+  argVarsNotInInKeys :
+    ∀ argExpr ∈ CallArg.getInputExprs args,
+    ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) argExpr,
+      v ∉ ListMap.keys proc.header.inputs
+  outAlignment :
+    ∀ v ∈ ListMap.keys proc.header.outputs,
+      v ∈ CallArg.getLhs args →
+      (CallArg.getLhs args).idxOf v =
+        (ListMap.keys proc.header.outputs).idxOf v
+
+/-- Specialize all seven `WFCallSiteProp` fields at a fixed call form
+    `st = .cmd (CmdExt.call procName args md)` and procedure lookup
+    `π procName = some proc`.
+
+    Lets the call-site case discharge the `(procName, args, md, rfl,
+    proc, lkup)` instantiation once and reuse the seven specialized
+    facts via `obtain ⟨...⟩ := Hwfcs.specialize Hst Hlkup`. -/
+theorem WFCallSiteProp.specialize {p : Program}
+    {π : String → Option Procedure} {st : Statement}
+    {procName : String} {args : List (CallArg Expression)} {md}
+    {proc : Procedure}
+    (Hwfcs : WFCallSiteProp p π st)
+    (Hst : st = .cmd (CmdExt.call procName args md))
+    (Hlkup : π procName = some proc) : WFCallSiteSpec proc args :=
+  ⟨ Hwfcs.preVarsFresh procName args md Hst proc Hlkup
+  , Hwfcs.postVarsFresh procName args md Hst proc Hlkup
+  , Hwfcs.argVarsNotInLhs procName args md Hst proc Hlkup
+  , Hwfcs.inoutFresh procName args md Hst proc Hlkup
+  , Hwfcs.argVarsNotInOutKeys procName args md Hst proc Hlkup
+  , Hwfcs.argVarsNotInInKeys procName args md Hst proc Hlkup
+  , Hwfcs.outAlignment procName args md Hst proc Hlkup ⟩
+
+/-- Relation between the source store `σ` and the call-elim transform
+    state `γ`'s tracked fresh-name set.
+
+    Bundles the two halves of the legacy `Hwfgenst` hypothesis: the
+    `tmp_*` alignment between `γ.genState.generated` and `σ`'s defined
+    keys, and the `old_*` freshness against `σ`. -/
+structure CoreGenStateRel (σ : CoreStore) (γ : CoreTransformState) : Prop where
+  /-- `tmp_*`-prefixed names in `γ.genState.generated` are exactly the
+      `tmp_*`-defined names in `σ`. -/
+  tmpAlign : ∀ v, v ∈ γ.genState.generated ∧ isTempIdent v ↔
+                  (σ v).isSome ∧ isTempIdent v
+  /-- `old_*`-prefixed names are never defined in `σ`. -/
+  oldFresh : ∀ v, isOldTempIdent v → (σ v).isNone
+  /-- The fresh-name generator state is well-formed.  Folded in here so
+      `CoreGenStateRel` is the complete γ-vs-σ relation needed by the
+      call-elim proof. -/
+  wfgen : CoreGenState.WF γ.genState
+
+/-- Call-elimination correctness for a single statement.
+
+    Given a small-step `EvalStatementsContract` derivation of `[st]`
+    from σ to σ', the transformed statement list `sts` produced by
+    `callElimStmt` admits an `EvalStatementsContract` derivation from
+    σ to some σ'' that extends σ' on the freshly-introduced temp
+    variables.
+
+    For non-call statements `callElimStmt` returns `[st]` unchanged
+    and the conclusion is immediate.  For a call statement the proof
+    chains L1–L6 via `EvalCallElim_glue`; that integration is the
+    open obligation, recorded as a single `sorry` below.
+
+    The WF/disjointness hypotheses (`Hp`, `Hwfc`, `Hwf`, `Hwfp`,
+    `Hgenrel`) are needed by the call-case proof
+    (when the open `sorry` is discharged); for non-call cases they
+    are not used. They are reinstated here so the next implementer
+    has them available.
+
+    The legacy big-step signature also carried `Hgv`
+    (`∀ gk, (p.find? .var gk).isSome → (σ gk).isSome`); this is
+    omitted because the current `Core.DeclKind` has no `.var` kind
+    and there is no live notion of "global variable declaration"
+    in `Program` to relate to a store.
+
+    -/
+theorem callElimStatementCorrect [LawfulBEq Expression.Expr]
+    {π : String → Option Procedure}
+    {φ : CoreEval → Imperative.PureFunc Expression → CoreEval}
+    {δ : CoreEval}
+    {σ σ' : CoreStore}
+    {p : Program}
+    {γ γ' : CoreTransformState}
+    {st : Statement}
+    {sts : List Statement}
+    (Hp : ∀ pname, π pname = Program.Procedure.find? p ⟨pname, ()⟩)
+    (Heval : EvalStatementsContract π φ ⟨σ, δ, false⟩ [st] ⟨σ', δ, false⟩)
+    (Hwfc : WellFormedCoreEvalCong δ)
+    (Hwf : WF.WFStatementsProp p [st])
+    (Hgenrel : CoreGenStateRel σ γ)
+    -- For each call statement, the free variables of the procedure's
+    -- preconditions and postconditions are not `tmp_*`/`old_*`-prefixed
+    -- (so they cannot collide with call-elim's freshly generated temp/
+    -- old-temp identifiers) and are disjoint from the call's `lhs`
+    -- (so they cannot collide with the call's output bindings).
+    --
+    -- The current `WFPreProp` / `WFPostProp` infrastructure (Strata/
+    -- Languages/Core/WF.lean:113-120) is empty modulo `oldOnlyInout`
+    -- for posts; it does not directly expose pre-/post-var scope
+    -- claims.  This hypothesis is therefore a call-site obligation
+    -- rather than derived from the WF
+    -- infrastructure.  Future work can replace it with a derivation
+    -- once `WFPreProp` is strengthened to include a `freeVarsScope`
+    -- field.
+    -- Six call-site disjointness clauses:
+    -- (1) pre-vars are not tmp_/old_ and not in lhs.
+    -- (2) post-vars are not tmp_/old_ and not in lhs.
+    -- (3) [D2b extension] argument-expression vars are not in lhs.
+    -- (4) [D2c extension] input/output parameter names are not
+    --     tmp_/old_-prefixed.
+    -- (5) [D2d-payload extension] argument-expression free vars are
+    --     not in `proc.header.outputs.keys` (the global modset).
+    -- (6) [D2d-payload extension] argument-expression free vars are
+    --     not in `proc.header.inputs.keys`.
+    --
+    -- Clause (3) is needed by the L6 (assumes) site: post-conditions
+    -- with `oldSubst`-substituted `mkOld` references for input-only
+    -- inout params expand into the original argument expression; for
+    -- the spike's `Hpred_disj : ks'_L6.Disjoint subPostVars` to hold
+    -- (where ks'_L6 = lhs ++ argTemps_filtered), we must ensure no
+    -- argument-expression free variable coincides with an lhs name.
+    -- This is a call-site WF invariant — typical surface-language
+    -- type checkers reject `proc(x); x := ...` aliasing — but it is
+    -- not currently exposed via `WFcallProp`.  Like clauses (1)/(2),
+    -- it is therefore introduced as a direct hypothesis here pending
+    -- a future strengthening of `WFcallProp`.
+    --
+    -- Clause (4) is needed by the L6 (assumes) σ_R1 substStores
+    -- derivation: the substitution σ_R1 ↔ σ_havoc must agree on
+    -- input-half keys (input_i ↦ argTemp_i for filtered inputs),
+    -- and σ_R1 looks up input_i via fall-through over genOldIdents
+    -- (an `isOldTempIdent`-only layer).  The fall-through is correct
+    -- only if input_i ∉ genOldIdents.  Symmetrically for outputs and
+    -- argTemps/outTemps fall-through.  Procedure parameters are
+    -- normal source-language identifiers; the surface-language type
+    -- checker reserves `tmp_*`/`old_*` prefixes for transform-
+    -- generated names.  This hypothesis therefore reflects that
+    -- pipeline invariant pending a future strengthening of
+    -- `WFProcedureProp`.
+    --
+    -- Clauses (5) and (6) are needed by the L6 `HinputSubBridge` (the
+    -- `inputOnlyOldSubst_L6` codomain bridge of `HpostEval_bridge`).
+    -- For each `argExpr` in `getInputExprs args` and each `v ∈ getVars
+    -- argExpr`, the chain `δ σ_R1 argExpr = δ σ argExpr` requires that
+    -- `σ_R1[v] = σO[v] = σAO[v] = σA[v] = σ[v]`.  This chain breaks at
+    -- `σAO ↔ σ` if `v ∈ proc.header.outputs.keys` (Hinitout writes `v`)
+    -- or `σA ↔ σ` if `v ∈ proc.header.inputs.keys` (Hinitin sets `σA[v]`
+    -- to the argument's eval, which differs from `σ[v]` in general).
+    -- Real surface-language type checkers enforce this — a call's
+    -- argument expressions cannot reference globals the called
+    -- procedure modifies, nor procedure parameter names — so this is
+    -- a genuine call-WF invariant pending future exposure via
+    -- `WFcallProp`.
+    (Hwfcallsite : WFCallSiteProp p π st)
+    (Helim : (Except.ok sts, γ') = (runWith st (callElimStmt · p) γ)) :
+    ∃ σ'',
+      Inits σ' σ'' ∧
+      EvalStatementsContract π φ ⟨σ, δ, false⟩ sts ⟨σ'', δ, false⟩ := by
+  -- The non-call cases all close with σ'' = σ' (`callElimStmt`
+  -- returns `[st]` unchanged); the call case must construct a
+  -- σ'' that extends σ' with the freshly-introduced temp/old vars.
+  -- The existential is therefore introduced per-case.
+  -- All non-call cases: `callElimStmt` returns `[st]` unchanged,
+  -- so `sts = [st]` and the goal is exactly `Heval`.  We unify all
+  -- non-call branches via the file-scope helper
+  -- `callElimStmt_non_call_eq`, dispatched through `nc_close`.
+  have nc_close : ∀ {b : Statement} (_ : st = b)
+      (_ : ∀ pn ar mt, b ≠ .cmd (CmdExt.call pn ar mt)),
+      ∃ σ'', Inits σ' σ'' ∧
+        EvalStatementsContract π φ ⟨σ, δ, false⟩ sts ⟨σ'', δ, false⟩ := by
+    intro b heq hne
+    refine ⟨σ', Inits.init InitVars.init_none, ?_⟩
+    have hsts := callElimStmt_non_call_eq hne (heq ▸ Helim)
+    rw [hsts]; rw [← heq]; exact Heval
+  cases hst : st with
+  | block lbl b md => exact nc_close hst (by intro _ _ _ h; cases h)
+  | ite cd tb eb md => exact nc_close hst (by intro _ _ _ h; cases h)
+  | loop g m i b md => exact nc_close hst (by intro _ _ _ h; cases h)
+  | exit lbl md => exact nc_close hst (by intro _ _ _ h; cases h)
+  | funcDecl f md => exact nc_close hst (by intro _ _ _ h; cases h)
+  | typeDecl tc md => exact nc_close hst (by intro _ _ _ h; cases h)
+  | cmd c =>
+      cases c with
+      | cmd c' => exact nc_close hst (by intro _ _ _ h; cases h)
+      | call procName args md =>
+          -- B1: Destructure `Helim` to expose `argTrips`, `outTrips`,
+          -- `oldTrips` and intermediate gen states.
+          --
+          -- Specialise `Heval` to the call form so it survives the
+          -- `simp` reduction of `Helim` below.
+          subst hst
+          -- Reduce `runWith st (callElimStmt · p) γ` past the
+          -- `match`/`callElimCmd` discriminators so that the underlying
+          -- `genArgExprIdentsTrip / genOutExprIdentsTrip /
+          -- genOldExprIdentsTrip` triplet plumbing is exposed.
+          simp only [runWith, StateT.run, callElimStmt,
+                     bind, pure,
+                     StateT.bind, ExceptT.bind, ExceptT.bindCont,
+                     ExceptT.mk, ExceptT.pure, modify, modifyGet,
+                     MonadStateOf.modifyGet, MonadState.modifyGet,
+                     StateT.modifyGet, MonadStateOf.set,
+                     monadLift, MonadLift.monadLift, liftM, ExceptT.lift,
+                     StateT.pure, Functor.map, StateT.map] at Helim
+          -- After this `simp` reduction, `Helim` is of the form
+          -- `(Except.ok sts, γ') = (match (callElimCmd (CmdExt.call procName args md) {γ with currentProgram := some p}) with ...)`.
+          -- Inspect the inner `callElimCmd` result via successive splits.
+          -- After the `simp` reduction, `Helim` is of the form
+          -- `(Except.ok sts, γ') = (match (callElimCmd ... γ_ext) with ...)`.
+          -- where `γ_ext` is `γ` with `currentProgram := some p`.  The two
+          -- splits below pull the inner `Except` and `Option` apart.
+          -- Peel the outer pair-binder, then the inner `Except.ok / Except.error`
+          -- layer, and then the `Option (List Statement)`.
+          split at Helim
+          rename_i x_pair a_ce s_ce heq_ce
+          split at Helim
+          · -- inner `Except.ok` branch
+            rename_i a_opt heq_ok
+            -- a_opt : Option (List Statement)
+            -- Now Helim has a `match a_opt with | none => ... | some s' => ...`.
+            split at Helim
+            · -- `a_opt = none`: heq_ce says `callElimCmd ... = (Except.ok none, s_ce)`.
+              -- But `callElimCmd (CmdExt.call ...)` never returns `.none` —
+              -- only the `_ => return .none` catch-all does, which is
+              -- unreachable here.  We discharge this via the equation.
+              refine ⟨σ', Inits.init InitVars.init_none, ?_⟩
+              simp only [pure, StateT.pure, Prod.mk.injEq, Except.ok.injEq] at Helim
+              -- Helim.1 : sts = [Imperative.Stmt.cmd (CmdExt.call procName args md)]
+              rw [Helim.1]; exact Heval
+            · -- `a_opt = some s'`: this is the genuine call-elim case.
+              rename_i s' heq_some
+              simp only [pure, StateT.pure, Prod.mk.injEq, Except.ok.injEq] at Helim
+              obtain ⟨Hsts, Hγ⟩ := Helim
+              -- `Hsts : sts = s'`, `Hγ : γ' = s_ce`,
+              -- `heq_ce : callElimCmd (CmdExt.call procName args md) γ_ext = (Except.ok (some s'), s_ce)`
+              --
+              -- B1 destructuring: unfold `callElimCmd` to expose `argTrips`,
+              -- `outTrips`, `oldTrips`, intermediate gen states, and the
+              -- structural shape `s' = argInit ++ outInit ++ oldInit ++
+              -- asserts ++ havocs ++ assumes`.  The full destructuring
+              -- recipe lives in `docs/superpowers/research/
+              -- 2026-05-21-legacy-call-case-recipe.md` Section 1; we land
+              -- the live skeleton here as Phase B/C work continues.
+              rw [Hsts]
+              -- B1 (continued): destructure `heq_ce` via the helper
+              -- `callElimCmd_call_eq` (defined above) which folds the
+              -- chained `bind/ExceptT.bindCont` plumbing of `callElimCmd`
+              -- into a single existential capturing `proc, argTrips,
+              -- outTrips, oldTrips, s_arg, s_out` and the structural
+              -- equation for `s'`.  The destructuring is moved out of
+              -- the call site because the inner bind chain doesn't
+              -- normalize to a bare `match` syntactically.
+              --
+              -- B2: peel `Heval` via `EvalStmtsSmall` → `step_stmts_cons`
+              -- → `seq_reaches_terminal` → `step_cmd` →
+              -- `EvalCommandContract.call_sem`.  After this peel, the
+              -- call_sem binders `argVals/oVals/modvals/σA/σAO/σO`,
+              -- `lkup`, `Hevalargs`, `Hevalouts`, `Hwfval/Hwfvars/Hwfb/
+              -- Hwf2`, `Hinitin`, `Hinitout`, `Hpre`, `Hhav1`, `Hpost`,
+              -- `Hrd`, `Hupdate` are in scope.
+              have ⟨ρ_inner, hstep_call, htail⟩ : ∃ ρ_inner,
+                  Imperative.StepStmtStar Expression (EvalCommandContract π)
+                      (EvalPureFunc φ)
+                      (.stmt (Imperative.Stmt.cmd
+                        (CmdExt.call procName args md))
+                          ⟨σ, δ, false⟩)
+                      (.terminal ρ_inner) ∧
+                  Imperative.StepStmtStar Expression (EvalCommandContract π)
+                      (EvalPureFunc φ)
+                      (.stmts [] ρ_inner)
+                      (.terminal ⟨σ', δ, false⟩) := by
+                -- Heval : EvalStatementsContract π φ ⟨σ,δ,false⟩
+                --   [Stmt.cmd (CmdExt.call procName args md)]
+                --   ⟨σ',δ,false⟩
+                -- = StepStmtStar P EvalCC EPF (.stmts [stmt] ⟨σ,δ,false⟩)
+                --                              (.terminal ⟨σ',δ,false⟩)
+                unfold EvalStatementsContract Imperative.EvalStmtsSmall at Heval
+                match Heval with
+                | .step _ _ _ .step_stmts_cons hrest =>
+                  exact Imperative.seq_reaches_terminal Expression
+                    (EvalCommandContract π) (EvalPureFunc φ) hrest
+              -- `htail` is `StepStmtStar (.stmts [] ρ_inner) (.terminal ⟨σ',δ,false⟩)`,
+              -- which forces `ρ_inner = ⟨σ',δ,false⟩`.
+              have hρ_inner_eq : ρ_inner = ⟨σ', δ, false⟩ := by
+                match htail with
+                | .step _ _ _ .step_stmts_nil hrest' =>
+                  cases hrest' with
+                  | refl => rfl
+                  | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+              subst hρ_inner_eq
+              -- Now `hstep_call : StepStmtStar (.stmt (.cmd (.call ...)) ⟨σ,δ,false⟩) (.terminal ⟨σ',δ,false⟩)`.
+              -- A single `step_cmd` of `EvalCommandContract` lifts to
+              -- this multi-step trace; invert to extract `Hcc`.
+              have Hcc : EvalCommandContract π δ σ
+                  (CmdExt.call procName args md) σ' false := by
+                match hstep_call with
+                | .step _ _ _ (.step_cmd hcc) hrest =>
+                  cases hrest with
+                  | refl =>
+                    -- `step_cmd` produces `.terminal { ρ with store := σ',
+                    -- hasFailure := ρ.hasFailure || hf }`; with the
+                    -- target `.terminal ⟨σ',δ,false⟩` this forces `hf = false`.
+                    -- The only `EvalCommandContract` constructor for a
+                    -- `.call …` command is `call_sem`, whose `f` field
+                    -- is hard-wired to `false`, so `hcc` is the desired
+                    -- `EvalCommandContract` at flag `false`.
+                    exact hcc
+                  | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+              -- Now invert `Hcc` to bind the `call_sem` constructor's
+              -- destructured fields.
+              cases Hcc with
+              | call_sem lkup hCallArgsIn hCallArgsLhs Hevalargs Hevalouts
+                          Hwfval Hwfvars Hwfb Hwf2 HdefOver
+                          Hinitin Hinitout Hpre Hhav1 Hpost Hrd Hupdate =>
+                -- Bind the 10 implicit vars exposed by `call_sem`,
+                -- positionally per the constructor signature:
+                --   `lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals`.
+                rename_i lhs σ₀ inArgs oVals argVals σA σAO σO proc modvals
+                -- Bound names from `call_sem`:
+                --   procFound : Procedure  (the looked-up procedure)
+                --   argVals/oVals/modvals : List Value
+                --   σA, σAO, σO : CoreStore
+                --   lkup : π procName = some procFound
+                --   hCallArgsIn  : CallArg.getInputExprs args = ...
+                --   hCallArgsLhs : CallArg.getLhs args = ...
+                --   Hevalargs : EvalExpressions δ σ inArgs argVals
+                --   Hevalouts : ReadValues σ lhs oVals
+                --   Hwfval/Hwfvars/Hwfb/Hwf2 : eval-congruence packs
+                --   HdefOver : isDefinedOver ... σ (Statement.call ...)
+                --   Hinitin   : InitStates σ (inputs.keys) argVals σA
+                --   Hinitout  : InitStates σA (outputs.keys) oVals σAO
+                --   Hpre      : ∀ pre ∈ preconditions, ...
+                --   Hhav1     : HavocVars σAO (outputs.keys) σO
+                --   Hpost     : ∀ post ∈ postconditions, ...
+                --   Hrd       : ReadValues σO (outputs.keys) modvals
+                --   Hupdate   : UpdateStates σ lhs modvals σ'
+                --
+                -- Phase B is done.  Phase C (σ'' construction + L1–L6
+                -- chaining via `EvalCallElim_glue`) lives below and is
+                -- the next obligation.  Bound binders at this point:
+                --   lhs       : List Expression.Ident
+                --   σ₀        : CoreStore
+                --   inArgs    : List Expression.Expr  (= getInputExprs args)
+                --   oVals     : List Expression.Expr  (= read from σ at lhs)
+                --   argVals   : List Expression.Expr  (= eval inArgs in σ)
+                --   σA σAO σO : Imperative.SemanticStore Expression
+                --   proc      : Procedure
+                --   modvals   : List Expression.Expr
+                -- with hypotheses
+                --   lkup       : π procName = some proc
+                --   hCallArgsIn  : CallArg.getInputExprs args = inArgs
+                --   hCallArgsLhs : CallArg.getLhs args = lhs
+                --   Hevalargs  : EvalExpressions δ σ inArgs argVals
+                --   Hevalouts  : ReadValues σ lhs oVals
+                --   Hwfval/Hwfvars/Hwfb : eval-congruence packs
+                --   Hwf2       : WellFormedCoreEvalTwoState δ σ₀ σ
+                --   HdefOver   : isDefinedOver ... σ (Statement.call procName args md)
+                --   Hinitin    : InitStates σ (inputs.keys) argVals σA
+                --   Hinitout   : InitStates σA (outputs.keys) oVals σAO
+                --   Hpre       : ∀ pre ∈ ..., isDefinedOver ... σAO pre ∧ δ σAO pre = tt
+                --   Hhav1      : HavocVars σAO (outputs.keys) σO
+                --   Hpost      : ∀ post ∈ ..., isDefinedOver ... σAO post ∧ δ σO post = tt
+                --   Hrd        : ReadValues σO (outputs.keys) modvals
+                --   Hupdate    : UpdateStates σ lhs modvals σ'
+                -- B1-tail: Destructure heq_ce via the helper
+                -- `callElimCmd_call_eq` to bind `proc, argTrips, outTrips,
+                -- s_arg, s_out` and the procedure-lookup result.
+                -- Note: `oldTrips`, `s_old`, and the structural equation
+                -- for `s'` are not yet bound here; the live `callElimCmd`
+                -- builds `oldTrips` inline from `genOldExprIdents` (raw
+                -- list) plus a manual zip, so deriving these requires
+                -- additional state-walk that is deferred to Phase C.
+                obtain ⟨proc', argTrips, outTrips, genOldIdents, oldTys,
+                        asserts, assumes,
+                        s_arg, s_out, s_old,
+                        Hfind, Heqarg, Heqout, Heqold, Holdtylen,
+                        Hsts_struct, HassertsShape, HassumesShape⟩ :=
+                  callElimCmd_call_eq heq_ce
+                have Heqargs : argTrips.unzip.snd =
+                    CallArg.getInputExprs args :=
+                  genArgExprIdentsTrip_snd Heqarg
+                have Heqouts : outTrips.unzip.snd =
+                    CallArg.getLhs args :=
+                  genOutExprIdentsTrip_snd Heqout
+                -- Hoisted abbreviations for argument/output temp idents.
+                -- These appear pervasively in the call branch; binding
+                -- them here keeps downstream sites readable.
+                let argTemps : List Expression.Ident :=
+                  argTrips.unzip.fst.unzip.fst
+                let outTemps : List Expression.Ident :=
+                  outTrips.unzip.fst.unzip.fst
+                -- C1: aux facts derived from the destructured binders.
+                -- These mirror the legacy proof's `have` blocks.
+                have Hwfgenargs : CoreGenState.WF s_arg.genState := by
+                  apply genArgExprIdentsTripWFMono ?_ Heqarg
+                  exact Hgenrel.wfgen
+                have Hwfgenouts : CoreGenState.WF s_out.genState :=
+                  genOutExprIdentsTripWFMono Hwfgenargs Heqout
+                have Hgenargs :
+                    s_arg.genState.generated =
+                      argTemps.reverse ++
+                        γ.genState.generated := by
+                  have HH := genArgExprIdentsTripGeneratedWF Heqarg
+                  -- {γ with ...}.genState = γ.genState; reduce.
+                  exact HH
+                have Hgenouts :
+                    s_out.genState.generated =
+                      outTemps.reverse ++
+                        s_arg.genState.generated :=
+                  genOutExprIdentsTripGeneratedWF Heqout
+                have HargTemp :
+                    Forall (fun x => isTempIdent x)
+                      argTemps :=
+                  genArgExprIdentsTrip_isTempIdent Heqarg
+                have HoutTemp :
+                    Forall (fun x => isTempIdent x)
+                      outTemps :=
+                  genOutExprIdentsTrip_isTempIdent Heqout
+                -- Old-related aux facts.  `oldVars` is the filter
+                -- expression in the live `callElimCmd`.
+                have Hwfgenolds : CoreGenState.WF s_old :=
+                  genOldExprIdentsTripWFMono Hwfgenouts Heqold
+                have Hgenolds :
+                    s_old.generated =
+                      genOldIdents.reverse ++ s_out.genState.generated :=
+                  genOldExprIdents_GeneratedWF Heqold
+                have HoldIdentsTemp :
+                    Forall (fun x => isOldTempIdent x) genOldIdents :=
+                  genOldExprIdents_isOldTempIdent Heqold
+                -- Combined-extension equation: the post-old gen list is
+                -- the concatenation of all three reverse-segments and γ's gen.
+                have HgenApp :
+                    s_old.generated =
+                      genOldIdents.reverse ++
+                        outTemps.reverse ++
+                          argTemps.reverse ++
+                            γ.genState.generated := by
+                  rw [Hgenolds, Hgenouts, Hgenargs]
+                  simp [List.append_assoc]
+                -- Nodup of the combined list, in reversed-segment shape.
+                have Hgennd' :
+                    (γ.genState.generated.reverse ++
+                      argTemps ++
+                        outTemps ++
+                          genOldIdents).Nodup := by
+                  -- `Hwfgenolds : CoreGenState.WF s_old`, which is a 3-conj
+                  -- `StringGenState.WF s_old.cs ∧ ... ∧ s_old.generated.Nodup`.
+                  -- Project the third component via `.right.right`.
+                  have HndOld : s_old.generated.Nodup := Hwfgenolds.right.right
+                  rw [HgenApp] at HndOld
+                  have Hnd := nodup_reverse HndOld
+                  simp only [List.reverse_append, List.reverse_reverse,
+                             ← List.append_assoc] at Hnd
+                  exact Hnd
+                -- Nodup of just (argT ++ outT ++ genOldIdents).
+                have Hgennd :
+                    (argTemps ++
+                      outTemps ++
+                        genOldIdents).Nodup := by
+                  simp only [List.append_assoc] at Hgennd' ⊢
+                  exact (List.nodup_append.mp Hgennd').2.1
+                -- ── Hndefgen: combined-list freshness against σ' ──
+                -- Derive `Hnotgen_arg / Hnotgen_out`: arg/out names not yet
+                -- in γ.genState.generated.  The Nodup `Hgennd'` forces the
+                -- four segments mutually disjoint; in particular any x in
+                -- argT (or outT) is not in γ.gen (membership preserved
+                -- through reverse).
+                have Hnotgen_arg :
+                    ∀ x ∈ argTemps,
+                      x ∉ γ.genState.generated := by
+                  intro x Hxin
+                  -- Hgennd' : (γ.gen.rev ++ argT ++ outT ++ olds).Nodup.
+                  -- Re-associate to (γ.gen.rev ++ (argT ++ outT ++ olds))
+                  -- so that nodup_append gives a disjointness over the
+                  -- full second segment.
+                  have Hnd1 : List.Nodup (γ.genState.generated.reverse ++
+                      (argTemps ++
+                        outTemps ++ genOldIdents)) := by
+                    simp only [List.append_assoc] at Hgennd' ⊢
+                    exact Hgennd'
+                  have Hdisj := (List.nodup_append.mp Hnd1).2.2
+                  intro Hxgen
+                  have Hin_rev : x ∈ γ.genState.generated.reverse :=
+                    List.mem_reverse.mpr Hxgen
+                  have Hin_combined :
+                      x ∈ argTemps ++
+                            outTemps ++ genOldIdents := by
+                    simp only [List.mem_append]
+                    exact Or.inl (Or.inl Hxin)
+                  exact Hdisj x Hin_rev x Hin_combined rfl
+                have Hnotgen_out :
+                    ∀ x ∈ outTemps,
+                      x ∉ γ.genState.generated := by
+                  intro x Hxin
+                  have Hnd1 : List.Nodup (γ.genState.generated.reverse ++
+                      (argTemps ++
+                        outTemps ++ genOldIdents)) := by
+                    simp only [List.append_assoc] at Hgennd' ⊢
+                    exact Hgennd'
+                  have Hdisj := (List.nodup_append.mp Hnd1).2.2
+                  intro Hxgen
+                  have Hin_rev : x ∈ γ.genState.generated.reverse :=
+                    List.mem_reverse.mpr Hxgen
+                  have Hin_combined :
+                      x ∈ argTemps ++
+                            outTemps ++ genOldIdents := by
+                    simp only [List.mem_append]
+                    exact Or.inl (Or.inr Hxin)
+                  exact Hdisj x Hin_rev x Hin_combined rfl
+                -- σ-level freshness facts.
+                have HndefArg_σ :
+                    Imperative.isNotDefined σ argTemps :=
+                  fresh_temps_not_defined Hgenrel.tmpAlign Hnotgen_arg HargTemp
+                have HndefOut_σ :
+                    Imperative.isNotDefined σ outTemps :=
+                  fresh_temps_not_defined Hgenrel.tmpAlign Hnotgen_out HoutTemp
+                have HndefOld_σ :
+                    Imperative.isNotDefined σ genOldIdents :=
+                  fresh_olds_not_defined Hgenrel.oldFresh HoldIdentsTemp
+                -- Combined freshness against σ.
+                have Hndefσ :
+                    Imperative.isNotDefined σ
+                      (argTemps ++
+                        outTemps ++
+                          genOldIdents) := by
+                  intro v Hin
+                  simp only [List.mem_append] at Hin
+                  rcases Hin with (Hin | Hin)
+                  · rcases Hin with (Hin | Hin)
+                    · exact HndefArg_σ v Hin
+                    · exact HndefOut_σ v Hin
+                  · exact HndefOld_σ v Hin
+                -- Lift to σ' via Hupdate.
+                have Hndefgen :
+                    Imperative.isNotDefined σ'
+                      (argTemps ++
+                        outTemps ++
+                          genOldIdents) :=
+                  UpdateStatesNotDefMonotone Hndefσ Hupdate
+                -- ── Length facts ──
+                -- argTrips.length = argVals.length
+                have Hargtriplen : argTrips.length = argVals.length := by
+                  rw [← unzip_snd_length argTrips, Heqargs, hCallArgsIn]
                   exact EvalExpressionsLength Hevalargs
-                . -- substNoDup
-                  simp [Imperative.substNodup]
-                  rw [List.map_fst_zip]
-                  rw [List.map_snd_zip]
-                  . apply List.Disjoint_Nodup_iff.mp
-                    refine ⟨Hinoutnd, ?_, ?_⟩
-                    . simp [← List.append_assoc] at Hgennd
-                      have HH := List.nodup_append.mp Hgennd
-                      apply List.Disjoint_Nodup_iff.mp
-                      refine ⟨?_, ?_, ?_⟩
-                      . exact (List.nodup_append.mp HH.1).1
-                      . exact Hlhs.1
-                      . apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isLocl ·))
-                        . exact HargTemp
-                        . exact Hlhs.2
-                        . apply List.PredDisjoint_PredImplies_right
-                          exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                          exact CoreIdent.isLocl_isGlobOrLocl
-                    . apply List.Disjoint.symm
-                      apply List.Disjoint_app.mp ⟨?_, ?_⟩
-                      . apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isGlobOrLocl ·))
-                        . exact HargTemp
-                        . apply List.Forall_append.mpr ⟨?_, ?_⟩
-                          . exact List.Forall_PredImplies Hinlc CoreIdent.isLocl_isGlobOrLocl
-                          . exact List.Forall_PredImplies Houtlc CoreIdent.isLocl_isGlobOrLocl
-                        . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                      . intros x Hin1 Hin2
-                        apply Hlhsdisj Hin1
-                        simp_all
-                  . simp_all
-                    simp [← Hargtriplen, ← Heqargs]
-                  . simp_all
-                    simp [← Hargtriplen, ← Heqargs]
-                . -- substDefined
-                  intros k1 k2 Hin
-                  have Hmem := List.of_mem_zip Hin
-                  simp only [List.mem_append] at Hmem
-                  apply And.intro
-                  -- inputs and outputs defined in σR
-                  . cases Hmem.1 with
-                    | inl Hmem =>
-                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.inputs) := by
-                      simp [← HσR₁]
-                      apply updatedStatesDefMonotone
-                      apply updatedStatesDefMonotone
-                      apply HavocVarsDefMonotone ?_ Hhav2
-                      apply HavocVarsDefMonotone ?_ Hhav1
-                      apply InitStatesDefMonotone ?_ Hinitout
-                      exact InitStatesDefined Hinitin
-                    exact Hdef k1 Hmem
-                    | inr Hmem =>
-                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.outputs) := by
-                      simp [← HσR₁]
-                      apply updatedStatesDefMonotone
-                      apply updatedStatesDefMonotone
-                      apply HavocVarsDefMonotone ?_ Hhav2
-                      apply HavocVarsDefMonotone ?_ Hhav1
-                      exact InitStatesDefined Hinitout
-                    exact Hdef k1 Hmem
-                  . cases Hmem.2 with
-                    | inl Hmem =>
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefined
-                      simp_all
-                    | inr Hmem =>
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                      apply updatedStatesDefMonotone <;> try assumption
-                    -- args and outs are defined in σ₁
-                . intros substPost HinSubst
-                  refine ⟨?_, ?_, ?_⟩
-                  . -- store invariant
-                    have Hndrd1 : (ListMap.keys proc.header.outputs ++ proc.spec.modifies).Nodup := by
-                      refine List.Disjoint_Nodup_iff.mp ⟨Houtnd, Hmodsnd, ?_⟩
-                      -- disjoint between local and global
-                      apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isLocl ·))
-                          (Q:=(CoreIdent.isGlob ·))
-                      . exact Houtlc
-                      . exact Hmodglob
-                      . exact CoreIdent.Disjoint_isLocl_isGlob
-                    have Hrd1 := UpdateStatesReadValues Houtnd Hup1
-                    have Hrd2 := UpdateStatesReadValues Hmodsnd Hup2
-                    have Heq2 := ReadValuesInjective Hrd2 Hrd'.2.2
-                    -- start reducing the update operation
-                    apply InvStoresExceptInvStores (ks:=
-                          (ListMap.keys proc.header.inputs ++
-                          ListMap.keys proc.header.outputs ++
-                          (List.map (Prod.fst ∘ Prod.fst) argTrips ++
-                          List.map Prod.snd outTrips)))
-                    . apply Imperative.invStoresExceptComm
-                      rw [← HσR₁]
-                      apply InvStoresExceptUpdatedSame
-                      apply InvStoresExceptUpdatedSame
-                      . apply InvStoresExceptUpdatedMem
-                        . rw [← Hrd'.1]
-                          rw [List.zip_append]
-                          rw [updatedStates'App]
-                          rw [updatedStatesComm]
-                          . apply InvStoresExceptUpdatedMem
-                            . simp [UpdateStatesUpdated Hup2]
-                              simp [← Heq2]
-                              apply InvStoresExceptUpdatedSame
-                              . apply Imperative.invStoresExceptComm
-                                simp [UpdateStatesUpdated Hup1]
-                                simp [InitStatesUpdated Hinitout]
-                                simp [InitStatesUpdated Hinitin]
-                                apply InvStoresExceptUpdatedMem
-                                apply InvStoresExceptUpdatedMem
-                                apply InvStoresExceptUpdatedMem
-                                apply InvStoresExceptId
-                                . simp [Harglen, ← Heqargs, Hargtriplen]
-                                . intros x Hin
-                                  simp_all
-                                . simp [Houtlen]
-                                . intros x Hin
-                                  simp_all
-                                . exact ReadValuesLength Hrd1
-                                . intros x Hin
-                                  simp_all
-                              . exact ReadValuesLength Hrd2
-                              . exact Hmodsnd
-                            . simp [← Houtlen , Houttriplen]
-                              have Hlen := ReadValuesLength Hrd'.2.1
-                              simp at Hlen
-                              exact Hlen
-                            . intros x Hin
-                              simp_all
-                          . -- lhs disjoint from modifies, from WF
-                            rw [List.unzip_zip]
-                            rw [List.unzip_zip]
-                            simp
-                            . exact List.DisjointAppRight' Hlhsdisj
-                            . simp [← Heq2]
-                              exact ReadValuesLength Hrd2
-                            . have Hlen := ReadValuesLength Hrd'.2.1
-                              simp_all
-                          . simp [← Houtlen , Houttriplen]
-                            have Hlen := ReadValuesLength Hrd'.2.1
-                            simp at Hlen
-                            exact Hlen
-                        . simp [Hargtriplen]
-                        . intros x Hin
-                          simp_all
-                          -- NOTE: can also use equivalent proof term:
-                          -- exact List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl Hin)))
-                      . simp [Houttriplen]
-                      . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
-                      . simp [Holdtriplen]
-                      . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-                    . apply List.Disjoint.symm
-                      exact List.removeAll_Disjoint
-                  . -- TODO : all vars in substPost is a subset of subst ++ fst fst oldTrips
-                    have Hin := postconditions_subst_unwrap HinSubst
-                    cases Hin with
-                    | intro post Hin =>
-                    have HH := prepostconditions_unwrap Hin.1
-                    cases HH with
-                    | intro label HH =>
-                    cases HH with
-                    | intro attr HH =>
-                    cases HH with
-                    | intro md HH =>
-                    have Hpost := (List.Forall_mem_iff.mp wfpost _ HH)
-                    have Hlcl := List.Forall_mem_iff.mp Hpost.lvars
-                    have Hgl := List.Forall_mem_iff.mp Hpost.glvars
-                    simp at Hlcl Hgl
-                    intros x Hin1 Hin2
-                    have Hdisj : oldTrips.unzip.fst.unzip.fst.Disjoint oldTrips.unzip.snd := by
-                      apply List.PredDisjoint_Disjoint
-                        (P:=(CoreIdent.isTemp ·))
-                        (Q:=(CoreIdent.isGlob ·))
-                      . simp; exact HoldTemp
-                      . simp; exact Holdsndglob
-                      . apply List.PredDisjoint_PredImplies_right
-                        exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                        exact CoreIdent.isGlob_isGlobOrLocl
-                    have Hsubset := substsOldPostSubset (post:=(OldExpressions.normalizeOldExpr post)) (oldTrips:=oldTrips) Hdisj
-                    have Hin : x ∈ (Imperative.HasVarsPure.getVars (P:=Expression) (OldExpressions.normalizeOldExpr post) ++
-                                oldTrips.unzip.fst.unzip.fst) := by
-                      apply Hsubset
-                      simp [Hin.2] at Hin2
-                      exact Hin2
-                    simp only [List.mem_append] at Hin Hin1
-                    cases Hin1 with
-                    | inl Hin1 =>
-                      cases Hin with
-                      | inl Hin =>
-                        -- disjoint of global/local with temp
-                        have Hin := normalizeOldExprInVars Hin
-                        specialize Hgl x Hin
-                        apply CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                        . exact List.Forall_mem_iff.mp HargTemp x Hin1
-                        . exact Hgl
-                      | inr Hin =>
-                        -- disjoint among temp
-                        simp only [List.unzip_fst, List.map_map] at Hin
-                        simp [CoreIdent.isGlobOrLocl] at Hgl
-                        have HH := (List.nodup_append.mp Hgennd).2.2
-                        apply HH x Hin1 x
-                        apply List.mem_append.mpr
-                        apply (Or.inr Hin)
+                -- outTrips.length = oVals.length
+                have Houttriplen : outTrips.length = oVals.length := by
+                  rw [← unzip_snd_length outTrips, Heqouts, hCallArgsLhs]
+                  exact ReadValuesLength Hevalouts
+                -- ── C1: Derive `Hinoutnd` from the call_sem InitStates binders ──
+                -- Path (b) chosen in Phase A1: the `EvalCommandContract.call_sem`
+                -- constructor enforces
+                --     Hinitin  : InitStates σ  (inputs.keys)  argVals σA
+                --     Hinitout : InitStates σA (outputs.keys) oVals  σAO
+                -- and `InitStates` (CmdSemantics.lean:265-273) requires the
+                -- target identifier to be `none` in the pre-store. Composing
+                -- with `InitStatesDefined`/`InitStatesNotDefined` forces
+                -- pointwise input/output disjointness on σA, no
+                -- `WFProcedureProp` extension needed.
+                have Hinnd_io : (proc.header.inputs.keys).Nodup :=
+                  InitStatesNodup Hinitin
+                have Houtnd_io : (proc.header.outputs.keys).Nodup :=
+                  InitStatesNodup Hinitout
+                have Hindef_io :
+                    Imperative.isDefined σA (proc.header.inputs.keys) :=
+                  InitStatesDefined Hinitin
+                have Houtndef_io :
+                    Imperative.isNotDefined σA (proc.header.outputs.keys) :=
+                  InitStatesNotDefined Hinitout
+                have Hiodisj :
+                    (proc.header.inputs.keys).Disjoint
+                      (proc.header.outputs.keys) := by
+                  intro x Hin1 Hin2
+                  have h1 : (σA x).isSome = true := Hindef_io x Hin1
+                  have h2 : σA x = none := Houtndef_io x Hin2
+                  rw [h2] at h1
+                  simp at h1
+                have Hinoutnd :
+                    (proc.header.inputs.keys ++
+                      proc.header.outputs.keys).Nodup := by
+                  rw [List.nodup_append]
+                  refine ⟨Hinnd_io, Houtnd_io, ?_⟩
+                  intro a Ha b Hb Heq
+                  subst Heq
+                  exact Hiodisj Ha Hb
+                -- ── C2: Derive `HoldVals` and `Holdtriplen` ──
+                --
+                -- The `Hsts_struct` filter expression names the old-vars
+                -- list; introduce a local `let oldVars` abbreviation so
+                -- the rest of this section can refer to it without
+                -- restating the giant filter body.  All references go
+                -- through `proc'` (the destructure of
+                -- `callElimCmd_call_eq`), the procedure looked up via
+                -- `Program.Procedure.find?`.
+                let oldVars : List Expression.Ident :=
+                  List.filter
+                    (fun g =>
+                      (ListMap.keys proc'.header.inputs).contains g &&
+                          (ListMap.keys proc'.header.outputs).contains g &&
+                        (List.map Procedure.Check.expr
+                            proc'.spec.postconditions.values).any fun e =>
+                          List.any e.freeVars
+                            fun x => x.fst == CoreIdent.mkOld g.name)
+                    (CallArg.getLhs args)
+                -- `oldVars ⊆ lhs` because the filter narrows `lhs` ↪ `oldVars`.
+                -- `Hevalouts : ReadValues σ lhs oVals` then forces every
+                -- element of `lhs` (and hence `oldVars`) defined in σ.
+                have HrdOldDef : Imperative.isDefined σ oldVars := by
+                  intro g Hg
+                  have Hg_in_getLhs : g ∈ CallArg.getLhs args :=
+                    (List.mem_filter.mp Hg).1
+                  -- `hCallArgsLhs : CallArg.getLhs args = lhs` (forward).
+                  have Hg_in_lhs : g ∈ lhs := hCallArgsLhs ▸ Hg_in_getLhs
+                  have Hlhs_def : Imperative.isDefined σ lhs :=
+                    ReadValuesIsDefined Hevalouts
+                  exact Hlhs_def g Hg_in_lhs
+                -- Existential reading of `oldVars` against σ.
+                obtain ⟨oldVals, HoldVals⟩ :=
+                  isDefinedReadValues HrdOldDef
+                -- Length facts.
+                have HoldValsLen : oldVals.length = oldVars.length := by
+                  have := ReadValuesLength HoldVals
+                  exact this.symm
+                -- Length of the trip-shape needed by the `updatedStatesInit`
+                -- step in C3: `oldVals.length = genOldIdents.length`.
+                -- `genOldExprIdents_length Heqold` gives
+                -- `genOldIdents.length = oldVars.length`.
+                have HgenOldLen : genOldIdents.length = oldVars.length :=
+                  genOldExprIdents_length Heqold
+                -- `Holdtylen` says `oldTys.length = oldVars.length`
+                -- (after unfolding the `let oldVars` definition, the RHS
+                -- of `Holdtylen` is literally the filter that defines
+                -- `oldVars`).  Restate it for ergonomics.
+                have HoldTysLen : oldTys.length = oldVars.length := Holdtylen
+                -- The trip-shape expected by `Hsts_struct`'s
+                -- `createInitVars` argument.  Both inner zips truncate to
+                -- the shorter operand, so once the per-list lengths
+                -- agree (genOld = oldTys = oldVars), the outer collapses
+                -- to `oldVars.length`.
+                have Holdtriplen :
+                    oldVals.length =
+                      ((genOldIdents.zip oldTys).zip oldVars).length := by
+                  rw [HoldValsLen]
+                  simp [List.length_zip, HgenOldLen, HoldTysLen]
+                -- ── C3: Construct σ'' witness and prove Inits σ' σ'' ──
+                --
+                -- The σ'' witness is the post-call concrete store, built
+                -- from σ' by initializing the freshly generated names
+                -- (`argTemps ++ outTemps
+                -- ++ genOldIdents`) to the corresponding values
+                -- (`argVals ++ oVals ++ oldVals`).  We use
+                -- `updatedStatesInit` to land an `InitStates σ' …` and
+                -- `InitStatesInits` to project to `Inits σ' σ''`.
+                --
+                -- The second conjunct (`EvalStatementsContract …`) is the
+                -- D2 obligation; we leave a transient `sorry` here.
+                have Hinit :=
+                  updatedStatesInit (P := Expression) ?_ ?_ ?_ (σ := σ')
+                    (hs := argTemps
+                            ++ outTemps
+                            ++ genOldIdents)
+                    (vs := argVals ++ oVals ++ oldVals)
+                rotate_left
+                · -- length of `hs` = length of `vs`
+                  -- Reduce both sides via List.length_append, then close
+                  -- segment-wise via Hargtriplen / Houttriplen / (HgenOldLen ; HoldValsLen).
+                  have HgenOldValsLen :
+                      genOldIdents.length = oldVals.length := by
+                    rw [HgenOldLen, ← HoldValsLen]
+                  simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                        Hargtriplen, Houttriplen, HgenOldValsLen]
+                · exact Hndefgen
+                · exact Hgennd
+                -- Now `Hinit : InitStates σ' (argT.fst.fst ++ outT.fst.fst ++
+                -- genOldIdents) (argVals ++ oVals ++ oldVals) (updatedStates σ' …)`.
+                -- The σ'' we hand to the existential is the
+                -- `updatedStates σ' …` form.  D2 will additionally invoke
+                -- `InitsUpdatesComm Hupdate Hinit` to commute the init/update
+                -- chain over σ rather than σ', as needed for the L4-L6
+                -- substitution arguments.
+                refine ⟨updatedStates σ'
+                          (argTemps
+                            ++ outTemps
+                            ++ genOldIdents)
+                          (argVals ++ oVals ++ oldVals), ?_, ?_⟩
+                · -- First conjunct: Inits σ' σ''.
+                  exact InitStatesInits Hinit
+                · -- Second conjunct: EvalStatementsContract … s' …
+                  -- This is the D2 obligation (L1-L3 inits + L4 asserts +
+                  -- L5 havocs + L6 assumes, chained via `EvalCallElim_glue`).
+                  --
+                  -- D1: discharge L1, L2, L3 segment evaluations via
+                  -- `H_inits` (arg expressions) and `H_initVars` (out
+                  -- and old layers).  Each yields a
+                  -- `EvalStatementsContract` over the corresponding
+                  -- segment so D2 can chain them via `EvalCallElim_glue`.
+                  --
+                  -- Common helper facts: arg/out/old temps are pairwise
+                  -- disjoint (peeled from `Hgennd`) and disjoint from
+                  -- σ-defined names (`HndefArg_σ` / `HndefOut_σ` /
+                  -- `HndefOld_σ` derived earlier).
+                  have HargNd : argTemps.Nodup := by
+                    have Hsplit := List.nodup_append.mp Hgennd
+                    -- Hgennd : (argT ++ outT ++ olds).Nodup;
+                    -- Hsplit.1 : (argT ++ outT).Nodup
+                    exact (List.nodup_append.mp Hsplit.1).1
+                  have HoutNd : outTemps.Nodup := by
+                    have Hsplit := List.nodup_append.mp Hgennd
+                    exact (List.nodup_append.mp Hsplit.1).2.1
+                  have HoldNd : genOldIdents.Nodup := by
+                    have Hsplit := List.nodup_append.mp Hgennd
+                    exact Hsplit.2.1
+                  have HargOutDisj :
+                      argTemps.Disjoint
+                        outTemps := by
+                    have Hsplit := List.nodup_append.mp Hgennd
+                    have Hsplit2 := List.nodup_append.mp Hsplit.1
+                    intro x Hin1 Hin2
+                    exact Hsplit2.2.2 x Hin1 x Hin2 rfl
+                  have HargOldDisj :
+                      argTemps.Disjoint genOldIdents := by
+                    have Hnd' : (argTemps ++
+                                  (outTemps ++
+                                    genOldIdents)).Nodup := by
+                      simp only [List.append_assoc] at Hgennd
+                      exact Hgennd
+                    have Hsplit := List.nodup_append.mp Hnd'
+                    intro x Hin1 Hin2
+                    exact Hsplit.2.2 x Hin1 x
+                      (List.mem_append.mpr (Or.inr Hin2)) rfl
+                  have HoutOldDisj :
+                      outTemps.Disjoint genOldIdents := by
+                    have Hsplit := List.nodup_append.mp Hgennd
+                    have Hsplit2 := List.nodup_append.mp Hsplit.1
+                    -- Hsplit.2.1 : (outT ++ olds).Nodup is wrong shape;
+                    -- Hgennd is ((argT ++ outT) ++ olds).Nodup.
+                    -- Use Hsplit.2.2 : (argT ++ outT) Disjoint olds.
+                    intro x Hin1 Hin2
+                    exact Hsplit.2.2 x
+                      (List.mem_append.mpr (Or.inr Hin1)) x Hin2 rfl
+                  -- Disjointness of σ-defined argument expression vars
+                  -- from the freshly generated argTemps: HdefOver puts
+                  -- them in σ, HndefArg_σ keeps temps out of σ, so they
+                  -- can't intersect.
+                  have HdefVars : Imperative.isDefined σ
+                      (List.flatMap
+                        (Imperative.HasVarsPure.getVars (P:=Expression))
+                        (CallArg.getInputExprs args)) := by
+                    -- Use `Hevalargs : EvalExpressions δ σ inArgs argVals`
+                    -- directly: each `eval_some` cons step carries a
+                    -- pointwise `isDefined σ (getVars e)`, which we glue
+                    -- into the flatMap-level `isDefined`.  Bypasses the
+                    -- `HdefOver`/`isDefinedOver`/`allVarsTrans` route, none
+                    -- of whose defs are `@[expose]` in current module
+                    -- system mode.
+                    have Heval' :
+                        Imperative.isDefined σ
+                          (List.flatMap
+                            (Imperative.HasVarsPure.getVars (P:=Expression))
+                            inArgs) :=
+                      evalExpressions_isDefined_flatMap Hevalargs
+                    -- hCallArgsIn : CallArg.getInputExprs args = inArgs.
+                    rw [← hCallArgsIn] at Heval'
+                    exact Heval'
+                  have HargExprDisj :
+                      argTemps.Disjoint
+                        (List.flatMap
+                          (Imperative.HasVarsPure.getVars (P:=Expression))
+                          argTrips.unzip.snd) := by
+                    intro x Hin1 Hin2
+                    -- Rewrite Hin2 via Heqargs so we can use HdefVars.
+                    rw [Heqargs] at Hin2
+                    -- HndefArg_σ says σ x = none; HdefVars says (σ x).isSome.
+                    have Hnone : σ x = none := HndefArg_σ x Hin1
+                    have Hsome : (σ x).isSome = true := HdefVars x Hin2
+                    rw [Hnone] at Hsome
+                    simp at Hsome
+                  -- ── L1: argInit ──
+                  -- `H_inits` evaluates `createInits argTrips md` from
+                  -- σ to `updatedStates σ argTemps argVals`.
+                  have HevalArgs' :
+                      EvalExpressions (P:=Core.Expression) δ σ
+                        argTrips.unzip.snd argVals := by
+                    rw [Heqargs, hCallArgsIn]
+                    exact Hevalargs
+                  have HL1 :
+                      EvalStatementsContract π φ ⟨σ, δ, false⟩
+                        (Core.Transform.createInits argTrips md)
+                        ⟨updatedStates σ argTemps
+                          argVals, δ, false⟩ :=
+                    H_inits Hwfvars Hwfval Hwfc HargExprDisj HargNd
+                      HevalArgs' HndefArg_σ
+                  -- ── L2: outInit ──
+                  -- `H_initVars` reads outTrips.snd (= lhs) on the
+                  -- σ_arg = updatedStates σ argTemps argVals store and
+                  -- writes oVals into outTemps.
+                  --
+                  -- Lift `Hevalouts : ReadValues σ lhs oVals` to σ_arg
+                  -- using `readValues_updatedStates` with disjointness
+                  -- `lhs.Disjoint argTemps` (program-level vs temps).
+                  have Hlhs_isLocl :
+                      Imperative.isDefined σ lhs :=
+                    ReadValuesIsDefined Hevalouts
+                  have HlhsDisjArg :
+                      lhs.Disjoint argTemps := by
+                    intro x Hin1 Hin2
+                    have Hnone : σ x = none := HndefArg_σ x Hin2
+                    have Hsome : (σ x).isSome = true := Hlhs_isLocl x Hin1
+                    rw [Hnone] at Hsome
+                    simp at Hsome
+                  have HlhsDisjOut :
+                      lhs.Disjoint outTemps := by
+                    intro x Hin1 Hin2
+                    have Hnone : σ x = none := HndefOut_σ x Hin2
+                    have Hsome : (σ x).isSome = true := Hlhs_isLocl x Hin1
+                    rw [Hnone] at Hsome
+                    simp at Hsome
+                  have HlhsDisjOld :
+                      lhs.Disjoint genOldIdents := by
+                    intro x Hin1 Hin2
+                    have Hnone : σ x = none := HndefOld_σ x Hin2
+                    have Hsome : (σ x).isSome = true := Hlhs_isLocl x Hin1
+                    rw [Hnone] at Hsome
+                    simp at Hsome
+                  -- Out-temp Nodup append form for `H_initVars`.
+                  have HoutSnd_eq_lhs : outTrips.unzip.snd = lhs := by
+                    rw [Heqouts, hCallArgsLhs]
+                  have HlhsNd : lhs.Nodup := by
+                    -- WFcallProp.lhsWF says (CallArg.getLhs args).Nodup.
+                    -- Hwf is now Forall (WFStatementProp p)
+                    --   [Stmt.cmd (CmdExt.call procName args md)].
+                    have Hwfst_head := (List.Forall_cons _ _ _).mp Hwf
+                    -- Hwfst_head.1 : WFStatementProp p (Statement.call ...)
+                    have Hwfcall : WF.WFcallProp p procName args := Hwfst_head.1
+                    have Hlhs_args_nd :
+                        (CallArg.getLhs args).Nodup := Hwfcall.lhsWF
+                    rw [hCallArgsLhs] at Hlhs_args_nd
+                    exact Hlhs_args_nd
+                  have Hout_nd_app :
+                      List.Nodup (outTemps
+                                  ++ outTrips.unzip.snd) := by
+                    rw [HoutSnd_eq_lhs]
+                    rw [List.nodup_append]
+                    refine ⟨HoutNd, HlhsNd, ?_⟩
+                    intro a Ha b Hb Heq
+                    subst Heq
+                    exact HlhsDisjOut Hb Ha
+                  -- ReadValues over the σ_arg store.
+                  have HrdOuts_argLayer :
+                      ReadValues
+                        (updatedStates σ argTemps
+                          argVals)
+                        outTrips.unzip.snd oVals := by
+                    rw [HoutSnd_eq_lhs]
+                    apply readValues_updatedStates
+                    · -- length: argTemps.length = argVals.length via Hargtriplen
+                      rw [show argTemps.length =
+                            argTrips.length from by
+                            simp [argTemps, List.unzip_eq_map]]
+                      exact Hargtriplen
+                    · exact HlhsDisjArg
+                    · exact Hevalouts
+                  -- isNotDefined of outTemps in σ_arg: argTemps disjoint
+                  -- from outTemps, so outTemps stay undefined after
+                  -- argTemp updates.
+                  have HndefOut_argLayer :
+                      Imperative.isNotDefined
+                        (updatedStates σ argTemps
+                          argVals)
+                        outTemps := by
+                    intro v Hv
+                    have Hv_notin : ¬ v ∈ argTemps := by
+                      intro Hin
+                      exact HargOutDisj Hin Hv
+                    have Hfall := updatedStates_get_notin
+                      (σ:=σ)
+                      (ks:=argTemps)
+                      (vs:=argVals) Hv_notin
+                    rw [Hfall]
+                    exact HndefOut_σ v Hv
+                  have HL2 :
+                      EvalStatementsContract π φ
+                        ⟨updatedStates σ argTemps
+                          argVals, δ, false⟩
+                        (Core.Transform.createInitVars outTrips md)
+                        ⟨updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals, δ, false⟩ :=
+                    H_initVars Hwfvars Hout_nd_app HrdOuts_argLayer
+                      HndefOut_argLayer
+                  -- ── L3: oldInit ──
+                  -- `oldInit` is `createInitVars` over the trip-shape
+                  -- `(genOldIdents.zip oldTys).zip oldVars`.  Its
+                  -- `.unzip.fst.unzip.fst` reduces to `genOldIdents`
+                  -- (modulo the inner zip-truncation), and `.unzip.snd`
+                  -- reduces to `oldVars`.
+                  let oldTrips :
+                      List ((Expression.Ident × Expression.Ty) ×
+                             Expression.Ident) :=
+                    (genOldIdents.zip oldTys).zip oldVars
+                  have HoldTripsFst :
+                      oldTrips.unzip.fst.unzip.fst = genOldIdents := by
+                    -- (genOldIdents.zip oldTys).zip oldVars
+                    -- unzip.fst = genOldIdents.zip oldTys (when lengths match)
+                    -- unzip.fst.unzip.fst = genOldIdents (when lengths match)
+                    have HzipLen :
+                        (genOldIdents.zip oldTys).length = oldVars.length := by
+                      simp [List.length_zip, HgenOldLen, HoldTysLen]
+                    have HzipUnzip1 :
+                        ((genOldIdents.zip oldTys).zip oldVars).unzip.fst =
+                          genOldIdents.zip oldTys := by
+                      simp [List.unzip_eq_map, List.map_fst_zip,
+                            HzipLen]
+                    have HzipUnzip2 :
+                        (genOldIdents.zip oldTys).unzip.fst = genOldIdents := by
+                      simp [List.unzip_eq_map, List.map_fst_zip,
+                            HgenOldLen, HoldTysLen]
+                    rw [show oldTrips = (genOldIdents.zip oldTys).zip oldVars
+                        from rfl]
+                    rw [HzipUnzip1]
+                    exact HzipUnzip2
+                  have HoldTripsSnd :
+                      oldTrips.unzip.snd = oldVars := by
+                    have HzipLen :
+                        (genOldIdents.zip oldTys).length = oldVars.length := by
+                      simp [List.length_zip, HgenOldLen, HoldTysLen]
+                    rw [show oldTrips = (genOldIdents.zip oldTys).zip oldVars
+                        from rfl]
+                    simp [List.unzip_eq_map, List.map_snd_zip, HzipLen]
+                  -- Disjointness of oldVars from argTemps/outTemps and
+                  -- oldVars Nodup follow from `oldVars ⊆ lhs`.
+                  have HoldVars_sub_lhs : ∀ g ∈ oldVars, g ∈ lhs := by
+                    intro g Hg
+                    have Hg_in_getLhs : g ∈ CallArg.getLhs args :=
+                      (List.mem_filter.mp Hg).1
+                    exact hCallArgsLhs ▸ Hg_in_getLhs
+                  have HoldVarsDisjArg :
+                      oldVars.Disjoint argTemps := by
+                    intro x Hin1 Hin2
+                    exact HlhsDisjArg (HoldVars_sub_lhs x Hin1) Hin2
+                  have HoldVarsDisjOut :
+                      oldVars.Disjoint outTemps := by
+                    intro x Hin1 Hin2
+                    exact HlhsDisjOut (HoldVars_sub_lhs x Hin1) Hin2
+                  have HoldVarsDisjOldT :
+                      oldVars.Disjoint genOldIdents := by
+                    intro x Hin1 Hin2
+                    exact HlhsDisjOld (HoldVars_sub_lhs x Hin1) Hin2
+                  have HoldVarsNd : oldVars.Nodup := by
+                    -- oldVars = filter ... (CallArg.getLhs args), and
+                    -- (CallArg.getLhs args) = lhs (via hCallArgsLhs) so
+                    -- has the same Nodup as `lhs`.
+                    have HlhsArgs_nd : (CallArg.getLhs args).Nodup := by
+                      rw [hCallArgsLhs]
+                      exact HlhsNd
+                    exact List.Sublist.nodup List.filter_sublist HlhsArgs_nd
+                  -- σ_out := updatedStates (updatedStates σ argT argVals)
+                  --                       outT oVals.
+                  -- ReadValues σ oldVars oldVals (from C2's HoldVals).
+                  -- Lift to σ_out via two readValues_updatedStates layers.
+                  have HrdOlds_outLayer :
+                      ReadValues
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        oldVars oldVals := by
+                    -- First lift through argTemp layer.
+                    have Hstep1 :
+                        ReadValues
+                          (updatedStates σ
+                            argTemps argVals)
+                          oldVars oldVals := by
+                      apply readValues_updatedStates
+                      · rw [show argTemps.length =
+                              argTrips.length from by
+                              simp [argTemps, List.unzip_eq_map]]
+                        exact Hargtriplen
+                      · exact HoldVarsDisjArg
+                      · exact HoldVals
+                    -- Then lift through outTemp layer.
+                    apply readValues_updatedStates
+                    · rw [show outTemps.length =
+                            outTrips.length from by
+                            simp [outTemps, List.unzip_eq_map]]
+                      exact Houttriplen
+                    · exact HoldVarsDisjOut
+                    · exact Hstep1
+                  -- ReadValues precondition for H_initVars uses
+                  -- oldTrips.unzip.snd; rewrite via HoldTripsSnd.
+                  have HrdOldTrips :
+                      ReadValues
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        oldTrips.unzip.snd oldVals := by
+                    rw [HoldTripsSnd]
+                    exact HrdOlds_outLayer
+                  -- isNotDefined of genOldIdents in σ_out: genOldIdents
+                  -- disjoint from argTemps and outTemps.
+                  have HndefOld_outLayer :
+                      Imperative.isNotDefined
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        genOldIdents := by
+                    intro v Hv
+                    have Hv_notin_out :
+                        ¬ v ∈ outTemps := by
+                      intro Hin
+                      exact HoutOldDisj Hin Hv
+                    have Hfall_out := updatedStates_get_notin
+                      (σ:=updatedStates σ argTemps
+                            argVals)
+                      (ks:=outTemps) (vs:=oVals)
+                      Hv_notin_out
+                    rw [Hfall_out]
+                    have Hv_notin_arg :
+                        ¬ v ∈ argTemps := by
+                      intro Hin
+                      exact HargOldDisj Hin Hv
+                    have Hfall_arg := updatedStates_get_notin
+                      (σ:=σ) (ks:=argTemps)
+                      (vs:=argVals) Hv_notin_arg
+                    rw [Hfall_arg]
+                    exact HndefOld_σ v Hv
+                  -- isNotDefined precondition for H_initVars on
+                  -- oldTrips.unzip.fst.unzip.fst.
+                  have HndefOldTrips :
+                      Imperative.isNotDefined
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        oldTrips.unzip.fst.unzip.fst := by
+                    rw [HoldTripsFst]
+                    exact HndefOld_outLayer
+                  -- Nodup precondition: (genOldIdents ++ oldVars).Nodup.
+                  have HoldTrips_nd_app :
+                      List.Nodup
+                        (oldTrips.unzip.fst.unzip.fst ++ oldTrips.unzip.snd) := by
+                    rw [HoldTripsFst, HoldTripsSnd]
+                    rw [List.nodup_append]
+                    refine ⟨HoldNd, HoldVarsNd, ?_⟩
+                    intro a Ha b Hb Heq
+                    subst Heq
+                    exact HoldVarsDisjOldT Hb Ha
+                  have HL3 :
+                      EvalStatementsContract π φ
+                        ⟨updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals, δ, false⟩
+                        (Core.Transform.createInitVars oldTrips md)
+                        ⟨updatedStates
+                          (updatedStates
+                            (updatedStates σ
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩ :=
+                    H_initVars Hwfvars HoldTrips_nd_app HrdOldTrips
+                      HndefOldTrips
+                  -- ── D2: L4 (asserts), L5 (havocs), L6 (assumes) chain ──
+                  -- After Hsts_struct rewrite, the goal is segmented as
+                  --   createInits argTrips md ++
+                  --   createInitVars outTrips md ++
+                  --   createInitVars (genOldIdents.zip oldTys).zip oldVars md ++
+                  --   asserts ++
+                  --   createHavocs (CallArg.getLhs args) md ++
+                  --   assumes
+                  -- The `oldTrips` abbreviation in scope is the same shape;
+                  -- after `rw Hsts_struct`, the goal segments use the
+                  -- filter shape directly (which equals `oldTrips` modulo
+                  -- the let-binding).
+                  rw [Hsts_struct]
+                  -- L5: build the post-havoc store witness σ_havoc.  The
+                  -- 3-layer init applied to σ' (= σ.update lhs modvals) is
+                  -- the same shape as σ'' (the C3 witness), modulo the
+                  -- definitional unfolding of `oldTrips`.
+                  --
+                  -- Use `EvalCallElim_havocs` with
+                  --   tempVars := argT ++ outT ++ olds (3-layer)
+                  -- but this needs the σ_old shape to be flat.  Instead,
+                  -- we apply HavocVars segment-by-segment via the lift.
+                  -- For ergonomics, derive HL5 directly:
+                  have HlhsDef : Imperative.isDefined σ lhs :=
+                    ReadValuesIsDefined Hevalouts
+                  have Hhav_σ : HavocVars σ lhs σ' :=
+                    UpdateStatesHavocVars Hupdate
+                  have Hhav_arg :
+                      HavocVars (updatedStates σ
+                                  argTemps argVals)
+                                lhs
+                                (updatedStates σ'
+                                  argTemps argVals) :=
+                    havocVars_updatedStates_lift HlhsDisjArg Hhav_σ
+                  have Hhav_out :
+                      HavocVars
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        lhs
+                        (updatedStates
+                          (updatedStates σ'
+                            argTemps argVals)
+                          outTemps oVals) :=
+                    havocVars_updatedStates_lift HlhsDisjOut Hhav_arg
+                  have Hhav_old :
+                      HavocVars
+                        (updatedStates
+                          (updatedStates
+                            (updatedStates σ
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals)
+                        lhs
+                        (updatedStates
+                          (updatedStates
+                            (updatedStates σ'
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals) := by
+                    rw [HoldTripsFst]
+                    apply havocVars_updatedStates_lift HlhsDisjOld Hhav_out
+                  -- isDefined σ_old lhs (via 3-layer extension monotone).
+                  have HlhsDef_arg :
+                      Imperative.isDefined
+                        (updatedStates σ
+                          argTemps argVals) lhs := by
+                    intro v Hv
+                    have Hnotin :
+                        ¬ v ∈ argTemps := by
+                      intro Hin
+                      exact HlhsDisjArg Hv Hin
+                    rw [updatedStates_get_notin Hnotin]
+                    exact HlhsDef v Hv
+                  have HlhsDef_out :
+                      Imperative.isDefined
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals) lhs := by
+                    intro v Hv
+                    have Hnotin :
+                        ¬ v ∈ outTemps := by
+                      intro Hin
+                      exact HlhsDisjOut Hv Hin
+                    rw [updatedStates_get_notin Hnotin]
+                    exact HlhsDef_arg v Hv
+                  have HlhsDef_old :
+                      Imperative.isDefined
+                        (updatedStates
+                          (updatedStates
+                            (updatedStates σ
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals) lhs := by
+                    intro v Hv
+                    have Hnotin :
+                        ¬ v ∈ oldTrips.unzip.fst.unzip.fst := by
+                      rw [HoldTripsFst]
+                      intro Hin
+                      exact HlhsDisjOld Hv Hin
+                    rw [updatedStates_get_notin Hnotin]
+                    exact HlhsDef_out v Hv
+                  -- HL5: havocs over `lhs` from σ_old to σ_havoc (same
+                  -- 3-layer init applied to σ' instead of σ).  Use
+                  -- `hCallArgsLhs.symm` to align with `CallArg.getLhs args`.
+                  have HL5_pre :
+                      EvalStatementsContract π φ
+                        ⟨updatedStates
+                          (updatedStates
+                            (updatedStates σ
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩
+                        (Core.Transform.createHavocs lhs md)
+                        ⟨updatedStates
+                          (updatedStates
+                            (updatedStates σ'
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩ :=
+                    H_havocs Hwfvars HlhsDef_old Hhav_old
+                  -- Equality: σ_havoc (3-layer applied to σ') = σ'' (flat).
+                  -- Both yield the same store via updatedStates'App and
+                  -- list-zip-append commutation.
+                  have HoldFstLen :
+                      oldTrips.unzip.fst.unzip.fst.length = oldVals.length := by
+                    rw [HoldTripsFst, HgenOldLen, HoldValsLen]
+                  have HoutFstLen :
+                      outTemps.length = oVals.length := by
+                    rw [show outTemps.length =
+                            outTrips.length from by
+                            simp [outTemps, List.unzip_eq_map]]
+                    exact Houttriplen
+                  have HargFstLen :
+                      argTemps.length = argVals.length := by
+                    rw [show argTemps.length =
+                            argTrips.length from by
+                            simp [argTemps, List.unzip_eq_map]]
+                    exact Hargtriplen
+                  have Hflatten_eq :
+                      updatedStates σ'
+                        (argTemps ++
+                          outTemps ++ genOldIdents)
+                        (argVals ++ oVals ++ oldVals) =
+                      updatedStates
+                        (updatedStates
+                          (updatedStates σ'
+                            argTemps argVals)
+                          outTemps oVals)
+                        oldTrips.unzip.fst.unzip.fst oldVals := by
+                    rw [HoldTripsFst]
+                    simp only [updatedStates]
+                    -- (a ++ b ++ c).zip (av ++ bv ++ cv) = a.zip av ++ b.zip bv ++ c.zip cv.
+                    have Hzip1 :
+                        ((argTemps ++
+                          outTemps) ++ genOldIdents).zip
+                          ((argVals ++ oVals) ++ oldVals) =
+                        (argTemps ++
+                          outTemps).zip
+                          (argVals ++ oVals) ++
+                          genOldIdents.zip oldVals :=
+                      List.zip_append (by
+                        rw [List.length_append, List.length_append,
+                            HargFstLen, HoutFstLen])
+                    have Hzip2 :
+                        (argTemps ++
+                          outTemps).zip
+                          (argVals ++ oVals) =
+                        argTemps.zip argVals ++
+                          outTemps.zip oVals :=
+                      List.zip_append HargFstLen
+                    rw [Hzip1, Hzip2]
+                    rw [updatedStates'App, updatedStates'App]
+                  have HL5 :
+                      EvalStatementsContract π φ
+                        ⟨updatedStates
+                          (updatedStates
+                            (updatedStates σ
+                              argTemps argVals)
+                            outTemps oVals)
+                          oldTrips.unzip.fst.unzip.fst oldVals, δ, false⟩
+                        (Core.Transform.createHavocs (CallArg.getLhs args) md)
+                        ⟨updatedStates σ'
+                          (argTemps ++
+                            outTemps ++ genOldIdents)
+                          (argVals ++ oVals ++ oldVals), δ, false⟩ := by
+                    rw [Hflatten_eq, hCallArgsLhs]
+                    exact HL5_pre
+                  -- ── D2a: per-precondition payload for L4 (asserts) ──
+                  --
+                  -- Each filtered precondition entry needs three facts
+                  -- to feed into `H_asserts_call_spike` (or, equivalently,
+                  -- into the underlying `H_asserts_anylist`):
+                  --
+                  --   Hinv       : invStores σAO σ_old
+                  --                  (preVars.removeAll
+                  --                     ((inputs ++ outputs) ++
+                  --                       (argTemps ++ lhs)))
+                  --   Hpred_disj : (argTemps ++ lhs).Disjoint preVars
+                  --   Hpre'      : δ σAO entry.snd.expr = some HasBool.tt
+                  --
+                  -- We derive these from the call_sem-supplied `Hpre`
+                  -- (after restricting to the filtered subset),
+                  -- the InitStates layers (σ vs σAO), the 3-layer
+                  -- updatedStates (σ vs σ_old), and the call-site
+                  -- hypothesis `Hpre_post_lhs_disj` (which constrains
+                  -- pre-/post-vars to be non-tmp_/non-old_ and
+                  -- disjoint from `lhs`).
+                  --
+                  -- Bind `proc' = proc` via `Hp` so we can map between
+                  -- the call_sem destructuring and the
+                  -- `callElimCmd_call_eq` destructuring.
+                  have HprocEq : proc' = proc := by
+                    have Hπ := Hp procName
+                    -- Hπ : π procName = Program.Procedure.find? p ⟨procName, ()⟩
+                    -- lkup : π procName = some proc
+                    -- Hfind : Program.Procedure.find? p ⟨procName, ()⟩ = some proc'
+                    rw [Hπ] at lkup
+                    rw [Hfind] at lkup
+                    -- lkup : some proc' = some proc
+                    exact (Option.some_inj.mp lkup.symm).symm
+                  -- Specialize the call-site hypothesis to the call form.
+                  -- `Hwfcallsite` is over the call_sem `proc`;
+                  -- the spike interface uses `proc'`, but `HprocEq`
+                  -- bridges them where needed.
+                  obtain ⟨HpreVarsFresh, HpostVarsFresh, HargVarsNotInLhs,
+                          HinoutFresh, HargVarsNotInOutKeys,
+                          HargVarsNotInInKeys, HoutAlign⟩ :=
+                    Hwfcallsite.specialize (procName := procName)
+                      (args := args) (md := md) rfl lkup
+                  -- ── C-aux: hoisted disjointness facts (used by L4 + L6) ──
+                  -- HinoutFresh: ∀ v ∈ inputs ++ outputs, ¬isTemp ∧ ¬isOld.
+                  -- Decompose into inputs-only and outputs-only forms.
+                  have HinputsFresh :
+                      ∀ v ∈ proc.header.inputs.keys,
+                        ¬ isTempIdent v ∧ ¬ isOldTempIdent v := by
+                    intro v Hv
+                    exact HinoutFresh v (List.mem_append.mpr (Or.inl Hv))
+                  have HoutputsFresh :
+                      ∀ v ∈ proc.header.outputs.keys,
+                        ¬ isTempIdent v ∧ ¬ isOldTempIdent v := by
+                    intro v Hv
+                    exact HinoutFresh v (List.mem_append.mpr (Or.inr Hv))
+                  -- inputs.keys ∩ argTemps = ∅ (inputs not tmp_).
+                  have HinKeys_disj_argTemps :
+                      proc.header.inputs.keys.Disjoint argTemps := by
+                    intro v Hv1 Hv2
+                    have HvNotTemp : ¬ isTempIdent v := (HinputsFresh v Hv1).1
+                    have HvTemp : isTempIdent v :=
+                      (List.Forall_mem_iff.mp HargTemp) v Hv2
+                    exact HvNotTemp HvTemp
+                  have HinKeys_disj_outTemps :
+                      proc.header.inputs.keys.Disjoint outTemps := by
+                    intro v Hv1 Hv2
+                    have HvNotTemp : ¬ isTempIdent v := (HinputsFresh v Hv1).1
+                    have HvTemp : isTempIdent v :=
+                      (List.Forall_mem_iff.mp HoutTemp) v Hv2
+                    exact HvNotTemp HvTemp
+                  have HinKeys_disj_olds :
+                      proc.header.inputs.keys.Disjoint genOldIdents := by
+                    intro v Hv1 Hv2
+                    have HvNotOld : ¬ isOldTempIdent v :=
+                      (HinputsFresh v Hv1).2
+                    have HvOld : isOldTempIdent v :=
+                      (List.Forall_mem_iff.mp HoldIdentsTemp) v Hv2
+                    exact HvNotOld HvOld
+                  have HoutKeys_disj_argTemps :
+                      proc.header.outputs.keys.Disjoint argTemps := by
+                    intro v Hv1 Hv2
+                    have HvNotTemp : ¬ isTempIdent v := (HoutputsFresh v Hv1).1
+                    have HvTemp : isTempIdent v :=
+                      (List.Forall_mem_iff.mp HargTemp) v Hv2
+                    exact HvNotTemp HvTemp
+                  have HoutKeys_disj_outTemps :
+                      proc.header.outputs.keys.Disjoint outTemps := by
+                    intro v Hv1 Hv2
+                    have HvNotTemp : ¬ isTempIdent v := (HoutputsFresh v Hv1).1
+                    have HvTemp : isTempIdent v :=
+                      (List.Forall_mem_iff.mp HoutTemp) v Hv2
+                    exact HvNotTemp HvTemp
+                  have HoutKeys_disj_olds :
+                      proc.header.outputs.keys.Disjoint genOldIdents := by
+                    intro v Hv1 Hv2
+                    have HvNotOld : ¬ isOldTempIdent v :=
+                      (HoutputsFresh v Hv1).2
+                    have HvOld : isOldTempIdent v :=
+                      (List.Forall_mem_iff.mp HoldIdentsTemp) v Hv2
+                    exact HvNotOld HvOld
+                  -- inputs.keys ∩ lhs = ∅: σ-undefined inputs vs σ-defined lhs.
+                  have HinKeys_disj_lhs :
+                      proc.header.inputs.keys.Disjoint lhs := by
+                    intro v Hv1 Hv2
+                    have Hvσ_none : σ v = none :=
+                      InitStatesNotDefined Hinitin v Hv1
+                    have Hvσ_some : (σ v).isSome = true :=
+                      HlhsDef v Hv2
+                    rw [Hvσ_none] at Hvσ_some
+                    simp at Hvσ_some
+                  -- outputs.keys ∩ lhs = ∅: σA-undefined outputs vs σ-defined lhs.
+                  have HoutKeys_disj_lhs :
+                      proc.header.outputs.keys.Disjoint lhs := by
+                    intro v Hv1 Hv2
+                    have HvσA_none : σA v = none := Houtndef_io v Hv1
+                    have HvNotInInputs : v ∉ proc.header.inputs.keys :=
+                      fun h => Hiodisj h Hv1
+                    have HvσA_eq_σ : σA v = σ v :=
+                      initStates_get_notin Hinitin HvNotInInputs
+                    have Hvσ_none : σ v = none := by
+                      rw [← HvσA_eq_σ]; exact HvσA_none
+                    have Hvσ_some : (σ v).isSome = true :=
+                      HlhsDef v Hv2
+                    rw [Hvσ_none] at Hvσ_some
+                    simp at Hvσ_some
+                  -- Restrict to the filtered preconditions: each entry's
+                  -- expr is in `getCheckExprs proc.spec.preconditions`.
+                  let presFiltered : List (CoreLabel × Procedure.Check) :=
+                    proc.spec.preconditions.filter
+                      (fun (_, c) => c.attr ≠ .Free)
+                  -- The filtered list's exprs are a subset of the full
+                  -- preconditions' exprs.
+                  -- Bridge: `entry.snd.expr` for each filtered entry is
+                  -- contained in `getCheckExprs proc.spec.preconditions`.
+                  -- `simp [Procedure.Spec.getCheckExprs]` reduces the body
+                  -- to `values.map (·.expr)`, after which membership
+                  -- follows via `List.mem_map_of_mem`.
+                  have HfilteredContains :
+                      ∀ entry ∈ presFiltered,
+                        (Procedure.Spec.getCheckExprs
+                          proc.spec.preconditions).contains entry.snd.expr :=
+                    fun entry Hentry => filterCheck_in_getCheckExprs Hentry
+                  -- Bind σAO definedness/eval-tt for each filtered entry.
+                  have HpreFiltered :
+                      ∀ entry ∈ presFiltered,
+                        Imperative.isDefinedOver
+                          (Imperative.HasVarsPure.getVars (P:=Expression))
+                          σAO entry.snd.expr ∧
+                        δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
+                    intro entry Hentry
+                    exact Hpre entry.snd.expr (HfilteredContains entry Hentry)
+                  -- ── pre-var "freshness" lemma against σ_old / σAO ──
+                  --
+                  -- For each filtered entry, derive that pre-vars are
+                  -- not in argT/outT/olds (they're not tmp_/old_), and
+                  -- not in lhs (by `Hpre_post_lhs_disj`).  Combined
+                  -- with `(σAO v).isSome` for v ∈ getVars pre, we get
+                  -- the disjointness facts needed by H_asserts_anylist.
+                  have HpresVarsFresh' :
+                      ∀ entry ∈ presFiltered,
+                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
+                          ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+                          v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
+                    HpreVarsFresh entry.snd.expr
+                      (filterCheck_mem_getCheckExprs Hentry) v Hv
+                  -- ── HpresPayload (D2a output) ──
+                  --
+                  -- For each filtered entry:
+                  --   (1) invStores σAO σ_old (preVars.removeAll
+                  --         ((inputs ++ outputs) ++ (argT ++ lhs)))
+                  --   (2) (argT ++ lhs).Disjoint preVars
+                  --   (3) δ σAO entry.snd.expr = some HasBool.tt
+                  have HpresPayload :
+                      ∀ entry ∈ presFiltered,
+                        Imperative.invStores σAO
+                          (updatedStates
+                            (updatedStates
+                              (updatedStates σ
+                                argTemps argVals)
+                              outTemps oVals)
+                            oldTrips.unzip.fst.unzip.fst oldVals)
+                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                              entry.snd.expr).removeAll
+                            ((proc.header.inputs.keys ++
+                                proc.header.outputs.keys) ++
+                              (argTemps ++ lhs))) ∧
+                        (argTemps ++ lhs).Disjoint
+                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                            entry.snd.expr) ∧
+                        δ σAO entry.snd.expr = some Imperative.HasBool.tt := by
+                    intro entry Hentry
+                    -- Unpack per-entry facts.
+                    have HpreEnt := HpreFiltered entry Hentry
+                    -- preVars are not tmp_/old_ and not in lhs.
+                    have HfreshEnt := HpresVarsFresh' entry Hentry
+                    -- (1) Hpred_disj: (argT ++ lhs).Disjoint preVars.
+                    have Hpred_disj :
+                        (argTemps ++ lhs).Disjoint
+                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                            entry.snd.expr) := by
+                      intro x Hin1 Hin2
+                      cases List.mem_append.mp Hin1 with
+                      | inl HxArg =>
+                        -- x ∈ argT (tmp_), x ∈ preVars (not tmp_).
+                        have HxTemp : isTempIdent x :=
+                          (List.Forall_mem_iff.mp HargTemp) x HxArg
+                        have HxNotTemp : ¬ isTempIdent x :=
+                          (HfreshEnt x Hin2).1
+                        exact HxNotTemp HxTemp
+                      | inr HxLhs =>
+                        -- x ∈ lhs, x ∉ lhs (via Hpre_post_lhs_disj).
+                        -- hCallArgsLhs : CallArg.getLhs args = lhs
+                        have HxNotInLhs : x ∉ CallArg.getLhs args :=
+                          (HfreshEnt x Hin2).2.2
+                        -- HxLhs : x ∈ lhs, want: x ∈ CallArg.getLhs args.
+                        rw [hCallArgsLhs] at HxNotInLhs
+                        exact HxNotInLhs HxLhs
+                    -- (2) Hinv: invStores σAO σ_old (preVars.removeAll ...).
+                    -- For each v in the removeAll list:
+                    --   v ∈ preVars
+                    --   v ∉ inputs, v ∉ outputs, v ∉ argT, v ∉ lhs.
+                    -- We additionally need v ∉ outT (not tmp_) and
+                    -- v ∉ olds (not old_), via HfreshEnt.
+                    have Hinv :
+                        Imperative.invStores σAO
+                          (updatedStates
+                            (updatedStates
+                              (updatedStates σ
+                                argTemps argVals)
+                              outTemps oVals)
+                            oldTrips.unzip.fst.unzip.fst oldVals)
+                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                              entry.snd.expr).removeAll
+                            ((proc.header.inputs.keys ++
+                                proc.header.outputs.keys) ++
+                              (argTemps ++ lhs))) := by
+                      simp only [Imperative.invStores, Imperative.substStores]
+                      intros k1 k2 Hkin
+                      have Hk_eq := zip_self_eq Hkin
+                      subst Hk_eq
+                      have Hk1_in : k1 ∈
+                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                            entry.snd.expr).removeAll
+                            ((proc.header.inputs.keys ++
+                                proc.header.outputs.keys) ++
+                              (argTemps ++ lhs)) :=
+                        (List.of_mem_zip Hkin).1
+                      -- Decompose the removeAll membership.
+                      have Hk1_inPre :
+                          k1 ∈ Imperative.HasVarsPure.getVars
+                                  (P:=Expression) entry.snd.expr ∧
+                          k1 ∉ (proc.header.inputs.keys ++
+                                  proc.header.outputs.keys) ++
+                                (argTemps ++ lhs) := by
+                        simp only [List.removeAll, List.mem_filter,
+                                   List.elem_eq_mem, Bool.not_eq_true',
+                                   decide_eq_false_iff_not] at Hk1_in
+                        exact Hk1_in
+                      obtain ⟨Hk1_pre, Hk1_notin⟩ := Hk1_inPre
+                      obtain ⟨Hk1_notin_inputs, Hk1_notin_outputs,
+                              Hk1_notin_argT, _Hk1_notin_lhs⟩ :=
+                        notin_append4 Hk1_notin
+                      -- preVar k1 fresh facts (not tmp_, not old_, not in lhs).
+                      have HfreshK := HfreshEnt k1 Hk1_pre
+                      have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
+                      have Hk1_notOld : ¬ isOldTempIdent k1 := HfreshK.2.1
+                      -- k1 ∉ outT (since outT are tmp_).
+                      have Hk1_notin_outT :
+                          k1 ∉ outTemps := fun h =>
+                        Hk1_notTemp ((List.Forall_mem_iff.mp HoutTemp) k1 h)
+                      -- k1 ∉ genOldIdents (since olds are old_).
+                      have Hk1_notin_olds :
+                          k1 ∉ genOldIdents := fun h =>
+                        Hk1_notOld
+                          ((List.Forall_mem_iff.mp HoldIdentsTemp) k1 h)
+                      -- σ_old k1 = σ k1 by 3-layer fall-through.
+                      have Hold_eq_σ :
+                          (updatedStates
+                            (updatedStates
+                              (updatedStates σ
+                                argTemps argVals)
+                              outTemps oVals)
+                            oldTrips.unzip.fst.unzip.fst oldVals) k1 = σ k1 := by
+                        have Hk1_notin_oldFst :
+                            k1 ∉ oldTrips.unzip.fst.unzip.fst := by
+                          rw [HoldTripsFst]; exact Hk1_notin_olds
+                        rw [updatedStates_get_notin Hk1_notin_oldFst,
+                            updatedStates_get_notin Hk1_notin_outT,
+                            updatedStates_get_notin Hk1_notin_argT]
+                      -- σAO k1 = σ k1 by InitStates fall-through.
+                      have HAO_eq_σ : σAO k1 = σ k1 := by
+                        -- σAO comes from σA via Hinitout (over outputs).
+                        -- σA comes from σ via Hinitin (over inputs).
+                        rw [initStates_get_notin Hinitout Hk1_notin_outputs,
+                            initStates_get_notin Hinitin Hk1_notin_inputs]
+                      -- Conclude: σAO k1 = σ_old k1.
+                      rw [HAO_eq_σ, Hold_eq_σ]
+                    refine ⟨Hinv, Hpred_disj, ?_⟩
+                    exact HpreEnt.2
+                  -- HpresPayload : ∀ entry ∈ presFiltered, Hinv ∧ Hpred_disj ∧ Hpre'
+                  -- D2c will derive the σO↔σAO δ-eval bridge; D2d will
+                  -- apply the spikes and `EvalCallElim_glue` to close
+                  -- the chain.
+                  --
+                  -- ── D2b: per-postcondition payload structure for L6 ──
+                  --
+                  -- The L6 (assumes) site evaluates each postcondition
+                  -- after applying `oldSubst`.  Each entry in the
+                  -- post-`oldSubst` list `posts` (per `HassumesShape`)
+                  -- has expression `substFvars original.expr oldSubst`,
+                  -- where `oldSubst = createOldVarsSubst oldTripsCanonical
+                  -- ++ inputOnlyOldSubst`.
+                  --
+                  -- We bind two D2b deliverables here:
+                  --   `HpostFiltered`     — σO eval-tt for original posts
+                  --   `HpostSubFresh`     — vars in the *substituted* post
+                  --                         decompose into three classes
+                  --                         (surviving / old-temp / arg-expr).
+                  --
+                  -- D2c/D2d consume these to build `Hpost`, `Heval_bridge`,
+                  -- `Hinv`, and `Hpred_disj` for the spike interface.
+                  -- Bind σO eval-tt for each filtered postcondition entry.
+                  -- Hpost from call_sem gives `δ σO post = tt` for every
+                  -- post in `getCheckExprs proc.spec.postconditions`.
+                  let postsFiltered : List (CoreLabel × Procedure.Check) :=
+                    proc.spec.postconditions.filter
+                      (fun (_, c) => c.attr ≠ .Free)
+                  -- Bridge: each filtered entry's expr is contained in
+                  -- `getCheckExprs proc.spec.postconditions` (`.contains`
+                  -- form, matching `Hpost`'s expected argument).
+                  have HpostFilteredContains :
+                      ∀ entry ∈ postsFiltered,
+                        (Procedure.Spec.getCheckExprs
+                          proc.spec.postconditions).contains entry.snd.expr :=
+                    fun entry Hentry => filterCheck_in_getCheckExprs Hentry
+                  -- Bind σO eval-tt for each filtered post entry.  Hpost
+                  -- gives `isDefinedOver σAO post ∧ δ σO post = tt` over
+                  -- the full getCheckExprs list.
+                  have HpostFiltered :
+                      ∀ entry ∈ postsFiltered,
+                        Imperative.isDefinedOver
+                          (Imperative.HasVarsPure.getVars (P:=Expression))
+                          σAO entry.snd.expr ∧
+                        δ σO entry.snd.expr = some Imperative.HasBool.tt := by
+                    intro entry Hentry
+                    exact Hpost entry.snd.expr (HpostFilteredContains entry Hentry)
+                  -- ── post-var "freshness" lemma against the ORIGINAL
+                  -- post (pre-oldSubst). ──
+                  --
+                  -- For each filtered original entry, derive that
+                  -- post-vars are not tmp_/old_ and not in lhs.  This is
+                  -- the post-half of `Hpre_post_lhs_disj`, restricted to
+                  -- the filtered list.
+                  have HpostsVarsFresh_orig :
+                      ∀ entry ∈ postsFiltered,
+                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression) entry.snd.expr,
+                          ¬ isTempIdent v ∧ ¬ isOldTempIdent v ∧
+                          v ∉ CallArg.getLhs args := fun entry Hentry v Hv =>
+                    HpostVarsFresh entry.snd.expr
+                      (filterCheck_mem_getCheckExprs Hentry) v Hv
+                  -- ── D2c: σ_R1 + L6 substStores/substDefined facts ──
+                  --
+                  -- σ_R1 plays the role of `σA` in `H_assumes_anylist`
+                  -- (line 6083+).  Its shape: σO with `genOldIdents ↦
+                  -- oldVals` overlaid.  No outTemps overlay (the
+                  -- substStores derivation pairs outputs ↔ lhs, not
+                  -- outputs ↔ outTemps).  σO already has outputs
+                  -- defined (post-Hhav1) and inputs defined (via Hinitin
+                  -- through the Hinitout/Hhav1 chain).
+                  let σ_R1 : CoreStore :=
+                    updatedStates σO genOldIdents oldVals
+                  -- σ_havoc abbreviation (matches HL5's RHS).
+                  let σ_havoc : CoreStore :=
+                    updatedStates σ'
+                      (argTemps ++
+                        outTemps ++ genOldIdents)
+                      (argVals ++ oVals ++ oldVals)
+                  -- Filtered argument substitution shape.  Matches
+                  -- `arg_subst_filtered` in `callElimCmd` (CallElim.lean:133).
+                  let filtered_argSubst :
+                      List (Expression.Ident × Expression.Ident) :=
+                    (proc.header.inputs.keys.zip argTemps).filter
+                      (fun pr =>
+                        ¬ (proc.header.outputs.keys).contains pr.1)
+                  let filtered_inputs : List Expression.Ident :=
+                    filtered_argSubst.unzip.fst
+                  let filtered_argTemps : List Expression.Ident :=
+                    filtered_argSubst.unzip.snd
+                  let filtered_ks : List Expression.Ident :=
+                    proc.header.outputs.keys ++ filtered_inputs
+                  let filtered_ks' : List Expression.Ident :=
+                    lhs ++ filtered_argTemps
+                  -- Pre-filter zip lengths agree (inputs.keys.length =
+                  -- argTemps.length).  Hinitin → InitStatesLength gives
+                  -- inputs.keys.length = argVals.length, and Hargtriplen
+                  -- gives argTemps.length = argVals.length.
+                  have HinKeys_argTemps_len :
+                      proc.header.inputs.keys.length = argTemps.length := by
+                    have H1 : proc.header.inputs.keys.length =
+                                argVals.length := InitStatesLength Hinitin
+                    have H2 : argTemps.length = argVals.length := by
+                      show argTemps.length = argVals.length
+                      simp [argTemps, List.unzip_eq_map, Hargtriplen]
+                    omega
+                  -- The pre-filter zip's unzip is exactly (inputs.keys,
+                  -- argTemps); the filter doesn't break the length-match.
+                  have Hzip_unzip :
+                      (proc.header.inputs.keys.zip argTemps).unzip =
+                      (proc.header.inputs.keys, argTemps) := by
+                    apply List.unzip_zip
+                    exact HinKeys_argTemps_len
+                  -- Filter sub-membership: each (id, t) ∈ filtered_argSubst
+                  -- is in the original zip and satisfies the filter.
+                  have Hfilter_in :
+                      ∀ pr ∈ filtered_argSubst,
+                        pr ∈ proc.header.inputs.keys.zip argTemps ∧
+                        pr.1 ∉ proc.header.outputs.keys := by
+                    intro pr Hpr
+                    have := List.mem_filter.mp Hpr
+                    refine ⟨this.1, ?_⟩
+                    have Hbool := this.2
+                    simp [List.contains_iff_mem] at Hbool
+                    exact Hbool
+                  -- Length symmetry of filtered halves.
+                  have Hfilt_len_sym :
+                      filtered_inputs.length = filtered_argTemps.length := by
+                    show filtered_argSubst.unzip.fst.length =
+                          filtered_argSubst.unzip.snd.length
+                    simp [List.unzip_eq_map]
+                  -- Outputs ↔ lhs length: from Hinitout (outputs.length =
+                  -- oVals.length) plus Hevalouts (lhs.length = oVals.length).
+                  have HoutKeys_lhs_len :
+                      proc.header.outputs.keys.length = lhs.length := by
+                    have H1 : proc.header.outputs.keys.length = oVals.length :=
+                      InitStatesLength Hinitout
+                    have H2 : lhs.length = oVals.length :=
+                      ReadValuesLength Hevalouts
+                    omega
+                  -- Hkslen (Goal #4):
+                  --   filtered_ks.length = filtered_ks'.length.
+                  have Hkslen :
+                      filtered_ks.length = filtered_ks'.length := by
+                    show (proc.header.outputs.keys ++
+                          filtered_inputs).length =
+                         (lhs ++ filtered_argTemps).length
+                    rw [List.length_append, List.length_append,
+                        HoutKeys_lhs_len, Hfilt_len_sym]
+                  -- (HinputsFresh/HoutputsFresh and inputs/outputs vs
+                  --  argTemps/outTemps/olds disjointness hoisted to C-aux.)
+                  -- filtered_inputs ⊆ inputs.keys (via the filter zip path).
+                  have Hfilt_in_eq_map :
+                      filtered_inputs = filtered_argSubst.map Prod.fst := by
+                    show filtered_argSubst.unzip.fst = _
+                    simp [List.unzip_eq_map]
+                  have Hfilt_argT_eq_map :
+                      filtered_argTemps = filtered_argSubst.map Prod.snd := by
+                    show filtered_argSubst.unzip.snd = _
+                    simp [List.unzip_eq_map]
+                  have Hfilt_in_sub_inputs :
+                      ∀ v ∈ filtered_inputs, v ∈ proc.header.inputs.keys := by
+                    intro v Hv
+                    have Hv' : v ∈ filtered_argSubst.map Prod.fst :=
+                      Hfilt_in_eq_map ▸ Hv
+                    rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
+                    have HinZip := (Hfilter_in pr Hpr_in).1
+                    have Hofzip := List.of_mem_zip HinZip
+                    rw [← Hpr_eq]
+                    exact Hofzip.1
+                  have Hfilt_argT_sub_argTemps :
+                      ∀ v ∈ filtered_argTemps, v ∈ argTemps := by
+                    intro v Hv
+                    have Hv' : v ∈ filtered_argSubst.map Prod.snd :=
+                      Hfilt_argT_eq_map ▸ Hv
+                    rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
+                    have HinZip := (Hfilter_in pr Hpr_in).1
+                    have Hofzip := List.of_mem_zip HinZip
+                    rw [← Hpr_eq]
+                    exact Hofzip.2
+                  have Hfilt_in_disj_outs :
+                      filtered_inputs.Disjoint proc.header.outputs.keys := by
+                    intro v Hv1 Hv2
+                    have Hv' : v ∈ filtered_argSubst.map Prod.fst :=
+                      Hfilt_in_eq_map ▸ Hv1
+                    rcases List.mem_map.mp Hv' with ⟨pr, Hpr_in, Hpr_eq⟩
+                    have HnotIn := (Hfilter_in pr Hpr_in).2
+                    rw [Hpr_eq] at HnotIn
+                    exact HnotIn Hv2
+                  -- ── Hnd: substNodup of filtered_ks.zip filtered_ks' ──
+                  -- substNodup unfolds to
+                  --   (zip.unzip.fst ++ zip.unzip.snd).Nodup.
+                  -- When filtered_ks.length = filtered_ks'.length, the zip
+                  -- doesn't truncate either side, so unzip recovers them.
+                  have Hnd : Imperative.substNodup
+                      (filtered_ks.zip filtered_ks') := by
+                    -- Unfold substNodup; rewrite via unzip_zip.
+                    have HzipUnzip :
+                        (filtered_ks.zip filtered_ks').unzip =
+                          (filtered_ks, filtered_ks') :=
+                      List.unzip_zip Hkslen
+                    show ((filtered_ks.zip filtered_ks').unzip.fst ++
+                          (filtered_ks.zip filtered_ks').unzip.snd).Nodup
+                    rw [HzipUnzip]
+                    -- Now goal: (filtered_ks ++ filtered_ks').Nodup.
+                    show ((proc.header.outputs.keys ++ filtered_inputs) ++
+                          (lhs ++ filtered_argTemps)).Nodup
+                    -- Re-associate to (outs ++ filt_in ++ lhs ++ filt_argT).
+                    -- Build Nodup pairwise:
+                    --   1) outputs.Nodup (Houtnd_io)
+                    --   2) filt_in.Nodup (sublist of inputs.keys.Nodup
+                    --      via filter_sublist + map_sublist).
+                    --   3) lhs.Nodup (HlhsNd)
+                    --   4) filt_argT.Nodup (sublist of argTemps.Nodup
+                    --      via similar).
+                    --   Cross-disjointness: outs∩filt_in = ∅ (filter
+                    --   removes outputs.contains); outs∩lhs = ? — wait,
+                    --   outputs are program-named, lhs are program-named
+                    --   too — they CAN coincide.  Hmm.
+                    -- Re-examining the assumeSubst structure:
+                    --   ret_subst = outputs.keys.zip (createFvars lhs)
+                    --     ↦ keys = outputs, vals = createFvar lhs.
+                    --   arg_subst_filtered → filt'd input/argTemp pairs.
+                    -- substNodup operates on `(outs ++ filt_in)` ++
+                    -- `(lhs ++ filt_argT)`.  The legacy proof had
+                    --   List.Disjoint_Nodup_iff.mp ⟨Hinoutnd, …, …⟩
+                    -- which used Hinoutnd = (inputs ++ outputs).Nodup.
+                    -- Here we need (outs ++ filt_in) Nodup which follows
+                    -- from outs.Nodup + filt_in.Nodup + outs∩filt_in=∅.
+                    -- Then we need (lhs ++ filt_argT).Nodup, and
+                    -- ((outs ++ filt_in) ++ (lhs ++ filt_argT)).Nodup,
+                    -- which requires outs ∩ lhs / outs ∩ filt_argT /
+                    -- filt_in ∩ lhs / filt_in ∩ filt_argT all empty.
+                    --
+                    -- outs ∩ lhs: outputs are the procedure's output
+                    -- params (program-named); lhs are caller-side
+                    -- bindings.  In general these CAN coincide, BUT for
+                    -- substNodup we don't actually need this strong
+                    -- claim — substNodup is NOT outputs.Nodup vs
+                    -- lhs.Nodup but rather the CONCATENATED list Nodup,
+                    -- which might be too strong.
+                    --
+                    -- Looking at substNodup's actual definition:
+                    --   (substs.unzip.1 ++ substs.unzip.2).Nodup
+                    -- and the consumer `subst_fvars_correct` (used in
+                    -- H_assumes_anylist), this says ks/keys and
+                    -- ks'/values are pairwise distinct AS A
+                    -- CONCATENATED LIST.
+                    --
+                    -- For our case, this DOES require outputs ∩ lhs = ∅.
+                    -- Inspecting the call_sem at runtime: σ' is
+                    -- `updatedStates σ lhs modvals` — the caller writes
+                    -- to lhs.  If outputs aliases lhs, the substitution
+                    -- becomes degenerate.  We have HlhsDef (lhs defined
+                    -- in σ) but outputs are NOT defined in σ (they're
+                    -- introduced fresh by Hinitout).
+                    --
+                    -- (HoutKeys_disj_lhs / HinKeys_disj_lhs hoisted to C-aux.)
+                    have Hfilt_in_disj_lhs :
+                        filtered_inputs.Disjoint lhs := by
+                      intro v Hv1 Hv2
+                      exact HinKeys_disj_lhs (Hfilt_in_sub_inputs v Hv1) Hv2
+                    -- outs ∩ filt_argT: filt_argT ⊆ argTemps.
+                    -- outputs ∩ argTemps = ∅ (HoutKeys_disj_argTemps).
+                    have HoutKeys_disj_filt_argT :
+                        proc.header.outputs.keys.Disjoint
+                          filtered_argTemps := by
+                      intro v Hv1 Hv2
+                      exact HoutKeys_disj_argTemps Hv1
+                        (Hfilt_argT_sub_argTemps v Hv2)
+                    -- filt_in ∩ filt_argT: subsets of inputs / argTemps.
+                    have Hfilt_in_disj_filt_argT :
+                        filtered_inputs.Disjoint filtered_argTemps := by
+                      intro v Hv1 Hv2
+                      exact HinKeys_disj_argTemps
+                        (Hfilt_in_sub_inputs v Hv1)
+                        (Hfilt_argT_sub_argTemps v Hv2)
+                    -- lhs ∩ filt_argT: lhs ∩ argTemps = ∅ (HlhsDisjArg).
+                    have Hlhs_disj_filt_argT :
+                        lhs.Disjoint filtered_argTemps := by
+                      intro v Hv1 Hv2
+                      exact HlhsDisjArg Hv1
+                        (Hfilt_argT_sub_argTemps v Hv2)
+                    -- Underlying full-zip has Pairwise distinct fst
+                    -- (via inputs.keys.Nodup), so its filter has the
+                    -- same Pairwise property, hence (filter).map fst
+                    -- has Pairwise (· ≠ ·) i.e. Nodup.
+                    have Hin_nd_pw :
+                        List.Pairwise
+                          (· ≠ ·) proc.header.inputs.keys :=
+                      List.nodup_iff_pairwise_ne.mp Hinnd_io
+                    have HargT_nd_pw :
+                        List.Pairwise (· ≠ ·) argTemps :=
+                      List.nodup_iff_pairwise_ne.mp HargNd
+                    -- Pairwise-distinct on the full zip.
+                    have Hzip_pw_fst :
+                        List.Pairwise
+                          (fun (p q :
+                              Expression.Ident × Expression.Ident) =>
+                            p.1 ≠ q.1)
+                          (proc.header.inputs.keys.zip argTemps) := by
+                      -- pairwise_map: Pairwise (· ≠ ·) (xs.map fst) ↔
+                      --   Pairwise (fun p q => f p ≠ f q) xs.
+                      -- The zip's fst-projection equals inputs.keys
+                      -- (when lengths match).  Lift via List.Pairwise.imp
+                      -- on the underlying inputs.keys Pairwise.
+                      rw [show (fun (p q : Expression.Ident × Expression.Ident) =>
+                                  p.1 ≠ q.1) =
+                            (fun p q => Prod.fst p ≠ Prod.fst q) from rfl]
+                      rw [← List.pairwise_map]
+                      rw [List.map_fst_zip
+                            (Nat.le_of_eq HinKeys_argTemps_len)]
+                      exact Hin_nd_pw
+                    have Hzip_pw_snd :
+                        List.Pairwise
+                          (fun (p q :
+                              Expression.Ident × Expression.Ident) =>
+                            p.2 ≠ q.2)
+                          (proc.header.inputs.keys.zip argTemps) := by
+                      rw [show (fun (p q : Expression.Ident × Expression.Ident) =>
+                                  p.2 ≠ q.2) =
+                            (fun p q => Prod.snd p ≠ Prod.snd q) from rfl]
+                      rw [← List.pairwise_map]
+                      rw [List.map_snd_zip
+                            (Nat.le_of_eq HinKeys_argTemps_len.symm)]
+                      exact HargT_nd_pw
+                    -- Filter preserves Pairwise (sublist).
+                    have Hfilt_pw_fst :
+                        List.Pairwise
+                          (fun (p q :
+                              Expression.Ident × Expression.Ident) =>
+                            p.1 ≠ q.1)
+                          filtered_argSubst :=
+                      List.Pairwise.sublist List.filter_sublist Hzip_pw_fst
+                    have Hfilt_pw_snd :
+                        List.Pairwise
+                          (fun (p q :
+                              Expression.Ident × Expression.Ident) =>
+                            p.2 ≠ q.2)
+                          filtered_argSubst :=
+                      List.Pairwise.sublist List.filter_sublist Hzip_pw_snd
+                    have Hfilt_in_nodup : filtered_inputs.Nodup := by
+                      show filtered_argSubst.unzip.fst.Nodup
+                      simp [List.unzip_eq_map]
+                      rw [List.nodup_iff_pairwise_ne]
+                      rw [List.pairwise_map]
+                      exact Hfilt_pw_fst
+                    have Hfilt_argT_nodup : filtered_argTemps.Nodup := by
+                      show filtered_argSubst.unzip.snd.Nodup
+                      simp [List.unzip_eq_map]
+                      rw [List.nodup_iff_pairwise_ne]
+                      rw [List.pairwise_map]
+                      exact Hfilt_pw_snd
+                    -- Step: assemble (filtered_ks ++ filtered_ks').Nodup.
+                    -- = (outputs ++ filtered_inputs ++ lhs ++ filtered_argTemps).Nodup.
+                    rw [List.nodup_append]
+                    refine ⟨?_, ?_, ?_⟩
+                    · -- (outputs ++ filtered_inputs).Nodup.
+                      rw [List.nodup_append]
+                      refine ⟨Houtnd_io, Hfilt_in_nodup, ?_⟩
+                      intro a Ha b Hb Heq
+                      subst Heq
+                      exact Hfilt_in_disj_outs Hb Ha
+                    · -- (lhs ++ filtered_argTemps).Nodup.
+                      rw [List.nodup_append]
+                      refine ⟨HlhsNd, Hfilt_argT_nodup, ?_⟩
+                      intro a Ha b Hb Heq
+                      subst Heq
+                      exact Hlhs_disj_filt_argT Ha Hb
+                    · -- (outputs ++ filtered_inputs).Disjoint
+                      --   (lhs ++ filtered_argTemps).
+                      intro a Ha b Hb Heq
+                      subst Heq
+                      cases List.mem_append.mp Ha with
+                      | inl HaOuts =>
+                        cases List.mem_append.mp Hb with
+                        | inl HbLhs =>
+                          exact HoutKeys_disj_lhs HaOuts HbLhs
+                        | inr HbArgT =>
+                          exact HoutKeys_disj_filt_argT HaOuts HbArgT
+                      | inr HaIn =>
+                        cases List.mem_append.mp Hb with
+                        | inl HbLhs =>
+                          exact Hfilt_in_disj_lhs HaIn HbLhs
+                        | inr HbArgT =>
+                          exact Hfilt_in_disj_filt_argT HaIn HbArgT
+                  -- ── Hdef: substDefined σ_R1 σ_havoc ──
+                  -- For each (k, v) ∈ filtered_ks.zip filtered_ks':
+                  --   • k ∈ outputs ∨ k ∈ filtered_inputs.
+                  --   • v ∈ lhs ∨ v ∈ filtered_argTemps.
+                  -- σ_R1[k]: outputs/inputs are defined in σO (via Hinitin
+                  --   /Hinitout/Hhav1 chain); σ_R1 layers add olds (which
+                  --   are disjoint from outputs/inputs).
+                  -- σ_havoc[v]: lhs is defined in σ' (via Hupdate); argTemps
+                  --   are written by σ_havoc's first layer.
+                  -- σ_R1 definedness on outputs.keys.
+                  have HσO_def_outs :
+                      Imperative.isDefined σO proc.header.outputs.keys := by
+                    apply HavocVarsDefMonotone ?_ Hhav1
+                    exact InitStatesDefined Hinitout
+                  have HσO_def_inputs :
+                      Imperative.isDefined σO proc.header.inputs.keys := by
+                    apply HavocVarsDefMonotone ?_ Hhav1
+                    apply InitStatesDefMonotone ?_ Hinitout
+                    exact InitStatesDefined Hinitin
+                  have Hσ_R1_def_outs :
+                      Imperative.isDefined σ_R1 proc.header.outputs.keys := by
+                    intro v Hv
+                    show (updatedStates σO genOldIdents oldVals v).isSome = true
+                    rw [updatedStates_get_notin
+                      (HoutKeys_disj_olds Hv : v ∉ genOldIdents)]
+                    exact HσO_def_outs v Hv
+                  have Hσ_R1_def_filt_in :
+                      Imperative.isDefined σ_R1 filtered_inputs := by
+                    intro v Hv
+                    show (updatedStates σO genOldIdents oldVals v).isSome = true
+                    have Hv_in : v ∈ proc.header.inputs.keys :=
+                      Hfilt_in_sub_inputs v Hv
+                    rw [updatedStates_get_notin
+                      (HinKeys_disj_olds Hv_in : v ∉ genOldIdents)]
+                    exact HσO_def_inputs v Hv_in
+                  -- σ_havoc definedness on lhs.
+                  have Hσ_havoc_def_lhs :
+                      Imperative.isDefined σ_havoc lhs := by
+                    intro v Hv
+                    show (updatedStates σ'
+                      (argTemps ++
+                        outTemps ++ genOldIdents)
+                      (argVals ++ oVals ++ oldVals) v).isSome = true
+                    have Hv_notin :
+                        v ∉ argTemps ++
+                              outTemps ++ genOldIdents := by
+                      intro h
+                      cases List.mem_append.mp h with
+                      | inl h2 =>
+                        cases List.mem_append.mp h2 with
+                        | inl hArg =>
+                          exact HlhsDisjArg Hv hArg
+                        | inr hOut =>
+                          exact HlhsDisjOut Hv hOut
+                      | inr hOld =>
+                        exact HlhsDisjOld Hv hOld
+                    rw [updatedStates_get_notin Hv_notin]
+                    -- σ' v isSome via UpdateStates' definedness on lhs.
+                    have Hσ'def : Imperative.isDefined σ' lhs := by
+                      have Hh := UpdateStatesHavocVars Hupdate
+                      exact HavocVarsDefined Hh
+                    exact Hσ'def v Hv
+                  -- σ_havoc definedness on filtered_argTemps.
+                  have Hσ_havoc_def_filt_argT :
+                      Imperative.isDefined σ_havoc filtered_argTemps := by
+                    intro v Hv
+                    have Hv_argT : v ∈ argTemps :=
+                      Hfilt_argT_sub_argTemps v Hv
+                    -- σ_havoc[v]: v ∈ argTemps, layer 1 of σ_havoc writes
+                    -- argTemps to argVals.  Use updatedStatesDefined on
+                    -- (argTemps ++ outTemps ++ olds) over argVals++oVals++oldVals.
+                    show (updatedStates σ'
+                      (argTemps ++
+                        outTemps ++ genOldIdents)
+                      (argVals ++ oVals ++ oldVals) v).isSome = true
+                    apply updatedStatesDefined
+                    · -- length of (argT++outT++olds) = length of vals.
+                      have HgenOldValsLen :
+                          genOldIdents.length = oldVals.length := by
+                        rw [HgenOldLen, ← HoldValsLen]
+                      simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                            Hargtriplen, Houttriplen, HgenOldValsLen]
+                    · simp only [List.mem_append]
+                      exact Or.inl (Or.inl Hv_argT)
+                  -- Now assemble Hdef.
+                  have Hdef : Imperative.substDefined σ_R1 σ_havoc
+                      (filtered_ks.zip filtered_ks') := by
+                    intro k1 k2 Hkin
+                    have Hpair_in_fst : k1 ∈ filtered_ks :=
+                      (List.of_mem_zip Hkin).1
+                    have Hpair_in_snd : k2 ∈ filtered_ks' :=
+                      (List.of_mem_zip Hkin).2
+                    refine ⟨?_, ?_⟩
+                    · -- (σ_R1 k1).isSome.
+                      cases List.mem_append.mp Hpair_in_fst with
+                      | inl Hk1_outs => exact Hσ_R1_def_outs k1 Hk1_outs
+                      | inr Hk1_in => exact Hσ_R1_def_filt_in k1 Hk1_in
+                    · -- (σ_havoc k2).isSome.
+                      cases List.mem_append.mp Hpair_in_snd with
+                      | inl Hk2_lhs => exact Hσ_havoc_def_lhs k2 Hk2_lhs
+                      | inr Hk2_aT => exact Hσ_havoc_def_filt_argT k2 Hk2_aT
+                  -- ── Hsubst: substStores σ_R1 σ_havoc ──
+                  -- Per-pair: σ_R1[k] = σ_havoc[v].
+                  -- Pairs are (output_i, lhs_i) (positional via outputs ↔
+                  -- lhs zip) or (filt_input, filt_argTemp) (positional via
+                  -- the filtered argSubst zip).
+                  --
+                  -- Output-half (output_i, lhs_i):
+                  --   σ_R1[output_i] = σO[output_i] (fall through olds)
+                  --   σO[output_i] = modvals[i] (via Hrd : ReadValues σO outputs modvals)
+                  --   σ'[lhs_i] = modvals[i] (via UpdateStatesUpdated Hupdate)
+                  --   σ_havoc[lhs_i] = σ'[lhs_i] (fall through argT/outT/olds)
+                  --
+                  -- Input-half (filt_input_i, filt_argTemp_i):
+                  --   σ_R1[input_i] = σO[input_i] (fall olds)
+                  --   σO[input_i] = σAO[input_i] (havoc preserves on non-outs)
+                  --   σAO[input_i] = σA[input_i] (Hinitout fall-through)
+                  --   σA[input_i] = argVals[idx] (via positional Hinitin)
+                  --   σ_havoc[argTemp_i] = argVals[idx] (layer-1 lookup)
+                  -- σ' equation: σ' = updatedStates σ lhs modvals.
+                  have Hσ'_eq : σ' = updatedStates σ lhs modvals :=
+                    UpdateStatesUpdated Hupdate
+                  -- modvals length = lhs length.
+                  have HmodvalsLen : modvals.length = lhs.length := by
+                    have := UpdateStatesLength Hupdate
+                    omega
+                  -- σO outputs = modvals (via Hrd).
+                  -- σO inputs = σA inputs (via the σAO/σA fall-through chain).
+                  -- σ_havoc on lhs = σ' lhs.
+                  have Hσ_havoc_lhs_eq :
+                      ∀ v ∈ lhs, σ_havoc v = σ' v := by
+                    intro v Hv
+                    have Hv_notin :
+                        v ∉ argTemps ++
+                              outTemps ++ genOldIdents := by
+                      intro h
+                      cases List.mem_append.mp h with
+                      | inl h2 =>
+                        cases List.mem_append.mp h2 with
+                        | inl hArg => exact HlhsDisjArg Hv hArg
+                        | inr hOut => exact HlhsDisjOut Hv hOut
+                      | inr hOld => exact HlhsDisjOld Hv hOld
+                    show updatedStates σ'
+                      (argTemps ++
+                        outTemps ++ genOldIdents)
+                      (argVals ++ oVals ++ oldVals) v = σ' v
+                    exact updatedStates_get_notin Hv_notin
+                  -- σ_R1 on outputs = σO on outputs.
+                  have Hσ_R1_outs_eq :
+                      ∀ v ∈ proc.header.outputs.keys, σ_R1 v = σO v := by
+                    intro v Hv
+                    show updatedStates σO genOldIdents oldVals v = σO v
+                    exact updatedStates_get_notin (HoutKeys_disj_olds Hv)
+                  -- σ_R1 on inputs = σO on inputs.
+                  have Hσ_R1_ins_eq :
+                      ∀ v ∈ proc.header.inputs.keys, σ_R1 v = σO v := by
+                    intro v Hv
+                    show updatedStates σO genOldIdents oldVals v = σO v
+                    exact updatedStates_get_notin (HinKeys_disj_olds Hv)
+                  -- σO on inputs = σA on inputs (Hhav1 preserves on non-outputs;
+                  -- Hinitout preserves on non-outputs).
+                  have HσO_ins_eq_σA :
+                      ∀ v ∈ proc.header.inputs.keys, σO v = σA v := by
+                    intro v Hv
+                    -- σO = updatedStates σAO outputs.keys outVals_havoc
+                    --   (via HavocVarsUpdateStates Hhav1 + UpdateStatesUpdated).
+                    have Hhav_up := HavocVarsUpdateStates Hhav1
+                    rcases Hhav_up with ⟨ovh, Hup_havoc⟩
+                    have HσO_eq : σO = updatedStates σAO
+                                    proc.header.outputs.keys ovh :=
+                      UpdateStatesUpdated Hup_havoc
+                    have Hv_notin_outs : v ∉ proc.header.outputs.keys :=
+                      fun h => Hiodisj Hv h
+                    rw [HσO_eq, updatedStates_get_notin Hv_notin_outs]
+                    -- σAO v = σA v via initStates_get_notin Hinitout.
+                    exact initStates_get_notin Hinitout Hv_notin_outs
+                  -- σA on inputs = positional argVals (via Hinitin).
+                  -- Use ReadValues σA inputs.keys argVals from
+                  -- InitStatesReadValues Hinitin.
+                  have HrdA : ReadValues σA proc.header.inputs.keys argVals :=
+                    InitStatesReadValues Hinitin
+                  -- σO on outputs = modvals (positional via Hrd).
+                  -- Hrd : ReadValues σO proc.header.outputs.keys modvals.
+                  -- ── Build Hsubst via per-pair direct argument ──
+                  -- For each (k1, k2) ∈ filtered_ks.zip filtered_ks',
+                  -- show σ_R1 k1 = σ_havoc k2.  The pair is either
+                  -- (outputs.keys.get i, lhs.get i) at the output-half
+                  -- index `i` (positional via outputs ↔ lhs zip), or
+                  -- (filtered_inputs.get j, filtered_argTemps.get j) at
+                  -- the input-half index `j` (positional via filtered
+                  -- argSubst).  Both halves resolve to a common value
+                  -- in σ_R1 / σ_havoc through the call_sem ReadValues
+                  -- chains.
+                  have HinKeys_argVals_len :
+                      proc.header.inputs.keys.length = argVals.length :=
+                    InitStatesLength Hinitin
+                  -- Length: zip (inputs ↔ argTemps) ↔ argVals lengths align.
+                  have Hzip_argV_len :
+                      (proc.header.inputs.keys.zip argTemps).length =
+                        argVals.length := by
+                    rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
+                    omega
+                  -- ── Build Hsubst via parallel ReadValues ──
+                  -- Strategy: build ReadValues σ_R1 outputs.keys modvals
+                  -- (via Hrd through σ_R1's old-overlay) and ReadValues
+                  -- σ_R1 inputs.keys argVals (via Hinitin → Hinitout →
+                  -- Hhav1 monotonicity), and similarly for σ_havoc on
+                  -- (lhs, modvals) and (argTemps, argVals).  Then apply
+                  -- `readValues_filter` to both inputs/argTemps sides
+                  -- simultaneously with a predicate that filters by the
+                  -- input identifier.  Finally combine via ReadValuesApp
+                  -- + ReadValuesSubstStores.
+                  --
+                  -- The trick: the predicate must filter (inputs.keys[i],
+                  -- argTemps[i], argVals[i]) at the SAME positions in
+                  -- both ReadValues.  We achieve this by filtering the
+                  -- triple `((inputs.keys, argTemps), argVals)` zip,
+                  -- which has positional alignment baked in.
+                  have HinKVlen :
+                      proc.header.inputs.keys.length = argVals.length :=
+                    InitStatesLength Hinitin
+                  have HargT_len_argV :
+                      argTemps.length = argVals.length := by
+                    rw [← HinKeys_argTemps_len]; exact HinKVlen
+                  -- σ_R1 reads inputs.keys → argVals (full).
+                  have Hrd_R1_in_full :
+                      ReadValues σ_R1 proc.header.inputs.keys argVals := by
+                    apply readValues_updatedStates
+                    · rw [HgenOldLen, HoldValsLen]
+                    · exact HinKeys_disj_olds
+                    · -- ReadValues σO inputs.keys argVals.
+                      have HrdAO :
+                          ReadValues σAO proc.header.inputs.keys argVals := by
+                        apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
+                        exact InitStatesReadValues Hinitin
+                      have Hh1 := HavocVarsUpdateStates Hhav1
+                      rcases Hh1 with ⟨ovh, Hup_havoc⟩
+                      apply UpdateStatesReadValuesMonotone (σ:=σAO) _
+                              ?_ Hup_havoc
+                      · exact Hinoutnd
+                      · exact HrdAO
+                  -- σ_R1 reads outputs.keys → modvals (full).
+                  have Hrd_R1_outs :
+                      ReadValues σ_R1 proc.header.outputs.keys modvals := by
+                    apply readValues_updatedStates
+                    · rw [HgenOldLen, HoldValsLen]
+                    · exact HoutKeys_disj_olds
+                    · exact Hrd
+                  -- σ_havoc reads argTemps → argVals (layer-1).
+                  have Hrd_havoc_argT :
+                      ReadValues σ_havoc argTemps argVals := by
+                    show ReadValues
+                      (updatedStates σ'
+                        (argTemps ++
+                          outTemps ++ genOldIdents)
+                        (argVals ++ oVals ++ oldVals))
+                      argTemps argVals
+                    rw [Hflatten_eq]
+                    have HargF_σ' :
+                        ReadValues
+                          (updatedStates σ' argTemps argVals)
+                          argTemps argVals := by
+                      apply readValues_updatedStatesSame
+                      · exact HargFstLen
+                      · exact HargNd
+                    have HargF_step1 :
+                        ReadValues
+                          (updatedStates
+                            (updatedStates σ' argTemps argVals)
+                            outTemps oVals) argTemps argVals := by
+                      apply readValues_updatedStates
+                      · exact HoutFstLen
+                      · exact HargOutDisj
+                      · exact HargF_σ'
+                    have HargF_step2 :
+                        ReadValues
+                          (updatedStates
+                            (updatedStates
+                              (updatedStates σ' argTemps argVals)
+                              outTemps oVals)
+                            oldTrips.unzip.fst.unzip.fst oldVals)
+                          argTemps argVals := by
+                      rw [HoldTripsFst]
+                      apply readValues_updatedStates
+                      · -- length: genOldIdents.length = oldVals.length.
+                        rw [HgenOldLen, ← HoldValsLen]
+                      · exact HargOldDisj
+                      · exact HargF_step1
+                    exact HargF_step2
+                  -- σ_havoc reads lhs → modvals (fall-through to σ').
+                  have HmodvalsLen' : lhs.length = modvals.length := by
+                    have := UpdateStatesLength Hupdate; omega
+                  have Hrd_havoc_lhs :
+                      ReadValues σ_havoc lhs modvals := by
+                    apply readValues_updatedStates
+                    · have HgenOldValsLen :
+                          genOldIdents.length = oldVals.length := by
+                        rw [HgenOldLen, ← HoldValsLen]
+                      simp [argTemps, outTemps, List.length_append, List.unzip_eq_map,
+                            Hargtriplen, Houttriplen, HgenOldValsLen]
+                    · intro v Hv1 Hv2
+                      cases List.mem_append.mp Hv2 with
+                      | inl h => cases List.mem_append.mp h with
+                        | inl ha => exact HlhsDisjArg Hv1 ha
+                        | inr ho => exact HlhsDisjOut Hv1 ho
+                      | inr ho => exact HlhsDisjOld Hv1 ho
+                    · rw [Hσ'_eq]
+                      exact readValues_updatedStatesSame HmodvalsLen' HlhsNd
+                  -- ── Filtered halves via the triple zip ──
+                  -- We use a predicate on (Ident × Ident) — the inputs.keys
+                  -- + argTemps zip — and apply it to both ReadValues
+                  -- (σ_R1, inputs.keys, argVals) and (σ_havoc, argTemps,
+                  -- argVals).  However, filterValues requires a predicate
+                  -- on (Ident × Expr).
+                  --
+                  -- The cleanest route: directly do per-pair argument
+                  -- using membership in filtered_argSubst.
+                  -- Given pair (k1, k2) ∈ filtered_argSubst, we have:
+                  --   (k1, k2) ∈ inputs.keys.zip argTemps (Hfilter_in.1).
+                  -- Both ReadValues are positional, so for any index m
+                  -- in inputs.keys.zip argTemps, σ_R1[inputs.keys[m]] =
+                  -- argVals[m] = σ_havoc[argTemps[m]].
+                  --
+                  -- We extract m via List.mem_iff_get and use readValues_get.
+                  have Hsubst : Imperative.substStores σ_R1 σ_havoc
+                      (filtered_ks.zip filtered_ks') := by
+                    intro k1 k2 Hkin
+                    show σ_R1 k1 = σ_havoc k2
+                    -- (k1, k2) ∈ filtered_ks.zip filtered_ks'.
+                    -- Get the underlying pair shape: either output-pair
+                    -- or filtered-input-pair.
+                    rcases List.mem_iff_get.mp Hkin with ⟨n, Hn⟩
+                    have Hn_lt_zip : n.val < (filtered_ks.zip filtered_ks').length :=
+                      n.isLt
+                    have Hzip_len :
+                        (filtered_ks.zip filtered_ks').length =
+                          filtered_ks.length := by
+                      simp [List.length_zip, Hkslen]
+                    have Hn_lt_ks : n.val < filtered_ks.length := by omega
+                    have Hn_lt_ks' : n.val < filtered_ks'.length := by
+                      rw [← Hkslen]; exact Hn_lt_ks
+                    -- Project (k1, k2) via getElem_zip.
+                    have Hzip_get :
+                        (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip =
+                          (filtered_ks[n.val]'Hn_lt_ks,
+                           filtered_ks'[n.val]'Hn_lt_ks') :=
+                      List.getElem_zip
+                    have HnGE :
+                        (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip =
+                          (k1, k2) := by
+                      have HhE := Hn
+                      have : (filtered_ks.zip filtered_ks').get n =
+                              (filtered_ks.zip filtered_ks')[n.val]'Hn_lt_zip :=
                         rfl
-                    | inr Hin1 =>
-                    cases Hin with
-                    | inl Hin =>
-                      have Hin := normalizeOldExprInVars Hin
-                      specialize Hgl x Hin
-                      -- x is either global or local
-                      simp [CoreIdent.isGlobOrLocl] at Hgl
-                      cases Hgl with
-                      | inl Hg =>
-                        -- x is global
-                        have Hlhs := List.Forall_mem_iff.mp Hlhs.2
-                        specialize Hlhs x Hin1
-                        exact CoreIdent.Disjoint_isLocl_isGlob _ Hlhs Hg
-                      | inr Hl =>
-                        -- x is local, use wf
-                        specialize Hlcl x Hin Hl
-                        apply Hlhsdisj Hin1
-                        simp_all
-                    | inr Hin =>
-                      -- oldTrips disjoint from lhs
-                      simp only [List.unzip_fst, List.map_map] at Hin
-                      apply CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                      . exact List.Forall_mem_iff.mp HoldTemp x Hin
-                      . apply CoreIdent.isLocl_isGlobOrLocl
-                        exact List.Forall_mem_iff.mp Hlhs.2 _ Hin1
-                  . -- post condition correct
-                    have Hmem := SubstPostsMem HinSubst
-                    cases Hmem with
-                    | intro post Hin =>
-                    specialize Hpost post Hin.1
-                    simp [Hin.2]
-                    -- simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-                    -- apply (Hwfb _ _ _).1.1.mp
-                    have Hsubst' :
-                      δ σR₁ post =
-                      δ σR₁ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) (OldExpressions.normalizeOldExpr post))
-                      := by
-                        cases Hwf2 with
-                        | intro e Hwf2 =>
-                        rw [Hwf2.2 (e:=post)]
-                        apply substsOldCorrect
-                        -- wf
-                        . assumption
-                        . assumption
-                        . assumption
-                        -- wfTwoState, should be provable by setting inits to the oldVars created
-                        . simp [WellFormedCoreEvalTwoState]
-                          refine ⟨?_, ?_, Hwf2.2⟩
-                          . -- split into havoc and init, by setting inits to the oldVars created
-                            simp [← HσR₁]
-                            refine ⟨proc.spec.modifies,
-                                    (List.map (Prod.fst ∘ Prod.fst) outTrips) ++
-                                    (List.map (Prod.fst ∘ Prod.fst) oldTrips), σR, ?_, ?_⟩
-                            . exact Hhav2
-                            . simp [updatedStates]
-                              rw [← updatedStates'App]
-                              rw [← List.zip_append]
-                              rw [← updatedStates]
-                              apply InitStatesInitVars
-                              refine updatedStatesInit ?_ ?_ ?_
-                              . simp [Houttriplen, Holdtriplen]
-                              . -- not defined
-                                apply UpdateStatesNotDefMonotone _ Hup2
-                                apply UpdateStatesNotDefMonotone _ Hup1
-                                simp [InitStatesUpdated Hinitout]
-                                apply UpdatedStatesDisjNotDefMonotone
-                                . -- Disjoint between local and temp
-                                  apply List.Disjoint.symm
-                                  apply List.PredDisjoint_Disjoint
-                                    (P:=(CoreIdent.isTemp ·))
-                                    (Q:=(CoreIdent.isGlobOrLocl ·))
-                                  . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-                                  . exact List.Forall_PredImplies Houtlc CoreIdent.isLocl_isGlobOrLocl
-                                  . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                                . simp [Houtlen]
-                                . simp [InitStatesUpdated Hinitin]
-                                  apply UpdatedStatesDisjNotDefMonotone
-                                  . -- Disjoint between local and temp
-                                    apply List.Disjoint.symm
-                                    apply List.PredDisjoint_Disjoint
-                                      (P:=(CoreIdent.isTemp ·))
-                                      (Q:=(CoreIdent.isGlobOrLocl ·))
-                                    . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-                                    . exact List.Forall_PredImplies Hinlc CoreIdent.isLocl_isGlobOrLocl
-                                    . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                                  . simp [← Hargtriplen, Harglen, ← Heqargs]
-                                  . have Hndef := (Imperative.isNotDefinedApp' Hndefgen).2
-                                    exact UpdateStatesNotDefMonotone' Hndef Hupdate
-                              . exact (List.nodup_append.mp Hgennd).2.1
-                              . simp [Houttriplen]
-                          . intros vs vs' σ₀ σ₁ σ m Hhav Hinit
-                            grind
-                        -- normalized
-                        . apply OldExpressions.normalizeOldExprSound
-                          have HH := prepostconditions_unwrap Hin.1
-                          cases HH with
-                          | intro label HH =>
-                          cases HH with
-                          | intro attr HH =>
-                          cases HH with
-                          | intro md HH =>
-                          have Hwfpost := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
-                          simp at Hwfpost
-                          exact Hwfpost
-                        . rw [createOldStoreSubstEq]
-                          have Hhav := HavocVarsUpdateStates Hhav1
-                          cases Hhav with
-                          | intro modvals Hhav =>
-                          apply ReadValuesSubstStores
-                          apply UpdateStatesReadValuesMonotone (σ:=σAO) (vs:=oldVals) _ ?_ Hhav
-                          . -- Nodup
-                            apply List.Disjoint_Nodup_iff.mp
-                            refine ⟨?_, ?_, ?_⟩
-                            . have Heq := genOldExprIdentsTrip_snd Heqold
-                              simp [Heq]
-                              apply filter_nodup
-                              apply eraseDups_Nodup
-                            . exact Houtnd
-                            . -- Disjoint between local and temp
-                              apply List.Disjoint.symm
-                              apply List.PredDisjoint_Disjoint
-                                  (P:=(CoreIdent.isLocl ·))
-                                  (Q:=(CoreIdent.isGlob ·))
-                              . exact Houtlc
-                              . simp [genOldExprIdentsTrip_snd Heqold]
-                                apply List.Forall_PredImplies
-                                . apply List.Forall_filter
-                                . exact WFProgGlob Hwfp
-                              . exact CoreIdent.Disjoint_isLocl_isGlob
-                          . apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-                            . apply InitStatesReadValuesMonotone (σ:=σ) ?_ Hinitin
-                              simp only [List.unzip_snd]
-                              exact HoldVals
-                          . simp [← HσR₁]
-                            apply ReadValuesUpdatedStatesSame
-                            simp [Holdtriplen]
-                            exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-                        . rw [createOldStoreSubstEq]
-                          intros k1 k2 Hin
-                          have Hmem := List.of_mem_zip Hin
-                          apply And.intro
-                          . have Hdef : Imperative.isDefined σO (oldTrips.unzip.snd) := by
-                              apply HavocVarsDefMonotone ?_ Hhav1
-                              apply InitStatesDefMonotone ?_ Hinitout
-                              apply InitStatesDefMonotone ?_ Hinitin
-                              simp only [List.unzip_snd]
-                              exact HoldDef
-                            exact Hdef k1 Hmem.1
-                          . have Hdef : Imperative.isDefined σR₁ oldTrips.unzip.fst.unzip.fst := by
-                              simp [← HσR₁]
-                              apply updatedStatesDefined
-                              simp [Holdtriplen]
-                            exact Hdef k2 Hmem.2
-                        . rw [createOldStoreSubstEq]
-                          simp [Imperative.substNodup]
-                          simp [← List.unzip_fst, ← List.unzip_snd]
-                          rw [List.unzip_zip]
-                          simp
-                          apply List.Disjoint_Nodup_iff.mp
-                          . refine ⟨?_, ?_, ?_⟩
-                            . -- oldTrips.unzip.2 Nodup. needs some equivalence
-                              have Heq := genOldExprIdentsTrip_snd Heqold
-                              simp only [Heq]
-                              apply filter_nodup
-                              apply eraseDups_Nodup
-                            . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-                            . apply List.Disjoint.symm
-                              apply List.PredDisjoint_Disjoint
-                                  (P:=(CoreIdent.isTemp ·))
-                                  (Q:=(CoreIdent.isGlob ·))
-                              . exact HoldTemp
-                              . simp [genOldExprIdentsTrip_snd Heqold]
-                                apply List.Forall_PredImplies
-                                . apply List.Forall_filter
-                                . exact WFProgGlob Hwfp
-                              . apply List.PredDisjoint_PredImplies_right
-                                exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                                exact CoreIdent.isGlob_isGlobOrLocl
-                          . simp [Holdtriplen]
-                        . apply List.Disjoint_Subset_right (ks:=(Imperative.HasVarsPure.getVars post))
-                          . apply List.PredDisjoint_Disjoint
-                                (P:=(CoreIdent.isTemp ·))
-                                (Q:=(CoreIdent.isGlobOrLocl ·))
-                            . simp
-                              exact HoldTemp
-                            . have HH := prepostconditions_unwrap Hin.1
-                              cases HH with
-                              | intro label HH =>
-                              cases HH with
-                              | intro attr HH =>
-                              cases HH with
-                              | intro md HH =>
-                              have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
-                              simp at Hwf
-                              exact Hwf
-                            . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                          . refine extractedOldVarsInVars ?_
-                            have HH := prepostconditions_unwrap Hin.1
-                            cases HH with
-                            | intro label HH =>
-                            cases HH with
-                            | intro attr HH =>
-                            cases HH with
-                            | intro md HH =>
-                            have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
-                            simp at Hwf
-                            exact Hwf
-                    rw [← Hsubst']
-                    simp [← HσR₁]
-                    apply EvalExpressionUpdatedStates <;> try assumption
-                    . simp [Holdtriplen]
-                    . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-                    . apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isGlobOrLocl ·))
-                      . exact HoldTemp
-                      . have HH := prepostconditions_unwrap Hin.1
-                        cases HH with
-                        | intro label HH =>
-                        cases HH with
-                        | intro attr HH =>
-                        cases HH with
-                        | intro md HH =>
-                        have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
-                        simp at Hwf
-                        exact Hwf
-                      . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                    apply EvalExpressionUpdatedStates <;> try assumption
-                    . simp [Houttriplen]
-                    . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
-                    . apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isGlobOrLocl ·))
-                      . exact HoutTemp
-                      . have HH := prepostconditions_unwrap Hin.1
-                        cases HH with
-                        | intro label HH =>
-                        cases HH with
-                        | intro attr HH =>
-                        cases HH with
-                        | intro md HH =>
-                        have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
-                        simp at Hwf
-                        exact Hwf
-                      . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                    exact Hpost.2
-                . -- substStores, provable
-                  apply ReadValuesSubstStores (vs:=argVals ++ v1)
-                  . apply ReadValuesApp
-                    . simp [← HσR₁]
-                      apply InitStatesReadValuesMonotone (σ:=σR)
-                      . -- read values
-                        apply UpdateStatesReadValuesMonotone (σ:=σO) _ ?_ Hup2
-                        . -- nodup between inputs and modifies
-                          apply List.Disjoint_Nodup_iff.mp
-                          refine ⟨?_, ?_, ?_⟩
-                          . exact Hinnd
-                          . exact Hmodsnd
-                          . -- Disjoint between local and temp
-                            apply List.PredDisjoint_Disjoint
-                                (P:=(CoreIdent.isLocl ·))
-                                (Q:=(CoreIdent.isGlob ·))
-                            . exact Hinlc
-                            . exact Hmodglob
-                            . exact CoreIdent.Disjoint_isLocl_isGlob
-                        . apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup1
-                          . exact Hinoutnd
-                          . apply InitStatesReadValuesMonotone (σ:=σA) _ Hinitout
-                            . apply InitStatesReadValues (σ:=σ) Hinitin
-                      . simp [updatedStates]
-                        rw [← updatedStates'App]
-                        rw [← List.zip_append]
-                        rw [← updatedStates]
-                        apply updatedStatesInit
-                        . simp [Holdtriplen, Houttriplen]
-                        . -- not defined
-                          apply UpdateStatesNotDefMonotone _ Hup2
-                          apply UpdateStatesNotDefMonotone _ Hup1
-                          simp [InitStatesUpdated Hinitout]
-                          apply UpdatedStatesDisjNotDefMonotone
-                          . -- Disjoint between local and temp
-                            apply List.Disjoint.symm
-                            apply List.PredDisjoint_Disjoint
-                              (P:=(CoreIdent.isTemp ·))
-                              (Q:=(CoreIdent.isGlobOrLocl ·))
-                            . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-                            . refine List.Forall_PredImplies Houtlc CoreIdent.isLocl_isGlobOrLocl
-                            . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                          . simp [Houtlen]
-                          . simp [InitStatesUpdated Hinitin]
-                            apply UpdatedStatesDisjNotDefMonotone
-                            . -- Disjoint between local and temp
-                              apply List.Disjoint.symm
-                              apply List.PredDisjoint_Disjoint
-                                (P:=(CoreIdent.isTemp ·))
-                                (Q:=(CoreIdent.isGlobOrLocl ·))
-                              . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-                              . refine List.Forall_PredImplies Hinlc CoreIdent.isLocl_isGlobOrLocl
-                              . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                            . simp [← Hargtriplen, Harglen, ← Heqargs]
-                            . have Hndef := (Imperative.isNotDefinedApp' Hndefgen).2
-                              exact UpdateStatesNotDefMonotone' Hndef Hupdate
-                        . exact (List.nodup_append.mp Hgennd).2.1
-                        . simp [Houttriplen]
-                    . simp [← HσR₁]
-                      apply ReadValuesUpdatedStates
-                      . simp [Holdtriplen]
-                      . -- Disjoint between local and temp
-                        apply List.PredDisjoint_Disjoint
-                          (P:=(CoreIdent.isTemp ·))
-                          (Q:=(CoreIdent.isGlobOrLocl ·))
-                        . exact HoldTemp
-                        . refine List.Forall_PredImplies Houtlc CoreIdent.isLocl_isGlobOrLocl
-                        . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                      . apply ReadValuesUpdatedStates
-                        . simp [Houttriplen]
-                        . -- Disjoint between local and temp
-                          apply List.PredDisjoint_Disjoint
-                            (P:=(CoreIdent.isTemp ·))
-                            (Q:=(CoreIdent.isGlobOrLocl ·))
-                          . exact HoutTemp
-                          . refine List.Forall_PredImplies Houtlc CoreIdent.isLocl_isGlobOrLocl
-                          . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                        . exact Hrd'.2.1
-                  . apply ReadValuesApp
-                    . apply ReadValuesUpdatedStates
-                      . simp [Holdtriplen]
-                      . simp only [nodup_swap'] at Hgennd
-                        simp only [List.append_assoc] at Hgennd
-                        exact (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).2.1).2.2
-                      . apply ReadValuesUpdatedStates
-                        . simp [Houttriplen]
-                        . simp only [← List.append_assoc] at Hgennd
-                          exact List.Disjoint.symm (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
-                        . apply ReadValuesUpdatedStatesSame
-                          . simp [Hargtriplen]
-                          . exact (List.nodup_append.mp Hgennd).1
-                    . simp [← Hrd'.1]
-                      rw [List.zip_append, updatedStates'App]
-                      . apply ReadValuesUpdatedStates
-                        . simp [Holdtriplen]
-                        . -- Disjoint between local and temp
-                          apply List.PredDisjoint_Disjoint
-                            (P:=(CoreIdent.isTemp ·))
-                            (Q:=(CoreIdent.isLocl ·))
-                          . exact HoldTemp
-                          . exact Hlhs.2
-                          . apply List.PredDisjoint_PredImplies_right
-                            exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                            exact CoreIdent.isLocl_isGlobOrLocl
-                        . apply ReadValuesUpdatedStates
-                          . simp [Houttriplen]
-                          . -- Disjoint between local and temp
-                            apply List.PredDisjoint_Disjoint
-                              (P:=(CoreIdent.isTemp ·))
-                              (Q:=(CoreIdent.isLocl ·))
-                            . exact HoutTemp
-                            . exact Hlhs.2
-                            . apply List.PredDisjoint_PredImplies_right
-                              exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                              exact CoreIdent.isLocl_isGlobOrLocl
-                          . apply ReadValuesUpdatedStates
-                            . simp [Hargtriplen]
-                            . -- Disjoint between local and temp
-                              apply List.PredDisjoint_Disjoint
-                                (P:=(CoreIdent.isTemp ·))
-                                (Q:=(CoreIdent.isLocl ·))
-                              . exact HargTemp
-                              . exact Hlhs.2
-                              . apply List.PredDisjoint_PredImplies_right
-                                exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                                exact CoreIdent.isLocl_isGlobOrLocl
-                            . apply ReadValuesUpdatedStates
-                              . exact ReadValuesLength Hrd'.2.2
-                              . intros x Hin1 Hin2
-                                apply Hlhsdisj Hin2
-                                simp_all
-                              . apply ReadValuesUpdatedStatesSame
-                                . simp [Houttriplen, ← Houtlen]
-                                  have HH := ReadValuesLength Hrd'.2.1
-                                  simp at HH
-                                  exact HH
-                                . exact Hlhs.1
-                      . simp [Houttriplen, ← Houtlen]
-                        have HH := ReadValuesLength Hrd'.2.1
-                        simp at HH
-                        exact HH
-              . -- length of input and argTrips
-                simp [createFvars]
-                have Heq := InitStatesLength Hinitin
-                simp_all
-              . -- length of output and outVals
-                simp_all
-              . simp
-                have Hlen := UpdateStatesLength Hupdate
-                rw [List.map_fst_zip]
-                rw [List.map_fst_zip]
-                . -- Disjoint between old labels and lhs, modified, and modvals
-                  apply List.PredDisjoint_Disjoint
-                    (P:=(CoreIdent.isTemp ·))
-                    (Q:=(CoreIdent.isGlobOrLocl ·))
-                  . simp at HargTemp
-                    exact HargTemp
-                  . apply List.Forall_append.mpr ⟨?_, ?_⟩
-                    . exact List.Forall_PredImplies Hlhs.2 CoreIdent.isLocl_isGlobOrLocl
-                    . exact List.Forall_PredImplies Hmodglob CoreIdent.isGlob_isGlobOrLocl
-                  . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                . simp_all
-                . simp_all
-              . -- Disjoint between old labels and lhs, modified, and modvals
-                simp
-                rw [List.map_fst_zip]
-                rw [List.map_fst_zip (l₂:=modvals)]
-                apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isGlobOrLocl ·))
-                . simp at HoutTemp
-                  exact HoutTemp
-                . apply List.Forall_append.mpr ⟨?_, ?_⟩
-                  . exact List.Forall_PredImplies Hlhs.2 CoreIdent.isLocl_isGlobOrLocl
-                  . exact List.Forall_PredImplies Hmodglob CoreIdent.isGlob_isGlobOrLocl
-                . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                . have Hlen := UpdateStatesLength Hupdate
-                  omega
-                . simp_all
-              . -- Disjoint between generated out labels and lhs ++ modifies
-                simp
-                rw [List.map_fst_zip]
-                rw [List.map_fst_zip (l₂:=modvals)]
-                apply List.PredDisjoint_Disjoint
-                  (P:=(CoreIdent.isTemp ·))
-                  (Q:=(CoreIdent.isGlobOrLocl ·))
-                . simp at HoldTemp
-                  exact HoldTemp
-                . apply List.Forall_append.mpr ⟨?_, ?_⟩
-                  . exact List.Forall_PredImplies Hlhs.2 CoreIdent.isLocl_isGlobOrLocl
-                  . exact List.Forall_PredImplies Hmodglob CoreIdent.isGlob_isGlobOrLocl
-                . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
-                . have Hlen := UpdateStatesLength Hupdate
-                  omega
-                . simp_all
-      -/
-
--/
--/
+                      rw [this] at HhE
+                      exact HhE
+                    have Hk1_eq : k1 = filtered_ks[n.val]'Hn_lt_ks := by
+                      have := HnGE
+                      rw [Hzip_get] at this
+                      exact ((Prod.mk.injEq _ _ _ _).mp this.symm).1
+                    have Hk2_eq : k2 = filtered_ks'[n.val]'Hn_lt_ks' := by
+                      have := HnGE
+                      rw [Hzip_get] at this
+                      exact ((Prod.mk.injEq _ _ _ _).mp this.symm).2
+                    by_cases Hsplit : n.val < proc.header.outputs.keys.length
+                    · -- Output-half.
+                      have Hks_app_lt :
+                          n.val < (proc.header.outputs.keys ++
+                                    filtered_inputs).length := by
+                        rw [List.length_append]; omega
+                      have HoutLhsLen : n.val < lhs.length := by
+                        rw [← HoutKeys_lhs_len]; exact Hsplit
+                      have Hks'_app_lt :
+                          n.val < (lhs ++ filtered_argTemps).length := by
+                        rw [List.length_append]; omega
+                      have Hk1_app :
+                          k1 = proc.header.outputs.keys[n.val]'Hsplit := by
+                        rw [Hk1_eq]
+                        show (proc.header.outputs.keys ++
+                              filtered_inputs)[n.val]'_ = _
+                        rw [List.getElem_append_left (h := Hsplit)]
+                      have Hk2_app : k2 = lhs[n.val]'HoutLhsLen := by
+                        rw [Hk2_eq]
+                        show (lhs ++ filtered_argTemps)[n.val]'_ = _
+                        rw [List.getElem_append_left (h := HoutLhsLen)]
+                      -- σ_R1 k1 = some modvals[n.val] (via Hrd_R1_outs).
+                      have HmodLen_outs :
+                          n.val < modvals.length := by
+                        have := ReadValuesLength Hrd_R1_outs; omega
+                      have HrdR1_get :
+                          σ_R1 (proc.header.outputs.keys[n.val]'Hsplit) =
+                            some (modvals[n.val]'HmodLen_outs) := by
+                        have HG := readValues_get
+                          (σ:=σ_R1) (ks:=proc.header.outputs.keys)
+                          (vs:=modvals) Hrd_R1_outs
+                          (i:=n.val) (hi:=Hsplit) (hi':=HmodLen_outs)
+                        exact HG
+                      have HrdHavoc_get :
+                          σ_havoc (lhs[n.val]'HoutLhsLen) =
+                            some (modvals[n.val]'HmodLen_outs) := by
+                        have HG := readValues_get
+                          (σ:=σ_havoc) (ks:=lhs) (vs:=modvals)
+                          Hrd_havoc_lhs
+                          (i:=n.val) (hi:=HoutLhsLen) (hi':=HmodLen_outs)
+                        exact HG
+                      rw [Hk1_app, HrdR1_get, Hk2_app, HrdHavoc_get]
+                    · -- Input-half.
+                      have Hsplit_le : proc.header.outputs.keys.length ≤ n.val :=
+                        Nat.le_of_not_lt Hsplit
+                      have Hlhs_le : lhs.length ≤ n.val := by
+                        rw [← HoutKeys_lhs_len]; exact Hsplit_le
+                      have Hk1_app :
+                          k1 = filtered_inputs[n.val -
+                              proc.header.outputs.keys.length]'(by
+                            have Hl : filtered_ks.length =
+                                proc.header.outputs.keys.length +
+                                  filtered_inputs.length :=
+                              List.length_append
+                            omega) := by
+                        rw [Hk1_eq]
+                        show (proc.header.outputs.keys ++
+                              filtered_inputs)[n.val]'_ = _
+                        rw [List.getElem_append_right (h₁ := Hsplit_le)]
+                      have Hk2_app :
+                          k2 = filtered_argTemps[n.val - lhs.length]'(by
+                            have Hl : filtered_ks'.length =
+                                lhs.length + filtered_argTemps.length :=
+                              List.length_append
+                            omega) := by
+                        rw [Hk2_eq]
+                        show (lhs ++ filtered_argTemps)[n.val]'_ = _
+                        rw [List.getElem_append_right (h₁ := Hlhs_le)]
+                      -- The two filtered halves' indices line up:
+                      --   n - outputs.length = n - lhs.length (by HoutKeys_lhs_len).
+                      have Hidx_eq :
+                          n.val - proc.header.outputs.keys.length =
+                          n.val - lhs.length := by
+                        rw [HoutKeys_lhs_len]
+                      let j : Nat :=
+                        n.val - proc.header.outputs.keys.length
+                      have Hj_lt_filt :
+                          j < filtered_inputs.length := by
+                        have Hl : filtered_ks.length =
+                            proc.header.outputs.keys.length +
+                              filtered_inputs.length :=
+                          List.length_append
+                        omega
+                      have Hj_lt_argT :
+                          j < filtered_argTemps.length := by
+                        rw [← Hfilt_len_sym]; exact Hj_lt_filt
+                      have Hj_lt_subst :
+                          j < filtered_argSubst.length := by
+                        show j < filtered_argSubst.length
+                        rw [show filtered_argSubst.length =
+                            filtered_argSubst.unzip.fst.length from by
+                            simp [List.unzip_eq_map]]
+                        exact Hj_lt_filt
+                      -- Pair at index j in filtered_argSubst is (k1, k2).
+                      have HpairAtJ :
+                          filtered_argSubst[j]'Hj_lt_subst = (k1, k2) := by
+                        -- filtered_inputs[j] = (filtered_argSubst[j]).fst.
+                        have HfilGetFst :
+                            filtered_inputs[j]'Hj_lt_filt =
+                            (filtered_argSubst[j]'Hj_lt_subst).fst := by
+                          show filtered_argSubst.unzip.fst[j]'_ = _
+                          simp [List.unzip_eq_map]
+                        have HfilGetSnd :
+                            filtered_argTemps[j]'Hj_lt_argT =
+                            (filtered_argSubst[j]'Hj_lt_subst).snd := by
+                          show filtered_argSubst.unzip.snd[j]'_ = _
+                          simp [List.unzip_eq_map]
+                        ext
+                        · -- fst component.
+                          rw [← HfilGetFst, ← Hk1_app]
+                        · -- snd component.
+                          rw [← HfilGetSnd]
+                          have : filtered_argTemps[n.val - lhs.length]'(by
+                              have Hl : filtered_ks'.length =
+                                  lhs.length + filtered_argTemps.length :=
+                                List.length_append
+                              omega) = filtered_argTemps[j]'Hj_lt_argT := by
+                            congr 1
+                            exact Hidx_eq.symm
+                          rw [Hk2_app, this]
+                      -- Pair (k1, k2) ∈ filtered_argSubst.
+                      have HpairIn : (k1, k2) ∈ filtered_argSubst := by
+                        rw [← HpairAtJ]
+                        exact List.getElem_mem _
+                      -- (k1, k2) ∈ inputs.keys.zip argTemps via Hfilter_in.
+                      have HpairZip := (Hfilter_in (k1, k2) HpairIn).1
+                      -- Get index m in inputs.keys.zip argTemps.
+                      rcases List.mem_iff_get.mp HpairZip with ⟨m, Hm⟩
+                      have Hzip_inkA_len :
+                          (proc.header.inputs.keys.zip argTemps).length =
+                            argVals.length := by
+                        rw [List.length_zip, HinKeys_argTemps_len, Nat.min_self]
+                        omega
+                      have Hm_lt_in : m.val < proc.header.inputs.keys.length := by
+                        have Hmlt := m.isLt
+                        have Hl1 : (proc.header.inputs.keys.zip argTemps).length =
+                                    argVals.length := Hzip_inkA_len
+                        have Hl2 : argVals.length =
+                                    proc.header.inputs.keys.length :=
+                          HinKVlen.symm
+                        omega
+                      have Hm_lt_argT : m.val < argTemps.length := by
+                        rw [← HinKeys_argTemps_len]; exact Hm_lt_in
+                      have Hm_lt_argV : m.val < argVals.length := by
+                        rw [← HinKVlen]; exact Hm_lt_in
+                      have HmGet :
+                          (proc.header.inputs.keys.zip argTemps)[m.val]'(by
+                              have := m.isLt; exact this) =
+                          (proc.header.inputs.keys[m.val]'Hm_lt_in,
+                           argTemps[m.val]'Hm_lt_argT) :=
+                        List.getElem_zip
+                      have HmEq :
+                          (k1, k2) = (proc.header.inputs.keys[m.val]'Hm_lt_in,
+                                       argTemps[m.val]'Hm_lt_argT) := by
+                        have := Hm.symm
+                        rw [show (proc.header.inputs.keys.zip argTemps).get m =
+                              (proc.header.inputs.keys.zip argTemps)[m.val]'_
+                            from rfl] at this
+                        rw [HmGet] at this
+                        exact this
+                      have Hk1_inGet :
+                          k1 = proc.header.inputs.keys[m.val]'Hm_lt_in :=
+                        ((Prod.mk.injEq _ _ _ _).mp HmEq).1
+                      have Hk2_argTGet :
+                          k2 = argTemps[m.val]'Hm_lt_argT :=
+                        ((Prod.mk.injEq _ _ _ _).mp HmEq).2
+                      -- σ_R1 k1 = some argVals[m.val] (via Hrd_R1_in_full).
+                      have HrdR1_get :
+                          σ_R1 (proc.header.inputs.keys[m.val]'Hm_lt_in) =
+                            some (argVals[m.val]'Hm_lt_argV) := by
+                        have HG := readValues_get
+                          (σ:=σ_R1) (ks:=proc.header.inputs.keys)
+                          (vs:=argVals) Hrd_R1_in_full
+                          (i:=m.val) (hi:=Hm_lt_in) (hi':=Hm_lt_argV)
+                        exact HG
+                      have HrdHavoc_get :
+                          σ_havoc (argTemps[m.val]'Hm_lt_argT) =
+                            some (argVals[m.val]'Hm_lt_argV) := by
+                        have HG := readValues_get
+                          (σ:=σ_havoc) (ks:=argTemps) (vs:=argVals)
+                          Hrd_havoc_argT
+                          (i:=m.val) (hi:=Hm_lt_argT) (hi':=Hm_lt_argV)
+                        exact HG
+                      rw [Hk1_inGet, HrdR1_get, Hk2_argTGet, HrdHavoc_get]
+                  -- ── Substituted-post freshness facts (D2b deliverable). ──
+                  --
+                  -- For the substituted-post-vars, the structural
+                  -- decomposition `getVars_substFvars_mem` partitions
+                  -- each var `v ∈ getVars (substFvars e sm)` into:
+                  --   class (a): v survives from e (find? sm v = none),
+                  --              constrained by `HpostsVarsFresh_orig`.
+                  --   class (b): v contributed by some sm[k]'s vars,
+                  --              where k ∈ getVars e and find? sm k = some w.
+                  --
+                  -- For our use case, `sm = oldSubst = createOldVarsSubst
+                  -- oldTripsCanonical ++ inputOnlyOldSubst`.  The `w`s
+                  -- are either fvar(genOldIdent) (from createOldVarsSubst)
+                  -- or argExprs from CallArg.getInputExprs (from
+                  -- inputOnlyOldSubst).  Their vars are either
+                  -- `isOldTempIdent` (genOldIdents) or arg-expression
+                  -- vars (which by `HargVarsNotInLhs` are not in lhs).
+                  --
+                  -- D2c/D2d consume `getVars_substFvars_mem`,
+                  -- `HpostsVarsFresh_orig`, and `HargVarsNotInLhs` to
+                  -- build the spike's `Hpred_disj` and `Hinv`.  Binding
+                  -- a fully-substituted form here is unwieldy because
+                  -- `oldSubst` is a giant inline filter expression; we
+                  -- bind the constituent facts and let D2c/D2d combine
+                  -- them at the call site once the ks_L6/ks'_L6 choice
+                  -- is finalized.  The inputs are now sufficient.
+                  -- HL4 (asserts) and HL6 (assumes) chain assembly is
+                  -- still deferred.  The structural skeleton is in
+                  -- place: σ_old (post-L3) and σ_havoc (post-L5) shapes
+                  -- match the spikes' interface, `HassertsShape` /
+                  -- `HassumesShape` expose `pres.zip labels` form, and
+                  -- the label-agnostic helpers `H_asserts_anylist` /
+                  -- `H_assumes_anylist` consume that form directly.
+                  --
+                  -- The combined HL4+HL6+chain step is held as a single
+                  -- transient sorry so the rest of the call-case proof
+                  -- (HL1-HL3 + HL5 + glue + D2a + D2b structural inputs)
+                  -- is fully exercised.
+                  --
+                  -- ARCHITECTURAL CONCERN (D2b): The L6 spike
+                  -- `H_assumes_call_spike` operates on σ_havoc / σAO with
+                  -- ks ∪ ks' that DOES NOT include the `genOldIdents`
+                  -- old-temps introduced by `oldSubst`.  However, those
+                  -- old-temps DO appear in `getVars (substFvars
+                  -- entry.snd.expr oldSubst)` — they're class (b) of the
+                  -- `getVars_substFvars_mem` decomposition.  For the
+                  -- spike's `Hinv` to hold, σAO and σ_havoc must agree
+                  -- on these old-temps; but D2's σ_havoc is the L5
+                  -- 3-layer post-havoc store which has old-temps
+                  -- initialized from L3, while σAO does not.  This is a
+                  -- mismatch between the spike's expected σ_havoc shape
+                  -- (which the docstring at line 6488 identifies as σO
+                  -- from the call_sem) and the actual L5 σ_havoc.
+                  --
+                  -- D2c/D2d will need to either (a) adjust the spike
+                  -- signature to include old-temps in ks/ks', (b)
+                  -- introduce a σ_havoc=σO-style identification step,
+                  -- or (c) adjust the L5 chain to land on a different
+                  -- σ_havoc.  D2b establishes the structural inputs
+                  -- (HpostFiltered, HpostsVarsFresh_orig) that any of
+                  -- these paths will consume.
+                  -- ── D2e: Apply H_asserts_zip to derive HL4 ──
+                  --
+                  -- HL4 is the L4 segment of the EvalCallElim_glue chain:
+                  --   EvalStatementsContract π φ ⟨σ_old, δ, false⟩
+                  --     asserts ⟨σ_old, δ, false⟩
+                  -- where σ_old is the post-L3 store (3-layer init applied
+                  -- to σ over argTemps/outTemps/oldTrips.fst.fst) and
+                  -- `asserts` has the `pres.zip labels` shape exposed by
+                  -- `HassertsShape`.
+                  --
+                  -- Strategy: derive the four substitution preconditions
+                  -- (length / nodup / defined / stores) for the L4
+                  -- substitution map `(inputs ++ outputs).zip
+                  -- (createFvars (argTemps ++ lhs))`, then apply
+                  -- `H_asserts_zip` with `HpresPayload` (D2a).  Bridge to
+                  -- the actual `asserts` list via `HassertsShape`.
+                  -- σ_old abbreviation (matches the post-L3 store from HL3).
+                  let σ_old : CoreStore :=
+                    updatedStates
+                      (updatedStates
+                        (updatedStates σ
+                          argTemps argVals)
+                        outTemps oVals)
+                      oldTrips.unzip.fst.unzip.fst oldVals
+                  -- L4 ks/ks' bindings with explicit type annotation
+                  -- so `substNodup` can unify the identifier type.
+                  let ks_L4 : List Expression.Ident :=
+                    proc.header.inputs.keys ++ proc.header.outputs.keys
+                  let ks'_L4 : List Expression.Ident :=
+                    argTemps ++ lhs
+                  -- ── L4 length facts ──
+                  have HinKeys_argVals_len_L4 :
+                      proc.header.inputs.keys.length = argVals.length :=
+                    InitStatesLength Hinitin
+                  have HoutKeys_oVals_len_L4 :
+                      proc.header.outputs.keys.length = oVals.length :=
+                    InitStatesLength Hinitout
+                  have Hks_len_L4 :
+                      ks_L4.length = ks'_L4.length := by
+                    show (proc.header.inputs.keys ++
+                          proc.header.outputs.keys).length =
+                         (argTemps ++ lhs).length
+                    rw [List.length_append, List.length_append,
+                        HinKeys_argTemps_len, HoutKeys_lhs_len]
+                  -- ── L4 substNodup: ((inputs ++ outputs) ++ (argTemps ++ lhs)).Nodup ──
+                  -- Disjointness facts (HinKeys/HoutKeys vs argTemps/lhs)
+                  -- hoisted to C-aux phase; consumed below by name.
+                  have HargT_disj_lhs_L4 :
+                      argTemps.Disjoint lhs :=
+                    fun v Hv1 Hv2 => HlhsDisjArg Hv2 Hv1
+                  have HargT_lhs_nd :
+                      (argTemps ++ lhs).Nodup := by
+                    have HargNd' : argTemps.Nodup :=
+                      (List.nodup_append.mp
+                        (List.nodup_append.mp Hgennd).1).1
+                    rw [List.nodup_append]
+                    refine ⟨HargNd', HlhsNd, ?_⟩
+                    intro a Ha b Hb Heq
+                    subst Heq
+                    exact HargT_disj_lhs_L4 Ha Hb
+                  have Hbignd_L4 :
+                      (ks_L4 ++ ks'_L4).Nodup := by
+                    show ((proc.header.inputs.keys ++
+                            proc.header.outputs.keys) ++
+                          (argTemps ++ lhs)).Nodup
+                    rw [List.nodup_append]
+                    refine ⟨Hinoutnd, HargT_lhs_nd, ?_⟩
+                    intro a Ha b Hb Heq
+                    subst Heq
+                    cases List.mem_append.mp Ha with
+                    | inl HaIn =>
+                      cases List.mem_append.mp Hb with
+                      | inl HbArg =>
+                        exact HinKeys_disj_argTemps HaIn HbArg
+                      | inr HbLhs =>
+                        exact HinKeys_disj_lhs HaIn HbLhs
+                    | inr HaOut =>
+                      cases List.mem_append.mp Hb with
+                      | inl HbArg =>
+                        exact HoutKeys_disj_argTemps HaOut HbArg
+                      | inr HbLhs =>
+                        exact HoutKeys_disj_lhs HaOut HbLhs
+                  have Hnd_L4 : Imperative.substNodup
+                      (ks_L4.zip ks'_L4) := by
+                    unfold Imperative.substNodup
+                    rw [List.unzip_zip Hks_len_L4]
+                    exact Hbignd_L4
+                  -- ── L4 substDefined ──
+                  have HσAO_def_in_L4 :
+                      Imperative.isDefined σAO proc.header.inputs.keys := by
+                    apply InitStatesDefMonotone ?_ Hinitout
+                    exact InitStatesDefined Hinitin
+                  have HσAO_def_out_L4 :
+                      Imperative.isDefined σAO proc.header.outputs.keys :=
+                    InitStatesDefined Hinitout
+                  -- σ_old definedness on argTemps (layer 1 fall-through).
+                  have Hσ_old_def_argT :
+                      Imperative.isDefined σ_old
+                        argTemps := by
+                    intro v Hv
+                    show ((updatedStates
+                            (updatedStates
+                              (updatedStates σ
+                                argTemps argVals)
+                              outTemps oVals)
+                            oldTrips.unzip.fst.unzip.fst oldVals) v).isSome =
+                          true
+                    -- v not in oldTrips.fst.fst (= genOldIdents), since v ∈ argT
+                    -- and argT ∩ olds = ∅ (Hgennd).
+                    have Hv_notin_old :
+                        v ∉ oldTrips.unzip.fst.unzip.fst := by
+                      rw [HoldTripsFst]
+                      intro Hin
+                      have Hnd' :=
+                        (List.nodup_append.mp Hgennd).2.2
+                      exact Hnd' v
+                        (List.mem_append.mpr (Or.inl Hv))
+                        v Hin rfl
+                    -- v not in outTrips.fst.fst, by Nodup of (argT ++ outT).
+                    have Hv_notin_outT :
+                        v ∉ outTemps := by
+                      have Hnd_argT_outT :=
+                        (List.nodup_append.mp Hgennd).1
+                      have Hnd' :=
+                        (List.nodup_append.mp Hnd_argT_outT).2.2
+                      intro Hin
+                      exact Hnd' v Hv v Hin rfl
+                    rw [updatedStates_get_notin Hv_notin_old,
+                        updatedStates_get_notin Hv_notin_outT]
+                    -- updatedStates σ argTemps argVals v: v ∈ argTemps, so layer
+                    -- 1 maps it to argVals[idx].
+                    apply updatedStatesDefined
+                    · exact HargFstLen
+                    · exact Hv
+                  -- σ_old definedness on lhs (3-layer fall-through to σ).
+                  have Hσ_old_def_lhs :
+                      Imperative.isDefined σ_old lhs := by
+                    intro v Hv
+                    show ((updatedStates
+                            (updatedStates
+                              (updatedStates σ
+                                argTemps argVals)
+                              outTemps oVals)
+                            oldTrips.unzip.fst.unzip.fst oldVals) v).isSome =
+                          true
+                    have Hv_notin_old :
+                        v ∉ oldTrips.unzip.fst.unzip.fst := by
+                      rw [HoldTripsFst]
+                      intro Hin
+                      exact HlhsDisjOld Hv Hin
+                    have Hv_notin_out :
+                        v ∉ outTemps := by
+                      intro Hin
+                      exact HlhsDisjOut Hv Hin
+                    have Hv_notin_arg :
+                        v ∉ argTemps := by
+                      intro Hin
+                      exact HlhsDisjArg Hv Hin
+                    rw [updatedStates_get_notin Hv_notin_old,
+                        updatedStates_get_notin Hv_notin_out,
+                        updatedStates_get_notin Hv_notin_arg]
+                    -- σ v defined since v ∈ lhs (HlhsDef).
+                    have HlhsDef_σ : Imperative.isDefined σ lhs :=
+                      ReadValuesIsDefined Hevalouts
+                    exact HlhsDef_σ v Hv
+                  have Hdef_L4 : Imperative.substDefined σAO σ_old
+                      (ks_L4.zip ks'_L4) := by
+                    intro k1 k2 Hkin
+                    have Hmem := List.of_mem_zip Hkin
+                    refine ⟨?_, ?_⟩
+                    · cases List.mem_append.mp Hmem.1 with
+                      | inl Hin1 => exact HσAO_def_in_L4 k1 Hin1
+                      | inr Hin1 => exact HσAO_def_out_L4 k1 Hin1
+                    · cases List.mem_append.mp Hmem.2 with
+                      | inl Hin2 => exact Hσ_old_def_argT k2 Hin2
+                      | inr Hin2 => exact Hσ_old_def_lhs k2 Hin2
+                  -- ── L4 substStores: substStores σ_old σAO ((argTemps ++ lhs).zip (inputs ++ outputs)) ──
+                  -- Strategy: build matching ReadValues on both σ_old and σAO,
+                  -- then close via ReadValuesSubstStores.
+                  -- σAO reads inputs ↦ argVals (via Hinitin lifted by Hinitout).
+                  have HrdAO_in_L4 :
+                      ReadValues σAO proc.header.inputs.keys argVals := by
+                    have HrdA_in : ReadValues σA proc.header.inputs.keys argVals :=
+                      InitStatesReadValues Hinitin
+                    apply InitStatesReadValuesMonotone HrdA_in Hinitout
+                  have HrdAO_out_L4 :
+                      ReadValues σAO proc.header.outputs.keys oVals :=
+                    InitStatesReadValues Hinitout
+                  have HrdAO_inout_L4 :
+                      ReadValues σAO
+                        (proc.header.inputs.keys ++
+                          proc.header.outputs.keys)
+                        (argVals ++ oVals) :=
+                    ReadValuesApp HrdAO_in_L4 HrdAO_out_L4
+                  -- σ_old reads argTemps ↦ argVals.
+                  -- argTemps were initialized at layer 1 (positional).
+                  -- Lift through layers 2/3 via readValues_updatedStates
+                  -- (using disjointness from outTemps/olds).
+                  have HrdLayer1_argT :
+                      ReadValues
+                        (updatedStates σ
+                          argTemps argVals)
+                        argTemps argVals := by
+                    apply readValues_updatedStatesSame
+                    · exact HargFstLen
+                    · -- argTemps.Nodup
+                      exact (List.nodup_append.mp
+                        (List.nodup_append.mp Hgennd).1).1
+                  have HargT_disj_outT :
+                      argTemps.Disjoint
+                        outTemps := by
+                    have Hnd' := (List.nodup_append.mp Hgennd).1
+                    intro v Hv1 Hv2
+                    have Hpw := (List.nodup_append.mp Hnd').2.2
+                    exact Hpw v Hv1 v Hv2 rfl
+                  have HargT_disj_old :
+                      argTemps.Disjoint genOldIdents := by
+                    intro v Hv1 Hv2
+                    have Hpw := (List.nodup_append.mp Hgennd).2.2
+                    exact Hpw v
+                      (List.mem_append.mpr (Or.inl Hv1)) v Hv2 rfl
+                  have HrdLayer2_argT :
+                      ReadValues
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        argTemps argVals := by
+                    apply readValues_updatedStates HoutFstLen
+                            HargT_disj_outT HrdLayer1_argT
+                  have HoldFstLen_L4 :
+                      oldTrips.unzip.fst.unzip.fst.length = oldVals.length := by
+                    rw [HoldTripsFst, HgenOldLen, HoldValsLen]
+                  have HargT_disj_oldFst :
+                      argTemps.Disjoint
+                        oldTrips.unzip.fst.unzip.fst := by
+                    rw [HoldTripsFst]
+                    exact HargT_disj_old
+                  have HrdLayer3_argT :
+                      ReadValues σ_old
+                        argTemps argVals :=
+                    readValues_updatedStates HoldFstLen_L4 HargT_disj_oldFst
+                      HrdLayer2_argT
+                  -- σ_old reads lhs ↦ oVals.  Path: σ_old(lhs) lifts σ(lhs)
+                  -- via readValues_updatedStates × 3 (lhs disjoint from
+                  -- argT/outT/old).  σ(lhs) = oVals via Hevalouts.
+                  have HrdLayer1_lhs :
+                      ReadValues
+                        (updatedStates σ
+                          argTemps argVals)
+                        lhs oVals :=
+                    readValues_updatedStates HargFstLen HlhsDisjArg Hevalouts
+                  have HrdLayer2_lhs :
+                      ReadValues
+                        (updatedStates
+                          (updatedStates σ
+                            argTemps argVals)
+                          outTemps oVals)
+                        lhs oVals :=
+                    readValues_updatedStates HoutFstLen HlhsDisjOut HrdLayer1_lhs
+                  have Hlhs_disj_oldFst :
+                      lhs.Disjoint oldTrips.unzip.fst.unzip.fst := by
+                    rw [HoldTripsFst]
+                    exact HlhsDisjOld
+                  have HrdLayer3_lhs :
+                      ReadValues σ_old lhs oVals :=
+                    readValues_updatedStates HoldFstLen_L4 Hlhs_disj_oldFst
+                      HrdLayer2_lhs
+                  have HrdOld_inout_L4 :
+                      ReadValues σ_old
+                        (argTemps ++ lhs)
+                        (argVals ++ oVals) :=
+                    ReadValuesApp HrdLayer3_argT HrdLayer3_lhs
+                  have Hsubst_L4 : Imperative.substStores σ_old σAO
+                      (ks'_L4.zip ks_L4) :=
+                    ReadValuesSubstStores HrdOld_inout_L4 HrdAO_inout_L4
+                  -- ── Apply H_asserts_zip ──
+                  -- Destructure HassertsShape to bind the labels list.
+                  obtain ⟨assertLabels, HassertLabelsLen, HassertShape⟩ :=
+                    HassertsShape
+                  -- Bridge: the assertSubst from HassertsShape equals
+                  -- ks_L4.zip (createFvars ks'_L4),
+                  -- via List.zip_append and createFvarsApp.
+                  have HassertSubst_eq :
+                      ((proc.header.inputs.keys.zip
+                          (Core.Transform.createFvars
+                            argTemps)) ++
+                        (proc.header.outputs.keys.zip
+                          (Core.Transform.createFvars
+                            (CallArg.getLhs args)))) =
+                      ks_L4.zip
+                        (Core.Transform.createFvars ks'_L4) := by
+                    show _ =
+                      (proc.header.inputs.keys ++
+                        proc.header.outputs.keys).zip
+                      (Core.Transform.createFvars
+                        (argTemps ++ lhs))
+                    rw [hCallArgsLhs, createFvarsApp]
+                    rw [List.zip_append]
+                    rw [createFvarsLength]
+                    exact HinKeys_argTemps_len
+                  -- Apply H_asserts_zip with the L4 facts and HpresPayload.
+                  -- Note: presFiltered is a `let`-binding for
+                  -- `proc.spec.preconditions.filter (… ≠ .Free)`,
+                  -- which using `(_, c) => c.attr != .Free)` is the same as
+                  -- the corresponding inequality form via `bne_iff_ne`.
+                  have HL4_pre :
+                      EvalStatementsContract π φ ⟨σ_old, δ, false⟩
+                        (((proc.spec.preconditions.filter
+                              (fun (_, check) => check.attr != .Free)).zip
+                            assertLabels).map (fun (entry, lbl) =>
+                          Statement.assert lbl
+                            (Lambda.LExpr.substFvars entry.snd.expr
+                              (ks_L4.zip
+                                (Core.Transform.createFvars ks'_L4)))
+                            (entry.snd.md.setCallSiteFileRange md)))
+                        ⟨σ_old, δ, false⟩ := by
+                    apply H_asserts_zip
+                      (σA := σAO) (σ' := σ_old)
+                      (ks := ks_L4)
+                      (ks' := ks'_L4)
+                      (pres := proc.spec.preconditions.filter
+                                (fun (_, check) => check.attr != .Free))
+                      (labels := assertLabels)
+                      Hwfb Hwfvars Hwfval Hwfc
+                      Hks_len_L4 Hnd_L4 Hdef_L4 Hsubst_L4
+                    -- HpresPayload over presFiltered.  The two filter forms
+                    -- (`c.attr != .Free` boolean and `c.attr ≠ .Free` Prop)
+                    -- agree definitionally via decide reduction.
+                    intros entry Hentry
+                    -- Bridge: filter-form `c.attr != .Free` ↔ `c.attr ≠ .Free`.
+                    have Hentry' : entry ∈ presFiltered := by
+                      show entry ∈ proc.spec.preconditions.filter
+                                    (fun (_, c) => c.attr ≠ .Free)
+                      have Hin :
+                          entry ∈
+                            (List.filter
+                              (fun x => match x with
+                                | (_, check) => check.attr != Procedure.CheckAttr.Free)
+                              proc.spec.preconditions) := Hentry
+                      rw [List.mem_filter] at Hin ⊢
+                      refine ⟨Hin.1, ?_⟩
+                      simp only [decide_not, Bool.not_eq_eq_eq_not, Bool.not_true,
+                                 decide_eq_false_iff_not, ne_eq]
+                      have := Hin.2
+                      simp only [bne_iff_ne, ne_eq] at this
+                      exact this
+                    exact HpresPayload entry Hentry'
+                  -- Bridge to the actual `asserts` list via HassertsShape.
+                  have HL4 :
+                      EvalStatementsContract π φ ⟨σ_old, δ, false⟩
+                        asserts ⟨σ_old, δ, false⟩ := by
+                    -- Rewrite asserts using HassertShape; the resulting list
+                    -- is over `proc'`-keys, which equal `proc`-keys via HprocEq.
+                    rw [HassertShape]
+                    -- Push proc' = proc through to reach the L4-derived form.
+                    rw [HprocEq]
+                    -- Rewrite the inner substitution map via HassertSubst_eq.
+                    rw [HassertSubst_eq]
+                    exact HL4_pre
+                  -- ── D2d-bridge: σO ↔ σAO old-binding bridge ──
+                  --
+                  -- The L6 eval clause needs `δ σ_R1 (substFvars post oldSubst) =
+                  -- δ σ_R1 post = some HasBool.tt`.  The first equality follows
+                  -- (via `substsOldCorrect` and an analogue for the
+                  -- input-only old codomain) from a `WellFormedCoreEvalTwoState
+                  -- δ σ_pre σ_R1` instance over the σO/σAO havoc shape.  We
+                  -- manufacture the per-output δ-eval bridge here.
+                  --
+                  -- Building blocks (all accessible now that
+                  -- `WellFormedCoreEvalTwoState` is `@[expose]`'d in
+                  -- `Strata.Languages.Core.StatementSemantics`):
+                  --   * Hwf2's universal clause (`.2.1` projection)
+                  --     instantiated at (vs := outputs.keys, vs' := [],
+                  --     σ₀ := σAO, σ₁ := σO, σ_arg := σO) using
+                  --     `Hhav1 : HavocVars σAO outputs.keys σO` and the
+                  --     trivial `InitVars σO [] σO = InitVars.init_none`.
+                  --   * Positional `ReadValues σAO outputs.keys oVals`
+                  --     (via `InitStatesReadValues Hinitout`).
+                  --   * Positional `ReadValues σ lhs oVals` (via Hevalouts).
+                  --   * Positional `ReadValues σ oldVars oldVals` (via HoldVals).
+                  --   * Positional alignment for inout vars (via
+                  --     `Hwfcallsite.outAlignment` field).
+                  --
+                  -- ── (a) Trivial empty-init witness ──
+                  have HInitVars_empty : InitVars σO [] σO := InitVars.init_none
+                  -- ── (b) Per-output bridge via Hwf2's universal clause ──
+                  --
+                  -- For each v ∈ outputs.keys, `δ σO (mkOld v.name) = σAO v`.
+                  -- Project Hwf2's universal clause; with `@[expose]` we can
+                  -- destructure the conjunction directly via `simp` followed
+                  -- by `.2.1` or manual `cases`/`obtain`.
+                  have Hwf2_univ :
+                      ∀ v ∈ proc.header.outputs.keys,
+                        δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
+                                                         none) =
+                          σAO v := by
+                    intro v Hv
+                    -- Unfold Hwf2 to expose the `∧` structure.
+                    simp only [WellFormedCoreEvalTwoState] at Hwf2
+                    -- Hwf2.2 : universal clause; instantiate at
+                    -- (vs := outputs.keys, vs' := [], σ₀ := σAO, σ₁ := σO,
+                    --  σ_arg := σO) using `Hhav1 ∧ HInitVars_empty`.
+                    have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
+                                ⟨Hhav1, HInitVars_empty⟩ v
+                    -- HH : (v ∈ outputs.keys → δ σO (mkOld v.name) = σAO v) ∧
+                    --      (¬ v ∈ outputs.keys → δ σO (mkOld v.name) = σO v)
+                    exact HH.1 Hv
+                  -- ── (c) σAO[v] = σ[v] for v ∉ outputs ∪ inputs (fall-through) ──
+                  -- Hinitout: InitStates σA outputs.keys oVals σAO
+                  -- Hinitin:  InitStates σ inputs.keys argVals σA
+                  -- For v ∉ outputs.keys, σAO v = σA v (initStates_get_notin).
+                  -- For v ∉ inputs.keys,  σA v = σ v   (initStates_get_notin).
+                  have HσAO_notin_eq_σ :
+                      ∀ v, v ∉ proc.header.outputs.keys →
+                           v ∉ proc.header.inputs.keys →
+                           σAO v = σ v := by
+                    intro v Hv_notout Hv_notin
+                    rw [initStates_get_notin Hinitout Hv_notout,
+                        initStates_get_notin Hinitin Hv_notin]
+                  -- ── (d) σAO reads outputs ↦ oVals (positional) ──
+                  -- Hinitout : InitStates σA outputs.keys oVals σAO gives
+                  -- ReadValues σAO outputs.keys oVals via InitStatesReadValues.
+                  -- Concretely: for each i, σAO[outputs.keys[i]] = oVals[i].
+                  have HσAO_reads_outs :
+                      ReadValues σAO proc.header.outputs.keys oVals :=
+                    InitStatesReadValues Hinitout
+                  -- ── (e) Positional alignment for the call ──
+                  -- `HoutAlign` is the `outAlignment` field of the
+                  -- specialized `WFCallSiteSpec`, already bound at the
+                  -- top of the call branch via `Hwfcallsite.specialize`.
+                  -- ── (f) Per-index δ-eval bridge ──
+                  --
+                  -- For each i < oldVars.length, derive
+                  --   δ σO (mkOld oldVars[i].name) = some oldVals[i]
+                  -- via the chain:
+                  --   oldVars[i] ∈ outputs.keys (oldVars filter)
+                  --   → δ σO (mkOld oldVars[i].name) = σAO oldVars[i]   (Hwf2_univ)
+                  --   = oVals[outputs.keys.idxOf oldVars[i]]            (HσAO_reads_outs positional)
+                  --   = oVals[lhs.idxOf oldVars[i]]                     (HoutAlign reverse)
+                  --   = σ oldVars[i]                                    (Hevalouts positional)
+                  --   = some oldVals[i]                                 (HoldVals positional).
+                  --
+                  -- Length facts.
+                  have HoldVals_len : oldVals.length = oldVars.length :=
+                    HoldValsLen
+                  -- For v ∈ oldVars, v is in CallArg.getLhs args (filter).
+                  have HoldVars_sub_callLhs : ∀ v ∈ oldVars, v ∈ CallArg.getLhs args := by
+                    intro v Hv
+                    exact (List.mem_filter.mp Hv).1
+                  -- For v ∈ oldVars, v is in proc'.header.outputs.keys (filter).
+                  -- Bridge proc' = proc via HprocEq.
+                  have HoldVars_sub_outs : ∀ v ∈ oldVars,
+                      v ∈ ListMap.keys proc.header.outputs := by
+                    intro v Hv
+                    have Hv_filt := List.mem_filter.mp Hv
+                    have Hbool := Hv_filt.2
+                    -- Hbool : (proc'.inputs.contains v && proc'.outputs.contains v &&
+                    --         ...) = true
+                    -- Project the outputs.contains conjunct.
+                    simp only [Bool.and_eq_true] at Hbool
+                    have HinOuts' : (ListMap.keys proc'.header.outputs).contains v := by
+                      exact Hbool.1.2
+                    rw [HprocEq] at HinOuts'
+                    exact List.contains_iff_mem.mp HinOuts'
+                  -- For v ∈ oldVars, v ∈ lhs (oldVars ⊆ getLhs args = lhs).
+                  have HoldVars_sub_lhs_L6 : ∀ v ∈ oldVars, v ∈ lhs := by
+                    intro v Hv
+                    exact hCallArgsLhs ▸ HoldVars_sub_callLhs v Hv
+                  -- The per-index bridge.  We name it `HoldEval_bridge`
+                  -- and frame it positionally for downstream consumers.
+                  have HoldEval_bridge :
+                      ∀ (i : Nat) (Hi : i < oldVars.length),
+                        δ σO
+                            (Lambda.LExpr.fvar ()
+                              (CoreIdent.mkOld (oldVars[i]'Hi).name) none) =
+                          some (oldVals[i]'(HoldVals_len.symm ▸ Hi)) := by
+                    intro i Hi
+                    -- Name the i-th oldVars element via let-binding.
+                    let v : Expression.Ident := oldVars[i]'Hi
+                    have Hv_def : v = oldVars[i]'Hi := rfl
+                    -- v ∈ oldVars (List.getElem_mem).
+                    have Hv_mem : v ∈ oldVars := List.getElem_mem _
+                    -- v ∈ outputs.keys.
+                    have Hv_out : v ∈ ListMap.keys proc.header.outputs :=
+                      HoldVars_sub_outs v Hv_mem
+                    -- v ∈ lhs.
+                    have Hv_lhs : v ∈ lhs := HoldVars_sub_lhs_L6 v Hv_mem
+                    -- v ∈ CallArg.getLhs args.
+                    have Hv_callLhs : v ∈ CallArg.getLhs args :=
+                      HoldVars_sub_callLhs v Hv_mem
+                    -- Step 1: δ σO (mkOld v.name) = σAO v.
+                    have HStep1 :
+                        δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name)
+                                                         none) =
+                          σAO v :=
+                      Hwf2_univ v Hv_out
+                    -- Step 2: σAO v = oVals[outputs.keys.idxOf v].
+                    -- HσAO_reads_outs : ReadValues σAO outputs.keys oVals.
+                    -- Use idxOf to index into outputs.keys.
+                    let j_out := (ListMap.keys proc.header.outputs).idxOf v
+                    have Hj_out_def : j_out =
+                        (ListMap.keys proc.header.outputs).idxOf v := rfl
+                    have Hj_out_lt :
+                        j_out < (ListMap.keys proc.header.outputs).length :=
+                      List.idxOf_lt_length_of_mem Hv_out
+                    have HouterKeys_oVals_len :
+                        (ListMap.keys proc.header.outputs).length =
+                          oVals.length :=
+                      InitStatesLength Hinitout
+                    have Hj_out_lt_oVals : j_out < oVals.length := by
+                      rw [← HouterKeys_oVals_len]
+                      exact Hj_out_lt
+                    have Houts_get_v :
+                        (ListMap.keys proc.header.outputs)[j_out]'Hj_out_lt = v := by
+                      show (ListMap.keys proc.header.outputs)[
+                              (ListMap.keys proc.header.outputs).idxOf v]'_ = v
+                      unfold List.idxOf
+                      have HH := @List.findIdx_getElem _ (· == v)
+                                  (ListMap.keys proc.header.outputs)
+                                  (List.idxOf_lt_length_of_mem Hv_out)
+                      simpa using HH
+                    have HStep2 :
+                        σAO v = some (oVals[j_out]'Hj_out_lt_oVals) := by
+                      have Hget := readValues_get
+                        (σ:=σAO)
+                        (ks:=ListMap.keys proc.header.outputs)
+                        (vs:=oVals)
+                        HσAO_reads_outs
+                        (i:=j_out) (hi:=Hj_out_lt) (hi':=Hj_out_lt_oVals)
+                      -- Hget : σAO outputs.keys[j_out] = some oVals[j_out].
+                      -- Houts_get_v : outputs.keys[j_out] = v.
+                      rw [Houts_get_v] at Hget
+                      exact Hget
+                    -- Step 3: lhs.idxOf v = outputs.keys.idxOf v (alignment).
+                    have HAlign :
+                        (CallArg.getLhs args).idxOf v =
+                          (ListMap.keys proc.header.outputs).idxOf v :=
+                      HoutAlign v Hv_out Hv_callLhs
+                    -- Translate to lhs (since hCallArgsLhs : getLhs args = lhs).
+                    have HAlign_lhs : lhs.idxOf v = j_out := by
+                      show lhs.idxOf v = (ListMap.keys proc.header.outputs).idxOf v
+                      rw [← HAlign, hCallArgsLhs]
+                    -- Step 4: σ v = oVals[lhs.idxOf v]'_.
+                    -- Use Hevalouts : ReadValues σ lhs oVals positional.
+                    let j_lhs := lhs.idxOf v
+                    have Hj_lhs_def : j_lhs = lhs.idxOf v := rfl
+                    have Hj_lhs_eq_j_out : j_lhs = j_out := HAlign_lhs
+                    have Hj_lhs_lt : j_lhs < lhs.length :=
+                      List.idxOf_lt_length_of_mem Hv_lhs
+                    have Hlhs_oVals_len : lhs.length = oVals.length :=
+                      ReadValuesLength Hevalouts
+                    have Hj_lhs_lt_oVals : j_lhs < oVals.length := by
+                      rw [Hlhs_oVals_len] at Hj_lhs_lt
+                      exact Hj_lhs_lt
+                    have Hlhs_get_v : lhs[j_lhs]'Hj_lhs_lt = v := by
+                      show lhs[lhs.idxOf v]'_ = v
+                      unfold List.idxOf
+                      have HH := @List.findIdx_getElem _ (· == v) lhs
+                                  (List.idxOf_lt_length_of_mem Hv_lhs)
+                      simpa using HH
+                    have HStep4 :
+                        σ v = some (oVals[j_lhs]'Hj_lhs_lt_oVals) := by
+                      have Hget := readValues_get
+                        (σ:=σ) (ks:=lhs) (vs:=oVals) Hevalouts
+                        (i:=j_lhs) (hi:=Hj_lhs_lt) (hi':=Hj_lhs_lt_oVals)
+                      rw [Hlhs_get_v] at Hget
+                      exact Hget
+                    -- Step 5: σ v = some oldVals[i]'_ (HoldVals positional).
+                    have Hi_oldVals : i < oldVals.length := HoldVals_len.symm ▸ Hi
+                    have HStep5 : σ v = some (oldVals[i]'Hi_oldVals) := by
+                      have Hget := readValues_get
+                        (σ:=σ) (ks:=oldVars) (vs:=oldVals) HoldVals
+                        (i:=i) (hi:=Hi) (hi':=Hi_oldVals)
+                      -- Hget : σ oldVars[i] = some oldVals[i].
+                      -- v = oldVars[i] by Hv_def.
+                      exact Hget
+                    -- Combine: δ σO (mkOld v.name) = σAO v
+                    --                              = some oVals[j_out]
+                    --                              = some oVals[j_lhs]    (HAlign_lhs)
+                    --                              = σ v
+                    --                              = some oldVals[i].
+                    show δ σO (Lambda.LExpr.fvar () (CoreIdent.mkOld v.name) none)
+                          = some (oldVals[i]'Hi_oldVals)
+                    rw [HStep1, HStep2]
+                    -- Goal: some oVals[j_out] = some oldVals[i].
+                    have Hj_eq : oVals[j_out]'Hj_out_lt_oVals =
+                                 oVals[j_lhs]'Hj_lhs_lt_oVals := by
+                      congr 1
+                      exact Hj_lhs_eq_j_out.symm
+                    rw [Hj_eq]
+                    -- Goal: some oVals[j_lhs] = some oldVals[i].
+                    rw [← HStep4, HStep5]
+                  -- ── D2d: Structural pieces of HpostPayload (Hinv + Hpred_disj) ──
+                  --
+                  -- The L6 H_assumes_anylist consumer expects, for each
+                  -- entry ∈ posts_filtered (post-`oldSubst` postconditions):
+                  --   (1) Hinv         : invStores σ_R1 σ_havoc
+                  --                         (postVars.removeAll (filtered_ks ++ filtered_ks'))
+                  --   (2) Hpred_disj   : filtered_ks'.Disjoint postVars
+                  --   (3) Heval_bridge : δ σ_R1 entry.snd.expr = some HasBool.tt
+                  --
+                  -- Where postVars = getVars (substFvars original_post oldSubst).
+                  -- Each `v ∈ postVars` falls into one of two classes via
+                  -- `getVars_substFvars_mem`:
+                  --   class (a): `v ∈ getVars original_post ∧ find? oldSubst v = none`
+                  --   class (b): ∃ k w, k ∈ getVars original_post,
+                  --              find? oldSubst k = some w, v ∈ getVars w.
+                  --
+                  -- D2d lands the structural pieces (Hinv + Hpred_disj) that
+                  -- don't depend on the eval bridge.  The eval clause (3)
+                  -- requires a σO ↔ σ_R1 δ-eval bridge plus a `subst_fvars`-
+                  -- style argument over `oldSubst`'s arbitrary-expression
+                  -- codomain — this is a substantial lift comparable to the
+                  -- legacy `substsOldCorrect` chain.  D2f addresses (3).
+                  --
+                  -- ── Local copy of `oldSubst` and `posts_filtered` ──
+                  --
+                  -- Mirror the let-bindings inside `HassumesShape` so we
+                  -- can name the substituted-post list explicitly.
+                  let oldVars_L6 : List Expression.Ident :=
+                    List.filter
+                      (fun g =>
+                        (ListMap.keys proc'.header.inputs).contains g &&
+                            (ListMap.keys proc'.header.outputs).contains g &&
+                          (List.map Procedure.Check.expr
+                              proc'.spec.postconditions.values).any fun e =>
+                            List.any e.freeVars
+                              fun x => x.fst == CoreIdent.mkOld g.name)
+                      (CallArg.getLhs args)
+                  let oldGVars_L6 : List Expression.Ident :=
+                    oldVars_L6.map (fun g => CoreIdent.mkOld g.name)
+                  let oldTripsCanonical_L6 :
+                      List ((Expression.Ident × Expression.Ty) ×
+                            Expression.Ident) :=
+                    (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                      oldGVars_L6).map
+                      fun (((fresh, ty), _orig), oldG) => ((fresh, ty), oldG)
+                  let inputOnlyOldSubst_L6 :
+                      Map Expression.Ident Expression.Expr :=
+                    (proc'.header.inputs.keys.zip
+                        (CallArg.getInputExprs args)).filterMap
+                      fun (paramId, argExpr) =>
+                        let oldVar := CoreIdent.mkOld paramId.name
+                        if !(ListMap.keys proc'.header.outputs).contains paramId &&
+                           (proc'.spec.postconditions.values.map
+                             Procedure.Check.expr).any
+                             (fun e => Lambda.LExpr.freeVars e |>.any
+                               (fun (id, _) => id == oldVar))
+                        then some (oldVar, argExpr)
+                        else none
+                  let oldSubst_L6 : Map Expression.Ident Expression.Expr :=
+                    Core.Transform.createOldVarsSubst oldTripsCanonical_L6 ++
+                      inputOnlyOldSubst_L6
+                  let posts_filtered_L6 :
+                      ListMap CoreLabel Procedure.Check :=
+                    Procedure.Spec.updateCheckExprs
+                      (proc'.spec.postconditions.values.map
+                        (fun c =>
+                          Lambda.LExpr.substFvars c.expr oldSubst_L6))
+                      proc'.spec.postconditions
+                  -- ── Per-entry `posts_filtered_L6 ↔ original` correspondence ──
+                  --
+                  -- For each `entry ∈ posts_filtered_L6`, there exists a
+                  -- corresponding `c ∈ proc'.spec.postconditions.values`
+                  -- such that `entry.snd.expr = substFvars c.expr
+                  -- oldSubst_L6`.  Provable via the
+                  -- `updateCheckExprs_substFvars_mem` helper, which
+                  -- consumes the `keys.zip (walk ...)` form (= the
+                  -- definitional unfolding of `updateCheckExprs`).
+                  have HpostFiltered_corresp :
+                      ∀ entry : CoreLabel × Procedure.Check,
+                        entry ∈
+                          (proc'.spec.postconditions.keys.zip
+                            (updateCheckExprs_walk
+                              (proc'.spec.postconditions.values.map
+                                (fun c =>
+                                  Lambda.LExpr.substFvars c.expr oldSubst_L6))
+                              proc'.spec.postconditions.values)) →
+                        ∃ c ∈ proc'.spec.postconditions.values,
+                          entry.snd.expr =
+                            Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
+                    intro entry Hentry
+                    exact updateCheckExprs_substFvars_mem Hentry
+                  -- ── Per-entry decomposition helper ──
+                  --
+                  -- Bundles the bridge `entry ∈ posts_filtered_L6.toList →
+                  -- entry ∈ keys.zip (walk ...)` with
+                  -- `HpostFiltered_corresp` so each downstream consumer
+                  -- (`HpostEval_bridge`, `Hinv`, `Hpred_disj`) destructures
+                  -- in one line instead of repeating the 12-line preamble.
+                  have forall_post_filtered_decompose :
+                      ∀ entry : CoreLabel × Procedure.Check,
+                        entry ∈ posts_filtered_L6.toList →
+                        ∃ c ∈ proc'.spec.postconditions.values,
+                          entry.snd.expr =
+                            Lambda.LExpr.substFvars c.expr oldSubst_L6 := by
+                    intro entry Hentry
+                    have Hentry_zip :
+                        entry ∈
+                          (proc'.spec.postconditions.keys.zip
+                            (updateCheckExprs_walk
+                              (proc'.spec.postconditions.values.map
+                                (fun c =>
+                                  Lambda.LExpr.substFvars c.expr oldSubst_L6))
+                              proc'.spec.postconditions.values)) := by
+                      rw [updateCheckExprs_walk_eq_go]
+                      show entry ∈
+                          (proc'.spec.postconditions.keys.zip
+                            (Procedure.Spec.updateCheckExprs.go _ _))
+                      exact Hentry
+                    exact HpostFiltered_corresp entry Hentry_zip
+                  -- Note: directly applying `updateCheckExprs_substFvars_mem`
+                  -- to `entry ∈ posts_filtered_L6` requires bridging
+                  -- `posts_filtered_L6 = keys.zip (walk ...)`.  This bridge
+                  -- holds by definitional reduction of
+                  -- `Procedure.Spec.updateCheckExprs`, but the where-clause
+                  -- `.go` is private to `Core` and not @[expose]'d.  D2f
+                  -- adapts the application using whichever path works:
+                  -- (a) inline `simp [Procedure.Spec.updateCheckExprs]`, or
+                  -- (b) build a positional access via List.mem_iff_get on
+                  -- `posts_filtered_L6` then apply the helper's positional
+                  -- variant `updateCheckExprs_walk_getElem_substFvars`
+                  -- after a length-equality bridge.
+                  -- ── D2d-eval: per-fvar bridges for substFvars eval ──
+                  --
+                  -- The eval bridge `δ σ_R1 (substFvars c.expr oldSubst_L6) =
+                  -- δ σO c.expr` is consumed via `subst_fvars_eval_bridge`.
+                  -- We derive its two pointwise hypotheses at the call site:
+                  --   (1) Hsurv : surviving fvars (find? oldSubst = none)
+                  --       evaluate identically at σ_R1 vs σO.
+                  --   (2) Hsub  : codomain expressions (find? oldSubst = some w)
+                  --       evaluate at σ_R1 to the same value as the keyed
+                  --       fvar at σO.
+                  --
+                  -- (1) holds because surviving v ∈ getVars c.expr is
+                  -- not isOldTempIdent (HpostsVarsFresh_orig), genOldIdents
+                  -- are isOldTempIdent (HoldIdentsTemp), so v ∉ genOldIdents
+                  -- and σ_R1 v = σO v (updatedStates_get_notin).
+                  --
+                  -- (2) splits into two flavors based on which side of
+                  -- `oldSubst_L6 = createOldVarsSubst ++ inputOnlyOldSubst`
+                  -- contributed `(k, w)`:
+                  --   (2a) createOldVarsSubst flavor: w = createFvar
+                  --        genOldIdents[i], k = mkOld oldVars[i].name.
+                  --        δ σ_R1 w = σ_R1 genOldIdents[i] = oldVals[i]
+                  --        (overlay positional); δ σO (fvar k) = oldVals[i]
+                  --        by HoldEval_bridge.
+                  --   (2b) inputOnlyOldSubst flavor: w = argExpr (an arg
+                  --        expression from the call's input list).  The
+                  --        chain involves σ → σA → σAO → σO → σ_R1
+                  --        agreement on argExpr's free vars; the detailed
+                  --        derivation is left to D2d-payload (the assembly
+                  --        of HpostEval_bridge).  D2d-eval lands the
+                  --        structural infrastructure: the generic helper
+                  --        `subst_fvars_eval_bridge` plus the (1) and (2a)
+                  --        components.
+                  --
+                  -- Note: (1) is built per-entry as `HsurvBridgeC` inside
+                  -- `HpostEval_bridge` below, where the entry's `c` is
+                  -- already fixed; a universal version over `postsFiltered`
+                  -- is unused (each call site needs the specialization).
+                  -- ── (2a) HoldSubBridge: createOldVarsSubst codomain ──
+                  --
+                  -- For each `(k, w) ∈ createOldVarsSubst oldTripsCanonical_L6`,
+                  -- show `δ σ_R1 w = δ σO (fvar () k none)`.  Members of
+                  -- `createOldVarsSubst trips` have the shape
+                  --   k = oldG (= mkOld oldVars[i].name)
+                  --   w = createFvar fresh (= fvar () genOldIdents[i] none).
+                  -- The bridge:
+                  --   LHS: σ_R1 genOldIdents[i] = some oldVals[i]  (overlay)
+                  --   RHS: δ σO (fvar (mkOld oldVars[i].name) none)
+                  --                                = some oldVals[i]  (HoldEval_bridge)
+                  --
+                  -- We extract the positional index `i` from the structural
+                  -- shape `oldTripsCanonical_L6 = (((genOldIdents.zip oldTys).
+                  -- zip oldVars_L6).zip oldGVars_L6).map ...` via
+                  -- `List.mem_iff_get`.
+                  have HoldSubBridge :
+                      ∀ k w,
+                        Map.find?
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) k = some w →
+                        δ σ_R1 w =
+                          δ σO (Lambda.LExpr.fvar () k none) := by
+                    intro k w Hf
+                    -- (k, w) ∈ createOldVarsSubst oldTripsCanonical_L6 (as List).
+                    have Hkw_mem_list :
+                        List.Mem (k, w)
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) :=
+                      Map.find?_mem _ k w Hf
+                    -- createOldVarsSubst trips = trips.map go (definitional).
+                    have HsubstUnfold :
+                        Core.Transform.createOldVarsSubst
+                          oldTripsCanonical_L6 =
+                        oldTripsCanonical_L6.map
+                          (fun trip =>
+                            Core.Transform.createOldVarsSubst.go trip) := rfl
+                    rw [HsubstUnfold] at Hkw_mem_list
+                    -- (k, w) ∈ trips.map go ⇒ ∃ trip, trip ∈ trips ∧ go trip = (k, w).
+                    rcases List.mem_map.mp Hkw_mem_list with ⟨trip, Htrip_in, Htrip_eq⟩
+                    -- trip ∈ oldTripsCanonical_L6; extract via mem_iff_get.
+                    rcases List.mem_iff_get.mp Htrip_in with ⟨ni, Hni⟩
+                    -- oldTripsCanonical_L6 length = oldVars_L6.length (after
+                    -- collapsing the multi-zip via Holdtriplen-style reasoning).
+                    -- oldVars_L6 = oldVars (definitionally; same filter expr).
+                    have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
+                    have HCanonLen :
+                        oldTripsCanonical_L6.length = oldVars.length := by
+                      show ((((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                        oldGVars_L6).map _).length = oldVars.length
+                      have HoldGLen :
+                          oldGVars_L6.length = oldVars_L6.length := by
+                        show (oldVars_L6.map _).length = oldVars_L6.length
+                        simp [List.length_map]
+                      simp only [List.length_map, List.length_zip,
+                                 HgenOldLen, HoldTysLen, HoldGLen,
+                                 HoldVars_L6_eq]
+                      omega
+                    -- Bound the index against oldVars.
+                    have Hni_lt : ni.val < oldVars.length := by
+                      have HiLt := ni.isLt
+                      omega
+                    -- Extract trip's positional shape:
+                    --   trip = ((genOldIdents[i], oldTys[i]), oldGVars_L6[i]).
+                    -- Build via two-step zip-getElem reduction.
+                    have HziptyLen :
+                        (genOldIdents.zip oldTys).length = oldVars_L6.length := by
+                      have HoldVars_L6_eq2 : oldVars_L6 = oldVars := rfl
+                      rw [HoldVars_L6_eq2]
+                      simp [List.length_zip, HgenOldLen, HoldTysLen]
+                    have Hni_lt_zipty : ni.val < (genOldIdents.zip oldTys).length := by
+                      rw [HziptyLen]; exact Hni_lt
+                    have Hni_lt_oldGVars_L6 :
+                        ni.val < oldGVars_L6.length := by
+                      show ni.val < (oldVars_L6.map _).length
+                      simp [List.length_map]; exact Hni_lt
+                    have Hni_lt_oldVars_L6 :
+                        ni.val < oldVars_L6.length := Hni_lt
+                    have Hni_lt_genOld : ni.val < genOldIdents.length := by
+                      have := HgenOldLen
+                      omega
+                    have Hni_lt_oldTys : ni.val < oldTys.length := by
+                      have := HoldTysLen
+                      omega
+                    -- Bound ni.val against oldTripsCanonical_L6 directly.
+                    have Hni_lt_canon : ni.val < oldTripsCanonical_L6.length :=
+                      ni.isLt
+                    -- Project trip via zip getElem.
+                    have HtripGet :
+                        oldTripsCanonical_L6[ni.val]'Hni_lt_canon =
+                          ((genOldIdents[ni.val]'Hni_lt_genOld,
+                            oldTys[ni.val]'Hni_lt_oldTys),
+                           oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
+                      show (((((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                        oldGVars_L6).map _)[ni.val]'Hni_lt_canon) = _
+                      rw [List.getElem_map]
+                      have HouterLt :
+                          ni.val < (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                              oldGVars_L6).length := by
+                        simp only [List.length_zip]
+                        omega
+                      have Houter :
+                          (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                              oldGVars_L6)[ni.val]'HouterLt =
+                            ((((genOldIdents.zip oldTys).zip oldVars_L6))[ni.val]'(by
+                              simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6),
+                             oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) :=
+                        List.getElem_zip
+                      rw [Houter]
+                      have Hmid :
+                          ((genOldIdents.zip oldTys).zip oldVars_L6)[ni.val]'(by
+                            simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6) =
+                            ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
+                             oldVars_L6[ni.val]'Hni_lt_oldVars_L6) :=
+                        List.getElem_zip
+                      rw [Hmid]
+                      have Hinner :
+                          (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
+                            (genOldIdents[ni.val]'Hni_lt_genOld,
+                             oldTys[ni.val]'Hni_lt_oldTys) :=
+                        List.getElem_zip
+                      rw [Hinner]
+                    -- Convert ni.get to ni-indexed getElem.
+                    have HtripEq_get :
+                        oldTripsCanonical_L6[ni.val]'Hni_lt_canon = trip := by
+                      have HhE := Hni
+                      have HgetEq : oldTripsCanonical_L6.get ni =
+                              oldTripsCanonical_L6[ni.val]'Hni_lt_canon :=
+                        rfl
+                      rw [HgetEq] at HhE
+                      exact HhE
+                    -- Combine: trip = ((gen, ty), oldG).
+                    have Htrip_shape :
+                        trip = ((genOldIdents[ni.val]'Hni_lt_genOld,
+                                 oldTys[ni.val]'Hni_lt_oldTys),
+                                oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
+                      rw [← HtripEq_get]; exact HtripGet
+                    -- oldGVars_L6[i] = mkOld oldVars_L6[i].name.
+                    have HoldG_get :
+                        oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6 =
+                          CoreIdent.mkOld
+                            (oldVars_L6[ni.val]'Hni_lt_oldVars_L6).name := by
+                      show (oldVars_L6.map (fun g => CoreIdent.mkOld g.name))[ni.val]'_ = _
+                      rw [List.getElem_map]
+                    -- Bridge oldVars_L6 = oldVars (definitionally; same filter expr).
+                    have HoldVarsBridgeGet :
+                        oldVars_L6[ni.val]'Hni_lt_oldVars_L6 =
+                          oldVars[ni.val]'Hni_lt := rfl
+                    -- Apply createOldVarsSubst.go to the trip.
+                    -- go ((v', _), v) = (v, createFvar v').
+                    -- For our trip = ((gen, ty), oldG):
+                    --   go trip = (oldG, createFvar gen).
+                    have HgoEq :
+                        Core.Transform.createOldVarsSubst.go trip =
+                          (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
+                           Core.Transform.createFvar
+                             (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+                      rw [Htrip_shape]
+                      rfl
+                    -- Combined: (k, w) = (oldG, createFvar gen).
+                    have HkwEq :
+                        (k, w) = (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
+                                  Core.Transform.createFvar
+                                    (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+                      rw [← HgoEq]; exact Htrip_eq.symm
+                    have Hk_eq :
+                        k = oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6 :=
+                      ((Prod.mk.injEq _ _ _ _).mp HkwEq).1
+                    have Hw_eq :
+                        w = Core.Transform.createFvar
+                              (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                      ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
+                    -- k = mkOld oldVars[i].name, via HoldG_get + HoldVarsBridgeGet.
+                    have Hk_eqMkOld :
+                        k = CoreIdent.mkOld
+                              (oldVars[ni.val]'Hni_lt).name := by
+                      rw [Hk_eq, HoldG_get, HoldVarsBridgeGet]
+                    -- LHS: δ σ_R1 w = σ_R1 genOldIdents[i] = some oldVals[i].
+                    -- σ_R1 = updatedStates σO genOldIdents oldVals.
+                    -- Use readValues_updatedStatesSame + readValues_get.
+                    have HoldValsLenE :
+                        genOldIdents.length = oldVals.length := by
+                      have := HoldValsLen
+                      have := HgenOldLen
+                      omega
+                    have Hni_lt_oldVals : ni.val < oldVals.length := by
+                      have := HoldValsLen
+                      omega
+                    have HrdR1_olds :
+                        ReadValues σ_R1 genOldIdents oldVals := by
+                      show ReadValues
+                        (updatedStates σO genOldIdents oldVals)
+                        genOldIdents oldVals
+                      exact readValues_updatedStatesSame
+                              HoldValsLenE HoldNd
+                    have HrdR1_get :
+                        σ_R1 (genOldIdents[ni.val]'Hni_lt_genOld) =
+                          some (oldVals[ni.val]'Hni_lt_oldVals) :=
+                      readValues_get HrdR1_olds
+                        (i:=ni.val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                    -- δ σ_R1 (createFvar gen) = σ_R1 gen.
+                    have Hwfvr := Hwfvars
+                    simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+                    have HwfL :
+                        δ σ_R1 (Core.Transform.createFvar
+                                 (genOldIdents[ni.val]'Hni_lt_genOld)) =
+                          σ_R1 (genOldIdents[ni.val]'Hni_lt_genOld) := by
+                      show δ σ_R1 (Lambda.LExpr.fvar () _ none) = _
+                      rw [Hwfvr (Lambda.LExpr.fvar ()
+                            (genOldIdents[ni.val]'Hni_lt_genOld) none)
+                          (genOldIdents[ni.val]'Hni_lt_genOld)]
+                      simp [Imperative.HasFvar.getFvar]
+                    -- RHS: δ σO (fvar k) = δ σO (fvar (mkOld oldVars[i].name))
+                    --                    = some oldVals[i] (HoldEval_bridge).
+                    have HoldEv :
+                        δ σO (Lambda.LExpr.fvar ()
+                                (CoreIdent.mkOld
+                                  (oldVars[ni.val]'Hni_lt).name)
+                                none) =
+                          some (oldVals[ni.val]'Hni_lt_oldVals) :=
+                      HoldEval_bridge ni.val Hni_lt
+                    -- Conclude.
+                    rw [Hw_eq, HwfL, HrdR1_get, Hk_eqMkOld, HoldEv]
+                  -- ── (2b) HinputSubBridge: inputOnlyOldSubst codomain ──
+                  --
+                  -- For each `(k, w) ∈ inputOnlyOldSubst_L6` with
+                  --   k = mkOld input_id.name, input_id ∈ inputs.keys ∖ outputs.keys,
+                  --   and w = argExpr (the call argument expression at the
+                  --   same positional index as input_id in inputs.keys),
+                  -- the obligation is `δ σ_R1 w = δ σO (fvar () k none)`.
+                  --
+                  -- Strategy:
+                  --   RHS chain (σO ↔ σ at argExpr free vars; argVals[i]):
+                  --     δ σO (mkOld input_id.name) = σO input_id      (Hwf2 not-in branch)
+                  --     σO input_id = σAO input_id                    (havoc preserves on non-outs)
+                  --     σAO input_id = σA input_id                    (Hinitout fall-through)
+                  --     σA input_id = some argVals[i]                 (positional Hinitin)
+                  --     argVals[i] = δ σ argExpr                       (evalExpressions_get + hCallArgsIn)
+                  --   LHS chain (σ_R1 ↔ σ at argExpr free vars):
+                  --     For v ∈ getVars argExpr,
+                  --       v ∉ outputs.keys (clause 5 of Hpre_post_lhs_disj),
+                  --       v ∉ inputs.keys (clause 6 of Hpre_post_lhs_disj),
+                  --       v ∉ genOldIdents (v ∈ σ-defined ⇒ ¬ isOldTempIdent v;
+                  --                        genOldIdents are isOldTempIdent).
+                  --     Hence σ_R1 v = σO v = σAO v = σA v = σ v on argExpr's
+                  --     free vars; Hwfc.fvarcongr lifts to δ σ_R1 argExpr =
+                  --     δ σ argExpr.
+                  --   Combine: δ σ_R1 argExpr = δ σ argExpr = some argVals[i] =
+                  --     σ input_id = σO input_id = δ σO (mkOld input_id.name).
+                  have HinputSubBridge :
+                      ∀ k w,
+                        Map.find? inputOnlyOldSubst_L6 k = some w →
+                        δ σ_R1 w =
+                          δ σO (Lambda.LExpr.fvar () k none) := by
+                    intro k w Hf
+                    -- (k, w) ∈ inputOnlyOldSubst_L6 (as List).
+                    have Hkw_mem_list :
+                        List.Mem (k, w) inputOnlyOldSubst_L6 :=
+                      Map.find?_mem _ k w Hf
+                    -- Apply List.mem_filterMap to extract a witness pair.
+                    rcases List.mem_filterMap.mp Hkw_mem_list with
+                      ⟨pair, Hpair_in, Hpair_eq⟩
+                    -- pair : (Expression.Ident × Expression.Expr)
+                    -- pair ∈ inputs.keys.zip (getInputExprs args)
+                    -- The filterMap function returned `some (k, w)`.
+                    -- Inspect Hpair_eq: a `match`/`if-then-else`.  When the
+                    -- guard is false, the result is `none ≠ some (k, w)`.
+                    -- So the guard is true and the result is
+                    -- `some (mkOld pair.fst.name, pair.snd)`.
+                    -- Case-split on guard via by_cases.
+                    by_cases Hg :
+                        (!(ListMap.keys proc'.header.outputs).contains pair.fst &&
+                         (proc'.spec.postconditions.values.map
+                           Procedure.Check.expr).any
+                           (fun e => Lambda.LExpr.freeVars e |>.any
+                             (fun (id, _) => id ==
+                               CoreIdent.mkOld pair.fst.name))) = true
+                    · -- guard = true branch.
+                      have Hpair_eq' :
+                          (CoreIdent.mkOld pair.fst.name, pair.snd) = (k, w) := by
+                        have HH := Hpair_eq
+                        simp only [Hg, if_true] at HH
+                        exact (Option.some_inj.mp HH)
+                      have Hk_eq : k = CoreIdent.mkOld pair.fst.name :=
+                        ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').1.symm
+                      have Hw_eq : w = pair.snd :=
+                        ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').2.symm
+                      -- pair ∈ inputs.keys.zip (getInputExprs args).
+                      -- Extract positional index.
+                      rcases List.mem_iff_get.mp Hpair_in with ⟨ni, Hni⟩
+                      -- Lengths.
+                      have Hni_lt_zip :
+                          ni.val < (proc'.header.inputs.keys.zip
+                            (CallArg.getInputExprs args)).length := ni.isLt
+                      have HzipLen : (proc'.header.inputs.keys.zip
+                            (CallArg.getInputExprs args)).length =
+                            min proc'.header.inputs.keys.length
+                                (CallArg.getInputExprs args).length :=
+                        List.length_zip
+                      have Hni_lt_min :
+                          ni.val < min proc'.header.inputs.keys.length
+                                       (CallArg.getInputExprs args).length := by
+                        rw [← HzipLen]; exact Hni_lt_zip
+                      have Hni_lt_inKeys :
+                          ni.val < proc'.header.inputs.keys.length := by
+                        have := Hni_lt_min
+                        omega
+                      have Hni_lt_inArgs :
+                          ni.val < (CallArg.getInputExprs args).length := by
+                        have := Hni_lt_min
+                        omega
+                      -- Project pair to its components positionally.
+                      have HpairGet :
+                          (proc'.header.inputs.keys.zip
+                              (CallArg.getInputExprs args))[ni.val]'Hni_lt_zip =
+                            (proc'.header.inputs.keys[ni.val]'Hni_lt_inKeys,
+                             (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs) :=
+                        List.getElem_zip
+                      have HpairEq_get :
+                          (proc'.header.inputs.keys.zip
+                              (CallArg.getInputExprs args))[ni.val]'Hni_lt_zip =
+                            pair := by
+                        have Hge : (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args)).get ni =
+                              (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args))[ni.val]'Hni_lt_zip := rfl
+                        rw [Hge] at Hni
+                        exact Hni
+                      have Hpair_shape :
+                          pair = (proc'.header.inputs.keys[ni.val]'Hni_lt_inKeys,
+                                  (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs) := by
+                        rw [← HpairEq_get]; exact HpairGet
+                      -- Bridge proc' = proc.
+                      have Hni_lt_inKeys' :
+                          ni.val < proc.header.inputs.keys.length := by
+                        have HEqLen : proc'.header.inputs.keys.length =
+                            proc.header.inputs.keys.length := by rw [HprocEq]
+                        omega
+                      have HpinKeys :
+                          proc'.header.inputs.keys[ni.val]'Hni_lt_inKeys =
+                            proc.header.inputs.keys[ni.val]'Hni_lt_inKeys' := by
+                        subst HprocEq; rfl
+                      -- Let `inputId := inputs.keys[ni.val]`.
+                      let inputId : Expression.Ident :=
+                        proc.header.inputs.keys[ni.val]'Hni_lt_inKeys'
+                      have HinputId_def : inputId =
+                          proc.header.inputs.keys[ni.val]'Hni_lt_inKeys' := rfl
+                      -- inputId ∈ inputs.keys.
+                      have HinputId_in : inputId ∈ proc.header.inputs.keys :=
+                        List.getElem_mem _
+                      -- inputId ∉ outputs.keys (via Hiodisj).
+                      have HinputId_notin_outs :
+                          inputId ∉ proc.header.outputs.keys :=
+                        fun h => Hiodisj HinputId_in h
+                      -- argExpr := the snd projection.
+                      let argExpr : Expression.Expr :=
+                        (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs
+                      have HargExpr_def : argExpr =
+                          (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs := rfl
+                      have HargExpr_in : argExpr ∈ CallArg.getInputExprs args :=
+                        List.getElem_mem _
+                      have Hpair_fst : pair.fst = inputId := by
+                        rw [Hpair_shape, HpinKeys]
+                      have Hpair_snd : pair.snd = argExpr := by
+                        rw [Hpair_shape]
+                      -- k = mkOld inputId.name.
+                      have Hk_mkOld : k = CoreIdent.mkOld inputId.name := by
+                        rw [Hk_eq, Hpair_fst]
+                      -- w = argExpr.
+                      have Hw_argExpr : w = argExpr := by
+                        rw [Hw_eq, Hpair_snd]
+                      -- Bridge inArgs ↔ getInputExprs args.
+                      have Hni_lt_inArgsCall : ni.val < inArgs.length := by
+                        have : (CallArg.getInputExprs args).length =
+                            inArgs.length := by rw [hCallArgsIn]
+                        rw [← this]
+                        exact Hni_lt_inArgs
+                      have HargExpr_eq_inArgs :
+                          argExpr = inArgs[ni.val]'Hni_lt_inArgsCall := by
+                        show (CallArg.getInputExprs args)[ni.val]'Hni_lt_inArgs =
+                              inArgs[ni.val]'Hni_lt_inArgsCall
+                        congr 1 <;> exact hCallArgsIn
+                      -- argVals length facts.
+                      have HinKeys_argVals_len :
+                          proc.header.inputs.keys.length = argVals.length :=
+                        InitStatesLength Hinitin
+                      have Hni_lt_argVals : ni.val < argVals.length := by
+                        rw [← HinKeys_argVals_len]
+                        exact Hni_lt_inKeys'
+                      -- ── RHS Step A: δ σO (mkOld inputId.name) = σO inputId
+                      --   via Hwf2 not-in-outputs branch. ──
+                      have HRHS_StepA :
+                          δ σO (Lambda.LExpr.fvar ()
+                                  (CoreIdent.mkOld inputId.name) none) =
+                            σO inputId := by
+                        simp only [WellFormedCoreEvalTwoState] at Hwf2
+                        have HH := Hwf2.2 proc.header.outputs.keys [] σAO σO σO
+                                    ⟨Hhav1, HInitVars_empty⟩ inputId
+                        exact HH.2 HinputId_notin_outs
+                      -- ── RHS Step B: σO inputId = σAO inputId
+                      --   via havoc preserves on non-outputs. ──
+                      have HRHS_StepB : σO inputId = σAO inputId := by
+                        have Hhav_up := HavocVarsUpdateStates Hhav1
+                        rcases Hhav_up with ⟨ovh, Hup_havoc⟩
+                        have HσO_eq : σO = updatedStates σAO
+                                        proc.header.outputs.keys ovh :=
+                          UpdateStatesUpdated Hup_havoc
+                        rw [HσO_eq, updatedStates_get_notin HinputId_notin_outs]
+                      -- ── RHS Step C: σAO inputId = σA inputId
+                      --   via Hinitout fall-through. ──
+                      have HRHS_StepC : σAO inputId = σA inputId :=
+                        initStates_get_notin Hinitout HinputId_notin_outs
+                      -- ── RHS Step D: σA inputId = some argVals[ni.val]
+                      --   via positional Hinitin. ──
+                      have HRHS_StepD : σA inputId =
+                          some (argVals[ni.val]'Hni_lt_argVals) := by
+                        have HrdA :
+                            ReadValues σA proc.header.inputs.keys argVals :=
+                          InitStatesReadValues Hinitin
+                        have Hget := readValues_get
+                          (σ:=σA) (ks:=proc.header.inputs.keys)
+                          (vs:=argVals) HrdA
+                          (i:=ni.val) (hi:=Hni_lt_inKeys')
+                          (hi':=Hni_lt_argVals)
+                        -- Hget : σA inputs.keys[ni.val] = some argVals[ni.val].
+                        exact Hget
+                      -- ── RHS Step E: argVals[ni.val] = δ σ argExpr
+                      --   via evalExpressions_get + hCallArgsIn. ──
+                      have HRHS_StepE :
+                          δ σ argExpr =
+                            some (argVals[ni.val]'Hni_lt_argVals) := by
+                        have Hev := evalExpressions_get Hevalargs
+                                      Hni_lt_inArgsCall Hni_lt_argVals
+                        -- Hev : δ σ (List.get inArgs ⟨ni.val, _⟩) =
+                        --   some (List.get argVals ⟨ni.val, _⟩).
+                        -- Bridge δ σ argExpr = δ σ inArgs[ni.val].
+                        have HargList :
+                            List.get inArgs ⟨ni.val, Hni_lt_inArgsCall⟩ =
+                              inArgs[ni.val]'Hni_lt_inArgsCall := rfl
+                        have HvalList :
+                            List.get argVals ⟨ni.val, Hni_lt_argVals⟩ =
+                              argVals[ni.val]'Hni_lt_argVals := rfl
+                        rw [HargList, HvalList] at Hev
+                        rw [HargExpr_eq_inArgs]
+                        exact Hev
+                      -- ── LHS Step F: δ σ_R1 argExpr = δ σ argExpr ──
+                      --
+                      -- For each v ∈ getVars argExpr:
+                      --   • v ∈ σ-defined (evalExpressions_isDefined_flatMap).
+                      --   • v ∉ outputs.keys (clause 5 of Hpre_post_lhs_disj).
+                      --   • v ∉ inputs.keys (clause 6).
+                      --   • v ∉ genOldIdents (¬ isOldTempIdent v ⇒ v ∉ genOldIdents).
+                      -- Hence σ_R1 v = σO v = σAO v = σA v = σ v.
+                      have HargIsDef : Imperative.isDefined σ
+                            (List.flatMap
+                              (Imperative.HasVarsPure.getVars (P:=Expression))
+                              inArgs) :=
+                        evalExpressions_isDefined_flatMap Hevalargs
+                      -- For v ∈ getVars argExpr, σ v is some (definedness lift).
+                      have HargExpr_in_argList :
+                          argExpr ∈ inArgs := by
+                        rw [HargExpr_eq_inArgs]
+                        exact List.getElem_mem _
+                      have HargExpr_in_callList :
+                          argExpr ∈ CallArg.getInputExprs args := HargExpr_in
+                      -- σ_R1 ↔ σ pointwise on argExpr's free vars.
+                      have Hσ_R1_eq_σ_argVars :
+                          ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                                  argExpr,
+                            σ_R1 v = σ v := by
+                        intro v Hv
+                        -- v ∈ flatMap getVars inArgs.
+                        have Hv_flat : v ∈
+                            List.flatMap
+                              (Imperative.HasVarsPure.getVars (P:=Expression))
+                              inArgs := by
+                          rw [List.mem_flatMap]
+                          refine ⟨argExpr, ?_, Hv⟩
+                          exact HargExpr_in_argList
+                        -- σ v is some.
+                        have Hσv_some : (σ v).isSome := HargIsDef v Hv_flat
+                        -- v not isOldTempIdent (via Hgenrel.oldFresh contrapositive).
+                        have HvNotOldTemp : ¬ isOldTempIdent v := by
+                          intro Hold
+                          have HNone := Hgenrel.oldFresh v Hold
+                          have HSome : ¬ (σ v).isNone := by
+                            simp only [Option.isNone_iff_eq_none,
+                                       ← Option.isSome_iff_ne_none]
+                            exact Hσv_some
+                          exact HSome HNone
+                        -- v ∉ genOldIdents.
+                        have HvNotGen : v ∉ genOldIdents := by
+                          intro Hg
+                          exact HvNotOldTemp
+                            ((List.Forall_mem_iff.mp HoldIdentsTemp) v Hg)
+                        -- v ∉ outputs.keys (clause 5).
+                        have HvNotOuts : v ∉ proc.header.outputs.keys :=
+                          HargVarsNotInOutKeys argExpr HargExpr_in_callList v Hv
+                        -- v ∉ inputs.keys (clause 6).
+                        have HvNotIns : v ∉ proc.header.inputs.keys :=
+                          HargVarsNotInInKeys argExpr HargExpr_in_callList v Hv
+                        -- σ_R1 v = σ v via the layered store-agreement
+                        -- helper.
+                        show updatedStates σO genOldIdents oldVals v = σ v
+                        exact σR1_eq_σ_for_notTouched
+                          Hinitin Hinitout Hhav1 HvNotIns HvNotOuts HvNotGen
+                      -- Lift to δ-eval via Hwfvars (fvarcongr-like).
+                      have Hwfvr := Hwfvars
+                      simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+                      have Hδ_R1_eq_δ_σ :
+                          δ σ_R1 argExpr = δ σ argExpr := by
+                        -- Argue by induction on the structure of argExpr,
+                        -- using Hwfc.fvarcongr at each fvar leaf.
+                        -- Use the existing helper `subst_fvars_eval_bridge`
+                        -- specialized to the empty substitution map.
+                        --
+                        -- Empty-substitution form: δ σ_R1 e = δ σ e when
+                        -- σ_R1 ↔ σ agree on every free var of e.
+                        have Hsurv :
+                            ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                                    argExpr,
+                              Map.find? (∅ : Map Expression.Ident
+                                            Expression.Expr) v = none →
+                              δ σ_R1 (Lambda.LExpr.fvar () v none) =
+                                δ σ (Lambda.LExpr.fvar () v none) := by
+                          intro v Hv _
+                          have HwfL :
+                              δ σ_R1 (Lambda.LExpr.fvar () v none) = σ_R1 v := by
+                            rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+                            simp [Imperative.HasFvar.getFvar]
+                          have HwfR :
+                              δ σ (Lambda.LExpr.fvar () v none) = σ v := by
+                            rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+                            simp [Imperative.HasFvar.getFvar]
+                          rw [HwfL, HwfR]
+                          exact Hσ_R1_eq_σ_argVars v Hv
+                        have Hsub :
+                            ∀ k' w', k' ∈ Imperative.HasVarsPure.getVars
+                                            (P:=Expression) argExpr →
+                              Map.find? (∅ : Map Expression.Ident
+                                            Expression.Expr) k' = some w' →
+                              δ σ_R1 w' =
+                                δ σ (Lambda.LExpr.fvar () k' none) := by
+                          intro k' w' _ Hf
+                          simp [Map.find?] at Hf
+                        have Hbridge :
+                            δ σ_R1 (Lambda.LExpr.substFvars argExpr
+                                      (∅ : Map Expression.Ident
+                                            Expression.Expr)) =
+                              δ σ argExpr :=
+                          subst_fvars_eval_bridge Hwfc Hwfvars Hwfval
+                            (sm:=∅)
+                            Hsurv Hsub
+                        -- substFvars argExpr ∅ = argExpr.
+                        have HsubstEmpty :
+                            Lambda.LExpr.substFvars argExpr
+                                (∅ : Map Expression.Ident Expression.Expr) =
+                              argExpr := by
+                          induction argExpr with
+                          | const _ _ => simp
+                          | op _ _ _ => simp
+                          | bvar _ _ => simp
+                          | fvar m name ty =>
+                            rw [Lambda.LExpr.substFvars_fvar_none m name ty]
+                            rfl
+                          | abs _ _ _ _ ih =>
+                            simp [Lambda.LExpr.substFvars_abs, ih]
+                          | quant _ _ _ _ _ _ trih bih =>
+                            simp [Lambda.LExpr.substFvars_quant, trih, bih]
+                          | app _ _ _ ih1 ih2 =>
+                            simp [Lambda.LExpr.substFvars_app, ih1, ih2]
+                          | eq _ _ _ ih1 ih2 =>
+                            simp [Lambda.LExpr.substFvars_eq, ih1, ih2]
+                          | ite _ _ _ _ ih1 ih2 ih3 =>
+                            simp [Lambda.LExpr.substFvars_ite,
+                                  ih1, ih2, ih3]
+                        rw [HsubstEmpty] at Hbridge
+                        exact Hbridge
+                      -- ── Conclude. ──
+                      -- δ σ_R1 w = δ σ_R1 argExpr (Hw_argExpr)
+                      --          = δ σ argExpr      (Hδ_R1_eq_δ_σ)
+                      --          = some argVals[i] (HRHS_StepE)
+                      --          = σA inputId       (HRHS_StepD.symm)
+                      --          = σAO inputId      (HRHS_StepC.symm)
+                      --          = σO inputId       (HRHS_StepB.symm)
+                      --          = δ σO (mkOld inputId.name)  (HRHS_StepA.symm)
+                      --          = δ σO (fvar k none) (Hk_mkOld.symm).
+                      rw [Hw_argExpr, Hδ_R1_eq_δ_σ, HRHS_StepE,
+                          ← HRHS_StepD, ← HRHS_StepC, ← HRHS_StepB,
+                          ← HRHS_StepA, ← Hk_mkOld]
+                    · -- guard = false branch — contradiction.
+                      have HH := Hpair_eq
+                      simp only [Hg] at HH
+                      exact absurd HH (by simp)
+                  -- ── HpostEval_bridge: per-entry σ_R1 eval bridge ──
+                  --
+                  -- For each `entry ∈ posts_filtered_L6`, we have
+                  -- `entry.snd.expr = substFvars c.expr oldSubst_L6` for
+                  -- some `c ∈ proc'.spec.postconditions.values` (via
+                  -- `HpostFiltered_corresp` after a positional bridge).
+                  -- Then by `subst_fvars_eval_bridge` (with HsurvBridge,
+                  -- HoldSubBridge ⊕ HinputSubBridge),
+                  --   δ σ_R1 entry.snd.expr = δ σO c.expr
+                  -- and `Hpost` gives `δ σO c.expr = some HasBool.tt`.
+                  -- The combined `Hsub` for the bridge case-splits via
+                  -- `Map.find?_append`.
+                  have HpostEval_bridge :
+                      ∀ entry : CoreLabel × Procedure.Check,
+                        entry ∈ posts_filtered_L6.toList →
+                        δ σ_R1 entry.snd.expr =
+                          some Imperative.HasBool.tt := by
+                    intro entry Hentry
+                    obtain ⟨c, Hc_in, Hentry_eq⟩ :=
+                      forall_post_filtered_decompose entry Hentry
+                    -- entry.snd.expr = substFvars c.expr oldSubst_L6.
+                    rw [Hentry_eq]
+                    -- Build the combined Hsub for subst_fvars_eval_bridge.
+                    have Hsub :
+                        ∀ k w, k ∈ Imperative.HasVarsPure.getVars
+                                      (P:=Expression) c.expr →
+                          Map.find? oldSubst_L6 k = some w →
+                          δ σ_R1 w =
+                            δ σO (Lambda.LExpr.fvar () k none) := by
+                      intro k w _Hk Hf
+                      -- oldSubst_L6 = createOldVarsSubst ... ++ inputOnlyOldSubst_L6.
+                      -- Map.find? on append: split via Map.find?_append.
+                      have HfApp := Hf
+                      show δ σ_R1 w =
+                          δ σO (Lambda.LExpr.fvar () k none)
+                      -- Case split on `Map.find? createOldVarsSubst k`.
+                      cases hfind : Map.find?
+                                      (Core.Transform.createOldVarsSubst
+                                        oldTripsCanonical_L6) k with
+                      | some v =>
+                        -- find? oldSubst_L6 k = some v (via Map.find?_append
+                        -- + this branch).  HfApp tells us it's `some w`,
+                        -- so v = w.
+                        have HH := Map.find?_append
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
+                        rw [hfind] at HH
+                        -- HH : (createOldVarsSubst ... ++ inputOnlyOldSubst_L6).find? k = some v
+                        have Hvw : v = w := by
+                          have HfApp_unfold :
+                            Map.find?
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6 ++
+                                  inputOnlyOldSubst_L6) k = some w := HfApp
+                          have Hcombined := HH.symm.trans HfApp_unfold
+                          exact Option.some_inj.mp Hcombined
+                        rw [← Hvw]
+                        exact HoldSubBridge k v hfind
+                      | none =>
+                        -- find? oldSubst_L6 k = find? inputOnlyOldSubst_L6 k.
+                        have HH := Map.find?_append
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
+                        rw [hfind] at HH
+                        -- HH : (createOldVarsSubst ... ++ inputOnlyOldSubst_L6).find? k =
+                        --       inputOnlyOldSubst_L6.find? k
+                        have HfApp_unfold :
+                            Map.find?
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6 ++
+                                  inputOnlyOldSubst_L6) k = some w := HfApp
+                        have Hin_some :
+                            Map.find? inputOnlyOldSubst_L6 k = some w :=
+                          HH.symm.trans HfApp_unfold
+                        exact HinputSubBridge k w Hin_some
+                    -- Build HsurvBridge specialized to c.
+                    have Hc_filtered : c ∈ postsFiltered.map (·.snd) ∨
+                                        c ∈ proc'.spec.postconditions.values := by
+                      right; exact Hc_in
+                    -- HsurvBridge wants entry ∈ postsFiltered, not c ∈ ...values.
+                    -- We need to find entry' ∈ postsFiltered with entry'.snd = c.
+                    -- For the bridge, we just need v ∈ getVars c.expr ⇒
+                    -- ¬ isOldTempIdent v, which holds via HpostVarsFresh.
+                    have HsurvBridgeC :
+                        ∀ v ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                                c.expr,
+                          Map.find? oldSubst_L6 v = none →
+                          δ σ_R1 (Lambda.LExpr.fvar () v none) =
+                            δ σO (Lambda.LExpr.fvar () v none) := by
+                      intro v Hv _Hnone
+                      -- v ∈ getVars c.expr where c ∈ proc'.spec.postconditions.values.
+                      -- Bridge to proc.spec.postconditions and apply HpostVarsFresh.
+                      have Hin_full :
+                          c.expr ∈ Procedure.Spec.getCheckExprs
+                                      proc.spec.postconditions := by
+                        simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                        refine ⟨c, ?_, rfl⟩
+                        rw [HprocEq] at Hc_in
+                        rw [ListMap.values_eq_map_snd]
+                        rw [ListMap.values_eq_map_snd] at Hc_in
+                        exact Hc_in
+                      have HvFresh := HpostVarsFresh c.expr Hin_full v Hv
+                      have HvNotOld : ¬ isOldTempIdent v := HvFresh.2.1
+                      have HvNotGen : v ∉ genOldIdents := by
+                        intro Hg
+                        exact HvNotOld
+                          ((List.Forall_mem_iff.mp HoldIdentsTemp) v Hg)
+                      have Hσ_R1_v_eq_σO :
+                          σ_R1 v = σO v := by
+                        show (updatedStates σO genOldIdents oldVals) v = σO v
+                        exact updatedStates_get_notin HvNotGen
+                      have Hwfvr := Hwfvars
+                      simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
+                      have HwfL :
+                          δ σ_R1 (Lambda.LExpr.fvar () v none) = σ_R1 v := by
+                        rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+                        simp [Imperative.HasFvar.getFvar]
+                      have HwfR :
+                          δ σO (Lambda.LExpr.fvar () v none) = σO v := by
+                        rw [Hwfvr (Lambda.LExpr.fvar () v none) v]
+                        simp [Imperative.HasFvar.getFvar]
+                      rw [HwfL, HwfR]
+                      exact Hσ_R1_v_eq_σO
+                    -- Apply subst_fvars_eval_bridge.
+                    have Hbridge :
+                        δ σ_R1 (Lambda.LExpr.substFvars c.expr oldSubst_L6) =
+                          δ σO c.expr :=
+                      subst_fvars_eval_bridge Hwfc Hwfvars Hwfval
+                        HsurvBridgeC Hsub
+                    rw [Hbridge]
+                    -- Now `δ σO c.expr = some HasBool.tt`.
+                    -- Bridge proc'.spec.postconditions ↔ proc.spec.postconditions.
+                    have Hin_full :
+                        c.expr ∈ Procedure.Spec.getCheckExprs
+                                    proc.spec.postconditions := by
+                      simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                      refine ⟨c, ?_, rfl⟩
+                      rw [HprocEq] at Hc_in
+                      rw [ListMap.values_eq_map_snd]
+                      rw [ListMap.values_eq_map_snd] at Hc_in
+                      exact Hc_in
+                    have Hin_contains :
+                        (Procedure.Spec.getCheckExprs
+                            proc.spec.postconditions).contains c.expr = true :=
+                      List.contains_iff_mem.mpr Hin_full
+                    exact (Hpost c.expr Hin_contains).2
+                  -- ── Hinv: residual invStores σ_R1 σ_havoc ──
+                  --
+                  -- For each entry ∈ posts_filtered_L6, derive
+                  --   invStores σ_R1 σ_havoc
+                  --     ((getVars entry.snd.expr).removeAll
+                  --        (filtered_ks ++ filtered_ks'))
+                  --
+                  -- Decompose v ∈ getVars (substFvars c.expr oldSubst_L6) via
+                  -- `getVars_substFvars_mem` into:
+                  --   (a) v ∈ getVars c.expr ∧ find? oldSubst_L6 v = none
+                  --   (b) ∃ k w, ... ∧ find? oldSubst_L6 k = some w ∧ v ∈ getVars w
+                  -- Sub-split (b) via Map.find?_append into createOldVarsSubst
+                  -- and inputOnlyOldSubst flavors.
+                  have HrdHavoc_olds_pos :
+                      ∀ (i : Nat) (Hi : i < genOldIdents.length)
+                        (Hi' : i < oldVals.length),
+                        σ_havoc (genOldIdents[i]'Hi) =
+                          some (oldVals[i]'Hi') := by
+                    -- σ_havoc reads genOldIdents → oldVals (overlay positional,
+                    -- via the appended-list semantics of updatedStates).
+                    -- Use readValues_updatedStatesSame after a splitting bridge
+                    -- (turn ++-unfold of updatedStates into a 2-layer form).
+                    have HoldValsLenE :
+                        genOldIdents.length = oldVals.length := by
+                      have := HoldValsLen
+                      have := HgenOldLen
+                      omega
+                    have HargLen : argTemps.length =
+                        argVals.length := by
+                      show argTemps.length = argVals.length
+                      simp [argTemps, List.unzip_eq_map, Hargtriplen]
+                    have HoutLen : outTemps.length =
+                        oVals.length := by
+                      have H1 : outTemps.length =
+                          outTrips.length := by
+                        simp [outTemps, List.unzip_eq_map]
+                      have H2 : lhs.length = oVals.length :=
+                        ReadValuesLength Hevalouts
+                      have H3 : outTrips.length = lhs.length := by
+                        have HE : outTrips.unzip.snd = lhs := by
+                          rw [Heqouts, hCallArgsLhs]
+                        have HEL : outTrips.unzip.snd.length = lhs.length := by
+                          rw [HE]
+                        have HE2 : outTrips.unzip.snd.length = outTrips.length := by
+                          simp [List.unzip_eq_map]
+                        omega
+                      omega
+                    -- Decompose σ_havoc as nested updatedStates.
+                    -- updatedStates σ (a ++ b) (va ++ vb) =
+                    --   updatedStates (updatedStates σ a va) b vb
+                    -- via List.zip_append (when |a|=|va|).
+                    have HzipAppend1 :
+                        (argTemps ++
+                            outTemps).zip
+                          (argVals ++ oVals) =
+                          (argTemps.zip argVals) ++
+                          (outTemps.zip oVals) :=
+                      List.zip_append HargLen
+                    have HzipAppend2 :
+                        ((argTemps ++
+                            outTemps) ++ genOldIdents).zip
+                          ((argVals ++ oVals) ++ oldVals) =
+                          ((argTemps ++
+                              outTemps).zip
+                            (argVals ++ oVals)) ++
+                          (genOldIdents.zip oldVals) := by
+                      apply List.zip_append
+                      simp [List.length_append]
+                      omega
+                    have HsplitOverlay :
+                        σ_havoc =
+                        updatedStates
+                          (updatedStates σ'
+                            (argTemps ++
+                              outTemps)
+                            (argVals ++ oVals))
+                          genOldIdents oldVals := by
+                      show updatedStates σ'
+                            (argTemps ++
+                              outTemps ++ genOldIdents)
+                            (argVals ++ oVals ++ oldVals) = _
+                      simp only [updatedStates]
+                      rw [HzipAppend2, updatedStates'App]
+                    have HrdHavoc :
+                        ReadValues σ_havoc genOldIdents oldVals := by
+                      rw [HsplitOverlay]
+                      exact readValues_updatedStatesSame HoldValsLenE HoldNd
+                    intro i Hi Hi'
+                    exact readValues_get HrdHavoc (i:=i) (hi:=Hi) (hi':=Hi')
+                  have Hinv :
+                      ∀ entry : CoreLabel × Procedure.Check,
+                        entry ∈ posts_filtered_L6.toList →
+                        Imperative.invStores σ_R1 σ_havoc
+                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                              entry.snd.expr).removeAll
+                            (filtered_ks ++ filtered_ks')) := by
+                    intro entry Hentry
+                    obtain ⟨c, Hc_in, Hentry_eq⟩ :=
+                      forall_post_filtered_decompose entry Hentry
+                    -- Open invStores.
+                    simp only [Imperative.invStores, Imperative.substStores]
+                    intros k1 k2 Hkin
+                    have Hk_eq := zip_self_eq Hkin
+                    subst Hk_eq
+                    have Hk1_in : k1 ∈
+                        (Imperative.HasVarsPure.getVars (P:=Expression)
+                          entry.snd.expr).removeAll
+                          (filtered_ks ++ filtered_ks') :=
+                      (List.of_mem_zip Hkin).1
+                    -- Decompose removeAll.
+                    have Hk1_inDecomp :
+                        k1 ∈ Imperative.HasVarsPure.getVars
+                                (P:=Expression) entry.snd.expr ∧
+                        k1 ∉ filtered_ks ++ filtered_ks' := by
+                      simp only [List.removeAll, List.mem_filter,
+                                 List.elem_eq_mem, Bool.not_eq_true',
+                                 decide_eq_false_iff_not] at Hk1_in
+                      exact Hk1_in
+                    obtain ⟨Hk1_pre, Hk1_notin_combined⟩ := Hk1_inDecomp
+                    -- Decompose `k1 ∉ (outputs ++ filtered_inputs) ++
+                    -- (lhs ++ filtered_argTemps)` into 4 leaf facts.
+                    obtain ⟨Hk1_notin_outs, Hk1_notin_filtIn,
+                            Hk1_notin_lhs, Hk1_notin_filtArgT⟩ :=
+                      notin_append4 Hk1_notin_combined
+                    -- entry.snd.expr = substFvars c.expr oldSubst_L6.
+                    rw [Hentry_eq] at Hk1_pre
+                    -- Decompose k1 ∈ getVars (substFvars c.expr oldSubst_L6).
+                    rcases getVars_substFvars_mem Hk1_pre with
+                      Hclass_a | ⟨k, w, Hk_in, Hf, Hv_in⟩
+                    · -- ── Class (a): k1 ∈ getVars c.expr ∧ find? oldSubst_L6 k1 = none ──
+                      obtain ⟨Hk1_post, _Hf_none⟩ := Hclass_a
+                      -- HpostsVarsFresh_orig: ¬tmp_, ¬old_, k1 ∉ lhs
+                      -- (need to bridge proc' = proc).
+                      -- Find an entry corresponding to c via HpostVarsFresh.
+                      have Hin_full :
+                          c.expr ∈ Procedure.Spec.getCheckExprs
+                                      proc.spec.postconditions := by
+                        simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                        refine ⟨c, ?_, rfl⟩
+                        rw [HprocEq] at Hc_in
+                        rw [ListMap.values_eq_map_snd]
+                        rw [ListMap.values_eq_map_snd] at Hc_in
+                        exact Hc_in
+                      have HfreshK := HpostVarsFresh c.expr Hin_full k1 Hk1_post
+                      have Hk1_notTemp : ¬ isTempIdent k1 := HfreshK.1
+                      have Hk1_notOld : ¬ isOldTempIdent k1 := HfreshK.2.1
+                      -- k1 ∉ argTemps (tmp_).
+                      have Hk1_notin_argT :
+                          k1 ∉ argTemps := fun h =>
+                        Hk1_notTemp ((List.Forall_mem_iff.mp HargTemp) k1 h)
+                      have Hk1_notin_outT :
+                          k1 ∉ outTemps := fun h =>
+                        Hk1_notTemp ((List.Forall_mem_iff.mp HoutTemp) k1 h)
+                      have Hk1_notin_genOld :
+                          k1 ∉ genOldIdents := fun h =>
+                        Hk1_notOld
+                          ((List.Forall_mem_iff.mp HoldIdentsTemp) k1 h)
+                      -- k1 ∉ inputs.keys (since k1 ∉ outputs and k1 ∉ filtered_inputs).
+                      have Hk1_notin_ins :
+                          k1 ∉ proc.header.inputs.keys := by
+                        intro h
+                        -- k1 ∈ inputs.keys, k1 ∉ outputs.keys ⇒ k1 ∈ filtered_inputs.
+                        rcases List.mem_iff_get.mp h with ⟨n, Hn⟩
+                        have Hn_lt_in : n.val < proc.header.inputs.keys.length := n.isLt
+                        have Hn_lt_argT : n.val < argTemps.length := by
+                          rw [← HinKeys_argTemps_len]; exact Hn_lt_in
+                        have HkE :
+                            proc.header.inputs.keys[n.val]'Hn_lt_in = k1 := by
+                          have HEget := Hn
+                          have :
+                              proc.header.inputs.keys[n.val]'Hn_lt_in =
+                                proc.header.inputs.keys.get
+                                  ⟨n.val, Hn_lt_in⟩ := rfl
+                          rw [this]; exact HEget
+                        have Hpair_in_zip :
+                            (k1, argTemps[n.val]'Hn_lt_argT) ∈
+                              proc.header.inputs.keys.zip argTemps := by
+                          rw [← HkE]
+                          apply List.mem_iff_get.mpr
+                          have HzL : (proc.header.inputs.keys.zip argTemps).length =
+                              min proc.header.inputs.keys.length argTemps.length :=
+                            List.length_zip
+                          have Hn_lt_zip :
+                              n.val < (proc.header.inputs.keys.zip argTemps).length := by
+                            rw [HzL]
+                            have := HinKeys_argTemps_len
+                            omega
+                          refine ⟨⟨n.val, Hn_lt_zip⟩, ?_⟩
+                          show (proc.header.inputs.keys.zip argTemps)[n.val]'_ = _
+                          exact List.getElem_zip
+                        have Hpair_in_filtAS :
+                            (k1, argTemps[n.val]'Hn_lt_argT) ∈
+                              filtered_argSubst := by
+                          apply List.mem_filter.mpr
+                          refine ⟨Hpair_in_zip, ?_⟩
+                          simp only [decide_not, Bool.not_eq_eq_eq_not,
+                                     Bool.not_true, decide_eq_false_iff_not,
+                                     List.contains_iff_mem]
+                          exact Hk1_notin_outs
+                        have Hk1_in_unzip :
+                            k1 ∈ filtered_inputs := by
+                          show k1 ∈ filtered_argSubst.unzip.fst
+                          simp only [List.unzip_eq_map, List.mem_map]
+                          refine ⟨(k1, argTemps[n.val]'Hn_lt_argT), Hpair_in_filtAS, rfl⟩
+                        exact Hk1_notin_filtIn Hk1_in_unzip
+                      -- σ_R1 k1 = σ k1 via the layered store-agreement
+                      -- helper, then chain through σ' and σ_havoc.
+                      have HσR1_σ :
+                          updatedStates σO genOldIdents oldVals k1 = σ k1 :=
+                        σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+                          Hk1_notin_ins Hk1_notin_outs Hk1_notin_genOld
+                      -- σ k1 = σ' k1 (k1 ∉ lhs; Hupdate).
+                      have H5 : σ k1 = σ' k1 := by
+                        rw [Hσ'_eq, updatedStates_get_notin Hk1_notin_lhs]
+                      -- σ' k1 = σ_havoc k1 (k1 ∉ argT/outT/genOld).
+                      have Hk1_notin_layered :
+                          k1 ∉ argTemps ++
+                                outTemps ++ genOldIdents := by
+                        intro h
+                        rcases List.mem_append.mp h with h | h
+                        · rcases List.mem_append.mp h with h | h
+                          · exact Hk1_notin_argT h
+                          · exact Hk1_notin_outT h
+                        · exact Hk1_notin_genOld h
+                      have H6 : σ' k1 = σ_havoc k1 := by
+                        show σ' k1 =
+                          updatedStates σ'
+                            (argTemps ++
+                              outTemps ++ genOldIdents)
+                            (argVals ++ oVals ++ oldVals) k1
+                        rw [updatedStates_get_notin Hk1_notin_layered]
+                      show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
+                      rw [HσR1_σ, H5, H6]
+                    · -- ── Class (b): k1 ∈ getVars w for some (k, w) ∈ oldSubst_L6 ──
+                      -- Split via Map.find?_append.
+                      cases hfind : Map.find?
+                                      (Core.Transform.createOldVarsSubst
+                                        oldTripsCanonical_L6) k with
+                      | some w' =>
+                        -- (b1) createOldVarsSubst flavor.
+                        have HH := Map.find?_append
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
+                        rw [hfind] at HH
+                        have Hf_unfold :
+                            Map.find?
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6 ++
+                                  inputOnlyOldSubst_L6) k = some w :=
+                          Hf
+                        have Hw'w : w' = w :=
+                          Option.some_inj.mp (HH.symm.trans Hf_unfold)
+                        -- Extract positional witness from createOldVarsSubst.
+                        have Hkw_mem_list :
+                            List.Mem (k, w')
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6) :=
+                          Map.find?_mem _ k w' hfind
+                        -- Same shape extraction as HoldSubBridge.
+                        have HsubstUnfold :
+                            Core.Transform.createOldVarsSubst
+                              oldTripsCanonical_L6 =
+                            oldTripsCanonical_L6.map
+                              (fun trip =>
+                                Core.Transform.createOldVarsSubst.go trip) := rfl
+                        rw [HsubstUnfold] at Hkw_mem_list
+                        rcases List.mem_map.mp Hkw_mem_list with
+                          ⟨trip', Htrip_in', Htrip_eq'⟩
+                        rcases List.mem_iff_get.mp Htrip_in' with ⟨ni, Hni⟩
+                        have HCanonLen :
+                            oldTripsCanonical_L6.length = oldVars.length := by
+                          show ((((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                            oldGVars_L6).map _).length = oldVars.length
+                          have HoldGLen :
+                              oldGVars_L6.length = oldVars_L6.length := by
+                            show (oldVars_L6.map _).length = oldVars_L6.length
+                            simp [List.length_map]
+                          have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
+                          simp only [List.length_map, List.length_zip,
+                                     HgenOldLen, HoldTysLen, HoldGLen,
+                                     HoldVars_L6_eq]
+                          omega
+                        have Hni_lt : ni.val < oldVars.length := by
+                          have HiLt := ni.isLt
+                          omega
+                        have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
+                        have HziptyLen :
+                            (genOldIdents.zip oldTys).length = oldVars_L6.length := by
+                          rw [HoldVars_L6_eq]
+                          simp [List.length_zip, HgenOldLen, HoldTysLen]
+                        have Hni_lt_zipty :
+                            ni.val < (genOldIdents.zip oldTys).length := by
+                          rw [HziptyLen]; exact Hni_lt
+                        have Hni_lt_oldGVars_L6 :
+                            ni.val < oldGVars_L6.length := by
+                          show ni.val < (oldVars_L6.map _).length
+                          simp [List.length_map]; exact Hni_lt
+                        have Hni_lt_oldVars_L6 :
+                            ni.val < oldVars_L6.length := Hni_lt
+                        have Hni_lt_genOld : ni.val < genOldIdents.length := by
+                          have := HgenOldLen; omega
+                        have Hni_lt_oldTys : ni.val < oldTys.length := by
+                          have := HoldTysLen; omega
+                        have Hni_lt_canon :
+                            ni.val < oldTripsCanonical_L6.length := ni.isLt
+                        have HtripGet :
+                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon =
+                              ((genOldIdents[ni.val]'Hni_lt_genOld,
+                                oldTys[ni.val]'Hni_lt_oldTys),
+                               oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
+                          show (((((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                            oldGVars_L6).map _)[ni.val]'Hni_lt_canon) = _
+                          rw [List.getElem_map]
+                          have HouterLt :
+                              ni.val < (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                                  oldGVars_L6).length := by
+                            simp only [List.length_zip]
+                            omega
+                          have Houter :
+                              (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                                  oldGVars_L6)[ni.val]'HouterLt =
+                                ((((genOldIdents.zip oldTys).zip oldVars_L6))[ni.val]'(by
+                                  simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6),
+                                 oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) :=
+                            List.getElem_zip
+                          rw [Houter]
+                          have Hmid :
+                              ((genOldIdents.zip oldTys).zip oldVars_L6)[ni.val]'(by
+                                simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6) =
+                                ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
+                                 oldVars_L6[ni.val]'Hni_lt_oldVars_L6) :=
+                            List.getElem_zip
+                          rw [Hmid]
+                          have Hinner :
+                              (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
+                                (genOldIdents[ni.val]'Hni_lt_genOld,
+                                 oldTys[ni.val]'Hni_lt_oldTys) :=
+                            List.getElem_zip
+                          rw [Hinner]
+                        have HtripEq_get :
+                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon = trip' := by
+                          have HhE := Hni
+                          have HgetEq : oldTripsCanonical_L6.get ni =
+                                  oldTripsCanonical_L6[ni.val]'Hni_lt_canon :=
+                            rfl
+                          rw [HgetEq] at HhE
+                          exact HhE
+                        have Htrip_shape :
+                            trip' = ((genOldIdents[ni.val]'Hni_lt_genOld,
+                                     oldTys[ni.val]'Hni_lt_oldTys),
+                                    oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
+                          rw [← HtripEq_get]; exact HtripGet
+                        have HgoEq :
+                            Core.Transform.createOldVarsSubst.go trip' =
+                              (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
+                               Core.Transform.createFvar
+                                 (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+                          rw [Htrip_shape]
+                          rfl
+                        have HkwEq :
+                            (k, w') = (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
+                                       Core.Transform.createFvar
+                                         (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+                          rw [← HgoEq]; exact Htrip_eq'.symm
+                        have Hw'_eq :
+                            w' = Core.Transform.createFvar
+                                  (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                          ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
+                        have Hw_eq : w =
+                            Core.Transform.createFvar
+                              (genOldIdents[ni.val]'Hni_lt_genOld) := by
+                          rw [← Hw'w]; exact Hw'_eq
+                        -- v ∈ getVars w; w = createFvar genOldIdents[ni].
+                        rw [Hw_eq] at Hv_in
+                        have Hv_eq_gen :
+                            k1 = genOldIdents[ni.val]'Hni_lt_genOld := by
+                          have Hv_in' :
+                              k1 ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                                    (Core.Transform.createFvar
+                                      (genOldIdents[ni.val]'Hni_lt_genOld)) := Hv_in
+                          show k1 = _
+                          simp [Core.Transform.createFvar,
+                                Imperative.HasVarsPure.getVars,
+                                Lambda.LExpr.LExpr.getVars] at Hv_in'
+                          exact Hv_in'
+                        -- σ_R1 k1 = oldVals[ni.val]; σ_havoc k1 = oldVals[ni.val].
+                        have Hni_lt_oldVals :
+                            ni.val < oldVals.length := by
+                          have := HoldValsLen; omega
+                        have HoldValsLenE' :
+                            genOldIdents.length = oldVals.length := by
+                          have := HoldValsLen
+                          have := HgenOldLen
+                          omega
+                        have HrdR1_olds :
+                            ReadValues σ_R1 genOldIdents oldVals := by
+                          show ReadValues
+                            (updatedStates σO genOldIdents oldVals)
+                            genOldIdents oldVals
+                          exact readValues_updatedStatesSame
+                                  HoldValsLenE' HoldNd
+                        have Hσ_R1_v :
+                            σ_R1 (genOldIdents[ni.val]'Hni_lt_genOld) =
+                              some (oldVals[ni.val]'Hni_lt_oldVals) :=
+                          readValues_get HrdR1_olds
+                            (i:=ni.val) (hi:=Hni_lt_genOld) (hi':=Hni_lt_oldVals)
+                        have Hσ_havoc_v :
+                            σ_havoc (genOldIdents[ni.val]'Hni_lt_genOld) =
+                              some (oldVals[ni.val]'Hni_lt_oldVals) :=
+                          HrdHavoc_olds_pos ni.val Hni_lt_genOld Hni_lt_oldVals
+                        rw [Hv_eq_gen, Hσ_R1_v, Hσ_havoc_v]
+                      | none =>
+                        -- (b2) inputOnlyOldSubst flavor.
+                        have HH := Map.find?_append
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k
+                        rw [hfind] at HH
+                        have Hf_unfold :
+                            Map.find?
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6 ++
+                                  inputOnlyOldSubst_L6) k = some w := Hf
+                        have Hin_some :
+                            Map.find? inputOnlyOldSubst_L6 k = some w :=
+                          HH.symm.trans Hf_unfold
+                        -- Extract argExpr from inputOnlyOldSubst.
+                        have Hkw_mem_list :
+                            List.Mem (k, w) inputOnlyOldSubst_L6 :=
+                          Map.find?_mem _ k w Hin_some
+                        rcases List.mem_filterMap.mp Hkw_mem_list with
+                          ⟨pair, Hpair_in, Hpair_eq⟩
+                        by_cases Hg :
+                            (!(ListMap.keys proc'.header.outputs).contains pair.fst &&
+                             (proc'.spec.postconditions.values.map
+                               Procedure.Check.expr).any
+                               (fun e => Lambda.LExpr.freeVars e |>.any
+                                 (fun (id, _) => id ==
+                                   CoreIdent.mkOld pair.fst.name))) = true
+                        · -- guard = true.
+                          have Hpair_eq' :
+                              (CoreIdent.mkOld pair.fst.name, pair.snd) = (k, w) := by
+                            have HH' := Hpair_eq
+                            simp only [Hg, if_true] at HH'
+                            exact (Option.some_inj.mp HH')
+                          have Hw_eq : w = pair.snd :=
+                            ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').2.symm
+                          -- pair ∈ inputs.keys.zip (getInputExprs args).
+                          rcases List.mem_iff_get.mp Hpair_in with ⟨ni2, Hni2⟩
+                          have Hni2_lt_zip :
+                              ni2.val < (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args)).length := ni2.isLt
+                          have HzipLen :
+                              (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args)).length =
+                              min proc'.header.inputs.keys.length
+                                  (CallArg.getInputExprs args).length :=
+                            List.length_zip
+                          have Hni2_lt_min :
+                              ni2.val < min proc'.header.inputs.keys.length
+                                           (CallArg.getInputExprs args).length := by
+                            rw [← HzipLen]; exact Hni2_lt_zip
+                          have Hni2_lt_inArgs :
+                              ni2.val < (CallArg.getInputExprs args).length := by
+                            have := Hni2_lt_min; omega
+                          have Hni2_lt_inKeys :
+                              ni2.val < proc'.header.inputs.keys.length := by
+                            have := Hni2_lt_min; omega
+                          -- Extract argExpr.
+                          have HpairGet :
+                              (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args))[ni2.val]'Hni2_lt_zip =
+                                (proc'.header.inputs.keys[ni2.val]'Hni2_lt_inKeys,
+                                 (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs) :=
+                            List.getElem_zip
+                          have HpairEq_get :
+                              (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args))[ni2.val]'Hni2_lt_zip =
+                                pair := by
+                            have Hge :
+                                (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args)).get ni2 =
+                              (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args))[ni2.val]'Hni2_lt_zip := rfl
+                            rw [Hge] at Hni2
+                            exact Hni2
+                          have Hpair_shape :
+                              pair = (proc'.header.inputs.keys[ni2.val]'Hni2_lt_inKeys,
+                                      (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs) := by
+                            rw [← HpairEq_get]; exact HpairGet
+                          have Hpair_snd : pair.snd =
+                              (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs := by
+                            rw [Hpair_shape]
+                          -- argExpr = pair.snd.
+                          have HargExpr_def :
+                              w = (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs := by
+                            rw [Hw_eq, Hpair_snd]
+                          have HargExpr_in :
+                              w ∈ CallArg.getInputExprs args := by
+                            rw [HargExpr_def]; exact List.getElem_mem _
+                          -- k1 ∈ getVars w (= argExpr).  By clauses 5/6:
+                          have Hk1_notin_outs' :
+                              k1 ∉ proc.header.outputs.keys :=
+                            HargVarsNotInOutKeys w HargExpr_in k1 Hv_in
+                          have Hk1_notin_ins' :
+                              k1 ∉ proc.header.inputs.keys :=
+                            HargVarsNotInInKeys w HargExpr_in k1 Hv_in
+                          -- k1 ∈ σ-defined.
+                          have HargIsDef :
+                              Imperative.isDefined σ
+                                (List.flatMap
+                                  (Imperative.HasVarsPure.getVars (P:=Expression))
+                                  inArgs) :=
+                            evalExpressions_isDefined_flatMap Hevalargs
+                          have Hk1_in_inArgs : w ∈ inArgs := by
+                            -- w = pair.snd = (CallArg.getInputExprs args)[ni2.val].
+                            -- Bridge to inArgs via hCallArgsIn (which says
+                            -- CallArg.getInputExprs args = inArgs).
+                            have Hni2_lt_inArgsCall : ni2.val < inArgs.length := by
+                              have : (CallArg.getInputExprs args).length =
+                                  inArgs.length := by rw [hCallArgsIn]
+                              rw [← this]
+                              exact Hni2_lt_inArgs
+                            have HargExpr_eq_inArgs :
+                                w = inArgs[ni2.val]'Hni2_lt_inArgsCall := by
+                              rw [HargExpr_def]
+                              show (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs =
+                                    inArgs[ni2.val]'Hni2_lt_inArgsCall
+                              congr 1 <;> exact hCallArgsIn
+                            rw [HargExpr_eq_inArgs]
+                            exact List.getElem_mem _
+                          have Hk1_flat :
+                              k1 ∈ List.flatMap
+                                    (Imperative.HasVarsPure.getVars (P:=Expression))
+                                    inArgs := by
+                            rw [List.mem_flatMap]
+                            exact ⟨w, Hk1_in_inArgs, Hv_in⟩
+                          have Hk1_σ_some : (σ k1).isSome := HargIsDef k1 Hk1_flat
+                          -- k1 not isOldTempIdent.
+                          have Hk1_notOld' : ¬ isOldTempIdent k1 := by
+                            intro Hold
+                            have HNone := Hgenrel.oldFresh k1 Hold
+                            have HSome : ¬ (σ k1).isNone := by
+                              simp only [Option.isNone_iff_eq_none,
+                                         ← Option.isSome_iff_ne_none]
+                              exact Hk1_σ_some
+                            exact HSome HNone
+                          -- k1 not isTempIdent.  Via isNotDefined of argTemps/outTemps.
+                          have Hk1_notin_argT' :
+                              k1 ∉ argTemps := by
+                            intro h
+                            have := HndefArg_σ k1 h
+                            rw [this] at Hk1_σ_some
+                            simp at Hk1_σ_some
+                          have Hk1_notin_outT' :
+                              k1 ∉ outTemps := by
+                            intro h
+                            have := HndefOut_σ k1 h
+                            rw [this] at Hk1_σ_some
+                            simp at Hk1_σ_some
+                          have Hk1_notin_genOld' :
+                              k1 ∉ genOldIdents := by
+                            intro h
+                            have := HndefOld_σ k1 h
+                            rw [this] at Hk1_σ_some
+                            simp at Hk1_σ_some
+                          -- σ_R1 k1 = σ_havoc k1 via the layered store-
+                          -- agreement helper, plus the σ → σ' → σ_havoc tail.
+                          have HσR1_σ :
+                              updatedStates σO genOldIdents oldVals k1 = σ k1 :=
+                            σR1_eq_σ_for_notTouched Hinitin Hinitout Hhav1
+                              Hk1_notin_ins' Hk1_notin_outs' Hk1_notin_genOld'
+                          have H5 : σ k1 = σ' k1 := by
+                            rw [Hσ'_eq, updatedStates_get_notin Hk1_notin_lhs]
+                          have Hk1_notin_layered :
+                              k1 ∉ argTemps ++
+                                    outTemps ++ genOldIdents := by
+                            intro h
+                            rcases List.mem_append.mp h with h | h
+                            · rcases List.mem_append.mp h with h | h
+                              · exact Hk1_notin_argT' h
+                              · exact Hk1_notin_outT' h
+                            · exact Hk1_notin_genOld' h
+                          have H6 : σ' k1 = σ_havoc k1 := by
+                            show σ' k1 =
+                              updatedStates σ'
+                                (argTemps ++
+                                  outTemps ++ genOldIdents)
+                                (argVals ++ oVals ++ oldVals) k1
+                            rw [updatedStates_get_notin Hk1_notin_layered]
+                          show updatedStates σO genOldIdents oldVals k1 = σ_havoc k1
+                          rw [HσR1_σ, H5, H6]
+                        · -- guard = false: contradiction.
+                          have HH' := Hpair_eq
+                          simp only [Hg] at HH'
+                          exact absurd HH' (by simp)
+                  -- ── Hpred_disj: filtered_ks' disjoint from entry's vars ──
+                  --
+                  -- For each entry, show
+                  --   filtered_ks'.Disjoint (getVars entry.snd.expr)
+                  -- where filtered_ks' = lhs ++ filtered_argTemps.
+                  --
+                  -- Decompose the entry's free vars via getVars_substFvars_mem
+                  -- and case-split as in Hinv.
+                  have HfiltArgT_sub_argT :
+                      ∀ x ∈ filtered_argTemps, x ∈ argTemps := by
+                    intro x Hx
+                    show x ∈ argTemps
+                    -- filtered_argTemps = filtered_argSubst.unzip.snd ⊆ argTemps.
+                    have Hx' : x ∈ filtered_argSubst.unzip.snd := Hx
+                    simp only [List.unzip_eq_map, List.mem_map] at Hx'
+                    rcases Hx' with ⟨pair, Hpair_mem, Hpair_snd⟩
+                    have Hpair_in_zip := (List.mem_filter.mp Hpair_mem).1
+                    -- pair ∈ inputs.keys.zip argTemps ⇒ pair.snd ∈ argTemps.
+                    have Hsnd_in :
+                        pair.snd ∈ argTemps :=
+                      (List.of_mem_zip Hpair_in_zip).2
+                    rw [← Hpair_snd]; exact Hsnd_in
+                  have Hpred_disj :
+                      ∀ entry : CoreLabel × Procedure.Check,
+                        entry ∈ posts_filtered_L6.toList →
+                        filtered_ks'.Disjoint
+                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                            entry.snd.expr) := by
+                    intro entry Hentry
+                    obtain ⟨c, Hc_in, Hentry_eq⟩ :=
+                      forall_post_filtered_decompose entry Hentry
+                    intro x Hin1 Hin2
+                    -- x ∈ filtered_ks' = lhs ++ filtered_argTemps.
+                    -- x ∈ entry.snd.expr.getVars.
+                    rw [Hentry_eq] at Hin2
+                    rcases getVars_substFvars_mem Hin2 with
+                      Hclass_a | ⟨k', w, Hk_in, Hf, Hv_in⟩
+                    · -- ── Class (a): x ∈ getVars c.expr ──
+                      obtain ⟨Hx_post, _Hf_none⟩ := Hclass_a
+                      -- HpostsVarsFresh_orig: ¬tmp_, ¬old_, x ∉ lhs.
+                      have Hin_full :
+                          c.expr ∈ Procedure.Spec.getCheckExprs
+                                      proc.spec.postconditions := by
+                        simp only [Procedure.Spec.getCheckExprs, List.mem_map]
+                        refine ⟨c, ?_, rfl⟩
+                        rw [HprocEq] at Hc_in
+                        rw [ListMap.values_eq_map_snd]
+                        rw [ListMap.values_eq_map_snd] at Hc_in
+                        exact Hc_in
+                      have HfreshK := HpostVarsFresh c.expr Hin_full x Hx_post
+                      have Hx_notTemp : ¬ isTempIdent x := HfreshK.1
+                      have Hx_notLhs : x ∉ CallArg.getLhs args := HfreshK.2.2
+                      -- Show contradiction.
+                      cases List.mem_append.mp Hin1 with
+                      | inl Hx_lhs =>
+                        rw [hCallArgsLhs] at Hx_notLhs
+                        exact Hx_notLhs Hx_lhs
+                      | inr Hx_filtArgT =>
+                        have Hx_argT : x ∈ argTemps :=
+                          HfiltArgT_sub_argT x Hx_filtArgT
+                        exact Hx_notTemp
+                          ((List.Forall_mem_iff.mp HargTemp) x Hx_argT)
+                    · -- ── Class (b): x ∈ getVars w for some (k', w) ∈ oldSubst_L6 ──
+                      cases hfind : Map.find?
+                                      (Core.Transform.createOldVarsSubst
+                                        oldTripsCanonical_L6) k' with
+                      | some w' =>
+                        -- (b1) createOldVarsSubst: x = genOldIdents[i].
+                        have HH := Map.find?_append
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k'
+                        rw [hfind] at HH
+                        have Hf_unfold :
+                            Map.find?
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6 ++
+                                  inputOnlyOldSubst_L6) k' = some w :=
+                          Hf
+                        have Hw'w : w' = w :=
+                          Option.some_inj.mp (HH.symm.trans Hf_unfold)
+                        -- Extract: w = createFvar genOldIdents[i].
+                        have Hkw_mem_list :
+                            List.Mem (k', w')
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6) :=
+                          Map.find?_mem _ k' w' hfind
+                        have HsubstUnfold :
+                            Core.Transform.createOldVarsSubst
+                              oldTripsCanonical_L6 =
+                            oldTripsCanonical_L6.map
+                              (fun trip =>
+                                Core.Transform.createOldVarsSubst.go trip) := rfl
+                        rw [HsubstUnfold] at Hkw_mem_list
+                        rcases List.mem_map.mp Hkw_mem_list with
+                          ⟨trip', Htrip_in', Htrip_eq'⟩
+                        rcases List.mem_iff_get.mp Htrip_in' with ⟨ni, Hni⟩
+                        have HCanonLen :
+                            oldTripsCanonical_L6.length = oldVars.length := by
+                          show ((((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                            oldGVars_L6).map _).length = oldVars.length
+                          have HoldGLen :
+                              oldGVars_L6.length = oldVars_L6.length := by
+                            show (oldVars_L6.map _).length = oldVars_L6.length
+                            simp [List.length_map]
+                          have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
+                          simp only [List.length_map, List.length_zip,
+                                     HgenOldLen, HoldTysLen, HoldGLen,
+                                     HoldVars_L6_eq]
+                          omega
+                        have Hni_lt : ni.val < oldVars.length := by
+                          have HiLt := ni.isLt
+                          omega
+                        have Hni_lt_genOld : ni.val < genOldIdents.length := by
+                          have := HgenOldLen; omega
+                        have Hni_lt_oldTys : ni.val < oldTys.length := by
+                          have := HoldTysLen; omega
+                        have HoldVars_L6_eq : oldVars_L6 = oldVars := rfl
+                        have HziptyLen :
+                            (genOldIdents.zip oldTys).length = oldVars_L6.length := by
+                          rw [HoldVars_L6_eq]
+                          simp [List.length_zip, HgenOldLen, HoldTysLen]
+                        have Hni_lt_zipty :
+                            ni.val < (genOldIdents.zip oldTys).length := by
+                          rw [HziptyLen]; exact Hni_lt
+                        have Hni_lt_oldGVars_L6 :
+                            ni.val < oldGVars_L6.length := by
+                          show ni.val < (oldVars_L6.map _).length
+                          simp [List.length_map]; exact Hni_lt
+                        have Hni_lt_oldVars_L6 :
+                            ni.val < oldVars_L6.length := Hni_lt
+                        have Hni_lt_canon :
+                            ni.val < oldTripsCanonical_L6.length := ni.isLt
+                        have HtripGet :
+                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon =
+                              ((genOldIdents[ni.val]'Hni_lt_genOld,
+                                oldTys[ni.val]'Hni_lt_oldTys),
+                               oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
+                          show (((((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                            oldGVars_L6).map _)[ni.val]'Hni_lt_canon) = _
+                          rw [List.getElem_map]
+                          have HouterLt :
+                              ni.val < (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                                  oldGVars_L6).length := by
+                            simp only [List.length_zip]; omega
+                          have Houter :
+                              (((genOldIdents.zip oldTys).zip oldVars_L6).zip
+                                  oldGVars_L6)[ni.val]'HouterLt =
+                                ((((genOldIdents.zip oldTys).zip oldVars_L6))[ni.val]'(by
+                                  simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6),
+                                 oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) :=
+                            List.getElem_zip
+                          rw [Houter]
+                          have Hmid :
+                              ((genOldIdents.zip oldTys).zip oldVars_L6)[ni.val]'(by
+                                simp [List.length_zip, HziptyLen]; exact Hni_lt_oldVars_L6) =
+                                ((genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty,
+                                 oldVars_L6[ni.val]'Hni_lt_oldVars_L6) :=
+                            List.getElem_zip
+                          rw [Hmid]
+                          have Hinner :
+                              (genOldIdents.zip oldTys)[ni.val]'Hni_lt_zipty =
+                                (genOldIdents[ni.val]'Hni_lt_genOld,
+                                 oldTys[ni.val]'Hni_lt_oldTys) :=
+                            List.getElem_zip
+                          rw [Hinner]
+                        have HtripEq_get :
+                            oldTripsCanonical_L6[ni.val]'Hni_lt_canon = trip' := by
+                          have HhE := Hni
+                          have HgetEq : oldTripsCanonical_L6.get ni =
+                                  oldTripsCanonical_L6[ni.val]'Hni_lt_canon :=
+                            rfl
+                          rw [HgetEq] at HhE
+                          exact HhE
+                        have Htrip_shape :
+                            trip' = ((genOldIdents[ni.val]'Hni_lt_genOld,
+                                     oldTys[ni.val]'Hni_lt_oldTys),
+                                    oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6) := by
+                          rw [← HtripEq_get]; exact HtripGet
+                        have HgoEq :
+                            Core.Transform.createOldVarsSubst.go trip' =
+                              (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
+                               Core.Transform.createFvar
+                                 (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+                          rw [Htrip_shape]
+                          rfl
+                        have HkwEq :
+                            (k', w') = (oldGVars_L6[ni.val]'Hni_lt_oldGVars_L6,
+                                       Core.Transform.createFvar
+                                         (genOldIdents[ni.val]'Hni_lt_genOld)) := by
+                          rw [← HgoEq]; exact Htrip_eq'.symm
+                        have Hw'_eq :
+                            w' = Core.Transform.createFvar
+                                  (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                          ((Prod.mk.injEq _ _ _ _).mp HkwEq).2
+                        have Hw_eq : w =
+                            Core.Transform.createFvar
+                              (genOldIdents[ni.val]'Hni_lt_genOld) := by
+                          rw [← Hw'w]; exact Hw'_eq
+                        rw [Hw_eq] at Hv_in
+                        have Hx_eq_gen :
+                            x = genOldIdents[ni.val]'Hni_lt_genOld := by
+                          have Hv_in' :
+                              x ∈ Imperative.HasVarsPure.getVars (P:=Expression)
+                                    (Core.Transform.createFvar
+                                      (genOldIdents[ni.val]'Hni_lt_genOld)) := Hv_in
+                          show x = _
+                          simp [Core.Transform.createFvar,
+                                Imperative.HasVarsPure.getVars,
+                                Lambda.LExpr.LExpr.getVars] at Hv_in'
+                          exact Hv_in'
+                        rw [Hx_eq_gen] at Hin1
+                        -- genOldIdents[ni.val] ∈ filtered_ks' = lhs ++ filtered_argTemps.
+                        -- Each branch yields contradiction.
+                        cases List.mem_append.mp Hin1 with
+                        | inl Hx_lhs =>
+                          -- HlhsDisjOld: lhs.Disjoint genOldIdents.
+                          exact HlhsDisjOld Hx_lhs (List.getElem_mem _)
+                        | inr Hx_filtArgT =>
+                          -- genOldIdents[i] is isOldTempIdent, but
+                          -- filtered_argTemps ⊆ argTemps which are isTempIdent;
+                          -- and isTempIdent and isOldTempIdent are disjoint
+                          -- (via HoldIdentsTemp + HargTemp).
+                          have Hx_argT :
+                              genOldIdents[ni.val]'Hni_lt_genOld ∈ argTemps :=
+                            HfiltArgT_sub_argT _ Hx_filtArgT
+                          have Hx_isTemp : isTempIdent
+                              (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                            (List.Forall_mem_iff.mp HargTemp) _ Hx_argT
+                          have Hx_isOld : isOldTempIdent
+                              (genOldIdents[ni.val]'Hni_lt_genOld) :=
+                            (List.Forall_mem_iff.mp HoldIdentsTemp)
+                              _ (List.getElem_mem _)
+                          exact isTempIdent_isOldTempIdent_disjoint
+                            Hx_isTemp Hx_isOld
+                      | none =>
+                        -- (b2) inputOnlyOldSubst flavor.
+                        have HH := Map.find?_append
+                          (Core.Transform.createOldVarsSubst
+                            oldTripsCanonical_L6) inputOnlyOldSubst_L6 k'
+                        rw [hfind] at HH
+                        have Hf_unfold :
+                            Map.find?
+                              (Core.Transform.createOldVarsSubst
+                                oldTripsCanonical_L6 ++
+                                  inputOnlyOldSubst_L6) k' = some w := Hf
+                        have Hin_some :
+                            Map.find? inputOnlyOldSubst_L6 k' = some w :=
+                          HH.symm.trans Hf_unfold
+                        have Hkw_mem_list :
+                            List.Mem (k', w) inputOnlyOldSubst_L6 :=
+                          Map.find?_mem _ k' w Hin_some
+                        rcases List.mem_filterMap.mp Hkw_mem_list with
+                          ⟨pair, Hpair_in, Hpair_eq⟩
+                        by_cases Hg :
+                            (!(ListMap.keys proc'.header.outputs).contains pair.fst &&
+                             (proc'.spec.postconditions.values.map
+                               Procedure.Check.expr).any
+                               (fun e => Lambda.LExpr.freeVars e |>.any
+                                 (fun (id, _) => id ==
+                                   CoreIdent.mkOld pair.fst.name))) = true
+                        · -- guard = true.
+                          have Hpair_eq' :
+                              (CoreIdent.mkOld pair.fst.name, pair.snd) = (k', w) := by
+                            have HH' := Hpair_eq
+                            simp only [Hg, if_true] at HH'
+                            exact (Option.some_inj.mp HH')
+                          have Hw_eq : w = pair.snd :=
+                            ((Prod.mk.injEq _ _ _ _).mp Hpair_eq').2.symm
+                          rcases List.mem_iff_get.mp Hpair_in with ⟨ni2, Hni2⟩
+                          have Hni2_lt_zip :
+                              ni2.val < (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args)).length := ni2.isLt
+                          have HzipLen :
+                              (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args)).length =
+                              min proc'.header.inputs.keys.length
+                                  (CallArg.getInputExprs args).length :=
+                            List.length_zip
+                          have Hni2_lt_min :
+                              ni2.val < min proc'.header.inputs.keys.length
+                                           (CallArg.getInputExprs args).length := by
+                            rw [← HzipLen]; exact Hni2_lt_zip
+                          have Hni2_lt_inArgs :
+                              ni2.val < (CallArg.getInputExprs args).length := by
+                            have := Hni2_lt_min; omega
+                          have Hni2_lt_inKeys :
+                              ni2.val < proc'.header.inputs.keys.length := by
+                            have := Hni2_lt_min; omega
+                          have HpairGet :
+                              (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args))[ni2.val]'Hni2_lt_zip =
+                                (proc'.header.inputs.keys[ni2.val]'Hni2_lt_inKeys,
+                                 (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs) :=
+                            List.getElem_zip
+                          have HpairEq_get :
+                              (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args))[ni2.val]'Hni2_lt_zip =
+                                pair := by
+                            have Hge :
+                                (proc'.header.inputs.keys.zip
+                                  (CallArg.getInputExprs args)).get ni2 =
+                              (proc'.header.inputs.keys.zip
+                                (CallArg.getInputExprs args))[ni2.val]'Hni2_lt_zip := rfl
+                            rw [Hge] at Hni2
+                            exact Hni2
+                          have Hpair_shape :
+                              pair = (proc'.header.inputs.keys[ni2.val]'Hni2_lt_inKeys,
+                                      (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs) := by
+                            rw [← HpairEq_get]; exact HpairGet
+                          have Hpair_snd : pair.snd =
+                              (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs := by
+                            rw [Hpair_shape]
+                          have HargExpr_def :
+                              w = (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs := by
+                            rw [Hw_eq, Hpair_snd]
+                          have HargExpr_in :
+                              w ∈ CallArg.getInputExprs args := by
+                            rw [HargExpr_def]; exact List.getElem_mem _
+                          -- x ∈ getVars w with w ∈ getInputExprs args.
+                          -- By clauses 3 (HargVarsNotInLhs), x ∉ lhs.
+                          -- By clauses 5/6, x ∉ outputs/inputs.
+                          -- By Hevalargs definedness, x ∈ σ-defined.
+                          have HargIsDef :
+                              Imperative.isDefined σ
+                                (List.flatMap
+                                  (Imperative.HasVarsPure.getVars (P:=Expression))
+                                  inArgs) :=
+                            evalExpressions_isDefined_flatMap Hevalargs
+                          have Hni2_lt_inArgsCall :
+                              ni2.val < inArgs.length := by
+                            have : (CallArg.getInputExprs args).length =
+                                inArgs.length := by rw [hCallArgsIn]
+                            rw [← this]
+                            exact Hni2_lt_inArgs
+                          have HargExpr_eq_inArgs :
+                              w = inArgs[ni2.val]'Hni2_lt_inArgsCall := by
+                            rw [HargExpr_def]
+                            show (CallArg.getInputExprs args)[ni2.val]'Hni2_lt_inArgs =
+                                  inArgs[ni2.val]'Hni2_lt_inArgsCall
+                            congr 1 <;> exact hCallArgsIn
+                          have Hk1_in_inArgs : w ∈ inArgs := by
+                            rw [HargExpr_eq_inArgs]; exact List.getElem_mem _
+                          have Hx_flat :
+                              x ∈ List.flatMap
+                                    (Imperative.HasVarsPure.getVars (P:=Expression))
+                                    inArgs := by
+                            rw [List.mem_flatMap]
+                            exact ⟨w, Hk1_in_inArgs, Hv_in⟩
+                          have Hx_σ_some : (σ x).isSome := HargIsDef x Hx_flat
+                          -- Now case-split on x ∈ filtered_ks'.
+                          cases List.mem_append.mp Hin1 with
+                          | inl Hx_lhs =>
+                            -- x ∉ lhs via HargVarsNotInLhs (clause 3).
+                            have Hx_notLhs :
+                                x ∉ CallArg.getLhs args :=
+                              HargVarsNotInLhs w HargExpr_in x Hv_in
+                            rw [hCallArgsLhs] at Hx_notLhs
+                            exact Hx_notLhs Hx_lhs
+                          | inr Hx_filtArgT =>
+                            -- x ∈ argTemps ⇒ σ x = none, but σ x is some.
+                            have Hx_argT :
+                                x ∈ argTemps :=
+                              HfiltArgT_sub_argT x Hx_filtArgT
+                            have Hx_σ_none : σ x = none := HndefArg_σ x Hx_argT
+                            rw [Hx_σ_none] at Hx_σ_some
+                            simp at Hx_σ_some
+                        · -- guard = false: contradiction.
+                          have HH' := Hpair_eq
+                          simp only [Hg] at HH'
+                          exact absurd HH' (by simp)
+                  -- ── HpostPayload: combined per-entry payload for L6 ──
+                  --
+                  -- For each `entry ∈ posts_filtered_L6`, the L6 consumer
+                  -- (H_assumes_anylist) needs:
+                  --   (1) Hinv          : invStores σ_R1 σ_havoc residual
+                  --   (2) Hpred_disj    : filtered_ks'.Disjoint entryVars
+                  --   (3) HpostEval     : δ σ_R1 entry.snd.expr = some HasBool.tt
+                  have HpostPayload :
+                      ∀ entry : CoreLabel × Procedure.Check,
+                        entry ∈ posts_filtered_L6.toList →
+                        Imperative.invStores σ_R1 σ_havoc
+                          ((Imperative.HasVarsPure.getVars (P:=Expression)
+                              entry.snd.expr).removeAll
+                            (filtered_ks ++ filtered_ks')) ∧
+                        filtered_ks'.Disjoint
+                          (Imperative.HasVarsPure.getVars (P:=Expression)
+                            entry.snd.expr) ∧
+                        δ σ_R1 entry.snd.expr =
+                          some Imperative.HasBool.tt := by
+                    intro entry Hentry
+                    refine ⟨Hinv entry Hentry,
+                            Hpred_disj entry Hentry,
+                            HpostEval_bridge entry Hentry⟩
+                  -- ── D2f: Apply H_assumes_zip to derive HL6 ──
+                  --
+                  -- HL6 is the L6 segment of the EvalCallElim_glue chain:
+                  --   EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩
+                  --     assumes ⟨σ_havoc, δ, false⟩
+                  -- where σ_havoc is the post-L5 store and `assumes` has
+                  -- the `posts.zip labels` shape exposed by `HassumesShape`.
+                  --
+                  -- Strategy: apply `H_assumes_zip` with σA := σ_R1, σ' :=
+                  -- σ_havoc, ks := filtered_ks, ks' := filtered_ks' (D2c
+                  -- bound the substitution preconditions Hkslen / Hnd /
+                  -- Hdef / Hsubst) and HpostPayload (D2d-payload-2). Bridge
+                  -- to the actual `assumes` list via HassumesShape, with a
+                  -- substitution-equation bridge from `assumeSubst` (whose
+                  -- input half is filtered by `! outputs.contains`) to
+                  -- `filtered_ks.zip (createFvars filtered_ks')`.
+                  obtain ⟨assumeLabels, _HassumeLabelsLen, HassumeShape⟩ :=
+                    HassumesShape
+                  -- Bridge: `assumeSubst = filtered_ks.zip (createFvars filtered_ks')`.
+                  -- The bridge starts from
+                  --   LHS = outputs.zip (createFvars lhs) ++
+                  --         (inputs.zip (createFvars argTemps)).filter
+                  --           (fun (id, _) => ! outputs.contains id)
+                  -- and rewrites it to
+                  --   RHS = (outputs ++ filtered_inputs).zip
+                  --           (createFvars (lhs ++ filtered_argTemps)).
+                  -- The head halves agree directly via hCallArgsLhs and
+                  -- createFvarsApp / List.zip_append.  The tails are equated
+                  -- via the chain:
+                  --   inputs.zip (createFvars argTemps)
+                  --     = (inputs.zip argTemps).map (Prod.map id createFvar)  (zip_map_right)
+                  --   .filter ... = (.filter ... (inputs.zip argTemps)).map (Prod.map id createFvar)
+                  --                                                     (List.filter_map)
+                  --                = filtered_argSubst.map (Prod.map id createFvar)
+                  --                = filtered_argSubst.unzip.fst.zip
+                  --                    (filtered_argSubst.unzip.snd.map createFvar)
+                  --                                                     (zip_map_right + zip_unzip)
+                  --                = filtered_inputs.zip (createFvars filtered_argTemps).
+                  --
+                  -- We state the bridge in `proc'`-form (matching the
+                  -- HassumeShape's inlined `proc'.header.inputs.keys` etc.,
+                  -- after the existential destructure), since we plan to
+                  -- `rw [HassumeShape]` first and then bridge against
+                  -- HL6_pre.  Both `proc'` and `proc` references resolve
+                  -- to the same identifier via HprocEq, but the goal will
+                  -- carry whichever form the rewriting yields.
+                  have HassumeSubst_eq :
+                      ((proc'.header.outputs.keys.zip
+                          (Core.Transform.createFvars (CallArg.getLhs args))) ++
+                        (proc'.header.inputs.keys.zip
+                          (Core.Transform.createFvars argTemps)).filter
+                          (fun (id, _) =>
+                            !(ListMap.keys proc'.header.outputs).contains id)) =
+                      filtered_ks.zip
+                        (Core.Transform.createFvars filtered_ks') := by
+                    rw [HprocEq]
+                    show _ = (proc.header.outputs.keys ++ filtered_inputs).zip
+                      (Core.Transform.createFvars (lhs ++ filtered_argTemps))
+                    rw [createFvarsApp]
+                    rw [List.zip_append
+                          (show proc.header.outputs.keys.length =
+                                (Core.Transform.createFvars lhs).length by
+                            rw [createFvarsLength,
+                                HoutKeys_lhs_len])]
+                    -- LHS = outputs.zip (createFvars (CallArg.getLhs args)) ++
+                    --       (inputs.zip (createFvars argTemps)).filter (...)
+                    -- RHS = outputs.zip (createFvars lhs) ++
+                    --       filtered_inputs.zip (createFvars filtered_argTemps)
+                    -- Head: bridge via hCallArgsLhs.
+                    rw [hCallArgsLhs]
+                    -- Now bridge the tail.
+                    congr 1
+                    -- Goal: (inputs.zip (createFvars argTemps)).filter (...) =
+                    --       filtered_inputs.zip (createFvars filtered_argTemps)
+                    show (proc.header.inputs.keys.zip
+                          (argTemps.map Core.Transform.createFvar)).filter _ =
+                      filtered_argSubst.unzip.fst.zip
+                        (filtered_argSubst.unzip.snd.map
+                          Core.Transform.createFvar)
+                    rw [List.zip_map_right]
+                    -- Goal: ((inputs.zip argTemps).map (Prod.map id createFvar)).filter (...) =
+                    --       filtered_argSubst.unzip.fst.zip
+                    --         (filtered_argSubst.unzip.snd.map createFvar)
+                    rw [List.filter_map]
+                    -- Goal: ((inputs.zip argTemps).filter (P ∘ Prod.map id createFvar)).map
+                    --         (Prod.map id createFvar) =
+                    --       filtered_argSubst.unzip.fst.zip ...
+                    -- The composed predicate on `Prod.map id createFvar pr` reduces
+                    -- to applying the predicate to `pr.fst` (since `Prod.map id f`
+                    -- preserves the first component).  Bridge the filter form to
+                    -- `filtered_argSubst`'s underlying filter expression
+                    -- (`fun pr => ¬ outputs.contains pr.1`, decided as `!`).
+                    have HfiltEq :
+                        (proc.header.inputs.keys.zip argTemps).filter
+                          ((fun (x : Expression.Ident × Expression.Expr) =>
+                              !(ListMap.keys proc.header.outputs).contains x.1) ∘
+                            Prod.map id Core.Transform.createFvar) =
+                          filtered_argSubst := by
+                      show _ = (proc.header.inputs.keys.zip argTemps).filter
+                          (fun pr =>
+                            ¬ (proc.header.outputs.keys).contains pr.1)
+                      apply List.filter_congr
+                      intro pr _
+                      cases pr with
+                      | mk a b =>
+                        by_cases h :
+                            (ListMap.keys proc.header.outputs).contains a
+                        · simp [h, Function.comp, Prod.map]
+                        · simp [h, Function.comp, Prod.map]
+                    rw [HfiltEq]
+                    -- Goal: filtered_argSubst.map (Prod.map id createFvar) =
+                    --       filtered_argSubst.unzip.fst.zip
+                    --         (filtered_argSubst.unzip.snd.map createFvar)
+                    -- Massage the RHS: zip_map_right reverse + zip_unzip.
+                    rw [show filtered_argSubst.unzip.fst.zip
+                            (filtered_argSubst.unzip.snd.map
+                              Core.Transform.createFvar) =
+                          (filtered_argSubst.unzip.fst.zip
+                            filtered_argSubst.unzip.snd).map
+                            (Prod.map id Core.Transform.createFvar) from
+                        List.zip_map_right]
+                    rw [show filtered_argSubst.unzip.fst.zip
+                            filtered_argSubst.unzip.snd =
+                          filtered_argSubst from List.zip_unzip _]
+                  -- ── Apply H_assumes_zip ──
+                  have HL6_pre :
+                      EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩
+                        ((posts_filtered_L6.zip assumeLabels).map
+                          (fun (entry, lbl) =>
+                            Statement.assume lbl
+                              (Lambda.LExpr.substFvars entry.snd.expr
+                                (filtered_ks.zip
+                                  (Core.Transform.createFvars filtered_ks')))
+                              (entry.snd.md.setCallSiteFileRange md)))
+                        ⟨σ_havoc, δ, false⟩ := by
+                    apply H_assumes_zip
+                      (σA := σ_R1) (σ' := σ_havoc)
+                      (ks := filtered_ks)
+                      (ks' := filtered_ks')
+                      (posts := posts_filtered_L6.toList)
+                      (labels := assumeLabels)
+                      Hwfb Hwfvars Hwfval Hwfc
+                      Hkslen Hnd Hdef Hsubst
+                    intros entry Hentry
+                    exact HpostPayload entry Hentry
+                  -- Bridge to the actual `assumes` list via HassumeShape.
+                  have HL6 :
+                      EvalStatementsContract π φ ⟨σ_havoc, δ, false⟩
+                        assumes ⟨σ_havoc, δ, false⟩ := by
+                    -- HassumeShape uses `proc'`-keys (definitionally `proc`
+                    -- via HprocEq) for assumeSubst and posts.  After the
+                    -- HassumeShape rewrite, the goal carries `proc'`-keys
+                    -- both in the `posts` and `assumeSubst` shape.  Our
+                    -- HassumeSubst_eq is stated in `proc'`-form, so we can
+                    -- bridge directly without an extra HprocEq rewrite.
+                    rw [HassumeShape]
+                    rw [HassumeSubst_eq]
+                    exact HL6_pre
+                  -- ── D2g: Chain L1-L6 via EvalCallElim_glue ──
+                  exact EvalCallElim_glue HL1 HL2 HL3 HL4 HL5 HL6
+          · -- inner `Except.error` branch — contradiction
+            rename_i e_err heq_err
+            simp only [pure, StateT.pure, Prod.mk.injEq] at Helim
+            exact absurd Helim.1 (by simp)
 
 end -- public section
 

@@ -47,7 +47,7 @@ when the command signals a failure.
 @[expose] def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → (σ v).isSome = true
 
-def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
+@[expose] def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → σ v = none
 
 -- Can make this more generic by supplying a predicate function
@@ -138,26 +138,26 @@ theorem isNotDefinedApp' :
 /-! ### Store Substitution -/
 
 /-- Substitution relation between stores.  -/
-def substStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (substs : List (P.Ident × P.Ident))
+@[expose] def substStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (substs : List (P.Ident × P.Ident))
   : Prop :=
   ∀ k1 k2, (k1, k2) ∈ substs → σ₁ k1 = σ₂ k2
 
-def substDefined {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (substs : List (P.Ident × P.Ident))
+@[expose] def substDefined {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (substs : List (P.Ident × P.Ident))
   : Prop :=
   ∀ k1 k2, (k1, k2) ∈ substs → (σ₁ k1).isSome = true ∧ (σ₂ k2).isSome = true
 
-def substNodup {P : PureExpr} (substs : List (P.Ident × P.Ident))
+@[expose] def substNodup {P : PureExpr} (substs : List (P.Ident × P.Ident))
   : Prop := (substs.unzip.1 ++ substs.unzip.2).Nodup
 
 /-- a specialization of substitution, where the keys are the same -/
-def invStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
+@[expose] def invStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
   : Prop :=
   substStores σ₁ σ₂ $ vs.zip vs
 
 def invStoresExcept {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
   : Prop := ∀ (vs' : List P.Ident), vs'.Disjoint vs → invStores σ₁ σ₂ vs'
 
-def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
+@[expose] def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
   : List (P.Ident × P.Ident) := substs.map Prod.swap
 
 theorem substSwapId (substs : List (P.Ident × P.Ident)) :
@@ -229,7 +229,7 @@ def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasNot P]
       (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.ff)) ∧
       (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.tt))
 
-def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
+@[expose] def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
   -- evaluator only evaluates to values
     (∀ v v' σ, δ σ v = some v' → HasVal.value v') ∧

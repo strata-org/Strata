@@ -42,6 +42,7 @@ def StringGenState.emp : StringGenState := { cs := .emp, generated := [] }
   followed by an underscore (`_`), followed by a unique number given by its
   underlying counter `σ.cs`.
  -/
+@[expose]
 def StringGenState.gen (pf : String) (σ : StringGenState) : String × StringGenState :=
   let (counter, cs) := Counter.genCounter σ.cs
   let newString : String := (pf ++ "_" ++ toString counter)
