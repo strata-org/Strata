@@ -9,6 +9,7 @@ public import Strata.DDM.Util.Ion.AST
 public import Strata.DDM.Util.Ion.Deserialize
 public import Strata.DDM.Util.Ion.Serialize
 public import Strata.DDM.Util.Ion.SymbolTable
+public import Strata.DDM.Util.Ion.SystemSymbolIds
 
 import all Strata.DDM.Util.ByteArray
 import all Strata.DDM.Util.Fin
