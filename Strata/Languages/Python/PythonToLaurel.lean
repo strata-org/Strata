@@ -1339,9 +1339,9 @@ def nullcall_var := freeVarMd "nullcall_ret"
 /-- Walk an expression tree and extract any nested multi-output procedure calls
     into preceding multi-target assignments. Returns (preamble, rewritten expr).
     Uses a mutable counter for unique variable names. -/
-partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
+def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
     : StateM Nat (List StmtExprMd × StmtExprMd) := do
-  match e.val with
+  match _h : e.val with
   | .StaticCall callee args =>
     if withException ctx callee.text then
       -- Multi-output call: extract into a temp assignment and add exception check
@@ -1356,27 +1356,17 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
       return ([varDecl, assign], varRef)
     else
       -- Recurse into arguments
-      let mut preambleRev : List StmtExprMd := []
-      let mut newArgsRev : List StmtExprMd := []
-      for arg in args do
-        let (pre, arg') ← extractMultiOutputCalls ctx arg
-        preambleRev := pre.foldl (fun acc stmt => stmt :: acc) preambleRev
-        newArgsRev := arg' :: newArgsRev
-      let preamble := preambleRev.reverse
-      let newArgs := newArgsRev.reverse
+      let results ← args.attach.mapM fun ⟨arg, _⟩ => extractMultiOutputCalls ctx arg
+      let preamble := results.foldl (fun acc (pre, _) => acc ++ pre) []
+      let newArgs := results.map (·.2)
       if preamble.isEmpty then
         return ([], e)
       else
         return (preamble, mkStmtExprMdWithLoc (.StaticCall callee.text newArgs) e.source)
   | .PrimitiveOp op args =>
-    let mut preambleRev : List StmtExprMd := []
-    let mut newArgsRev : List StmtExprMd := []
-    for arg in args do
-      let (pre, arg') ← extractMultiOutputCalls ctx arg
-      preambleRev := pre.foldl (fun acc stmt => stmt :: acc) preambleRev
-      newArgsRev := arg' :: newArgsRev
-    let preamble := preambleRev.reverse
-    let newArgs := newArgsRev.reverse
+    let results ← args.attach.mapM fun ⟨arg, _⟩ => extractMultiOutputCalls ctx arg
+    let preamble := results.foldl (fun acc (pre, _) => acc ++ pre) []
+    let newArgs := results.map (·.2)
     if preamble.isEmpty then
       return ([], e)
     else
@@ -1384,7 +1374,7 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
   | .IfThenElse cond thenBr elseBr =>
     let (preCond, cond') ← extractMultiOutputCalls ctx cond
     let (preThen, then') ← extractMultiOutputCalls ctx thenBr
-    let preElse ← elseBr.mapM (extractMultiOutputCalls ctx)
+    let preElse ← elseBr.attach.mapM fun ⟨br, _⟩ => extractMultiOutputCalls ctx br
     let thenExpr :=
       if preThen.isEmpty then
         then'
@@ -1403,6 +1393,12 @@ partial def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
     else
       return ([], e)
   | _ => return ([], e)
+termination_by sizeOf e
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt e)
+  all_goals (try term_by_mem)
+  all_goals (cases e; simp_all; omega)
 
 /-- Translate an expression and extract any nested multi-output calls into
     preceding statements. -/
@@ -1447,12 +1443,14 @@ partial def translateAssign  (ctx : TranslationContext)
     | .Attribute _ (.Name _ name _) _ _ => name.val == "self" && ctx.currentClassName.isSome
     | _ => false
   let rhsCtx := if isSelfFieldAssign then {ctx with suppressDispatch := true} else ctx
-  let extractionSeedText :=
+  let extractionSeed :=
     if rhs.ann.isNone then
-      pyExprToString lhs ++ " <- " ++ pyExprToString rhs
+      -- Fallback: hash the expression text to get a unique-enough seed
+      let text := pyExprToString lhs ++ " <- " ++ pyExprToString rhs
+      text.foldl (fun acc ch => acc * 131 + ch.toNat) 0
     else
-      s!"{rhs.ann.start}_{rhs.ann.stop}"
-  let extractionSeed := extractionSeedText.foldl (fun acc ch => acc * 131 + ch.toNat) 0
+      -- Use byte offset directly — globally unique per source position
+      rhs.ann.start.byteIdx
   let (moExtracts, rhs_trans, _) ← translateExprExtractingCalls rhsCtx rhs extractionSeed
   -- Use the statement's source location for extracted assignments so that
   -- diagnostics (e.g. requires checks) report the statement position.
