@@ -103,7 +103,9 @@ spec {
 #end
 
 -- ⚠️  This should be ❌ fail but is ✅ pass — the auto-axiom is too strong.
-/-- info:
+/-- info: [Boole] Warning: constructor `Pair.Pair_mk` has both `nat`- and `int`-typed fields. The auto-generated non-negativity axiom is globally quantified over all SMT terms of type `Pair`, which may be unsound if the solver introduces synthetic terms with negative nat fields.
+---
+info:
 Obligation: unsound_example_pre_unsound_example_requires_0_3451_calls_Pair..second_0
 Property: assert
 Result: ✅ pass
