@@ -714,10 +714,11 @@ theorem block_simulation
 The end-to-end statement: a successful DetCFG run is matched by a successful
 GOTO run reaching the same final configuration.
 
-This wraps `block_simulation` with an induction over `CoreCFGStepStar`,
-case-splitting `Sim` to either invoke the induction hypothesis on the
-post-block continuation label or collapse the tail to `refl` when the
-block transitioned to a terminal config. -/
+The main theorem `coreCFGToGoto_forward_simulation` is a thin wrapper that
+delegates to the auxiliary `cfgStepStar_to_gotoStar`, which performs the
+induction over `CoreCFGStepStar`, case-splitting `Sim` to either invoke
+the induction hypothesis on the post-block continuation label or collapse
+the tail to `refl` when the block transitioned to a terminal config. -/
 
 /-- Auxiliary induction over `CoreCFGStepStar`: from any `(.cont l σ failed)`
 configuration that reaches `(.terminal σ' b)` in the source CFG, we can
@@ -727,7 +728,7 @@ build a matching GOTO trace from `(.running pc σ failed)` to
 The main theorem is a wrapper that instantiates this at
 `l := cfg.entry`, `σ := initial store`, `failed := false`. -/
 private theorem cfgStepStar_to_gotoStar
-    (δ : Imperative.SemanticEval Core.Expression)
+    (δ : SemanticEval Core.Expression)
     (δ_goto : SemanticEvalGoto Core.Expression)
     (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
     (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
