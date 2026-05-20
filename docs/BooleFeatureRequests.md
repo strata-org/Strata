@@ -42,7 +42,7 @@ seeds with at least one open gap remain in
 - **`decreases` annotation on functions, procedures, and `for` loops**
   - Parsing/forwarding implemented (#1075): accepted in function preconds, `spec {}` blocks, procedure headers, and `for v := init to/downto limit` loops; the `for`-loop measure is forwarded to the Core while-loop measure field and actively verified.
   - `decreases` on functions (structural): termination verification implemented (#1092).
-  - `decreases <int expr>` on `rec function`: implemented (#1167). Non-negativity and strict-decrease obligations generated at each call site. Int-recursive functions are pure UFs in SMT — no definitional axioms; manual axioms still needed for functional properties.
+  - `decreases <int expr>` on `rec function`: implemented (#1167). Non-negativity and strict-decrease obligations generated at each call site. Int-recursive functions are pure UFs in SMT — functional properties (e.g. `even(1) == false`) cannot be proved without unfolding axioms; blocked by Gap #1.
   - `decreases` on procedures: `decr : Option Measure` parameter on `boole_procedure`, reusing Core's existing `Measure` category; currently parsed and silently dropped.
   - Benchmark: [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean).
 - **`Sequence T` type and slicing ops**
