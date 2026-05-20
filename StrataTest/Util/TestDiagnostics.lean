@@ -5,10 +5,9 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+import Strata.DDM.Parser
+public import Strata.Languages.Core.Verifier
 import Lean.Elab.Command
-
-meta section
 
 open Strata
 open String
@@ -16,7 +15,7 @@ open Lean Elab
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
-structure DiagnosticExpectation where
+public structure DiagnosticExpectation where
   line : Nat
   colStart : Nat
   colEnd : Nat
@@ -34,7 +33,7 @@ private def commentMarker (line : String) : Option String :=
 /-- Parse diagnostic expectations from source file comments.
     Format: `//  ^^^^^^ error: message` or `#  ^^^^^^ error: message`
     on the line after the problematic code -/
-def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
+public def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
   let lines := content.splitOn "\n"
   let mut expectations := []
 
@@ -83,7 +82,7 @@ def stringContains (haystack : String) (needle : String) : Bool :=
   needle.isEmpty || (haystack.splitOn needle).length > 1
 
 /-- Check if a Diagnostic matches a DiagnosticExpectation -/
-def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :=
+public def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :=
   diag.start.line == exp.line &&
   diag.start.column == exp.colStart &&
   diag.ending.line == exp.line &&
@@ -146,4 +145,3 @@ def testInput (filename: String) (input : String) (process : Lean.Parser.InputCo
   testInputWithOffset filename input 0 process
 
 end StrataTest.Util
-end
