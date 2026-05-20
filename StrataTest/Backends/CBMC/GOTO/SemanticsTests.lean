@@ -16,9 +16,10 @@ machinery on the simplest possible program — a single empty block with a
 `finish` transfer — and confirm the types compose end-to-end.
 
 The full forward-simulation theorem
-(`coreCFGToGoto_forward_simulation`) is currently `sorry`-blocked; tests
-that depend on it would also need to be `sorry`-blocked, providing little
-verification value. -/
+(`coreCFGToGoto_forward_simulation`) is sorry-free, modulo the
+documented axiomatized hypotheses (`WellFormedTranslation`,
+`ExprTranslationPreservesEval`). The `#print axioms` line at the bottom
+of this file documents its dependency surface. -/
 
 namespace CProverGOTOTests
 
@@ -190,3 +191,11 @@ example (σ : Imperative.SemanticStore Core.Expression) (failed : Bool) :
     (pc := 0) (h_pc := rfl)
 
 end CProverGOTOTests
+
+/-! ## Axiom audit
+
+`#print axioms` reports every axiom transitively used in the theorem's
+proof. Expected: only Lean's foundational axioms (e.g. `propext`,
+`Classical.choice`, `Quot.sound`). The presence of any project-defined
+axiom or `Sorry` would indicate a regression. -/
+#print axioms CProverGOTO.coreCFGToGoto_forward_simulation
