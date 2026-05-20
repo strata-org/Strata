@@ -254,6 +254,10 @@ def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : 
     | .unresolved _ => none
     | _ => dbg_trace s!"BUG: resolveQualifiedFieldName {fieldName} did resolved to something other than a field"; none
 
+private def wrapList (source : Option FileRange) : List StmtExprMd → StmtExprMd
+  | [single] => single
+  | many => ⟨.Block many none, source⟩
+
 /--
 Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
