@@ -560,8 +560,20 @@ mutual
 
 -- ### Dispatch
 
-/-- Synth-mode resolution: resolve `e` and synthesize its `HighType`.
-    Each constructor delegates to its rule's helper. -/
+/-- Synth-mode resolution: resolve `e` and synthesize its `HighType`,
+    written `Γ ⊢ e ⇒ T`. Each constructor delegates to its rule's helper.
+
+    Synthesis returns a type inferred from the expression itself; checking
+    (`checkStmtExpr`) verifies that the expression has a given expected
+    type. Each construct picks a mode based on whether its type is
+    determined locally (synth) or by context (check). Synth rules invoke
+    check on subexpressions whose expected type is known (e.g.
+    `cond ⇐ TBool` in `IfThenElse`); `checkStmtExpr` falls back to
+    `synthStmtExpr` via subsumption (rule `[⇐] Sub`). The two functions
+    are mutually recursive, with termination on a lexicographic measure
+    `(exprMd, tag)` — tag `0` for check, `1` for synth — so that
+    subsumption (which calls synth on the *same* expression) can decrease
+    via `Prod.Lex.right`. -/
 def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) := do
   match h_node: exprMd with
   | AstNode.mk expr source =>
@@ -628,10 +640,22 @@ def synthStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTypeMd) :=
     | (apply Prod.Lex.right; decide)
 
 /-- Check-mode resolution (rule **Sub** at the boundary): resolve `e` and
-    verify its type is a consistent subtype of `expected`. Bidirectional rules
-    for individual constructs push `expected` into subexpressions; everything
-    else falls back to subsumption (synth, then `isConsistentSubtype actual
-    expected`). -/
+    verify its type is a consistent subtype of `expected`, written
+    `Γ ⊢ e ⇐ T`. Bidirectional rules for individual constructs (`Block`,
+    `IfThenElse`, `Assign`, `Hole`) push `expected` into subexpressions
+    rather than bouncing through synthesis, which keeps error messages
+    localized and lets the expected type propagate through nested control
+    flow. Everything else falls back to subsumption — synthesize, then
+    verify `isConsistentSubtype actual expected`.
+
+    The right principle for new call sites is: when the position has a
+    known expected type (`TBool` for conditions, numeric for `decreases`,
+    the declared output for a constant initializer or a functional body),
+    use `checkStmtExpr`. When it doesn't, use `resolveStmtExpr` (a thin
+    wrapper that calls `synthStmtExpr` and discards the synthesized type,
+    used at sites where typing is not enforced — verification annotations,
+    modifies/reads clauses). `synthStmtExpr` itself is mostly an internal
+    interface used by other rules. -/
 def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd := do
   match h_node: exprMd with
   | AstNode.mk expr source =>
@@ -714,14 +738,19 @@ def synthVarField (exprMd : StmtExprMd)
 
 /-- Rules **If-NoElse** / **If-Synth**: `cond` is checked against `TBool`.
     With no else branch, the construct is a statement — `thenBr` is checked
-    against `TVoid` and the result is `TVoid`, so `if c then 5` is rejected.
+    against `TVoid` and the result is `TVoid`, so `x : int := if c then 5`
+    is rejected at the branch rather than slipping through to a downstream
+    subsumption.
+
     With an else branch, the result type is the join (LUB) of the two
-    branches' synthesized types, so `if c then new Left else new Right`
-    synthesizes the common ancestor `Top` rather than committing to one
-    branch arbitrarily. When no common supertype exists (e.g. a value branch
-    paired with a `TVoid` `return`/`exit`), `joinTypes` falls back to the
-    then-branch's type and the enclosing context's check surfaces any
-    mismatch downstream. -/
+    branches' synthesized types, so `if c then small else big` synthesizes
+    the common supertype rather than committing to one branch arbitrarily;
+    `if c then new Left else new Right` synthesizes the common ancestor.
+    When no common supertype exists (e.g. a value branch paired with a
+    `TVoid` `return`/`exit`), `joinTypes` falls back to the then-branch's
+    type and the enclosing context's check (`[⇐] Sub`, or a containing
+    `checkSubtype` like an assignment) surfaces any mismatch downstream
+    against the then-branch's type. -/
 def synthIfThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) :
@@ -747,11 +776,14 @@ def synthIfThenElse (exprMd : StmtExprMd)
          try omega)
       | (apply Prod.Lex.right; decide)
 
-/-- Rules **Block-Synth** / **Block-Synth-Empty**: non-last statements are
-    synthesized but their types discarded (the lax rule, matching
-    Java/Python/JS expression-statement semantics); the last statement's type
+/-- Rules **Block-Synth** / **Block-Synth-Empty**: each statement is resolved
+    in the scope produced by its predecessor and may itself extend it
+    (`Var (.Declare …)` does); non-last statements are synthesized but their
+    types discarded (the lax rule, matching Java/Python/JS where `f(x);` is
+    normal even when `f` returns a value — trade-off: `5;` is silently
+    accepted, flagging it belongs to a lint). The last statement's type
     becomes the block's type, or `TVoid` for an empty block. The block opens
-    a fresh nested scope. -/
+    a fresh nested scope, so bindings introduced inside don't escape. -/
 def synthBlock (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (h : exprMd.val = .Block stmts label) :
@@ -772,8 +804,9 @@ def synthBlock (exprMd : StmtExprMd)
     omega
 
 /-- Rule **While**: `cond ⇐ TBool`, each invariant `⇐ TBool`, optional
-    `decreases` is resolved without a type check (intended target is numeric),
-    body is synthesized; the construct itself synthesizes `TVoid`. -/
+    `decreases` is resolved without a type check today (the intended target
+    is a numeric type), body is synthesized; the construct itself
+    synthesizes `TVoid`. -/
 def synthWhile (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
     (dec : Option StmtExprMd) (body : StmtExprMd)
@@ -802,9 +835,22 @@ def synthExit (target : String) (source : Option FileRange) : StmtExpr × HighTy
 
 /-- Rules **Return-None** / **Return-Some** / **Return-Void-Error** /
     **Return-Multi-Error**: matches the optional return value against the
-    enclosing procedure's declared outputs (`expectedReturnTypes`). `none`
-    means "no enclosing procedure" — e.g. resolving a constant initializer —
-    and skips all `Return` checks. -/
+    enclosing procedure's declared outputs. The expected output types are
+    threaded through `ResolveState.expectedReturnTypes`, set from
+    `proc.outputs` by `resolveProcedure` / `resolveInstanceProcedure` for
+    the duration of the body; `none` means "no enclosing procedure" — e.g.
+    resolving a constant initializer — and skips all `Return` checks.
+
+    A bare `return;` is allowed in any context. In a single-output procedure
+    it acts as a Dafny-style early exit — the output parameter retains
+    whatever was last assigned to it. In a single-output procedure, `return e`
+    is checked against the declared output type (closing the prior soundness
+    gap where `return 0` in a `bool`-returning procedure went uncaught).
+
+    Multi-output procedures use named-output assignment (`r := …` on the
+    declared output parameters); `return e` syntactically takes a single
+    `Option StmtExpr` and cannot carry multiple values, so it is flagged with
+    a diagnostic pointing users at the named-output convention. -/
 def synthReturn (exprMd : StmtExprMd) (source : Option FileRange)
     (val : Option StmtExprMd)
     (h : exprMd.val = .Return val) :
@@ -841,9 +887,11 @@ def synthReturn (exprMd : StmtExprMd) (source : Option FileRange)
 
 /-- Rules **Block-Check** / **Block-Check-Empty**: pushes `expected` into the
     *last* statement rather than comparing the block's synthesized type at the
-    boundary. Errors fire at the offending subexpression, and `T` keeps
-    propagating through nested `Block` / `IfThenElse` / `Hole` / `Quantifier`.
-    Empty blocks reduce to a subsumption check of `TVoid` against `expected`. -/
+    boundary. Errors fire at the offending subexpression, and `expected`
+    keeps propagating through nested `Block` / `IfThenElse` / `Hole` /
+    `Quantifier`. Empty blocks reduce to a subsumption check of `TVoid`
+    against `expected` — the same check `[⇐] Block-Empty` performs when
+    `T` admits `TVoid`. -/
 def checkBlock (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -873,8 +921,9 @@ def checkBlock (exprMd : StmtExprMd)
 /-- Rules **If-Check** / **If-Check-NoElse**: pushes `expected` into both
     branches (rather than going through If-Synth + Sub at the boundary).
     Errors fire at the offending branch instead of the surrounding `if`.
-    Without an else branch, the construct can only succeed when `T` admits
-    `TVoid`. -/
+    Without an else branch, the construct can only succeed when `expected`
+    admits `TVoid` — the same subsumption check `[⇐] Block-Empty` performs
+    for an empty block. -/
 def checkIfThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -933,12 +982,16 @@ def synthAssume (exprMd : StmtExprMd)
 /-- Rule **Assign**: each target's declared type `T_i` (from `Local`,
     `Field`, or fresh `Declare`) is collapsed into a tuple `ExpectedTy`
     (single type if one target, otherwise `MultiValuedExpr [T_1; …; T_n]`)
-    and checked against the RHS's synthesized type. When the RHS is a
-    statement (`TVoid`) — `while`, `return`, … — all checks are skipped:
-    there's no value to assign. The construct synthesizes the RHS's type,
-    so that expression-position assignments like `x ++ (y := s)` see a
-    string in the second operand; statement-position uses are accommodated
-    by `checkAssign`, which accepts `TVoid` as the expected type. -/
+    and checked against the RHS's synthesized type. Both single- and
+    multi-target forms collapse into one tuple-vs-tuple check: when the RHS
+    is a `MultiValuedExpr`, both arity and per-position type mismatches
+    surface in a single diagnostic of shape *"expected '(int, int, int)',
+    got '(int, string)'"*. When the RHS is `TVoid` (a side-effecting
+    statement: `while`, `return`, …), all checks are skipped — there's no
+    value to assign. The construct synthesizes the RHS's type, so that
+    expression-position assignments like `x ++ (y := s)` see a string in
+    the second operand; statement-position uses are accommodated by
+    `checkAssign`, which accepts `TVoid` as the expected type. -/
 def synthAssign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assign targets value) :
@@ -1090,11 +1143,17 @@ def synthInstanceCall (exprMd : StmtExprMd)
 
 /-- Rules **Op-Bool** / **Op-Cmp** / **Op-Eq** / **Op-Arith** / **Op-Concat**:
     each operator family has its own argument-type discipline and result
-    type. Arguments are synthesized first, then the per-family check fires
-    (`⇐ TBool` for booleans, `Numeric` for arithmetic/comparison, consistency
-    `~` for equality, `⇐ TString` for concatenation). The result type is
-    `TBool` for booleans/comparisons/equality, the head argument's type for
-    arithmetic, `TString` for concatenation. -/
+    type. Arguments are synthesized first, then the per-family check fires:
+    `⇐ TBool` for booleans, `Numeric` (consistent with `TInt`, `TReal`, or
+    `TFloat64`) for arithmetic/comparison, consistency `~` for equality
+    (symmetric — no subtype direction is privileged), `⇐ TString` for
+    concatenation. The result type is `TBool` for
+    booleans/comparisons/equality, the head argument's type for arithmetic
+    ("result is the type of the first argument" handles `int + int → int`,
+    `real + real → real`, etc. without unification — known relaxation:
+    `int + real` passes since each operand individually passes `Numeric`;
+    a proper fix needs numeric promotion or unification), `TString` for
+    concatenation. -/
 def synthPrimitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     (op : Operation) (args : List StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .PrimitiveOp op args)
@@ -1161,7 +1220,9 @@ def synthNew (ref : Identifier) (source : Option FileRange) :
   pure (.New ref', ty)
 
 /-- Rule **AsType**: `target` is resolved but not checked against `T` — the
-    cast is the user's claim. The synthesized type is `T`. -/
+    cast is the user's claim. The synthesized type is `T`.
+
+    `IsType` is the runtime test counterpart and synthesizes `TBool`. -/
 def synthAsType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd)
     (h : exprMd.val = .AsType target ty) :
@@ -1192,7 +1253,12 @@ def synthIsType (exprMd : StmtExprMd)
     omega
 
 /-- Rule **RefEq**: both operands must be reference types (`UserDefined` or
-    `Unknown`). Reference equality is meaningless on primitives. -/
+    `Unknown`) — reference equality is meaningless on primitives. The
+    operands must also be mutually consistent (the symmetric `isConsistent`),
+    so `Cat === Dog` is rejected when `Cat` and `Dog` are unrelated
+    user-defined types, while `Cat === Animal` is accepted when `Cat`
+    extends `Animal` (the gradual `Unknown` wildcard makes either side
+    flow freely against the other). -/
 def synthRefEq (exprMd : StmtExprMd) (expr : StmtExpr)
     (lhs rhs : StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .ReferenceEquals lhs rhs)
@@ -1242,9 +1308,11 @@ def synthPureFieldUpdate (exprMd : StmtExprMd)
 
 -- ### Verification expressions
 
-/-- Rule **Quantifier**: opens a fresh scope, binds `x : T`, resolves the
-    optional trigger, and checks the body against `TBool`. The construct
-    itself synthesizes `TBool` since a quantifier is a proposition. -/
+/-- Rule **Quantifier**: opens a fresh scope, binds `x : T` (in scope only
+    for the body and trigger), resolves the optional trigger, and checks
+    the body against `TBool` since a quantifier is a proposition. Without
+    that body check, `forall x: int :: x + 1` would be silently accepted.
+    The construct itself synthesizes `TBool`. -/
 def synthQuantifier (exprMd : StmtExprMd)
     (mode : QuantifierMode) (param : Parameter)
     (trigger : Option StmtExprMd) (body : StmtExprMd) (source : Option FileRange)
@@ -1296,7 +1364,9 @@ def synthOld (exprMd : StmtExprMd)
     omega
 
 /-- Rule **Fresh**: `v` is synthesized and must have a reference type
-    (`UserDefined` or `Unknown`). The construct itself synthesizes `TBool`. -/
+    (`UserDefined` or `Unknown`) — `Fresh` only makes sense on
+    heap-allocated references, so `fresh(5)` is rejected. The construct
+    itself synthesizes `TBool`. -/
 def synthFresh (exprMd : StmtExprMd) (expr : StmtExpr)
     (val : StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .Fresh val)
@@ -1334,8 +1404,13 @@ def synthProveBy (exprMd : StmtExprMd)
 -- ### Self reference
 
 /-- Rules **This-Inside** / **This-Outside**: when `instanceTypeName` is set
-    (we're inside an instance method), `This` synthesizes `UserDefined T`;
-    otherwise an error is emitted and the type collapses to `Unknown`. -/
+    (we're inside an instance method, populated on `ResolveState` by
+    `resolveInstanceProcedure` for the duration of an instance method body),
+    `This` synthesizes `UserDefined T`. With it, `this.field` and
+    instance-method dispatch synthesize real types instead of being
+    wildcarded through `Unknown`. Otherwise an error is emitted ("'this'
+    is not allowed outside instance methods") and the type collapses to
+    `Unknown` to suppress cascading errors. -/
 def synthThis (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let s ← get
@@ -1364,10 +1439,25 @@ def synthAll (source : Option FileRange) : StmtExpr × HighTypeMd :=
 -- ### ContractOf
 
 /-- Rules **ContractOf-Bool** / **ContractOf-Set** / **ContractOf-Error**:
-    `fn` must be a direct identifier reference resolving to a procedure;
-    anything else is ill-formed (a contract belongs to a *named* procedure).
-    Pre/postconditions are propositions (`TBool`); reads/modifies are sets of
-    heap references with element type `Unknown` for now. -/
+    `ContractOf ty fn` extracts a procedure's contract clause as a value:
+    its preconditions (`Precondition`), postconditions (`PostCondition`),
+    reads set (`Reads`), or modifies set (`Modifies`). `fn` must be a
+    direct identifier reference resolving to a procedure — a contract
+    belongs to a *named* procedure, not an arbitrary expression. Anything
+    else fires the diagnostic *"'contractOf' expected a procedure
+    reference"* and the construct synthesizes `Unknown` to suppress
+    cascading errors.
+
+    `Precondition` and `PostCondition` are propositions, hence `TBool`.
+    `Reads` and `Modifies` are sets of heap-allocated locations —
+    composite/datatype references and fields. The element type is left as
+    `Unknown` for now since the rule doesn't yet recover it from `fn`'s
+    declared modifies/reads clauses.
+
+    The constructor is reserved for future use — Laurel's grammar has no
+    `contractOf` production today, and the translator emits "not yet
+    implemented" for it. The typing rule exists so resolution remains
+    exhaustive over `StmtExpr`. -/
 def synthContractOf (exprMd : StmtExprMd)
     (ty : ContractType) (fn : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .ContractOf ty fn) :
@@ -1412,9 +1502,18 @@ def synthHole (det : Bool) (type : Option HighTypeMd) (source : Option FileRange
 
 /-- Rule **Hole-None-Check**: an untyped hole in check mode records the
     expected type on the node so downstream passes don't have to infer it
-    again. The subsumption check is trivial (`Unknown <: T` always holds), so
-    this rule never fails — it just preserves the type information available
-    at the check-mode boundary. -/
+    again. The subsumption check is trivial (`Unknown <: T` always holds),
+    so this rule never fails — it just preserves the type information
+    available at the check-mode boundary instead of discarding it.
+
+    A separate `InferHoleTypes` pass still runs after resolution to
+    annotate holes that ended up in synth-only positions. When that pass
+    encounters a hole whose type was already set (by `[⇐] Hole-None` or by
+    a user-written `?: T`), it checks the resolution-time and
+    inference-time types for consistency under `~`; a disagreement fires
+    the diagnostic *"hole annotated with 'T_resolution' but context
+    expects 'T_inference'"*, surfacing what would otherwise be a silent
+    overwrite. -/
 def checkHoleNone (det : Bool) (expected : HighTypeMd) (source : Option FileRange) :
     StmtExprMd :=
   { val := .Hole det (some expected), source := source }
