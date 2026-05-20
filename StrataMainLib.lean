@@ -599,7 +599,7 @@ private def reportUserCodeError (range : SourceRange) (msg : String)
       h.putStrLn line
   return location
 
-def pyAnalyzeLaurelCommand : Command where
+def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn) : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := verifyOptionsFlags ++ [
@@ -694,7 +694,7 @@ def pyAnalyzeLaurelCommand : Command where
       verifyOptions := options
       entryPoint, isBugFinding
       outputMode, skipVerification
-      metricsHandle
+      metricsHandle, mkDischarge
     }
 
     -- Always print pipeline warnings
