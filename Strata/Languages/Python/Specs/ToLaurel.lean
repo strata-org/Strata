@@ -7,12 +7,12 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 import Strata.DDM.Format
-import Strata.Languages.Python.OverloadTable
 import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Pipeline.Messages
 import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
+public import Strata.Languages.Python.OverloadTable
 import Strata.Languages.Python.Specs.MessageKind
 
 /-!
@@ -53,11 +53,14 @@ private def typeTestersMap : Std.HashMap PythonIdent String :=
 /-- Fully qualified Laurel name for a `PythonIdent`: module dots become
     underscores. E.g., `"mylib.sub"` / `"Foo"` → `"mylib_sub_Foo"`. -/
 def PythonIdent.toLaurelName (id : PythonIdent) : String :=
-  let pfx := "_".intercalate (id.pythonModule.splitOn ".")
-  if pfx.isEmpty then id.name else pfx ++ "_" ++ id.name
+  id.toString (sep := "_")
 
 end -- public section
 end Strata.Python
+
+namespace Strata.Python.Specs
+
+end Strata.Python.Specs
 
 namespace Strata.Python.Specs.ToLaurel
 
@@ -130,11 +133,38 @@ def pushOverloadEntry (funcName : String) (paramName : String)
           { existing with entries := existing.entries.insert literalValue returnType }
       }
 
-/-- Prepend the module prefix to a name. Returns the name unchanged
-    if the prefix is empty. -/
+/-- Extract an overload dispatch entry from an `@overload` function declaration. -/
+def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
+  let args := func.args.args
+  let .isTrue _ := decideProp (args.size > 0)
+    | reportError .overloadNoArgs func.loc
+        s!"Overloaded function '{func.name}' has no arguments"
+      return
+  let firstArgType := args[0].type
+  let literalValue ←
+        match firstArgType.asStringLiteral with
+        | some v => pure v
+        | none =>
+          reportError .overloadArgNotStringLiteral func.loc
+            s!"Overloaded function '{func.name}': first argument \
+              type '{firstArgType}' is not a \
+              string literal (only string literal dispatch is \
+              currently supported)"
+          return
+  let retType ←
+        match func.returnType.asIdent with
+        | some nm => pure nm
+        | none =>
+          reportError .overloadReturnNotClass func.loc
+            s!"Overloaded function '{func.name}': return type \
+              '{func.returnType}' is not a \
+              class type"
+          return
+  pushOverloadEntry func.name args[0].name literalValue retType
+
+/-- Prepend the module prefix to a name. -/
 def prefixName (name : String) : ToLaurelM String := do
   let ctx ← read
-  if ctx.modulePrefix.isEmpty then return name
   return ctx.modulePrefix ++ "_" ++ name
 
 /-! ## Helper Functions -/
@@ -579,38 +609,6 @@ def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
     instanceProcedures := []
   })
 
-/-- Extract an overload dispatch entry from an `@overload` function declaration.
-    Looks for a `stringLiteral` in the first argument's type and an `.ident`
-    return type, and records them in the dispatch table. -/
-def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
-  let args := func.args.args
-  let .isTrue _ := decideProp (args.size > 0)
-    | reportError .overloadNoArgs func.loc
-        s!"Overloaded function '{func.name}' has no arguments"
-      return
-  let firstArgType := args[0].type
-  let literalValue ←
-        match firstArgType.asStringLiteral with
-        | some v => pure v
-        | none =>
-          reportError .overloadArgNotStringLiteral func.loc
-            s!"Overloaded function '{func.name}': first argument \
-              type '{firstArgType}' is not a \
-              string literal (only string literal dispatch is \
-              currently supported)"
-          return
-  let retType ←
-        match func.returnType.asIdent with
-        | some nm => pure nm
-        | none =>
-          reportError .overloadReturnNotClass func.loc
-            s!"Overloaded function '{func.name}': return type \
-              '{func.returnType}' is not a \
-              class type"
-          return
-  -- args[0].name is the formal parameter name from the PySpec (not a call-site argument)
-  pushOverloadEntry func.name args[0].name literalValue retType
-
 /-- Convert a single PySpec signature to Laurel declarations. -/
 def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
   match sig with
@@ -642,9 +640,12 @@ public structure TranslationResult where
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
-    (modulePrefix : String)
+    (moduleName : ModuleName)
     : TranslationResult :=
-  let ctx : ToLaurelContext := { filepath, modulePrefix }
+  let ctx : ToLaurelContext := {
+    filepath,
+    modulePrefix := moduleName.toString (sep := "_")
+  }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
   let pgm : Laurel.Program := {
     staticProcedures := state.procedures.toList
@@ -672,5 +673,6 @@ public def extractOverloads (filepath : System.FilePath) (sigs : Array Signature
     | _ => pure ()
   let ((), state) := action.run ctx |>.run {}
   (state.overloads, state.errors)
+
 
 end Strata.Python.Specs.ToLaurel

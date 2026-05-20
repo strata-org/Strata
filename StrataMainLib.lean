@@ -915,14 +915,14 @@ def pySpecToLaurelCommand : Command where
     let strataDir : System.FilePath := v[1]
     let some mod := pythonFile.fileStem
       | exitFailure s!"No stem {pythonFile}"
-    let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
+    let some mod := Strata.Python.ModuleName.ofString? mod
       | exitFailure s!"Invalid module {mod}"
     let ionFile := strataDir / mod.strataFileName
     let sigs ←
       match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => exitFailure s!"Could not read {ionFile}: {msg}"
-    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs ""
+    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs mod
     if result.errors.size > 0 then
       IO.eprintln s!"{result.errors.size} translation warning(s):"
       for err in result.errors do
