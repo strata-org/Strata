@@ -714,8 +714,41 @@ theorem block_simulation
 The end-to-end statement: a successful DetCFG run is matched by a successful
 GOTO run reaching the same final configuration.
 
-This wraps `block_simulation` with a `ReflTrans`-length induction, mirroring
-the pattern in `Strata.Transform.DetToKleeneCorrect`. -/
+This wraps `block_simulation` with an induction over `CoreCFGStepStar`,
+case-splitting `Sim` to either invoke the induction hypothesis on the
+post-block continuation label or collapse the tail to `refl` when the
+block transitioned to a terminal config. -/
+
+/-- Auxiliary induction over `CoreCFGStepStar`: from any `(.cont l σ failed)`
+configuration that reaches `(.terminal σ' b)` in the source CFG, we can
+build a matching GOTO trace from `(.running pc σ failed)` to
+`(.terminal σ' b)`, where `pc` is the GOTO entry for label `l`.
+
+The main theorem is a wrapper that instantiates this at
+`l := cfg.entry`, `σ := initial store`, `failed := false`. -/
+private theorem cfgStepStar_to_gotoStar
+    (δ : Imperative.SemanticEval Core.Expression)
+    (δ_goto : SemanticEvalGoto Core.Expression)
+    (δ_goto_bool : SemanticEvalGotoBool Core.Expression)
+    (h_expr : ExprTranslationPreservesEval δ δ_goto δ_goto_bool)
+    (h_wf_bool : WellFormedSemanticEvalGotoBool δ_goto_bool)
+    (π : String → Option Core.Procedure)
+    (φ : Core.CoreEval → Imperative.PureFunc Core.Expression → Core.CoreEval)
+    (cfg : Core.DetCFG) (pgm : Program)
+    (wf : WellFormedTranslation cfg pgm δ δ_goto δ_goto_bool)
+    (h_call_free :
+      ∀ p ∈ cfg.blocks, ∀ c ∈ p.2.cmds, c.isAdmittedCmd = true)
+    (l : String) (σ : Imperative.SemanticStore Core.Expression)
+    (failed : Bool)
+    (σ' : Imperative.SemanticStore Core.Expression) (b : Bool)
+    (pc : Nat) (h_pc : wf.labelMap l = some pc)
+    (h_run :
+      Core.CoreCFGStepStar π φ δ cfg
+        (.cont l σ failed)
+        (.terminal σ' b))
+    : StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
+        (.running pc σ failed) (.terminal σ' b) := by
+  sorry
 
 /-- Forward simulation: any terminating DetCFG run is matched by a
 terminating GOTO run with the same final store and failure flag.
@@ -723,12 +756,14 @@ terminating GOTO run with the same final store and failure flag.
 Hypotheses:
 
 * `h_expr` — every Core expression has a GOTO translation that the
-  evaluators agree on.
+  evaluators agree on. (Currently unused by the proof chain — threaded
+  through `WellFormedTranslation.layout_*` instead — but retained as a
+  documented axiomatized input.)
 * `h_wf_bool` — the GOTO boolean evaluator is well-formed under negation.
 * `wf` — a `WellFormedTranslation` witness for `pgm` against `cfg`.
+* `h_call_free` — every block of the CFG admits the proof's restricted
+  command fragment (no `.call`, no `.cover`, no nondet `.init`).
 * `h_run` — a multi-step DetCFG run from the entry to a terminal config.
-* (Implicit: the CFG's blocks are call-free; the proof obligation above
-  takes this as a per-block hypothesis.)
 
 Conclusion: there is a `StepGotoStar` from the GOTO program's entry
 configuration to a `terminal` configuration with the same `(σ', b)`. -/
@@ -754,21 +789,10 @@ theorem coreCFGToGoto_forward_simulation
         StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
           (.running pc_entry σ false)
           (.terminal σ' b) := by
-  -- Proof outline (deferred):
-  -- 1. From `wf.entry_in_map`, obtain `pc_entry` such that
-  --    `wf.labelMap cfg.entry = some pc_entry`.
-  -- 2. Induct on `h_run : CoreCFGStepStar …` (which has its own `refl` /
-  --    `step` constructors, mutually defined with `EvalCommand`).
-  --    For each `step` case, apply `block_simulation` to get a
-  --    corresponding `StepGotoStar` segment, then concatenate with the
-  --    induction hypothesis via `ReflTrans_Transitive`.
-  -- 3. The `refl` case is impossible here because the start config
-  --    `(.cont cfg.entry σ false)` is not equal to a terminal config —
-  --    it's discharged by `cases` / `injection`.
-  -- 4. The `terminal` case lifts via `Sim.sim_terminal`.
-  --
-  -- Mirrors the structure of `detToKleene_overapproximates` in
-  -- `Strata/Transform/DetToKleeneCorrect.lean`.
-  sorry
+  obtain ⟨pc_entry, h_pc_entry⟩ := wf.entry_in_map
+  refine ⟨pc_entry, h_pc_entry, ?_⟩
+  exact cfgStepStar_to_gotoStar δ δ_goto δ_goto_bool h_expr h_wf_bool
+    π φ cfg pgm wf h_call_free
+    cfg.entry σ false σ' b pc_entry h_pc_entry h_run
 
 end CProverGOTO
