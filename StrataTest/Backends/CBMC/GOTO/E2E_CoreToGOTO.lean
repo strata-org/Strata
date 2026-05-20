@@ -377,3 +377,75 @@ procedure test(x : int) {
   assert! (gotoStr.splitOn "x must be positive").length > 1
   -- It should NOT contain the default label as the comment
   assert! (gotoStr.splitOn "assert_0").length == 1
+
+-------------------------------------------------------------------------------
+
+-- Regression: inout-parameter rename collision.
+-- An inout parameter appears in both `Procedure.Header.inputs` and
+-- `Procedure.Header.outputs`. Before the fix, the rename map's outputs entry
+-- (`pname::1::x`) overwrote the formals entry (`pname::x`), and call sites
+-- passing inout args produced typeless `LExpr.fvar id none` that
+-- `toGotoExprCtx` rejected with "Not yet implemented: LExpr.fvar … none".
+
+-- Inout params are bound to the formal symbol form, not a separate local.
+private def E2E_InoutRename :=
+#strata
+program Core;
+procedure caller(inout y : int)
+spec {
+  ensures (y == y);
+} {
+  y := y;
+};
+#end
+
+#eval do
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_InoutRename
+    | IO.throwServerError "inout translation failed"
+  let symtabStr := symtab.pretty
+  let gotoStr := goto.pretty
+  -- Body references to `y` resolve to the formal symbol `caller::y`,
+  -- not the local symbol `caller::1::y`.
+  assert! (gotoStr.splitOn "caller::y").length > 1
+  assert! (gotoStr.splitOn "caller::1::y").length == 1
+  -- The formal symbol entry exists; the spurious local entry does NOT.
+  assert! (symtabStr.splitOn "\"caller::y\"").length > 1
+  assert! (symtabStr.splitOn "\"caller::1::y\"").length == 1
+
+-- Inout call site: passing inout to a callee no longer errors at toGotoExprCtx.
+private def E2E_InoutCallSite :=
+#strata
+program Core;
+procedure helper(inout x : int) { x := x; };
+procedure main(inout y : int)   { call helper(inout y); };
+#end
+
+#eval do
+  -- Before the fix, this produced:
+  --   [toGotoExprCtx] Not yet implemented: LExpr.fvar … name := "main::1::y" … none
+  let cprog := translateCore E2E_InoutCallSite
+  let procs := cprog.decls.filterMap fun d => Core.Decl.getProc? d
+  let mainProc := procs[1]!
+  let Env := Lambda.TEnv.default
+  let (.ok _) := procedureToGotoCtx Env mainProc
+    | IO.throwServerError "inout call-site translation failed"
+  pure ()
+
+-- Pure-out regression guard: inouts must not break the pre-existing `out`
+-- handling. A pure `out` parameter still gets the local symbol form.
+private def E2E_PureOutRegression :=
+#strata
+program Core;
+procedure helper(out x : int) { x := 0; };
+procedure main(out y : int)   { call helper(out y); };
+#end
+
+#eval do
+  let cprog := translateCore E2E_PureOutRegression
+  let procs := cprog.decls.filterMap fun d => Core.Decl.getProc? d
+  let mainProc := procs[1]!
+  let Env := Lambda.TEnv.default
+  let (.ok (ctx, _)) := procedureToGotoCtx Env mainProc
+    | IO.throwServerError "pure-out translation failed"
+  -- `y` is a pure out, so it appears in ctx.locals (mapped to `main::1::y`).
+  assert! ctx.locals.contains "y"

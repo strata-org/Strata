@@ -158,7 +158,17 @@ private partial def coreStmtsToGoto
         let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
-        let argExprs ← renamedArgs.mapM toExpr
+        -- `getInputExprs` synthesizes a typeless `LExpr.fvar id none` for every
+        -- inout argument (see `Strata/Languages/Core/Statement.lean`). After
+        -- renaming, look up the type from the threaded type env so
+        -- `toGotoExprCtx` can produce a typed GOTO symbol expression.
+        let typedArgs := renamedArgs.map fun e => match e with
+          | .fvar m id none =>
+            match trans.T.context.types.find? id with
+            | some lty => Lambda.LExpr.fvar m id (some lty.toMonoTypeUnsafe)
+            | none => e
+          | _ => e
+        let argExprs ← typedArgs.mapM toExpr
         let lhsExpr := match renamedLhs with
           | id :: _ =>
             let name := Core.CoreIdent.toPretty id
@@ -284,19 +294,29 @@ def procedureToGotoCtx
   let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
   let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
-  let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
+  -- Inout params live in BOTH inputs and outputs by Strata Core convention;
+  -- their canonical CBMC binding is the formal symbol (`pname::x`), not a
+  -- separate local (`pname::1::x`). Filter inouts out of the outputs list
+  -- everywhere outputs would otherwise produce a local-symbol entry that
+  -- would shadow the formal.
+  let formalsSet : Std.HashSet String := formals.foldl (·.insert ·) ∅
+  let pureOutputPairs := (outputs.zip p.header.outputs.values).filter
+    fun (n, _) => !formalsSet.contains n
+  let pureOutputs := pureOutputPairs.map (·.1)
+  let pureOutputTypes := pureOutputPairs.map (·.2)
+  let new_outputs := pureOutputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals := (Imperative.Block.definedVars body).map Core.CoreIdent.toPretty
   let localTypes := collectInitTypesFromStmts body
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
   let rn : Std.HashMap String String :=
-    (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
+    (formals.zip new_formals ++ pureOutputs.zip new_outputs ++ locals.zip new_locals).foldl
       (init := {}) fun m (k, v) => m.insert k v
   -- Seed the type environment with renamed input, output, and local variable types
   let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
-    (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
+    (new_outputs.zip pureOutputTypes).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let localEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     localTypes.filterMap fun (name, ty) =>
@@ -371,13 +391,14 @@ def procedureToGotoCtx
     let postJson ← (postGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
-  -- Build localTypes map for output parameters (so they get proper types in symbol table)
-  let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
+  -- Build localTypes map for pure output parameters (so they get proper types in symbol table).
+  -- Inouts are bound by the formal symbol and don't get a separate local entry.
+  let pureOutput_tys ← pureOutputTypes.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=
-    (outputs.zip output_tys).foldl (init := {}) fun m (k, v) => m.insert k v
+    (pureOutputs.zip pureOutput_tys).foldl (init := {}) fun m (k, v) => m.insert k v
   let ctx : CoreToGOTO.CProverGOTO.Context :=
     { program := pgm, formals := formals_tys, ret := ret_ty,
-      locals := outputs ++ locals, contracts := contracts,
+      locals := pureOutputs ++ locals, contracts := contracts,
       localTypes := localTypes }
   return (ctx, liftedFuncs)
 
