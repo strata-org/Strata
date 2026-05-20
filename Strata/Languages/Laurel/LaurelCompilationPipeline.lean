@@ -182,8 +182,6 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
-        for d in newErrors do
-          dbg_trace s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
         emit pass.name "laurel.st" program
       program := result.program
       model := result.model
