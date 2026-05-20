@@ -328,15 +328,19 @@ def run_cbmc_backend(core_st: Path, tmpdir: Path, result: PipelineResult):
     stem = core_st.stem
     goto_bin = tmpdir / f"{stem}.gb"
     rc, stdout, stderr = run_cmd([
-        SYMTAB2GB_BIN, str(symtab), str(goto_json), "--out", str(goto_bin)
+        SYMTAB2GB_BIN, str(symtab), "--goto-functions", str(goto_json),
+        "--out", str(goto_bin)
     ], timeout=60)
     if rc != 0:
         result.add_backend("cbmc", "FAIL", f"symtab2gb: {stderr.strip()[:60]}")
         return
 
-    # Step 4: Run CBMC
+    # Step 4: Run CBMC. `--function main` is required because Strata-emitted
+    # `main` has parameters that don't match cbmc's standard C entrypoint
+    # signatures; without it cbmc rejects the binary as "no entry point" and
+    # exits with rc=6 rather than the rc=0/10 PASS/FAIL contract used below.
     rc, stdout, stderr = run_cmd([
-        CBMC_BIN, str(goto_bin)
+        CBMC_BIN, "--function", "main", str(goto_bin)
     ], timeout=120)
     if rc == 0:
         result.add_backend("cbmc", "PASS", "All properties hold")
