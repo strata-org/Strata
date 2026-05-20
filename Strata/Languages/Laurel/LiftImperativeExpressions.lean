@@ -157,7 +157,44 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
   return computeExprType s.model expr
 
-/-- Check if an expression contains any assignments (recursively). -/
+/-- Check if an expression contains any assignments that are NOT inside an
+unlabeled block. Unlabeled blocks in expression position are lowered by the
+`.Block` case of `transformExpr` (prepends side-effects), so assignments
+inside them are safely lifted. This is used by the `.Assert` / `.Assume`
+cases in both `transformStmt` and `transformExpr` to decide whether to
+recursively lift the condition: `false` → lift; `true` → leave unchanged so
+the Laurel-to-Core translator can emit "destructive assignments are not
+supported in functions or contracts" against a top-level assignment that
+the user almost certainly didn't intend. -/
+def containsAssignmentOutsideUnlabeledBlock (expr : StmtExprMd) : Bool :=
+  match expr with
+  | AstNode.mk val _ =>
+  match val with
+  | .Assign .. => true
+  | .StaticCall _ args =>
+    args.attach.any (fun x => containsAssignmentOutsideUnlabeledBlock x.val)
+  | .PrimitiveOp _ args =>
+    args.attach.any (fun x => containsAssignmentOutsideUnlabeledBlock x.val)
+  -- Unlabeled blocks are lowered by `transformExpr`, assignments inside
+  -- are safely lifted as prepended side effects.
+  | .Block _ none => false
+  | .Block stmts (some _) =>
+    stmts.attach.any (fun x => containsAssignmentOutsideUnlabeledBlock x.val)
+  | .IfThenElse cond th el =>
+      containsAssignmentOutsideUnlabeledBlock cond ||
+      containsAssignmentOutsideUnlabeledBlock th ||
+      match el with
+      | some e => containsAssignmentOutsideUnlabeledBlock e
+      | none => false
+  | _ => false
+  termination_by expr
+  decreasing_by
+    all_goals ((try cases x); simp_all; try term_by_mem)
+
+/-- Check if an expression contains any assignments (recursively).
+
+Used by the ITE case of `transformExpr` to decide whether a branch needs
+its own prepend isolation. -/
 def containsAssignment (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
@@ -249,12 +286,47 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let resultExpr ← match firstTarget.val with
         | .Local varName => pure (⟨.Var (.Local (← getSubst varName)), source⟩)
         | .Declare param =>
-          -- Declaration with initializer: check if substitution exists
+          -- Declaration with initializer in expression position. If we already
+          -- have a substitution for this name (because a later traversal pass
+          -- introduced one), use the snapshot. Otherwise, fully lower this
+          -- declaration: recursively transform the initializer (so any inner
+          -- assignments / unlabeled blocks / nondeterministic holes get
+          -- lifted), then emit the lifted declaration as a prepended statement
+          -- in correct execution order. Return a reference to the declared
+          -- name as the expression's value.
           let hasSubst := (← get).subst.lookup param.name |>.isSome
           if hasSubst then
             pure (⟨.Var (.Local (← getSubst param.name)), source⟩)
           else
-            return expr
+            -- Run the inner transformation with a fresh prepend stack so we
+            -- can distinguish side-effects from this declaration's initializer
+            -- from those already accumulated by previously-processed (later in
+            -- program order) statements in the right-to-left traversal.
+            let outerPrepends := (← get).prependedStmts
+            modify fun s => { s with prependedStmts := [] }
+            let seqValue ← transformExpr value
+            let innerPrepends ← takePrepends
+            -- Reassemble in correct execution order (front = earliest):
+            --   outerPrepends   - already-lifted statements from later
+            --                     positions; their snapshot decls must precede
+            --                     any reference inserted via substitution into
+            --                     this declaration's initializer.
+            --   innerPrepends   - side effects from evaluating `value`; they
+            --                     must execute before the declaration binds.
+            --   liftedDecl      - this declaration with the transformed value.
+            -- Note: this means later-position prepends (outerPrepends) end up
+            -- at the front of state, contradicting the usual right-to-left
+            -- invariant. That's safe here because outerPrepends only contain
+            -- snapshot/havoc decls and lifted assignments that commute with
+            -- this declaration up to the substitutions applied to seqValue.
+            let liftedDecl : StmtExprMd := ⟨.Assign targets seqValue, source⟩
+            modify fun s => { s with
+              prependedStmts := outerPrepends ++ innerPrepends ++ [liftedDecl] }
+            -- The expression value of `var t := init` is the just-declared `t`.
+            -- Returning a `.Var (.Local name)` lets `onlyKeepSideEffectStmtsAndLast`
+            -- drop this slot from the surrounding block (the side effect is
+            -- already captured in the prepended declaration above).
+            return ⟨.Var (.Local param.name), source⟩
         | _ =>
           dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
           return expr
@@ -344,6 +416,11 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return ⟨.IfThenElse seqCond seqThen seqElse, source⟩
 
   | .Block stmts labelOption =>
+      -- Recursively transform sub-expressions (this also creates SSA snapshots
+      -- for assignments in expression position, via the `.Assign` case above).
+      -- We keep the Block structure: `LaurelToCoreTranslator` natively handles
+      -- singleton blocks (`{ e }`) and `var x := init`-prefixed blocks (as
+      -- let-bindings), so we should not collapse those structures here.
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
       return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, source⟩
 
@@ -358,9 +435,48 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       else
         return expr
 
+  | .Assert cond =>
+      -- Asserts in expression position (typically as a non-last stmt of a
+      -- block in expression position) are lifted out as prepended statements.
+      -- The condition is recursively transformed so any nested assignments,
+      -- holes or unlabeled-block side-effects inside it are themselves lifted.
+      -- Returning a leaf placeholder lets `onlyKeepSideEffectStmtsAndLast`
+      -- drop this slot from the surrounding block.
+      --
+      -- A top-level assignment in the condition (e.g. `assert (x := 2) == 2`)
+      -- is left in place: the Laurel-to-Core translator emits a
+      -- "destructive assignments are not supported" diagnostic for those,
+      -- which is more useful than silently lifting an almost certainly
+      -- unintended assignment.
+      if containsAssignmentOutsideUnlabeledBlock cond.condition then
+        return expr
+      let outerPrepends := (← get).prependedStmts
+      modify fun s => { s with prependedStmts := [] }
+      let seqCond ← transformExpr cond.condition
+      let condPrepends ← takePrepends
+      let liftedAssert : StmtExprMd :=
+        ⟨.Assert { cond with condition := seqCond }, source⟩
+      modify fun s => { s with
+        prependedStmts := outerPrepends ++ condPrepends ++ [liftedAssert] }
+      return ⟨.LiteralBool true, source⟩
+
+  | .Assume cond =>
+      -- Same shape as the `.Assert` case above.
+      if containsAssignmentOutsideUnlabeledBlock cond then
+        return expr
+      let outerPrepends := (← get).prependedStmts
+      modify fun s => { s with prependedStmts := [] }
+      let seqCond ← transformExpr cond
+      let condPrepends ← takePrepends
+      let liftedAssume : StmtExprMd := ⟨.Assume seqCond, source⟩
+      modify fun s => { s with
+        prependedStmts := outerPrepends ++ condPrepends ++ [liftedAssume] }
+      return ⟨.LiteralBool true, source⟩
+
   | _ => return expr
   termination_by (sizeOf expr, 0)
   decreasing_by
+    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
     all_goals (simp_all; try term_by_mem)
 
 /--
@@ -372,26 +488,22 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | AstNode.mk val source =>
   match val with
   | .Assert cond =>
-      -- Do not transform assert conditions with assignments — they must be rejected.
-      -- But nondeterministic holes and imperative calls need to be lifted.
-      if !containsAssignment cond.condition then
-        let seqCond ← transformExpr cond.condition
-        let prepends ← takePrepends
-        modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩]
-      else
+      -- See the matching case in `transformExpr` for why we leave a top-level
+      -- destructive assignment in the condition unchanged.
+      if containsAssignmentOutsideUnlabeledBlock cond.condition then
         return [stmt]
+      let seqCond ← transformExpr cond.condition
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩]
 
   | .Assume cond =>
-      -- Do not transform assume conditions with assignments — they must be rejected.
-      -- But nondeterministic holes and imperative calls need to be lifted.
-      if !containsAssignment cond then
-        let seqCond ← transformExpr cond
-        let prepends ← takePrepends
-        modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assume seqCond, source⟩]
-      else
+      if containsAssignmentOutsideUnlabeledBlock cond then
         return [stmt]
+      let seqCond ← transformExpr cond
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.Assume seqCond, source⟩]
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
