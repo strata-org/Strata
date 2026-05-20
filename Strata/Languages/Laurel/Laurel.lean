@@ -143,6 +143,10 @@ inductive HighType : Type where
   | TSet (elementType : AstNode HighType)
   /-- Map type. -/
   | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
+  /-- Immutable sequence type, e.g. `Seq<int>`. Maps to Core's polymorphic `Sequence` type. -/
+  | TSeq (elementType : AstNode HighType)
+  /-- Mutable heap-backed array type, e.g. `Array<int>`. Has reference (aliasing) semantics. -/
+  | TArray (elementType : AstNode HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
@@ -329,6 +333,25 @@ inductive StmtExpr : Type where
         not allowed in functions.
       - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
+  /-- Subscript access or update, e.g. `s[i]` or `s[i := v]`. Eliminated by `SubscriptElim`.
+
+      **Position-encoded interpretation.** The same shape `.Subscript t i (some v)`
+      represents two different operations depending on syntactic position:
+
+      - At *expression position* (e.g. `let s' := s[i := v]`), it is a pure
+        functional update that produces a new sequence.
+      - At *statement position* (e.g. `a[i] := v` as a top-level statement),
+        it is a destructive update on a mutable array.
+
+      Statement-position interpretation requires the `.Subscript` to appear as
+      a direct child of a `.Block` / `.IfThenElse` / `.While` container —
+      `SubscriptElim` and `ValidateSubscriptUsage` recognise the shape there
+      and dispatch on it before the expression-position arms run. A bare
+      `.Subscript ... (some _)` reachable outside such a container would be
+      treated as a value and lose its destructive semantics; today the
+      grammar always wraps procedure bodies in `.Block`, so this case does
+      not arise. -/
+  | Subscript (target : AstNode StmtExpr) (index : AstNode StmtExpr) (update : Option (AstNode StmtExpr))
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
@@ -365,6 +388,237 @@ theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
   have := AstNode.sizeOf_val_lt v
   have := Variable.sizeOf_field_target_lt target fieldName
   have : sizeOf v.val = sizeOf (Variable.Field target fieldName) := congrArg sizeOf h
+  omega
+
+/-- The target/index/value subexpressions of a `StmtExpr.Subscript` are strictly
+smaller than the `Subscript` itself. Useful for termination proofs when recursing
+into `Subscript` children. -/
+theorem StmtExpr.sizeOf_subscript_target_lt (target index : AstNode StmtExpr)
+    (value : Option (AstNode StmtExpr)) :
+    sizeOf target < sizeOf (StmtExpr.Subscript target index value) := by
+  simp; omega
+
+theorem StmtExpr.sizeOf_subscript_index_lt (target index : AstNode StmtExpr)
+    (value : Option (AstNode StmtExpr)) :
+    sizeOf index < sizeOf (StmtExpr.Subscript target index value) := by
+  simp; omega
+
+theorem StmtExpr.sizeOf_subscript_value_lt (target index : AstNode StmtExpr)
+    (v : AstNode StmtExpr) :
+    sizeOf v < sizeOf (StmtExpr.Subscript target index (some v)) := by
+  simp; omega
+
+/-- Variants that work directly with an `AstNode StmtExpr` whose `.val` is known to
+be a `Subscript`. Uses the match-with-hypothesis pattern
+(`match _h : e.val with | .Subscript target index value => ...`). -/
+theorem StmtExpr.sizeOf_subscript_target_lt_of_eq {e : AstNode StmtExpr}
+    {target index : AstNode StmtExpr} {value : Option (AstNode StmtExpr)}
+    (h : e.val = StmtExpr.Subscript target index value) :
+    sizeOf target < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_subscript_target_lt target index value
+  have : sizeOf e.val = sizeOf (StmtExpr.Subscript target index value) := congrArg sizeOf h
+  omega
+
+theorem StmtExpr.sizeOf_subscript_index_lt_of_eq {e : AstNode StmtExpr}
+    {target index : AstNode StmtExpr} {value : Option (AstNode StmtExpr)}
+    (h : e.val = StmtExpr.Subscript target index value) :
+    sizeOf index < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_subscript_index_lt target index value
+  have : sizeOf e.val = sizeOf (StmtExpr.Subscript target index value) := congrArg sizeOf h
+  omega
+
+theorem StmtExpr.sizeOf_subscript_value_lt_of_eq {e : AstNode StmtExpr}
+    {target index : AstNode StmtExpr} {v : AstNode StmtExpr}
+    (h : e.val = StmtExpr.Subscript target index (some v)) :
+    sizeOf v < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_subscript_value_lt target index v
+  have : sizeOf e.val = sizeOf (StmtExpr.Subscript target index (some v)) := congrArg sizeOf h
+  omega
+
+/-- The `value` subexpression of a `StmtExpr.Assign` is strictly smaller than
+the `Assign` itself. Useful for termination proofs when recursing into the
+rhs of an assignment (including `.Assign [.Declare param] initExpr`). -/
+theorem StmtExpr.sizeOf_assign_value_lt (targets : List (AstNode Variable))
+    (value : AstNode StmtExpr) :
+    sizeOf value < sizeOf (StmtExpr.Assign targets value) := by
+  simp; omega
+
+theorem StmtExpr.sizeOf_assign_value_lt_of_eq {e : AstNode StmtExpr}
+    {targets : List (AstNode Variable)} {value : AstNode StmtExpr}
+    (h : e.val = StmtExpr.Assign targets value) :
+    sizeOf value < sizeOf e := by
+  have := AstNode.sizeOf_val_lt e
+  have := StmtExpr.sizeOf_assign_value_lt targets value
+  have : sizeOf e.val = sizeOf (StmtExpr.Assign targets value) := congrArg sizeOf h
+  omega
+
+/-- Helper lemmas for proving termination of `HighType` walkers that recurse
+on `AstNode HighType` children of compound type constructors. Each says
+`sizeOf child < sizeOf (Constructor child)`, derived by `simp; omega`. -/
+theorem HighType.sizeOf_tset_et_lt (et : AstNode HighType) :
+    sizeOf et < sizeOf (HighType.TSet et) := by simp
+
+theorem HighType.sizeOf_tseq_et_lt (et : AstNode HighType) :
+    sizeOf et < sizeOf (HighType.TSeq et) := by simp
+
+theorem HighType.sizeOf_ttypedfield_vt_lt (vt : AstNode HighType) :
+    sizeOf vt < sizeOf (HighType.TTypedField vt) := by simp
+
+theorem HighType.sizeOf_tarray_et_lt (et : AstNode HighType) :
+    sizeOf et < sizeOf (HighType.TArray et) := by simp
+
+theorem HighType.sizeOf_tmap_kt_lt (kt vt : AstNode HighType) :
+    sizeOf kt < sizeOf (HighType.TMap kt vt) := by simp; omega
+
+theorem HighType.sizeOf_tmap_vt_lt (kt vt : AstNode HighType) :
+    sizeOf vt < sizeOf (HighType.TMap kt vt) := by simp; omega
+
+theorem HighType.sizeOf_pure_base_lt (base : AstNode HighType) :
+    sizeOf base < sizeOf (HighType.Pure base) := by simp
+
+theorem HighType.sizeOf_applied_base_lt (base : AstNode HighType) (args : List (AstNode HighType)) :
+    sizeOf base < sizeOf (HighType.Applied base args) := by simp; omega
+
+theorem HighType.sizeOf_applied_args_lt (base : AstNode HighType) (args : List (AstNode HighType)) :
+    sizeOf args < sizeOf (HighType.Applied base args) := by simp; omega
+
+theorem HighType.sizeOf_intersection_types_lt (types : List (AstNode HighType)) :
+    sizeOf types < sizeOf (HighType.Intersection types) := by simp
+
+/-- Variant: works directly with an `AstNode HighType` whose `.val` is the relevant
+constructor. Mirrors `Variable.sizeOf_field_target_lt_of_eq`. -/
+theorem HighType.sizeOf_tset_et_lt_of_eq {ty : AstNode HighType} {et : AstNode HighType}
+    (h : ty.val = HighType.TSet et) : sizeOf et < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tset_et_lt et
+  have : sizeOf ty.val = sizeOf (HighType.TSet et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tseq_et_lt_of_eq {ty : AstNode HighType} {et : AstNode HighType}
+    (h : ty.val = HighType.TSeq et) : sizeOf et < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tseq_et_lt et
+  have : sizeOf ty.val = sizeOf (HighType.TSeq et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_ttypedfield_vt_lt_of_eq {ty : AstNode HighType} {vt : AstNode HighType}
+    (h : ty.val = HighType.TTypedField vt) : sizeOf vt < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_ttypedfield_vt_lt vt
+  have : sizeOf ty.val = sizeOf (HighType.TTypedField vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tarray_et_lt_of_eq {ty : AstNode HighType} {et : AstNode HighType}
+    (h : ty.val = HighType.TArray et) : sizeOf et < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tarray_et_lt et
+  have : sizeOf ty.val = sizeOf (HighType.TArray et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_kt_lt_of_eq {ty : AstNode HighType}
+    {kt vt : AstNode HighType} (h : ty.val = HighType.TMap kt vt) :
+    sizeOf kt < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tmap_kt_lt kt vt
+  have : sizeOf ty.val = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_vt_lt_of_eq {ty : AstNode HighType}
+    {kt vt : AstNode HighType} (h : ty.val = HighType.TMap kt vt) :
+    sizeOf vt < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_tmap_vt_lt kt vt
+  have : sizeOf ty.val = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_pure_base_lt_of_eq {ty : AstNode HighType} {base : AstNode HighType}
+    (h : ty.val = HighType.Pure base) : sizeOf base < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_pure_base_lt base
+  have : sizeOf ty.val = sizeOf (HighType.Pure base) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_applied_base_lt_of_eq {ty : AstNode HighType}
+    {base : AstNode HighType} {args : List (AstNode HighType)}
+    (h : ty.val = HighType.Applied base args) : sizeOf base < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_applied_base_lt base args
+  have : sizeOf ty.val = sizeOf (HighType.Applied base args) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_applied_args_lt_of_eq {ty : AstNode HighType}
+    {base : AstNode HighType} {args : List (AstNode HighType)}
+    (h : ty.val = HighType.Applied base args) : sizeOf args < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_applied_args_lt base args
+  have : sizeOf ty.val = sizeOf (HighType.Applied base args) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_intersection_types_lt_of_eq {ty : AstNode HighType}
+    {types : List (AstNode HighType)}
+    (h : ty.val = HighType.Intersection types) : sizeOf types < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt ty
+  have := HighType.sizeOf_intersection_types_lt types
+  have : sizeOf ty.val = sizeOf (HighType.Intersection types) := congrArg sizeOf h
+  omega
+
+/-- Variants for use in `containsTArray`-style walkers that recurse on
+`et.val` rather than `et`: directly chain through both the constructor
+unfold and `AstNode.sizeOf_val_lt` to give `sizeOf et.val < sizeOf ty`
+when `ty = .Constructor et`. -/
+theorem HighType.sizeOf_tset_et_val_lt_of_eq {ty : HighType} {et : AstNode HighType}
+    (h : ty = HighType.TSet et) : sizeOf et.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt et
+  have := HighType.sizeOf_tset_et_lt et
+  have : sizeOf ty = sizeOf (HighType.TSet et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tseq_et_val_lt_of_eq {ty : HighType} {et : AstNode HighType}
+    (h : ty = HighType.TSeq et) : sizeOf et.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt et
+  have := HighType.sizeOf_tseq_et_lt et
+  have : sizeOf ty = sizeOf (HighType.TSeq et) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_ttypedfield_vt_val_lt_of_eq {ty : HighType} {vt : AstNode HighType}
+    (h : ty = HighType.TTypedField vt) : sizeOf vt.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt vt
+  have := HighType.sizeOf_ttypedfield_vt_lt vt
+  have : sizeOf ty = sizeOf (HighType.TTypedField vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_kt_val_lt_of_eq {ty : HighType}
+    {kt vt : AstNode HighType} (h : ty = HighType.TMap kt vt) :
+    sizeOf kt.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt kt
+  have := HighType.sizeOf_tmap_kt_lt kt vt
+  have : sizeOf ty = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_tmap_vt_val_lt_of_eq {ty : HighType}
+    {kt vt : AstNode HighType} (h : ty = HighType.TMap kt vt) :
+    sizeOf vt.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt vt
+  have := HighType.sizeOf_tmap_vt_lt kt vt
+  have : sizeOf ty = sizeOf (HighType.TMap kt vt) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_pure_base_val_lt_of_eq {ty : HighType} {base : AstNode HighType}
+    (h : ty = HighType.Pure base) : sizeOf base.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt base
+  have := HighType.sizeOf_pure_base_lt base
+  have : sizeOf ty = sizeOf (HighType.Pure base) := congrArg sizeOf h
+  omega
+
+theorem HighType.sizeOf_applied_base_val_lt_of_eq {ty : HighType}
+    {base : AstNode HighType} {args : List (AstNode HighType)}
+    (h : ty = HighType.Applied base args) : sizeOf base.val < sizeOf ty := by
+  have := AstNode.sizeOf_val_lt base
+  have := HighType.sizeOf_applied_base_lt base args
+  have : sizeOf ty = sizeOf (HighType.Applied base args) := congrArg sizeOf h
   omega
 
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
@@ -419,6 +673,8 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
+  | HighType.TSeq t1, HighType.TSeq t2 => highEq t1 t2
+  | HighType.TArray t1, HighType.TArray t2 => highEq t1 t2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -597,5 +853,43 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+/-! ## Sequence and Array well-known names
+
+`SubscriptElim` and `ConcreteToAbstractTreeTranslator` reference these names
+when lowering `Seq<T>` and `Array<T>` to Core. They are collected here so
+changes do not silently diverge between passes.
+-/
+
+/-- `Sequence.empty() : Seq<T>` — the empty sequence. -/
+def SeqOp.empty    := "Sequence.empty"
+/-- `Sequence.build(s, v) : Seq<T>` — append `v` to the end of `s`. -/
+def SeqOp.build    := "Sequence.build"
+/-- `Sequence.select(s, i) : T` — read the element at index `i`. -/
+def SeqOp.select   := "Sequence.select"
+/-- `Sequence.update(s, i, v) : Seq<T>` — functional update. -/
+def SeqOp.update   := "Sequence.update"
+/-- `Sequence.length(s) : int` — length of the sequence. -/
+def SeqOp.length   := "Sequence.length"
+
+/-- Name of the `$data` field on the synthetic `$Array` composite.
+    This is a field name, not a `Sequence.*` operation — kept out of the
+    `SeqOp.*` namespace since it's semantically different from the entries
+    above. -/
+def arrayDataField := "$data"
+
+/-- Name of the synthetic composite type injected by `SubscriptElim` to model
+    `Array<T>`. Uses the `$` prefix convention for internal names to avoid
+    colliding with user-defined composite types. -/
+def arrayCompositeName := "$Array"
+
+/-- Name of the `Array.length` function. Calls to this name are desugared by
+    `SubscriptElim` into `Sequence.length(a.$data)`. -/
+def arrayLengthName := "Array.length"
+
+/-- Name of the `Sequence.fromArray` function. Takes a snapshot of an array's
+    contents as an immutable `Seq<T>`. Calls are desugared by `SubscriptElim`
+    into `a#$data`. -/
+def sequenceFromArrayName := "Sequence.fromArray"
 
 end
