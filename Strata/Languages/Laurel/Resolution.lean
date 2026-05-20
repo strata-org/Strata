@@ -640,6 +640,8 @@ def checkStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtE
     checkBlock exprMd stmts label expected source (by rw [h_node])
   | .IfThenElse cond thenBr elseBr =>
     checkIfThenElse exprMd cond thenBr elseBr expected source (by rw [h_node])
+  | .Assign targets value =>
+    checkAssign exprMd targets value expected source (by rw [h_node])
   | .Hole det none => pure (checkHoleNone det expected source)
   | _ =>
     -- Subsumption fallback: synth then check `actual <: expected`.
@@ -933,7 +935,10 @@ def synthAssume (exprMd : StmtExprMd)
     (single type if one target, otherwise `MultiValuedExpr [T_1; …; T_n]`)
     and checked against the RHS's synthesized type. When the RHS is a
     statement (`TVoid`) — `while`, `return`, … — all checks are skipped:
-    there's no value to assign. -/
+    there's no value to assign. The construct synthesizes the RHS's type,
+    so that expression-position assignments like `x ++ (y := s)` see a
+    string in the second operand; statement-position uses are accommodated
+    by `checkAssign`, which accepts `TVoid` as the expected type. -/
 def synthAssign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assign targets value) :
@@ -966,6 +971,55 @@ def synthAssign (exprMd : StmtExprMd)
     checkSubtype source expectedTy valueTy
   pure (.Assign targets' value', valueTy)
   termination_by (exprMd, 1)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      simp [h] at hsz
+      try simp_all
+      try (have := List.sizeOf_lt_of_mem ‹_ ∈ targets›; simp_all)
+      omega
+
+/-- Rule **Assign-Check**: an assignment in statement position (checked
+    against `TVoid`) discards its RHS value, so the synthesized type is not
+    compared against `expected`. This lets `b := 1` appear as the last
+    statement of a block in an else-less `if` (whose branch is checked
+    against `TVoid`) without firing a subsumption error against the RHS's
+    type. For non-`TVoid` expected types, falls back to subsumption. -/
+def checkAssign (exprMd : StmtExprMd)
+    (targets : List VariableMd) (value : StmtExprMd)
+    (expected : HighTypeMd) (source : Option FileRange)
+    (h : exprMd.val = .Assign targets value) : ResolveM StmtExprMd := do
+  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+    let ⟨vv, vs⟩ := v
+    match vv with
+    | .Local ref =>
+      let ref' ← resolveRef ref source
+      pure (⟨.Local ref', vs⟩ : VariableMd)
+    | .Field target fieldName =>
+      let (target', _) ← synthStmtExpr target
+      let fieldName' ← resolveFieldRef target' fieldName source
+      pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
+    | .Declare param =>
+      let ty' ← resolveHighType param.type
+      let name' ← defineNameCheckDup param.name (.var param.name ty')
+      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
+  let (value', valueTy) ← synthStmtExpr value
+  let targetType (t : VariableMd) : ResolveM HighTypeMd := do
+    match t.val with
+    | .Local ref => getVarType ref
+    | .Declare param => pure param.type
+    | .Field _ fieldName => getVarType fieldName
+  if valueTy.val != HighType.TVoid then
+    let targetTys ← targets'.mapM targetType
+    let assignedTy : HighTypeMd := match targetTys with
+      | [single] => single
+      | _        => { val := .MultiValuedExpr targetTys, source := source }
+    checkSubtype source assignedTy valueTy
+  unless expected.val matches .TVoid do
+    checkSubtype source expected valueTy
+  pure { val := .Assign targets' value', source := source }
+  termination_by (exprMd, 0)
   decreasing_by
     all_goals
       apply Prod.Lex.left
