@@ -4633,53 +4633,6 @@ private theorem Block.uniqueInits.loop_body {P : PureExpr}
   unfold Stmt.initVars at h_head
   exact h_head
 
-/-! ## Block.noBlocks projection helpers
-
-`Block.noBlocks ss` is a boolean predicate identifying statement lists
-containing no `.block` constructor. These helpers project it down to
-sub-lists used by the recursive simulation calls. -/
-
-private theorem Block.noBlocks.tail {P : PureExpr} {C : Type}
-    {s : Stmt P C} {ss : List (Stmt P C)}
-    (h : Block.noBlocks (s :: ss) = true) : Block.noBlocks ss = true := by
-  rw [Block.noBlocks] at h
-  exact (Bool.and_eq_true _ _).mp h |>.2
-
-private theorem Block.noBlocks.head_stmt {P : PureExpr} {C : Type}
-    {s : Stmt P C} {ss : List (Stmt P C)}
-    (h : Block.noBlocks (s :: ss) = true) : Stmt.noBlocks s = true := by
-  rw [Block.noBlocks] at h
-  exact (Bool.and_eq_true _ _).mp h |>.1
-
-private theorem Block.noBlocks.ite_then {P : PureExpr} {C : Type}
-    {g : ExprOrNondet P} {tss ess : List (Stmt P C)} {md : MetaData P}
-    {rest : List (Stmt P C)}
-    (h : Block.noBlocks (.ite g tss ess md :: rest) = true) :
-    Block.noBlocks tss = true := by
-  have h_head := Block.noBlocks.head_stmt h
-  rw [Stmt.noBlocks] at h_head
-  exact (Bool.and_eq_true _ _).mp h_head |>.1
-
-private theorem Block.noBlocks.ite_else {P : PureExpr} {C : Type}
-    {g : ExprOrNondet P} {tss ess : List (Stmt P C)} {md : MetaData P}
-    {rest : List (Stmt P C)}
-    (h : Block.noBlocks (.ite g tss ess md :: rest) = true) :
-    Block.noBlocks ess = true := by
-  have h_head := Block.noBlocks.head_stmt h
-  rw [Stmt.noBlocks] at h_head
-  exact (Bool.and_eq_true _ _).mp h_head |>.2
-
-private theorem Block.noBlocks.loop_body {P : PureExpr} {C : Type}
-    {guard : ExprOrNondet P} {measure : Option P.Expr}
-    {invariants : List (String × P.Expr)}
-    {bss : List (Stmt P C)} {md : MetaData P}
-    {rest : List (Stmt P C)}
-    (h : Block.noBlocks (.loop guard measure invariants bss md :: rest) = true) :
-    Block.noBlocks bss = true := by
-  have h_head := Block.noBlocks.head_stmt h
-  rw [Stmt.noBlocks] at h_head
-  exact h_head
-
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
