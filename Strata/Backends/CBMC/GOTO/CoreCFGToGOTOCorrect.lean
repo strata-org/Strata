@@ -13,6 +13,7 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Util.Relations
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.StatementSemanticsProps
 
 public section
 
@@ -749,10 +750,70 @@ private theorem cfgStepStar_to_gotoStar
         (.terminal σ' b))
     : StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
         (.running pc σ failed) (.terminal σ' b) := by
-  cases h_run with
-  | step h_lookup h_blk h_rest =>
-    -- The `step` constructor: discharged in a later task.
-    sorry
+  -- Use `Core.CoreCFGStepStar_rec` since `CoreCFGStepStar` is mutually
+  -- inductive and the `induction` tactic doesn't apply. Encode the
+  -- conclusion as a motive over `(c₁, c₂)` so that the IH gives us a
+  -- tail trace from the post-block continuation label.
+  let motive : Imperative.CFGConfig String Core.Expression →
+               Imperative.CFGConfig String Core.Expression → Prop :=
+    fun c₁ c₂ =>
+      ∀ (l : String) (σ : Imperative.SemanticStore Core.Expression)
+        (failed : Bool) (pc : Nat),
+        c₁ = .cont l σ failed →
+        wf.labelMap l = some pc →
+        ∀ (σ' : Imperative.SemanticStore Core.Expression) (b : Bool),
+          c₂ = .terminal σ' b →
+          StepGotoStar Core.Expression δ_goto δ_goto_bool pgm
+            (.running pc σ failed) (.terminal σ' b)
+  have key : motive (.cont l σ failed) (.terminal σ' b) := by
+    apply Core.CoreCFGStepStar_rec (motive := motive) ?_ ?_ h_run
+    · -- refl case: motive c c. The two equalities force
+      -- (.cont l σ failed) = (.terminal σ' b), which is impossible.
+      intro c l' σ_l f_l pc_l h_eq_l _h_pc σ_r b_r h_eq_r
+      rw [h_eq_l] at h_eq_r
+      cases h_eq_r
+    · -- step case
+      intro t blk_step σ_step failed_step config c₃
+        h_lookup h_blk h_rest ih
+        l' σ_l f_l pc_l h_eq_l h_pc_l σ_r b_r h_eq_r
+      -- Constructor injection on
+      --   h_eq_l : (.cont t σ_step failed_step) = (.cont l' σ_l f_l)
+      -- Cases substitutes l', σ_l, f_l by t, σ_step, failed_step.
+      cases h_eq_l
+      -- Derive (t, blk_step) ∈ cfg.blocks from h_lookup.
+      have h_mem : (t, blk_step) ∈ cfg.blocks := by
+        obtain ⟨l₁, l₂, h_split, _⟩ :=
+          List.lookup_eq_some_iff.mp h_lookup
+        rw [h_split]
+        exact List.mem_append_right _ List.mem_cons_self
+      -- Apply block_simulation.
+      obtain ⟨c_after_goto, h_blk_steps, h_sim⟩ :=
+        block_simulation δ δ_goto δ_goto_bool h_expr h_wf_bool
+          π φ cfg pgm wf t blk_step h_mem
+          (h_call_free (t, blk_step) h_mem)
+          σ_step failed_step _ h_blk pc_l h_pc_l
+      -- Case-split on `config`: this forces `updateFailure config failed_step`
+      -- to reduce so that `cases h_sim` can match `Sim`'s constructor patterns.
+      cases config with
+      | cont l_blk σ_blk f_blk =>
+        -- updateFailure (.cont l_blk σ_blk f_blk) failed_step
+        -- = .cont l_blk σ_blk (f_blk || failed_step)
+        cases h_sim with
+        | sim_cont h_lnext =>
+          -- Apply IH: motive (updateFailure config failed_step) c₃
+          -- specialized at (l_blk, σ_blk, f_blk || failed_step, _, σ_r, b_r, h_eq_r).
+          have h_tail :=
+            ih l_blk σ_blk (f_blk || failed_step) _ rfl h_lnext σ_r b_r h_eq_r
+          -- Concatenate block trace with tail.
+          unfold StepGotoStar at h_blk_steps h_tail ⊢
+          exact ReflTrans_Transitive _ _ _ _ h_blk_steps h_tail
+      | terminal σ_blk f_blk =>
+        -- updateFailure (.terminal σ_blk f_blk) failed_step
+        -- = .terminal σ_blk (f_blk || failed_step)
+        cases h_sim with
+        | sim_terminal =>
+          sorry
+  exact key l σ failed pc rfl h_pc σ' b rfl
 
 /-- Forward simulation: any terminating DetCFG run is matched by a
 terminating GOTO run with the same final store and failure flag.
