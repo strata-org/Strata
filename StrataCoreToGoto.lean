@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 import Strata.Languages.Core.Verifier
 import Strata.Util.IO
 
@@ -71,7 +71,7 @@ def main (args : List String) : IO UInt32 := do
       | .ok (tcPgm, env) =>
         IO.eprintln s!"[Strata.Core] Type Checking Succeeded!"
         let sourceText := some text
-        match ← Strata.coreToGotoFiles tcPgm env baseName sourceText |>.toBaseIO with
+        match ← Strata.coreToGotoFilesDispatch tcPgm env baseName sourceText |>.toBaseIO with
         | .ok () => return 0
         | .error e =>
           IO.eprintln s!"Error: {e}"

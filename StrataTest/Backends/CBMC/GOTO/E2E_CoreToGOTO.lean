@@ -5,6 +5,7 @@
 -/
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 
 /-! ## End-to-end tests: Core program → GOTO JSON
 
@@ -449,3 +450,30 @@ procedure main(out y : int)   { call helper(out y); };
     | IO.throwServerError "pure-out translation failed"
   -- `y` is a pure out, so it appears in ctx.locals (mapped to `main::1::y`).
   assert! ctx.locals.contains "y"
+
+-------------------------------------------------------------------------------
+
+-- Regression: body-aware dispatch sends CFG procedures through
+-- `procedureToGotoCtxViaCFG` instead of erroring "expected structured body,
+-- got CFG". Before the dispatch wrapper, every CFG-bodied procedure failed
+-- at coreToGotoFiles even though procedureToGotoCtxViaCFG existed.
+--
+-- We build the procedure programmatically because the `cfg ...` surface
+-- syntax isn't parseable in the #strata macro on this branch.
+
+private def E2E_CFGDispatchProc : Core.Procedure :=
+  { header := { name := "trivialCfg", typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .cfg
+      { entry := "start",
+        blocks := [("start", { cmds := [], transfer := .finish })] } }
+
+#eval do
+  let Env := Lambda.TEnv.default
+  -- The dispatcher sees a CFG body and routes to procedureToGotoCtxViaCFG.
+  let (.ok _) := procedureToGotoCtxDispatch Env E2E_CFGDispatchProc
+    | IO.throwServerError "CFG-body dispatch failed"
+  -- Sanity: the structured-only path explicitly rejects CFG bodies.
+  match procedureToGotoCtx Env E2E_CFGDispatchProc with
+  | .error _ => pure ()  -- expected
+  | .ok _ => IO.throwServerError "structured path unexpectedly accepted CFG body"

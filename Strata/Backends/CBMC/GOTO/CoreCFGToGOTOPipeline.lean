@@ -317,6 +317,71 @@ def procedureToGotoCtxViaCFG
       localTypes := localTypes }
   return (ctx, liftedFuncs)
 
+/-! ### Body-aware dispatch -/
+
+/--
+Translate a Core procedure to CProver GOTO, dispatching on the body
+representation: structured bodies go through `procedureToGotoCtx`, CFG
+bodies go through `procedureToGotoCtxViaCFG`.
+-/
+def procedureToGotoCtxDispatch
+    (Env : Core.Expression.TyEnv) (p : Core.Procedure)
+    (sourceText : Option String := none)
+    (axioms : List Core.Axiom := [])
+    (distincts :
+      List (Core.Expression.Ident × List Core.Expression.Expr) := [])
+    : Except Std.Format
+        (CoreToGOTO.CProverGOTO.Context × List Core.Function) :=
+  match p.body with
+  | .cfg _ => procedureToGotoCtxViaCFG Env p sourceText axioms distincts
+  | _      => procedureToGotoCtx Env p sourceText axioms distincts
+
+/--
+Mirrors `coreToGotoFiles` but dispatches on body type so CFG procedures
+go through `procedureToGotoCtxViaCFG` instead of erroring with
+"expected structured body, got CFG".
+-/
+public def coreToGotoFilesDispatch (tcPgm : Core.Program)
+    (Env : Core.Expression.TyEnv)
+    (baseName : String)
+    (sourceText : Option String := none)
+    (entryPoints : List String := ["main", "__main__"])
+    : EIO String Unit := do
+  let findProc (name : String) := tcPgm.decls.find? fun d =>
+      match d with
+      | .proc p _ => Core.CoreIdent.toPretty p.header.name == name
+      | _ => false
+  let mainDecl ← match entryPoints.findSome? findProc with
+    | some d => pure d
+    | none => throw s!"No entry-point procedure found (tried {entryPoints})"
+  let some p := mainDecl.getProc?
+    | throw "entry point is not a procedure"
+  let procName := "main"
+  let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+  let distincts := tcPgm.decls.filterMap fun d => match d with
+    | .distinct name es _ => some (name, es) | _ => none
+  match procedureToGotoCtxDispatch Env p sourceText
+        (axioms := axioms) (distincts := distincts) with
+  | .error e => throw s!"{e}"
+  | .ok (ctx, liftedFuncs) =>
+    let extraSyms ← match collectExtraSymbols tcPgm with
+      | .ok s => pure (Lean.toJson s)
+      | .error e => throw s!"{e}"
+    let (symtab, goto) ←
+      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+              (moduleName := baseName) |>.toBaseIO with
+      | .ok r => pure r
+      | .error e => throw s!"{e}"
+    let symTabFile := s!"{baseName}.symtab.json"
+    let gotoFile := s!"{baseName}.goto.json"
+    match ← writeJsonFile symTabFile symtab |>.toBaseIO with
+    | .ok () => pure ()
+    | .error e => throw s!"Error writing {symTabFile}: {e}"
+    match ← writeJsonFile gotoFile goto |>.toBaseIO with
+    | .ok () => pure ()
+    | .error e => throw s!"Error writing {gotoFile}: {e}"
+    let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
+
 end -- public section
 
 end Strata
