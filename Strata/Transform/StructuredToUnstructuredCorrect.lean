@@ -4633,6 +4633,35 @@ private theorem Block.uniqueInits.loop_body {P : PureExpr}
   unfold Stmt.initVars at h_head
   exact h_head
 
+/-! ## Frame helpers for `.ite .nondet` and `.loop` cases
+
+These helpers support the "counterfactual IH + frame lift" technique used
+to close fresh-binding sorries: idents manufactured by the translator
+(`$__nondet_ite$_n`, `$__nondet_loop$_n`, `loop_measure$_n`) are bound on
+the CFG side but absent from the structured side. We frame these bindings
+through the inner body's CFG run via `cfgFrameTouches`. -/
+
+/-- Idents that a single `Cmd` can read or write. Conservative
+over-approximation. -/
+@[expose] def Cmd.touchedVars {P : PureExpr} [HasVarsPure P P.Expr]
+    (c : Cmd P) : List P.Ident :=
+  Cmd.getVars c ++ Cmd.definedVars c ++ Cmd.modifiedVars c
+
+/-- Idents that a `DetTransferCmd`'s expression can read. `goto` and
+`finish` read no idents; `condGoto` reads its predicate. -/
+@[expose] def DetTransferCmd.touchedVars {P : PureExpr}
+    [HasVarsPure P P.Expr] :
+    DetTransferCmd String P → List P.Ident
+  | .condGoto e _ _ _ => HasVarsPure.getVars e
+  | .finish _ => []
+
+/-- Idents that a `DetBlock` can read or write across all its commands and
+its transfer. Used to express "this ident is not touched by the block". -/
+@[expose] def Block.cfgFrameTouches {P : PureExpr} [HasVarsPure P P.Expr]
+    (blk : DetBlock String (Cmd P) P) : List P.Ident :=
+  (blk.cmds.foldr (fun c acc => Cmd.touchedVars c ++ acc) []) ++
+    DetTransferCmd.touchedVars blk.transfer
+
 /-! ## Generalized simulation
 
 The central lemma: for any continuation `k`, exit-continuation stack, and
