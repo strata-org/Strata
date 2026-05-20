@@ -1352,7 +1352,7 @@ def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
     else
       -- Recurse into arguments
       let results ← args.attach.mapM fun ⟨arg, _⟩ => extractMultiOutputCalls ctx arg
-      let preamble := results.foldl (fun acc (pre, _) => acc ++ pre) []
+      let preamble := (results.map (fun (pre, _) => pre)).flatten
       let newArgs := results.map (·.2)
       if preamble.isEmpty then
         return ([], e)
@@ -1360,7 +1360,7 @@ def extractMultiOutputCalls (ctx : TranslationContext) (e : StmtExprMd)
         return (preamble, mkStmtExprMdWithLoc (.StaticCall callee.text newArgs) e.source)
   | .PrimitiveOp op args =>
     let results ← args.attach.mapM fun ⟨arg, _⟩ => extractMultiOutputCalls ctx arg
-    let preamble := results.foldl (fun acc (pre, _) => acc ++ pre) []
+    let preamble := (results.map (fun (pre, _) => pre)).flatten
     let newArgs := results.map (·.2)
     if preamble.isEmpty then
       return ([], e)
